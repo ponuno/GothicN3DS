@@ -1,0 +1,29 @@
+# Собирает и тестирует ПК-часть, затем собирает .3dsx в официальном контейнере devkitPro.
+name: build
+on: [push, pull_request]
+
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  n3ds:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: make -j2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gothic3ds
+          path: |
+            gothic3ds.3dsx
+            gothic3ds.smdh

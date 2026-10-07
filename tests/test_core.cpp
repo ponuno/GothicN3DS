@@ -1,6 +1,7 @@
 // Unit and integration tests for the data path: archive, texture layout,
 // chunker, streaming. Usage: test_core <scratch dir>
 #include "app.h"
+#include "bake.h"
 #include "chunker.h"
 #include "g3ds/pak.h"
 #include "g3ds/tex.h"
@@ -10,10 +11,12 @@
 #include "rg_etc1.h"
 #include "texture_bake.h"
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <random>
 #include <string>
 
@@ -276,7 +279,7 @@ static void testChunker() {
 	ChunkerOptions opt;
 	opt.chunkSize = 1000.0f;
 	ChunkerStats st;
-	std::vector<BakedChunk> chunks = buildChunks(scene, remap, opt, st);
+	std::vector<BakedChunk> chunks = buildChunks(scene, remap, {0, 0}, opt, st);
 	CHECK(chunks.size() == 16);
 	CHECK(st.inputTriangles == 801 && st.outputTriangles == 800 && st.degenerate == 1);
 	CHECK(st.uvClamped == 0);
@@ -317,7 +320,7 @@ static void testChunker() {
 	// A tiny vertex limit forces cells to split without losing triangles.
 	opt.maxVertices = 24;
 	ChunkerStats st2;
-	chunks = buildChunks(scene, remap, opt, st2);
+	chunks = buildChunks(scene, remap, {0, 0}, opt, st2);
 	CHECK(st2.outputTriangles == 800 && st2.splitChunks == 16 && chunks.size() > 16);
 	for (const BakedChunk& c : chunks) CHECK(c.vertices.size() <= 24);
 
@@ -358,8 +361,8 @@ static void testChunker() {
 	ChunkerOptions one;
 	one.chunkSize = 100000.0f; // a single chunk
 	ChunkerStats sp, ss;
-	buildChunks(plain, {0}, one, sp);
-	const std::vector<BakedChunk> merged = buildChunks(shifted, {0}, one, ss);
+	buildChunks(plain, {0}, {0}, one, sp);
+	const std::vector<BakedChunk> merged = buildChunks(shifted, {0}, {0}, one, ss);
 	std::printf("  uv seams: %llu vertices plain, %llu with per-polygon offsets\n",
 	            static_cast<unsigned long long>(sp.vertices), static_cast<unsigned long long>(ss.vertices));
 	CHECK(sp.vertices == 21 * 21);
@@ -372,6 +375,109 @@ static void testChunker() {
 			CHECK(std::fabs(d - std::round(d)) < 0.002f); // same texel, some whole repeats away
 		}
 
+	// Draw order and detail classes: batches come out sorted by order key
+	// (opaque, cut-out, blended), then detail class, then material; each batch
+	// knows its bounds.
+	{
+		SrcScene mix;
+		mix.materials.resize(3);
+		auto quadAt = [&](float x, u32 material, u8 detail) {
+			SrcTriangle tr = plain.triangles[0], tr2 = plain.triangles[1];
+			for (SrcTriangle* q : {&tr, &tr2}) {
+				for (SrcVertex& v : q->v) v.pos[0] += x;
+				q->material = material;
+				q->detail = detail;
+				mix.triangles.push_back(*q);
+			}
+		};
+		quadAt(0, 0, DETAIL_SMALL);    // world material 2: blended
+		quadAt(1000, 1, DETAIL_ALWAYS); // world material 0: opaque
+		quadAt(2000, 1, DETAIL_SMALL);
+		quadAt(3000, 2, DETAIL_MEDIUM); // world material 1: cut-out
+		quadAt(4000, 1, DETAIL_ALWAYS);
+		ChunkerStats sm;
+		const std::vector<BakedChunk> mc = buildChunks(mix, {2, 0, 1}, {0, 1, 2}, one, sm);
+		CHECK(mc.size() == 1 && mc[0].batches.size() == 4);
+		if (mc.size() == 1 && mc[0].batches.size() == 4) {
+			const BakedChunk& c = mc[0];
+			const u16 wantMaterial[4] = {0, 0, 1, 2};
+			const u8 wantDetail[4] = {DETAIL_ALWAYS, DETAIL_SMALL, DETAIL_MEDIUM, DETAIL_SMALL};
+			const float wantX[4][2] = {{1000, 4200}, {2000, 2200}, {3000, 3200}, {0, 200}};
+			for (int b = 0; b < 4; ++b) {
+				CHECK(c.batches[b].material == wantMaterial[b] && c.batches[b].detail == wantDetail[b]);
+				CHECK(c.batches[b].indexCount == (b == 0 ? 12u : 6u));
+				const float x0 = c.header.origin[0] + float(c.batches[b].bbMin[0]) * c.header.posScale;
+				const float x1 = c.header.origin[0] + float(c.batches[b].bbMax[0]) * c.header.posScale;
+				CHECK(std::fabs(x0 - wantX[b][0]) < 0.3f && std::fabs(x1 - wantX[b][1]) < 0.3f);
+				CHECK(c.batches[b].bbMin[1] <= c.batches[b].bbMax[1] && c.batches[b].bbMin[2] < c.batches[b].bbMax[2]);
+			}
+		}
+		CHECK(sm.batches == 4 && sm.detailTriangles[DETAIL_ALWAYS] == 4 && sm.detailTriangles[DETAIL_MEDIUM] == 2 &&
+		      sm.detailTriangles[DETAIL_SMALL] == 4);
+	}
+
+	// One lattice for the whole world: a vertex on the border of two chunks
+	// lands on bit-identical world coordinates in both, whatever its position,
+	// so there are no hairline cracks along chunk borders.
+	{
+		SrcScene seam;
+		seam.materials.resize(1);
+		std::mt19937 jitter(5);
+		auto h = [&](int ix, int iz) { return float((ix * 7919 + iz * 104729) % 1000) * 0.137f - 40.0f; };
+		for (int z = 0; z < 12; ++z)
+			for (int x = 0; x < 12; ++x) {
+				SrcTriangle tr;
+				tr.material = 0;
+				const int cx[4] = {x, x + 1, x + 1, x}, cz[4] = {z, z, z + 1, z + 1};
+				SrcVertex q[4] = {};
+				for (int k = 0; k < 4; ++k) {
+					// Awkward coordinates: nothing lines up with the lattice by itself.
+					q[k].pos[0] = float(cx[k]) * 333.33f - 1777.7f;
+					q[k].pos[1] = h(cx[k], cz[k]);
+					q[k].pos[2] = float(cz[k]) * 333.33f + 12345.6f;
+					q[k].rgba[3] = 255;
+				}
+				tr.v[0] = q[0]; tr.v[1] = q[1]; tr.v[2] = q[2];
+				seam.triangles.push_back(tr);
+				tr.v[1] = q[2]; tr.v[2] = q[3];
+				seam.triangles.push_back(tr);
+			}
+		(void)jitter;
+		ChunkerOptions small;
+		small.chunkSize = 1000.0f;
+		ChunkerStats sq;
+		const std::vector<BakedChunk> sc = buildChunks(seam, {0}, {0}, small, sq);
+		CHECK(sc.size() > 9);
+		// Collect every world position each source corner was written to.
+		std::map<std::pair<int, int>, std::vector<std::array<float, 3>>> seen;
+		for (const BakedChunk& c : sc)
+			for (const WorldVertex& v : c.vertices) {
+				const float wx = c.header.origin[0] + float(v.x) * c.header.posScale;
+				const float wy = c.header.origin[1] + float(v.y) * c.header.posScale;
+				const float wz = c.header.origin[2] + float(v.z) * c.header.posScale;
+				const int ix = int(std::lround((wx + 1777.7f) / 333.33f)), iz = int(std::lround((wz - 12345.6f) / 333.33f));
+				seen[{ix, iz}].push_back({wx, wy, wz});
+				CHECK(std::fabs(wx - (float(ix) * 333.33f - 1777.7f)) <= 0.26f && std::fabs(wy - h(ix, iz)) <= 0.26f);
+			}
+		size_t shared = 0;
+		for (const auto& kv : seen) {
+			shared += kv.second.size() > 1;
+			for (const auto& p : kv.second) CHECK(p == kv.second[0]);
+		}
+		CHECK(seen.size() == 13 * 13 && shared > 20); // many corners sit in two or more chunks
+		CHECK(std::fabs(sc[0].header.posScale - 0.5f) < 1e-6f);
+
+		// A chunk too large for the base step doubles it until it fits.
+		SrcScene giant;
+		giant.materials.resize(1);
+		SrcTriangle g = seam.triangles[0];
+		g.v[1].pos[0] += 30000.0f;
+		giant.triangles.push_back(g);
+		ChunkerStats sg;
+		const std::vector<BakedChunk> gc = buildChunks(giant, {0}, {0}, small, sg);
+		CHECK(gc.size() == 1 && std::fabs(gc[0].header.posScale - 1.0f) < 1e-6f && sg.outputTriangles == 1);
+	}
+
 	// A triangle spanning more texture repeats than 16.16 fixed point holds.
 	SrcScene wide;
 	wide.materials.resize(1);
@@ -379,7 +485,7 @@ static void testChunker() {
 	t.v[1].uv[0] = t.v[0].uv[0] + 100.0f;
 	wide.triangles.push_back(t);
 	ChunkerStats st3;
-	buildChunks(wide, {0}, ChunkerOptions {}, st3);
+	buildChunks(wide, {0}, {0}, ChunkerOptions {}, st3);
 	CHECK(st3.uvClamped == 1);
 }
 
@@ -410,74 +516,19 @@ static void testMath() {
 	CHECK(fwd.x > 0.99f && std::fabs(fwd.z) < 0.01f);
 }
 
-// Minimal bake of a scene into a pak (the CLI does the same with more
-// reporting). Textures the scene cannot provide drop their triangles.
-static void bakeScenePak(SrcScene& scene, const std::string& path, const char* name, float chunkSize) {
+// Bakes one scene into a pak with the pipeline the command-line tool uses.
+static void bakeScenePak(const SrcScene& scene, const std::string& path, const char* name, float chunkSize) {
+	std::vector<BakeWorld> worlds(1);
+	worlds[0].name = name;
+	worlds[0].scene = scene;
+	BakeOptions opt;
+	opt.chunker.chunkSize = chunkSize;
+	opt.tex.maxSize = 32;
+	opt.tex.quality = 0;
+	opt.threads = 2;
+	opt.quiet = true;
 	PakWriter pak;
-	std::vector<WorldMaterial> mats;
-	std::vector<int> remap;
-	TexBakeOptions to;
-	to.maxSize = 32;
-	to.quality = 0;
-	for (const SrcMaterial& m : scene.materials) {
-		SrcImage img;
-		if (!scene.loadTexture || !scene.loadTexture(m.texture, img)) {
-			if (scene.loadTexture) {
-				remap.push_back(-1);
-				continue;
-			}
-			// Scenes without textures (collision tests): a flat grey one.
-			img.width = img.height = 8;
-			img.rgba.assign(8 * 8 * 4, 160);
-		}
-		TexBakeInfo info;
-		const std::string texName = "tex/" + m.name;
-		pak.add(texName, ASSET_TEXTURE, bakeTexture(img, to, &info));
-		WorldMaterial wm {};
-		wm.textureHash = hashName(texName.c_str());
-		wm.flags = u16((info.alpha ? MATF_ALPHA_TEST : 0) | (m.noCollision ? MATF_NO_COLLISION : 0));
-		remap.push_back(int(mats.size()));
-		mats.push_back(wm);
-	}
-	ChunkerOptions co;
-	co.chunkSize = chunkSize;
-	ChunkerStats st;
-	const std::vector<BakedChunk> chunks = buildChunks(scene, remap, co, st);
-	WorldHeader wh {};
-	wh.magic = WORLD_MAGIC;
-	wh.version = WORLD_VERSION;
-	wh.chunkSize = co.chunkSize;
-	wh.chunkCount = u32(chunks.size());
-	wh.materialCount = u32(mats.size());
-	wh.triangleCount = u32(st.outputTriangles);
-	std::memcpy(wh.spawnPos, scene.spawnPos, sizeof(wh.spawnPos));
-	wh.spawnYaw = scene.spawnYaw;
-	std::vector<ChunkInfo> infos;
-	const std::string prefix = std::string("world/") + name;
-	for (size_t i = 0; i < chunks.size(); ++i) {
-		const std::string chunkName = prefix + "/" + std::to_string(i);
-		const std::vector<u8> blob = chunks[i].serialize();
-		pak.add(chunkName, ASSET_CHUNK, blob);
-		ChunkInfo ci {};
-		std::memcpy(ci.bbMin, chunks[i].bbMin, 12);
-		std::memcpy(ci.bbMax, chunks[i].bbMax, 12);
-		ci.entryHash = hashName(chunkName.c_str());
-		ci.size = u32(blob.size());
-		ci.vertexCount = chunks[i].header.vertexCount;
-		ci.batchCount = chunks[i].header.batchCount;
-		ci.indexCount = chunks[i].header.indexCount;
-		infos.push_back(ci);
-		for (int a = 0; a < 3; ++a) {
-			wh.bbMin[a] = i ? std::min(wh.bbMin[a], ci.bbMin[a]) : ci.bbMin[a];
-			wh.bbMax[a] = i ? std::max(wh.bbMax[a], ci.bbMax[a]) : ci.bbMax[a];
-		}
-	}
-	std::vector<u8> index(sizeof(wh) + mats.size() * sizeof(WorldMaterial) + infos.size() * sizeof(ChunkInfo));
-	std::memcpy(index.data(), &wh, sizeof(wh));
-	std::memcpy(index.data() + sizeof(wh), mats.data(), mats.size() * sizeof(WorldMaterial));
-	std::memcpy(index.data() + sizeof(wh) + mats.size() * sizeof(WorldMaterial), infos.data(),
-	            infos.size() * sizeof(ChunkInfo));
-	pak.add(prefix, ASSET_WORLD, index);
+	bakeWorlds(worlds, opt, pak);
 	pak.write(path);
 }
 
@@ -510,6 +561,32 @@ static void testRuntime() {
 		w.config().maxLoadsPerFrame = 1;
 		app.update(Input {}, 1.0f / 30.0f);
 		CHECK(w.stats().chunksLoaded == 1 && w.stats().chunksPending > 0);
+		// ... and always takes the nearest missing chunks first.
+		{
+			const Vec3 c = app.camera().pos;
+			auto distance = [&](u32 i) {
+				const ChunkInfo& ci = w.chunkInfo(i);
+				const float dx = std::max({ci.bbMin[0] - c.x, c.x - ci.bbMax[0], 0.0f});
+				const float dy = std::max({ci.bbMin[1] - c.y, c.y - ci.bbMax[1], 0.0f});
+				const float dz = std::max({ci.bbMin[2] - c.z, c.z - ci.bbMax[2], 0.0f});
+				return std::sqrt(dx * dx + dy * dy + dz * dz);
+			};
+			// All but two of the missing chunks in one go: the two left out
+			// must be the farthest ones.
+			const u32 pendingBefore = w.stats().chunksPending;
+			CHECK(pendingBefore > 6);
+			w.config().maxLoadsPerFrame = pendingBefore - 2;
+			app.update(Input {}, 1.0f / 30.0f);
+			CHECK(w.stats().chunksLoaded == pendingBefore - 1 && w.stats().chunksPending == 2);
+			float farthestLoaded = 0, nearestMissing = 1e30f;
+			for (u32 i = 0; i < w.stats().chunksTotal; ++i) {
+				if (w.chunkResident(i))
+					farthestLoaded = std::max(farthestLoaded, distance(i));
+				else
+					nearestMissing = std::min(nearestMissing, distance(i));
+			}
+			CHECK(farthestLoaded <= nearestMissing);
+		}
 		// ... and a preload fetches everything in range at once.
 		w.preload(app.camera().pos);
 		const u32 near = w.stats().chunksLoaded;
@@ -531,12 +608,37 @@ static void testRuntime() {
 			distinct += std::abs(int(fb[i * 4 + 1]) - int(app.skyColors().horizon[1])) > 24;
 		CHECK(distinct > 200);
 
+		const u32 skyBytes = gfx::memStats().meshBytes + gfx::memStats().textureBytes - w.stats().residentBytes; // the dome
+
 		// Far away from everything: all chunks are released again.
 		app.teleport({1e6f, 0, 1e6f});
 		app.update(Input {}, 1.0f / 30.0f);
 		CHECK(w.stats().chunksLoaded == 0 && w.stats().residentBytes == 0 && w.stats().texturesLoaded == 0);
 		CHECK(w.stats().collisionBytes == 0);
 		CHECK(gfx::memStats().meshCount == 1 && gfx::memStats().textureCount == 0); // only the sky dome is left
+
+		// The allocator runs dry before the budget does (a full linear heap on
+		// the console): chunks and textures wait instead of being written off,
+		// and arrive once there is room.
+		app.teleport({scene.spawnPos[0], scene.spawnPos[1], scene.spawnPos[2]});
+		gfx::softSetMemoryLimit(gfx::memStats().meshBytes + 40 * 1024);
+		w.preload(app.camera().pos);
+		const u32 starved = w.stats().chunksLoaded;
+		CHECK(starved > 0 && starved < near && w.stats().budgetRejects > 0 && w.stats().loadFailures == 0);
+		CHECK(w.stats().chunksPending == near - starved);
+		app.render(); // whatever is there can be drawn, textured or not
+		gfx::softSetMemoryLimit(0);
+		w.preload(app.camera().pos);
+		for (int i = 0; i < 40; ++i) app.update(Input {}, 1.0f / 30.0f); // one waiting texture per frame
+		CHECK(w.stats().chunksLoaded == near && w.stats().loadFailures == 0 && w.stats().chunksPending == 0);
+		CHECK(w.stats().residentBytes == gfx::memStats().meshBytes + gfx::memStats().textureBytes - skyBytes);
+		app.render();
+		CHECK(w.stats().trianglesDrawn > 500);
+		app.teleport({1e6f, 0, 1e6f});
+		app.update(Input {}, 1.0f / 30.0f);
+		CHECK(w.stats().chunksLoaded == 0 && w.stats().texturesLoaded == 0 && w.stats().residentBytes == 0);
+		w.config() = StreamConfig {};
+		app.setDrawDistance(6000.0f);
 
 		// A budget too small for the neighbourhood: loading stops, nothing breaks.
 		app.teleport({scene.spawnPos[0], scene.spawnPos[1], scene.spawnPos[2]});
@@ -584,6 +686,345 @@ static void testRuntime() {
 		app.render();
 		app.shutdown();
 		CHECK(gfx::memStats().meshCount == 0 && gfx::memStats().textureCount == 0);
+	}
+	gfx::shutdown();
+}
+
+// Two worlds in one archive: portals, water (blending, animation, wading,
+// swimming, the view from below), detail classes.
+static void testWorlds() {
+	std::vector<BakeWorld> worlds(2);
+	worlds[0].name = "world";
+	worlds[0].level = "WORLD.ZEN";
+	SynthOptions so;
+	so.cells = 48;
+	so.huts = 8;
+	so.trees = 60;
+	buildSyntheticScene(so, worlds[0].scene);
+	worlds[1].name = "cave";
+	worlds[1].level = "CAVE.ZEN";
+	buildSyntheticCave(worlds[1].scene);
+	const float gate[3] = {worlds[0].scene.points["CAMP_GATE"].pos[0], worlds[0].scene.points["CAMP_GATE"].pos[1],
+	                       worlds[0].scene.points["CAMP_GATE"].pos[2]};
+	BakeOptions bo;
+	bo.tex.maxSize = 32;
+	bo.tex.quality = 0;
+	bo.threads = 2;
+	bo.quiet = true;
+	PakWriter writer;
+	const BakeResult result = bakeWorlds(worlds, bo, writer);
+	const std::string path = gDir + "/worlds.pak";
+	writer.write(path);
+	// Textures are shared: both worlds use the same water, rock and dirt.
+	CHECK(result.textures == 13 && result.report.find("== world 'cave'") != std::string::npos);
+	CHECK(result.report.find("portals: 1 of 1 lead to a baked world: cave at CAVE_ENTRY") != std::string::npos);
+	CHECK(result.report.find("portals: 1 of 1 lead to a baked world: world at CAMP_GATE") != std::string::npos);
+	CHECK(result.report.find("1 animated, 1 scrolling") != std::string::npos);
+
+	const float dt = 1.0f / 30.0f;
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr)); // the archive names its start world
+	CHECK(std::string(app.worldName()) == "world/world");
+	World& w = app.world();
+	Player& pl = app.player();
+	CHECK(w.header().portalCount == 1 && w.header().textureCount == 14);
+	w.preload(app.camera().pos);
+
+	// ---- detail classes: small objects are only drawn near the camera ----
+	app.player().flying = true;
+	app.teleport({0, 600, 0}); // above the middle of the camp, barrels all around
+	app.camera().pitch = -0.6f;
+	app.update(Input {}, dt);
+	w.preload(app.camera().pos);
+	app.render();
+	const u32 trisNear = w.stats().trianglesDrawn, culledNear = w.stats().batchesCulled;
+	w.config().detailDistance[DETAIL_SMALL] = 0.0f;
+	w.config().detailDistance[DETAIL_MEDIUM] = 0.0f;
+	app.render();
+	std::printf("  detail classes: %u triangles with objects, %u without them\n", trisNear, w.stats().trianglesDrawn);
+	CHECK(w.stats().trianglesDrawn < trisNear && w.stats().batchesCulled > culledNear);
+	w.config() = StreamConfig {};
+	app.setDrawDistance(12000.0f);
+
+	// ---- blended pass: the glow and the cobweb in the gate ----
+	app.teleport({gate[0], gate[1] + 175.0f, gate[2]});
+	app.camera().yaw = 3.14159f; // CAMP_GATE looks away from the gate; turn round
+	app.camera().pitch = 0;
+	app.update(Input {}, dt);
+	w.preload(app.camera().pos);
+	app.render();
+	CHECK(w.stats().blendedDrawCalls >= 2 && w.stats().drawCalls > w.stats().blendedDrawCalls);
+	// Additive light in the gate: brighter and warmer than anything the lit
+	// world produces on its own (the cobweb's threads cover part of it).
+	{
+		const u8* fb = gfx::softFramebuffer();
+		int glowing = 0;
+		for (int i = 0; i < gfx::SCREEN_W * gfx::SCREEN_H; ++i) glowing += fb[i * 4] > 230 && fb[i * 4] > fb[i * 4 + 2] + 40;
+		std::printf("  blended pass: %d glowing pixels\n", glowing);
+		CHECK(glowing > 100 && glowing < 4000);
+	}
+
+	// ---- portal: walking through the gate leads into the cave ----
+	pl.flying = false;
+	app.teleport({gate[0], gate[1] + 175.0f, gate[2]});
+	app.camera().yaw = 3.14159f;
+	for (int i = 0; i < 20; ++i) app.update(Input {}, dt); // settle on the ground
+	CHECK(pl.grounded && app.worldSwitches() == 0);
+	int frames = 0;
+	for (; frames < 120 && app.worldSwitches() == 0; ++frames) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+	}
+	CHECK(app.worldSwitches() == 1 && frames > 15);
+	CHECK(std::string(app.worldName()) == "world/cave");
+	CHECK(std::fabs(app.camera().pos.x) < 1.0f && std::fabs(app.camera().pos.z - 900.0f) < 1.0f);
+	CHECK(std::fabs(app.camera().yaw) < 1e-4f);
+	CHECK(w.stats().chunksLoaded == 4 && w.stats().chunksTotal == 4); // preloaded on arrival
+	for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
+	CHECK(pl.grounded && std::fabs(pl.feet.y) < 0.3f && app.worldSwitches() == 1); // no bounce back
+
+	// ---- water: wade in, swim, come back out ----
+	bool waded = false;
+	for (int i = 0; i < 400 && pl.feet.z < 2400.0f; ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+		waded = waded || (!pl.swimming && pl.grounded && pl.waterDepth > 60.0f);
+	}
+	CHECK(waded && pl.swimming && !pl.grounded);
+	// Afloat: the feet hang 125 cm below the surface (at -20), the eyes are above it.
+	CHECK(std::fabs(pl.feet.y - (-20.0f - 125.0f)) < 2.0f && app.camera().pos.y > -20.0f);
+	const float swimStart = pl.feet.z;
+	for (int i = 0; i < 30; ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		in.fast = true; // no sprinting in water
+		app.update(in, dt);
+	}
+	CHECK(pl.feet.z - swimStart < 300.0f && pl.feet.z > swimStart + 100.0f);
+	// The far wall of the pool stops the swimmer.
+	for (int i = 0; i < 200; ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+	}
+	CHECK(pl.swimming && pl.feet.z < 2750.0f && pl.feet.z > 2650.0f);
+	// Looking back over the pool: the water is drawn in the blended pass, and
+	// being animated and scrolling, the same view changes over time.
+	app.camera().yaw = 3.14159f;
+	app.camera().pitch = -0.35f;
+	app.update(Input {}, dt);
+	app.render();
+	CHECK(!app.underwater() && w.stats().blendedDrawCalls > 0);
+	const std::vector<u8> before(gfx::softFramebuffer(), gfx::softFramebuffer() + gfx::SCREEN_W * gfx::SCREEN_H * 4);
+	app.update(Input {}, 0.3f); // more than one animation frame (4 per second)
+	app.render();
+	int changed = 0;
+	for (size_t i = 0; i < before.size(); i += 4) changed += std::abs(int(before[i + 2]) - int(gfx::softFramebuffer()[i + 2])) > 3;
+	std::printf("  water animation: %d pixels changed in 0.3 s\n", changed);
+	CHECK(changed > 2000);
+	app.camera().pitch = 0;
+
+	// Back up the ramp.
+	for (int i = 0; i < 400 && pl.feet.z > 1300.0f; ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+	}
+	CHECK(!pl.swimming && pl.grounded && std::fabs(pl.feet.y) < 0.5f && pl.waterDepth == 0.0f);
+
+	// ---- under water the view is fogged in ----
+	pl.flying = true;
+	app.teleport({0, -200.0f, 2400.0f});
+	app.update(Input {}, dt);
+	app.render();
+	CHECK(app.underwater());
+	app.teleport({0, 300.0f, 2400.0f});
+	app.update(Input {}, dt);
+	app.render();
+	CHECK(!app.underwater());
+	float surface = 0;
+	CHECK(w.waterBelow({0, 300, 2400}, 1000, surface) && std::fabs(surface + 20.0f) < 0.3f);
+	CHECK(!w.waterBelow({0, 300, 1000}, 1000, surface)); // dry floor
+	CHECK(!w.waterBelow({0, -100, 2400}, 1000, surface)); // from below the surface
+	pl.flying = false;
+
+	// ---- an indoor world has no sky and no time of day ----
+	CHECK(w.indoor() && w.header().fogColor[0] == 14 && w.header().ladderCount == 1);
+	app.teleport({0, 175.0f, 900.0f});
+	app.camera().yaw = 0.4f;
+	app.environment().timeOfDay = 13.0f;
+	for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
+	app.render();
+	const std::vector<u8> noon(gfx::softFramebuffer(), gfx::softFramebuffer() + gfx::SCREEN_W * gfx::SCREEN_H * 4);
+	// A whole number of water animation cycles later (1 s; the scroll period is far longer), at night.
+	app.environment().timeOfDay = 1.0f;
+	app.render();
+	int differing = 0, bright = 0;
+	for (size_t i = 0; i < noon.size(); i += 4) {
+		differing += std::abs(int(noon[i]) - int(gfx::softFramebuffer()[i])) > 2;
+		bright += noon[i] > 40;
+	}
+	CHECK(differing == 0 && bright > 10000); // lit by its own light, at any hour
+	app.environment().timeOfDay = 13.0f;
+
+	// ---- ladder: walk into it to climb, step off at the top, back down again ----
+	app.teleport({-1200.0f, 175.0f, 3000.0f});
+	app.camera().yaw = 0;
+	for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
+	CHECK(pl.grounded && !pl.climbing);
+	bool climbed = false;
+	float highest = 0;
+	for (int i = 0; i < 300 && !(pl.grounded && pl.feet.y > 290.0f && pl.feet.z > 3450.0f); ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+		climbed = climbed || pl.climbing;
+		highest = std::max(highest, pl.feet.y);
+	}
+	std::printf("  ladder: up to %.0f cm, standing at %.0f %.0f %.0f\n", double(highest), double(pl.feet.x), double(pl.feet.y),
+	            double(pl.feet.z));
+	CHECK(climbed && !pl.climbing && pl.grounded && std::fabs(pl.feet.y - 300.0f) < 0.5f && pl.feet.z > 3450.0f);
+	CHECK(highest < 345.0f); // no leap over the edge
+	// Walking about on the ledge next to the ladder's top is just walking.
+	for (int i = 0; i < 10; ++i) {
+		Input in;
+		in.moveX = 1.0f;
+		app.update(in, dt);
+		CHECK(!pl.climbing && pl.grounded);
+	}
+	// Down: back onto the ladder, facing the ledge.
+	app.teleport({-1200.0f, 475.0f, 3460.0f});
+	for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
+	CHECK(pl.grounded && std::fabs(pl.feet.y - 300.0f) < 0.5f);
+	climbed = false;
+	float fastestDrop = 0, lastY = pl.feet.y;
+	for (int i = 0; i < 300 && !(pl.grounded && pl.feet.y < 1.0f); ++i) {
+		Input in;
+		in.moveZ = -1.0f;
+		app.update(in, dt);
+		climbed = climbed || pl.climbing;
+		fastestDrop = std::max(fastestDrop, lastY - pl.feet.y);
+		lastY = pl.feet.y;
+	}
+	CHECK(climbed && pl.grounded && std::fabs(pl.feet.y) < 0.5f && pl.feet.z < 3400.0f && pl.feet.z > 3330.0f);
+	CHECK(fastestDrop < 8.0f); // climbed down at 170 cm/s (5.7 cm a frame), not fallen
+	// Jumping lets go of a ladder.
+	for (int i = 0; i < 40; ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+	}
+	CHECK(pl.climbing && pl.feet.y > 100.0f);
+	Input letGo;
+	letGo.jump = true;
+	app.update(letGo, dt);
+	CHECK(!pl.climbing);
+	for (int i = 0; i < 40; ++i) app.update(Input {}, dt);
+	CHECK(pl.grounded && std::fabs(pl.feet.y) < 0.5f);
+
+	// ---- the way back ----
+	app.teleport({0, 175.0f, 900.0f});
+	app.camera().yaw = 3.14159f;
+	for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
+	for (frames = 0; frames < 120 && app.worldSwitches() == 1; ++frames) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+	}
+	CHECK(app.worldSwitches() == 2 && std::string(app.worldName()) == "world/world");
+	CHECK(std::fabs(app.camera().pos.x - gate[0]) < 1.0f && std::fabs(app.camera().pos.z - gate[2]) < 1.0f);
+
+	// ---- the saved state brings the player back to the same spot, across worlds ----
+	{
+		const std::string statePath = gDir + "/state.bin";
+		app.environment().timeOfDay = 17.25f;
+		app.setDrawDistance(9000.0f);
+		app.camera().pitch = -0.3f;
+		const Vec3 left = app.camera().pos;
+		const float leftYaw = app.camera().yaw;
+		CHECK(app.saveState(statePath.c_str()));
+		// Leave: another world, another place, another hour.
+		CHECK(app.enterWorld(hashName("world/cave"), nullptr, 0));
+		app.environment().timeOfDay = 3.0f;
+		app.setDrawDistance(12000.0f);
+		const u32 switches = app.worldSwitches();
+		CHECK(app.loadState(statePath.c_str()));
+		CHECK(std::string(app.worldName()) == "world/world" && app.worldSwitches() == switches);
+		CHECK(std::fabs(app.camera().pos.x - left.x) < 0.01f && std::fabs(app.camera().pos.y - left.y) < 0.01f &&
+		      std::fabs(app.camera().pos.z - left.z) < 0.01f);
+		CHECK(std::fabs(app.camera().yaw - leftYaw) < 1e-5f && std::fabs(app.camera().pitch + 0.3f) < 1e-5f);
+		CHECK(std::fabs(app.environment().timeOfDay - 17.25f) < 1e-4f && std::fabs(app.drawDistance() - 9000.0f) < 0.01f);
+		for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
+		CHECK(pl.grounded && std::string(app.worldName()) == "world/world");
+
+		// A damaged or missing file changes nothing.
+		FILE* f = fopen(statePath.c_str(), "r+b");
+		fseek(f, 20, SEEK_SET);
+		fputc(0x5A, f);
+		fclose(f);
+		const Vec3 here = app.camera().pos;
+		CHECK(!app.loadState(statePath.c_str()));
+		CHECK(!app.loadState((gDir + "/no-such-state.bin").c_str()));
+		CHECK(app.camera().pos.x == here.x && app.camera().pos.z == here.z);
+		app.setDrawDistance(12000.0f);
+		app.environment().timeOfDay = 13.0f;
+	}
+
+	// ---- the debug key walks through the worlds of the archive; bad targets are refused ----
+	const u32 switchesBefore = app.worldSwitches();
+	Input next;
+	next.nextWorld = true;
+	app.update(next, dt);
+	CHECK(app.worldSwitches() == switchesBefore + 1 && std::string(app.worldName()) == "world/cave");
+	app.update(next, dt);
+	CHECK(app.worldSwitches() == switchesBefore + 2 && std::string(app.worldName()) == "world/world");
+	CHECK(!app.enterWorld(hashName("world/nowhere"), nullptr, 0));
+	CHECK(!app.enterWorld(hashName("tex/syn_rock"), nullptr, 0)); // exists, but is not a world
+	CHECK(std::string(app.worldName()) == "world/world" && app.worldSwitches() == switchesBefore + 2);
+	app.render();
+	CHECK(w.stats().trianglesDrawn > 100 && w.stats().loadFailures == 0);
+
+	app.shutdown();
+	CHECK(gfx::memStats().meshCount == 0 && gfx::memStats().textureCount == 0);
+
+	// ---- a world index that points outside its own tables is refused ----
+	{
+		WorldHeader wh {};
+		wh.magic = WORLD_MAGIC;
+		wh.version = WORLD_VERSION;
+		wh.chunkSize = 4000;
+		wh.materialCount = 1;
+		wh.textureCount = 1;
+		WorldMaterial wm {};
+		wm.texture = 0;
+		wm.frameCount = 2; // two frames, but the table has one texture
+		const u32 tex = hashName("tex/none");
+		std::vector<u8> blob(sizeof(wh) + sizeof(wm) + sizeof(tex));
+		std::memcpy(blob.data(), &wh, sizeof(wh));
+		std::memcpy(blob.data() + sizeof(wh), &wm, sizeof(wm));
+		std::memcpy(blob.data() + sizeof(wh) + sizeof(wm), &tex, sizeof(tex));
+		PakWriter bad;
+		bad.add("world/bad", ASSET_WORLD, blob);
+		wm.frameCount = 1;
+		std::memcpy(blob.data() + sizeof(wh), &wm, sizeof(wm));
+		bad.add("world/empty", ASSET_WORLD, blob);
+		blob.pop_back();
+		bad.add("world/short", ASSET_WORLD, blob);
+		const std::string badPath = gDir + "/badworld.pak";
+		bad.write(badPath);
+		Pak pak;
+		CHECK(pak.open(badPath.c_str()));
+		World world;
+		CHECK(!world.open(&pak, "bad") && !world.isOpen());
+		CHECK(!world.open(&pak, "short"));
+		CHECK(world.open(&pak, "empty") && world.isOpen()); // valid, just without chunks
+		world.update({0, 0, 0});
+		world.draw(identity(), {0, 0, 0}, 0);
+		world.drawBlended();
+		world.close();
 	}
 	gfx::shutdown();
 }
@@ -795,7 +1236,8 @@ int main(int argc, char** argv) {
 		void (*fn)();
 	} tests[] = {{"hash", testHash},     {"pak", testPak},         {"etc1 block decoder", testEtc1BlockDecoder},
 	             {"texture", testTexture}, {"chunker", testChunker}, {"math", testMath},
-	             {"runtime", testRuntime}, {"collision", testCollision}, {"sky", testSky}};
+	             {"runtime", testRuntime}, {"worlds", testWorlds},       {"collision", testCollision},
+	             {"sky", testSky}};
 	for (auto& t : tests) {
 		const int before = gFailures;
 		std::printf("[ RUN ] %s\n", t.name);

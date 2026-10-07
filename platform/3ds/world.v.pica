@@ -14,6 +14,7 @@
 .fvec projection[4], modelView[4]
 .fvec params        ; x = uv scale, y = 1/255, z = fogA, w = fogB
 .fvec dayDelta      ; xyz = dayLight - 1
+.fvec texOffset     ; xy = texture scroll offset (zw must be 0)
 
 .constf consts(0.0, 1.0, 0.0, 0.0)
 .alias zero consts.xxxx
@@ -44,6 +45,7 @@
 	dp4 outpos.w, projection[3], r1
 
 	mul r2, params.xxxx, intc
+	add r2, texOffset, r2
 	mov outtc0, r2
 
 	; fog factor

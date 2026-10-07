@@ -3,6 +3,7 @@
 // pipeline (ETC1, cut-out alpha, chunking, streaming, fog) can be built and
 // tested without owning the game. Sizes and densities are loosely modelled
 // on the Colony so the bake report says something useful about budgets.
+#include "g3ds/world.h"
 #include "importers.h"
 
 #include <algorithm>
@@ -78,6 +79,7 @@ void shade(float ndl, float occlusion, u8 out[4]) {
 
 struct Builder {
 	SrcScene& scene;
+	u8 detail = 0; // DetailClass given to the triangles emitted from now on
 
 	SrcVertex vert(V3 p, float u, float v, V3 n, float occ = 1.0f) {
 		SrcVertex s {};
@@ -100,6 +102,7 @@ struct Builder {
 		t.v[1] = b;
 		t.v[2] = c;
 		t.material = material;
+		t.detail = detail;
 		scene.triangles.push_back(t);
 		if (twoSided) {
 			std::swap(t.v[1], t.v[2]);
@@ -129,6 +132,8 @@ void rgb(u8* p, float r, float g, float b, float a = 1.0f) {
 	p[2] = c(b);
 	p[3] = c(a);
 }
+
+const int kWaterFrames = 4;
 
 bool makeTexture(const std::string& name, SrcImage& img) {
 	const int S = 256; // deliberately larger than the default bake size
@@ -167,10 +172,30 @@ bool makeTexture(const std::string& name, SrcImage& img) {
 			float v = (0.5f + 0.5f * n) * row;
 			rgb(p, 0.72f * v, 0.60f * v, 0.30f * v);
 		});
-	} else if (name == "SYN_WATER") {
+	} else if (name.rfind("SYN_WATER_A", 0) == 0 && name.size() == 12 && name[11] >= '0' && name[11] < '0' + kWaterFrames) {
+		// Four frames of ripples: the same noise sampled along a small circle.
+		const float phase = float(name[11] - '0') / float(kWaterFrames) * 6.28318f;
 		fill(img, S, [&](int x, int y, u8* p) {
-			float n = fbm(x * k * 6, y * k * 6, 61, 4, 6);
-			rgb(p, 0.12f + 0.2f * n, 0.30f + 0.3f * n, 0.42f + 0.35f * n);
+			float n = fbm(x * k * 6 + 0.35f * std::cos(phase), y * k * 6 + 0.35f * std::sin(phase), 61, 4, 6);
+			float glint = std::max(0.0f, std::sin(n * 20.0f + phase)) * 0.12f;
+			rgb(p, 0.10f + 0.2f * n + glint, 0.30f + 0.3f * n + glint, 0.44f + 0.35f * n + glint);
+		});
+	} else if (name == "SYN_GLOW") {
+		// A soft blob of light; the alpha is how much of it gets added.
+		fill(img, S, [&](int x, int y, u8* p) {
+			float cx = (float(x) - 127.5f) / 128.0f, cy = (float(y) - 127.5f) / 128.0f;
+			float a = std::clamp(1.0f - std::sqrt(cx * cx + cy * cy), 0.0f, 1.0f);
+			rgb(p, 1.0f, 0.82f, 0.45f, a * a);
+		});
+	} else if (name == "SYN_WEB") {
+		// A cobweb: thin threads on a transparent background, drawn blended.
+		fill(img, S, [&](int x, int y, u8* p) {
+			float cx = float(x) - 127.5f, cy = float(y) - 127.5f;
+			float r = std::sqrt(cx * cx + cy * cy), ang = std::atan2(cy, cx);
+			float spoke = std::fabs(std::fmod(ang * 8.0f / 6.28318f + 16.0f, 1.0f) - 0.5f);
+			float ring = std::fabs(std::fmod(r / 22.0f, 1.0f) - 0.5f);
+			bool thread = r < 124.0f && (spoke < 0.03f + 2.0f / (r + 8.0f) || ring < 0.06f);
+			rgb(p, 0.85f, 0.85f, 0.88f, thread ? 0.75f : 0.0f);
 		});
 	} else if (name == "SYN_PALISADE") {
 		// Pointed stakes with gaps: exercises ETC1A4 and the alpha test.
@@ -202,24 +227,39 @@ bool makeTexture(const std::string& name, SrcImage& img) {
 	return true;
 }
 
-} // namespace
-
-void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
-	enum { GRASS, ROCK, DIRT, WOOD, THATCH, WATER, PALISADE, TREE, MISSING, MAT_COUNT };
-	static const char* names[MAT_COUNT] = {"SYN_GRASS", "SYN_ROCK",     "SYN_DIRT", "SYN_WOOD",   "SYN_THATCH",
-	                                       "SYN_WATER", "SYN_PALISADE", "SYN_TREE", "SYN_MISSING"};
-	for (int i = 0; i < MAT_COUNT; ++i) {
+// Both synthetic worlds use the same material list.
+void addMaterials(SrcScene& scene) {
+	static const char* names[] = {"SYN_GRASS",    "SYN_ROCK", "SYN_DIRT",    "SYN_WOOD", "SYN_THATCH", "SYN_WATER_A0",
+	                              "SYN_PALISADE", "SYN_TREE", "SYN_MISSING", "SYN_GLOW", "SYN_WEB"};
+	enum { WATER = 5, TREE = 7, GLOW = 9, WEB = 10 };
+	for (int i = 0; i < int(sizeof(names) / sizeof(names[0])); ++i) {
 		SrcMaterial m;
 		m.name = names[i];
 		m.texture = std::string(names[i]) + ".TGA";
-		m.water = i == WATER;
-		m.noCollision = i == TREE; // foliage cards: walk through
+		if (i == WATER) {
+			// Animated, slowly drifting, see-through.
+			m.water = true;
+			m.opacity = 150;
+			m.animFps = 4.0f;
+			m.scroll[0] = 0.03f;
+			m.scroll[1] = 0.015f;
+		}
+		m.noCollision = i == TREE || i == GLOW || i == WEB; // foliage cards and decals: walk through
+		if (i == GLOW) m.blend = SrcBlend::Add;
+		if (i == WEB) m.blend = SrcBlend::Alpha;
 		scene.materials.push_back(m);
 	}
 	scene.loadTexture = [](const std::string& name, SrcImage& img) {
 		std::string base = name.substr(0, name.find('.'));
 		return makeTexture(base, img);
 	};
+}
+
+} // namespace
+
+void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
+	enum { GRASS, ROCK, DIRT, WOOD, THATCH, WATER, PALISADE, TREE, MISSING, GLOW, WEB, MAT_COUNT };
+	addMaterials(scene);
 
 	Builder b {scene};
 	const int N = opt.cells;
@@ -359,6 +399,63 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 		}
 	}
 
+	// ---- small and medium objects: only drawn near the camera ----
+	auto box = [&](float cx, float cz, float w, float h, float rot, int sides, u32 mat) {
+		// A prism with `sides` faces and a lid, standing on the ground.
+		const float y = height(cx, cz) - 5.0f;
+		for (int i = 0; i < sides; ++i) {
+			const float a0 = rot + float(i) / float(sides) * 6.28318f, a1 = rot + float(i + 1) / float(sides) * 6.28318f;
+			const V3 p0 {cx + std::cos(a0) * w, y, cz + std::sin(a0) * w}, p1 {cx + std::cos(a1) * w, y, cz + std::sin(a1) * w};
+			const V3 nn = norm({std::cos((a0 + a1) * 0.5f), 0, std::sin((a0 + a1) * 0.5f)});
+			b.quad(b.vert(p0, float(i) * 0.5f, 1, nn, 0.7f), b.vert(p1, float(i + 1) * 0.5f, 1, nn, 0.7f),
+			       b.vert({p1.x, y + h, p1.z}, float(i + 1) * 0.5f, 0, nn), b.vert({p0.x, y + h, p0.z}, float(i) * 0.5f, 0, nn), nn, mat);
+			b.tri(b.vert({cx, y + h, cz}, 0.5f, 0.5f, {0, 1, 0}), b.vert({p0.x, y + h, p0.z}, 0, 0, {0, 1, 0}),
+			      b.vert({p1.x, y + h, p1.z}, 1, 0, {0, 1, 0}), {0, 1, 0}, mat);
+		}
+	};
+	int barrels = 0, crates = 0;
+	for (int i = 0; i < opt.huts * 2; ++i) {
+		const float ang = float(i) * 1.618f, r = campRadius * (0.25f + 0.6f * rnd(i, 0, 131));
+		b.detail = DETAIL_SMALL;
+		box(std::cos(ang) * r, std::sin(ang) * r, 38.0f, 95.0f, rnd(i, 1, 131), 8, WOOD); // barrel
+		++barrels;
+		if (i % 3 == 0) {
+			b.detail = DETAIL_MEDIUM;
+			box(std::cos(ang) * r + 260.0f, std::sin(ang) * r + 140.0f, 150.0f, 210.0f, 0.785f + rnd(i, 2, 131), 4, WOOD); // crate
+			++crates;
+		}
+	}
+	b.detail = DETAIL_ALWAYS;
+
+	// ---- a gate that leads into the cave world, with a glow and a cobweb ----
+	const float gateX = 1500.0f, gateZ = campRadius * 1.9f;
+	const float gateY = height(gateX, gateZ);
+	for (float side : {-1.0f, 1.0f}) box(gateX + side * 230.0f, gateZ, 30.0f, 330.0f, 0.785f, 4, WOOD);
+	{
+		const V3 n {0, 0, 1};
+		const float x0 = gateX - 200.0f, x1 = gateX + 200.0f, y0 = gateY + 10.0f, y1 = gateY + 310.0f;
+		// One face each: the blended pass draws both sides.
+		b.quad(b.vert({x0, y0, gateZ}, 0, 1, n), b.vert({x1, y0, gateZ}, 1, 1, n), b.vert({x1, y1, gateZ}, 1, 0, n),
+		       b.vert({x0, y1, gateZ}, 0, 0, n), n, GLOW);
+		b.quad(b.vert({x0, y0, gateZ + 6.0f}, 0, 1, n), b.vert({x1, y0, gateZ + 6.0f}, 1, 1, n),
+		       b.vert({x1, y1, gateZ + 6.0f}, 1, 0, n), b.vert({x0, y1, gateZ + 6.0f}, 0, 0, n), n, WEB);
+		// Glow is light: full brightness, untouched by the time of day.
+		for (size_t t = scene.triangles.size() - 4; t < scene.triangles.size() - 2; ++t)
+			for (SrcVertex& v : scene.triangles[t].v) {
+				v.rgba[0] = v.rgba[1] = v.rgba[2] = 255;
+				v.rgba[3] = 0;
+			}
+	}
+	SrcPortal portal;
+	const float pmin[3] = {gateX - 200.0f, gateY - 50.0f, gateZ - 120.0f}, pmax[3] = {gateX + 200.0f, gateY + 320.0f, gateZ + 120.0f};
+	std::copy_n(pmin, 3, portal.bbMin);
+	std::copy_n(pmax, 3, portal.bbMax);
+	portal.level = "CAVE.ZEN";
+	portal.point = "CAVE_ENTRY";
+	scene.portals.push_back(portal);
+	// Where the cave's exit leads back to: in front of the gate, facing away.
+	scene.points["CAMP_GATE"] = SrcPoint {{gateX, height(gateX, gateZ + 600.0f), gateZ + 600.0f}, 0.0f};
+
 	// Start just outside the gate, looking back at the camp.
 	scene.spawnPos[0] = 0;
 	scene.spawnPos[2] = campRadius * 1.9f;
@@ -366,7 +463,101 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 	scene.spawnYaw = 3.14159f;
 	scene.hasSpawn = true;
 	scene.notes.push_back("synthetic scene: " + std::to_string(N) + "x" + std::to_string(N) + " terrain cells, " +
-	                      std::to_string(opt.huts) + " huts, " + std::to_string(placed) + " trees");
+	                      std::to_string(opt.huts) + " huts, " + std::to_string(placed) + " trees, " +
+	                      std::to_string(barrels) + " barrels, " + std::to_string(crates) + " crates");
+}
+
+// A lightmapped rock chamber, 30 x 40 m, with a pool whose floor slopes from
+// the entrance side down to 3 m, so it can be waded into, swum and left again.
+void buildSyntheticCave(SrcScene& scene) {
+	enum { ROCK = 1, DIRT = 2, WOOD = 3, WATER = 5 };
+	addMaterials(scene);
+	Builder b {scene};
+	scene.indoor = true;
+	scene.fogColor[0] = 14;
+	scene.fogColor[1] = 12;
+	scene.fogColor[2] = 10;
+
+	const float x0 = -1500.0f, x1 = 1500.0f, z0 = 0.0f, z1 = 4000.0f, top = 800.0f;
+	const float poolX = 500.0f, poolZ0 = 1500.0f, poolZ1 = 2750.0f, poolDepth = 300.0f, waterY = -20.0f;
+	// Indoor light: dim, warm, and not tinted by the time of day (alpha 0).
+	auto lit = [&](V3 p, float u, float v, float shade) {
+		SrcVertex s = b.vert(p, u, v, {0, 1, 0});
+		const float d = std::clamp(shade * (0.75f + 0.25f * std::sin(p.x * 0.004f) * std::cos(p.z * 0.003f)), 0.0f, 1.0f);
+		s.rgba[0] = u8(150 * d);
+		s.rgba[1] = u8(128 * d);
+		s.rgba[2] = u8(104 * d);
+		s.rgba[3] = 0;
+		return s;
+	};
+	const float cell = 250.0f;
+	for (float z = z0; z < z1; z += cell)
+		for (float x = x0; x < x1; x += cell) {
+			const float cx = x + cell * 0.5f, cz = z + cell * 0.5f;
+			const bool pool = std::fabs(cx) < poolX && cz > poolZ0 && cz < poolZ1;
+			auto P = [&](float px, float pz) {
+				// Pool cells use the sloped bottom, everything else is flat.
+				return V3 {px, pool ? -poolDepth * (std::clamp(pz, poolZ0, poolZ1) - poolZ0) / (poolZ1 - poolZ0) : 0.0f, pz};
+			};
+			b.quad(lit(P(x, z), x / 300.0f, z / 300.0f, pool ? 0.6f : 1.0f), lit(P(x + cell, z), (x + cell) / 300.0f, z / 300.0f, pool ? 0.6f : 1.0f),
+			       lit(P(x + cell, z + cell), (x + cell) / 300.0f, (z + cell) / 300.0f, pool ? 0.6f : 1.0f),
+			       lit(P(x, z + cell), x / 300.0f, (z + cell) / 300.0f, pool ? 0.6f : 1.0f), {0, 1, 0}, DIRT);
+			if (pool)
+				b.quad(lit({x, waterY, z}, x / 700.0f, z / 700.0f, 1.0f), lit({x + cell, waterY, z}, (x + cell) / 700.0f, z / 700.0f, 1.0f),
+				       lit({x + cell, waterY, z + cell}, (x + cell) / 700.0f, (z + cell) / 700.0f, 1.0f),
+				       lit({x, waterY, z + cell}, x / 700.0f, (z + cell) / 700.0f, 1.0f), {0, 1, 0}, WATER);
+			// Ceiling.
+			b.quad(lit({x, top, z}, x / 300.0f, z / 300.0f, 0.5f), lit({x + cell, top, z}, (x + cell) / 300.0f, z / 300.0f, 0.5f),
+			       lit({x + cell, top, z + cell}, (x + cell) / 300.0f, (z + cell) / 300.0f, 0.5f),
+			       lit({x, top, z + cell}, x / 300.0f, (z + cell) / 300.0f, 0.5f), {0, -1, 0}, ROCK);
+		}
+	// The pool's side and far walls (the near edge is the ramp).
+	auto wall = [&](V3 a, V3 c, V3 inward, float bottomA, float bottomC, float topY) {
+		b.quad(lit({a.x, bottomA, a.z}, 0, 1, 0.8f), lit({c.x, bottomC, c.z}, 2, 1, 0.8f), lit({c.x, topY, c.z}, 2, 0, 0.8f),
+		       lit({a.x, topY, a.z}, 0, 0, 0.8f), inward, ROCK);
+	};
+	wall({-poolX, 0, poolZ0}, {-poolX, 0, poolZ1}, {1, 0, 0}, 0.0f, -poolDepth, 0.0f);
+	wall({poolX, 0, poolZ0}, {poolX, 0, poolZ1}, {-1, 0, 0}, 0.0f, -poolDepth, 0.0f);
+	wall({-poolX, 0, poolZ1}, {poolX, 0, poolZ1}, {0, 0, -1}, -poolDepth, -poolDepth, 0.0f);
+	// The chamber's four walls.
+	wall({x0, 0, z0}, {x1, 0, z0}, {0, 0, 1}, 0, 0, top);
+	wall({x0, 0, z1}, {x1, 0, z1}, {0, 0, -1}, 0, 0, top);
+	wall({x0, 0, z0}, {x0, 0, z1}, {1, 0, 0}, 0, 0, top);
+	wall({x1, 0, z0}, {x1, 0, z1}, {-1, 0, 0}, 0, 0, top);
+
+	// A ledge in the far left corner, 3 m up, reached by a ladder.
+	const float ledgeX = -900.0f, ledgeZ = 3400.0f, ledgeY = 300.0f;
+	b.quad(lit({x0, ledgeY, ledgeZ}, 0, 0, 1.0f), lit({ledgeX, ledgeY, ledgeZ}, 2, 0, 1.0f), lit({ledgeX, ledgeY, z1}, 2, 2, 1.0f),
+	       lit({x0, ledgeY, z1}, 0, 2, 1.0f), {0, 1, 0}, DIRT);
+	wall({x0, 0, ledgeZ}, {ledgeX, 0, ledgeZ}, {0, 0, -1}, 0, 0, ledgeY);
+	wall({ledgeX, 0, ledgeZ}, {ledgeX, 0, z1}, {1, 0, 0}, 0, 0, ledgeY);
+	SrcLadder ladder;
+	const float lmin[3] = {-1230.0f, 0.0f, ledgeZ - 12.0f}, lmax[3] = {-1170.0f, ledgeY + 20.0f, ledgeZ};
+	std::copy_n(lmin, 3, ladder.bbMin);
+	std::copy_n(lmax, 3, ladder.bbMax);
+	scene.ladders.push_back(ladder);
+	{
+		// The ladder itself: a plank leaning on the ledge's front.
+		const V3 n {0, 0, -1};
+		b.quad(lit({lmin[0], lmin[1], lmin[2]}, 0, 3, 1.0f), lit({lmax[0], lmin[1], lmin[2]}, 0.5f, 3, 1.0f),
+		       lit({lmax[0], lmax[1], lmin[2]}, 0.5f, 0, 1.0f), lit({lmin[0], lmax[1], lmin[2]}, 0, 0, 1.0f), n, WOOD);
+	}
+
+	SrcPortal portal;
+	const float pmin[3] = {-200.0f, -50.0f, 80.0f}, pmax[3] = {200.0f, 320.0f, 380.0f};
+	std::copy_n(pmin, 3, portal.bbMin);
+	std::copy_n(pmax, 3, portal.bbMax);
+	portal.level = "WORLD.ZEN";
+	portal.point = "CAMP_GATE";
+	scene.portals.push_back(portal);
+	scene.points["CAVE_ENTRY"] = SrcPoint {{0.0f, 0.0f, 900.0f}, 0.0f};
+
+	scene.spawnPos[0] = 0;
+	scene.spawnPos[1] = 175.0f;
+	scene.spawnPos[2] = 900.0f;
+	scene.spawnYaw = 0;
+	scene.hasSpawn = true;
+	scene.notes.push_back("synthetic cave: one chamber with a pool, " + std::to_string(scene.triangles.size()) + " triangles");
 }
 
 } // namespace g3

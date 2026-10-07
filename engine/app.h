@@ -25,6 +25,7 @@ struct Environment {
 
 class App {
 public:
+	// `worldName` may be null: the archive says which world the game starts in.
 	bool init(const char* pakPath, const char* worldName);
 	void shutdown();
 
@@ -35,16 +36,36 @@ public:
 	void setDrawDistance(float cm);
 	// Moves the player's eyes to `eye` (keeps walking or flying as it was).
 	void teleport(Vec3 eye);
+	// Switches to another world of the archive. `eye` null uses its start
+	// point. On failure the current world stays.
+	bool enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw);
+
+	// Where the player is (world, position, view, time of day, draw distance),
+	// so the next start continues from there. loadState returns false and
+	// changes nothing if the file is missing, damaged or names a world that is
+	// not in this archive.
+	bool saveState(const char* path) const;
+	bool loadState(const char* path);
+	float drawDistance() const { return _world.config().drawDistance; }
 
 	Camera& camera() { return _cam; }
 	Environment& environment() { return _env; }
 	Player& player() { return _player; }
 	World& world() { return _world; }
+	const World& world() const { return _world; }
 	Pak& pak() { return _pak; }
 	SkyColors skyColors() const { return skyColorsAt(_env.timeOfDay); }
 	const char* error() const { return _error; }
+	// Name of the current world asset ("world/oldmine"), for display.
+	const char* worldName() const;
+	// How many times the world was switched (portals and the debug key).
+	u32 worldSwitches() const { return _switches; }
+	// True while the camera is below a water surface.
+	bool underwater() const { return _underwater; }
 
 private:
+	void checkPortals();
+
 	Pak _pak;
 	World _world;
 	Player _player;
@@ -52,6 +73,10 @@ private:
 	Camera _cam;
 	Environment _env;
 	const char* _error = "";
+	double _clock = 0;       // seconds since init: drives texture animation
+	u32 _switches = 0;
+	bool _portalLock = false; // just arrived: ignore portals until the player has left their boxes
+	bool _underwater = false;
 };
 
 } // namespace g3

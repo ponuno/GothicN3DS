@@ -1,6 +1,7 @@
 // Software backend for the PC build. It is not meant to be fast or pretty: it
 // reproduces the pipeline the 3DS backend sets up (texture * vertex colour,
-// alpha test, per-vertex linear fog, CCW front faces, 16-bit indexed meshes) so the whole data path can be tested without a 3DS.
+// alpha test, blending, per-vertex linear fog, CCW front faces, 16-bit
+// indexed meshes) so the whole data path can be tested without a 3DS.
 // Textures are decoded from the very same PICA-native bytes the console gets.
 #include "gfx_soft.h"
 
@@ -34,9 +35,14 @@ float gFogA = 1.0f, gFogB = 0.0f; // fog factor = clamp(A - viewZ * B)
 Pass gPass = PASS_WORLD;
 Texture* gTexture = nullptr;
 u32 gMaterialFlags = 0;
+float gOpacity = 1.0f;
+float gUvOffset[2] = {0, 0};
 bool gCull = true;
+u32 gMemoryLimit = 0;
 MemStats gMem;
 SoftStats gStats;
+
+bool fits(u32 bytes) { return gMemoryLimit == 0 || gMem.meshBytes + gMem.textureBytes + bytes <= gMemoryLimit; }
 
 struct ClipVert {
 	float x, y, z, w;
@@ -84,8 +90,13 @@ void rasterize(const ScreenVert& a, const ScreenVert& b, const ScreenVert& c, fl
 		tw = gTexture->width >> level;
 		th = gTexture->height >> level;
 	}
-	const bool alphaTest = (gMaterialFlags & MATF_ALPHA_TEST) != 0;
-	++gStats.trianglesRasterised;
+	// Blended materials are never cut out: their alpha is the blend factor.
+	const bool blend = gPass == PASS_BLEND;
+	const bool additive = blend && (gMaterialFlags & MATF_ADD) != 0;
+	const bool alphaTest = !blend && (gMaterialFlags & MATF_ALPHA_TEST) != 0;
+	const bool depthTest = gPass != PASS_SKY, depthWrite = gPass == PASS_WORLD;
+	const bool count = gPass == PASS_WORLD; // statistics describe the opaque world
+	if (count) ++gStats.trianglesRasterised;
 
 	for (int y = y0; y <= y1; ++y) {
 		for (int x = x0; x <= x1; ++x) {
@@ -97,8 +108,8 @@ void rasterize(const ScreenVert& a, const ScreenVert& b, const ScreenVert& c, fl
 
 			const int idx = y * SCREEN_W + x;
 			const float z = a.z * w0 + b.z * w1 + c.z * w2;
-			++gStats.pixelsTested;
-			if (gPass == PASS_WORLD && z >= gDepth[idx]) continue;
+			gStats.pixelsTested += count;
+			if (depthTest && z >= gDepth[idx]) continue;
 
 			const float invW = a.invW * w0 + b.invW * w1 + c.invW * w2;
 			const float w = 1.0f / invW;
@@ -121,13 +132,23 @@ void rasterize(const ScreenVert& a, const ScreenVert& b, const ScreenVert& c, fl
 			if (alphaTest && al <= 0.5f) continue;
 
 			const float fog = clamp((a.fog * w0 + b.fog * w1 + c.fog * w2) * w, 0.0f, 1.0f);
+			// Added light fades to nothing in the fog; everything else fades to the fog colour.
+			const float fogTo[3] = {additive ? 0.0f : float(gFrame.fogColor[0]), additive ? 0.0f : float(gFrame.fogColor[1]),
+			                        additive ? 0.0f : float(gFrame.fogColor[2])};
+			float src[3] = {fogTo[0] + (r * 255.0f - fogTo[0]) * fog, fogTo[1] + (g * 255.0f - fogTo[1]) * fog,
+			                fogTo[2] + (bl * 255.0f - fogTo[2]) * fog};
 			u8* out = gColor + idx * 4;
-			out[0] = u8(clamp(gFrame.fogColor[0] + (r * 255.0f - gFrame.fogColor[0]) * fog, 0.0f, 255.0f));
-			out[1] = u8(clamp(gFrame.fogColor[1] + (g * 255.0f - gFrame.fogColor[1]) * fog, 0.0f, 255.0f));
-			out[2] = u8(clamp(gFrame.fogColor[2] + (bl * 255.0f - gFrame.fogColor[2]) * fog, 0.0f, 255.0f));
+			if (blend) {
+				const float alpha = clamp(al * gOpacity, 0.0f, 1.0f);
+				const float keep = additive ? 1.0f : 1.0f - alpha;
+				for (int ch = 0; ch < 3; ++ch) src[ch] = src[ch] * alpha + float(out[ch]) * keep;
+			}
+			out[0] = u8(clamp(src[0], 0.0f, 255.0f));
+			out[1] = u8(clamp(src[1], 0.0f, 255.0f));
+			out[2] = u8(clamp(src[2], 0.0f, 255.0f));
 			out[3] = 255;
-			if (gPass == PASS_WORLD) gDepth[idx] = z;
-			++gStats.pixelsWritten;
+			if (depthWrite) gDepth[idx] = z;
+			gStats.pixelsWritten += count;
 		}
 	}
 }
@@ -144,7 +165,7 @@ void drawTriangle(const ClipVert in[3]) {
 		outF += in[i].z > in[i].w;
 	}
 	if (outL == 3 || outR == 3 || outB == 3 || outT == 3 || outN == 3 || outF == 3) {
-		++gStats.trianglesClipped;
+		if (gPass == PASS_WORLD) ++gStats.trianglesClipped;
 		return;
 	}
 
@@ -181,9 +202,9 @@ void drawTriangle(const ClipVert in[3]) {
 	// negative area here. PICA default: GPU_CULL_BACK_CCW.
 	const float area =
 	    (sv[1].sx - sv[0].sx) * (sv[2].sy - sv[0].sy) - (sv[2].sx - sv[0].sx) * (sv[1].sy - sv[0].sy);
-	if (area >= 0.0f) {
+	if (area >= 0.0f && gPass == PASS_WORLD) {
 		++gStats.trianglesBackface;
-		if (gCull && gPass == PASS_WORLD) return;
+		if (gCull) return;
 	}
 
 	// One mip level per triangle from the texel/pixel area ratio.
@@ -210,6 +231,7 @@ bool init() {
 void shutdown() {}
 
 Texture* textureCreate(const TexHeader& h, const u8* data) {
+	if (!fits(h.dataSize)) return nullptr;
 	Texture* t = static_cast<Texture*>(calloc(1, sizeof(Texture)));
 	if (!t) return nullptr;
 	t->width = h.width;
@@ -242,6 +264,7 @@ void textureDestroy(Texture* t) {
 }
 
 Mesh* meshCreate(const WorldVertex* vertices, u32 vertexCount, const u16* indices, u32 indexCount) {
+	if (!fits(vertexCount * u32(sizeof(WorldVertex)) + indexCount * u32(sizeof(u16)))) return nullptr;
 	Mesh* m = static_cast<Mesh*>(calloc(1, sizeof(Mesh)));
 	if (!m) return nullptr;
 	m->vertices = static_cast<WorldVertex*>(malloc(size_t(vertexCount) * sizeof(WorldVertex) + 1));
@@ -286,6 +309,8 @@ void frameBegin(const FrameDesc& f) {
 	gStats = {};
 	gTexture = nullptr;
 	gMaterialFlags = 0;
+	gOpacity = 1.0f;
+	gUvOffset[0] = gUvOffset[1] = 0.0f;
 }
 
 void setPass(Pass pass) {
@@ -295,10 +320,10 @@ void setPass(Pass pass) {
 		gFogA = 1.0f;
 		gFogB = 0.0f;
 	} else {
+		// No usable fog range means no fog, as in the 3DS backend.
 		const float range = gFrame.fogEnd - gFrame.fogStart;
 		gFogB = range > 0.0f ? 1.0f / range : 0.0f;
-		gFogA = gFrame.fogEnd * gFogB;
-		gStats = {}; // statistics describe the world pass only
+		gFogA = range > 0.0f ? gFrame.fogEnd * gFogB : 1.0f;
 	}
 }
 
@@ -307,13 +332,16 @@ void setChunkTransform(const float origin[3], float posScale, float uvScale) {
 	gUvScale = uvScale;
 }
 
-void setMaterial(Texture* t, u32 materialFlags) {
+void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, float uvOffsetV) {
 	gTexture = t;
 	gMaterialFlags = materialFlags;
+	gOpacity = opacity;
+	gUvOffset[0] = uvOffsetU;
+	gUvOffset[1] = uvOffsetV;
 }
 
 void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
-	if (!m || firstIndex + indexCount > m->indexCount) return;
+	if (!m || indexCount == 0 || firstIndex + indexCount > m->indexCount) return;
 	for (u32 i = 0; i + 2 < indexCount; i += 3) {
 		ClipVert cv[3];
 		for (int k = 0; k < 3; ++k) {
@@ -326,22 +354,26 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 			const float weight = v.a * (1.0f / 255.0f);
 			const float tint[3] = {1.0f + weight * (gFrame.dayLight[0] - 1.0f), 1.0f + weight * (gFrame.dayLight[1] - 1.0f),
 			                       1.0f + weight * (gFrame.dayLight[2] - 1.0f)};
-			cv[k] = {c.x, c.y, c.z, c.w, float(v.u) * gUvScale, float(v.v) * gUvScale,
+			cv[k] = {c.x, c.y, c.z, c.w, float(v.u) * gUvScale + gUvOffset[0], float(v.v) * gUvScale + gUvOffset[1],
 			         v.r * (1.0f / 255.0f) * tint[0], v.g * (1.0f / 255.0f) * tint[1], v.b * (1.0f / 255.0f) * tint[2],
 			         1.0f, fog};
 		}
-		++gStats.trianglesSubmitted;
+		if (gPass == PASS_WORLD) ++gStats.trianglesSubmitted;
 		drawTriangle(cv);
 	}
 }
 
 void frameEnd() {}
 
+void releaseDestroyed() {} // nothing is deferred here
+
 MemStats memStats() { return gMem; }
+FrameStats frameStats() { return {0, 0.0f}; }
 
 const u8* softFramebuffer() { return gColor; }
 SoftStats softStats() { return gStats; }
 void softSetCulling(bool enabled) { gCull = enabled; }
+void softSetMemoryLimit(u32 bytes) { gMemoryLimit = bytes; }
 
 } // namespace gfx
 } // namespace g3

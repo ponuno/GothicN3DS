@@ -46,36 +46,53 @@ u32 ChunkCollider::bytes() const {
 }
 
 bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const WorldVertex* vertices,
-                          const u16* indices, const WorldMaterial* materials) {
+                          const u16* indices, const WorldMaterial* materials, u16 flagMask, u16 flagValue) {
 	release();
 	memcpy(origin, h.origin, sizeof(origin));
 	scale = h.posScale > 0 ? h.posScale : 1.0f;
 
 	u32 tris = 0;
 	for (u32 b = 0; b < h.batchCount; ++b)
-		if (!(materials[batches[b].material].flags & MATF_NO_COLLISION)) tris += batches[b].indexCount / 3;
+		if ((materials[batches[b].material].flags & flagMask) == flagValue) tris += batches[b].indexCount / 3;
 	if (tris == 0) return true;
 
-	positions = static_cast<i16*>(malloc(size_t(h.vertexCount) * 3 * sizeof(i16)));
+	// Only the vertices these triangles use are kept: a chunk full of trees
+	// with one puddle must not pay for every leaf in its water collider.
+	const u16 unused = 0xFFFF;
+	u16* remap = static_cast<u16*>(malloc(size_t(h.vertexCount) * sizeof(u16) + 2));
 	triangles = static_cast<u16*>(malloc(size_t(tris) * 3 * sizeof(u16)));
-	if (!positions || !triangles) {
+	if (!remap || !triangles) {
+		free(remap);
 		release();
 		return false;
 	}
-	vertexCount = h.vertexCount;
+	memset(remap, 0xFF, size_t(h.vertexCount) * sizeof(u16));
 	triangleCount = tris;
-	for (u32 i = 0; i < h.vertexCount; ++i) {
-		positions[i * 3 + 0] = vertices[i].x;
-		positions[i * 3 + 1] = vertices[i].y;
-		positions[i * 3 + 2] = vertices[i].z;
-	}
-	u32 n = 0;
+	u32 n = 0, used = 0;
 	for (u32 b = 0; b < h.batchCount; ++b) {
-		if (materials[batches[b].material].flags & MATF_NO_COLLISION) continue;
+		if ((materials[batches[b].material].flags & flagMask) != flagValue) continue;
 		const u32 count = batches[b].indexCount / 3 * 3;
-		memcpy(triangles + n, indices + batches[b].firstIndex, size_t(count) * sizeof(u16));
-		n += count;
+		for (u32 i = 0; i < count; ++i) {
+			const u16 v = indices[batches[b].firstIndex + i];
+			if (remap[v] == unused) remap[v] = u16(used++);
+			triangles[n++] = remap[v];
+		}
 	}
+	positions = static_cast<i16*>(malloc(size_t(used) * 3 * sizeof(i16) + 2));
+	if (!positions) {
+		free(remap);
+		release();
+		return false;
+	}
+	vertexCount = used;
+	for (u32 i = 0; i < h.vertexCount; ++i) {
+		if (remap[i] == unused) continue;
+		i16* p = positions + size_t(remap[i]) * 3;
+		p[0] = vertices[i].x;
+		p[1] = vertices[i].y;
+		p[2] = vertices[i].z;
+	}
+	free(remap);
 
 	// Grid: cells of about 2.5 m, at most 48 x 48.
 	i32 maxX = 0, maxZ = 0;

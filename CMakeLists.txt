@@ -50,6 +50,7 @@ target_link_libraries(g3ds-host PRIVATE g3soft)
 set(G3DS_BAKE_SOURCES
     tools/common/pak_writer.cpp
     tools/bake/texture_bake.cpp
+    tools/bake/bake.cpp
     tools/bake/chunker.cpp
     tools/bake/ground.cpp
     tools/bake/synth.cpp)

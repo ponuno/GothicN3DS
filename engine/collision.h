@@ -1,7 +1,8 @@
 // Collision against the static world. A chunk's collision mesh is its render
 // mesh: the quantised vertex positions plus the indices of every batch whose
 // material collides. A small XZ grid per chunk keeps queries to a handful of
-// triangles. All queries treat triangles as two-sided.
+// triangles. All queries treat triangles as two-sided. Water surfaces get a
+// collider of their own, used to find the water level.
 #pragma once
 #include "g3ds/math.h"
 #include "g3ds/world.h"
@@ -19,10 +20,11 @@ struct ChunkCollider {
 	float cellSize = 1.0f; // in local units
 	u32 gridW = 0, gridH = 0;
 
-	// Copies what collision needs out of a chunk. False on allocation failure;
-	// a chunk without any collidable triangle is valid and simply empty.
+	// Copies what collision needs out of a chunk: the triangles of every batch
+	// whose material has (flags & flagMask) == flagValue. False on allocation
+	// failure; a chunk without any such triangle is valid and simply empty.
 	bool build(const ChunkHeader& h, const ChunkBatch* batches, const WorldVertex* vertices, const u16* indices,
-	           const WorldMaterial* materials);
+	           const WorldMaterial* materials, u16 flagMask, u16 flagValue);
 	void release();
 	u32 bytes() const;
 

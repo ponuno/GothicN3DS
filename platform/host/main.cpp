@@ -15,7 +15,7 @@ using namespace g3;
 
 static void usage() {
 	puts("usage: g3ds-host --pak data.pak [options]\n"
-	     "  --world NAME        world asset to load (default: world)\n"
+	     "  --world NAME        world asset to load (default: the archive's start world)\n"
 	     "  --frames N          frames to simulate at 30 fps (default: 300)\n"
 	     "  --shots N           screenshots to save, evenly spaced (default: 4)\n"
 	     "  --out PREFIX        screenshot prefix (default: frame)\n"
@@ -26,12 +26,14 @@ static void usage() {
 	     "  --no-cull           draw back faces too (winding check)\n"
 	     "  --budget-mb N       world memory budget (default: 24)\n"
 	     "  --draw-distance CM  draw distance (default: 12000)\n"
+	     "  --detail M,S        draw distance of medium and small objects, cm (default: 7000,3500)\n"
 	     "  --stats FILE        write a JSON summary");
 }
 
 int main(int argc, char** argv) {
 	const char* pakPath = nullptr;
-	const char* worldName = "world";
+	const char* worldName = nullptr;
+	const char* detailSpec = nullptr;
 	const char* outPrefix = "frame";
 	const char* statsPath = nullptr;
 	const char* camSpec = nullptr;
@@ -51,6 +53,7 @@ int main(int argc, char** argv) {
 		else if (arg("--budget-mb")) budgetMb = float(atof(argv[++i]));
 		else if (arg("--draw-distance")) drawDistance = float(atof(argv[++i]));
 		else if (arg("--stats")) statsPath = argv[++i];
+		else if (arg("--detail")) detailSpec = argv[++i];
 		else if (arg("--time")) timeOfDay = float(atof(argv[++i]));
 		else if (strcmp(argv[i], "--still") == 0) still = true;
 		else if (strcmp(argv[i], "--walk") == 0) walk = true;
@@ -76,6 +79,10 @@ int main(int argc, char** argv) {
 	StreamConfig& cfg = app.world().config();
 	cfg.memoryBudget = u32(budgetMb * 1024.0f * 1024.0f);
 	app.setDrawDistance(drawDistance);
+	if (detailSpec && sscanf(detailSpec, "%f,%f", &cfg.detailDistance[g3::DETAIL_MEDIUM], &cfg.detailDistance[g3::DETAIL_SMALL]) != 2) {
+		usage();
+		return 2;
+	}
 	app.environment().timeOfDay = timeOfDay;
 	// Three modes: a level flight a few metres up (default), a walk on the
 	// ground with collision (--walk), or a fixed view from the spawn (--still).
@@ -100,14 +107,16 @@ int main(int argc, char** argv) {
 	}
 
 	const WorldHeader& wh = app.world().header();
-	printf("world '%s': %u chunks, %u materials, %u triangles, chunk %.0f cm\n", worldName, wh.chunkCount,
-	       wh.materialCount, wh.triangleCount, wh.chunkSize);
+	printf("%s: %u chunks, %u materials, %u textures, %u portals, %u triangles, chunk %.0f cm\n", app.worldName(),
+	       wh.chunkCount, wh.materialCount, wh.textureCount, wh.portalCount, wh.triangleCount, wh.chunkSize);
 
 	// What a loading screen would do.
 	app.world().preload(app.camera().pos);
 
 	const float dt = 1.0f / 30.0f;
-	u32 maxTris = 0, maxDraws = 0, maxLoaded = 0, maxPending = 0, maxLoadsFrame = 0;
+	u32 maxTris = 0, maxDraws = 0, maxBlended = 0, maxLoaded = 0, maxPending = 0, maxLoadsFrame = 0;
+	u64 sumCulled = 0, sumDraws = 0;
+	int swimFrames = 0, wadeFrames = 0, underwaterFrames = 0;
 	u64 sumTris = 0, sumWritten = 0, sumTested = 0, sumBackface = 0, sumFacing = 0;
 	int saved = 0, groundedFrames = 0;
 
@@ -129,12 +138,18 @@ int main(int argc, char** argv) {
 		app.update(in, dt);
 		if (!still && !walk) app.camera().pitch = viewPitch;
 		groundedFrames += app.player().grounded;
+		swimFrames += app.player().swimming;
+		wadeFrames += !app.player().swimming && app.player().waterDepth > 0;
 		app.render();
+		underwaterFrames += app.underwater();
 
 		const WorldStats& ws = app.world().stats();
 		const gfx::SoftStats ss = gfx::softStats();
 		maxTris = max(maxTris, ws.trianglesDrawn);
 		maxDraws = max(maxDraws, ws.drawCalls);
+		maxBlended = max(maxBlended, ws.blendedDrawCalls);
+		sumCulled += ws.batchesCulled;
+		sumDraws += ws.drawCalls;
 		maxLoaded = max(maxLoaded, ws.chunksLoaded);
 		maxPending = max(maxPending, ws.chunksPending);
 		maxLoadsFrame = max(maxLoadsFrame, ws.loadsThisFrame);
@@ -165,7 +180,9 @@ int main(int argc, char** argv) {
 
 	printf("\n--- %d frames ---\n", frames);
 	printf("triangles/frame   avg %llu, max %u\n", static_cast<unsigned long long>(sumTris / u64(frames)), maxTris);
-	printf("draw calls/frame  max %u\n", maxDraws);
+	printf("draw calls/frame  avg %llu, max %u (blended max %u); %llu batches/frame culled by view or distance\n",
+	       static_cast<unsigned long long>(sumDraws / u64(frames)), maxDraws, maxBlended,
+	       static_cast<unsigned long long>(sumCulled / u64(frames)));
 	printf("chunks resident   max %u of %u (pending max %u, loads/frame max %u)\n", maxLoaded, ws.chunksTotal,
 	       maxPending, maxLoadsFrame);
 	printf("world memory      now %.2f MB, peak %.2f MB, budget %.0f MB\n", ws.residentBytes / 1048576.0,
@@ -179,9 +196,13 @@ int main(int argc, char** argv) {
 	printf("back faces        %.0f%% of the triangles in view\n", backfaceShare * 100.0);
 	if (walk) {
 		const Vec3 p = app.player().feet;
-		printf("walk              on the ground %d of %d frames, ended at %.0f %.0f %.0f, collision data %.0f KB\n",
-		       groundedFrames, frames, double(p.x), double(p.y), double(p.z), double(ws.collisionBytes) / 1024.0);
+		printf("walk              %d frames: %d on the ground (%d of them wading), %d swimming, %d in the air\n", frames,
+		       groundedFrames, wadeFrames, swimFrames, frames - groundedFrames - swimFrames);
+		printf("                  ended at %.0f %.0f %.0f in %s, collision data %.0f KB\n", double(p.x), double(p.y),
+		       double(p.z), app.worldName(), double(ws.collisionBytes) / 1024.0);
 	}
+	if (underwaterFrames) printf("camera under water %d frames\n", underwaterFrames);
+	if (app.worldSwitches()) printf("world switches    %u\n", app.worldSwitches());
 	printf("budget rejects %u, load failures %u, pak I/O %.2f MB\n", ws.budgetRejects, ws.loadFailures,
 	       double(app.pak().bytesRead()) / 1048576.0);
 
@@ -194,10 +215,14 @@ int main(int argc, char** argv) {
 		fprintf(fp,
 		        "{\"frames\":%d,\"trianglesAvg\":%llu,\"trianglesMax\":%u,\"drawCallsMax\":%u,"
 		        "\"chunksTotal\":%u,\"chunksLoadedMax\":%u,\"peakBytes\":%u,\"budgetRejects\":%u,"
-		        "\"loadFailures\":%u,\"overdraw\":%.3f,\"backfaceShare\":%.3f,\"groundedFrames\":%d,\"pixelsWritten\":%llu}\n",
+		        "\"loadFailures\":%u,\"overdraw\":%.3f,\"backfaceShare\":%.3f,\"groundedFrames\":%d,"
+		        "\"swimFrames\":%d,\"blendedDrawsMax\":%u,\"batchesCulledAvg\":%llu,\"worldSwitches\":%u,"
+		        "\"pixelsWritten\":%llu}\n",
 		        frames, static_cast<unsigned long long>(sumTris / u64(frames)), maxTris, maxDraws, ws.chunksTotal,
 		        maxLoaded, ws.peakResidentBytes, ws.budgetRejects, ws.loadFailures, double(sumWritten) / screen,
-		        backfaceShare, groundedFrames, static_cast<unsigned long long>(sumWritten));
+		        backfaceShare, groundedFrames, swimFrames, maxBlended,
+		        static_cast<unsigned long long>(sumCulled / u64(frames)), app.worldSwitches(),
+		        static_cast<unsigned long long>(sumWritten));
 		fclose(fp);
 	}
 

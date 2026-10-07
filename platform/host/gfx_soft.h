@@ -19,6 +19,9 @@ const u8* softFramebuffer();
 SoftStats softStats();
 // Debug aid for checking the winding of freshly imported data.
 void softSetCulling(bool enabled);
+// Test aid: mesh and texture creation fails once the total would exceed
+// `bytes` (0 = no limit), like a full linear heap on the console.
+void softSetMemoryLimit(u32 bytes);
 
 } // namespace gfx
 } // namespace g3

@@ -7,6 +7,10 @@ void Player::spawn(Vec3 eye) {
 	_eyeY = eye.y;
 	velocityY = 0;
 	grounded = false;
+	swimming = false;
+	climbing = false;
+	_letGo = false;
+	waterDepth = 0;
 	_placed = false;
 }
 
@@ -32,6 +36,110 @@ void Player::collideWalls(const World& world) {
 	}
 }
 
+// Handles deep water. Returns true if the player is afloat this frame, which
+// replaces gravity and the floor logic.
+bool Player::swim(const World& world, float dt) {
+	const PlayerConfig& cfg = config;
+	float surface;
+	const float reach = cfg.eyeHeight + 150.0f;
+	const bool water = world.waterBelow({feet.x, feet.y + reach, feet.z}, reach + 20.0f, surface);
+	waterDepth = water ? max(surface - feet.y, 0.0f) : 0.0f;
+	// A little hysteresis keeps the body from bobbing between the two states.
+	if (waterDepth <= cfg.swimDepth - (swimming ? 30.0f : 0.0f)) {
+		swimming = false;
+		return false;
+	}
+
+	const float target = surface - cfg.swimDepth; // where the feet float
+	float y;
+	Vec3 n;
+	// Shore: a floor the player can stand on with the head above the water.
+	if (world.rayDown({feet.x, max(feet.y, target) + cfg.stepHeight, feet.z}, cfg.stepHeight + 40.0f, y, n) &&
+	    y >= target && n.y >= cfg.minFloorNormal) {
+		feet.y = y;
+		grounded = true;
+		swimming = false;
+		velocityY = 0;
+		waterDepth = max(surface - y, 0.0f);
+		return true;
+	}
+	swimming = true;
+	grounded = false;
+	velocityY = 0;
+	feet.y += clamp(target - feet.y, -cfg.floatSpeed * dt, cfg.floatSpeed * dt);
+	return true;
+}
+
+// Ladders work like in the old shooters: inside a ladder's box, forward
+// means up and backward means down, and gravity is off. The box reaches a
+// little above the ladder, so at the top the way forward is free again and
+// the player steps over the edge. Returns true if the player is on a ladder
+// this frame.
+bool Player::climb(const World& world, const Input& in, float dt) {
+	const PlayerConfig& cfg = config;
+	float y;
+	Vec3 n;
+	if (!world.ladderAt({feet.x, feet.y + 90.0f, feet.z})) {
+		climbing = false;
+		_letGo = false;
+		return false;
+	}
+	if (grounded) _letGo = false;
+	if (in.jump) {
+		// Jumping lets go, and the ladder stays let go until the player has
+		// landed or left it.
+		_letGo = _letGo || climbing;
+		climbing = false;
+		return false;
+	}
+	if (_letGo) return false;
+	if (!climbing) {
+		if (grounded) {
+			// From the floor: by walking into the ladder.
+			if (!(in.moveZ > 0.1f && _blocked)) return false;
+		} else if (velocityY > 0 || world.rayDown({feet.x, feet.y + cfg.stepHeight, feet.z}, cfg.stepHeight + 100.0f, y, n)) {
+			// In the air, but only hopping at the foot of the ladder or about
+			// to land at its top.
+			return false;
+		}
+		// Otherwise: caught in mid-air, which is also the way down from the top.
+		climbing = true;
+	} else if (in.moveZ > 0.1f && !_blocked) {
+		// Nothing in the way any more: this is the top. Stay level and walk
+		// on until there is floor underfoot.
+		velocityY = 0;
+		grounded = false;
+		if (world.rayDown({feet.x, feet.y + cfg.stepHeight, feet.z}, cfg.stepHeight + 30.0f, y, n) &&
+		    n.y >= cfg.minFloorNormal) {
+			feet.y = y;
+			grounded = true;
+			climbing = false;
+		}
+		return true;
+	}
+	velocityY = 0;
+	const float dy = in.moveZ * cfg.climbSpeed * dt;
+	if (dy < 0 && world.rayDown({feet.x, feet.y + cfg.stepHeight, feet.z}, cfg.stepHeight - dy + 1.0f, y, n) &&
+	    n.y >= cfg.minFloorNormal) {
+		// Back on the floor at the bottom.
+		feet.y = y;
+		grounded = true;
+		climbing = false;
+		return true;
+	}
+	grounded = false;
+	if (dy > 0) {
+		// A ceiling over the ladder ends the climb.
+		const float r = cfg.radius;
+		Vec3 head = {feet.x, feet.y + dy + cfg.eyeHeight - r, feet.z};
+		const float headY = head.y;
+		if (world.pushSphere(head, r) && head.y < headY - 0.5f) return true;
+	}
+	feet.y += dy;
+	collideWalls(world);
+	return true;
+}
+
 void Player::walk(const World& world, const Input& in, float yaw, float dt) {
 	const PlayerConfig& cfg = config;
 
@@ -46,18 +154,37 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt) {
 		_placed = true;
 	}
 
-	// Horizontal move in small steps so thin walls cannot be skipped.
-	Vec3 wish = {sinf(yaw) * in.moveZ + cosf(yaw) * in.moveX, 0, cosf(yaw) * in.moveZ - sinf(yaw) * in.moveX};
+	// Horizontal move in small steps so thin walls cannot be skipped. Going
+	// down a ladder, "back" must not walk the player off it.
+	const float forward = (climbing && in.moveZ < 0) ? 0.0f : in.moveZ;
+	Vec3 wish = {sinf(yaw) * forward + cosf(yaw) * in.moveX, 0, cosf(yaw) * forward - sinf(yaw) * in.moveX};
 	const float len = length(wish);
 	if (len > 1.0f) wish = wish * (1.0f / len);
-	const Vec3 delta = wish * ((in.fast ? cfg.fastSpeed : cfg.walkSpeed) * dt);
+	float speed = in.fast ? cfg.fastSpeed : cfg.walkSpeed;
+	if (climbing)
+		speed = cfg.walkSpeed * 0.35f; // just enough to step off at the top
+	else if (swimming)
+		speed = min(speed, cfg.swimSpeed);
+	else if (waterDepth > cfg.wadeDepth)
+		speed *= cfg.wadeFactor;
+	const Vec3 delta = wish * (speed * dt);
 	const float dist = length(delta);
 	const int steps = clamp(int(dist / (cfg.radius * 0.5f)) + 1, 1, 12);
+	const Vec3 from = feet;
 	for (int i = 0; i < steps; ++i) {
 		feet.x += delta.x / float(steps);
 		feet.z += delta.z / float(steps);
 		collideWalls(world);
 	}
+	// Did something stop the move? (Ladders are climbed by walking into them.)
+	const float gained = (feet.x - from.x) * delta.x + (feet.z - from.z) * delta.z;
+	_blocked = dist > 0.01f && gained < 0.5f * dist * dist;
+
+	if (swim(world, dt)) {
+		climbing = false;
+		return;
+	}
+	if (climb(world, in, dt)) return;
 
 	if (grounded && in.jump) {
 		velocityY = cfg.jumpSpeed;
@@ -110,6 +237,8 @@ void Player::update(const World& world, const Input& in, float yaw, float pitch,
 		flying = !flying;
 		velocityY = 0;
 		grounded = false;
+		swimming = false;
+		climbing = false;
 	}
 
 	if (flying) {
@@ -119,6 +248,7 @@ void Player::update(const World& world, const Input& in, float yaw, float pitch,
 		feet = feet + f * (in.moveZ * speed) + r * (in.moveX * speed) + Vec3 {0, in.moveY * speed, 0};
 		_eyeY = feet.y + config.eyeHeight;
 		_placed = true;
+		waterDepth = 0;
 		return;
 	}
 

@@ -2,7 +2,7 @@
 //   platform/3ds/gfx_c3d.cpp   - PICA200 through citro3d
 //   platform/host/gfx_soft.cpp - software rasteriser that mimics the same
 //                                fixed-function path (texture * vertex colour,
-//                                alpha test, per-vertex linear fog) for PC testing.
+//                                alpha test, blending, per-vertex linear fog) for PC testing.
 // The engine never touches platform APIs directly.
 #pragma once
 #include "g3ds/math.h"
@@ -33,8 +33,10 @@ struct FrameDesc {
 };
 
 enum Pass {
-	PASS_WORLD, // depth tested, back faces culled, fogged
+	PASS_WORLD, // opaque geometry: depth tested and written, back faces culled, fogged
 	PASS_SKY,   // backdrop: no depth, no culling, no fog
+	PASS_BLEND, // translucent geometry after the opaque world: depth tested but not
+	            // written, both sides drawn, blended per material (MATF_BLEND / MATF_ADD)
 };
 
 struct MemStats {
@@ -42,6 +44,12 @@ struct MemStats {
 	u32 textureBytes; // texture memory
 	u32 meshCount;
 	u32 textureCount;
+};
+
+// What the backend made of the last finished frame.
+struct FrameStats {
+	u32 drawsDropped;     // draw calls skipped because the GPU command buffer was full
+	float commandBufferUse; // 0..1, share of the GPU command buffer the frame needed
 };
 
 bool init();
@@ -60,11 +68,19 @@ void setPass(Pass pass);
 // Sets the dequantisation transform for the following draws.
 void setChunkTransform(const float origin[3], float posScale, float uvScale);
 // materialFlags: MaterialFlags from world.h. A null texture draws white.
-void setMaterial(Texture* t, u32 materialFlags);
+// opacity scales the alpha of blended materials; uvOffset is added to the
+// texture coordinates (scrolling water).
+void setMaterial(Texture* t, u32 materialFlags, float opacity = 1.0f, float uvOffsetU = 0.0f, float uvOffsetV = 0.0f);
 void draw(Mesh* m, u32 firstIndex, u32 indexCount);
 void frameEnd();
 
+// Destroyed textures and meshes may stay allocated until the GPU has finished
+// the frame that last used them. This waits for that and frees them now. Call
+// it outside a frame, before allocating a lot at once (a world switch).
+void releaseDestroyed();
+
 MemStats memStats();
+FrameStats frameStats();
 
 } // namespace gfx
 } // namespace g3

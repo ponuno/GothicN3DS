@@ -49,12 +49,17 @@ VertexKey fractionKey(WorldVertex v, i32 u, i32 vv) {
 	return VertexKey {v};
 }
 
+using i64 = long long;
+
 struct CellBuilder {
 	const SrcScene& scene;
 	const std::vector<int>& remap;
+	const std::vector<u8>& order;
 	const ChunkerOptions& opt;
 	ChunkerStats& stats;
 	std::vector<BakedChunk>& out;
+
+	static u8 detailOf(const SrcTriangle& t) { return t.detail < DETAIL_COUNT ? t.detail : u8(DETAIL_COUNT - 1); }
 
 	void build(int gx, int gz, std::vector<u32>& tris) {
 		// One quantisation frame for the whole cell, so parts of a split cell
@@ -66,14 +71,30 @@ struct CellBuilder {
 					mn[a] = std::min(mn[a], v.pos[a]);
 					mx[a] = std::max(mx[a], v.pos[a]);
 				}
+		// Every chunk quantises on one world-wide lattice: the step is the
+		// base step times a power of two and the origin is a multiple of the
+		// step. A vertex shared by two neighbouring chunks then lands on exactly
+		// the same world position in both, so their borders have no hairline
+		// cracks. (Chunks that need different steps - only those holding a
+		// giant triangle - can still disagree by half a step.)
 		const float extent = std::max({mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2], 1.0f});
-		const float posScale = extent / 32767.0f;
+		double step = opt.positionStep;
+		while ((double(extent) + step) / step > 32766.0) step *= 2.0;
+		const float posScale = float(step);
+		i64 originSteps[3];
+		for (int a = 0; a < 3; ++a) {
+			originSteps[a] = i64(std::floor(double(mn[a]) / step));
+			mn[a] = float(double(originSteps[a]) * step); // from here on `mn` is the chunk origin
+		}
 		stats.maxPosError = std::max(stats.maxPosError, posScale * 0.5f);
 
-		// Batches are contiguous per material.
-		std::stable_sort(tris.begin(), tris.end(), [&](u32 a, u32 b) {
-			return remap[scene.triangles[a].material] < remap[scene.triangles[b].material];
-		});
+		// Batches are contiguous per (draw order, detail class, material).
+		auto sortKey = [&](u32 t) {
+			const SrcTriangle& tri = scene.triangles[t];
+			const u32 m = u32(remap[tri.material]);
+			return (u32(order[m]) << 24) | (u32(detailOf(tri)) << 16) | m;
+		};
+		std::stable_sort(tris.begin(), tris.end(), [&](u32 a, u32 b) { return sortKey(a) < sortKey(b); });
 
 		// A shared UV origin per material keeps vertices shareable between triangles.
 		std::map<int, std::pair<float, float>> uvBase;
@@ -122,6 +143,22 @@ struct CellBuilder {
 			cur.header.batchCount = u16(cur.batches.size());
 			cur.header.vertexCount = u16(cur.vertices.size());
 			cur.header.indexCount = u32(cur.indices.size());
+			for (ChunkBatch& b : cur.batches) {
+				for (int a = 0; a < 3; ++a) {
+					b.bbMin[a] = 32767;
+					b.bbMax[a] = -32768;
+				}
+				for (u32 i = 0; i < b.indexCount; ++i) {
+					const WorldVertex& v = cur.vertices[cur.indices[b.firstIndex + i]];
+					const i16 p[3] = {v.x, v.y, v.z};
+					for (int a = 0; a < 3; ++a) {
+						b.bbMin[a] = std::min(b.bbMin[a], p[a]);
+						b.bbMax[a] = std::max(b.bbMax[a], p[a]);
+					}
+				}
+				stats.detailTriangles[b.detail] += b.indexCount / 3;
+			}
+			stats.batches += cur.batches.size();
 			for (int a = 0; a < 3; ++a) {
 				cur.bbMin[a] = 1e30f;
 				cur.bbMax[a] = -1e30f;
@@ -171,7 +208,7 @@ struct CellBuilder {
 			i32 su[3], sv[3]; // texture coordinates in fixed point, before range limiting
 			for (int k = 0; k < 3; ++k) {
 				const SrcVertex& v = tri.v[k];
-				auto quant = [&](int a) { return i16(std::lround((v.pos[a] - mn[a]) / posScale)); };
+				auto quant = [&](int a) { return i16(i64(std::llround(double(v.pos[a]) / step)) - originSteps[a]); };
 				auto quantUv = [&](int a) {
 					float s = (v.uv[a] - base[a]) / WORLD_UV_SCALE;
 					return i32(std::lround(std::clamp(s, -1.0e6f, 1.0e6f)));
@@ -244,9 +281,11 @@ struct CellBuilder {
 				q[k].v = i16(std::clamp(sv[k], -32767, 32767));
 			}
 
-			if (cur.batches.empty() || cur.batches.back().material != u16(material)) {
+			if (cur.batches.empty() || cur.batches.back().material != u16(material) ||
+			    cur.batches.back().detail != detailOf(tri)) {
 				ChunkBatch b {};
 				b.material = u16(material);
+				b.detail = detailOf(tri);
 				b.firstIndex = u32(cur.indices.size());
 				cur.batches.push_back(b);
 			}
@@ -273,7 +312,8 @@ struct CellBuilder {
 } // namespace
 
 std::vector<BakedChunk> buildChunks(const SrcScene& scene, const std::vector<int>& materialRemap,
-                                    const ChunkerOptions& opt, ChunkerStats& stats) {
+                                    const std::vector<u8>& materialOrder, const ChunkerOptions& opt,
+                                    ChunkerStats& stats) {
 	// Assign every triangle to the grid cell of its centroid (XZ plane).
 	std::map<std::pair<int, int>, std::vector<u32>> cells;
 	for (u32 t = 0; t < scene.triangles.size(); ++t) {
@@ -286,7 +326,7 @@ std::vector<BakedChunk> buildChunks(const SrcScene& scene, const std::vector<int
 	}
 
 	std::vector<BakedChunk> out;
-	CellBuilder builder {scene, materialRemap, opt, stats, out};
+	CellBuilder builder {scene, materialRemap, materialOrder, opt, stats, out};
 	for (auto& kv : cells) builder.build(kv.first.first, kv.first.second, kv.second);
 	return out;
 }

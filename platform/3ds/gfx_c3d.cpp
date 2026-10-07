@@ -2,10 +2,16 @@
 //
 // Fixed pipeline for world geometry:
 //   vertex shader  world.v.pica (dequantise, transform, per-vertex linear fog)
-//   TexEnv 0       texture * baked vertex light, alpha from the texture
+//   TexEnv 0       texture * baked vertex light, alpha = texture alpha * opacity
 //   TexEnv 1       lerp towards the fog colour by the fog factor (vertex alpha)
 //   alpha test     only for cut-out materials
+//   blending       off for the opaque passes, per material in PASS_BLEND
 // Vertex and index buffers live in the linear heap and are used in place.
+//
+// Every state setter of citro3d marks a whole register group dirty and the
+// next draw call re-sends it, so all state here is cached and only touched
+// when it really changes: the GPU command buffer is finite, and overflowing
+// it stops the program (libctru calls svcBreak).
 #include "gfx.h"
 
 #include "world_shbin.h"
@@ -42,15 +48,31 @@ C3D_RenderTarget* gTarget = nullptr;
 DVLB_s* gDvlb = nullptr;
 shaderProgram_s gProgram;
 bool gProgramReady = false;
-int gLocProjection = -1, gLocModelView = -1, gLocParams = -1, gLocDayDelta = -1;
+bool gReady = false; // C3D_Init succeeded
+int gLocProjection = -1, gLocModelView = -1, gLocParams = -1, gLocDayDelta = -1, gLocTexOffset = -1;
 Pass gPass = PASS_WORLD;
+
+// 1 MB of command buffer: about 5000 draw calls with a texture change each.
+const size_t kCommandBufferBytes = 0x100000;
+// Words kept free for one draw call with every state group dirty, plus the
+// few commands C3D_FrameEnd appends.
+const u32 kDrawReserveWords = 0x400;
+
+enum BlendMode { BLEND_OFF, BLEND_ALPHA, BLEND_ADD, BLEND_UNSET };
 
 FrameDesc gFrame;
 Texture* gBoundTexture = nullptr;
+Mesh* gBoundMesh = nullptr;
 bool gTextured = true;
 bool gAlphaTest = false;
 bool gInFrame = false;
+u8 gOpacity = 255;
+bool gFogToBlack = false;
+BlendMode gBlend = BLEND_UNSET;
+float gTexOffset[2] = {0, 0};
 MemStats gMem;
+FrameStats gFrameStats = {0, 0.0f};
+u32 gDropped = 0;
 
 // Engine matrices are column-major; C3D_Mtx stores rows.
 void toC3D(const Mat4& m, C3D_Mtx* out) {
@@ -62,26 +84,30 @@ void toC3D(const Mat4& m, C3D_Mtx* out) {
 	}
 }
 
-void setStage0(bool textured) {
+// Stage 0: colour = texture * vertex light; alpha = texture alpha * opacity.
+// The opacity travels in the stage's constant colour.
+void setStage0(bool textured, u8 opacity) {
 	C3D_TexEnv* env = C3D_GetTexEnv(0);
 	C3D_TexEnvInit(env);
 	if (textured) {
 		C3D_TexEnvSrc(env, C3D_RGB, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
 		C3D_TexEnvFunc(env, C3D_RGB, GPU_MODULATE);
-		C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
-		C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
+		C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE0, GPU_CONSTANT, GPU_CONSTANT);
+		C3D_TexEnvFunc(env, C3D_Alpha, GPU_MODULATE);
 	} else {
 		C3D_TexEnvSrc(env, C3D_RGB, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
 		C3D_TexEnvFunc(env, C3D_RGB, GPU_REPLACE);
-		C3D_TexEnvSrc(env, C3D_Alpha, GPU_CONSTANT, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+		C3D_TexEnvSrc(env, C3D_Alpha, GPU_CONSTANT, GPU_CONSTANT, GPU_CONSTANT);
 		C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
-		C3D_TexEnvColor(env, 0xFFFFFFFFu);
 	}
+	C3D_TexEnvColor(env, 0x00FFFFFFu | (u32(opacity) << 24));
 	gTextured = textured;
+	gOpacity = opacity;
 }
 
-void setFogStage(const u8 color[3]) {
-	// out = previous * fog + fogColour * (1 - fog), fog = primary alpha
+// Stage 1: out = previous * fog + fogColour * (1 - fog), fog = primary alpha.
+// Added light fades to black instead, so that it adds nothing in the distance.
+void setFogStage(bool toBlack) {
 	C3D_TexEnv* env = C3D_GetTexEnv(1);
 	C3D_TexEnvInit(env);
 	C3D_TexEnvSrc(env, C3D_RGB, GPU_PREVIOUS, GPU_CONSTANT, GPU_PRIMARY_COLOR);
@@ -89,7 +115,27 @@ void setFogStage(const u8 color[3]) {
 	C3D_TexEnvFunc(env, C3D_RGB, GPU_INTERPOLATE);
 	C3D_TexEnvSrc(env, C3D_Alpha, GPU_PREVIOUS, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
 	C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
-	C3D_TexEnvColor(env, u32(color[0]) | (u32(color[1]) << 8) | (u32(color[2]) << 16) | 0xFF000000u);
+	const u8* c = gFrame.fogColor;
+	C3D_TexEnvColor(env, toBlack ? 0xFF000000u : (u32(c[0]) | (u32(c[1]) << 8) | (u32(c[2]) << 16) | 0xFF000000u));
+	gFogToBlack = toBlack;
+}
+
+void setBlend(BlendMode mode) {
+	if (mode == gBlend) return;
+	gBlend = mode;
+	if (mode == BLEND_ALPHA)
+		C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA);
+	else if (mode == BLEND_ADD)
+		C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE, GPU_ZERO, GPU_ONE);
+	else
+		C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+}
+
+void setTexOffset(float u, float v) {
+	if (u == gTexOffset[0] && v == gTexOffset[1]) return;
+	gTexOffset[0] = u;
+	gTexOffset[1] = v;
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocTexOffset, u, v, 0.0f, 0.0f);
 }
 
 // The GPU executes a frame's command list after C3D_FrameEnd returns, so
@@ -136,7 +182,9 @@ void reap() {
 
 bool init() {
 	gMem = {};
-	if (!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE)) return false;
+	gFrameStats = {0, 0.0f};
+	if (!C3D_Init(kCommandBufferBytes)) return false;
+	gReady = true;
 
 	gTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 	if (!gTarget) return false;
@@ -153,7 +201,8 @@ bool init() {
 	gLocModelView = shaderInstanceGetUniformLocation(gProgram.vertexShader, "modelView");
 	gLocParams = shaderInstanceGetUniformLocation(gProgram.vertexShader, "params");
 	gLocDayDelta = shaderInstanceGetUniformLocation(gProgram.vertexShader, "dayDelta");
-	if (gLocProjection < 0 || gLocModelView < 0 || gLocParams < 0 || gLocDayDelta < 0) return false;
+	gLocTexOffset = shaderInstanceGetUniformLocation(gProgram.vertexShader, "texOffset");
+	if (gLocProjection < 0 || gLocModelView < 0 || gLocParams < 0 || gLocDayDelta < 0 || gLocTexOffset < 0) return false;
 
 	// Matches WorldVertex: short4 position, short2 uv, ubyte4 colour.
 	C3D_AttrInfo* attr = C3D_GetAttrInfo();
@@ -169,19 +218,35 @@ bool init() {
 }
 
 void shutdown() {
-	C3D_FrameSync(); // let the last frame finish before its buffers go away
-	reap();
+	// Without a working citro3d there is nothing to wait for or to tear down
+	// (and C3D_FrameSync would wait for a VBlank callback that was never installed).
+	if (gReady) {
+		C3D_FrameSync(); // let the last frame reach the screen
+		if (gProgramReady) shaderProgramFree(&gProgram);
+		if (gDvlb) DVLB_Free(gDvlb);
+		// Deleting the target waits for the GPU's queue; only then are the
+		// buffers of the last frame safe to free.
+		if (gTarget) C3D_RenderTargetDelete(gTarget);
+		reap();
+		C3D_Fini();
+	}
 	free(gDeadTextures.items);
 	free(gDeadMeshes.items);
 	gDeadTextures = {};
 	gDeadMeshes = {};
-	if (gProgramReady) shaderProgramFree(&gProgram);
-	if (gDvlb) DVLB_Free(gDvlb);
-	if (gTarget) C3D_RenderTargetDelete(gTarget);
 	gProgramReady = false;
 	gDvlb = nullptr;
 	gTarget = nullptr;
-	C3D_Fini();
+	gReady = false;
+}
+
+void releaseDestroyed() {
+	if (!gReady || gInFrame || (gDeadTextures.count == 0 && gDeadMeshes.count == 0)) return;
+	// An empty frame: C3D_FrameBegin returns once the GPU has finished
+	// everything submitted before, and ending a frame without draw calls
+	// submits nothing.
+	if (C3D_FrameBegin(0)) C3D_FrameEnd(GX_CMDLIST_FLUSH);
+	reap();
 }
 
 Texture* textureCreate(const TexHeader& h, const u8* data) {
@@ -196,8 +261,12 @@ Texture* textureCreate(const TexHeader& h, const u8* data) {
 	p.type = GPU_TEX_2D;
 	p.onVram = false; // VRAM is only 6 MB; see docs/ROADMAP.md
 	if (!C3D_TexInitWithParams(&t->tex, nullptr, p)) {
-		free(t);
-		return nullptr;
+		// Memory may still be held by resources destroyed a moment ago.
+		releaseDestroyed();
+		if (!C3D_TexInitWithParams(&t->tex, nullptr, p)) {
+			free(t);
+			return nullptr;
+		}
 	}
 	// The baker already produced PICA's tile order, so each level is a memcpy.
 	for (u32 level = 0; level < h.mipCount; ++level)
@@ -215,7 +284,12 @@ Texture* textureCreate(const TexHeader& h, const u8* data) {
 
 void textureDestroy(Texture* t) {
 	if (!t) return;
-	if (gBoundTexture == t) gBoundTexture = nullptr;
+	// citro3d keeps the pointer of the bound texture and reads it again
+	// whenever it re-sends the texture unit (after the HOME menu, for one).
+	if (gBoundTexture == t) {
+		C3D_TexBind(0, nullptr);
+		gBoundTexture = nullptr;
+	}
 	gMem.textureBytes -= t->bytes;
 	--gMem.textureCount;
 	if (!bury(gDeadTextures, t)) freeTexture(t);
@@ -228,6 +302,12 @@ Mesh* meshCreate(const WorldVertex* vertices, u32 vertexCount, const u16* indice
 	const u32 ibytes = indexCount * u32(sizeof(u16));
 	m->vertices = static_cast<WorldVertex*>(linearAlloc(vbytes));
 	m->indices = static_cast<u16*>(linearAlloc(ibytes));
+	if (!m->vertices || !m->indices) {
+		// Memory may still be held by resources destroyed a moment ago.
+		releaseDestroyed();
+		if (!m->vertices) m->vertices = static_cast<WorldVertex*>(linearAlloc(vbytes));
+		if (!m->indices) m->indices = static_cast<u16*>(linearAlloc(ibytes));
+	}
 	if (!m->vertices || !m->indices) {
 		if (m->vertices) linearFree(m->vertices);
 		if (m->indices) linearFree(m->indices);
@@ -251,6 +331,7 @@ Mesh* meshCreate(const WorldVertex* vertices, u32 vertexCount, const u16* indice
 
 void meshDestroy(Mesh* m) {
 	if (!m) return;
+	if (gBoundMesh == m) gBoundMesh = nullptr;
 	gMem.meshBytes -= m->vertexCount * u32(sizeof(WorldVertex)) + m->indexCount * u32(sizeof(u16));
 	--gMem.meshCount;
 	if (!bury(gDeadMeshes, m)) freeMesh(m);
@@ -272,14 +353,22 @@ void frameBegin(const FrameDesc& f) {
 	Mtx_PerspTilt(&proj, f.fovY, C3D_AspectRatioTop, f.zNear, f.zFar, true);
 	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocProjection, &proj);
 
-	setStage0(true);
-	setFogStage(f.fogColor);
+	// Start every frame from a known state; from here on only changes are sent.
+	setStage0(true, 255);
+	setFogStage(false);
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocDayDelta, f.dayLight[0] - 1.0f, f.dayLight[1] - 1.0f, f.dayLight[2] - 1.0f, 0.0f);
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocTexOffset, 0.0f, 0.0f, 0.0f, 0.0f);
+	gTexOffset[0] = gTexOffset[1] = 0.0f;
 	gPass = PASS_SKY; // force setPass to apply the world state
 	setPass(PASS_WORLD);
 	C3D_AlphaTest(false, GPU_GREATER, 127);
 	gAlphaTest = false;
+	gBlend = BLEND_UNSET;
+	setBlend(BLEND_OFF);
+	C3D_TexBind(0, nullptr); // nothing bound until the first textured material
 	gBoundTexture = nullptr;
+	gBoundMesh = nullptr;
+	gDropped = 0;
 }
 
 void setPass(Pass pass) {
@@ -288,10 +377,16 @@ void setPass(Pass pass) {
 	if (pass == PASS_SKY) {
 		C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
 		C3D_CullFace(GPU_CULL_NONE);
+	} else if (pass == PASS_BLEND) {
+		// Tested against the opaque world, but not written: translucent
+		// surfaces must not hide each other.
+		C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_COLOR);
+		C3D_CullFace(GPU_CULL_NONE);
 	} else {
 		C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
 		C3D_CullFace(GPU_CULL_BACK_CCW);
 	}
+	if (pass != PASS_BLEND) setBlend(BLEND_OFF);
 }
 
 void setChunkTransform(const float origin[3], float posScale, float uvScale) {
@@ -302,31 +397,47 @@ void setChunkTransform(const float origin[3], float posScale, float uvScale) {
 	// Fog factor = clamp(fogA - viewZ * fogB); the sky is never fogged.
 	const float range = gFrame.fogEnd - gFrame.fogStart;
 	float fogA = 1.0f, fogB = 0.0f;
-	if (gPass == PASS_WORLD && range > 0.0f) {
+	if (gPass != PASS_SKY && range > 0.0f) {
 		fogB = 1.0f / range;
 		fogA = gFrame.fogEnd * fogB;
 	}
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocParams, uvScale, 1.0f / 255.0f, fogA, fogB);
 }
 
-void setMaterial(Texture* t, u32 materialFlags) {
+void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, float uvOffsetV) {
 	if (!gInFrame) return;
+	const bool blended = gPass == PASS_BLEND;
 	const bool textured = t != nullptr;
-	if (textured != gTextured) setStage0(textured);
+	const u8 alpha = blended ? u8(clamp(opacity, 0.0f, 1.0f) * 255.0f + 0.5f) : u8(255);
+	if (textured != gTextured || alpha != gOpacity) setStage0(textured, alpha);
 	if (t && t != gBoundTexture) {
 		C3D_TexBind(0, &t->tex);
 		gBoundTexture = t;
 	}
-	const bool alphaTest = (materialFlags & MATF_ALPHA_TEST) != 0;
+	// Blended materials are never cut out: their alpha is the blend factor.
+	const bool alphaTest = !blended && (materialFlags & MATF_ALPHA_TEST) != 0;
 	if (alphaTest != gAlphaTest) {
 		C3D_AlphaTest(alphaTest, GPU_GREATER, 127);
 		gAlphaTest = alphaTest;
 	}
+	const bool additive = blended && (materialFlags & MATF_ADD) != 0;
+	if (blended) setBlend(additive ? BLEND_ADD : BLEND_ALPHA);
+	if (additive != gFogToBlack) setFogStage(additive);
+	setTexOffset(uvOffsetU, uvOffsetV);
 }
 
 void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
-	if (!gInFrame || !m || firstIndex + indexCount > m->indexCount) return;
-	C3D_SetBufInfo(&m->buf);
+	if (!gInFrame || !m || indexCount == 0 || firstIndex + indexCount > m->indexCount) return;
+	// A full command buffer makes libctru stop the program. Dropping the rest
+	// of the frame's geometry is ugly but survivable, and it is reported.
+	if (gpuCmdBufOffset + kDrawReserveWords > gpuCmdBufSize) {
+		++gDropped;
+		return;
+	}
+	if (m != gBoundMesh) {
+		C3D_SetBufInfo(&m->buf);
+		gBoundMesh = m;
+	}
 	C3D_DrawElements(GPU_TRIANGLES, int(indexCount), C3D_UNSIGNED_SHORT, m->indices + firstIndex);
 }
 
@@ -335,11 +446,16 @@ void frameEnd() {
 	// every buffer and texture is already flushed on creation, passing
 	// GX_CMDLIST_FLUSH here should be a free win - try it once this runs on
 	// hardware (docs/ROADMAP.md).
-	if (gInFrame) C3D_FrameEnd(0);
+	if (gInFrame) {
+		C3D_FrameEnd(0);
+		gFrameStats.drawsDropped = gDropped;
+		gFrameStats.commandBufferUse = C3D_GetCmdBufUsage();
+	}
 	gInFrame = false;
 }
 
 MemStats memStats() { return gMem; }
+FrameStats frameStats() { return gFrameStats; }
 
 } // namespace gfx
 } // namespace g3

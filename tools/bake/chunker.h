@@ -21,6 +21,9 @@ struct BakedChunk {
 
 struct ChunkerOptions {
 	float chunkSize = 4000.0f; // cm
+	// Finest position step, cm. 0.5 cm covers a chunk extent of 163 m; chunks
+	// reaching farther (a giant triangle) double it until they fit.
+	float positionStep = 0.5f;
 	u32 maxVertices = CHUNK_MAX_VERTICES;
 };
 
@@ -37,11 +40,17 @@ struct ChunkerStats {
 	u32 maxChunkTriangles = 0;
 	u32 maxChunkVertices = 0;
 	u32 maxChunkBatches = 0;
+	u64 batches = 0;
+	u64 detailTriangles[DETAIL_COUNT] = {0, 0, 0};
 	float maxPosError = 0; // cm, worst-case quantisation step / 2
 };
 
 // `materialRemap[srcMaterial]` gives the world material index, or -1 to drop.
+// `materialOrder[worldMaterial]` is a draw-order key: batches of a chunk are
+// sorted by it first (opaque, then cut-out, then blended), so the runtime
+// changes render state as rarely as possible.
 std::vector<BakedChunk> buildChunks(const SrcScene& scene, const std::vector<int>& materialRemap,
-                                    const ChunkerOptions& opt, ChunkerStats& stats);
+                                    const std::vector<u8>& materialOrder, const ChunkerOptions& opt,
+                                    ChunkerStats& stats);
 
 } // namespace g3

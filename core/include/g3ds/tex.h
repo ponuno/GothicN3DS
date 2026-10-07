@@ -1,0 +1,71 @@
+// G3TX: textures stored exactly the way the PICA200 samples them, so the
+// 3DS side only has to memcpy each mip level into a C3D_Tex.
+//
+// PICA layout for ETC1 / ETC1A4 (see docs/FORMATS.md):
+//  * rows are stored bottom-up (stored row = height - 1 - image row);
+//  * the image is cut into 8x8 tiles in raster order;
+//  * each tile holds four 4x4 ETC1 blocks in Z order (TL, TR, BL, BR);
+//  * a block is the standard big-endian ETC1 block with its 8 bytes reversed;
+//  * ETC1A4 puts 8 bytes of 4-bit alpha (column-major nibbles) before it.
+#pragma once
+#include "g3ds/base.h"
+
+namespace g3 {
+
+constexpr u32 TEX_MAGIC = fourcc('G', '3', 'T', 'X');
+constexpr u32 TEX_MIN_SIZE = 8;    // PICA minimum
+constexpr u32 TEX_MAX_SIZE = 1024; // PICA maximum
+
+enum TexFormat : u8 {
+	TEX_ETC1 = 0,   // 4 bpp, opaque
+	TEX_ETC1A4 = 1, // 8 bpp, 4-bit alpha
+};
+
+enum TexFlags : u16 {
+	TEXF_ALPHA_TEST = 1 << 0, // has cut-out alpha: draw with alpha test
+};
+
+struct TexHeader {
+	u32 magic;
+	u16 width;  // power of two, 8..1024
+	u16 height; // power of two, 8..1024
+	u8 format;  // TexFormat
+	u8 mipCount;
+	u16 flags;
+	u32 dataSize; // bytes of mip data following the header
+};
+static_assert(sizeof(TexHeader) == 16, "TexHeader layout");
+
+inline u32 texBytesPerBlock(u8 format) { return format == TEX_ETC1A4 ? 16 : 8; }
+
+inline u32 texLevelSize(const TexHeader& h, u32 level) {
+	u32 w = h.width >> level, hh = h.height >> level;
+	return (w / 4) * (hh / 4) * texBytesPerBlock(h.format);
+}
+
+inline u32 texLevelOffset(const TexHeader& h, u32 level) {
+	u32 off = 0;
+	for (u32 i = 0; i < level; ++i) off += texLevelSize(h, i);
+	return off;
+}
+
+// Largest mip count PICA accepts for a size (smallest level is 8 texels).
+inline u32 texMaxMipCount(u32 w, u32 h) {
+	u32 n = 1, m = w < h ? w : h;
+	while (m > TEX_MIN_SIZE) {
+		m >>= 1;
+		++n;
+	}
+	return n;
+}
+
+bool texValidate(const TexHeader& h, u32 availableBytes);
+
+// Decodes one standard (big-endian) ETC1 block to 4x4 RGBA, row-major.
+void etc1DecodeBlock(const u8 block[8], u8 outRGBA[64]);
+
+// Decodes a mip level to top-down RGBA8 (w*h*4 bytes). Used by the software
+// backend and the tests; the 3DS never decodes.
+void texDecodeLevel(const TexHeader& h, const u8* data, u32 level, u8* outRGBA);
+
+} // namespace g3

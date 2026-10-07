@@ -1,0 +1,6 @@
+/build*/
+/out/
+*.pak
+*.3dsx
+*.smdh
+*.elf

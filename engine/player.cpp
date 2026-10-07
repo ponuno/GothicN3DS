@@ -12,6 +12,7 @@ void Player::spawn(Vec3 eye) {
 	_letGo = false;
 	waterDepth = 0;
 	_placed = false;
+	_carry = {0, 0, 0};
 }
 
 void Player::collideWalls(const World& world) {
@@ -140,7 +141,7 @@ bool Player::climb(const World& world, const Input& in, float dt) {
 	return true;
 }
 
-void Player::walk(const World& world, const Input& in, float yaw, float dt) {
+void Player::walk(const World& world, const Input& in, float yaw, float dt, const Drive* drive) {
 	const PlayerConfig& cfg = config;
 
 	// The ground under the spawn point may still be streaming in.
@@ -157,7 +158,8 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt) {
 	// Horizontal move in small steps so thin walls cannot be skipped. Going
 	// down a ladder, "back" must not walk the player off it.
 	const float forward = (climbing && in.moveZ < 0) ? 0.0f : in.moveZ;
-	Vec3 wish = {sinf(yaw) * forward + cosf(yaw) * in.moveX, 0, cosf(yaw) * forward - sinf(yaw) * in.moveX};
+	const float side = drive ? 0.0f : in.moveX; // (a driven character turns with it instead)
+	Vec3 wish = {sinf(yaw) * forward + cosf(yaw) * side, 0, cosf(yaw) * forward - sinf(yaw) * side};
 	const float len = length(wish);
 	if (len > 1.0f) wish = wish * (1.0f / len);
 	float speed = in.fast ? cfg.fastSpeed : cfg.walkSpeed;
@@ -167,7 +169,17 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt) {
 		speed = min(speed, cfg.swimSpeed);
 	else if (waterDepth > cfg.wadeDepth)
 		speed *= cfg.wadeFactor;
-	const Vec3 delta = wish * (speed * dt);
+	Vec3 delta = wish * (speed * dt);
+	if (drive && !climbing) {
+		if (grounded || swimming || drive->lift) {
+			// On its feet (or carried by a jump's take-off): where the animation goes.
+			delta = {drive->step.x, 0, drive->step.z};
+			if (dt > 0) _carry = delta * (1.0f / dt);
+		} else {
+			// In the air: on with what it had.
+			delta = _carry * dt;
+		}
+	}
 	const float dist = length(delta);
 	const int steps = clamp(int(dist / (cfg.radius * 0.5f)) + 1, 1, 12);
 	const Vec3 from = feet;
@@ -186,13 +198,37 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt) {
 	}
 	if (climb(world, in, dt)) return;
 
-	if (grounded && in.jump) {
+	float y;
+	Vec3 n;
+	if (drive) {
+		if (drive->launch) {
+			velocityY = drive->velocity.y;
+			_carry = {drive->velocity.x, 0, drive->velocity.z};
+			grounded = false;
+		} else if (drive->lift) {
+			// The animation says how high. Rising, the spheres keep the body
+			// out of walls and ceilings; coming down, the floor ends it.
+			const float dy = drive->step.y;
+			velocityY = 0;
+			if (dy > 0.01f) {
+				feet.y += dy;
+				grounded = false;
+				collideWalls(world);
+			} else if (world.rayDown({feet.x, feet.y + cfg.stepHeight, feet.z}, cfg.stepHeight - dy + 1.0f, y, n) &&
+			           n.y >= cfg.minFloorNormal) {
+				feet.y = y;
+				grounded = true;
+			} else {
+				feet.y += dy;
+				grounded = false;
+			}
+			return;
+		}
+	} else if (grounded && in.jump) {
 		velocityY = cfg.jumpSpeed;
 		grounded = false;
 	}
 
-	float y;
-	Vec3 n;
 	if (grounded) {
 		// Stay glued to the floor: up a step, or down a slope or small ledge.
 		const float snap = cfg.stepHeight * 0.8f;
@@ -205,7 +241,7 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt) {
 		}
 	}
 	if (!grounded) {
-		velocityY = max(velocityY - cfg.gravity * dt, -4000.0f);
+		velocityY = max(velocityY - (drive ? cfg.driveGravity : cfg.gravity) * dt, -4000.0f);
 		const float dy = velocityY * dt;
 		if (dy > 0) {
 			feet.y += dy; // rising: walls and ceilings are handled by the spheres
@@ -232,7 +268,7 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt) {
 	}
 }
 
-void Player::update(const World& world, const Input& in, float yaw, float pitch, float dt) {
+void Player::update(const World& world, const Input& in, float yaw, float pitch, float dt, const Drive* drive) {
 	if (in.toggleFly) {
 		flying = !flying;
 		velocityY = 0;
@@ -252,7 +288,7 @@ void Player::update(const World& world, const Input& in, float yaw, float pitch,
 		return;
 	}
 
-	walk(world, in, yaw, dt);
+	walk(world, in, yaw, dt, drive);
 	// Smooth the eye over steps and landings instead of snapping.
 	const float target = feet.y + config.eyeHeight;
 	const float blend = min(dt * 14.0f, 1.0f);

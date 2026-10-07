@@ -159,7 +159,7 @@ struct ShaderCheck {
 	const Model* model = nullptr;
 	Mat34 skin[MODEL_MAX_NODES];
 	Vec3 origin {0, 0, 0};
-	float yaw = 0;
+	float yaw = 0, lean = 0;
 	float light[3] = {1, 1, 1};
 	u32 nextPart = 0;
 	// Results.
@@ -192,7 +192,8 @@ struct ShaderCheck {
 		nextPart = 0;
 		points.clear();
 	}
-	void expect(const Model& m, const Pose& pose, Vec3 at, float turn, const float l[3]) {
+	void expect(const Model& m, const Pose& pose, Vec3 at, float turn, const float l[3], float leaning = 0.0f) {
+		lean = leaning;
 		model = &m;
 		Mat34 world[MODEL_MAX_NODES];
 		m.worldTransforms(pose, world);
@@ -232,7 +233,8 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 	}
 
 	std::vector<bool> done(65536, false);
-	const Mat34 turn = mat34From(quatFromYaw(sc.yaw), {0, 0, 0});
+	// Turned to where it faces, and tipped sideways about its feet (a runner in a turn).
+	const Mat34 turn = mat34From(quatMul(quatFromYaw(sc.yaw), {0, 0, std::sin(-sc.lean * 0.5f), std::cos(-sc.lean * 0.5f)}), {0, 0, 0});
 	for (unsigned i = 0; i < call.count; ++i) {
 		const u16 index = call.indices[i];
 		if (done[index]) continue;
@@ -375,7 +377,7 @@ static void testShader(const std::string& pak) {
 			if (check) {
 				const Camera& cam = app.camera();
 				sc.beginFrame(viewLH(cam.pos, cam.yaw, cam.pitch), cam.pos, cam.fovY, cam.zNear, cam.zFar);
-				sc.expect(app.hero().model(), app.hero().animator().pose(), app.hero().origin(), app.hero().yaw(), app.hero().light());
+				sc.expect(app.hero().model(), app.hero().pose(), app.hero().feet(), app.hero().yaw(), app.hero().light(), app.hero().lean());
 				mock3ds::setDrawHook(shaderHook, &sc);
 			}
 			app.render();

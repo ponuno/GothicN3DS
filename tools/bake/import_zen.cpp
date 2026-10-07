@@ -2,12 +2,15 @@
 // (meshes, models in their rest pose, decals), portals and all textures
 // straight from a Gothic installation through ZenKit. Nothing from the game
 // is redistributed; the user bakes their own copy.
+#include "g3ds/model.h"
 #include "importers.h"
 
 #include "g3ds/world.h"
 #include "ground.h"
 
+#include <zenkit/DaedalusVm.hh>
 #include <zenkit/Mesh.hh>
+#include <zenkit/addon/daedalus.hh>
 #include <zenkit/Model.hh>
 #include <zenkit/ModelAnimation.hh>
 #include <zenkit/ModelHierarchy.hh>
@@ -941,6 +944,7 @@ void describeWater(SrcScene& scene) {
 
 struct ZenGame {
 	zenkit::Vfs vfs;
+	fs::path dir; // the installation: compiled scripts lie there as loose files
 };
 
 std::shared_ptr<ZenGame> openZenGame(const std::string& gameDir, std::vector<std::string>& notes) {
@@ -958,6 +962,7 @@ std::shared_ptr<ZenGame> openZenGame(const std::string& gameDir, std::vector<std
 	std::sort(disks.begin(), disks.end());
 	if (disks.empty()) throw std::runtime_error("no .vdf archives in '" + dataDir.string() + "'");
 	auto game = std::make_shared<ZenGame>();
+	game->dir = gameDir;
 	for (const fs::path& d : disks) {
 		try {
 			game->vfs.mount_disk(d);
@@ -1132,16 +1137,32 @@ void appendActorMesh(SrcModel& model, const zenkit::MultiResolutionMesh& mrm, co
 	}
 }
 
-// The animations the hero's movement uses, plus the transitions between
-// them for later.
+// The animations the hero's movement uses. The states ("S_...") are what the
+// body can be doing; the rest are single actions: hopping back, a step
+// sideways, turning on the spot.
 const char* const kHeroClips[] = {
-    "S_RUN",          "S_RUNL",         "T_RUN_2_RUNL",  "T_RUNL_2_RUN",  "S_WALK",       "S_WALKL",
-    "T_WALK_2_WALKL", "T_WALKL_2_WALK", "S_SNEAK",       "S_SNEAKL",      "T_RUNSTRAFEL", "T_RUNSTRAFER",
-    "T_RUNTURNL",     "T_RUNTURNR",     "T_JUMPB",       "T_STAND_2_JUMP", "S_JUMP",      "T_JUMP_2_STAND",
-    "T_RUNL_2_JUMP",  "T_JUMP_2_RUNL",  "S_FALLDN",      "T_FALLDN_2_STAND", "S_FALL",    "S_FALLB",
-    "S_SWIM",         "S_SWIMF",        "T_SWIM_2_SWIMF", "T_SWIMF_2_SWIM", "S_SWIMB",    "S_DIVE",
-    "S_DIVEF",        "S_WALKWL",       "S_WALKW",
+    "S_RUN",        "S_RUNL",       "S_WALK",        "S_WALKL",       "S_WALKBL",    "S_WALKWL",    "S_JUMP",
+    "S_FALLDN",     "S_FALL",       "S_SWIM",        "S_SWIMF",       "S_SWIMB",     "T_JUMPB",     "T_RUNSTRAFEL",
+    "T_RUNSTRAFER", "T_WALKSTRAFEL", "T_WALKSTRAFER", "T_RUNTURNL",    "T_RUNTURNR",  "T_WALKTURNL", "T_WALKTURNR",
+    "T_SWIMTURNL",  "T_SWIMTURNR",
 };
+// ZenGin goes from state A to state B through "T_A_2_B" if the model script
+// has it (and from standing through "T_STAND_2_B", to standing through
+// "T_A_2_STAND"). Every such transition between these states is brought along.
+const char* const kHeroStates[] = {"STAND", "RUN", "RUNL", "WALK", "WALKL", "WALKBL", "WALKWL", "JUMP", "FALLDN", "FALL", "SWIM", "SWIMF", "SWIMB"};
+
+bool isHeroTransition(const std::string& name) {
+	if (name.compare(0, 2, "T_") != 0) return false;
+	const size_t mid = name.find("_2_");
+	if (mid == std::string::npos) return false;
+	const std::string from = name.substr(2, mid - 2), to = name.substr(mid + 3);
+	bool a = false, b = false;
+	for (const char* st : kHeroStates) {
+		a = a || from == st;
+		b = b || to == st;
+	}
+	return a && b;
+}
 
 } // namespace
 
@@ -1323,12 +1344,28 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 	}
 	// ---- animations ----
 	std::vector<std::string> wanted = opt.clips;
-	if (wanted.empty()) wanted.assign(std::begin(kHeroClips), std::end(kHeroClips));
+	const bool standardSet = wanted.empty();
+	if (standardSet) {
+		wanted.assign(std::begin(kHeroClips), std::end(kHeroClips));
+		for (const zenkit::MdsAnimation& a : script.animations)
+			if (isHeroTransition(upper(a.name))) wanted.push_back(upper(a.name));
+		for (const zenkit::MdsAnimationAlias& a : script.aliases)
+			if (isHeroTransition(upper(a.name))) wanted.push_back(upper(a.name));
+		for (const zenkit::MdsAnimationBlend& b : script.blends) {
+			if (!isHeroTransition(upper(b.name))) continue;
+			SrcAniBlend blend;
+			blend.name = upper(b.name);
+			blend.next = upper(b.next);
+			blend.blendIn = b.blend_in;
+			blend.blendOut = b.blend_out;
+			model.blends.push_back(blend);
+		}
+	}
 	struct Loaded {
 		std::string name, next;
 		float blendIn = 0.1f, blendOut = 0.1f;
 		int layer = 1;
-		bool moves = false, reversed = false;
+		bool moves = false, fly = false, reversed = false;
 		zenkit::ModelAnimation ani;
 	};
 	std::vector<Loaded> loadedClips;
@@ -1346,6 +1383,7 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 				lc.blendOut = a.blend_out;
 				lc.layer = int(a.layer);
 				lc.moves = a.flags & zenkit::AnimationFlags::MOVE;
+				lc.fly = a.flags & zenkit::AnimationFlags::FLY;
 				described = true;
 				break;
 			}
@@ -1357,6 +1395,7 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 					lc.blendOut = a.blend_out;
 					lc.layer = int(a.layer);
 					lc.moves = a.flags & zenkit::AnimationFlags::MOVE;
+					lc.fly = a.flags & zenkit::AnimationFlags::FLY;
 					lc.reversed = a.direction == zenkit::AnimationDirection::BACKWARD;
 					file = upper(a.alias);
 					described = true;
@@ -1442,6 +1481,7 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		clip.blendIn = lc.blendIn;
 		clip.blendOut = lc.blendOut;
 		clip.moves = lc.moves;
+		clip.fly = lc.fly;
 		for (uint32_t idx : lc.ani.node_indices) clip.nodes.push_back(int(idx));
 		const uint32_t frames = lc.ani.frame_count, tracks = lc.ani.node_count;
 		clip.samples.resize(size_t(frames) * tracks);
@@ -1574,6 +1614,105 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 	}
 	if (model.clips.empty()) model.notes.push_back("WARNING: no animation could be read; the character stands in its rest pose");
 	return true;
+}
+
+// ---- the camera ----------------------------------------------------------
+
+namespace {
+
+// A path below `root` given in any letter case (the game is a Windows program).
+fs::path findNoCase(fs::path root, std::initializer_list<const char*> parts) {
+	for (const char* part : parts) {
+		fs::path next;
+		std::error_code ec;
+		for (const auto& e : fs::directory_iterator(root, ec))
+			if (lower(e.path().filename().string()) == part) next = e.path();
+		if (next.empty()) return {};
+		root = next;
+	}
+	return root;
+}
+
+} // namespace
+
+bool importZenCamera(std::shared_ptr<const ZenGame> game, CameraSet& set, std::vector<std::string>& notes) {
+	set = defaultCameraSet();
+	std::unique_ptr<zenkit::Read> rd;
+	// Compiled scripts are loose files of the installation; a mod may carry them in an archive.
+	const fs::path loose = findNoCase(game->dir, {"_work", "data", "scripts", "_compiled", "camera.dat"});
+	if (!loose.empty() && fs::is_regular_file(loose)) {
+		rd = zenkit::Read::from(loose);
+	} else if (const zenkit::VfsNode* node = game->vfs.find("CAMERA.DAT")) {
+		rd = node->open_read();
+	} else {
+		notes.push_back("camera: CAMERA.DAT not found (_work/Data/Scripts/_compiled); this project's own set-up is used");
+		return false;
+	}
+	try {
+		zenkit::DaedalusScript script;
+		script.load(rd.get());
+		if (!script.find_symbol_by_name("CCAMSYS")) throw std::runtime_error("no class CCAMSYS in it");
+		zenkit::ICamera::register_(script);
+		zenkit::DaedalusVm vm {std::move(script), zenkit::DaedalusVmExecutionFlag::ALLOW_NULL_INSTANCE_ACCESS};
+		static const char* const kNames[CAMERA_MODE_COUNT] = {"CAMMODNORMAL", "CAMMODSWIM", "CAMMODFALL"};
+		std::string list;
+		for (u32 i = 0; i < CAMERA_MODE_COUNT; ++i) {
+			zenkit::DaedalusSymbol* sym = vm.find_symbol_by_name(kNames[i]);
+			if (!sym) {
+				if (i == CAMERA_NORMAL) throw std::runtime_error("no instance CAMMODNORMAL in it");
+				set.mode[i] = set.mode[CAMERA_NORMAL];
+				continue;
+			}
+			// Running a script that ends early would never return: its
+			// missing code reads as "add" for ever. Walk it first.
+			std::function<void(std::uint32_t, int)> walk = [&](std::uint32_t at, int depth) {
+				for (int steps = 0; steps < 4096; ++steps) {
+					if (at >= vm.size()) break;
+					const zenkit::DaedalusInstruction in = vm.instruction_at(at);
+					if (in.op == zenkit::DaedalusOpcode::RSR) return;
+					if (in.op == zenkit::DaedalusOpcode::BL && depth < 4) walk(in.address, depth + 1);
+					at += in.size;
+				}
+				throw std::runtime_error(std::string("the script of ") + kNames[i] + " has no end: the file is cut short");
+			};
+			walk(sym->address(), 0);
+			const auto cam = vm.init_instance<zenkit::ICamera>(sym);
+			CameraMode& m = set.mode[i];
+			m.bestRange = cam->best_range;
+			m.minRange = cam->min_range;
+			m.maxRange = cam->max_range;
+			m.bestElevation = cam->best_elevation;
+			m.minElevation = cam->min_elevation;
+			m.maxElevation = cam->max_elevation;
+			m.bestAzimuth = cam->best_azimuth;
+			m.minAzimuth = cam->min_azimuth;
+			m.maxAzimuth = cam->max_azimuth;
+			m.rotOffsetX = cam->rot_offset_x;
+			m.rotOffsetY = cam->rot_offset_y;
+			m.targetOffsetX = cam->target_offset_x;
+			m.targetOffsetY = cam->target_offset_y;
+			m.targetOffsetZ = cam->target_offset_z;
+			m.veloTrans = cam->velo_trans;
+			m.veloRot = cam->velo_rot;
+			// Values no camera can have mean the file was not understood.
+			if (!(m.bestRange >= 0.5f && m.bestRange <= 20.0f) || !(std::fabs(m.bestElevation) < 90.0f) ||
+			    !(std::fabs(m.rotOffsetX) < 90.0f) || !(m.veloTrans > 0.0f && m.veloTrans < 1000.0f))
+				throw std::runtime_error(std::string(kNames[i]) + " has values out of range");
+			char buf[200];
+			std::snprintf(buf, sizeof(buf), "%s%s range %.2f m (%.2f..%.2f), elevation %.0f, azimuth %.0f, view offset %.0f %.0f, pace %.0f",
+			              list.empty() ? "" : "; ", kNames[i], double(m.bestRange), double(m.minRange), double(m.maxRange),
+			              double(m.bestElevation), double(m.bestAzimuth), double(m.rotOffsetX), double(m.rotOffsetY),
+			              double(m.veloTrans));
+			list += buf;
+		}
+		set.fromGame = 1;
+		notes.push_back("camera: from the game's CAMERA.DAT: " + list);
+		return true;
+	} catch (const std::exception& ex) {
+		set = defaultCameraSet();
+		notes.push_back(std::string("camera: CAMERA.DAT could not be used (") + ex.what() + "); this project's own set-up is used");
+		return false;
+	}
 }
 
 void importZenWorld(std::shared_ptr<const ZenGame> game, const ZenImportOptions& opt, SrcScene& scene) {

@@ -1,4 +1,5 @@
 // Used when the project is configured with -DG3DS_WITH_ZENKIT=OFF.
+#include "g3ds/model.h"
 #include "importers.h"
 
 #include <memory>
@@ -21,5 +22,6 @@ bool zenGameHasFile(const ZenGame&, const std::string&) { return false; }
 void importZenWorld(std::shared_ptr<const ZenGame>, const ZenImportOptions&, SrcScene&) { unavailable(); }
 void importZenMesh(const ZenImportOptions&, SrcScene&) { unavailable(); }
 bool importZenActor(std::shared_ptr<const ZenGame>, const ZenActorOptions&, SrcModel&) { unavailable(); }
+bool importZenCamera(std::shared_ptr<const ZenGame>, CameraSet&, std::vector<std::string>&) { unavailable(); }
 
 } // namespace g3

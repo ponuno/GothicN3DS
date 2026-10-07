@@ -45,8 +45,16 @@ struct SrcClip {
 	int layer = 1;
 	float blendIn = 0.1f, blendOut = 0.1f; // seconds
 	bool moves = false;     // the root node travels: the game moves the character by that much instead
+	bool fly = false;       // marked as airborne in the model script
 	std::vector<int> nodes; // animated nodes
 	std::vector<SrcClipSample> samples; // frame after frame, one sample per animated node
+};
+
+// "aniBlend": a fade standing in for a transition animation.
+struct SrcAniBlend {
+	std::string name; // "T_RUNL_2_WALKL"
+	std::string next; // "S_WALKL"
+	float blendIn = 0.1f, blendOut = 0.1f;
 };
 
 struct SrcModel {
@@ -54,6 +62,7 @@ struct SrcModel {
 	std::vector<SrcNode> nodes;
 	std::vector<SrcModelPart> parts;
 	std::vector<SrcClip> clips;
+	std::vector<SrcAniBlend> blends;
 	std::function<bool(const std::string& name, SrcImage& out)> loadTexture;
 	std::vector<std::string> notes; // importer remarks for the bake report
 };

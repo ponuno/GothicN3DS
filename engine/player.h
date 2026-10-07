@@ -7,12 +7,18 @@
 
 namespace g3 {
 
+// What the player asks for. With a character (the game proper) the scheme is
+// the original's: the character is steered, not the camera - forward and
+// back along where it faces, left and right turn it, a step sideways has its
+// own keys. Without one (and when flying) it is a free first-person camera.
 struct Input {
-	float moveX = 0, moveZ = 0; // strafe / forward, -1..1
+	float moveX = 0, moveZ = 0; // character: turn right / forward; free camera: strafe / forward. -1..1
 	float moveY = 0;            // fly mode only: down / up, -1..1
-	float lookX = 0, lookY = 0; // turn right / look up, -1..1
+	float lookX = 0, lookY = 0; // turn right / look up, -1..1 (a character turns with lookX too)
+	float strafe = 0;           // character only: step left (-1) or right (+1)
 	bool fast = false;
 	bool jump = false;      // held
+	bool toggleWalk = false; // pressed this frame: character walks <-> runs
 	bool toggleFly = false; // pressed this frame
 	bool nextWorld = false; // pressed this frame: jump to the next world of the archive (debug)
 	bool toggleCamera = false; // pressed this frame: third person <-> first person
@@ -35,6 +41,17 @@ struct PlayerConfig {
 	float swimSpeed = 260.0f;  // cm/s
 	float floatSpeed = 220.0f; // cm/s the body rises to the surface with
 	float climbSpeed = 170.0f; // cm/s up or down a ladder
+	float driveGravity = 981.0f; // cm/s^2 for a driven body: the original's
+};
+
+// Movement decided elsewhere: by the animated character, which goes where
+// its animation carries it. The controller then only resolves that against
+// the world - walls, floors, water.
+struct Drive {
+	Vec3 step {0, 0, 0};     // displacement wanted this frame, world space (y only counts with `lift`)
+	bool lift = false;       // the animation carries the body through the air (a jump's take-off): no gravity
+	bool launch = false;     // leave the ground now, with `velocity`
+	Vec3 velocity {0, 0, 0}; // cm/s
 };
 
 class Player {
@@ -50,13 +67,14 @@ public:
 
 	// Places the eyes at `eye`; the feet settle on the ground once it is loaded.
 	void spawn(Vec3 eye);
-	void update(const World& world, const Input& in, float yaw, float pitch, float dt);
+	// `drive` null: the player's input moves the body directly.
+	void update(const World& world, const Input& in, float yaw, float pitch, float dt, const Drive* drive = nullptr);
 	Vec3 eye() const { return {feet.x, _eyeY, feet.z}; }
 	// False until the ground under the spawn point has been found.
 	bool placed() const { return _placed; }
 
 private:
-	void walk(const World& world, const Input& in, float yaw, float dt);
+	void walk(const World& world, const Input& in, float yaw, float dt, const Drive* drive);
 	void collideWalls(const World& world);
 	bool swim(const World& world, float dt);
 	bool climb(const World& world, const Input& in, float dt);
@@ -65,6 +83,7 @@ private:
 	bool _placed = false;
 	bool _blocked = false; // the last horizontal move ran into something
 	bool _letGo = false;   // jumped off a ladder: do not grab it again before landing
+	Vec3 _carry {0, 0, 0}; // driven: the horizontal velocity the body keeps in the air
 };
 
 } // namespace g3

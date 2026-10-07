@@ -1,6 +1,7 @@
 // g3ds-bake: turns scenes (the worlds of a Gothic installation or the
 // built-in synthetic test scene) into data.pak for the 3DS runtime.
 #include "bake.h"
+#include "g3ds/model.h"
 #include "g3ds/tex.h"
 #include "importers.h"
 #include "model_bake.h"
@@ -174,6 +175,8 @@ int main(int argc, char** argv) {
 		const auto t0 = std::chrono::steady_clock::now();
 		std::vector<BakeWorld> worlds;
 		std::vector<SrcModel> models;
+		CameraSet camera = defaultCameraSet();
+		bool haveCamera = false;
 		if (cmd == "synth") {
 			if (hero) {
 				models.emplace_back();
@@ -237,12 +240,19 @@ int main(int argc, char** argv) {
 					models.push_back(std::move(model));
 				else
 					worlds[0].scene.notes.insert(worlds[0].scene.notes.end(), model.notes.begin(), model.notes.end());
+				// ... and the game's own way of looking at it.
+				importZenCamera(game, camera, worlds[0].scene.notes);
+				haveCamera = true;
 			}
 		}
 		if (!firstName.empty()) worlds[0].name = firstName;
 
 		PakWriter pak;
 		bakeWorlds(worlds, models, opt, pak);
+		if (haveCamera) {
+			const u8* bytes = reinterpret_cast<const u8*>(&camera);
+			pak.add("meta/camera", ASSET_META, std::vector<u8>(bytes, bytes + sizeof(camera)));
+		}
 		pak.write(out);
 		const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 		std::printf("wrote %s: %zu worlds, %zu entries in %.1f s\n", out.c_str(), worlds.size(), pak.items().size(), secs);

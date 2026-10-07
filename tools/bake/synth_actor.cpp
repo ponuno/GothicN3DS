@@ -7,6 +7,7 @@
 
 #include "g3ds/math.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -299,12 +300,96 @@ void buildSyntheticActor(SrcModel& model) {
 		p.rot[L_THIGH] = aboutX(0.3f * c);
 		p.rot[R_THIGH] = aboutX(-0.3f * c);
 	}));
-	// One clip that ends: taking off for a jump, followed by the pose in the air.
-	model.clips.push_back(makeClip("T_STAND_2_JUMP", "S_JUMP", 5, false, [](float phase, float, Pose& p) {
-		p.pos[ROOT][1] -= 14.0f * (1.0f - phase);
-		p.rot[L_THIGH] = p.rot[R_THIGH] = aboutX(-0.9f * (1.0f - phase));
-		p.rot[L_CALF] = p.rot[R_CALF] = aboutX(1.6f * (1.0f - phase));
+	// Standing in walk mode, and swimming backwards.
+	model.clips.push_back(makeClip("S_WALK", "S_WALK", 40, false, [](float phase, float, Pose& p) {
+		const float s = std::sin(phase * kTau);
+		p.rot[CHEST] = aboutX(0.02f * s);
+		p.rot[L_ARM] = aboutZ(-0.05f);
+		p.rot[R_ARM] = aboutZ(0.05f);
 	}));
+	model.clips.push_back(makeClip("S_SWIMB", "S_SWIMB", 24, true, [](float phase, float seconds, Pose& p) {
+		const float s = std::sin(phase * kTau);
+		p.rot[ROOT] = aboutX(-0.9f); // leaning back
+		p.pos[ROOT][2] = -120.0f * seconds;
+		p.rot[L_ARM] = aboutZ(-1.0f + 0.5f * s);
+		p.rot[R_ARM] = aboutZ(1.0f - 0.5f * s);
+	}));
+
+	// Transitions, as ZenGin's model scripts have them: from standing into
+	// the run (gathering pace) and out of it, each ending in the pose its
+	// follower starts with.
+	model.clips.push_back(makeClip("T_RUN_2_RUNL", "S_RUNL", 8, true, [](float phase, float seconds, Pose& p) {
+		stride(0.0f, 0.0f, 0.75f * phase, 0.0f, p);
+		const float whole = 7.0f / 25.0f;                       // the clip's length
+		p.pos[ROOT][2] = 0.5f * 480.0f * seconds * seconds / whole; // from rest to 480 cm/s
+	}));
+	model.clips.push_back(makeClip("T_RUNL_2_RUN", "S_RUN", 6, true, [](float phase, float seconds, Pose& p) {
+		stride(0.0f, 0.0f, 0.75f * (1.0f - phase), 0.0f, p);
+		const float whole = 5.0f / 25.0f;
+		p.pos[ROOT][2] = 480.0f * seconds - 0.5f * 480.0f * seconds * seconds / whole; // from 480 cm/s to rest
+	}));
+	// Single actions: a hop back, a step to either side, turning on the spot.
+	model.clips.push_back(makeClip("T_JUMPB", "S_RUN", 11, true, [](float phase, float, Pose& p) {
+		const float arc = std::sin(phase * kTau * 0.5f);
+		p.pos[ROOT][1] += 10.0f * arc;
+		p.pos[ROOT][2] = -70.0f * phase;
+		p.rot[L_THIGH] = p.rot[R_THIGH] = aboutX(-0.5f * arc);
+		p.rot[L_CALF] = p.rot[R_CALF] = aboutX(0.9f * arc);
+	}));
+	for (int right = 0; right < 2; ++right) {
+		const float side = right ? 1.0f : -1.0f;
+		model.clips.push_back(makeClip(right ? "T_RUNSTRAFER" : "T_RUNSTRAFEL", "S_RUN", 13, true, [side](float phase, float, Pose& p) {
+			const float arc = std::sin(phase * kTau * 0.5f);
+			p.pos[ROOT][0] = side * 60.0f * phase;
+			p.rot[L_THIGH] = aboutZ(-0.35f * arc);
+			p.rot[R_THIGH] = aboutZ(0.35f * arc);
+		}));
+		model.clips.push_back(makeClip(right ? "T_RUNTURNR" : "T_RUNTURNL", right ? "T_RUNTURNR" : "T_RUNTURNL", 12, false,
+		                               [side](float phase, float, Pose& p) {
+			                               const float s = std::sin(phase * kTau);
+			                               p.rot[L_THIGH] = aboutX(-0.25f * std::max(s, 0.0f));
+			                               p.rot[R_THIGH] = aboutX(-0.25f * std::max(-s, 0.0f));
+			                               p.rot[L_CALF] = aboutX(0.5f * std::max(s, 0.0f));
+			                               p.rot[R_CALF] = aboutX(0.5f * std::max(-s, 0.0f));
+			                               p.rot[CHEST] = {0, std::sin(side * 0.1f), 0, std::cos(side * 0.1f)};
+		                               }));
+	}
+	// Jumps. As in the game's files, the leap itself is in the take-off
+	// animation: its root rises and travels, and the game moves the body by
+	// that. S_JUMP is only the pose held in the air afterwards.
+	SrcClip standJump = makeClip("T_STAND_2_JUMP", "S_JUMP", 13, true, [](float phase, float, Pose& p) {
+		const float crouch = phase < 0.35f ? std::sin(phase / 0.35f * kTau * 0.5f) : 0.0f; // down and up again
+		const float flight = phase < 0.35f ? 0.0f : (phase - 0.35f) / 0.65f;                // then off the ground
+		p.pos[ROOT][1] += -14.0f * crouch + 75.0f * std::sin(flight * kTau * 0.25f);
+		p.pos[ROOT][2] = 130.0f * flight;
+		p.rot[L_THIGH] = p.rot[R_THIGH] = aboutX(-0.9f * crouch - 0.5f * flight);
+		p.rot[L_CALF] = p.rot[R_CALF] = aboutX(1.6f * crouch + 0.8f * flight);
+		p.rot[L_ARM] = p.rot[R_ARM] = aboutX(-2.4f * flight);
+	});
+	standJump.fly = true;
+	model.clips.push_back(standJump);
+	SrcClip runJump = makeClip("T_RUNL_2_JUMP", "S_JUMP", 9, true, [](float phase, float seconds, Pose& p) {
+		p.pos[ROOT][1] += 85.0f * std::sin(phase * kTau * 0.25f);
+		p.pos[ROOT][2] = 480.0f * seconds;
+		p.rot[L_THIGH] = aboutX(-0.7f * phase);
+		p.rot[R_THIGH] = aboutX(-0.3f * phase);
+		p.rot[L_CALF] = aboutX(1.1f * phase);
+		p.rot[R_CALF] = aboutX(0.6f * phase);
+		p.rot[L_ARM] = p.rot[R_ARM] = aboutX(-2.4f * phase);
+	});
+	runJump.fly = true;
+	model.clips.push_back(runJump);
+	for (const char* name : {"T_JUMP_2_STAND", "T_FALLDN_2_STAND"})
+		model.clips.push_back(makeClip(name, "S_RUN", 6, false, [](float phase, float, Pose& p) {
+			const float crouch = 1.0f - phase;
+			p.pos[ROOT][1] -= 16.0f * crouch;
+			p.rot[L_THIGH] = p.rot[R_THIGH] = aboutX(-0.9f * crouch);
+			p.rot[L_CALF] = p.rot[R_CALF] = aboutX(1.6f * crouch);
+		}));
+	// Where the script has no animation for a change, it names a fade.
+	model.blends = {{"T_RUNL_2_WALKL", "S_WALKL", 0.2f, 0.2f}, {"T_WALKL_2_RUNL", "S_RUNL", 0.2f, 0.2f},
+	                {"T_SWIM_2_SWIMF", "S_SWIMF", 0.3f, 0.3f}, {"T_SWIMF_2_SWIM", "S_SWIM", 0.3f, 0.3f},
+	                {"T_JUMP_2_RUNL", "S_RUNL", 0.15f, 0.15f}};
 	model.notes.push_back("synthetic test character: 14 nodes, clips named as in Gothic");
 }
 

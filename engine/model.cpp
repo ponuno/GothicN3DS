@@ -17,8 +17,10 @@ bool Clip::load(Pak& pak, u32 entryHash, u32 nodeCount) {
 	u8* blob = static_cast<u8*>(pak.readAlloc(*e));
 	if (!blob) return false;
 	memcpy(&_h, blob, sizeof(_h));
+	const bool hasMotion = (_h.flags & CLIPF_MOVES) != 0;
 	bool ok = _h.magic == CLIP_MAGIC && _h.version == CLIP_VERSION && _h.trackCount > 0 && _h.frameCount > 0 &&
-	          _h.fps > 0.0f && _h.trackCount <= MODEL_MAX_NODES && e->size == clipBlobSize(_h.trackCount, _h.frameCount);
+	          _h.fps > 0.0f && _h.trackCount <= MODEL_MAX_NODES &&
+	          e->size == clipBlobSize(_h.trackCount, _h.frameCount, hasMotion);
 	const u8* tracks = blob + sizeof(ClipHeader);
 	for (u32 t = 0; ok && t < _h.trackCount; ++t) ok = tracks[t] < nodeCount;
 	if (!ok) {
@@ -30,7 +32,50 @@ bool Clip::load(Pak& pak, u32 entryHash, u32 nodeCount) {
 	_tracks = tracks;
 	// 2-byte aligned: the header and the padded track table are multiples of 4.
 	_samples = reinterpret_cast<const ClipSample*>(tracks + clipTrackTableSize(_h.trackCount));
+	_motion = nullptr;
+	_rise = 0;
+	if (hasMotion) {
+		_motion = reinterpret_cast<const i16*>(blob + clipSamplesEnd(_h.trackCount, _h.frameCount));
+		for (u32 f = 0; f < _h.frameCount; ++f) _rise = max(_rise, float(_motion[f * 3 + 1]) * _h.motionScale);
+	}
 	return true;
+}
+
+Vec3 Clip::motionAt(u32 frame) const {
+	const i16* m = _motion + size_t(frame) * 3;
+	return Vec3 {float(m[0]), float(m[1]), float(m[2])} * _h.motionScale;
+}
+
+Vec3 Clip::motion(float time) const {
+	if (!_motion || _h.frameCount < 2) return {0, 0, 0};
+	const u32 last = _h.frameCount - 1;
+	float f = max(time, 0.0f) * _h.fps;
+	if (!loops()) {
+		f = min(f, float(last));
+		const u32 i = min(u32(f), last - 1);
+		const Vec3 a = motionAt(i), b = motionAt(i + 1);
+		return a + (b - a) * (f - float(i));
+	}
+	// A loop: the table covers the way from the first frame to the last; the
+	// step from the last frame back into the first is taken at the clip's
+	// average pace. Height is not travel: it comes back to where it was.
+	const Vec3 whole = motionAt(last);
+	Vec3 step = whole * (1.0f / float(last));
+	step.y = 0;
+	Vec3 pass = whole + step;
+	pass.y = 0;
+	const float passes = floorf(f / float(_h.frameCount));
+	f -= passes * float(_h.frameCount);
+	Vec3 at;
+	if (f >= float(last)) {
+		at = whole + step * (f - float(last));
+		at.y = whole.y * (1.0f - (f - float(last)));
+	} else {
+		const u32 i = u32(f);
+		const Vec3 a = motionAt(i), b = motionAt(i + 1);
+		at = a + (b - a) * (f - float(i));
+	}
+	return at + pass * passes;
 }
 
 void Clip::release() {
@@ -38,6 +83,8 @@ void Clip::release() {
 	_blob = nullptr;
 	_tracks = nullptr;
 	_samples = nullptr;
+	_motion = nullptr;
+	_rise = 0;
 	_h = {};
 }
 
@@ -94,16 +141,17 @@ bool Model::load(Pak& pak, const char* name) {
 	memcpy(&_h, blob, sizeof(_h));
 	bool ok = _h.magic == MODEL_MAGIC && _h.version == MODEL_VERSION && _h.nodeCount > 0 &&
 	          _h.nodeCount <= MODEL_MAX_NODES && _h.vertexCount > 0 && _h.vertexCount <= 65535 && _h.indexCount % 3 == 0 &&
-	          e->size == modelBlobSize(_h);
+	          _h.blendCount <= 4096 && e->size == modelBlobSize(_h);
 	const u8* p = blob + sizeof(ModelHeader);
 	if (ok) {
 		_nodes = static_cast<ModelNode*>(malloc(size_t(_h.nodeCount) * sizeof(ModelNode)));
 		_parts = static_cast<ModelPart*>(malloc(size_t(_h.partCount) * sizeof(ModelPart) + 1));
 		_clipRefs = static_cast<ModelClipRef*>(malloc(size_t(_h.clipCount) * sizeof(ModelClipRef) + 1));
+		_blends = static_cast<ModelBlend*>(malloc(size_t(_h.blendCount) * sizeof(ModelBlend) + 1));
 		// Zeroed memory is a valid, empty Clip (and nothing here needs operator new).
 		_clips = static_cast<Clip*>(calloc(size_t(_h.clipCount) + 1, sizeof(Clip)));
 		_textures = static_cast<gfx::Texture**>(calloc(size_t(_h.partCount) + 1, sizeof(gfx::Texture*)));
-		ok = _nodes && _parts && _clipRefs && _clips && _textures;
+		ok = _nodes && _parts && _clipRefs && _blends && _clips && _textures;
 	}
 	const WorldVertex* vertices = nullptr;
 	const u16* indices = nullptr;
@@ -114,6 +162,8 @@ bool Model::load(Pak& pak, const char* name) {
 		p += size_t(_h.partCount) * sizeof(ModelPart);
 		memcpy(_clipRefs, p, size_t(_h.clipCount) * sizeof(ModelClipRef));
 		p += size_t(_h.clipCount) * sizeof(ModelClipRef);
+		memcpy(_blends, p, size_t(_h.blendCount) * sizeof(ModelBlend));
+		p += size_t(_h.blendCount) * sizeof(ModelBlend);
 		vertices = reinterpret_cast<const WorldVertex*>(p); // 4-byte aligned: every table before is
 		indices = reinterpret_cast<const u16*>(vertices + _h.vertexCount);
 		// Parents come first, parts stay inside the buffers, palettes inside the skeleton.
@@ -184,6 +234,8 @@ void Model::release() {
 	free(_nodes);
 	free(_parts);
 	free(_clipRefs);
+	free(_blends);
+	_blends = nullptr;
 	_clips = nullptr;
 	_textures = nullptr;
 	_nodes = nullptr;
@@ -203,6 +255,12 @@ int Model::findNode(u32 nameHash) const {
 const Clip* Model::clip(u32 nameHash) const {
 	for (u32 i = 0; i < _h.clipCount; ++i)
 		if (_clipRefs[i].nameHash == nameHash) return _clips[i].loaded() ? &_clips[i] : nullptr;
+	return nullptr;
+}
+
+const ModelBlend* Model::blend(u32 nameHash) const {
+	for (u32 i = 0; i < _h.blendCount; ++i)
+		if (_blends[i].nameHash == nameHash) return &_blends[i];
 	return nullptr;
 }
 
@@ -226,13 +284,15 @@ void Model::worldTransforms(const Pose& pose, Mat34* world) const {
 // 32 KB stack. Drawing happens on one thread.
 static Mat34 gDrawWorld[MODEL_MAX_NODES], gDrawSkin[MODEL_MAX_NODES];
 
-void Model::draw(const Pose& pose, Vec3 origin, float yaw, const float light[3]) const {
+void Model::draw(const Pose& pose, Vec3 origin, float yaw, const float light[3], float lean) const {
 	if (!_mesh) return;
 	Mat34* const world = gDrawWorld;
 	Mat34* const skin = gDrawSkin;
 	worldTransforms(pose, world);
 	// Skin matrices: rest position -> posed position, then turned to face `yaw`.
-	const Mat34 turn = mat34From(quatFromYaw(yaw), {0, 0, 0});
+	// (Leaning to the right tips the head towards +X: a turn about the model's -Z.)
+	const Quat tip = {0, 0, sinf(-lean * 0.5f), cosf(-lean * 0.5f)};
+	const Mat34 turn = mat34From(quatMul(quatFromYaw(yaw), tip), {0, 0, 0});
 	for (u32 i = 0; i < _h.nodeCount; ++i) {
 		Mat34 inv;
 		memcpy(inv.m, _nodes[i].invBind, sizeof(inv.m));
@@ -267,6 +327,7 @@ void Animator::bind(const Model* model) {
 	_fade = 1.0f;
 	_fadeTime = 0;
 	_finished = false;
+	_moved = {0, 0, 0};
 	if (model && model->loaded()) {
 		model->restPose(_pose);
 		_from = _pose;
@@ -280,7 +341,19 @@ void Animator::play(const Clip* clip, float blend) {
 	_time = 0;
 	_rate = 1.0f;
 	_finished = false;
-	_fadeTime = blend >= 0.0f ? blend : (clip ? clip->header().blendIn : 0.15f);
+	// Without a time from the caller: the script's, as ZenGin applies it (the
+	// longer of the new clip's two fades).
+	_fadeTime = blend >= 0.0f ? blend : (clip ? max(clip->header().blendIn, clip->header().blendOut) : 0.15f);
+	_fade = _fadeTime > 0.0f ? 0.0f : 1.0f;
+	evaluate();
+}
+
+void Animator::restart(float blend) {
+	if (!_model || !_clip) return;
+	_from = _pose;
+	_time = 0;
+	_finished = false;
+	_fadeTime = max(blend, 0.0f);
 	_fade = _fadeTime > 0.0f ? 0.0f : 1.0f;
 	evaluate();
 }
@@ -305,24 +378,38 @@ void Animator::update(float dt) {
 	if (!_model) return;
 	if (_fade < 1.0f) _fade = _fadeTime > 0.0f ? min(_fade + dt / _fadeTime, 1.0f) : 1.0f;
 	if (_clip) {
+		const Vec3 before = _clip->motion(_time);
 		_time += dt * _rate;
 		if (!_clip->loops() && _time >= _clip->duration()) {
+			_moved = _moved + (_clip->motion(_clip->duration()) - before);
 			// Over: on to the clip the model script names as the next one.
 			const Clip* next = _clip->header().next ? _model->clip(_clip->header().next) : nullptr;
 			if (next && next != _clip) {
 				const float left = _time - _clip->duration();
-				play(next, _clip->header().blendOut);
+				// The script's fade, as ZenGin applies it: the longer of the
+				// follower's two times.
+				play(next, max(next->header().blendIn, next->header().blendOut));
 				_time = left;
+				_moved = _moved + next->motion(left);
 			} else {
 				_time = _clip->duration();
 				_finished = true;
 			}
-		} else if (_clip->loops()) {
-			const float d = _clip->duration();
-			if (d > 0.0f && _time >= d * 64.0f) _time = fmodf(_time, d); // keep the float precise on long stays
+		} else {
+			_moved = _moved + (_clip->motion(_time) - before);
+			if (_clip->loops()) {
+				const float d = _clip->duration();
+				if (d > 0.0f && _time >= d * 64.0f) _time = fmodf(_time, d); // keep the float precise on long stays
+			}
 		}
 	}
 	evaluate();
+}
+
+Vec3 Animator::takeMotion() {
+	const Vec3 m = _moved;
+	_moved = {0, 0, 0};
+	return m;
 }
 
 } // namespace g3

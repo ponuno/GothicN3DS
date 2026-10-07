@@ -264,28 +264,33 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 		if (!clipNames.insert(hashName(clip.name.c_str())).second) continue; // the first of a name wins
 
 		std::vector<SrcClipSample> samples = clip.samples;
-		// Where the root ends up, horizontally, is travel: it becomes a speed,
-		// and the game moves the character itself. What the root does on the
-		// way - the sway of the hips, a stance off the model's centre - stays
-		// in the clip. (ZenGin flags standing animations as "moving" too; a
-		// clip that goes nowhere is not travel.)
-		float travelled = 0;
+		// Root motion (see g3ds/model.h): what the root does since the first
+		// frame is where the clip carries the character; the root itself is
+		// drawn over the character's position.
+		std::vector<std::array<float, 3>> motion;
+		float motionReach = 0, rise = 0;
 		for (size_t t = 0; t < tracks; ++t) {
 			const int node = clip.nodes[t];
 			if (node < 0 || size_t(node) >= n) throw std::runtime_error("model '" + model.name + "': clip node out of range");
-			if (model.nodes[size_t(node)].parent >= 0 || !clip.moves || frames < 2) continue;
-			const SrcClipSample& first = clip.samples[t];
-			const SrcClipSample& last = clip.samples[(frames - 1) * tracks + t];
-			const float net[2] = {last.pos[0] - first.pos[0], last.pos[2] - first.pos[2]};
-			const float length = std::sqrt(net[0] * net[0] + net[1] * net[1]);
-			if (length < 5.0f) continue;
-			travelled = std::max(travelled, length);
+			if (model.nodes[size_t(node)].parent >= 0) continue;
+			if (clip.moves && motion.empty()) {
+				motion.resize(frames);
+				for (size_t f = 0; f < frames; ++f) {
+					for (int a = 0; a < 3; ++a) motion[f][size_t(a)] = clip.samples[f * tracks + t].pos[a] - clip.samples[t].pos[a];
+					for (float c : motion[f]) motionReach = std::max(motionReach, std::fabs(c));
+					rise = std::max(rise, motion[f][1]);
+				}
+			}
 			for (size_t f = 0; f < frames; ++f) {
-				const float share = float(f) / float(frames - 1);
-				samples[f * tracks + t].pos[0] -= net[0] * share;
-				samples[f * tracks + t].pos[2] -= net[1] * share;
+				samples[f * tracks + t].pos[0] = 0;
+				samples[f * tracks + t].pos[2] = 0;
 			}
 		}
+		// (ZenGin flags standing animations as "moving" too; a root that
+		// stays where it is carries nobody anywhere.)
+		if (motionReach < 0.4f) motion.clear();
+		float travelled = 0;
+		if (!motion.empty()) travelled = std::sqrt(motion.back()[0] * motion.back()[0] + motion.back()[2] * motion.back()[2]);
 		const bool loop = lowerName(clip.next) == lowerName(clip.name);
 		// A loop's last frame leads back into its first, so it lasts `frames`
 		// steps; anything else lasts `frames - 1`.
@@ -301,13 +306,14 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 		h.trackCount = u16(tracks);
 		h.frameCount = u16(frames);
 		h.fps = clip.fps;
-		h.flags = u16((loop ? CLIPF_LOOP : 0) | (travelled > 0.0f ? CLIPF_MOVES : 0));
+		h.flags = u16((loop ? CLIPF_LOOP : 0) | (!motion.empty() ? CLIPF_MOVES : 0) | (clip.fly ? CLIPF_FLY : 0));
 		h.layer = u16(std::clamp(clip.layer, 0, 65535));
 		h.blendIn = std::clamp(clip.blendIn, 0.0f, 5.0f);
 		h.blendOut = std::clamp(clip.blendOut, 0.0f, 5.0f);
 		h.next = clip.next.empty() ? 0 : hashName(clip.next.c_str());
-		h.moveSpeed = (h.flags & CLIPF_MOVES) ? travelled / travelSteps : 0.0f;
+		h.moveSpeed = travelled > 5.0f ? travelled / travelSteps : 0.0f;
 		h.posScale = posReach / 32767.0f;
+		h.motionScale = std::max(motionReach, 1.0f) / 32767.0f;
 
 		std::vector<u8> blob;
 		append(blob, h);
@@ -321,13 +327,36 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 			for (int a = 0; a < 4; ++a) out.rot[a] = i16(std::lround(r[a] * 32767.0f));
 			append(blob, out);
 		}
-		if (blob.size() != clipBlobSize(h.trackCount, h.frameCount)) throw std::logic_error("clip layout");
+		while (blob.size() % 4) blob.push_back(0);
+		for (const auto& m : motion)
+			for (float c : m) append(blob, i16(std::lround(c / h.motionScale)));
+		while (blob.size() % 4) blob.push_back(0);
+		if (blob.size() != clipBlobSize(h.trackCount, h.frameCount, !motion.empty())) throw std::logic_error("clip layout");
 		const std::string entry = "anim/" + lowerName(model.name) + "/" + lowerName(clip.name);
 		pak.add(entry, ASSET_CLIP, blob);
 		clipBytes += blob.size();
 		clipRefs.push_back({hashName(clip.name.c_str()), hashName(entry.c_str())});
-		clipNotes.push_back(format("%s %.2fs%s%s", clip.name.c_str(), double(duration), loop ? " loop" : "",
-		                           (h.flags & CLIPF_MOVES) ? format(" %.0fcm/s", double(h.moveSpeed)).c_str() : ""));
+		clipNotes.push_back(format("%s %.2fs%s%s%s", clip.name.c_str(), double(duration), loop ? " loop" : "",
+		                           h.moveSpeed > 0 ? format(" %.0fcm/s", double(h.moveSpeed)).c_str() : "",
+		                           rise > 20.0f ? format(" up %.0fcm", double(rise)).c_str() : ""));
+	}
+
+	// ---- blends ----
+	std::vector<ModelBlend> blends;
+	std::string blendList;
+	for (const SrcAniBlend& b : model.blends) {
+		if (b.name.empty() || b.next.empty()) continue;
+		const u32 name = hashName(b.name.c_str());
+		if (clipNames.count(name)) continue; // an animation of that name wins
+		bool seen = false;
+		for (const ModelBlend& e : blends) seen = seen || e.nameHash == name;
+		if (seen) continue;
+		ModelBlend e {};
+		e.nameHash = name;
+		e.nextHash = hashName(b.next.c_str());
+		e.time = std::clamp(std::max(b.blendIn, b.blendOut), 0.0f, 5.0f);
+		blends.push_back(e);
+		blendList += (blendList.empty() ? "" : ", ") + format("%s %.2fs", b.name.c_str(), double(e.time));
 	}
 
 	// ---- the model itself ----
@@ -337,6 +366,7 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 	mh.nodeCount = u16(n);
 	mh.partCount = u16(parts.size());
 	mh.clipCount = u16(clipRefs.size());
+	mh.blendCount = u32(blends.size());
 	mh.vertexCount = u32(vertices.size());
 	mh.indexCount = u32(indices.size());
 	mh.posScale = posScale;
@@ -348,6 +378,7 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 	for (const ModelNode& node : nodes) append(blob, node);
 	for (const ModelPart& part : parts) append(blob, part);
 	for (const ModelClipRef& ref : clipRefs) append(blob, ref);
+	for (const ModelBlend& e : blends) append(blob, e);
 	for (const WorldVertex& v : vertices) append(blob, v);
 	for (u16 i : indices) append(blob, i);
 	while (blob.size() % 4) blob.push_back(0);
@@ -369,6 +400,7 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 		for (size_t i = 0; i < clipNotes.size(); ++i) list += (i ? ", " : "") + clipNotes[i];
 		line(format("clips: %zu (%.0f KB): ", clipRefs.size(), double(clipBytes) / 1024.0) + list);
 	}
+	if (!blends.empty()) line(format("blends: %zu: ", blends.size()) + blendList);
 	if (!missing.empty()) {
 		std::string list;
 		for (size_t i = 0; i < missing.size(); ++i) list += (i ? ", " : "") + missing[i];

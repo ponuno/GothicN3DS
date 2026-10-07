@@ -113,8 +113,8 @@ int main(int argc, char** argv) {
 			usage();
 			return 2;
 		}
+		app.camera().yaw = yaw * 0.0174533f; // (a character takes its heading from it)
 		app.teleport({x, y, z});
-		app.camera().yaw = yaw * 0.0174533f;
 		viewPitch = app.camera().pitch = pitch * 0.0174533f;
 	}
 
@@ -233,11 +233,12 @@ int main(int argc, char** argv) {
 	}
 	if (app.hero().loaded()) {
 		const Hero& hero = app.hero();
-		printf("hero              %u triangles, %u clips; drawn in %d frames (%.0f pixels each): standing %d, running %d, walking %d, "
-		       "in the air %d, swimming %d\n",
-		       hero.model().triangles(), hero.model().clipCount(), heroFrames, heroFrames ? double(heroPixels) / heroFrames : 0.0,
-		       heroRoleFrames[Hero::IDLE], heroRoleFrames[Hero::RUN], heroRoleFrames[Hero::WALK],
-		       heroRoleFrames[Hero::JUMP] + heroRoleFrames[Hero::FALL], heroRoleFrames[Hero::SWIM] + heroRoleFrames[Hero::SWIM_IDLE]);
+		printf("hero              %u triangles, %u clips, %u blends; drawn in %d frames (%.0f pixels each): standing %d, running %d, "
+		       "walking %d, turning %d, in the air %d, swimming %d; camera set-up: %s\n",
+		       hero.model().triangles(), hero.model().clipCount(), hero.model().blendCount(), heroFrames,
+		       heroFrames ? double(heroPixels) / heroFrames : 0.0, heroRoleFrames[Hero::IDLE], heroRoleFrames[Hero::RUN],
+		       heroRoleFrames[Hero::WALK], heroRoleFrames[Hero::TURN], heroRoleFrames[Hero::JUMP] + heroRoleFrames[Hero::FALL],
+		       heroRoleFrames[Hero::SWIM] + heroRoleFrames[Hero::SWIM_IDLE], app.cameraSet().fromGame ? "the game's" : "this project's");
 	} else {
 		printf("hero              none in the archive: first person\n");
 	}

@@ -60,4 +60,10 @@ struct ZenActorOptions {
 // character). Throws std::runtime_error on files that exist but cannot be used.
 bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& opt, SrcModel& model);
 
+// The game's own camera set-ups, from its compiled scripts (CAMERA.DAT).
+// Returns false and leaves this project's defaults in `set` if they cannot be
+// read; either way a line for the bake report goes to `notes`.
+struct CameraSet;
+bool importZenCamera(std::shared_ptr<const ZenGame> game, CameraSet& set, std::vector<std::string>& notes);
+
 } // namespace g3

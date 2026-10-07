@@ -2034,7 +2034,9 @@ static void testModel() {
 		CHECK(r.triangles == 59 * 4 && r.parts >= 3 && r.largestPalette == MODEL_PALETTE && r.clips == 2 && r.textures == 1);
 		CHECK(r.report.find("skeleton: 60 nodes") != std::string::npos);
 		const ModelBakeResult a = bakeModel(actor, bo, writer);
-		CHECK(a.parts == 2 && a.clips == 8 && a.largestPalette <= MODEL_PALETTE);
+		CHECK(a.parts == 2 && a.clips == 20 && a.largestPalette <= MODEL_PALETTE);
+		CHECK(a.report.find("blends: 5: T_RUNL_2_WALKL 0.20s") != std::string::npos);
+		CHECK(a.report.find("T_STAND_2_JUMP 0.48s 239cm/s up 74cm") != std::string::npos);
 		writer.write(path);
 	}
 	// What cannot be baked is refused with a reason.
@@ -2070,18 +2072,21 @@ static void testModel() {
 		CHECK(threw);
 	}
 
-	// Travel and stance. ZenGin flags standing animations as "moving" too;
-	// only where the root ends up elsewhere is there travel to take out.
+	// Root motion: what the root does since the first frame is where the clip
+	// carries the character; the samples keep the root over the character.
 	{
 		SrcModel m = chain;
 		m.name = "walker";
 		m.clips.clear();
-		SrcClip crawl, stay;
+		SrcClip crawl, stay, hop, still;
 		crawl.name = crawl.next = "S_CRAWL";
 		stay.name = stay.next = "S_STAY";
-		crawl.fps = stay.fps = 10.0f;
-		crawl.moves = stay.moves = true;
-		crawl.nodes = stay.nodes = {0};
+		hop.name = "T_HOP";
+		still.name = still.next = "S_STILL";
+		crawl.fps = stay.fps = hop.fps = still.fps = 10.0f;
+		crawl.moves = stay.moves = hop.moves = still.moves = true; // (ZenGin flags standing animations, too)
+		hop.fly = true;
+		crawl.nodes = stay.nodes = hop.nodes = still.nodes = {0};
 		for (int f = 0; f < 5; ++f) {
 			SrcClipSample s {};
 			float rest[3];
@@ -2090,29 +2095,81 @@ static void testModel() {
 			s.pos[1] = 10.0f;
 			s.pos[2] = 50.0f * float(f);
 			crawl.samples.push_back(s);
-			s.pos[2] = -1.0f + 0.4f * float(f % 2);
+			s.pos[2] = -1.0f;
 			stay.samples.push_back(s);
+			s.pos[0] = 12.0f;
+			still.samples.push_back(s);
+			s.pos[1] = 10.0f + 30.0f * float(f); // up and away
+			s.pos[2] = 20.0f * float(f);
+			hop.samples.push_back(s);
 		}
-		m.clips = {crawl, stay};
+		m.clips = {crawl, stay, hop, still};
+		m.blends = {{"T_CRAWL_2_STAY", "S_STAY", 0.25f, 0.1f}, {"T_HOP", "S_STAY", 9.0f, 9.0f}, {"", "S_STAY", 1.0f, 1.0f}};
 		PakWriter writer;
 		const ModelBakeResult r = bakeModel(m, bo, writer);
 		CHECK(r.report.find("S_CRAWL 0.50s loop 500cm/s") != std::string::npos);
-		CHECK(r.report.find("S_STAY 0.50s loop,") != std::string::npos || r.report.find("S_STAY 0.50s loop\n") != std::string::npos);
+		CHECK(r.report.find("T_HOP 0.40s 200cm/s up 120cm") != std::string::npos);
+		CHECK(r.report.find("blends: 1: T_CRAWL_2_STAY 0.25s") != std::string::npos); // an animation of the name wins; no name, no blend
 		const std::string walkerPath = gDir + "/walker.pak";
 		writer.write(walkerPath);
 		Pak wp;
 		CHECK(wp.open(walkerPath.c_str()));
-		Clip c, st;
+		Clip c, st, hp, sl;
 		CHECK(c.load(wp, hashName("anim/walker/s_crawl"), 60) && st.load(wp, hashName("anim/walker/s_stay"), 60));
-		CHECK((c.header().flags & CLIPF_MOVES) && std::fabs(c.header().moveSpeed - 500.0f) < 1.0f);
-		CHECK(!(st.header().flags & CLIPF_MOVES) && st.header().moveSpeed == 0.0f);
+		CHECK(hp.load(wp, hashName("anim/walker/t_hop"), 60) && sl.load(wp, hashName("anim/walker/s_still"), 60));
+		CHECK(c.moves() && (c.header().flags & CLIPF_MOVES) && std::fabs(c.header().moveSpeed - 500.0f) < 1.0f && c.rise() == 0.0f);
+		// The sway of a stance is motion, too (the body sways with it), but no speed.
+		CHECK(st.moves() && st.header().moveSpeed == 0.0f);
+		// A root that stays put carries nobody anywhere, whatever the script's flag says.
+		CHECK(!sl.moves() && !(sl.header().flags & CLIPF_MOVES) && sl.motion(0.3f).z == 0.0f);
+		CHECK(hp.moves() && (hp.header().flags & CLIPF_FLY) && !hp.loops() && std::fabs(hp.rise() - 120.0f) < 0.1f);
 		Pose p;
 		for (int f = 0; f < 5; ++f) {
+			// The root is drawn over the character: x and z are gone from the samples ...
 			c.sample(float(f) * 0.1f, p);
-			CHECK(std::fabs(p.pos[0].x - (12.0f + 3.0f * float(f % 2))) < 0.01f && std::fabs(p.pos[0].z) < 0.01f);
-			st.sample(float(f) * 0.1f, p);
-			CHECK(std::fabs(p.pos[0].x - (12.0f + 3.0f * float(f % 2))) < 0.01f && std::fabs(p.pos[0].z - (-1.0f + 0.4f * float(f % 2))) < 0.01f);
+			CHECK(p.pos[0].x == 0.0f && p.pos[0].z == 0.0f && std::fabs(p.pos[0].y - 10.0f) < 0.01f);
+			// ... and are where the clip carries it.
+			const Vec3 at = c.motion(float(f) * 0.1f);
+			CHECK(std::fabs(at.x - 3.0f * float(f % 2)) < 0.02f && std::fabs(at.z - 50.0f * float(f)) < 0.02f && at.y == 0.0f);
 		}
+		// Between frames, and round the loop: the step from the last frame
+		// back to the first is taken at the clip's average pace.
+		CHECK(std::fabs(c.motion(0.25f).z - 125.0f) < 0.05f && std::fabs(c.motion(0.25f).x - 1.5f) < 0.02f);
+		CHECK(std::fabs(c.motion(0.45f).z - 225.0f) < 0.05f);
+		CHECK(std::fabs(c.motion(0.5f).z - 250.0f) < 0.05f && std::fabs(c.motion(1.7f).z - 850.0f) < 0.1f);
+		CHECK(std::fabs(c.motion(1.7f).x) < 0.02f && c.motion(-1.0f).z == 0.0f);
+		// A clip that ends stays where it got to; its height is part of the way.
+		const Vec3 top = hp.motion(0.4f), beyond = hp.motion(5.0f), mid = hp.motion(0.2f);
+		CHECK(std::fabs(top.y - 120.0f) < 0.05f && std::fabs(top.z - 80.0f) < 0.05f && beyond.y == top.y && beyond.z == top.z);
+		CHECK(std::fabs(mid.y - 60.0f) < 0.05f && std::fabs(mid.z - 40.0f) < 0.05f);
+
+		// The animator adds up what its clips carry, across the hand-over
+		// from a clip to its follower.
+		gfx::init();
+		Model wm;
+		CHECK(wm.load(wp, "walker") && wm.blendCount() == 1);
+		const ModelBlend* bl = wm.blend(hashName("t_crawl_2_stay"));
+		CHECK(bl && bl->nextHash == hashName("S_STAY") && std::fabs(bl->time - 0.25f) < 1e-6f && !wm.blend(hashName("T_HOP")));
+		Animator an;
+		an.bind(&wm);
+		an.play(wm.clip("S_CRAWL"), 0.0f);
+		Vec3 sum {0, 0, 0};
+		for (int i = 0; i < 37; ++i) {
+			an.update(0.033f);
+			sum = sum + an.takeMotion();
+		}
+		CHECK(std::fabs(sum.z - 500.0f * 37 * 0.033f) < 0.2f && an.takeMotion().z == 0.0f);
+		an.play(wm.clip("T_HOP"), 0.0f); // 0.4 s, no follower
+		sum = {0, 0, 0};
+		for (int i = 0; i < 20; ++i) {
+			an.update(0.033f);
+			sum = sum + an.takeMotion();
+		}
+		CHECK(an.finished() && std::fabs(sum.y - 120.0f) < 0.1f && std::fabs(sum.z - 80.0f) < 0.1f);
+		an.restart(0.0f);
+		CHECK(!an.finished() && an.time() == 0.0f && an.current() == wm.clip("T_HOP"));
+		wm.release();
+		gfx::shutdown();
 	}
 
 	gfx::init();
@@ -2277,7 +2334,7 @@ static void testModel() {
 	{
 		// The test character: loops wrap, moving clips know their speed.
 		Model m;
-		CHECK(m.load(pak, "hero") && m.nodeCount() == 14 && m.clipCount() == 8);
+		CHECK(m.load(pak, "hero") && m.nodeCount() == 14 && m.clipCount() == 20 && m.blendCount() == 5);
 		const Clip* run = m.clip("S_RUNL");
 		const Clip* walk = m.clip("S_WALKL");
 		const Clip* stand = m.clip("S_RUN");
@@ -2286,7 +2343,10 @@ static void testModel() {
 		if (run && walk && stand && takeOff) {
 			CHECK(run->loops() && (run->header().flags & CLIPF_MOVES) && std::fabs(run->header().moveSpeed - 480.0f) < 2.0f);
 			CHECK(std::fabs(walk->header().moveSpeed - 150.0f) < 2.0f);
-			CHECK(stand->loops() && !(stand->header().flags & CLIPF_MOVES) && stand->header().moveSpeed == 0.0f);
+			CHECK(stand->loops() && !stand->moves() && stand->header().moveSpeed == 0.0f);
+			// A loop carries the character on and on, at its pace.
+			CHECK(std::fabs(run->motion(0.3f).z - 144.0f) < 0.1f && std::fabs(run->motion(run->duration() * 2.5f).z - 480.0f * 0.64f * 2.5f) < 0.2f);
+			CHECK((takeOff->header().flags & CLIPF_FLY) && takeOff->rise() > 70.0f && takeOff->rise() < 76.0f);
 			CHECK(!takeOff->loops() && takeOff->header().next == hashName("S_JUMP"));
 			// The root does not travel: the game moves the character.
 			Pose a, b, c;
@@ -2331,7 +2391,8 @@ static void testModel() {
 		ModelHeader mh;
 		std::memcpy(&mh, model.data(), sizeof(mh));
 		const size_t partsAt = sizeof(ModelHeader) + mh.nodeCount * sizeof(ModelNode);
-		const size_t verticesAt = partsAt + mh.partCount * sizeof(ModelPart) + mh.clipCount * sizeof(ModelClipRef);
+		const size_t verticesAt = partsAt + mh.partCount * sizeof(ModelPart) + mh.clipCount * sizeof(ModelClipRef) +
+		                          mh.blendCount * sizeof(ModelBlend);
 		const size_t indicesAt = verticesAt + mh.vertexCount * sizeof(WorldVertex);
 		struct Damage {
 			const char* what;
@@ -2409,8 +2470,8 @@ static void testModel() {
 	gfx::shutdown();
 }
 
-// The player's character in the game: what it does follows what the player
-// does, and the camera stays behind it and out of the walls.
+// The player's character in the game: steered, moved and animated the way
+// the original does it, with the camera behind it and out of the walls.
 static void testHero() {
 	std::vector<BakeWorld> worlds(2);
 	worlds[0].name = "yard";
@@ -2427,9 +2488,10 @@ static void testHero() {
 			for (size_t t = scene.triangles.size() - 2; t < scene.triangles.size(); ++t)
 				for (SrcVertex& v : scene.triangles[t].v) v.rgba[0] = v.rgba[1] = v.rgba[2] = x < 0 ? 250 : 60;
 		}
-	// A wall along x = 1000..1040, six metres high, and a 30 cm step.
+	// A wall along x = 1000..1040, six metres high; a 30 cm step; a platform to fall off.
 	addBlock(scene, 1000, 1040, -3000, 3000, 600);
 	addBlock(scene, -600, 600, 1500, 2000, 30);
+	addBlock(scene, -3400, -3000, -400, 400, 180);
 	scene.spawnPos[0] = 0;
 	scene.spawnPos[1] = 175;
 	scene.spawnPos[2] = 0;
@@ -2440,7 +2502,7 @@ static void testHero() {
 
 	std::vector<SrcModel> models(1);
 	buildSyntheticActor(models[0]);
-	// A run of 520 cm/s instead of the controller's own 480: the player must take it over.
+	// A run of 520 cm/s: the character must move as fast as its animation carries it.
 	for (SrcClip& clip : models[0].clips)
 		if (clip.name == "S_RUNL")
 			for (size_t i = 0; i < clip.samples.size(); i += clip.nodes.size()) clip.samples[i].pos[2] *= 520.0f / 480.0f;
@@ -2457,7 +2519,6 @@ static void testHero() {
 		CHECK(r.models == 1 && r.report.find("== model 'hero' ==") != std::string::npos);
 		writer.write(path);
 	}
-
 	// A character that cannot be baked does not take the worlds down with it.
 	{
 		std::vector<SrcModel> broken(1);
@@ -2480,16 +2541,18 @@ static void testHero() {
 	app.world().preload(app.camera().pos);
 	const Hero& hero = app.hero();
 	Player& pl = app.player();
-	CHECK(hero.loaded() && app.thirdPerson());
-	for (int r = 0; r < Hero::ROLE_COUNT; ++r) CHECK(hero.hasRole(Hero::Role(r)));
-	CHECK(std::fabs(pl.config.walkSpeed - 520.0f) < 3.0f && std::fabs(hero.roleSpeed(Hero::RUN) - pl.config.walkSpeed) < 1e-3f);
-	CHECK(std::fabs(pl.config.swimSpeed - 260.0f) < 3.0f);
+	CHECK(hero.loaded() && app.thirdPerson() && app.steersHero() && !app.cameraSet().fromGame);
+	const Clip* const sRun = hero.clip("S_RUN");
+	const Clip* const sRunL = hero.clip("S_RUNL");
+	const Clip* const sWalk = hero.clip("S_WALK");
+	const Clip* const sWalkL = hero.clip("S_WALKL");
+	const Clip* const sJump = hero.clip("S_JUMP");
+	CHECK(sRun && sRunL && sWalk && sWalkL && sJump);
 
-	const float dt = 1.0f / 30.0f;
+	const float dt = 1.0f / 30.0f, deg = 0.0174533f;
 	auto place = [&](float x, float z, float yawDegrees) {
+		app.camera().yaw = yawDegrees * deg; // the character takes its heading from it
 		app.teleport({x, 220.0f, z});
-		app.camera().yaw = yawDegrees * 0.0174533f;
-		app.camera().pitch = 0;
 		for (int i = 0; i < 60; ++i) app.update(Input {}, dt);
 	};
 	auto angle = [](float a, float b) {
@@ -2498,84 +2561,247 @@ static void testHero() {
 		if (d < -3.14159265f) d += 6.2831853f;
 		return std::fabs(d);
 	};
+	auto step = [&](float forward, float turn = 0.0f, float strafe = 0.0f, bool jump = false) {
+		Input in;
+		in.moveZ = forward;
+		in.moveX = turn;
+		in.strafe = strafe;
+		in.jump = jump;
+		app.update(in, dt);
+	};
+	auto current = [&]() { return hero.animator().current(); };
 
-	// Standing: the idle clip, the camera 3.3 m behind and above the feet.
+	// ---- standing, and the camera's place ----
+	// The project's own set-up: 2.5 m behind the hips (95 cm up) at 25 degrees,
+	// the view tipped up by 20 and down again by 5.8 for the wide picture.
 	place(-1500, 0, 0);
-	CHECK(pl.grounded && hero.role() == Hero::IDLE && hero.speed() < 1.0f && hero.animator().current() == hero.model().clip("S_RUN"));
-	CHECK(app.heroVisible());
+	CHECK(pl.grounded && hero.role() == Hero::IDLE && hero.body() == Hero::GROUNDED && current() == sRun && hero.speed() < 1.0f);
+	CHECK(angle(hero.yaw(), 0.0f) < 1e-4f && std::fabs(hero.hipHeight() - 95.0f) < 0.01f);
 	Vec3 cam = app.camera().pos;
-	CHECK(std::fabs(cam.x + 1500.0f) < 1.0f && std::fabs(cam.y - 155.0f) < 1.0f && std::fabs(cam.z + 330.0f) < 2.0f);
+	const float behind = 250.0f * std::cos(25.0f * deg), above = 250.0f * std::sin(25.0f * deg);
+	CHECK(std::fabs(cam.x + 1500.0f) < 0.5f && std::fabs(cam.y - (95.0f + above)) < 1.0f && std::fabs(cam.z + behind) < 1.0f);
+	CHECK(angle(app.camera().yaw, 0.0f) < 0.01f && std::fabs(app.camera().pitch - (-25.0f + 20.0f - 5.82f) * deg) < 0.01f);
+	CHECK(app.heroVisible());
 	app.render();
 	gfx::SoftStats ss = gfx::softStats();
-	CHECK(ss.skinnedTriangles == hero.model().triangles() && ss.skinnedPixels > 1500);
-	// In the middle of the picture, seen from behind, feet below the horizon.
+	CHECK(ss.skinnedTriangles == hero.model().triangles() && ss.skinnedPixels > 2500);
 	{
+		// In the lower half of the picture, feet and all, seen from behind.
 		const Mat4 vp = mul(perspectiveLH(app.camera().fovY, float(gfx::SCREEN_W) / float(gfx::SCREEN_H), app.camera().zNear, app.camera().zFar),
 		                    viewLH(cam, app.camera().yaw, app.camera().pitch));
 		const Vec4 feet = transform(vp, {pl.feet.x, pl.feet.y, pl.feet.z, 1.0f}), head = transform(vp, {pl.feet.x, pl.feet.y + 180.0f, pl.feet.z, 1.0f});
-		CHECK(std::fabs(feet.x / feet.w) < 0.02f && feet.y / feet.w < -0.5f && head.y / head.w > 0.0f && head.y / head.w < 0.3f);
+		// (The feet are at the very edge, where the original has them too.)
+		CHECK(std::fabs(feet.x / feet.w) < 0.02f && feet.y / feet.w > -1.08f && feet.y / feet.w < -0.7f);
+		CHECK(head.y / head.w > -0.1f && head.y / head.w < 0.35f);
 	}
 
-	// Running: the run clip at the speed of the feet, the body turned the way it goes.
-	int runFrames = 0;
-	for (int i = 0; i < 45; ++i) {
-		Input in;
-		in.moveZ = 1.0f;
-		app.update(in, dt);
-		runFrames += hero.role() == Hero::RUN;
-	}
-	CHECK(runFrames > 38 && hero.role() == Hero::RUN && std::fabs(hero.speed() - 520.0f) < 8.0f);
-	CHECK(hero.animator().current() == hero.model().clip("S_RUNL") && angle(hero.yaw(), 0.0f) < 0.02f);
-	CHECK(pl.feet.z > 700.0f && std::fabs(hero.feet().z - pl.feet.z) < 1e-3f);
-	// The camera follows at its distance.
+	// ---- running: through the transitions, at the animation's pace ----
+	step(1.0f);
+	CHECK(current() == hero.clip("T_RUN_2_RUNL") && hero.role() == Hero::RUN);
+	float early = 0;
+	for (int i = 0; i < 5; ++i) step(1.0f);
+	early = hero.speed();
+	for (int i = 0; i < 50; ++i) step(1.0f);
+	// Gathering pace first (the transition's root does), then the loop's 520 cm/s.
+	CHECK(early > 30.0f && early < 350.0f && current() == sRunL && std::fabs(hero.speed() - 520.0f) < 6.0f);
+	CHECK(angle(hero.yaw(), 0.0f) < 1e-4f && std::fabs(pl.feet.x + 1500.0f) < 0.5f && pl.feet.z > 800.0f);
+	// The view widens when the character runs: the looked-after point trails it.
 	cam = app.camera().pos;
-	CHECK(std::fabs(pl.feet.z - cam.z - 330.0f) < 3.0f);
-	// Sideways: the body faces where it goes, not where the camera looks.
-	for (int i = 0; i < 20; ++i) {
-		Input in;
-		in.moveX = -1.0f;
-		app.update(in, dt);
-	}
-	CHECK(angle(hero.yaw(), -1.5707963f) < 0.05f && hero.role() == Hero::RUN);
-	// Half a push of the stick: a walk, played faster than authored (192 over 150 cm/s).
-	for (int i = 0; i < 30; ++i) {
-		Input in;
-		in.moveZ = 0.37f;
-		app.update(in, dt);
-	}
-	CHECK(hero.role() == Hero::WALK && hero.animator().current() == hero.model().clip("S_WALKL"));
-	CHECK(std::fabs(hero.speed() - 0.37f * 520.0f) < 6.0f);
-	// Letting go: back to standing.
-	for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
-	CHECK(hero.role() == Hero::IDLE && hero.speed() < 5.0f);
-
-	// A jump: up, down, and on the ground again.
-	place(-1500, 0, 0);
-	int jumpFrames = 0, fallFrames = 0;
+	const float trail = pl.feet.z - cam.z;
+	CHECK(trail > behind + 150.0f && trail < behind + 230.0f);
+	// Letting go: the run is not cut off, it is run out - T_RUNL_2_RUN carries
+	// the body another 48 cm - and then the character stands.
+	const float zLet = pl.feet.z;
+	step(0.0f);
+	CHECK(current() == hero.clip("T_RUNL_2_RUN"));
+	for (int i = 0; i < 45; ++i) step(0.0f);
+	CHECK(current() == sRun && hero.role() == Hero::IDLE && hero.speed() < 2.0f);
+	CHECK(pl.feet.z - zLet > 40.0f && pl.feet.z - zLet < 62.0f);
+	// ... and the camera closes up again.
+	for (int i = 0; i < 60; ++i) step(0.0f);
+	CHECK(std::fabs(pl.feet.z - app.camera().pos.z - behind) < 3.0f);
+	// A tap is a commitment, as in the original: into the run, and out of it again.
+	const float zTap = pl.feet.z;
+	step(1.0f);
+	int busyFrames = 0;
 	for (int i = 0; i < 40; ++i) {
-		Input in;
-		in.jump = i == 0;
-		app.update(in, dt);
-		jumpFrames += hero.role() == Hero::JUMP;
-		fallFrames += hero.role() == Hero::FALL;
+		step(0.0f);
+		busyFrames += current() != sRun;
 	}
-	CHECK(jumpFrames > 4 && fallFrames > 4 && hero.role() == Hero::IDLE && pl.grounded);
+	CHECK(pl.feet.z - zTap > 100.0f && busyFrames >= 13 && current() == sRun);
+
+	// ---- turning: the character, not the camera ----
+	place(-1500, 0, 0);
+	const Vec3 spot = pl.feet;
+	for (int i = 0; i < 30; ++i) step(0.0f, 1.0f);
+	CHECK(current() == hero.clip("T_RUNTURNR") && hero.role() == Hero::TURN);
+	CHECK(std::fabs(hero.yaw() - 95.0f * deg) < 0.02f); // a second at 95 degrees a second
+	CHECK(length(pl.feet - spot) < 0.5f);
+	// The camera swings round after it: behind for a moment, then behind again.
+	CHECK(angle(app.camera().yaw, hero.yaw()) > 0.05f);
+	for (int i = 0; i < 60; ++i) step(0.0f);
+	CHECK(current() == sRun && angle(app.camera().yaw, hero.yaw()) < 0.01f);
+	cam = app.camera().pos;
+	CHECK(std::fabs(cam.x - (spot.x - std::sin(hero.yaw()) * behind)) < 2.0f && std::fabs(cam.z - (spot.z - std::cos(hero.yaw()) * behind)) < 2.0f);
+	for (int i = 0; i < 15; ++i) step(0.0f, -1.0f);
+	CHECK(current() == hero.clip("T_RUNTURNL") && hero.yaw() < 95.0f * deg - 0.7f);
+	// The second stick turns it too, faster (the original's mouse).
+	place(-1500, 0, 0);
+	for (int i = 0; i < 15; ++i) {
+		Input in;
+		in.lookX = 1.0f;
+		app.update(in, dt);
+	}
+	CHECK(std::fabs(hero.yaw() - 90.0f * deg) < 0.02f);
+	// Running and turning: a curve, leaning into it (at most 14.5 degrees).
+	place(-1500, 0, 0);
+	for (int i = 0; i < 45; ++i) step(1.0f, 1.0f);
+	CHECK(current() == sRunL && hero.yaw() > 2.0f && hero.lean() > 0.08f && hero.lean() <= 0.2531f);
+	CHECK(pl.feet.x > spot.x + 100.0f);
+	for (int i = 0; i < 45; ++i) step(1.0f, -1.0f);
+	CHECK(hero.lean() < -0.08f);
+	for (int i = 0; i < 60; ++i) step(0.0f);
+	CHECK(std::fabs(hero.lean()) < 1e-3f);
+
+	// ---- back: a hop back, and another while the stick is held ----
+	place(-1500, 0, 0);
+	step(-1.0f);
+	CHECK(current() == hero.clip("T_JUMPB") && hero.role() == Hero::BACK);
+	for (int i = 0; i < 13; ++i) step(0.0f);
+	CHECK(current() == sRun && std::fabs(pl.feet.z + 63.6f) < 1.0f); // the whole hop, though the stick was let go
+	for (int i = 0; i < 60; ++i) step(-1.0f);
+	CHECK(pl.feet.z < -63.0f - 220.0f);
+	// ---- a step sideways: left is -X when facing +Z ----
+	place(-1500, 0, 0);
+	step(0.0f, 0.0f, -1.0f);
+	CHECK(current() == hero.clip("T_RUNSTRAFEL") && hero.role() == Hero::STRAFE);
+	for (int i = 0; i < 16; ++i) step(0.0f);
+	CHECK(current() == sRun && std::fabs(pl.feet.x + 1555.4f) < 1.0f && std::fabs(pl.feet.z) < 1.0f);
+	for (int i = 0; i < 40; ++i) step(0.0f, 0.0f, 1.0f);
+	CHECK(pl.feet.x > -1555.0f + 100.0f && hero.clip("T_RUNSTRAFER") != nullptr);
+
+	// ---- walking: a slight push of the stick, or walk mode ----
+	place(-1500, 0, 0);
+	for (int i = 0; i < 30; ++i) step(0.5f);
+	CHECK(current() == sWalkL && hero.role() == Hero::WALK && std::fabs(hero.speed() - 150.0f) < 4.0f);
+	// Pushed all the way: into the run, by the fade the script names (no animation for it).
+	step(1.0f);
+	CHECK(current() == sRunL);
+	for (int i = 0; i < 20; ++i) step(1.0f);
+	CHECK(std::fabs(hero.speed() - 520.0f) < 8.0f);
+	for (int i = 0; i < 30; ++i) step(0.0f);
+	{
+		Input in;
+		in.toggleWalk = true;
+		app.update(in, dt);
+		CHECK(hero.walking());
+		for (int i = 0; i < 20; ++i) step(0.0f);
+		CHECK(current() == sWalk);
+		for (int i = 0; i < 30; ++i) step(1.0f);
+		CHECK(current() == sWalkL && std::fabs(hero.speed() - 150.0f) < 4.0f);
+		for (int i = 0; i < 20; ++i) step(0.0f);
+		app.update(in, dt);
+		CHECK(!hero.walking());
+		for (int i = 0; i < 20; ++i) step(0.0f);
+		CHECK(current() == sRun);
+	}
+
+	// ---- jumping: the take-off animation carries the body ----
+	place(-1500, 0, 0);
+	step(0.0f, 0.0f, 0.0f, true);
+	CHECK(hero.body() == Hero::TAKEOFF && current() == hero.clip("T_STAND_2_JUMP") && hero.role() == Hero::JUMP);
+	float top = 0, lowest = 0;
+	int takeoffFrames = 0, airFrames = 0, landFrames = 0;
+	bool hipsKept = true;
+	float deepest = 95.0f;
+	for (int i = 0; i < 70; ++i) {
+		step(0.0f);
+		top = std::max(top, pl.feet.y);
+		lowest = std::min(lowest, pl.feet.y);
+		takeoffFrames += hero.body() == Hero::TAKEOFF;
+		airFrames += hero.body() == Hero::AIRBORNE;
+		landFrames += current() == hero.clip("T_JUMP_2_STAND");
+		// While the animation's height is in the body, the hips are drawn at
+		// their own; the crouch before the leap stays in the pose.
+		if (hero.body() == Hero::TAKEOFF) {
+			const float hips = hero.pose().pos[0].y;
+			deepest = std::min(deepest, hips);
+
+			hipsKept = hipsKept && hips < 95.5f && (pl.feet.y < 1.0f || std::fabs(hips - 95.0f) < 0.5f);
+		}
+		if (hero.body() == Hero::AIRBORNE) CHECK(current() == sJump || current() == hero.clip("T_STAND_2_JUMP"));
+	}
+	// Crouch (the body stays on the ground), 74 cm up with the animation, on a
+	// little by its own momentum, down again; 130 cm forward and what the flight adds.
+	CHECK(takeoffFrames >= 12 && takeoffFrames <= 15 && airFrames > 8 && landFrames >= 4 && hipsKept);
+	std::printf("  jump: crouch to %.1f cm (hips at rest: 95), top %.1f cm, landed at z = %.0f\n", double(deepest), double(top), double(pl.feet.z));
+	CHECK(deepest < 90.0f && deepest > 60.0f);
+	CHECK(top > 75.0f && top < 100.0f && lowest > -0.5f);
+	CHECK(pl.grounded && hero.body() == Hero::GROUNDED && current() == sRun && std::fabs(pl.feet.y) < 0.3f);
+	CHECK(pl.feet.z > 200.0f && pl.feet.z < 420.0f);
+	// Out of the run: further and higher.
+	place(-1500, 0, 0);
+	for (int i = 0; i < 30; ++i) step(1.0f);
+	const float zRun = pl.feet.z;
+	step(1.0f, 0.0f, 0.0f, true);
+	CHECK(current() == hero.clip("T_RUNL_2_JUMP") && hero.body() == Hero::TAKEOFF);
+	top = 0;
+	int f = 0;
+	for (; f < 80 && !(pl.grounded && hero.body() == Hero::GROUNDED && f > 5); ++f) {
+		step(1.0f);
+		top = std::max(top, pl.feet.y);
+	}
+	CHECK(f < 60 && top > 85.0f && top < 130.0f && pl.feet.z - zRun > 350.0f);
+	// Landing in a run: straight back into it (the script's fade), no stop.
+	step(1.0f);
+	CHECK(current() == sRunL);
+	// Holding the button is one jump, not a row of them.
+	place(-1500, 0, 0);
+	int jumps = 0;
+	for (int i = 0; i < 90; ++i) {
+		const Hero::Body before = hero.body();
+		step(0.0f, 0.0f, 0.0f, true);
+		jumps += before != Hero::TAKEOFF && hero.body() == Hero::TAKEOFF;
+	}
+	CHECK(jumps == 1);
+
+	// ---- falling: off a platform, with the pace it had ----
+	app.camera().yaw = 90.0f * deg;
+	app.teleport({-3200, 180.0f + 170.0f, 0});
+	for (int i = 0; i < 30; ++i) step(0.0f);
+	CHECK(pl.grounded && std::fabs(pl.feet.y - 180.0f) < 0.5f && angle(hero.yaw(), 90.0f * deg) < 1e-3f);
+	int fallFrames = 0, landing = 0;
+	float xLeft = 0, xLanded = 0;
+	for (int i = 0; i < 90; ++i) {
+		const bool wasGrounded = pl.grounded;
+		step(i < 22 ? 1.0f : 0.0f); // let go in the air: it lands standing
+		if (wasGrounded && !pl.grounded) xLeft = pl.feet.x;
+		if (!wasGrounded && pl.grounded) xLanded = pl.feet.x;
+		fallFrames += hero.role() == Hero::FALL && current() == hero.clip("S_FALLDN");
+		landing += current() == hero.clip("T_FALLDN_2_STAND");
+	}
+	CHECK(fallFrames > 5 && landing >= 4 && pl.grounded && std::fabs(pl.feet.y) < 0.3f && current() == sRun);
+	CHECK(xLeft > -3010.0f && xLanded - xLeft > 200.0f); // 0.6 s of falling at 520 cm/s
+	// Landing in a run, there is no stop: straight on.
+	app.camera().yaw = 90.0f * deg;
+	app.teleport({-3200, 180.0f + 170.0f, 0});
+	for (int i = 0; i < 30; ++i) step(0.0f);
+	for (int i = 0; i < 60; ++i) step(1.0f);
+	CHECK(pl.grounded && std::fabs(pl.feet.y) < 0.3f && current() == sRunL && pl.feet.x > -2400.0f);
 	// A 30 cm step up and down is not a jump or a fall.
 	place(0, 1200, 0);
-	int airFrames = 0;
-	for (int i = 0; i < 60; ++i) {
-		Input in;
-		in.moveZ = 1.0f;
-		app.update(in, dt);
-		airFrames += hero.role() == Hero::JUMP || hero.role() == Hero::FALL;
+	int offGround = 0;
+	for (int i = 0; i < 70; ++i) {
+		step(1.0f);
+		offGround += hero.role() == Hero::JUMP || hero.role() == Hero::FALL;
 	}
-	CHECK(pl.feet.z > 2100.0f && airFrames == 0);
+	CHECK(pl.feet.z > 2100.0f && offGround == 0 && current() == sRunL);
 	// A teleport is not a sprint.
 	app.teleport({-2000, 220, -2000});
 	app.update(Input {}, dt);
-	CHECK(hero.speed() < 1.0f && std::fabs(hero.feet().x + 2000.0f) < 1e-3f);
+	CHECK(hero.speed() < 1.0f && std::fabs(hero.feet().x + 2000.0f) < 1e-3f && current() == sRun);
 
-	// Lit like the ground it stands on, tinted by the time of day.
+	// ---- light: like the ground it stands on, tinted by the time of day ----
 	place(-1500, 0, 0);
 	const float bright = hero.light()[1];
 	place(500, 0, 0);
@@ -2586,98 +2812,210 @@ static void testHero() {
 	CHECK(hero.light()[1] < bright * 0.6f && hero.light()[1] >= 0.22f - 1e-3f);
 	app.environment().timeOfDay = 13.0f;
 
-	// The camera and the wall at x = 1000. Looking along -X with the wall
-	// behind: 2 m of room, so the boom is cut short and the camera stays this
-	// side of the wall ...
+	// ---- the camera and the wall at x = 1000 ----
+	// Facing away from it with two metres of room: the camera stays this side.
 	place(800, 0, -90);
 	cam = app.camera().pos;
-	CHECK(cam.x < 1000.0f - 23.0f && cam.x > 950.0f && app.heroVisible());
-	// ... and with the back to the wall there is no room at all: the view is
-	// (nearly) the character's own, and the character is not drawn.
+	CHECK(cam.x < 1000.0f - 23.0f && cam.x > 930.0f && app.heroVisible());
+	// With the back to the wall there is no room behind: the view from above,
+	// as the game does it - the character stays in the picture.
 	place(960, 0, -90);
 	cam = app.camera().pos;
-	CHECK(!app.heroVisible() && cam.x - pl.feet.x < 25.0f && cam.x - pl.feet.x >= 0.0f && cam.x < 1000.0f - 23.0f &&
-	      std::fabs(cam.y - 155.0f) < 1e-3f);
+	CHECK(app.heroVisible() && cam.x < 1000.0f - 23.0f && cam.y > 95.0f + 135.0f && app.camera().pitch < -0.8f);
 	app.render();
-	CHECK(gfx::softStats().skinnedTriangles == 0);
-	// Walking away from it: the camera never enters the wall and comes back
-	// out gently (no jump of more than a step and a bit per frame).
-	float worstJump = 0, boomBefore = pl.feet.x - cam.x;
+	CHECK(gfx::softStats().skinnedPixels > 500);
+	// Running away from it, and swinging round next to it: never inside the wall, and no jumps.
 	bool inWall = false;
+	float worstJump = 0;
+	Vec3 last = app.camera().pos;
 	for (int i = 0; i < 60; ++i) {
-		Input in;
-		in.moveZ = 1.0f;
-		app.update(in, dt);
+		step(1.0f);
 		cam = app.camera().pos;
 		inWall = inWall || cam.x > 1000.0f - 23.0f;
-		const float boom = cam.x - pl.feet.x;
-		worstJump = std::max(worstJump, std::fabs(boom - boomBefore));
-		boomBefore = boom;
+		if (i > 0) worstJump = std::max(worstJump, length(cam - last) - 520.0f * dt);
+		last = cam;
 	}
-	CHECK(!inWall && app.heroVisible() && worstJump < 75.0f);
-	CHECK(std::fabs(cam.x - pl.feet.x - 330.0f) < 12.0f);
-	// Swinging the camera round so that the wall comes between: in at once.
+	CHECK(!inWall && app.heroVisible() && worstJump < 60.0f);
 	place(900, 0, 0);
-	for (int i = 0; i < 40; ++i) {
-		Input in;
-		in.lookX = -1.0f; // turn left: the camera swings towards +X
-		app.update(in, dt);
+	for (int i = 0; i < 30; ++i) {
+		step(0.0f, -1.0f); // turning left: the camera swings towards +X, where the wall is
 		inWall = inWall || app.camera().pos.x > 1000.0f - 23.0f;
 	}
-	CHECK(!inWall);
+	CHECK(!inWall && hero.yaw() < -1.5f);
 
-	// First person on request, and always while flying.
+	// ---- the view: tilting, first person, flying ----
 	place(-1500, 0, 0);
+	const float camY = app.camera().pos.y;
+	for (int i = 0; i < 20; ++i) {
+		Input in;
+		in.lookY = 1.0f; // looking up: the camera sinks
+		app.update(in, dt);
+	}
+	for (int i = 0; i < 30; ++i) step(0.0f);
+	CHECK(app.camera().pos.y < camY - 60.0f && angle(hero.yaw(), 0.0f) < 1e-4f && app.camera().pitch > -0.19f + 0.3f);
 	Input toggle;
 	toggle.toggleCamera = true;
 	app.update(toggle, dt);
 	CHECK(!app.thirdPerson() && !app.heroVisible() && std::fabs(app.camera().pos.y - pl.eye().y) < 1e-3f &&
-	      std::fabs(app.camera().pos.z - pl.feet.z) < 1e-3f);
+	      std::fabs(app.camera().pos.z - pl.feet.z) < 1e-3f && app.camera().pitch == 0.0f);
 	app.render();
 	CHECK(gfx::softStats().skinnedTriangles == 0);
+	// Through its eyes the character is steered all the same.
+	for (int i = 0; i < 30; ++i) step(1.0f, 1.0f);
+	CHECK(pl.feet.z > 100.0f && angle(app.camera().yaw, hero.yaw()) < 1e-4f && hero.yaw() > 1.5f && app.steersHero());
 	app.update(toggle, dt);
-	CHECK(app.thirdPerson());
-	for (int i = 0; i < 10; ++i) app.update(Input {}, dt); // the camera pulls back out
-	CHECK(app.heroVisible() && pl.feet.z - app.camera().pos.z > 200.0f);
+	CHECK(app.thirdPerson() && app.heroVisible());
+	// Flying is a free camera again; landing puts the character where it is, facing where it looks.
 	Input fly;
 	fly.toggleFly = true;
 	app.update(fly, dt);
-	CHECK(pl.flying && !app.heroVisible() && std::fabs(app.camera().pos.z - pl.feet.z) < 1e-3f);
+	CHECK(pl.flying && !app.steersHero() && !app.heroVisible() && std::fabs(app.camera().pos.z - pl.feet.z) < 1e-3f);
+	const float flyYaw = app.camera().yaw;
+	for (int i = 0; i < 10; ++i) {
+		Input in;
+		in.lookX = 1.0f;
+		in.moveX = 1.0f; // sideways, as a free camera goes
+		app.update(in, dt);
+	}
+	CHECK(std::fabs(app.camera().yaw - flyYaw - 0.6f) < 0.01f);
 	app.update(fly, dt);
-	CHECK(!pl.flying);
+	for (int i = 0; i < 40; ++i) step(0.0f);
+	CHECK(!pl.flying && app.steersHero() && pl.grounded && angle(hero.yaw(), flyYaw + 0.6f) < 0.01f && app.heroVisible());
+	CHECK(length(hero.feet() - pl.feet) < 1e-3f);
 
-	// Into the cave and its pool: wading is a walk, then the body lies in the
-	// surface with its hips a hand below it, and swims as fast as it moves.
+	// ---- where the game is left, it goes on: place and heading ----
+	place(-1200, 300, 135);
+	const std::string statePath = gDir + "/hero-state.bin";
+	CHECK(app.saveState(statePath.c_str()));
+	place(0, 0, 0);
+	CHECK(app.loadState(statePath.c_str()));
+	for (int i = 0; i < 30; ++i) step(0.0f);
+	CHECK(std::fabs(pl.feet.x + 1200.0f) < 1.0f && std::fabs(pl.feet.z - 300.0f) < 1.0f && angle(hero.yaw(), 135.0f * deg) < 1e-3f);
+
+	// ---- water: wading is a walk, deep water carries the body ----
 	Input next;
 	next.nextWorld = true;
 	app.update(next, dt);
 	CHECK(app.world().indoor() && hero.loaded());
 	app.world().preload(app.camera().pos);
+	for (int i = 0; i < 20; ++i) step(0.0f);
 	int wadeWalk = 0, wadeFrames = 0, swimFrames = 0;
-	for (int i = 0; i < 220 && swimFrames < 40; ++i) {
-		Input in;
-		in.moveZ = 1.0f;
-		app.update(in, dt);
+	for (int i = 0; i < 400 && swimFrames < 60; ++i) {
+		step(1.0f);
 		if (pl.swimming) {
 			++swimFrames;
-		} else if (pl.waterDepth > pl.config.wadeDepth && pl.grounded) {
+		} else if (pl.waterDepth > pl.config.wadeDepth + 5.0f && pl.grounded) {
 			++wadeFrames;
 			wadeWalk += hero.role() == Hero::WALK;
 		}
 	}
-	CHECK(wadeFrames > 5 && wadeWalk >= wadeFrames - 3 && swimFrames == 40);
-	CHECK(hero.role() == Hero::SWIM && hero.animator().current() == hero.model().clip("S_SWIMF"));
+	CHECK(wadeFrames > 5 && wadeWalk >= wadeFrames - 3 && swimFrames == 60);
+	CHECK(hero.body() == Hero::SWIMMING && hero.role() == Hero::SWIM && current() == hero.clip("S_SWIMF"));
+	CHECK(std::fabs(hero.speed() - 260.0f) < 8.0f);
+	// The hips at their own height above the floating body: 30 cm under the surface.
 	const float surface = pl.feet.y + pl.waterDepth;
-	CHECK(std::fabs(hero.origin().y + hero.animator().pose().pos[0].y - (surface - 22.0f)) < 3.0f);
+	CHECK(std::fabs(pl.waterDepth - pl.config.swimDepth) < 2.0f && std::fabs(pl.feet.y + hero.pose().pos[0].y - (surface - 30.0f)) < 2.0f);
 	app.render();
 	CHECK(gfx::softStats().skinnedPixels > 200);
-	for (int i = 0; i < 30; ++i) app.update(Input {}, dt);
-	CHECK(pl.swimming && hero.role() == Hero::SWIM_IDLE && hero.animator().current() == hero.model().clip("S_SWIM"));
+	for (int i = 0; i < 30; ++i) step(0.0f);
+	CHECK(pl.swimming && hero.role() == Hero::SWIM_IDLE && current() == hero.clip("S_SWIM") && hero.speed() < 5.0f);
+	const float zSwim = pl.feet.z;
+	for (int i = 0; i < 30; ++i) step(-1.0f);
+	CHECK(current() == hero.clip("S_SWIMB") && pl.feet.z < zSwim - 80.0f);
 
 	app.shutdown();
 	CHECK(gfx::memStats().meshCount == 0 && gfx::memStats().textureCount == 0);
 
-	// An archive without a character: first person, whatever was asked for.
+	// ---- the game's own camera set-up, carried in the archive ----
+	{
+		PakWriter writer;
+		std::vector<BakeWorld> one(1);
+		one[0] = worlds[0];
+		bakeWorlds(one, models, bo, writer);
+		CameraSet set = defaultCameraSet();
+		set.fromGame = 1;
+		set.mode[CAMERA_NORMAL] = {4.0f, 2.0f, 10.0f, 40.0f, 0.0f, 89.0f, 0.0f, -90.0f, 90.0f, 10.0f, 0.0f, 0.0f, 20.0f, 0.0f, 80.0f, 2.0f};
+		const u8* bytes = reinterpret_cast<const u8*>(&set);
+		writer.add("meta/camera", ASSET_META, std::vector<u8>(bytes, bytes + sizeof(set)));
+		const std::string camPath = gDir + "/camera.pak";
+		writer.write(camPath);
+		App a;
+		CHECK(a.init(camPath.c_str(), nullptr));
+		a.world().preload(a.camera().pos);
+		for (int i = 0; i < 60; ++i) a.update(Input {}, dt);
+		CHECK(a.cameraSet().fromGame == 1);
+		// Four metres from the hips (and 20 cm above them: the target offset), at 40 degrees.
+		const Vec3 c = a.camera().pos, feet = a.player().feet;
+		CHECK(std::fabs(c.y - (feet.y + 95.0f + 20.0f + 400.0f * std::sin(40.0f * deg))) < 1.0f);
+		CHECK(std::fabs(feet.z - c.z - 400.0f * std::cos(40.0f * deg)) < 1.0f);
+		CHECK(std::fabs(a.camera().pitch - (-40.0f + 10.0f - 5.82f) * deg) < 0.01f);
+		a.shutdown();
+
+		// Nonsense in its place is not believed.
+		PakWriter bad;
+		bakeWorlds(one, models, bo, bad);
+		set.mode[CAMERA_NORMAL].bestRange = 4000.0f;
+		bad.add("meta/camera", ASSET_META, std::vector<u8>(bytes, bytes + sizeof(set)));
+		const std::string badPath = gDir + "/badcamera.pak";
+		bad.write(badPath);
+		App b;
+		CHECK(b.init(badPath.c_str(), nullptr));
+		CHECK(b.cameraSet().fromGame == 0 && b.cameraSet().mode[CAMERA_NORMAL].bestRange == 2.5f);
+		b.shutdown();
+	}
+
+	// ---- take-off animations that do not lift the body: thrown instead ----
+	// (Whether the game's own do is not known before its files are baked.)
+	{
+		std::vector<SrcModel> flat = models;
+		for (SrcClip& clip : flat[0].clips)
+			if (clip.name == "T_STAND_2_JUMP" || clip.name == "T_RUNL_2_JUMP")
+				for (size_t i = 0; i < clip.samples.size(); i += clip.nodes.size()) clip.samples[i].pos[1] = clip.samples[0].pos[1];
+		PakWriter writer;
+		std::vector<BakeWorld> one(1);
+		one[0] = worlds[0];
+		const BakeResult r = bakeWorlds(one, flat, bo, writer);
+		CHECK(r.report.find("T_STAND_2_JUMP 0.48s 239cm/s,") != std::string::npos); // no "up ... cm"
+		const std::string flatPath = gDir + "/flatjump.pak";
+		writer.write(flatPath);
+		App a;
+		CHECK(a.init(flatPath.c_str(), nullptr));
+		a.world().preload(a.camera().pos);
+		Player& p = a.player();
+		auto go = [&](float forward, bool jump) {
+			Input in;
+			in.moveZ = forward;
+			in.jump = jump;
+			a.update(in, dt);
+		};
+		for (int variant = 0; variant < 2; ++variant) {
+			a.camera().yaw = 0;
+			a.teleport({-1500, 220.0f, 0});
+			for (int i = 0; i < 60; ++i) go(0.0f, false);
+			const float pace = variant ? 1.0f : 0.0f;
+			for (int i = 0; i < 30; ++i) go(pace, false);
+			const float z0 = p.feet.z;
+			go(pace, true);
+			CHECK(a.hero().body() == Hero::AIRBORNE && a.hero().role() == Hero::JUMP);
+			float peak = 0;
+			int frames = 0;
+			for (; frames < 90 && !(p.grounded && frames > 3); ++frames) {
+				go(pace, false);
+				peak = std::max(peak, p.feet.y);
+			}
+			// 408 cm/s up against 981 cm/s^2: 85 cm, 0.83 s - and forward at
+			// the pace of the take-off animation (239 cm/s; out of the run 480).
+			std::printf("  thrown jump %s: top %.1f cm, %d frames, %.0f cm forward\n", variant ? "from a run" : "from standing", double(peak),
+			            frames, double(p.feet.z - z0));
+			CHECK(peak > 75.0f && peak < 90.0f && frames > 20 && frames < 30);
+			CHECK(variant ? p.feet.z - z0 > 350.0f : (p.feet.z - z0 > 150.0f && p.feet.z - z0 < 230.0f));
+			for (int i = 0; i < 40; ++i) go(0.0f, false);
+			CHECK(a.hero().body() == Hero::GROUNDED && a.hero().animator().current() == a.hero().clip("S_RUN"));
+		}
+		a.shutdown();
+	}
+
+	// ---- an archive without a character: a free first-person camera ----
 	{
 		PakWriter writer;
 		std::vector<BakeWorld> one(1);
@@ -2690,8 +3028,16 @@ static void testHero() {
 		a.world().preload(a.camera().pos);
 		a.setThirdPerson(true);
 		for (int i = 0; i < 30; ++i) a.update(Input {}, dt);
-		CHECK(!a.hero().loaded() && !a.thirdPerson() && !a.heroVisible() && std::fabs(a.camera().pos.y - 170.0f) < 1.0f);
-		CHECK(a.player().config.walkSpeed == 480.0f);
+		CHECK(!a.hero().loaded() && !a.thirdPerson() && !a.steersHero() && !a.heroVisible() && std::fabs(a.camera().pos.y - 170.0f) < 1.0f);
+		// The stick moves sideways and the view turns with the other one, as before.
+		const float x0 = a.player().feet.x;
+		for (int i = 0; i < 30; ++i) {
+			Input in;
+			in.moveX = 1.0f;
+			in.lookX = 0.5f;
+			a.update(in, dt);
+		}
+		CHECK(a.player().feet.x > x0 + 300.0f && std::fabs(a.camera().yaw - 0.9f) < 0.01f);
 		a.render();
 		CHECK(gfx::softStats().skinnedTriangles == 0);
 		a.shutdown();

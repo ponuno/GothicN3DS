@@ -10,15 +10,22 @@
 namespace g3 {
 
 struct Camera {
-	Vec3 pos {0, 0, 0}; // follows the player's eyes
+	Vec3 pos {0, 0, 0};
 	float yaw = 0, pitch = 0;
 	float fovY = 1.0472f; // 60 degrees
 	float zNear = 20.0f;  // cm
 	float zFar = 14000.0f;
-	// Third person: the camera circles a point above the character's feet.
-	float distance = 330.0f;    // cm behind it
-	float pivotHeight = 155.0f; // cm above the feet
-	float boomRadius = 24.0f;   // how much room the camera keeps from walls (the near plane reaches 30 cm sideways)
+	// Third person. The view is set up as the game's camera scripts say (the
+	// archive carries them, see CameraSet): a range behind the character at
+	// an elevation, looking at its hips and then tilted up, so that the
+	// character stands in the lower half of the picture. It follows with a
+	// lag: the point it looks after trails the character (which is why the
+	// view widens when the character runs), and the camera trails the place
+	// it should be at (which is why it swings round after a turn).
+	float boomRadius = 24.0f;  // how much room the camera keeps from walls (the near plane reaches 30 cm sideways)
+	float targetPace = 3.0f;   // 1/s: how eagerly the looked-after point follows the character
+	float topDownBelow = 80.0f; // cm: with less room behind than this the camera looks down from above instead
+	float topDownRange = 150.0f, topDownElevation = 80.0f;
 };
 
 struct Environment {
@@ -57,6 +64,12 @@ public:
 	Environment& environment() { return _env; }
 	Player& player() { return _player; }
 	const Hero& hero() const { return _hero; }
+	// True if the player steers a character (see Input); false with an
+	// archive that has none, and while flying.
+	bool steersHero() const { return _hero.loaded() && !_player.flying; }
+	// Where the player (the character, or the free camera) faces.
+	float heading() const { return _hero.loaded() ? _hero.yaw() : _cam.yaw; }
+	const CameraSet& cameraSet() const { return _cams; }
 	// Third person needs a character; without one the view is first-person.
 	bool thirdPerson() const { return _thirdPerson && _hero.loaded(); }
 	void setThirdPerson(bool on) { _thirdPerson = on; }
@@ -96,7 +109,11 @@ private:
 	bool _underwater = false;
 	bool _thirdPerson = true; // wanted; see thirdPerson()
 	bool _heroVisible = false;
-	float _boom = 0; // current camera distance
+	CameraSet _cams = defaultCameraSet();
+	Vec3 _camTarget {0, 0, 0}, _camOrigin {0, 0, 0}; // the looked-after point and the camera, both trailing
+	bool _camPlaced = false;   // false: the next frame puts the camera where it belongs at once
+	float _camElevation = 0;   // degrees the player has tilted the view away from the script's elevation
+	float _eyePitch = 0;       // first person with a character: looking up and down
 };
 
 } // namespace g3

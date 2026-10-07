@@ -2,11 +2,17 @@
 // text console with the numbers that matter for the feasibility check
 // (frame time split into CPU and GPU, triangles, streaming, memory).
 //
-// Controls: Circle Pad move, C-Stick or A/B/X/Y look, R jump,
-//           L third person <-> first person,
-//           ZL or ZR run fast, D-Pad Left/Right draw distance,
-//           D-Pad Down advance the time of day, D-Pad Up next world (debug),
-//           SELECT toggle fly mode (in fly mode L/R move down/up), START exit.
+// Controls, as in the original game - the character is steered, the view
+// follows it:
+//   Circle Pad    up: run (a slight push: walk), down: hop back, left/right: turn
+//   C-Stick       left/right: turn (faster), up/down: tilt the view
+//   L / R         step left / right
+//   B             jump          X  walk <-> run          Y  third <-> first person
+//   D-Pad         left/right: draw distance, down: time of day, up: next world (debug)
+//   SELECT        fly mode (a free camera: Circle Pad move, C-Stick or A/B/X/Y look,
+//                 L/R down/up, ZL or ZR fast)
+//   START         exit
+// An archive without a character is walked with the free camera, too (R jumps).
 // The position is saved on exit and restored on the next start; hold L while
 // starting to begin at the world's start point instead.
 //
@@ -14,7 +20,7 @@
 //   B  load chunks on the frame's own thread, as before (no background loading)
 //   X  no frame pacer (fixed object distances, never 30 fps)
 //   Y  citro3d's own frame order: the GPU waits while the CPU issues the draws
-//   A  first person from the start (the character is not drawn until L is pressed)
+//   A  first person from the start (the character is not drawn until Y is pressed)
 //   R  the vertex shader of the versions before characters; no character at all
 #include "app.h"
 #include "gfx_c3d.h"
@@ -37,6 +43,10 @@ namespace gfx = g3::gfx;
 static const char* kPakPath = "sdmc:/3ds/gothic3ds/data.pak";
 // Where the player was when the program was left; the next start continues there.
 static const char* kStatePath = "sdmc:/3ds/gothic3ds/state.bin";
+
+// The application: 13 KB, with the character's poses in it. Not a local of
+// main(): the stack is 32 KB.
+static App gApp;
 
 static float stick(int v) {
 	const float dead = 18.0f, full = 140.0f;
@@ -94,7 +104,7 @@ int main(int, char**) {
 	gfx::c3dSetClassicFrames(classic);
 	gfx::c3dSetPlainShader(plainShader);
 
-	App app;
+	App& app = gApp;
 	// Chunks are read, unpacked and given their collision grids on a worker
 	// thread; the frame only copies the finished mesh into video memory.
 	g3::StreamConfig& stream = app.world().config();
@@ -154,15 +164,21 @@ int main(int, char**) {
 		in.moveZ = stick(pad.dy);
 		in.lookX = stick(cstick.dx);
 		in.lookY = stick(cstick.dy);
-		if (held & KEY_A) in.lookX = 1.0f;
-		if (held & KEY_Y) in.lookX = -1.0f;
-		if (held & KEY_X) in.lookY = 1.0f;
-		if (held & KEY_B) in.lookY = -1.0f;
-		in.moveY = (held & KEY_R ? 1.0f : 0.0f) - (held & KEY_L ? 1.0f : 0.0f);
-		in.fast = (held & (KEY_ZL | KEY_ZR)) != 0;
-		in.jump = (held & KEY_R) != 0;
+		if (app.steersHero()) {
+			in.strafe = (held & KEY_R ? 1.0f : 0.0f) - (held & KEY_L ? 1.0f : 0.0f);
+			in.jump = (held & KEY_B) != 0;
+			in.toggleWalk = (down & KEY_X) != 0;
+			in.toggleCamera = (down & KEY_Y) != 0 && !plainShader;
+		} else {
+			if (held & KEY_A) in.lookX = 1.0f;
+			if (held & KEY_Y) in.lookX = -1.0f;
+			if (held & KEY_X) in.lookY = 1.0f;
+			if (held & KEY_B) in.lookY = -1.0f;
+			in.moveY = (held & KEY_R ? 1.0f : 0.0f) - (held & KEY_L ? 1.0f : 0.0f);
+			in.jump = (held & KEY_R) != 0;
+			in.fast = (held & (KEY_ZL | KEY_ZR)) != 0;
+		}
 		in.toggleFly = (down & KEY_SELECT) != 0;
-		in.toggleCamera = (down & KEY_L) != 0 && !app.player().flying && !plainShader;
 		in.nextWorld = (down & KEY_DUP) != 0;
 		if (down & KEY_DDOWN) in.timeStep = 1.0f;
 
@@ -248,9 +264,10 @@ int main(int, char**) {
 			if (plainShader) {
 				reportLine("hero off: plain shader (R at start)");
 			} else if (hero.loaded()) {
-				static const char* const kRoles[g3::Hero::ROLE_COUNT] = {"stand", "run", "walk", "jump", "fall", "swim", "float"};
-				reportLine("hero %-5s %3.0f cm/s %s%s", kRoles[hero.role()], double(hero.speed()),
-				     app.thirdPerson() ? "3rd person" : "1st person", app.heroVisible() ? "" : " hid");
+				static const char* const kRoles[g3::Hero::ROLE_COUNT] = {"stand", "run", "walk", "back", "step",
+				                                                         "turn",  "jump", "fall", "swim", "float"};
+				reportLine("hero %-5s %3.0f cm/s %s%s cam %s", kRoles[hero.role()], double(hero.speed()),
+				     hero.walking() ? "walk " : "", app.thirdPerson() ? "3rd" : "1st", app.cameraSet().fromGame ? "game" : "own");
 			} else {
 				reportLine("hero: none in data.pak");
 			}

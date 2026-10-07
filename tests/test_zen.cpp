@@ -657,6 +657,13 @@ const char kHeroScript[] =
     "\t\tani (\"s_WalkL\" 1 \"s_WalkL\" 0.0 0.1 M. \"Fix_Hero_M02.asc\" F 0 3 FPS:25)\n"
     "\t\taniAlias (\"t_JumpB\" 1 \"s_Run\" 0.2 0.3 M. \"s_WalkL\" R)\n"
     "\t\taniAlias (\"s_Walk\" 1 \"s_Walk\" 0.0 0.0 M. \"t_JumpB\" R)\n"
+    // Transitions between the hero's states are brought along whatever they
+    // are - an animation of their own, an alias, a fade - and nothing else is.
+    "\t\taniAlias (\"t_Run_2_RunL\" 1 \"s_RunL\" 0.0 0.0 M. \"s_Run\" F)\n"
+    "\t\taniAlias (\"t_Stand_2_Jump\" 1 \"s_Jump\" 0.1 0.1 MF \"s_WalkL\" F)\n"
+    "\t\taniAlias (\"t_Dance_2_Run\" 1 \"s_Run\" 0.0 0.0 M. \"s_Run\" F)\n"
+    "\t\taniBlend (\"t_RunL_2_Run\" \"s_Run\" 0.2 0.3)\n"
+    "\t\taniBlend (\"t_Dance_2_Sleep\" \"s_Run\" 0.5 0.5)\n"
     "\t}\n}\n";
 
 void yellowPixel(int, int, uint8_t* p) {
@@ -741,7 +748,21 @@ void checkHero(std::shared_ptr<const ZenGame> game, const HeroCase& hc, const fs
 	}
 
 	// Clips: the two animations and the alias; everything else is reported missing.
-	CHECK(model.clips.size() == 4);
+	CHECK(model.clips.size() == 6 && model.blends.size() == 1);
+	if (model.blends.size() == 1)
+		CHECK(model.blends[0].name == "T_RUNL_2_RUN" && model.blends[0].next == "S_RUN" && std::fabs(model.blends[0].blendIn - 0.2f) < 1e-5f &&
+		      std::fabs(model.blends[0].blendOut - 0.3f) < 1e-5f);
+	{
+		const SrcClip* start = nullptr;
+		const SrcClip* takeOff = nullptr;
+		for (const SrcClip& c : model.clips) {
+			if (c.name == "T_RUN_2_RUNL") start = &c;
+			if (c.name == "T_STAND_2_JUMP") takeOff = &c;
+			CHECK(c.name != "T_DANCE_2_RUN");
+		}
+		CHECK(start && takeOff);
+		if (start && takeOff) CHECK(start->next == "S_RUNL" && start->moves && !start->fly && takeOff->next == "S_JUMP" && takeOff->fly && takeOff->moves);
+	}
 	CHECK(modelNote(model, zenGinConvention ? "rotations read conjugated" : "rotations read as stored"));
 	CHECK(modelNote(model, "animations not found") && modelNote(model, "S_SWIMF"));
 	CHECK(modelNote(model, "hips 90.0 cm above the ground at rest, 90.0 cm in S_RUN"));
@@ -789,7 +810,7 @@ void checkHero(std::shared_ptr<const ZenGame> game, const HeroCase& hc, const fs
 	bo.quiet = true;
 	PakWriter writer;
 	const ModelBakeResult baked = bakeModel(model, bo, writer);
-	CHECK(baked.clips == 4 && baked.triangles == 4 && baked.parts == 1 && baked.largestPalette == 4 && baked.textures == 1);
+	CHECK(baked.clips == 6 && baked.report.find("blends: 1: T_RUNL_2_RUN 0.30s") != std::string::npos && baked.triangles == 4 && baked.parts == 1 && baked.largestPalette == 4 && baked.textures == 1);
 	const std::string pakPath = (dir / "hero.pak").string();
 	writer.write(pakPath);
 	Pak pak;
@@ -801,18 +822,206 @@ void checkHero(std::shared_ptr<const ZenGame> game, const HeroCase& hc, const fs
 		CHECK(pak.read(*e, blob.data()));
 		ClipHeader h;
 		std::memcpy(&h, blob.data(), sizeof(h));
-		CHECK(h.magic == CLIP_MAGIC && h.trackCount == 3 && h.frameCount == 3 && (h.flags & CLIPF_LOOP) && (h.flags & CLIPF_MOVES));
+		CHECK(h.magic == CLIP_MAGIC && h.trackCount == 3 && h.frameCount == 3 && (h.flags & CLIPF_LOOP) && (h.flags & CLIPF_MOVES) &&
+		      !(h.flags & CLIPF_FLY));
+		CHECK(blob.size() == clipBlobSize(3, 3, true));
 		// 100.12 cm per frame at 10 frames per second.
 		CHECK(std::fabs(h.moveSpeed - std::sqrt(100.0f * 100.0f + 5.0f * 5.0f) * 10.0f) < 1.0f);
 		CHECK(h.next == hashName("S_RUN"));
 		const ClipSample* samples = reinterpret_cast<const ClipSample*>(blob.data() + sizeof(ClipHeader) + clipTrackTableSize(3));
+		const i16* motion = reinterpret_cast<const i16*>(blob.data() + clipSamplesEnd(3, 3));
 		for (int f = 0; f < 3; ++f) {
-			// The root stays over the origin (to what the file's 16-bit positions allow) ...
-			CHECK(std::fabs(float(samples[f * 3].pos[0]) * h.posScale) < 0.02f && std::fabs(float(samples[f * 3].pos[2]) * h.posScale) < 0.02f);
+			// The root is drawn over the character ...
+			CHECK(samples[f * 3].pos[0] == 0 && samples[f * 3].pos[2] == 0);
 			CHECK(std::fabs(float(samples[f * 3].pos[1]) * h.posScale - (90.0f + float(f))) < 0.01f); // ... but bobs
+			// ... and what it did in the file is where the clip carries the character.
+			CHECK(std::fabs(float(motion[f * 3]) * h.motionScale - 5.0f * float(f)) < 0.02f &&
+			      std::fabs(float(motion[f * 3 + 1]) * h.motionScale - float(f)) < 0.02f &&
+			      std::fabs(float(motion[f * 3 + 2]) * h.motionScale - 100.0f * float(f)) < 0.02f);
 		}
 	}
+	const PakEntry* je = pak.find("anim/hero/t_stand_2_jump");
+	CHECK(je && je->type == ASSET_CLIP);
+	if (je) {
+		std::vector<u8> blob(je->size);
+		CHECK(pak.read(*je, blob.data()));
+		ClipHeader h;
+		std::memcpy(&h, blob.data(), sizeof(h));
+		CHECK((h.flags & CLIPF_FLY) && (h.flags & CLIPF_MOVES) && !(h.flags & CLIPF_LOOP) && h.next == hashName("S_JUMP"));
+	}
 	CHECK(pak.find("model/hero") && pak.find("tex/fix_skin_v4_c1") && !pak.find("tex/fix_skin_v0_c0"));
+}
+
+void writeFile(const fs::path& path, const std::vector<std::byte>& data);
+std::vector<std::byte> readFile(const fs::path& path);
+
+// ---- the game's camera scripts ----
+//
+// A compiled Daedalus script (.DAT) the way the game's compiler writes it:
+// the class CCAMSYS with its members, the prototype CCAMSYS_DEF that sets the
+// defaults, and instances that call the prototype and change what differs.
+std::vector<std::byte> buildCameraDat(bool withNormal) {
+	static const char* const kMembers[23] = {"BESTRANGE", "MINRANGE", "MAXRANGE", "BESTELEVATION", "MINELEVATION", "MAXELEVATION",
+	                                         "BESTAZIMUTH", "MINAZIMUTH", "MAXAZIMUTH", "BESTROTZ", "MINROTZ", "MAXROTZ",
+	                                         "ROTOFFSETX", "ROTOFFSETY", "ROTOFFSETZ", "TARGETOFFSETX", "TARGETOFFSETY", "TARGETOFFSETZ",
+	                                         "VELOTRANS", "VELOROT", "TRANSLATE", "ROTATE", "COLLISION"};
+	enum { TYPE_FLOAT = 1, TYPE_INT = 2, TYPE_CLASS = 4, TYPE_PROTOTYPE = 6, TYPE_INSTANCE = 7, FLAG_CONST = 1, FLAG_MEMBER = 4 };
+	enum : uint8_t { OP_RSR = 60, OP_BL = 61, OP_PUSHI = 64, OP_PUSHV = 65, OP_MOVF = 73, OP_MOVI = 9 };
+	const uint32_t firstMember = 1, prototype = 24, firstInstance = 25;
+
+	// Code: `member = value;` is "push the value, push the member, assign".
+	std::vector<std::byte> code;
+	auto cw = zenkit::Write::to(&code);
+	uint32_t at = 0;
+	auto assign = [&](int member, float value) {
+		int32_t bits;
+		std::memcpy(&bits, &value, 4);
+		cw->write_ubyte(OP_PUSHI);
+		cw->write_int(bits);
+		cw->write_ubyte(OP_PUSHV);
+		cw->write_uint(firstMember + uint32_t(member));
+		cw->write_ubyte(OP_MOVF);
+		at += 11;
+	};
+	auto assignInt = [&](int member, int32_t value) {
+		cw->write_ubyte(OP_PUSHI);
+		cw->write_int(value);
+		cw->write_ubyte(OP_PUSHV);
+		cw->write_uint(firstMember + uint32_t(member));
+		cw->write_ubyte(OP_MOVI);
+		at += 11;
+	};
+	const uint32_t protoAt = at;
+	assign(0, 2.0f);   // bestRange
+	assign(1, 1.99f);  // minRange
+	assign(2, 4.01f);  // maxRange
+	assign(18, 40.0f); // veloTrans
+	assign(19, 2.0f);  // veloRot
+	assignInt(20, 1);
+	assignInt(21, 1);
+	assignInt(22, 1);
+	cw->write_ubyte(OP_RSR);
+	at += 1;
+	struct Instance {
+		const char* name;
+		uint32_t address;
+	};
+	std::vector<Instance> instances;
+	auto begin = [&](const char* name) {
+		instances.push_back({name, at});
+		cw->write_ubyte(OP_BL);
+		cw->write_uint(protoAt);
+		at += 5;
+	};
+	if (withNormal) {
+		begin("CAMMODNORMAL");
+		assign(0, 3.0f);
+		assign(1, 2.0f);
+		assign(2, 10.0f);
+		assign(3, 30.0f);   // bestElevation
+		assign(5, 89.0f);   // maxElevation
+		assign(7, -90.0f);  // minAzimuth
+		assign(8, 90.0f);   // maxAzimuth
+		assign(12, 23.0f);  // rotOffsetX
+		assign(16, 12.0f);  // targetOffsetY
+		cw->write_ubyte(OP_RSR);
+		at += 1;
+	}
+	begin("CAMMODSWIM");
+	assign(0, 3.5f);
+	assign(3, 35.0f);
+	assign(12, 17.0f);
+	assign(18, 25.0f);
+	cw->write_ubyte(OP_RSR);
+	at += 1;
+
+	std::vector<std::byte> out;
+	auto w = zenkit::Write::to(&out);
+	const uint32_t count = firstInstance + uint32_t(instances.size());
+	w->write_ubyte(0x32); // version
+	w->write_uint(count);
+	for (uint32_t i = 0; i < count; ++i) w->write_uint(i); // the sort table (not used by readers)
+	auto symbol = [&](const std::string& name, uint32_t vary, uint32_t elements, uint32_t type, uint32_t flags) {
+		w->write_uint(1); // named
+		w->write_line(name);
+		w->write_uint(vary);
+		w->write_uint(elements | (type << 12) | (flags << 16));
+		for (int i = 0; i < 5; ++i) w->write_uint(0); // file, line, line count, char, char count
+	};
+	symbol("CCAMSYS", 23 * 4, 23, TYPE_CLASS, 0);
+	w->write_int(0);  // class offset
+	w->write_int(-1); // parent
+	for (int m = 0; m < 23; ++m) {
+		symbol(std::string("CCAMSYS.") + kMembers[m], uint32_t(m) * 4, 1, m >= 20 ? TYPE_INT : TYPE_FLOAT, FLAG_MEMBER);
+		w->write_int(0); // parent: the class
+	}
+	symbol("CCAMSYS_DEF", 0, 0, TYPE_PROTOTYPE, 0);
+	w->write_int(int32_t(protoAt));
+	w->write_int(0);
+	for (const Instance& inst : instances) {
+		symbol(inst.name, 0, 0, TYPE_INSTANCE, FLAG_CONST);
+		w->write_int(int32_t(inst.address));
+		w->write_int(int32_t(prototype));
+	}
+	w->write_uint(uint32_t(code.size()));
+	w->write(code.data(), code.size());
+	return out;
+}
+
+void checkCamera(const fs::path& dir, const std::vector<std::byte>& vdf) {
+	// The scripts are loose files of the installation, in whatever letter case.
+	auto install = [&](const char* name, const std::vector<std::byte>* dat) {
+		const fs::path root = dir / name;
+		fs::create_directories(root / "Data");
+		writeFile(root / "Data" / "fixture.vdf", vdf);
+		if (dat) {
+			fs::create_directories(root / "_Work" / "DATA" / "Scripts" / "_compiled");
+			writeFile(root / "_Work" / "DATA" / "Scripts" / "_compiled" / "Camera.DAT", *dat);
+		}
+		std::vector<std::string> notes;
+		return openZenGame(root.string(), notes);
+	};
+	auto has = [](const std::vector<std::string>& notes, const char* text) {
+		for (const std::string& n : notes)
+			if (n.find(text) != std::string::npos) return true;
+		return false;
+	};
+	const std::vector<std::byte> good = buildCameraDat(true), noNormal = buildCameraDat(false);
+	// A file that ends early: the last script's code is missing.
+	std::vector<std::byte> cut(good.begin(), good.end() - 30);
+	{
+		CameraSet set;
+		std::vector<std::string> notes;
+		CHECK(importZenCamera(install("cam_good", &good), set, notes));
+		for (const std::string& n : notes) std::printf("  %s\n", n.c_str());
+		const CameraMode& n = set.mode[CAMERA_NORMAL];
+		const CameraMode& sw = set.mode[CAMERA_SWIM];
+		CHECK(set.magic == CAMERA_MAGIC && set.fromGame == 1 && set.modeCount == CAMERA_MODE_COUNT);
+		// The instance's own values, and the prototype's where it has none.
+		CHECK(n.bestRange == 3.0f && n.minRange == 2.0f && n.maxRange == 10.0f && n.bestElevation == 30.0f && n.maxElevation == 89.0f);
+		CHECK(n.minAzimuth == -90.0f && n.maxAzimuth == 90.0f && n.rotOffsetX == 23.0f && n.targetOffsetY == 12.0f);
+		CHECK(n.veloTrans == 40.0f && n.veloRot == 2.0f && n.bestAzimuth == 0.0f && n.rotOffsetY == 0.0f);
+		CHECK(sw.bestRange == 3.5f && sw.bestElevation == 35.0f && sw.rotOffsetX == 17.0f && sw.veloTrans == 25.0f && sw.minRange == 1.99f);
+		// The script has no camera for falling: the normal one stands in.
+		CHECK(std::memcmp(&set.mode[CAMERA_FALL], &n, sizeof(n)) == 0);
+		CHECK(has(notes, "camera: from the game's CAMERA.DAT: CAMMODNORMAL range 3.00 m (2.00..10.00), elevation 30, azimuth 0, view offset 23 0"));
+	}
+	const CameraSet own = defaultCameraSet();
+	{
+		// No scripts, or scripts without the camera: this project's own set-up, and the reason.
+		CameraSet set;
+		std::vector<std::string> notes;
+		CHECK(!importZenCamera(install("cam_none", nullptr), set, notes));
+		CHECK(std::memcmp(&set, &own, sizeof(set)) == 0 && has(notes, "camera: CAMERA.DAT not found"));
+		notes.clear();
+		CHECK(!importZenCamera(install("cam_nonormal", &noNormal), set, notes));
+		CHECK(std::memcmp(&set, &own, sizeof(set)) == 0 && has(notes, "could not be used (no instance CAMMODNORMAL"));
+		notes.clear();
+		// A file cut short: its scripts are not run (they would never return).
+		notes.clear();
+		CHECK(!importZenCamera(install("cam_cut", &cut), set, notes));
+		CHECK(std::memcmp(&set, &own, sizeof(set)) == 0 && has(notes, "the script of CAMMODSWIM has no end: the file is cut short"));
+	}
 }
 
 std::shared_ptr<zenkit::VirtualObject> makeObject(const char* visual, float x, float y, float z, bool solid, bool visible = true) {
@@ -1414,6 +1623,20 @@ int main(int argc, char** argv) {
 			CHECK(second.ladders.empty());
 		} catch (const std::exception& ex) {
 			std::printf("FAIL import threw: %s\n", ex.what());
+			++gFailures;
+		}
+	}
+
+	// ---- the camera ----
+	if (game) {
+		std::printf("[ RUN ] camera scripts\n");
+		try {
+			checkCamera(dir, readFile(dir / "game" / "DATA" / "fixture.VDF"));
+			// The fixture game gets them too, for the end-to-end test.
+			fs::create_directories(dir / "game" / "_work" / "Data" / "Scripts" / "_compiled");
+			writeFile(dir / "game" / "_work" / "Data" / "Scripts" / "_compiled" / "CAMERA.DAT", buildCameraDat(true));
+		} catch (const std::exception& ex) {
+			std::printf("FAIL camera import threw: %s\n", ex.what());
 			++gFailures;
 		}
 	}

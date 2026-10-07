@@ -3,6 +3,7 @@
 #include "bake.h"
 #include "g3ds/tex.h"
 #include "importers.h"
+#include "model_bake.h"
 
 #include <algorithm>
 #include <cctype>
@@ -32,18 +33,18 @@ int info(const char* path) {
 		std::fprintf(stderr, "error: cannot open '%s' as a G3PK archive\n", path);
 		return 1;
 	}
-	static const char* typeNames[] = {"blob", "texture", "world", "chunk", "meta"};
-	u64 packed[5] = {}, raw[5] = {};
-	u32 counts[5] = {};
+	static const char* typeNames[] = {"blob", "texture", "world", "chunk", "meta", "model", "clip"};
+	u64 packed[7] = {}, raw[7] = {};
+	u32 counts[7] = {};
 	for (u32 i = 0; i < pak.count(); ++i) {
 		const PakEntry& e = pak.entry(i);
-		const u32 t = e.type < 5 ? e.type : 0;
+		const u32 t = e.type < 7 ? e.type : 0;
 		++counts[t];
 		packed[t] += e.packedSize;
 		raw[t] += e.size;
 	}
 	std::printf("%s: %u entries\n", path, pak.count());
-	for (int t = 0; t < 5; ++t) {
+	for (int t = 0; t < 7; ++t) {
 		if (counts[t])
 			std::printf("  %-8s %5u  %8.2f MB raw  %8.2f MB packed\n", typeNames[t], counts[t], double(raw[t]) / 1048576.0,
 			            double(packed[t]) / 1048576.0);
@@ -85,6 +86,11 @@ void usage() {
 	          "  --max-tex N        longest texture edge, power of two, 8..1024 (default: 128)\n"
 	          "  --quality 0|1|2    ETC1 effort (default: 1)\n"
 	          "  --flip             reverse the triangle winding (if the winding check complains)\n"
+	          "  --no-hero          do not bake the player's character (the game stays first-person)\n"
+	          "  --hero-script NAME world: the character's model script (default: HUMANS.MDS)\n"
+	          "  --hero-body NAME   world: its body mesh (default: HUM_BODY_NAKED0)\n"
+	          "  --hero-head NAME   world: its head mesh (default: HUM_HEAD_PONY; \"\" for none)\n"
+	          "  --hero-skin B,C,H  world: texture variants of body, skin colour and head (default: 4,1,9)\n"
 	          "  --no-objects       world mesh only, skip trees, bridges and other world objects\n"
 	          "  --no-lightmaps     keep the vertex light on lightmapped (indoor) polygons\n"
 	          "  --threads N        worker threads");
@@ -114,10 +120,11 @@ int main(int argc, char** argv) {
 		BakeOptions opt;
 		opt.threads = std::max(1u, std::thread::hardware_concurrency());
 		ZenImportOptions zen;
+		ZenActorOptions actor;
 		SynthOptions synth;
 		std::string out = "data.pak", firstName, gameDir;
 		std::vector<std::string> levels;
-		bool follow = true;
+		bool follow = true, hero = true;
 		for (int i = 2; i < argc; ++i) {
 			const std::string a = argv[i];
 			auto value = [&]() -> std::string {
@@ -136,6 +143,15 @@ int main(int argc, char** argv) {
 			else if (a == "--game") gameDir = value();
 			else if (a == "--zen") levels.push_back(levelFile(value()));
 			else if (a == "--no-follow") follow = false;
+			else if (a == "--no-hero") hero = false;
+			else if (a == "--hero-script") actor.script = value();
+			else if (a == "--hero-body") actor.body = value();
+			else if (a == "--hero-head") actor.head = value();
+			else if (a == "--hero-skin") {
+				const std::string v = value();
+				if (std::sscanf(v.c_str(), "%d,%d,%d", &actor.bodyVariant, &actor.skinColor, &actor.headVariant) != 3)
+					throw std::runtime_error("--hero-skin wants BODY,COLOUR,HEAD, e.g. 4,1,9");
+			}
 			else if (a == "--msh") zen.meshFile = value();
 			else if (a == "--textures") zen.textureDir = value();
 			else if (a == "--no-objects") zen.objects = false;
@@ -157,7 +173,12 @@ int main(int argc, char** argv) {
 
 		const auto t0 = std::chrono::steady_clock::now();
 		std::vector<BakeWorld> worlds;
+		std::vector<SrcModel> models;
 		if (cmd == "synth") {
+			if (hero) {
+				models.emplace_back();
+				buildSyntheticActor(models.back());
+			}
 			worlds.resize(2);
 			worlds[0].name = "world";
 			worlds[0].level = "WORLD.ZEN";
@@ -201,11 +222,27 @@ int main(int argc, char** argv) {
 					}
 				worlds.push_back(std::move(bw));
 			}
+			// The player's character, if the game's files have it.
+			if (hero && !worlds.empty()) {
+				// Whatever is wrong with it must not cost the worlds their bake.
+				SrcModel model;
+				bool have = false;
+				try {
+					have = importZenActor(game, actor, model);
+				} catch (const std::exception& ex) {
+					model.notes.push_back(std::string("WARNING: the character could not be read (") + ex.what() +
+					                      "); none baked, the game stays first-person");
+				}
+				if (have)
+					models.push_back(std::move(model));
+				else
+					worlds[0].scene.notes.insert(worlds[0].scene.notes.end(), model.notes.begin(), model.notes.end());
+			}
 		}
 		if (!firstName.empty()) worlds[0].name = firstName;
 
 		PakWriter pak;
-		bakeWorlds(worlds, opt, pak);
+		bakeWorlds(worlds, models, opt, pak);
 		pak.write(out);
 		const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 		std::printf("wrote %s: %zu worlds, %zu entries in %.1f s\n", out.c_str(), worlds.size(), pak.items().size(), secs);

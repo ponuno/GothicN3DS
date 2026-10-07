@@ -3,6 +3,7 @@
 // (frame time split into CPU and GPU, triangles, streaming, memory).
 //
 // Controls: Circle Pad move, C-Stick or A/B/X/Y look, R jump,
+//           L third person <-> first person,
 //           ZL or ZR run fast, D-Pad Left/Right draw distance,
 //           D-Pad Down advance the time of day, D-Pad Up next world (debug),
 //           SELECT toggle fly mode (in fly mode L/R move down/up), START exit.
@@ -13,6 +14,8 @@
 //   B  load chunks on the frame's own thread, as before (no background loading)
 //   X  no frame pacer (fixed object distances, never 30 fps)
 //   Y  citro3d's own frame order: the GPU waits while the CPU issues the draws
+//   A  first person from the start (the character is not drawn until L is pressed)
+//   R  the vertex shader of the versions before characters; no character at all
 #include "app.h"
 #include "gfx_c3d.h"
 #include "pacer.h"
@@ -45,7 +48,7 @@ static float stick(int v) {
 
 // The bottom-screen report: laid out once every 30 frames, written a line
 // per frame (printing all of it at once takes several milliseconds).
-static const int kReportLines = 17;
+static const int kReportLines = 18;
 static char gReport[kReportLines][48];
 static int gReportCount = 0;
 
@@ -87,7 +90,9 @@ int main(int, char**) {
 		startKeys |= hidKeysHeld();
 	}
 	const bool background = !(startKeys & KEY_B), pacing = !(startKeys & KEY_X), classic = (startKeys & KEY_Y) != 0;
+	const bool plainShader = (startKeys & KEY_R) != 0;
 	gfx::c3dSetClassicFrames(classic);
+	gfx::c3dSetPlainShader(plainShader);
 
 	App app;
 	// Chunks are read, unpacked and given their collision grids on a worker
@@ -116,6 +121,7 @@ int main(int, char**) {
 	app.setDrawDistance(drawDistance);
 	// Continue where the last session ended, unless L is held at start.
 	if (!(startKeys & KEY_L) && app.loadState(kStatePath)) drawDistance = app.drawDistance();
+	if ((startKeys & KEY_A) || plainShader) app.setThirdPerson(false);
 	printf("loading...\n");
 	app.world().preload(app.camera().pos);
 	consoleClear();
@@ -156,6 +162,7 @@ int main(int, char**) {
 		in.fast = (held & (KEY_ZL | KEY_ZR)) != 0;
 		in.jump = (held & KEY_R) != 0;
 		in.toggleFly = (down & KEY_SELECT) != 0;
+		in.toggleCamera = (down & KEY_L) != 0 && !app.player().flying && !plainShader;
 		in.nextWorld = (down & KEY_DUP) != 0;
 		if (down & KEY_DDOWN) in.timeStep = 1.0f;
 
@@ -234,8 +241,19 @@ int main(int, char**) {
 			reportLine("draw distance %3.0f m  time %02d:%02d", double(drawDistance / 100.0f), int(app.environment().timeOfDay),
 			     int(app.environment().timeOfDay * 60.0f) % 60);
 			reportLine("%-22.22s %-16.16s", state, app.worldName());
-			reportLine("pos %7.0f %6.0f %7.0f", double(app.camera().pos.x), double(app.camera().pos.y),
-			     double(app.camera().pos.z));
+			// The player's eyes, wherever the camera hangs behind them.
+			const g3::Vec3 eye = pl.eye();
+			reportLine("pos %7.0f %6.0f %7.0f", double(eye.x), double(eye.y), double(eye.z));
+			const g3::Hero& hero = app.hero();
+			if (plainShader) {
+				reportLine("hero off: plain shader (R at start)");
+			} else if (hero.loaded()) {
+				static const char* const kRoles[g3::Hero::ROLE_COUNT] = {"stand", "run", "walk", "jump", "fall", "swim", "float"};
+				reportLine("hero %-5s %3.0f cm/s %s%s", kRoles[hero.role()], double(hero.speed()),
+				     app.thirdPerson() ? "3rd person" : "1st person", app.heroVisible() ? "" : " hid");
+			} else {
+				reportLine("hero: none in data.pak");
+			}
 			reportLines = gReportCount;
 			msAccum = 0.0f;
 			msWorst = 0.0f;

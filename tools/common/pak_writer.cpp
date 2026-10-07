@@ -99,4 +99,11 @@ u64 PakWriter::rawBytes(AssetType type) const {
 	return n;
 }
 
+bool PakWriter::has(const std::string& name) const {
+	const u32 hash = hashName(name.c_str());
+	for (const Item& it : _items)
+		if (it.hash == hash) return true;
+	return false;
+}
+
 } // namespace g3

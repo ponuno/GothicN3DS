@@ -23,6 +23,7 @@ static void usage() {
 	     "  --cam X,Y,Z,YAW,PITCH  start pose instead of the baked spawn (cm, degrees)\n"
 	     "  --still             keep the camera still\n"
 	     "  --walk              walk on the ground with collision instead of flying\n"
+	     "  --first-person      look through the character's eyes (default with a baked character: third person)\n"
 	     "  --time H            time of day in hours (default: 13)\n"
 	     "  --no-cull           draw back faces too (winding check)\n"
 	     "  --budget-mb N       world memory budget (default: 24)\n"
@@ -42,7 +43,7 @@ int main(int argc, char** argv) {
 	const char* camSpec = nullptr;
 	const char* streamMode = "sync";
 	int frames = 300, shots = 4;
-	bool still = false, cull = true, walk = false;
+	bool still = false, cull = true, walk = false, firstPerson = false;
 	float timeOfDay = 13.0f;
 	float budgetMb = 24.0f, drawDistance = 12000.0f;
 
@@ -62,6 +63,7 @@ int main(int argc, char** argv) {
 		else if (arg("--time")) timeOfDay = float(atof(argv[++i]));
 		else if (strcmp(argv[i], "--still") == 0) still = true;
 		else if (strcmp(argv[i], "--walk") == 0) walk = true;
+		else if (strcmp(argv[i], "--first-person") == 0) firstPerson = true;
 		else if (strcmp(argv[i], "--no-cull") == 0) cull = false;
 		else {
 			usage();
@@ -93,6 +95,7 @@ int main(int argc, char** argv) {
 		return 2;
 	}
 	app.environment().timeOfDay = timeOfDay;
+	app.setThirdPerson(!firstPerson);
 	// Three modes: a level flight a few metres up (default), a walk on the
 	// ground with collision (--walk), or a fixed view from the spawn (--still).
 	float viewPitch = walk ? -0.06f : -0.22f;
@@ -130,6 +133,8 @@ int main(int argc, char** argv) {
 	int saved = 0, groundedFrames = 0;
 	double updateSum = 0, updateWorst = 0;
 	u32 maxInFlight = 0, maxTexturesWaiting = 0;
+	int heroFrames = 0, heroRoleFrames[Hero::ROLE_COUNT] = {};
+	u64 heroPixels = 0;
 
 	for (int f = 0; f < frames; ++f) {
 		Input in;
@@ -157,6 +162,10 @@ int main(int argc, char** argv) {
 		wadeFrames += !app.player().swimming && app.player().waterDepth > 0;
 		app.render();
 		underwaterFrames += app.underwater();
+		if (app.heroVisible()) {
+			++heroFrames;
+			++heroRoleFrames[app.hero().role()];
+		}
 
 		const WorldStats& ws = app.world().stats();
 		const gfx::SoftStats ss = gfx::softStats();
@@ -174,6 +183,7 @@ int main(int argc, char** argv) {
 		sumWritten += ss.pixelsWritten;
 		sumTested += ss.pixelsTested;
 		sumBackface += ss.trianglesBackface;
+		heroPixels += ss.skinnedPixels;
 		sumFacing += ss.trianglesSubmitted - ss.trianglesClipped; // triangles that reached the facing test
 
 		const bool shot = shots > 0 && (f == frames - 1 || (shots > 1 && f == (frames - 1) * saved / (shots - 1)));
@@ -221,6 +231,16 @@ int main(int argc, char** argv) {
 		printf("                  ended at %.0f %.0f %.0f in %s, collision data %.0f KB\n", double(p.x), double(p.y),
 		       double(p.z), app.worldName(), double(ws.collisionBytes) / 1024.0);
 	}
+	if (app.hero().loaded()) {
+		const Hero& hero = app.hero();
+		printf("hero              %u triangles, %u clips; drawn in %d frames (%.0f pixels each): standing %d, running %d, walking %d, "
+		       "in the air %d, swimming %d\n",
+		       hero.model().triangles(), hero.model().clipCount(), heroFrames, heroFrames ? double(heroPixels) / heroFrames : 0.0,
+		       heroRoleFrames[Hero::IDLE], heroRoleFrames[Hero::RUN], heroRoleFrames[Hero::WALK],
+		       heroRoleFrames[Hero::JUMP] + heroRoleFrames[Hero::FALL], heroRoleFrames[Hero::SWIM] + heroRoleFrames[Hero::SWIM_IDLE]);
+	} else {
+		printf("hero              none in the archive: first person\n");
+	}
 	if (underwaterFrames) printf("camera under water %d frames\n", underwaterFrames);
 	if (app.worldSwitches()) printf("world switches    %u\n", app.worldSwitches());
 	printf("budget rejects %u, load failures %u, pak I/O %.2f MB\n", ws.budgetRejects, ws.loadFailures,
@@ -237,12 +257,16 @@ int main(int argc, char** argv) {
 		        "\"chunksTotal\":%u,\"chunksLoadedMax\":%u,\"peakBytes\":%u,\"budgetRejects\":%u,"
 		        "\"loadFailures\":%u,\"overdraw\":%.3f,\"backfaceShare\":%.3f,\"groundedFrames\":%d,"
 		        "\"swimFrames\":%d,\"blendedDrawsMax\":%u,\"batchesCulledAvg\":%llu,\"worldSwitches\":%u,"
-		        "\"pixelsWritten\":%llu}\n",
+		        "\"pixelsWritten\":%llu,\"heroFrames\":%d,\"heroRunFrames\":%d,\"heroAirFrames\":%d,"
+		        "\"heroSwimFrames\":%d,\"heroPixels\":%llu}\n",
 		        frames, static_cast<unsigned long long>(sumTris / u64(frames)), maxTris, maxDraws, ws.chunksTotal,
 		        maxLoaded, ws.peakResidentBytes, ws.budgetRejects, ws.loadFailures, double(sumWritten) / screen,
 		        backfaceShare, groundedFrames, swimFrames, maxBlended,
 		        static_cast<unsigned long long>(sumCulled / u64(frames)), app.worldSwitches(),
-		        static_cast<unsigned long long>(sumWritten));
+		        static_cast<unsigned long long>(sumWritten), heroFrames, heroRoleFrames[Hero::RUN],
+		        heroRoleFrames[Hero::JUMP] + heroRoleFrames[Hero::FALL],
+		        heroRoleFrames[Hero::SWIM] + heroRoleFrames[Hero::SWIM_IDLE],
+		        static_cast<unsigned long long>(heroFrames ? heroPixels / u64(heroFrames) : 0));
 		fclose(fp);
 	}
 

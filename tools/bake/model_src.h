@@ -1,0 +1,61 @@
+// Importer-neutral description of an animated character. Importers (ZenGin
+// model files, the synthetic test character) fill one of these; the model
+// baker never sees where the data came from.
+//
+// Conventions: Y up, the character stands on y = 0 and faces +Z; rotations
+// are unit quaternions (x y z w) that rotate column vectors.
+#pragma once
+#include "scene.h"
+
+#include <functional>
+#include <string>
+#include <vector>
+
+namespace g3 {
+
+struct SrcNode {
+	std::string name;
+	int parent = -1;
+	float pos[3] = {0, 0, 0}; // transform relative to the parent, at rest
+	float rot[4] = {0, 0, 0, 1};
+};
+
+struct SrcSkinVertex {
+	float pos[3]; // model space, rest pose
+	float normal[3];
+	float uv[2];
+	int bone[2];       // node indices; the same twice for a rigid vertex
+	float weight1 = 0; // share of bone[1], 0..1
+};
+
+struct SrcModelPart {
+	SrcMaterial material;
+	std::vector<SrcSkinVertex> verts; // three per triangle, counter-clockwise seen from the front
+};
+
+struct SrcClipSample {
+	float pos[3];
+	float rot[4];
+};
+
+struct SrcClip {
+	std::string name;
+	std::string next; // the clip that follows; the clip's own name for a loop
+	float fps = 25.0f;
+	int layer = 1;
+	float blendIn = 0.1f, blendOut = 0.1f; // seconds
+	bool moves = false;     // the root node travels: the game moves the character by that much instead
+	std::vector<int> nodes; // animated nodes
+	std::vector<SrcClipSample> samples; // frame after frame, one sample per animated node
+};
+
+struct SrcModel {
+	std::string name; // asset name: stored as "model/<name>"
+	std::vector<SrcNode> nodes;
+	std::vector<SrcModelPart> parts;
+	std::vector<SrcClip> clips;
+	std::function<bool(const std::string& name, SrcImage& out)> loadTexture;
+	std::vector<std::string> notes; // importer remarks for the bake report
+};
+
+} // namespace g3

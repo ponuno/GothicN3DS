@@ -14,6 +14,7 @@ struct ChunkCollider {
 	u16* triangles = nullptr; // 3 vertex indices per triangle
 	u32* cellStart = nullptr; // gridW * gridH + 1 offsets into cellItems
 	u32* cellItems = nullptr; // triangle numbers
+	u8* light = nullptr;      // 4 per triangle: its baked light (r g b) and daylight weight
 	u32 vertexCount = 0, triangleCount = 0;
 	float origin[3] = {0, 0, 0};
 	float scale = 1.0f;    // world = origin + local * scale
@@ -29,8 +30,9 @@ struct ChunkCollider {
 	void release();
 	u32 bytes() const;
 
-	// Highest surface under `from`, no lower than from.y - maxDrop.
-	bool rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal) const;
+	// Highest surface under `from`, no lower than from.y - maxDrop. `lightOut`,
+	// if given, receives the four light bytes of the triangle that was hit.
+	bool rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, u8* lightOut = nullptr) const;
 	// Moves the sphere out of any triangle it overlaps. True if it was moved.
 	bool pushSphere(Vec3& center, float radius) const;
 };

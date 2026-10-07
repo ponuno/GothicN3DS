@@ -41,7 +41,7 @@ target_link_libraries(g3sys PUBLIC Threads::Threads)
 target_compile_options(g3sys PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
 
 add_library(g3engine STATIC engine/world.cpp engine/app.cpp engine/collision.cpp engine/player.cpp engine/sky.cpp
-            engine/loader.cpp engine/pacer.cpp)
+            engine/loader.cpp engine/pacer.cpp engine/model.cpp engine/hero.cpp)
 target_include_directories(g3engine PUBLIC engine)
 target_link_libraries(g3engine PUBLIC g3core g3sys)
 target_compile_options(g3engine PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
@@ -61,6 +61,8 @@ set(G3DS_BAKE_SOURCES
     tools/bake/texture_bake.cpp
     tools/bake/bake.cpp
     tools/bake/chunker.cpp
+    tools/bake/model_bake.cpp
+    tools/bake/synth_actor.cpp
     tools/bake/ground.cpp
     tools/bake/synth.cpp)
 

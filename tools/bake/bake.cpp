@@ -1,5 +1,7 @@
 #include "bake.h"
 
+#include "model_bake.h"
+
 #include "g3ds/tex.h"
 #include "g3ds/world.h"
 
@@ -11,6 +13,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <set>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -45,8 +48,6 @@ std::string baseName(std::string s) {
 	return s;
 }
 
-// "Foo_Bar.TGA" -> "tex/foo_bar"
-std::string texturePakName(const std::string& texture) { return "tex/" + lower(baseName(texture)); }
 
 // ZenGin animates a texture whose name contains "_A0" by counting that number
 // up. Returns the name of frame `k`, or an empty string if it is not animated.
@@ -110,7 +111,15 @@ template <class T> void append(std::vector<u8>& out, const std::vector<T>& items
 
 std::string worldNameFromLevel(const std::string& level) { return lower(baseName(level)); }
 
+// "Foo_Bar.TGA" -> "tex/foo_bar"
+std::string texturePakName(const std::string& texture) { return "tex/" + lower(baseName(texture)); }
+
 BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const BakeOptions& opt, PakWriter& pak) {
+	return bakeWorlds(worlds, std::vector<SrcModel>(), opt, pak);
+}
+
+BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel>& models, const BakeOptions& opt,
+                      PakWriter& pak) {
 	if (worlds.empty()) throw std::runtime_error("nothing to bake");
 	BakeResult result;
 	auto line = [&](const std::string& s) {
@@ -120,6 +129,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const BakeOptions& opt, Pa
 
 	// ---- which materials and textures are referenced, by any world ----
 	std::vector<std::vector<char>> used(worlds.size());
+	std::vector<std::vector<u32>> materialTriangles(worlds.size());
 	std::vector<TexJob> jobs;
 	std::map<std::string, size_t> jobIndex;                 // pak name -> job
 	std::map<std::string, std::vector<std::string>> frames; // base pak name -> pak names of all frames
@@ -137,9 +147,11 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const BakeOptions& opt, Pa
 	for (size_t w = 0; w < worlds.size(); ++w) {
 		SrcScene& scene = worlds[w].scene;
 		used[w].assign(scene.materials.size(), 0);
+		materialTriangles[w].assign(scene.materials.size(), 0);
 		for (const SrcTriangle& t : scene.triangles) {
 			if (t.material >= scene.materials.size()) throw std::runtime_error("triangle references an unknown material");
 			used[w][t.material] = 1;
+			++materialTriangles[w][t.material];
 		}
 		for (size_t i = 0; i < scene.materials.size(); ++i) {
 			const std::string& tex = scene.materials[i].texture;
@@ -207,6 +219,25 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const BakeOptions& opt, Pa
 	}
 	const std::string fallbackName = "tex/_missing";
 	pak.add(fallbackName, ASSET_TEXTURE, bakeTexture(missingTexture(), opt.tex));
+	// A material without a usable texture is drawn in its own colour, as the
+	// game does: one small flat texture per colour.
+	std::set<std::string> flatTextures;
+	auto flatTexture = [&](const u8 rgb[3]) {
+		const std::string name = format("tex/_flat/%02x%02x%02x", unsigned(rgb[0]), unsigned(rgb[1]), unsigned(rgb[2]));
+		if (flatTextures.insert(name).second) {
+			SrcImage img;
+			img.width = img.height = 8;
+			img.rgba.resize(8 * 8 * 4);
+			for (size_t i = 0; i < img.rgba.size(); i += 4) {
+				img.rgba[i] = rgb[0];
+				img.rgba[i + 1] = rgb[1];
+				img.rgba[i + 2] = rgb[2];
+				img.rgba[i + 3] = 255;
+			}
+			pak.add(name, ASSET_TEXTURE, bakeTexture(img, opt.tex));
+		}
+		return name;
+	};
 
 	std::map<std::string, size_t> worldByLevel;
 	for (size_t w = 0; w < worlds.size(); ++w) {
@@ -250,6 +281,8 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const BakeOptions& opt, Pa
 		std::map<MaterialKey, int> materialIndex;
 		std::vector<int> remap(scene.materials.size(), -1);
 		int fallbackIndex = -1;
+		std::map<std::string, int> flatIndex; // flat texture name -> table index
+		std::vector<std::string> untextured;  // for the report
 		u32 blended = 0, animated = 0, scrolling = 0, water = 0;
 		for (size_t i = 0; i < scene.materials.size(); ++i) {
 			if (!used[w][i]) continue;
@@ -262,6 +295,19 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const BakeOptions& opt, Pa
 			const int tex = sm.texture.empty() ? -1 : tableIndex(texturePakName(sm.texture), wm.frameCount, alpha);
 			if (tex >= 0) {
 				wm.texture = u16(tex);
+			} else if (sm.hasColor) {
+				const std::string flat = flatTexture(sm.color);
+				auto fi = flatIndex.find(flat);
+				if (fi == flatIndex.end()) {
+					fi = flatIndex.emplace(flat, int(textureTable.size())).first;
+					textureTable.push_back(hashName(flat.c_str()));
+				}
+				wm.texture = u16(fi->second);
+				wm.flags |= MATF_NO_TEXTURE;
+				untextured.push_back(format("'%s' (%s, %u triangles, colour %u %u %u)", sm.name.c_str(),
+				                            sm.texture.empty() ? "no texture" : ("texture " + sm.texture + " not found").c_str(),
+				                            materialTriangles[w][i], unsigned(sm.color[0]), unsigned(sm.color[1]),
+				                            unsigned(sm.color[2])));
 			} else {
 				if (fallbackIndex < 0) {
 					fallbackIndex = int(textureTable.size());
@@ -478,6 +524,12 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const BakeOptions& opt, Pa
 		            "%u animated, %u scrolling",
 		            worldMaterials.size(), size_t(std::count(used[w].begin(), used[w].end(), 1)), textureTable.size(),
 		            blended, water, animated, scrolling));
+		if (!untextured.empty()) {
+			std::string list;
+			for (size_t i = 0; i < untextured.size() && i < 16; ++i) list += (i ? ", " : "") + untextured[i];
+			if (untextured.size() > 16) list += ", ...";
+			line(format("untextured: %zu materials drawn in their own colour: ", untextured.size()) + list);
+		}
 		if (scene.indoor)
 			line(format("indoor world: no sky, background colour %u %u %u", scene.fogColor[0], scene.fogColor[1], scene.fogColor[2]));
 		if (!ladders.empty()) line(format("ladders: %zu", ladders.size()));
@@ -505,7 +557,27 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const BakeOptions& opt, Pa
 		std::string list;
 		for (size_t i = 0; i < missing.size() && i < 12; ++i) list += (i ? ", " : "") + missing[i];
 		if (missing.size() > 12) list += ", ...";
-		line("WARNING: missing textures (drawn with the checker fallback): " + list);
+		line("WARNING: missing textures (drawn in the material's colour, or as a purple checker if it has none): " + list);
+	}
+
+	// ---- characters ----
+	// A character that cannot be baked is left out, with the reason in the
+	// report; the worlds are worth having without it.
+	bool heroBaked = false;
+	for (size_t i = 0; i < models.size(); ++i) {
+		try {
+			const ModelBakeResult mr = bakeModel(models[i], opt, pak);
+			result.report += mr.report;
+			++result.models;
+			heroBaked = heroBaked || i == 0;
+		} catch (const std::runtime_error& ex) {
+			line("== model '" + models[i].name + "' ==");
+			line(std::string("WARNING: not baked: ") + ex.what() + (i == 0 ? "; the game stays first-person" : ""));
+		}
+	}
+	if (heroBaked) {
+		const std::string hero = lower(models[0].name);
+		pak.add("meta/hero", ASSET_META, std::vector<u8>(hero.begin(), hero.end()));
 	}
 
 	const std::string& start = worlds[0].name;

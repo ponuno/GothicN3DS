@@ -20,5 +20,6 @@ std::shared_ptr<ZenGame> openZenGame(const std::string&, std::vector<std::string
 bool zenGameHasFile(const ZenGame&, const std::string&) { return false; }
 void importZenWorld(std::shared_ptr<const ZenGame>, const ZenImportOptions&, SrcScene&) { unavailable(); }
 void importZenMesh(const ZenImportOptions&, SrcScene&) { unavailable(); }
+bool importZenActor(std::shared_ptr<const ZenGame>, const ZenActorOptions&, SrcModel&) { unavailable(); }
 
 } // namespace g3

@@ -1,5 +1,6 @@
 // Scene sources for the baker.
 #pragma once
+#include "model_src.h"
 #include "scene.h"
 
 #include <memory>
@@ -41,5 +42,22 @@ bool zenGameHasFile(const ZenGame& game, const std::string& name);
 void importZenWorld(std::shared_ptr<const ZenGame> game, const ZenImportOptions& opt, SrcScene& scene);
 // Development path: a loose mesh plus a directory of compiled textures.
 void importZenMesh(const ZenImportOptions& opt, SrcScene& scene);
+
+// The player's character, as the game's start script dresses it.
+struct ZenActorOptions {
+	std::string name = "hero";          // asset name of the baked model
+	std::string script = "HUMANS.MDS";  // model script: skeleton and animations
+	std::string body = "HUM_BODY_NAKED0";
+	int bodyVariant = 4; // texture variant ("_V4") and skin colour ("_C1") of the body ...
+	int skinColor = 1;
+	std::string head = "HUM_HEAD_PONY";
+	int headVariant = 9; // ... and of the head
+	std::vector<std::string> clips; // animations to bake; empty: what the hero's movement needs
+};
+
+// Fills `model` from the game's files. Returns false, with the reason in
+// model.notes, if the game does not have them (the bake then goes on without a
+// character). Throws std::runtime_error on files that exist but cannot be used.
+bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& opt, SrcModel& model);
 
 } // namespace g3

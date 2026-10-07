@@ -1,8 +1,11 @@
 // A stand-in for libctru, just enough to run platform/3ds/gfx_c3d.cpp on the
-// PC. It draws nothing. What it models is ownership over time: which command
-// buffer the GPU is executing, which memory that buffer refers to, and when
-// the GPU is done - and it records every violation of those rules
-// (tests/mock3ds/mock3ds.h). See tests/test_frames.cpp.
+// PC. It draws nothing. It models two things:
+//  * ownership over time: which command buffer the GPU is executing, which
+//    memory that buffer refers to, and when the GPU is done - recording every
+//    violation of those rules;
+//  * the vertex shader: the assembled shader binary is parsed and its
+//    bytecode can be run on the vertices and uniforms of any draw call.
+// See tests/mock3ds/mock3ds.h and tests/test_frames.cpp.
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
@@ -63,7 +66,7 @@ enum GPU_BLENDFACTOR { GPU_ZERO = 0, GPU_ONE = 1, GPU_SRC_ALPHA = 6, GPU_ONE_MIN
 enum GPU_TEVSRC { GPU_PRIMARY_COLOR = 0, GPU_TEXTURE0 = 3, GPU_CONSTANT = 14, GPU_PREVIOUS = 15 };
 enum GPU_TEVOP_RGB { GPU_TEVOP_RGB_SRC_COLOR = 0, GPU_TEVOP_RGB_SRC_ALPHA = 2 };
 enum GPU_COMBINEFUNC { GPU_REPLACE = 0, GPU_MODULATE = 1, GPU_INTERPOLATE = 4 };
-enum GPU_FORMATS { GPU_UNSIGNED_BYTE = 1, GPU_SHORT = 2 };
+enum GPU_FORMATS { GPU_BYTE = 0, GPU_UNSIGNED_BYTE = 1, GPU_SHORT = 2, GPU_FLOAT = 3 };
 enum GPU_Primitive_t { GPU_TRIANGLES = 0 };
 enum GPU_COLORBUF { GPU_RB_RGBA8 = 0 };
 enum GPU_DEPTHBUF { GPU_RB_DEPTH24_STENCIL8 = 3 };

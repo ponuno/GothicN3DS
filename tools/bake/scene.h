@@ -38,6 +38,10 @@ struct SrcMaterial {
 	bool water = false;       // a water surface: blended, no collision, swimmable
 	bool noCollision = false; // the player passes through (foliage, water, movers)
 	SrcBlend blend = SrcBlend::Opaque;
+	// The material's own colour: what it is drawn with if it has no texture, or
+	// the texture cannot be found (as the game does).
+	u8 color[3] = {0, 0, 0};
+	bool hasColor = false;
 	u8 opacity = 255;         // alpha multiplier of a blended material
 	float animFps = 0;        // texture animation speed; 0 picks a default
 	float scroll[2] = {0, 0}; // texture scrolling, repeats per second

@@ -15,6 +15,7 @@
 #include "gfx.h"
 #include "gfx_c3d.h"
 
+#include "world_plain_shbin.h"
 #include "world_shbin.h"
 
 #include <3ds.h>
@@ -51,6 +52,9 @@ shaderProgram_s gProgram;
 bool gProgramReady = false;
 bool gReady = false; // C3D_Init succeeded
 int gLocProjection = -1, gLocModelView = -1, gLocChunk = -1, gLocParams = -1, gLocDayDelta = -1, gLocTexOffset = -1;
+int gLocSkinLight = -1, gLocBones = -1, gLocSkinned = -1;
+bool gSkinned = false; // last value of the shader's `skinned` switch
+bool gPlainShader = false; // the world-only shader of earlier versions: no characters
 Pass gPass = PASS_WORLD;
 
 // 1 MB of command buffer: about 5000 draw calls with a texture change each.
@@ -209,7 +213,8 @@ bool init() {
 	if (!gTarget) return false;
 	C3D_RenderTargetSetOutput(gTarget, GFX_TOP, GFX_LEFT, DISPLAY_TRANSFER_FLAGS);
 
-	gDvlb = DVLB_ParseFile(reinterpret_cast<u32*>(world_shbin), world_shbin_size);
+	gDvlb = gPlainShader ? DVLB_ParseFile(reinterpret_cast<u32*>(world_plain_shbin), world_plain_shbin_size)
+	                     : DVLB_ParseFile(reinterpret_cast<u32*>(world_shbin), world_shbin_size);
 	if (!gDvlb) return false;
 	shaderProgramInit(&gProgram);
 	shaderProgramSetVsh(&gProgram, &gDvlb->DVLE[0]);
@@ -222,8 +227,14 @@ bool init() {
 	gLocParams = shaderInstanceGetUniformLocation(gProgram.vertexShader, "params");
 	gLocDayDelta = shaderInstanceGetUniformLocation(gProgram.vertexShader, "dayDelta");
 	gLocTexOffset = shaderInstanceGetUniformLocation(gProgram.vertexShader, "texOffset");
-	if (gLocProjection < 0 || gLocModelView < 0 || gLocChunk < 0 || gLocParams < 0 || gLocDayDelta < 0 ||
-	    gLocTexOffset < 0)
+	gLocSkinLight = gLocBones = gLocSkinned = -1;
+	if (!gPlainShader) {
+		gLocSkinLight = shaderInstanceGetUniformLocation(gProgram.vertexShader, "skinLight");
+		gLocBones = shaderInstanceGetUniformLocation(gProgram.vertexShader, "bones");
+		gLocSkinned = shaderInstanceGetUniformLocation(gProgram.vertexShader, "skinned");
+		if (gLocSkinLight < 0 || gLocBones < 0 || gLocSkinned < 0) return false;
+	}
+	if (gLocProjection < 0 || gLocModelView < 0 || gLocChunk < 0 || gLocParams < 0 || gLocDayDelta < 0 || gLocTexOffset < 0)
 		return false;
 
 	// Matches WorldVertex: short4 position, short2 uv, ubyte4 colour.
@@ -411,6 +422,8 @@ void frameBegin(const FrameDesc& f) {
 	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocModelView, &mv);
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, 0.0f, 0.0f, 0.0f, 1.0f);
 	gParams[0] = gParams[1] = gParams[2] = gParams[3] = -1.0f; // unknown: the first chunk sends them
+	if (!gPlainShader) C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocSkinned, false);
+	gSkinned = false;
 
 	// Start every frame from a known state; from here on only changes are sent.
 	setStage0(true, 255);
@@ -448,11 +461,9 @@ void setPass(Pass pass) {
 	if (pass != PASS_BLEND) setBlend(BLEND_OFF);
 }
 
-void setChunkTransform(const float origin[3], float posScale, float uvScale) {
-	if (!gInFrame) return;
-	// Lattice positions minus a lattice point: exact, here and in the shader.
-	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, origin[0] - gAnchor[0], origin[1] - gAnchor[1], origin[2] - gAnchor[2],
-	              posScale);
+// uv scale and fog terms: the same for nearly every draw call of a pass, so
+// only sent when they change.
+static void setParams(float uvScale) {
 	// Fog factor = clamp(fogA - viewZ * fogB); the sky is never fogged.
 	const float range = gFrame.fogEnd - gFrame.fogStart;
 	float fogA = 1.0f, fogB = 0.0f;
@@ -460,12 +471,25 @@ void setChunkTransform(const float origin[3], float posScale, float uvScale) {
 		fogB = 1.0f / range;
 		fogA = gFrame.fogEnd * fogB;
 	}
-	// The same for nearly every chunk of a pass: only sent when it changes.
 	const float params[4] = {uvScale, 1.0f / 255.0f, fogA, fogB};
 	if (memcmp(params, gParams, sizeof(params)) != 0) {
 		memcpy(gParams, params, sizeof(params));
 		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocParams, params[0], params[1], params[2], params[3]);
 	}
+}
+
+static void setSkinned(bool on) {
+	if (on == gSkinned || gPlainShader) return;
+	gSkinned = on;
+	C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocSkinned, on);
+}
+
+void setChunkTransform(const float origin[3], float posScale, float uvScale) {
+	if (!gInFrame) return;
+	// Lattice positions minus a lattice point: exact, here and in the shader.
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, origin[0] - gAnchor[0], origin[1] - gAnchor[1], origin[2] - gAnchor[2],
+	              posScale);
+	setParams(uvScale);
 }
 
 void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, float uvOffsetV) {
@@ -498,6 +522,33 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 		++gDropped;
 		return;
 	}
+	setSkinned(false);
+	if (m != gBoundMesh) {
+		C3D_SetBufInfo(&m->buf);
+		gBoundMesh = m;
+	}
+	C3D_DrawElements(GPU_TRIANGLES, int(indexCount), C3D_UNSIGNED_SHORT, m->indices + firstIndex);
+}
+
+void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin) {
+	if (!gInFrame || gPlainShader || !m || indexCount == 0 || firstIndex + indexCount > m->indexCount || !skin.bones ||
+	    skin.boneCount == 0 || skin.boneCount > MODEL_PALETTE)
+		return;
+	// The palette alone is 26 * 3 uniform vectors: more than an ordinary draw call.
+	if (gpuCmdBufOffset + kDrawReserveWords + MODEL_PALETTE * 3 * 5 > gpuCmdBufSize) {
+		++gDropped;
+		return;
+	}
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, skin.origin[0] - gAnchor[0], skin.origin[1] - gAnchor[1],
+	              skin.origin[2] - gAnchor[2], skin.posScale);
+	setParams(skin.uvScale);
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocSkinLight, skin.light[0], skin.light[1], skin.light[2], 0.0f);
+	for (u32 b = 0; b < skin.boneCount; ++b) {
+		const float* row = skin.bones + b * 12;
+		for (int r = 0; r < 3; ++r)
+			C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocBones + int(b) * 3 + r, row[r * 4], row[r * 4 + 1], row[r * 4 + 2], row[r * 4 + 3]);
+	}
+	setSkinned(true);
 	if (m != gBoundMesh) {
 		C3D_SetBufInfo(&m->buf);
 		gBoundMesh = m;
@@ -546,6 +597,12 @@ void frameEnd() {
 void c3dSetClassicFrames(bool classic) {
 	if (!gReady) gClassic = classic;
 }
+
+void c3dSetPlainShader(bool plain) {
+	if (!gReady) gPlainShader = plain;
+}
+
+bool c3dPlainShader() { return gPlainShader; }
 
 MemStats memStats() { return gMem; }
 FrameStats frameStats() { return gFrameStats; }

@@ -420,6 +420,41 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 	}
 }
 
+void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin) {
+	if (!m || indexCount == 0 || firstIndex + indexCount > m->indexCount || !skin.bones) return;
+	const float rel[3] = {skin.origin[0] - gAnchor[0], skin.origin[1] - gAnchor[1], skin.origin[2] - gAnchor[2]};
+	const u32 writtenBefore = gStats.pixelsWritten, backBefore = gStats.trianglesBackface;
+	for (u32 i = 0; i + 2 < indexCount; i += 3) {
+		ClipVert cv[3];
+		for (int k = 0; k < 3; ++k) {
+			const WorldVertex& v = m->vertices[m->indices[firstIndex + i + u32(k)]];
+			// The shader's arithmetic: the colour bytes are two rows-of-three
+			// offsets into the bone palette, the second bone's weight and a shade.
+			const u32 b0 = min(u32(v.r) / 3u, skin.boneCount - 1), b1 = min(u32(v.g) / 3u, skin.boneCount - 1);
+			const float* m0 = skin.bones + b0 * 12;
+			const float* m1 = skin.bones + b1 * 12;
+			const float p[3] = {float(v.x) * skin.posScale, float(v.y) * skin.posScale, float(v.z) * skin.posScale};
+			const float w1 = float(v.b) * (1.0f / 255.0f);
+			float out[3];
+			for (int r = 0; r < 3; ++r) {
+				const float a = m0[r * 4] * p[0] + m0[r * 4 + 1] * p[1] + m0[r * 4 + 2] * p[2] + m0[r * 4 + 3];
+				const float b = m1[r * 4] * p[0] + m1[r * 4 + 1] * p[1] + m1[r * 4 + 2] * p[2] + m1[r * 4 + 3];
+				out[r] = a + (b - a) * w1 + rel[r];
+			}
+			const Vec4 c = transform(gViewProj, {out[0], out[1], out[2], 1.0f});
+			const float fog = clamp(gFogA - c.w * gFogB, 0.0f, 1.0f);
+			const float shade = float(v.a) * (1.0f / 255.0f);
+			cv[k] = {c.x, c.y, c.z, c.w, float(v.u) * skin.uvScale, float(v.v) * skin.uvScale, skin.light[0] * shade,
+			         skin.light[1] * shade, skin.light[2] * shade, 1.0f, fog};
+		}
+		if (gPass == PASS_WORLD) ++gStats.trianglesSubmitted;
+		drawTriangle(cv);
+	}
+	gStats.skinnedTriangles += indexCount / 3;
+	gStats.skinnedBackface += gStats.trianglesBackface - backBefore;
+	gStats.skinnedPixels += gStats.pixelsWritten - writtenBefore;
+}
+
 void frameEnd() {}
 
 void releaseDestroyed() {} // nothing is deferred here

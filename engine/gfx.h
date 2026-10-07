@@ -6,6 +6,7 @@
 // The engine never touches platform APIs directly.
 #pragma once
 #include "g3ds/math.h"
+#include "g3ds/model.h"
 #include "g3ds/tex.h"
 #include "g3ds/world.h"
 
@@ -81,6 +82,21 @@ void setChunkTransform(const float origin[3], float posScale, float uvScale);
 // texture coordinates (scrolling water).
 void setMaterial(Texture* t, u32 materialFlags, float opacity = 1.0f, float uvOffsetU = 0.0f, float uvOffsetV = 0.0f);
 void draw(Mesh* m, u32 firstIndex, u32 indexCount);
+
+// Skinned geometry (characters). The mesh is made with meshCreate from
+// vertices in the layout model.h describes: every vertex follows two of the
+// `bones` of the draw call.
+struct SkinDraw {
+	// boneCount matrices of 12 floats (3 rows of 4): rest position in model
+	// space -> position relative to `origin`.
+	const float* bones;
+	u32 boneCount;   // at most MODEL_PALETTE
+	float origin[3]; // where the model stands in the world
+	float posScale, uvScale;
+	float light[3];  // colour the character is lit with, time of day included
+};
+// Uses the material set with setMaterial. PASS_WORLD only.
+void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin);
 void frameEnd();
 
 // Destroyed textures and meshes may stay allocated until the GPU has finished

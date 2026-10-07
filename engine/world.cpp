@@ -503,7 +503,7 @@ void World::preload(Vec3 camera) {
 	_stats.texturesWaiting = _texturesWaiting;
 }
 
-bool World::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal) const {
+bool World::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, u8* light) const {
 	bool found = false;
 	float best = from.y - maxDrop;
 	for (u32 k = 0; k < _stats.chunksLoaded; ++k) {
@@ -513,11 +513,13 @@ bool World::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal) const {
 		if (from.y < ci.bbMin[1] || best > ci.bbMax[1]) continue;
 		float y;
 		Vec3 n;
+		u8 l[4] = {255, 255, 255, 255};
 		// Each chunk only needs to beat the best hit so far.
-		if (_loaded[i].collider.rayDown(from, from.y - best, y, n) && y >= best) {
+		if (_loaded[i].collider.rayDown(from, from.y - best, y, n, light ? l : nullptr) && y >= best) {
 			best = y;
 			hitY = y;
 			normal = n;
+			if (light) memcpy(light, l, 4);
 			found = true;
 		}
 	}

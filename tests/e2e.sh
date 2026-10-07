@@ -21,9 +21,18 @@ synth)
 	# Walking with collision: the player must spend most of the time on the ground.
 	"$host" --pak "$out/data.pak" --walk --frames 150 --shots 1 --out "$out/walk" --stats "$out/stats.json"
 	[ "$(num groundedFrames)" -gt 100 ] || fail "the walking player was not on the ground: $(num groundedFrames) of 150 frames"
+	# Third person: the character is on the screen in (nearly) every frame, mostly running, sometimes in the air.
+	[ "$(num heroFrames)" -gt 140 ] || fail "the character was drawn in only $(num heroFrames) of 150 frames"
+	[ "$(num heroPixels)" -gt 300 ] || fail "the character covers only $(num heroPixels) pixels"
+	[ "$(num heroRunFrames)" -gt 80 ] || fail "the character ran in only $(num heroRunFrames) frames"
+	[ "$(num heroAirFrames)" -gt 5 ] || fail "the character never jumped"
+	# First person on request: nothing of the character is drawn.
+	"$host" --pak "$out/data.pak" --walk --first-person --frames 30 --shots 1 --out "$out/eyes" --stats "$out/stats.json"
+	[ "$(num heroFrames)" = "0" ] || fail "the character was drawn in first person"
 	# The second world: a cave with a pool the scripted walk ends up swimming in.
 	"$host" --pak "$out/data.pak" --world cave --walk --frames 150 --shots 1 --out "$out/cave" --stats "$out/stats.json"
 	[ "$(num swimFrames)" -gt 30 ] || fail "nobody swam in the cave pool: $(num swimFrames) frames"
+	[ "$(num heroSwimFrames)" -gt 30 ] || fail "the character did not swim: $(num heroSwimFrames) frames"
 	[ "$(num blendedDrawsMax)" -gt 0 ] || fail "the water was not drawn in the blended pass"
 	# The same flight with chunks streamed in the background, as on the console.
 	for stream in inline thread; do
@@ -37,7 +46,9 @@ zen)
 	# The loose-mesh path and the Gothic-install path must agree.
 	"$bake" mesh --msh "$fixture/loose/fixture.msh" --textures "$fixture/loose" --chunk 2000 --max-tex 64 -o "$out/mesh.pak"
 	# Names one world; the baker follows its level-change trigger to the other.
-	"$bake" world --game "$fixture/game" --zen FIXTURE.ZEN --chunk 2000 --max-tex 64 -o "$out/data.pak"
+	# The fixture's character stands in for the game's (whose files it does not have).
+	"$bake" world --game "$fixture/game" --zen FIXTURE.ZEN --chunk 2000 --max-tex 64 \
+		--hero-script FIX_HERO.MDS --hero-body FIX_HERO_BODY --hero-head "" -o "$out/data.pak"
 	"$bake" info "$out/mesh.pak" | grep -q "514 triangles in, 514 out" || fail "mesh bake lost triangles"
 	"$host" --pak "$out/data.pak" --still --frames 3 --shots 1 --out "$out/frame" --stats "$out/stats.json"
 	;;
@@ -74,12 +85,26 @@ if [ "$mode" = zen ]; then
 	grep -q "indoor world: no sky, background colour 30 20 10" "$out/info.txt" || fail "the second world is not indoor"
 	grep -q "2 models in rest pose" "$out/info.txt" || fail "models were not baked"
 	grep -q "1 missing" "$out/info.txt" || fail "missing texture was not reported"
+	grep -q "untextured: 1 materials drawn in their own colour" "$out/info.txt" || fail "the material without a texture did not get its colour"
 	grep -q "1 cut-out" "$out/info.txt" || fail "cut-out texture was not detected"
 	grep -q "2 blended (1 water), 1 animated, 1 scrolling" "$out/info.txt" || fail "water or decal material lost its properties"
 	# Both worlds are in the archive and their portals found each other.
 	grep -q "start world: fixture" "$out/info.txt" || fail "no start world recorded"
 	grep -q "fixture2 at ARRIVAL" "$out/info.txt" || fail "portal to the second world was not resolved"
 	grep -q "fixture at START" "$out/info.txt" || fail "portal back was not resolved"
+	# The character came along, from ZenGin's own model, mesh and animation files.
+	grep -q "== model 'hero' ==" "$out/info.txt" || fail "no character in the archive"
+	grep -q "skeleton: 5 nodes; mesh: 4 triangles" "$out/info.txt" || fail "the character's mesh was not baked"
+	grep -q "rotations read conjugated" "$out/info.txt" || fail "the animations' rotation convention was not reported"
+	grep -q "clips: 4 " "$out/info.txt" || fail "the character's clips were not baked"
+	grep -q "S_WALKL 0.16s loop 2503cm/s" "$out/info.txt" || fail "the walk clip lost its speed"
+	"$host" --pak "$out/data.pak" --walk --frames 30 --shots 1 --out "$out/hero" --stats "$out/stats3.json"
+	grep -q '"heroFrames":[1-9]' "$out/stats3.json" || fail "the character was not drawn"
+	# The game's own character is asked for by default; a game without it bakes none and says so.
+	"$bake" world --game "$fixture/game" --zen FIXTURE.ZEN --no-follow -o "$out/nohero.pak" > "$out/nohero.txt"
+	grep -q "HUMANS.MSB/.MDS not found, no character baked" "$out/nohero.txt" || fail "the missing character was not reported"
+	"$host" --pak "$out/nohero.pak" --walk --frames 5 --shots 0 --stats "$out/stats4.json"
+	grep -q '"heroFrames":0' "$out/stats4.json" || fail "a character appeared from nowhere"
 	"$host" --pak "$out/data.pak" --world fixture2 --still --frames 3 --shots 1 --out "$out/second" --stats "$out/stats2.json"
 	# A single world when asked not to follow.
 	"$bake" world --game "$fixture/game" --zen FIXTURE.ZEN --no-follow -o "$out/single.pak" | grep -q "1 worlds" \

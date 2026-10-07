@@ -8,9 +8,11 @@
 #include "gfx_soft.h"
 #include "importers.h"
 #include "loader.h"
+#include "model_bake.h"
 #include "pacer.h"
 #include "pak_writer.h"
 #include "rg_etc1.h"
+#include "test_models.h"
 #include "texture_bake.h"
 
 #include <algorithm>
@@ -1762,21 +1764,72 @@ static void testPacer() {
 	}
 	CHECK(late >= 1 && late <= 4);
 
-	// The castle gate as measured on the console: 125% of a frame. With these
-	// shares of the cost it does not fit even without objects: one switch to a
-	// steady 30 fps, not a flicker between the two.
+	// A view that does not fit even without objects: one switch to a steady
+	// 30 fps, not a flicker between the two - and at 30 fps, with twice the
+	// time, the objects come back.
 	p.reset();
 	changes = 0;
 	for (int f = 0; f < 900; ++f) {
 		const int was = p.interval();
-		p.update(cost(1.6f, p.detailScale()));
+		p.update(cost(1.5f, p.detailScale()));
 		changes += p.interval() != was;
 	}
-	CHECK(p.interval() == 2 && changes == 1 && std::fabs(p.detailScale() - p.cfg.minDetail) < 1e-4f);
-	// Hovering just below the limit is no reason to go back ...
-	for (int f = 0; f < 300; ++f) p.update(0.95f);
+	CHECK(p.interval() == 2 && changes == 1 && p.detailScale() > 0.99f && !p.probing());
+	// It is too heavy to even ask whether 60 fps would do: the objects stay.
+	lowest = 1.0f;
+	for (int f = 0; f < 3000; ++f) {
+		p.update(cost(1.5f, p.detailScale()));
+		lowest = std::min(lowest, p.detailScale());
+	}
+	CHECK(p.interval() == 2 && lowest > 0.99f);
+
+	// The view gets lighter, but not light: 60 fps would fit with fewer
+	// objects. The pacer finds out by taking them away for a moment, and
+	// switches.
+	changes = 0;
+	int probes = 0;
+	bool wasProbing = false;
+	for (int f = 0; f < 600 && p.interval() == 2; ++f) {
+		p.update(cost(1.2f, p.detailScale())); // 120% with everything, 89% with the minimum
+		probes += p.probing() && !wasProbing;
+		wasProbing = p.probing();
+	}
+	CHECK(p.interval() == 1 && probes == 1 && p.detailScale() < 0.5f);
+	late = 0;
+	for (int f = 0; f < 900; ++f) {
+		const float load = cost(1.2f, p.detailScale());
+		late += load > 1.0f;
+		const int was = p.interval();
+		p.update(load);
+		changes += p.interval() != was;
+	}
+	CHECK(p.interval() == 1 && changes == 0 && late == 0); // and stays there
+
+	// A view where the answer is no (96% even with the minimum): the objects
+	// dip for a moment each time it asks, it asks less and less often, and it
+	// never leaves 30 fps.
+	// (Reached from a heavier view; coming from a light one it would simply
+	// stay at 60.)
+	p.reset();
+	for (int f = 0; f < 300; ++f) p.update(cost(1.5f, p.detailScale()));
 	CHECK(p.interval() == 2);
-	// ... a clearly lighter view is, and then the detail returns as well.
+	probes = 0;
+	wasProbing = false;
+	int firstHalf = 0;
+	bool stayed = true;
+	for (int f = 0; f < 6000; ++f) {
+		p.update(cost(1.297f, p.detailScale()));
+		probes += p.probing() && !wasProbing;
+		wasProbing = p.probing();
+		if (f == 2999) firstHalf = probes;
+		stayed = stayed && p.interval() == 2;
+	}
+	CHECK(stayed);
+	std::printf("  pacer at 30 fps, borderline view: asked %d times in 200 s (%d of them in the first 100 s)\n", probes,
+	            firstHalf);
+	CHECK(probes >= 3 && probes <= 6 && firstHalf >= probes - firstHalf);
+
+	// A clearly light view needs no check: straight back to 60, objects and all.
 	changes = 0;
 	for (int f = 0; f < 900; ++f) {
 		const int was = p.interval();
@@ -1955,6 +2008,697 @@ static void testCollision() {
 	gfx::shutdown();
 }
 
+// ---- characters ----
+
+// The rest-pose vertices of a source model, posed by hand: the reference the
+// runtime's skinning is compared with.
+static Vec3 posedVertex(const SrcSkinVertex& v, const std::vector<Mat34>& skin) {
+	const Vec3 p = {v.pos[0], v.pos[1], v.pos[2]};
+	const Vec3 a = transformPoint(skin[size_t(v.bone[0])], p), b = transformPoint(skin[size_t(v.bone[1])], p);
+	return a + (b - a) * v.weight1;
+}
+
+static void testModel() {
+	SrcModel chain, actor;
+	buildChainModel(chain, 60);
+	buildSyntheticActor(actor);
+	BakeOptions bo;
+	bo.tex.maxSize = 32;
+	bo.tex.quality = 0;
+	bo.quiet = true;
+	const std::string path = gDir + "/models.pak";
+	{
+		PakWriter writer;
+		const ModelBakeResult r = bakeModel(chain, bo, writer);
+		// 59 double-sided quads; 60 bones do not fit one palette.
+		CHECK(r.triangles == 59 * 4 && r.parts >= 3 && r.largestPalette == MODEL_PALETTE && r.clips == 2 && r.textures == 1);
+		CHECK(r.report.find("skeleton: 60 nodes") != std::string::npos);
+		const ModelBakeResult a = bakeModel(actor, bo, writer);
+		CHECK(a.parts == 2 && a.clips == 8 && a.largestPalette <= MODEL_PALETTE);
+		writer.write(path);
+	}
+	// What cannot be baked is refused with a reason.
+	{
+		PakWriter writer;
+		SrcModel bad = chain;
+		bad.nodes[3].parent = 7;
+		bad.nodes[7].parent = 3;
+		bool threw = false;
+		try {
+			bakeModel(bad, bo, writer);
+		} catch (const std::runtime_error& e) {
+			threw = std::string(e.what()).find("cycle") != std::string::npos;
+		}
+		CHECK(threw);
+		bad = chain;
+		bad.parts[0].verts[5].bone[1] = 60;
+		threw = false;
+		try {
+			bakeModel(bad, bo, writer);
+		} catch (const std::runtime_error&) {
+			threw = true;
+		}
+		CHECK(threw);
+		bad = chain;
+		bad.clips[0].samples.pop_back();
+		threw = false;
+		try {
+			bakeModel(bad, bo, writer);
+		} catch (const std::runtime_error&) {
+			threw = true;
+		}
+		CHECK(threw);
+	}
+
+	// Travel and stance. ZenGin flags standing animations as "moving" too;
+	// only where the root ends up elsewhere is there travel to take out.
+	{
+		SrcModel m = chain;
+		m.name = "walker";
+		m.clips.clear();
+		SrcClip crawl, stay;
+		crawl.name = crawl.next = "S_CRAWL";
+		stay.name = stay.next = "S_STAY";
+		crawl.fps = stay.fps = 10.0f;
+		crawl.moves = stay.moves = true;
+		crawl.nodes = stay.nodes = {0};
+		for (int f = 0; f < 5; ++f) {
+			SrcClipSample s {};
+			float rest[3];
+			chainRest(60, 0, rest, s.rot);
+			s.pos[0] = 12.0f + 3.0f * float(f % 2); // a stance off centre, swaying
+			s.pos[1] = 10.0f;
+			s.pos[2] = 50.0f * float(f);
+			crawl.samples.push_back(s);
+			s.pos[2] = -1.0f + 0.4f * float(f % 2);
+			stay.samples.push_back(s);
+		}
+		m.clips = {crawl, stay};
+		PakWriter writer;
+		const ModelBakeResult r = bakeModel(m, bo, writer);
+		CHECK(r.report.find("S_CRAWL 0.50s loop 500cm/s") != std::string::npos);
+		CHECK(r.report.find("S_STAY 0.50s loop,") != std::string::npos || r.report.find("S_STAY 0.50s loop\n") != std::string::npos);
+		const std::string walkerPath = gDir + "/walker.pak";
+		writer.write(walkerPath);
+		Pak wp;
+		CHECK(wp.open(walkerPath.c_str()));
+		Clip c, st;
+		CHECK(c.load(wp, hashName("anim/walker/s_crawl"), 60) && st.load(wp, hashName("anim/walker/s_stay"), 60));
+		CHECK((c.header().flags & CLIPF_MOVES) && std::fabs(c.header().moveSpeed - 500.0f) < 1.0f);
+		CHECK(!(st.header().flags & CLIPF_MOVES) && st.header().moveSpeed == 0.0f);
+		Pose p;
+		for (int f = 0; f < 5; ++f) {
+			c.sample(float(f) * 0.1f, p);
+			CHECK(std::fabs(p.pos[0].x - (12.0f + 3.0f * float(f % 2))) < 0.01f && std::fabs(p.pos[0].z) < 0.01f);
+			st.sample(float(f) * 0.1f, p);
+			CHECK(std::fabs(p.pos[0].x - (12.0f + 3.0f * float(f % 2))) < 0.01f && std::fabs(p.pos[0].z - (-1.0f + 0.4f * float(f % 2))) < 0.01f);
+		}
+	}
+
+	gfx::init();
+	Pak pak;
+	CHECK(pak.open(path.c_str()));
+	const PakEntry* me = pak.find("model/chain");
+	const PakEntry* ce = pak.find("anim/chain/s_bend");
+	CHECK(me && me->type == ASSET_MODEL && ce && ce->type == ASSET_CLIP && pak.find("tex/chain_skin"));
+	{
+		Model m;
+		CHECK(!m.load(pak, "nobody") && !m.loaded());
+		CHECK(m.load(pak, "chain") && m.loaded());
+		CHECK(m.nodeCount() == 60 && m.triangles() == 59 * 4 && m.clipCount() == 2 && m.textureBytes() > 0);
+		CHECK(m.findNode(hashName("LINK17")) == 17 && m.findNode(hashName("link59")) == 59 && m.findNode(hashName("NOPE")) < 0);
+		u32 indexSum = 0;
+		for (u32 i = 0; i < m.partCount(); ++i) {
+			CHECK(m.part(i).boneCount > 0 && m.part(i).boneCount <= MODEL_PALETTE);
+			indexSum += m.part(i).indexCount;
+		}
+		CHECK(indexSum == 59 * 4 * 3);
+
+		// At rest every bone's skin matrix is the identity: the mesh is drawn as stored.
+		Pose rest;
+		m.restPose(rest);
+		Mat34 world[MODEL_MAX_NODES];
+		m.worldTransforms(rest, world);
+		float worst = 0;
+		for (u32 i = 0; i < m.nodeCount(); ++i) {
+			Mat34 inv;
+			std::memcpy(inv.m, m.node(i).invBind, sizeof(inv.m));
+			const Mat34 skin = mul(world[i], inv), id = mat34Identity();
+			for (int r = 0; r < 3; ++r)
+				for (int c = 0; c < 4; ++c) worst = std::max(worst, std::fabs(skin.m[r][c] - id.m[r][c]));
+		}
+		std::printf("  rest pose: skin matrices within %.2g of the identity\n", double(worst));
+		CHECK(worst < 1e-3f); // sixty transforms deep
+
+		// A clip that is played once: sampled between its frames, held at its ends.
+		const Clip* bend = m.clip("S_BEND");
+		const Clip* nod = m.clip("t_nod");
+		CHECK(bend && nod && !m.clip("S_RUN"));
+		if (bend && nod) {
+			CHECK(bend->header().frameCount == 5 && bend->header().trackCount == 60 && !bend->loops());
+			CHECK(std::fabs(bend->duration() - 0.4f) < 1e-5f && bend->header().next == 0 && bend->header().moveSpeed == 0.0f);
+			CHECK(nod->header().trackCount == 1 && nod->header().next == hashName("S_BEND") && std::fabs(nod->duration() - 0.1f) < 1e-5f);
+			Pose p = rest;
+			bend->sample(0.0f, p);
+			CHECK(std::fabs(p.pos[0].y - 10.0f) < 0.01f);
+			bend->sample(0.05f, p); // half way from frame 0 to frame 1
+			CHECK(std::fabs(p.pos[0].y - 10.5f) < 0.01f);
+			bend->sample(0.2f, p);
+			CHECK(std::fabs(p.pos[0].y - 12.0f) < 0.01f);
+			// Link 5 at frame 2: its rest rotation, then 0.04 rad about its own X.
+			float restPos[3], restRot[4];
+			chainRest(60, 5, restPos, restRot);
+			const Quat want = quatMul({restRot[0], restRot[1], restRot[2], restRot[3]}, {std::sin(0.02f), 0, 0, std::cos(0.02f)});
+			const float d = std::fabs(want.x * p.rot[5].x + want.y * p.rot[5].y + want.z * p.rot[5].z + want.w * p.rot[5].w);
+			CHECK(d > 0.999999f);
+			CHECK(std::fabs(p.pos[5].y - 7.0f) < 0.01f);
+			bend->sample(99.0f, p);
+			CHECK(std::fabs(p.pos[0].y - 14.0f) < 0.01f);
+			bend->sample(-3.0f, p);
+			CHECK(std::fabs(p.pos[0].y - 10.0f) < 0.01f);
+			// A clip only moves the nodes it has tracks for.
+			Pose q = rest;
+			q.pos[3] = {1, 2, 3};
+			nod->sample(0.05f, q);
+			CHECK(q.pos[3].x == 1 && q.pos[3].y == 2 && q.pos[3].z == 3 && std::fabs(q.rot[59].y - std::sin(0.15f)) < 1e-3f);
+		}
+
+		// The animator: T_NOD runs out and hands over to S_BEND, which runs out
+		// and stays on its last frame.
+		Animator an;
+		an.bind(&m);
+		CHECK(an.current() == nullptr && !an.finished() && std::fabs(an.pose().pos[0].y - 10.0f) < 1e-4f);
+		an.play(nod);
+		an.update(0.05f);
+		CHECK(an.current() == nod && std::fabs(an.time() - 0.05f) < 1e-6f);
+		an.play(nod); // already playing: not restarted
+		CHECK(std::fabs(an.time() - 0.05f) < 1e-6f);
+		const Quat before = an.pose().rot[59];
+		an.update(0.1f);
+		CHECK(an.current() == bend && std::fabs(an.time() - 0.05f) < 1e-5f && !an.finished());
+		// The hand-over fades (T_NOD's blend-out is 0.25 s): no jump in the pose.
+		const Quat after = an.pose().rot[59];
+		CHECK(std::fabs(before.x * after.x + before.y * after.y + before.z * after.z + before.w * after.w) > 0.995f);
+		for (int i = 0; i < 20; ++i) an.update(0.05f);
+		CHECK(an.finished() && an.current() == bend && std::fabs(an.time() - bend->duration()) < 1e-6f);
+		CHECK(std::fabs(an.pose().pos[0].y - 14.0f) < 0.01f);
+		an.play(nullptr, 0.0f); // back to rest
+		an.update(0.01f);
+		CHECK(an.current() == nullptr && std::fabs(an.pose().pos[0].y - 10.0f) < 1e-4f);
+
+		// Drawn where the source mesh is - at rest and curled up - seen from
+		// the side, standing somewhere in the world and turned.
+		for (int posed = 0; posed < 2; ++posed) {
+			Pose pose = rest;
+			if (posed && bend) bend->sample(0.4f, pose);
+			m.worldTransforms(pose, world);
+			std::vector<Mat34> skin(60);
+			for (u32 i = 0; i < 60; ++i) {
+				Mat34 inv;
+				std::memcpy(inv.m, m.node(i).invBind, sizeof(inv.m));
+				skin[i] = mul(world[i], inv);
+			}
+			const Vec3 at = {300.0f, -50.0f, 700.0f};
+			const float yaw = 0.6f, light[3] = {1.0f, 0.8f, 0.6f};
+			gfx::FrameDesc fd {};
+			const Vec3 eye = {300.0f, 180.0f, -100.0f};
+			fd.view = viewLH(eye, 0.0f, 0.0f);
+			fd.eye = eye;
+			fd.fovY = 1.0f;
+			fd.zNear = 20.0f;
+			fd.zFar = 5000.0f;
+			fd.fogStart = 4000.0f;
+			fd.fogEnd = 5000.0f;
+			fd.clearColor[0] = 1;
+			fd.clearColor[1] = 2;
+			fd.clearColor[2] = 3;
+			fd.dayLight[0] = fd.dayLight[1] = fd.dayLight[2] = 1.0f;
+			gfx::frameBegin(fd);
+			gfx::setPass(gfx::PASS_WORLD);
+			m.draw(pose, at, yaw, light);
+			gfx::frameEnd();
+			const gfx::SoftStats ss = gfx::softStats();
+			// The strip has both sides: one of each pair faces the camera.
+			CHECK(ss.skinnedTriangles == 59 * 4 && ss.skinnedBackface == 59 * 2 && ss.skinnedPixels > 100);
+			// Where the pixels are ...
+			int x0 = 9999, x1 = -1, y0 = 9999, y1 = -1;
+			const u8* fb = gfx::softFramebuffer();
+			for (int y = 0; y < gfx::SCREEN_H; ++y)
+				for (int x = 0; x < gfx::SCREEN_W; ++x) {
+					const u8* px = fb + (y * gfx::SCREEN_W + x) * 4;
+					if (px[0] == 1 && px[1] == 2 && px[2] == 3) continue;
+					x0 = std::min(x0, x);
+					x1 = std::max(x1, x);
+					y0 = std::min(y0, y);
+					y1 = std::max(y1, y);
+				}
+			// ... and where the source vertices land.
+			const Mat4 vp = mul(perspectiveLH(fd.fovY, float(gfx::SCREEN_W) / float(gfx::SCREEN_H), fd.zNear, fd.zFar), fd.view);
+			const Mat34 turn = mat34From(quatFromYaw(yaw), at);
+			float wx0 = 1e9f, wx1 = -1e9f, wy0 = 1e9f, wy1 = -1e9f;
+			for (const SrcSkinVertex& v : chain.parts[0].verts) {
+				const Vec3 w = transformPoint(turn, posedVertex(v, skin));
+				const Vec4 c = transform(vp, {w.x, w.y, w.z, 1.0f});
+				const float sx = (c.x / c.w * 0.5f + 0.5f) * gfx::SCREEN_W, sy = (0.5f - c.y / c.w * 0.5f) * gfx::SCREEN_H;
+				wx0 = std::min(wx0, sx);
+				wx1 = std::max(wx1, sx);
+				wy0 = std::min(wy0, sy);
+				wy1 = std::max(wy1, sy);
+			}
+			std::printf("  chain %s: %u triangles, %u back, %u pixels; drawn %d..%d x %d..%d, expected %.1f..%.1f x %.1f..%.1f\n", posed ? "curled" : "at rest",
+			            ss.skinnedTriangles, ss.skinnedBackface, ss.skinnedPixels, x0, x1, y0, y1, double(wx0), double(wx1), double(wy0), double(wy1));
+			CHECK(wy1 - wy0 > (posed ? 35.0f : 80.0f)); // a tall thing on the screen, shorter once curled up
+			CHECK(std::fabs(float(x0) - wx0) < 1.6f && std::fabs(float(x1) - wx1) < 1.6f);
+			CHECK(std::fabs(float(y0) - wy0) < 1.6f && std::fabs(float(y1) - wy1) < 1.6f);
+		}
+		m.release();
+		CHECK(!m.loaded() && gfx::memStats().meshCount == 0 && gfx::memStats().textureCount == 0);
+	}
+	{
+		// The test character: loops wrap, moving clips know their speed.
+		Model m;
+		CHECK(m.load(pak, "hero") && m.nodeCount() == 14 && m.clipCount() == 8);
+		const Clip* run = m.clip("S_RUNL");
+		const Clip* walk = m.clip("S_WALKL");
+		const Clip* stand = m.clip("S_RUN");
+		const Clip* takeOff = m.clip("T_STAND_2_JUMP");
+		CHECK(run && walk && stand && takeOff);
+		if (run && walk && stand && takeOff) {
+			CHECK(run->loops() && (run->header().flags & CLIPF_MOVES) && std::fabs(run->header().moveSpeed - 480.0f) < 2.0f);
+			CHECK(std::fabs(walk->header().moveSpeed - 150.0f) < 2.0f);
+			CHECK(stand->loops() && !(stand->header().flags & CLIPF_MOVES) && stand->header().moveSpeed == 0.0f);
+			CHECK(!takeOff->loops() && takeOff->header().next == hashName("S_JUMP"));
+			// The root does not travel: the game moves the character.
+			Pose a, b, c;
+			m.restPose(a);
+			b = c = a;
+			const float d = run->duration();
+			run->sample(0.3f * d, a);
+			run->sample(1.3f * d, b);
+			run->sample(-0.7f * d, c);
+			float wrap = 0;
+			for (u32 i = 0; i < m.nodeCount(); ++i)
+				wrap = std::max({wrap, std::fabs(a.rot[i].x - b.rot[i].x), std::fabs(a.rot[i].w - b.rot[i].w), std::fabs(a.rot[i].x - c.rot[i].x),
+				                 std::fabs(a.pos[i].y - b.pos[i].y)});
+			CHECK(wrap < 1e-3f);
+			float travel = 0;
+			for (int f = 0; f < 16; ++f) {
+				run->sample(d * float(f) / 16.0f, a);
+				travel = std::max({travel, std::fabs(a.pos[0].x), std::fabs(a.pos[0].z)});
+			}
+			CHECK(travel < 0.01f && a.pos[0].y > 80.0f);
+			// The end of a loop leads back into its start: no jump at the seam.
+			run->sample(d - 1e-4f, a);
+			run->sample(0.0f, b);
+			float seam = 0;
+			for (u32 i = 0; i < m.nodeCount(); ++i) seam = std::max(seam, std::fabs(a.rot[i].x - b.rot[i].x));
+			CHECK(seam < 0.01f);
+		}
+	}
+	pak.close();
+
+	// Damaged data is turned down, never trusted.
+	{
+		Pak src;
+		CHECK(src.open(path.c_str()));
+		auto blob = [&](const char* name) {
+			const PakEntry* e = src.find(name);
+			std::vector<u8> out(e ? e->size : 0);
+			if (e) CHECK(src.read(*e, out.data()));
+			return out;
+		};
+		const std::vector<u8> model = blob("model/chain"), clip = blob("anim/chain/s_bend"), nod = blob("anim/chain/t_nod");
+		ModelHeader mh;
+		std::memcpy(&mh, model.data(), sizeof(mh));
+		const size_t partsAt = sizeof(ModelHeader) + mh.nodeCount * sizeof(ModelNode);
+		const size_t verticesAt = partsAt + mh.partCount * sizeof(ModelPart) + mh.clipCount * sizeof(ModelClipRef);
+		const size_t indicesAt = verticesAt + mh.vertexCount * sizeof(WorldVertex);
+		struct Damage {
+			const char* what;
+			size_t at;
+			u8 value;
+			bool truncate;
+		};
+		const Damage damages[] = {
+		    {"magic", 0, 'X', false},
+		    {"version", 4, 9, false},
+		    {"node count", 8, 61, false},
+		    {"truncated", 0, 0, true},
+		    {"parent after child", sizeof(ModelHeader) + 5 * sizeof(ModelNode), 40, false},
+		    {"palette size", partsAt + 6, 27, false},
+		    {"palette bone", partsAt + 16, 200, false},
+		    {"index range", partsAt + 12 + 3, 0x7F, false}, // top byte of indexCount
+		    {"vertex slot beyond the palette", verticesAt + 12, 78, false},
+		    {"vertex slot between rows", verticesAt + 13, 4, false},
+		    {"index beyond the vertices", indicesAt + 1, 0xFF, false},
+		};
+		PakWriter writer;
+		writer.add("model/good", ASSET_MODEL, model);
+		int n = 0;
+		for (const Damage& d : damages) {
+			std::vector<u8> bad = model;
+			if (d.truncate)
+				bad.resize(bad.size() - 4);
+			else
+				bad[d.at] = d.value;
+			writer.add("model/bad" + std::to_string(n++), ASSET_MODEL, bad);
+		}
+		// Clips: a good one, one for a longer skeleton, one cut short.
+		ModelClipRef refs[2];
+		std::memcpy(refs, model.data() + partsAt + mh.partCount * sizeof(ModelPart), sizeof(refs));
+		std::vector<u8> badClip = clip;
+		badClip[sizeof(ClipHeader) + 7] = 60; // a track for node 60 of 60
+		writer.add("anim/chain/s_bend", ASSET_CLIP, badClip);
+		std::vector<u8> shortClip = nod;
+		shortClip.resize(shortClip.size() - 14);
+		writer.add("anim/chain/t_nod", ASSET_CLIP, shortClip);
+		const std::string badPath = gDir + "/badmodels.pak";
+		writer.write(badPath);
+		src.close();
+
+		Pak bad;
+		CHECK(bad.open(badPath.c_str()));
+		Model m;
+		for (int i = 0; i < n; ++i) {
+			const bool loaded = m.load(bad, ("bad" + std::to_string(i)).c_str());
+			if (loaded) std::printf("  damaged model accepted: %s\n", damages[i].what);
+			CHECK(!loaded && !m.loaded());
+		}
+		CHECK(gfx::memStats().meshCount == 0 && gfx::memStats().textureCount == 0);
+		// The model itself is fine; its broken clips are simply not there, and
+		// its missing texture leaves it untextured.
+		CHECK(m.load(bad, "good") && m.clipCount() == 2 && !m.clip("S_BEND") && !m.clip("T_NOD") && m.textureBytes() == 0);
+		Pose rest;
+		m.restPose(rest);
+		gfx::FrameDesc fd {};
+		fd.view = viewLH({0, 200, -600}, 0, 0);
+		fd.eye = {0, 200, -600};
+		fd.fovY = 1.0f;
+		fd.zNear = 20.0f;
+		fd.zFar = 5000.0f;
+		fd.fogEnd = 5000.0f;
+		const float light[3] = {1, 1, 1};
+		gfx::frameBegin(fd);
+		gfx::setPass(gfx::PASS_WORLD);
+		m.draw(rest, {0, 0, 0}, 0, light);
+		gfx::frameEnd();
+		CHECK(gfx::softStats().skinnedPixels > 300);
+		m.release();
+		bad.close();
+	}
+	gfx::shutdown();
+}
+
+// The player's character in the game: what it does follows what the player
+// does, and the camera stays behind it and out of the walls.
+static void testHero() {
+	std::vector<BakeWorld> worlds(2);
+	worlds[0].name = "yard";
+	worlds[0].level = "YARD.ZEN";
+	SrcScene& scene = worlds[0].scene;
+	scene.materials.resize(1);
+	scene.materials[0].name = "solid";
+	// A floor of 80 x 80 m: brightly lit where x < 0, dim where x > 0.
+	for (int z = -8; z < 8; ++z)
+		for (int x = -8; x < 8; ++x) {
+			const float x0 = x * 500.0f, z0 = z * 500.0f;
+			const float p[4][3] = {{x0, 0, z0}, {x0 + 500, 0, z0}, {x0 + 500, 0, z0 + 500}, {x0, 0, z0 + 500}};
+			addQuad(scene, p[0], p[1], p[2], p[3], 0);
+			for (size_t t = scene.triangles.size() - 2; t < scene.triangles.size(); ++t)
+				for (SrcVertex& v : scene.triangles[t].v) v.rgba[0] = v.rgba[1] = v.rgba[2] = x < 0 ? 250 : 60;
+		}
+	// A wall along x = 1000..1040, six metres high, and a 30 cm step.
+	addBlock(scene, 1000, 1040, -3000, 3000, 600);
+	addBlock(scene, -600, 600, 1500, 2000, 30);
+	scene.spawnPos[0] = 0;
+	scene.spawnPos[1] = 175;
+	scene.spawnPos[2] = 0;
+	scene.hasSpawn = true;
+	worlds[1].name = "cave";
+	worlds[1].level = "CAVE.ZEN";
+	buildSyntheticCave(worlds[1].scene);
+
+	std::vector<SrcModel> models(1);
+	buildSyntheticActor(models[0]);
+	// A run of 520 cm/s instead of the controller's own 480: the player must take it over.
+	for (SrcClip& clip : models[0].clips)
+		if (clip.name == "S_RUNL")
+			for (size_t i = 0; i < clip.samples.size(); i += clip.nodes.size()) clip.samples[i].pos[2] *= 520.0f / 480.0f;
+	BakeOptions bo;
+	bo.chunker.chunkSize = 2000.0f;
+	bo.tex.maxSize = 32;
+	bo.tex.quality = 0;
+	bo.threads = 2;
+	bo.quiet = true;
+	const std::string path = gDir + "/hero.pak";
+	{
+		PakWriter writer;
+		const BakeResult r = bakeWorlds(worlds, models, bo, writer);
+		CHECK(r.models == 1 && r.report.find("== model 'hero' ==") != std::string::npos);
+		writer.write(path);
+	}
+
+	// A character that cannot be baked does not take the worlds down with it.
+	{
+		std::vector<SrcModel> broken(1);
+		buildChainModel(broken[0], 97); // more nodes than the format holds
+		std::vector<BakeWorld> one(1);
+		one[0] = worlds[0];
+		PakWriter writer;
+		const BakeResult r = bakeWorlds(one, broken, bo, writer);
+		CHECK(r.models == 0 && r.report.find("WARNING: not baked: model 'chain': 97 nodes") != std::string::npos);
+		CHECK(r.report.find("the game stays first-person") != std::string::npos);
+		const std::string brokenPath = gDir + "/brokenhero.pak";
+		writer.write(brokenPath);
+		Pak p;
+		CHECK(p.open(brokenPath.c_str()) && !p.find("meta/hero") && !p.find("model/chain") && p.find("meta/start"));
+	}
+
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	app.world().preload(app.camera().pos);
+	const Hero& hero = app.hero();
+	Player& pl = app.player();
+	CHECK(hero.loaded() && app.thirdPerson());
+	for (int r = 0; r < Hero::ROLE_COUNT; ++r) CHECK(hero.hasRole(Hero::Role(r)));
+	CHECK(std::fabs(pl.config.walkSpeed - 520.0f) < 3.0f && std::fabs(hero.roleSpeed(Hero::RUN) - pl.config.walkSpeed) < 1e-3f);
+	CHECK(std::fabs(pl.config.swimSpeed - 260.0f) < 3.0f);
+
+	const float dt = 1.0f / 30.0f;
+	auto place = [&](float x, float z, float yawDegrees) {
+		app.teleport({x, 220.0f, z});
+		app.camera().yaw = yawDegrees * 0.0174533f;
+		app.camera().pitch = 0;
+		for (int i = 0; i < 60; ++i) app.update(Input {}, dt);
+	};
+	auto angle = [](float a, float b) {
+		float d = std::fmod(a - b, 6.2831853f);
+		if (d > 3.14159265f) d -= 6.2831853f;
+		if (d < -3.14159265f) d += 6.2831853f;
+		return std::fabs(d);
+	};
+
+	// Standing: the idle clip, the camera 3.3 m behind and above the feet.
+	place(-1500, 0, 0);
+	CHECK(pl.grounded && hero.role() == Hero::IDLE && hero.speed() < 1.0f && hero.animator().current() == hero.model().clip("S_RUN"));
+	CHECK(app.heroVisible());
+	Vec3 cam = app.camera().pos;
+	CHECK(std::fabs(cam.x + 1500.0f) < 1.0f && std::fabs(cam.y - 155.0f) < 1.0f && std::fabs(cam.z + 330.0f) < 2.0f);
+	app.render();
+	gfx::SoftStats ss = gfx::softStats();
+	CHECK(ss.skinnedTriangles == hero.model().triangles() && ss.skinnedPixels > 1500);
+	// In the middle of the picture, seen from behind, feet below the horizon.
+	{
+		const Mat4 vp = mul(perspectiveLH(app.camera().fovY, float(gfx::SCREEN_W) / float(gfx::SCREEN_H), app.camera().zNear, app.camera().zFar),
+		                    viewLH(cam, app.camera().yaw, app.camera().pitch));
+		const Vec4 feet = transform(vp, {pl.feet.x, pl.feet.y, pl.feet.z, 1.0f}), head = transform(vp, {pl.feet.x, pl.feet.y + 180.0f, pl.feet.z, 1.0f});
+		CHECK(std::fabs(feet.x / feet.w) < 0.02f && feet.y / feet.w < -0.5f && head.y / head.w > 0.0f && head.y / head.w < 0.3f);
+	}
+
+	// Running: the run clip at the speed of the feet, the body turned the way it goes.
+	int runFrames = 0;
+	for (int i = 0; i < 45; ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+		runFrames += hero.role() == Hero::RUN;
+	}
+	CHECK(runFrames > 38 && hero.role() == Hero::RUN && std::fabs(hero.speed() - 520.0f) < 8.0f);
+	CHECK(hero.animator().current() == hero.model().clip("S_RUNL") && angle(hero.yaw(), 0.0f) < 0.02f);
+	CHECK(pl.feet.z > 700.0f && std::fabs(hero.feet().z - pl.feet.z) < 1e-3f);
+	// The camera follows at its distance.
+	cam = app.camera().pos;
+	CHECK(std::fabs(pl.feet.z - cam.z - 330.0f) < 3.0f);
+	// Sideways: the body faces where it goes, not where the camera looks.
+	for (int i = 0; i < 20; ++i) {
+		Input in;
+		in.moveX = -1.0f;
+		app.update(in, dt);
+	}
+	CHECK(angle(hero.yaw(), -1.5707963f) < 0.05f && hero.role() == Hero::RUN);
+	// Half a push of the stick: a walk, played faster than authored (192 over 150 cm/s).
+	for (int i = 0; i < 30; ++i) {
+		Input in;
+		in.moveZ = 0.37f;
+		app.update(in, dt);
+	}
+	CHECK(hero.role() == Hero::WALK && hero.animator().current() == hero.model().clip("S_WALKL"));
+	CHECK(std::fabs(hero.speed() - 0.37f * 520.0f) < 6.0f);
+	// Letting go: back to standing.
+	for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
+	CHECK(hero.role() == Hero::IDLE && hero.speed() < 5.0f);
+
+	// A jump: up, down, and on the ground again.
+	place(-1500, 0, 0);
+	int jumpFrames = 0, fallFrames = 0;
+	for (int i = 0; i < 40; ++i) {
+		Input in;
+		in.jump = i == 0;
+		app.update(in, dt);
+		jumpFrames += hero.role() == Hero::JUMP;
+		fallFrames += hero.role() == Hero::FALL;
+	}
+	CHECK(jumpFrames > 4 && fallFrames > 4 && hero.role() == Hero::IDLE && pl.grounded);
+	// A 30 cm step up and down is not a jump or a fall.
+	place(0, 1200, 0);
+	int airFrames = 0;
+	for (int i = 0; i < 60; ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+		airFrames += hero.role() == Hero::JUMP || hero.role() == Hero::FALL;
+	}
+	CHECK(pl.feet.z > 2100.0f && airFrames == 0);
+	// A teleport is not a sprint.
+	app.teleport({-2000, 220, -2000});
+	app.update(Input {}, dt);
+	CHECK(hero.speed() < 1.0f && std::fabs(hero.feet().x + 2000.0f) < 1e-3f);
+
+	// Lit like the ground it stands on, tinted by the time of day.
+	place(-1500, 0, 0);
+	const float bright = hero.light()[1];
+	place(500, 0, 0);
+	const float dim = hero.light()[1];
+	CHECK(bright > 1.0f && bright < 1.2f && std::fabs(dim - 60.0f / 255.0f * 1.15f) < 0.02f);
+	app.environment().timeOfDay = 1.0f; // night
+	place(-1500, 0, 0);
+	CHECK(hero.light()[1] < bright * 0.6f && hero.light()[1] >= 0.22f - 1e-3f);
+	app.environment().timeOfDay = 13.0f;
+
+	// The camera and the wall at x = 1000. Looking along -X with the wall
+	// behind: 2 m of room, so the boom is cut short and the camera stays this
+	// side of the wall ...
+	place(800, 0, -90);
+	cam = app.camera().pos;
+	CHECK(cam.x < 1000.0f - 23.0f && cam.x > 950.0f && app.heroVisible());
+	// ... and with the back to the wall there is no room at all: the view is
+	// (nearly) the character's own, and the character is not drawn.
+	place(960, 0, -90);
+	cam = app.camera().pos;
+	CHECK(!app.heroVisible() && cam.x - pl.feet.x < 25.0f && cam.x - pl.feet.x >= 0.0f && cam.x < 1000.0f - 23.0f &&
+	      std::fabs(cam.y - 155.0f) < 1e-3f);
+	app.render();
+	CHECK(gfx::softStats().skinnedTriangles == 0);
+	// Walking away from it: the camera never enters the wall and comes back
+	// out gently (no jump of more than a step and a bit per frame).
+	float worstJump = 0, boomBefore = pl.feet.x - cam.x;
+	bool inWall = false;
+	for (int i = 0; i < 60; ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+		cam = app.camera().pos;
+		inWall = inWall || cam.x > 1000.0f - 23.0f;
+		const float boom = cam.x - pl.feet.x;
+		worstJump = std::max(worstJump, std::fabs(boom - boomBefore));
+		boomBefore = boom;
+	}
+	CHECK(!inWall && app.heroVisible() && worstJump < 75.0f);
+	CHECK(std::fabs(cam.x - pl.feet.x - 330.0f) < 12.0f);
+	// Swinging the camera round so that the wall comes between: in at once.
+	place(900, 0, 0);
+	for (int i = 0; i < 40; ++i) {
+		Input in;
+		in.lookX = -1.0f; // turn left: the camera swings towards +X
+		app.update(in, dt);
+		inWall = inWall || app.camera().pos.x > 1000.0f - 23.0f;
+	}
+	CHECK(!inWall);
+
+	// First person on request, and always while flying.
+	place(-1500, 0, 0);
+	Input toggle;
+	toggle.toggleCamera = true;
+	app.update(toggle, dt);
+	CHECK(!app.thirdPerson() && !app.heroVisible() && std::fabs(app.camera().pos.y - pl.eye().y) < 1e-3f &&
+	      std::fabs(app.camera().pos.z - pl.feet.z) < 1e-3f);
+	app.render();
+	CHECK(gfx::softStats().skinnedTriangles == 0);
+	app.update(toggle, dt);
+	CHECK(app.thirdPerson());
+	for (int i = 0; i < 10; ++i) app.update(Input {}, dt); // the camera pulls back out
+	CHECK(app.heroVisible() && pl.feet.z - app.camera().pos.z > 200.0f);
+	Input fly;
+	fly.toggleFly = true;
+	app.update(fly, dt);
+	CHECK(pl.flying && !app.heroVisible() && std::fabs(app.camera().pos.z - pl.feet.z) < 1e-3f);
+	app.update(fly, dt);
+	CHECK(!pl.flying);
+
+	// Into the cave and its pool: wading is a walk, then the body lies in the
+	// surface with its hips a hand below it, and swims as fast as it moves.
+	Input next;
+	next.nextWorld = true;
+	app.update(next, dt);
+	CHECK(app.world().indoor() && hero.loaded());
+	app.world().preload(app.camera().pos);
+	int wadeWalk = 0, wadeFrames = 0, swimFrames = 0;
+	for (int i = 0; i < 220 && swimFrames < 40; ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+		if (pl.swimming) {
+			++swimFrames;
+		} else if (pl.waterDepth > pl.config.wadeDepth && pl.grounded) {
+			++wadeFrames;
+			wadeWalk += hero.role() == Hero::WALK;
+		}
+	}
+	CHECK(wadeFrames > 5 && wadeWalk >= wadeFrames - 3 && swimFrames == 40);
+	CHECK(hero.role() == Hero::SWIM && hero.animator().current() == hero.model().clip("S_SWIMF"));
+	const float surface = pl.feet.y + pl.waterDepth;
+	CHECK(std::fabs(hero.origin().y + hero.animator().pose().pos[0].y - (surface - 22.0f)) < 3.0f);
+	app.render();
+	CHECK(gfx::softStats().skinnedPixels > 200);
+	for (int i = 0; i < 30; ++i) app.update(Input {}, dt);
+	CHECK(pl.swimming && hero.role() == Hero::SWIM_IDLE && hero.animator().current() == hero.model().clip("S_SWIM"));
+
+	app.shutdown();
+	CHECK(gfx::memStats().meshCount == 0 && gfx::memStats().textureCount == 0);
+
+	// An archive without a character: first person, whatever was asked for.
+	{
+		PakWriter writer;
+		std::vector<BakeWorld> one(1);
+		one[0] = worlds[0];
+		bakeWorlds(one, bo, writer);
+		const std::string plain = gDir + "/nohero.pak";
+		writer.write(plain);
+		App a;
+		CHECK(a.init(plain.c_str(), nullptr));
+		a.world().preload(a.camera().pos);
+		a.setThirdPerson(true);
+		for (int i = 0; i < 30; ++i) a.update(Input {}, dt);
+		CHECK(!a.hero().loaded() && !a.thirdPerson() && !a.heroVisible() && std::fabs(a.camera().pos.y - 170.0f) < 1.0f);
+		CHECK(a.player().config.walkSpeed == 480.0f);
+		a.render();
+		CHECK(gfx::softStats().skinnedTriangles == 0);
+		a.shutdown();
+	}
+	gfx::shutdown();
+}
+
 static void testSky() {
 	const SkyColors noon = skyColorsAt(13.0f), night = skyColorsAt(1.0f), wrap = skyColorsAt(25.0f);
 	CHECK(noon.light[0] == 1.0f && noon.light[1] == 1.0f && noon.light[2] == 1.0f);
@@ -1984,6 +2728,8 @@ int main(int argc, char** argv) {
 	             {"streaming worlds", testStreamingWorlds},
 	             {"pacer", testPacer},
 	             {"collision", testCollision},
+	             {"model", testModel},
+	             {"hero", testHero},
 	             {"sky", testSky}};
 	for (auto& t : tests) {
 		// Later tests reuse the archives earlier ones baked.

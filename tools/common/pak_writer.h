@@ -21,6 +21,7 @@ public:
 	// Throws std::runtime_error on a duplicate name or a hash collision.
 	void add(const std::string& name, AssetType type, const std::vector<u8>& data, bool compress = true);
 	void write(const std::string& path) const;
+	bool has(const std::string& name) const;
 
 	const std::vector<Item>& items() const { return _items; }
 	u64 packedBytes(AssetType type) const;

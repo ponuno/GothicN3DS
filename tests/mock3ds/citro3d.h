@@ -69,27 +69,43 @@ void C3D_SetViewport(u32 x, u32 y, u32 w, u32 h);
 struct C3D_BufInfo {
 	const void* base;
 	int count;
+	int stride, attribCount;
+	u64 permutation;
 };
 static inline void BufInfo_Init(C3D_BufInfo* info) {
 	info->base = nullptr;
 	info->count = 0;
+	info->stride = 0;
+	info->attribCount = 0;
+	info->permutation = 0;
 }
-static inline int BufInfo_Add(C3D_BufInfo* info, const void* data, ptrdiff_t, int, u64) {
+static inline int BufInfo_Add(C3D_BufInfo* info, const void* data, ptrdiff_t stride, int attribCount, u64 permutation) {
 	info->base = data;
+	info->stride = int(stride);
+	info->attribCount = attribCount;
+	info->permutation = permutation;
 	return info->count++;
 }
 void C3D_SetBufInfo(C3D_BufInfo* info);
 
 struct C3D_AttrInfo {
 	int count;
+	struct {
+		int regId, format, components;
+	} loader[12];
 };
 C3D_AttrInfo* C3D_GetAttrInfo(void);
 static inline void AttrInfo_Init(C3D_AttrInfo* info) { info->count = 0; }
-static inline int AttrInfo_AddLoader(C3D_AttrInfo* info, int, GPU_FORMATS, int) { return info->count++; }
+static inline int AttrInfo_AddLoader(C3D_AttrInfo* info, int regId, GPU_FORMATS format, int count) {
+	if (info->count >= 12) return -1;
+	info->loader[info->count] = {regId, int(format), count};
+	return info->count++;
+}
 
 void C3D_BindProgram(shaderProgram_s* program);
 void C3D_FVUnifSet(GPU_SHADER_TYPE type, int id, float x, float y, float z, float w);
 void C3D_FVUnifMtx4x4(GPU_SHADER_TYPE type, int id, const C3D_Mtx* mtx);
+void C3D_BoolUnifSet(GPU_SHADER_TYPE type, int id, bool value);
 
 struct C3D_TexEnv {
 	int unused;

@@ -12,6 +12,9 @@ struct SoftStats {
 	u32 trianglesRasterised;
 	u32 pixelsTested;       // fragments that reached the depth test
 	u32 pixelsWritten;      // fragments that passed it (overdraw = written / screen)
+	u32 skinnedTriangles;   // of characters ...
+	u32 skinnedBackface;    // ... turned away from the camera ...
+	u32 skinnedPixels;      // ... and the fragments of theirs that passed the depth test
 };
 
 // RGBA8, SCREEN_W x SCREEN_H, row 0 at the top.

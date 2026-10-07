@@ -7,11 +7,18 @@
 // Usage: test_zen <output dir> [ZenKit sample dir]
 // The output directory is reused by the e2e test. With the sample directory
 // (ZenKit's own tests/samples) a few genuine game files are parsed as well.
+#include "bake.h"
+#include "g3ds/math.h"
+#include "g3ds/model.h"
+#include "g3ds/pak.h"
 #include "g3ds/world.h"
 #include "importers.h"
+#include "model_bake.h"
+#include "pak_writer.h"
 
 #include <zenkit/Archive.hh>
 #include <zenkit/Mesh.hh>
+#include <zenkit/ModelAnimation.hh>
 #include <zenkit/ModelHierarchy.hh>
 #include <zenkit/MultiResolutionMesh.hh>
 #include <zenkit/Stream.hh>
@@ -414,6 +421,398 @@ std::vector<std::byte> buildMdm(const zenkit::MultiResolutionMesh& rigid) {
 	w->write(skin.data(), skin.size());
 	writeChunk(w.get(), 0xD040, {});
 	return out;
+}
+
+// ---- a small character: skeleton, skinned body, animations and a script ---
+//
+// Five nodes with rotations like the real biped's (a quarter turn in the
+// root, the spine's own X pointing up):
+//   0 "BIP01"          root, hips 90 cm above the ground, a quarter turn about Y
+//   1 "BIP01 SPINE"    10 cm up, turned 120 degrees about (1, 1, 1)
+//   2 "BIP01 HEAD"     50 cm along the spine's X: (0, 150, 0) in model space
+//   3 "BIP01 L FOOT"   (-10, 5, 0) in model space
+//   4 "BIP01 L TOE0"   12 cm in front of the foot
+// Everything below is written in the usual maths convention (g3ds/math.h);
+// the files get ZenGin's.
+
+enum { HN_ROOT, HN_SPINE, HN_HEAD, HN_FOOT, HN_TOE, HN_COUNT };
+const char* const kHeroNodeNames[HN_COUNT] = {"Bip01", "Bip01 Spine", "Bip01 Head", "Bip01 L Foot", "Bip01 L Toe0"};
+const int kHeroParents[HN_COUNT] = {-1, HN_ROOT, HN_SPINE, HN_ROOT, HN_FOOT};
+
+Quat heroRestRot(int node) {
+	if (node == HN_ROOT) return quatFromYaw(1.5707963f);
+	if (node == HN_SPINE) return {0.5f, 0.5f, 0.5f, 0.5f};
+	return quatIdentity();
+}
+
+Vec3 heroRestPos(int node) {
+	// The root's quarter turn maps (a, b, c) to (c, b, -a); its children's
+	// offsets are given in model space and turned back into the root's.
+	auto intoRoot = [](Vec3 m) { return Vec3 {-m.z, m.y, m.x}; };
+	switch (node) {
+	case HN_ROOT: return {0, 90, 0};
+	case HN_SPINE: return intoRoot({0, 10, 0});
+	case HN_HEAD: return {50, 0, 0};
+	case HN_FOOT: return intoRoot({-10, -85, 0});
+	default: return intoRoot({0, -5, 12});
+	}
+}
+
+void heroRestWorld(Mat34 world[HN_COUNT]) {
+	for (int i = 0; i < HN_COUNT; ++i) {
+		const Mat34 local = mat34From(heroRestRot(i), heroRestPos(i));
+		world[i] = kHeroParents[i] < 0 ? local : mul(world[kHeroParents[i]], local);
+	}
+}
+
+// `turned`: the same character built facing -Z (the root turned half round).
+Quat halfTurn(Quat q) { return quatMul(quatFromYaw(3.14159265f), q); }
+
+zenkit::ModelHierarchy buildHeroHierarchy(bool turned) {
+	zenkit::ModelHierarchy h;
+	for (int i = 0; i < HN_COUNT; ++i) {
+		zenkit::ModelHierarchyNode n;
+		n.name = kHeroNodeNames[i];
+		n.parent_index = int16_t(kHeroParents[i]);
+		Vec3 pos = heroRestPos(i);
+		if (i == HN_ROOT) pos = {0, 0, 0}; // the hips' height travels in the root translation
+		const Mat34 m = mat34From(turned && i == HN_ROOT ? halfTurn(heroRestRot(i)) : heroRestRot(i), pos);
+		for (int c = 0; c < 4; ++c) n.transform.columns[c] = zenkit::Vec4 {m.m[0][c], m.m[1][c], m.m[2][c], c == 3 ? 1.0f : 0.0f};
+		h.nodes.push_back(n);
+	}
+	h.root_translation = zenkit::Vec3 {0, 90, 0};
+	h.checksum = 0;
+	return h;
+}
+
+// Model-space rest positions of the body's four vertices: a tetrahedron, its
+// faces wound so that their fronts point outwards.
+const float kHeroVertex[4][3] = {{0, 150, 0}, {70, 60, -50}, {-70, 5, -20}, {10, 0, 80}};
+const uint16_t kHeroTris[4][3] = {{0, 2, 1}, {0, 1, 3}, {0, 3, 2}, {1, 2, 3}};
+
+std::vector<std::byte> buildHeroMdm(bool insideOut) {
+	Mat34 world[HN_COUNT];
+	heroRestWorld(world);
+	zenkit::MultiResolutionMesh mrm;
+	for (const auto& p : kHeroVertex) mrm.positions.push_back(zenkit::Vec3 {p[0], p[1], p[2]});
+	zenkit::SubMesh sub;
+	sub.mat.name = "FIX_HERO_SKIN";
+	sub.mat.texture = "Fix_Skin_V0_C0.TGA";
+	for (uint16_t i = 0; i < 4; ++i) {
+		zenkit::MeshWedge w {};
+		w.normal = zenkit::Vec3 {0, 0, 1};
+		w.texture = zenkit::Vec2 {float(i & 1), float(i >> 1)};
+		w.index = i;
+		sub.wedges.push_back(w);
+	}
+	for (const auto& t : kHeroTris)
+		sub.triangles.push_back(insideOut ? zenkit::MeshTriangle {{t[0], t[2], t[1]}} : zenkit::MeshTriangle {{t[0], t[1], t[2]}});
+	mrm.sub_meshes.push_back(sub);
+
+	// Vertex 1 hangs on three bones; the weakest must be dropped on import.
+	struct Weight {
+		float weight;
+		int node;
+	};
+	const std::vector<std::vector<Weight>> weights = {
+	    {{1.0f, HN_HEAD}}, {{0.6f, HN_SPINE}, {0.3f, HN_HEAD}, {0.1f, HN_ROOT}}, {{1.0f, HN_FOOT}}, {{1.0f, HN_TOE}}};
+	std::vector<std::byte> nodes;
+	{
+		auto w = zenkit::Write::to(&nodes);
+		uint32_t bytes = 0;
+		for (const auto& v : weights) bytes += 4 + uint32_t(v.size()) * 17;
+		w->write_uint(bytes);
+		for (size_t i = 0; i < weights.size(); ++i) {
+			w->write_uint(uint32_t(weights[i].size()));
+			for (const Weight& e : weights[i]) {
+				// The same model-space point, as each bone sees it.
+				const Vec3 local = transformPoint(invertRigid(world[e.node]), {kHeroVertex[i][0], kHeroVertex[i][1], kHeroVertex[i][2]});
+				w->write_float(e.weight);
+				w->write_vec3(zenkit::Vec3 {local.x, local.y, local.z});
+				w->write_ubyte(uint8_t(e.node));
+			}
+		}
+		w->write_uint(0); // wedge normals
+		w->write_ushort(HN_COUNT);
+		for (int i = 0; i < HN_COUNT; ++i) w->write_int(i);
+		for (int i = 0; i < HN_COUNT; ++i) {
+			for (int f = 0; f < 15; ++f) w->write_float(0);
+			w->write_ushort(0);
+		}
+	}
+	std::vector<std::byte> out;
+	auto w = zenkit::Write::to(&out);
+	std::vector<std::byte> payload;
+	zenkit::Write::to(&payload)->write_uint(0x04030506);
+	writeChunk(w.get(), 0xD000, payload);
+	payload.clear();
+	zenkit::Write::to(&payload)->write_ushort(0); // no rigid parts
+	writeChunk(w.get(), 0xD020, payload);
+	payload.clear();
+	{
+		auto p = zenkit::Write::to(&payload);
+		p->write_uint(0);
+		p->write_ushort(1);
+	}
+	writeChunk(w.get(), 0xD030, payload);
+	payload.clear();
+	zenkit::Write::to(&payload)->write_uint(4);
+	writeChunk(w.get(), 0xE100, payload);
+	writeChunk(w.get(), 0xB100, mrmSection(mrm));
+	writeChunk(w.get(), 0xB1FF, nodes);
+	writeChunk(w.get(), 0xE110, {});
+	writeChunk(w.get(), 0xD040, {});
+	return out;
+}
+
+// What the clips are meant to do, frame by frame.
+struct HeroSample {
+	Vec3 pos;
+	Quat rot;
+};
+const uint32_t kHeroTracks[3] = {HN_ROOT, HN_SPINE, HN_HEAD}; // the foot and the toe are not animated
+
+HeroSample heroSample(int clip, int frame, int track) {
+	const float f = float(frame);
+	if (track == 0) {
+		// The root walks away from the origin (100 cm per frame along Z, 5 along X) and bobs.
+		return {{5.0f * f, 90.0f + f, 100.0f * f}, quatFromYaw(1.5707963f + 0.1f * f + 0.05f * float(clip))};
+	}
+	if (track == 1) {
+		const Quat bend = {std::sin(0.05f * f), 0, 0, std::cos(0.05f * f)};
+		return {heroRestPos(HN_SPINE), quatMul(heroRestRot(HN_SPINE), bend)};
+	}
+	const Quat nod = {0, 0, std::sin(0.1f * f + 0.02f), std::cos(0.1f * f + 0.02f)};
+	return {heroRestPos(HN_HEAD), nod};
+}
+
+// A compiled .MAN. ZenGin stores a rotation as three 16-bit components of a
+// quaternion with positive w - and turning the other way round than its node
+// matrices. `zenGinConvention` = false writes them unturned instead, to see
+// whether the importer notices.
+std::vector<std::byte> buildMan(const char* name, const char* next, float fps, int clip, int frames, bool zenGinConvention,
+                                bool turned) {
+	auto sampleOf = [&](int f, int t) {
+		HeroSample s = heroSample(clip, f, t);
+		if (turned && t == 0) {
+			s.pos = {-s.pos.x, s.pos.y, -s.pos.z};
+			s.rot = halfTurn(s.rot);
+		}
+		return s;
+	};
+	const float rotScale = (1.0f / 65535.0f) * 2.1f;
+	float lo = 1e30f, hi = -1e30f;
+	for (int f = 0; f < frames; ++f)
+		for (int t = 0; t < 3; ++t) {
+			const HeroSample s = sampleOf(f, t);
+			for (float c : {s.pos.x, s.pos.y, s.pos.z}) {
+				lo = std::min(lo, c);
+				hi = std::max(hi, c);
+			}
+		}
+	const float posScale = hi > lo ? (hi - lo) / 65535.0f : 1.0f;
+	std::vector<std::byte> out;
+	auto w = zenkit::Write::to(&out);
+	std::vector<std::byte> payload;
+	{
+		auto p = zenkit::Write::to(&payload);
+		p->write_ushort(0xC);
+		p->write_line(name);
+		p->write_uint(1); // layer
+		p->write_uint(uint32_t(frames));
+		p->write_uint(3);
+		p->write_float(fps);
+		p->write_float(25.0f);
+		p->write_float(lo);
+		p->write_float(posScale);
+		for (int i = 0; i < 6; ++i) p->write_float(0); // bounding box
+		p->write_line(next);
+	}
+	writeChunk(w.get(), 0xA020, payload);
+	payload.clear();
+	{
+		auto p = zenkit::Write::to(&payload);
+		p->write_uint(0); // checksum
+		for (uint32_t node : kHeroTracks) p->write_uint(node);
+		for (int f = 0; f < frames; ++f)
+			for (int t = 0; t < 3; ++t) {
+				const HeroSample s = sampleOf(f, t);
+				Quat q = s.rot;
+				if (zenGinConvention) q = {-q.x, -q.y, -q.z, q.w};
+				if (q.w < 0) q = {-q.x, -q.y, -q.z, -q.w};
+				for (float c : {q.x, q.y, q.z}) p->write_ushort(uint16_t(std::lround(c / rotScale + 32767.0f)));
+				for (float c : {s.pos.x, s.pos.y, s.pos.z}) p->write_ushort(uint16_t(std::lround((c - lo) / posScale)));
+			}
+	}
+	writeChunk(w.get(), 0xA090, payload);
+	return out;
+}
+
+const char kHeroScript[] =
+    "Model (\"FIX_HERO\")\n{\n"
+    "\tmeshAndTree (\"Fix_Hero_Body.ASC\" DONT_USE_MESH)\n"
+    "\tregisterMesh (\"Fix_Hero_Body.ASC\")\n"
+    "\taniEnum\n\t{\n"
+    "\t\tani (\"s_Run\" 1 \"s_Run\" 0.1 0.2 M. \"Fix_Hero_M01.asc\" F 0 2 FPS:10)\n"
+    "\t\tani (\"s_WalkL\" 1 \"s_WalkL\" 0.0 0.1 M. \"Fix_Hero_M02.asc\" F 0 3 FPS:25)\n"
+    "\t\taniAlias (\"t_JumpB\" 1 \"s_Run\" 0.2 0.3 M. \"s_WalkL\" R)\n"
+    "\t\taniAlias (\"s_Walk\" 1 \"s_Walk\" 0.0 0.0 M. \"t_JumpB\" R)\n"
+    "\t}\n}\n";
+
+void yellowPixel(int, int, uint8_t* p) {
+	p[0] = 230; p[1] = 200; p[2] = 40; p[3] = 255;
+}
+
+void bluePixel(int, int, uint8_t* p) {
+	p[0] = 40; p[1] = 60; p[2] = 220; p[3] = 255;
+}
+
+float quatDistance(Quat a, const float b[4]) {
+	const float d = std::fabs(a.x * b[0] + a.y * b[1] + a.z * b[2] + a.w * b[3]);
+	return 2.0f * std::acos(std::min(d, 1.0f)) * 57.29578f;
+}
+
+bool modelNote(const SrcModel& model, const char* text) {
+	for (const std::string& n : model.notes)
+		if (n.find(text) != std::string::npos) return true;
+	return false;
+}
+
+struct HeroCase {
+	const char* script;
+	const char* body;
+	bool zenGinConvention; // rotations stored the way ZenGin stores them
+	bool insideOut;        // the body's triangles wound the wrong way
+	bool turned;           // the character built facing -Z
+};
+
+void checkHero(std::shared_ptr<const ZenGame> game, const HeroCase& hc, const fs::path& dir) {
+	const bool zenGinConvention = hc.zenGinConvention;
+	ZenActorOptions opt;
+	opt.script = hc.script;
+	opt.body = hc.body;
+	opt.head = ""; // ZenKit cannot write morph meshes; the head is covered by the sample files
+	SrcModel model;
+	CHECK(importZenActor(game, opt, model));
+	for (const std::string& n : model.notes) std::printf("  %s\n", n.c_str());
+
+	// Skeleton.
+	CHECK(model.nodes.size() == HN_COUNT);
+	if (model.nodes.size() != HN_COUNT) return;
+	for (int i = 0; i < HN_COUNT; ++i) {
+		const SrcNode& n = model.nodes[size_t(i)];
+		std::string upperName = kHeroNodeNames[i];
+		for (char& c : upperName) c = char(std::toupper(static_cast<unsigned char>(c)));
+		CHECK(n.name == upperName && n.parent == kHeroParents[i]);
+		const Vec3 pos = heroRestPos(i);
+		CHECK(std::fabs(n.pos[0] - pos.x) < 1e-3f && std::fabs(n.pos[1] - pos.y) < 1e-3f && std::fabs(n.pos[2] - pos.z) < 1e-3f);
+		CHECK(quatDistance(heroRestRot(i), n.rot) < 0.1f);
+	}
+	if (hc.turned) {
+		CHECK(modelNote(model, "character turned by 180 degrees to face +Z (S_WALKL carries it 300 cm along -Z)"));
+	} else {
+		CHECK(modelNote(model, "character faces +Z (S_WALKL carries it 300 cm along +Z)"));
+		CHECK(modelNote(model, "rest pose within 0.0 cm"));
+	}
+	CHECK(modelNote(model, hc.insideOut ? "character mesh: 4 triangles, winding flipped (score -0.147)"
+	                                    : "character mesh: 4 triangles, winding kept (score 0.147)"));
+	CHECK(modelNote(model, "1 of 4 skin vertices hang on more than two bones"));
+
+	// Body: four triangles, fronts outwards; the skin variant of the texture;
+	// two bones per vertex.
+	CHECK(model.parts.size() == 1);
+	if (model.parts.size() != 1) return;
+	const SrcModelPart& part = model.parts[0];
+	CHECK(part.material.texture == "FIX_SKIN_V4_C1.TGA" && modelNote(model, "character skin: FIX_SKIN_V4_C1.TGA"));
+	CHECK(part.verts.size() == 12);
+	int corner[12];
+	for (int t = 0; t < 4; ++t)
+		for (int k = 0; k < 3; ++k) corner[t * 3 + k] = kHeroTris[t][k];
+	for (size_t k = 0; k < part.verts.size() && k < 12; ++k) {
+		const SrcSkinVertex& v = part.verts[k];
+		const float* want = kHeroVertex[corner[k]];
+		CHECK(std::fabs(v.pos[0] - want[0]) < 1e-3f && std::fabs(v.pos[1] - want[1]) < 1e-3f && std::fabs(v.pos[2] - want[2]) < 1e-3f);
+		if (corner[k] == 1) {
+			CHECK(v.bone[0] == HN_SPINE && v.bone[1] == HN_HEAD && std::fabs(v.weight1 - 0.3f / 0.9f) < 1e-4f);
+		} else {
+			const int single[4] = {HN_HEAD, -1, HN_FOOT, HN_TOE};
+			CHECK(v.bone[0] == single[corner[k]] && v.weight1 == 0.0f);
+		}
+	}
+
+	// Clips: the two animations and the alias; everything else is reported missing.
+	CHECK(model.clips.size() == 4);
+	CHECK(modelNote(model, zenGinConvention ? "rotations read conjugated" : "rotations read as stored"));
+	CHECK(modelNote(model, "animations not found") && modelNote(model, "S_SWIMF"));
+	CHECK(modelNote(model, "hips 90.0 cm above the ground at rest, 90.0 cm in S_RUN"));
+	const SrcClip* run = nullptr;
+	const SrcClip* walk = nullptr;
+	const SrcClip* back = nullptr;
+	const SrcClip* again = nullptr;
+	for (const SrcClip& c : model.clips) {
+		if (c.name == "S_WALK") again = &c;
+		if (c.name == "S_RUN") run = &c;
+		if (c.name == "S_WALKL") walk = &c;
+		if (c.name == "T_JUMPB") back = &c;
+	}
+	CHECK(run && walk && back && again);
+	if (!run || !walk || !back || !again) return;
+	CHECK(run->next == "S_RUN" && run->moves && std::fabs(run->fps - 10.0f) < 1e-4f && run->samples.size() == 3 * 3);
+	CHECK(std::fabs(run->blendIn - 0.1f) < 1e-4f && std::fabs(run->blendOut - 0.2f) < 1e-4f);
+	CHECK(walk->samples.size() == 4 * 3 && std::fabs(walk->fps - 25.0f) < 1e-4f);
+	CHECK(back->next == "S_RUN" && back->samples.size() == 4 * 3 && std::fabs(back->blendIn - 0.2f) < 1e-4f);
+	float worstRot = 0, worstPos = 0;
+	auto compare = [&](const SrcClip& c, int clip, int frames, bool reversed) {
+		CHECK(c.nodes.size() == 3 && c.nodes[0] == HN_ROOT && c.nodes[1] == HN_SPINE && c.nodes[2] == HN_HEAD);
+		for (int f = 0; f < frames; ++f)
+			for (int t = 0; t < 3; ++t) {
+				const HeroSample want = heroSample(clip, reversed ? frames - 1 - f : f, t);
+				const SrcClipSample& got = c.samples[size_t(f * 3 + t)];
+				worstRot = std::max(worstRot, quatDistance(want.rot, got.rot));
+				worstPos = std::max({worstPos, std::fabs(got.pos[0] - want.pos.x), std::fabs(got.pos[1] - want.pos.y),
+				                     std::fabs(got.pos[2] - want.pos.z)});
+			}
+	};
+	compare(*run, 0, 3, false);
+	compare(*walk, 1, 4, false);
+	compare(*back, 1, 4, true); // the alias plays the walk backwards
+	compare(*again, 1, 4, false); // an alias of that alias, backwards again: the walk as it was
+	CHECK(again->next == "S_WALK");
+	std::printf("  clips: rotations within %.3f degrees, positions within %.4f cm of what was written\n", double(worstRot),
+	            double(worstPos));
+	CHECK(worstRot < 0.05f && worstPos < 0.01f);
+
+	// Through the baker: the root's travel becomes a speed and leaves the samples.
+	BakeOptions bo;
+	bo.tex.maxSize = 32;
+	bo.tex.quality = 0;
+	bo.quiet = true;
+	PakWriter writer;
+	const ModelBakeResult baked = bakeModel(model, bo, writer);
+	CHECK(baked.clips == 4 && baked.triangles == 4 && baked.parts == 1 && baked.largestPalette == 4 && baked.textures == 1);
+	const std::string pakPath = (dir / "hero.pak").string();
+	writer.write(pakPath);
+	Pak pak;
+	CHECK(pak.open(pakPath.c_str()));
+	const PakEntry* e = pak.find("anim/hero/s_run");
+	CHECK(e && e->type == ASSET_CLIP);
+	if (e) {
+		std::vector<u8> blob(e->size);
+		CHECK(pak.read(*e, blob.data()));
+		ClipHeader h;
+		std::memcpy(&h, blob.data(), sizeof(h));
+		CHECK(h.magic == CLIP_MAGIC && h.trackCount == 3 && h.frameCount == 3 && (h.flags & CLIPF_LOOP) && (h.flags & CLIPF_MOVES));
+		// 100.12 cm per frame at 10 frames per second.
+		CHECK(std::fabs(h.moveSpeed - std::sqrt(100.0f * 100.0f + 5.0f * 5.0f) * 10.0f) < 1.0f);
+		CHECK(h.next == hashName("S_RUN"));
+		const ClipSample* samples = reinterpret_cast<const ClipSample*>(blob.data() + sizeof(ClipHeader) + clipTrackTableSize(3));
+		for (int f = 0; f < 3; ++f) {
+			// The root stays over the origin (to what the file's 16-bit positions allow) ...
+			CHECK(std::fabs(float(samples[f * 3].pos[0]) * h.posScale) < 0.02f && std::fabs(float(samples[f * 3].pos[2]) * h.posScale) < 0.02f);
+			CHECK(std::fabs(float(samples[f * 3].pos[1]) * h.posScale - (90.0f + float(f))) < 0.01f); // ... but bobs
+		}
+	}
+	CHECK(pak.find("model/hero") && pak.find("tex/fix_skin_v4_c1") && !pak.find("tex/fix_skin_v0_c0"));
 }
 
 std::shared_ptr<zenkit::VirtualObject> makeObject(const char* visual, float x, float y, float z, bool solid, bool visible = true) {
@@ -942,6 +1341,27 @@ int main(int argc, char** argv) {
 		addToVfs(anims, "FIX_GATE.MDM", mdm);
 		addToVfs(anims, "FIX_MILL.MDL", mdl);
 
+		// The character: script, skeleton, body, three clips' worth of files
+		// and both skins. A second script has its clips stored the other way
+		// round; a third is the same character built facing backwards.
+		const std::byte* scriptBytes = reinterpret_cast<const std::byte*>(kHeroScript);
+		const std::vector<std::byte> heroScript(scriptBytes, scriptBytes + sizeof(kHeroScript) - 1);
+		for (const char* base : {"FIX_HERO", "FIX_HERO2", "FIX_HERO3"}) {
+			const bool zenGin = std::string(base) != "FIX_HERO2", turned = std::string(base) == "FIX_HERO3";
+			std::vector<std::byte> heroMdh;
+			auto hhw = zenkit::Write::to(&heroMdh);
+			buildHeroHierarchy(turned).save(hhw.get());
+			addToVfs(vfs.mkdir("_WORK/DATA/ANIMS"), (std::string(base) + ".MDS").c_str(), heroScript);
+			addToVfs(anims, (std::string(base) + ".MDH").c_str(), heroMdh);
+			addToVfs(anims, (std::string(base) + "-S_RUN.MAN").c_str(), buildMan("S_RUN", "S_RUN", 10.0f, 0, 3, zenGin, turned));
+			addToVfs(anims, (std::string(base) + "-S_WALKL.MAN").c_str(),
+			         buildMan("S_WALKL", "S_WALKL", 25.0f, 1, 4, zenGin, turned));
+		}
+		addToVfs(anims, "FIX_HERO_BODY.MDM", buildHeroMdm(false));
+		addToVfs(anims, "FIX_HERO_BODY_IO.MDM", buildHeroMdm(true));
+		addToVfs(texDir, "FIX_SKIN_V0_C0-C.TEX", saveTexture(32, zenkit::TextureFormat::DXT1, yellowPixel));
+		addToVfs(texDir, "FIX_SKIN_V4_C1-C.TEX", saveTexture(32, zenkit::TextureFormat::DXT1, bluePixel));
+
 		auto out = zenkit::Write::to(dir / "game" / "DATA" / "fixture.VDF");
 		vfs.save(out.get(), zenkit::GameVersion::GOTHIC_1);
 	}
@@ -994,6 +1414,26 @@ int main(int argc, char** argv) {
 			CHECK(second.ladders.empty());
 		} catch (const std::exception& ex) {
 			std::printf("FAIL import threw: %s\n", ex.what());
+			++gFailures;
+		}
+	}
+
+	// ---- the character ----
+	if (game) {
+		std::printf("[ RUN ] character from VDF\n");
+		try {
+			checkHero(game, {"Fix_Hero.MDS", "Fix_Hero_Body", true, false, false}, dir);
+			// Rotations stored unturned and a body wound inside out: both noticed.
+			checkHero(game, {"FIX_HERO2.mds", "FIX_HERO_BODY_IO", false, true, false}, dir);
+			// Built facing backwards: turned round on import.
+			checkHero(game, {"FIX_HERO3", "FIX_HERO_BODY", true, false, true}, dir);
+			// A game without the files: no character, and the bake goes on.
+			SrcModel none;
+			ZenActorOptions missing;
+			CHECK(!importZenActor(game, missing, none));
+			CHECK(modelNote(none, "HUMANS.MSB/.MDS not found"));
+		} catch (const std::exception& ex) {
+			std::printf("FAIL character import threw: %s\n", ex.what());
 			++gFailures;
 		}
 	}
@@ -1067,6 +1507,70 @@ int main(int argc, char** argv) {
 		}
 	} else {
 		std::printf("[ SKIP ] sample files (no ZenKit sample directory given)\n");
+	}
+
+	// A genuine animation of the game's humans: the reason for reading its
+	// rotations conjugated. Nodes 1..5 are the pelvis and the chain above it,
+	// each a few centimetres along its parent's X axis - so the pelvis' X must
+	// point up. It does when the root's and the pelvis' rotations are read
+	// conjugated, and lies flat when they are read as stored.
+	if (!samples.empty() && fs::exists(samples / "G1" / "HUMANS-S_FISTRUN.MAN")) {
+		std::printf("[ RUN ] sample animation\n");
+		auto rd = zenkit::Read::from(samples / "G1" / "HUMANS-S_FISTRUN.MAN");
+		zenkit::ModelAnimation ani;
+		ani.load(rd.get());
+		CHECK(ani.name == "S_FISTRUN" && ani.frame_count == 20 && ani.node_count == 25 && ani.node_indices[0] == 0 &&
+		      ani.node_indices[1] == 1);
+		const zenkit::AnimationSample& root = ani.samples[0];
+		const zenkit::AnimationSample& pelvis = ani.samples[1];
+		CHECK(root.position.y > 80.0f && root.position.y < 100.0f); // hips above the ground: model space starts at the feet
+		for (int n = 2; n <= 5; ++n) CHECK(ani.samples[size_t(n)].position.x > 2.0f && std::fabs(ani.samples[size_t(n)].position.y) < 0.5f);
+		auto upOfX = [&](float sign) {
+			const Quat r = {root.rotation.x * sign, root.rotation.y * sign, root.rotation.z * sign, root.rotation.w};
+			const Quat p = {pelvis.rotation.x * sign, pelvis.rotation.y * sign, pelvis.rotation.z * sign, pelvis.rotation.w};
+			return quatRotate(quatMul(r, p), {1, 0, 0}).y;
+		};
+		std::printf("  spine direction: up %.2f read conjugated, %.2f read as stored\n", double(upOfX(-1.0f)), double(upOfX(1.0f)));
+		CHECK(upOfX(-1.0f) > 0.95f && std::fabs(upOfX(1.0f)) < 0.3f);
+
+		// The whole first frame, put together the way the importer and the
+		// runtime do (parents as in the biped the game's humans are built on:
+		// the legs are nodes 26-29 and 30-33, the spine 2-6): a man standing
+		// on the ground, toes in front of the ankles, facing +Z, his left
+		// side at -X. Read as stored, the same numbers put his feet above his head.
+		const int parentOf[34] = {-1, 0, 1, 2, 3, 4, 5, -2, 4, 8, 9, 10, 11, -2, -2, 4, 15, 16, 17, 18, -2, -2, -2, -2, -2, -2, 1, 26, 27, 28, 1, 30, 31, 32};
+		for (int reading = 0; reading < 2; ++reading) {
+			const float sign = reading == 0 ? -1.0f : 1.0f;
+			Mat34 world[34];
+			bool have[34] = {};
+			for (uint32_t t = 0; t < ani.node_count; ++t) {
+				const uint32_t node = ani.node_indices[t];
+				if (node >= 34 || parentOf[node] == -2) continue;
+				const zenkit::AnimationSample& s0 = ani.samples[t];
+				const Mat34 local = mat34From(quatNormalize({s0.rotation.x * sign, s0.rotation.y * sign, s0.rotation.z * sign, s0.rotation.w}),
+				                              {s0.position.x, s0.position.y, s0.position.z});
+				const int parent = parentOf[node];
+				if (parent >= 0 && !have[parent]) continue; // (tracks come parents first)
+				world[node] = parent < 0 ? local : mul(world[parent], local);
+				have[node] = true;
+			}
+			CHECK(have[6] && have[28] && have[29] && have[32] && have[33]);
+			auto at = [&](int node) { return Vec3 {world[node].m[0][3], world[node].m[1][3], world[node].m[2][3]}; };
+			const Vec3 head = at(6), lFoot = at(28), lToe = at(29), rFoot = at(32), rToe = at(33);
+			std::printf("  first frame read %s: head at %.0f %.0f %.0f, ankles at height %.0f and %.0f, toes at %.1f and %.1f, %.0f and %.0f cm "
+			            "in front of them\n",
+			            reading == 0 ? "conjugated" : "as stored", double(head.x), double(head.y), double(head.z), double(lFoot.y),
+			            double(rFoot.y), double(lToe.y), double(rToe.y), double(lToe.z - lFoot.z), double(rToe.z - rFoot.z));
+			if (reading == 0) {
+				CHECK(head.y > 135.0f && head.y < 160.0f);
+				CHECK(std::fabs(lToe.y) < 2.0f && std::fabs(rToe.y) < 2.0f); // on the ground: the model's origin is at its feet
+				CHECK(lFoot.y > 8.0f && lFoot.y < 20.0f && rFoot.y > 8.0f && rFoot.y < 20.0f);
+				CHECK(lToe.z - lFoot.z > 15.0f && rToe.z - rFoot.z > 15.0f); // facing +Z
+				CHECK(lFoot.x < rFoot.x - 20.0f);                            // left is -X
+			} else {
+				CHECK(lFoot.y > head.y && rFoot.y > head.y);
+			}
+		}
 	}
 
 	std::printf("%d checks, %d failed\n", gChecks, gFailures);

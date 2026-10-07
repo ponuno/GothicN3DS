@@ -7,6 +7,9 @@ shader:
 
     picasso -o world.shbin platform/3ds/world.v.pica
     python3 scripts/shbin2h.py world.shbin platform/3ds/world_shbin.h world_shbin
+
+and likewise world_plain.v.pica -> world_plain_shbin.h (world_plain_shbin),
+the fallback shader without characters.
 """
 import struct
 import sys

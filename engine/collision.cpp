@@ -37,12 +37,14 @@ void ChunkCollider::release() {
 	free(triangles);
 	free(cellStart);
 	free(cellItems);
+	free(light);
 	*this = ChunkCollider {};
 }
 
 u32 ChunkCollider::bytes() const {
 	if (!positions) return 0;
-	return vertexCount * 6 + triangleCount * 6 + (gridW * gridH + 1) * 4 + (cellStart ? cellStart[gridW * gridH] : 0) * 4;
+	return vertexCount * 6 + triangleCount * (6 + (light ? 4u : 0u)) + (gridW * gridH + 1) * 4 +
+	       (cellStart ? cellStart[gridW * gridH] : 0) * 4;
 }
 
 bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const WorldVertex* vertices,
@@ -61,7 +63,8 @@ bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const
 	const u16 unused = 0xFFFF;
 	u16* remap = static_cast<u16*>(malloc(size_t(h.vertexCount) * sizeof(u16) + 2));
 	triangles = static_cast<u16*>(malloc(size_t(tris) * 3 * sizeof(u16)));
-	if (!remap || !triangles) {
+	light = static_cast<u8*>(malloc(size_t(tris) * 4));
+	if (!remap || !triangles || !light) {
 		free(remap);
 		release();
 		return false;
@@ -75,6 +78,17 @@ bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const
 		for (u32 i = 0; i < count; ++i) {
 			const u16 v = indices[batches[b].firstIndex + i];
 			if (remap[v] == unused) remap[v] = u16(used++);
+			if (i % 3 == 0) {
+				// What stands on this triangle is lit like it: the mean of its corners.
+				const WorldVertex& c0 = vertices[v];
+				const WorldVertex& c1 = vertices[indices[batches[b].firstIndex + i + 1]];
+				const WorldVertex& c2 = vertices[indices[batches[b].firstIndex + i + 2]];
+				u8* l = light + size_t(n / 3) * 4;
+				l[0] = u8((u32(c0.r) + c1.r + c2.r) / 3);
+				l[1] = u8((u32(c0.g) + c1.g + c2.g) / 3);
+				l[2] = u8((u32(c0.b) + c1.b + c2.b) / 3);
+				l[3] = u8((u32(c0.a) + c1.a + c2.a) / 3);
+			}
 			triangles[n++] = remap[v];
 		}
 	}
@@ -163,7 +177,7 @@ static inline Vec3 localVertex(const i16* positions, u16 index) {
 	return {float(p[0]), float(p[1]), float(p[2])};
 }
 
-bool ChunkCollider::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal) const {
+bool ChunkCollider::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, u8* lightOut) const {
 	if (!triangleCount) return false;
 	// Work in the chunk's quantised space; the scale is uniform, so shapes keep.
 	const float inv = 1.0f / scale;
@@ -194,6 +208,7 @@ bool ChunkCollider::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal)
 		Vec3 n = normalize(cross(b - a, c - a));
 		if (n.y < 0) n = n * -1.0f;
 		normal = n;
+		if (lightOut && light) memcpy(lightOut, light + size_t(cellItems[i]) * 4, 4);
 	}
 	if (found) hitY = origin[1] + best * scale;
 	return found;

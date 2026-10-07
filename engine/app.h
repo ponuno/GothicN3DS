@@ -2,6 +2,7 @@
 // player and the sky. Platforms feed it input and call update()/render().
 #pragma once
 #include "g3ds/pak.h"
+#include "hero.h"
 #include "player.h"
 #include "sky.h"
 #include "world.h"
@@ -14,6 +15,10 @@ struct Camera {
 	float fovY = 1.0472f; // 60 degrees
 	float zNear = 20.0f;  // cm
 	float zFar = 14000.0f;
+	// Third person: the camera circles a point above the character's feet.
+	float distance = 330.0f;    // cm behind it
+	float pivotHeight = 155.0f; // cm above the feet
+	float boomRadius = 24.0f;   // how much room the camera keeps from walls (the near plane reaches 30 cm sideways)
 };
 
 struct Environment {
@@ -51,6 +56,13 @@ public:
 	Camera& camera() { return _cam; }
 	Environment& environment() { return _env; }
 	Player& player() { return _player; }
+	const Hero& hero() const { return _hero; }
+	// Third person needs a character; without one the view is first-person.
+	bool thirdPerson() const { return _thirdPerson && _hero.loaded(); }
+	void setThirdPerson(bool on) { _thirdPerson = on; }
+	// True if the character is drawn this frame (not while flying, and not
+	// when a wall has pushed the camera into its head).
+	bool heroVisible() const { return _heroVisible; }
 	World& world() { return _world; }
 	const World& world() const { return _world; }
 	Pak& pak() { return _pak; }
@@ -68,10 +80,12 @@ public:
 
 private:
 	void checkPortals();
+	void placeCamera(float dt);
 
 	Pak _pak;
 	World _world;
 	Player _player;
+	Hero _hero;
 	Sky _sky;
 	Camera _cam;
 	Environment _env;
@@ -80,6 +94,9 @@ private:
 	u32 _switches = 0;
 	bool _portalLock = false; // just arrived: ignore portals until the player has left their boxes
 	bool _underwater = false;
+	bool _thirdPerson = true; // wanted; see thirdPerson()
+	bool _heroVisible = false;
+	float _boom = 0; // current camera distance
 };
 
 } // namespace g3

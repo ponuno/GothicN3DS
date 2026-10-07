@@ -21,6 +21,16 @@ bool App::init(const char* pakPath, const char* worldName) {
 		_pak.close();
 		return false;
 	}
+	// Optional: archives without a character stay first-person. With one, the
+	// player moves as fast as its run animation carries it, so the feet do
+	// not slide (within reason: a broken clip must not cripple the game).
+	_player.config = PlayerConfig {};
+	if (_hero.load(_pak)) {
+		const float run = _hero.roleSpeed(Hero::RUN), swim = _hero.roleSpeed(Hero::SWIM);
+		if (run >= 300.0f && run <= 750.0f) _player.config.walkSpeed = run;
+		if (swim >= 120.0f && swim <= 450.0f) _player.config.swimSpeed = swim;
+	}
+	_boom = _cam.distance;
 	const WorldHeader& h = _world.header();
 	_cam.yaw = h.spawnYaw;
 	_cam.pitch = 0;
@@ -42,6 +52,7 @@ void App::teleport(Vec3 eye) {
 	_player.spawn(eye);
 	_player.flying = flying;
 	_cam.pos = eye;
+	_hero.reset(_player.feet, _cam.yaw);
 }
 
 bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
@@ -167,6 +178,7 @@ void App::setDrawDistance(float cm) {
 }
 
 void App::shutdown() {
+	_hero.release();
 	_sky.release();
 	_world.close();
 	_pak.close();
@@ -212,11 +224,52 @@ void App::update(const Input& in, float dt) {
 		enterWorld(next ? next : first, nullptr, 0);
 	}
 
+	if (in.toggleCamera) _thirdPerson = !_thirdPerson;
+
 	// Stream first, so the chunks the player is about to stand on are there.
-	_world.update(_cam.pos);
+	// Around the player, not the camera: the camera may be behind a wall.
+	_world.update(_player.eye());
 	_player.update(_world, in, _cam.yaw, _cam.pitch, dt);
-	_cam.pos = _player.eye();
 	checkPortals();
+	if (_hero.loaded()) {
+		const SkyColors sky = skyColors();
+		const float indoorLight[3] = {1, 1, 1};
+		_hero.update(_player, _world, _world.indoor() ? indoorLight : sky.light, dt);
+	}
+	placeCamera(dt);
+}
+
+// First person: at the player's eyes. Third person: on a boom behind the
+// character that shortens when something is in the way.
+void App::placeCamera(float dt) {
+	const Vec3 eye = _player.eye();
+	_heroVisible = false;
+	if (!thirdPerson() || _player.flying) {
+		_cam.pos = eye;
+		_boom = 0;
+		return;
+	}
+	const Vec3 pivot = {_player.feet.x, _player.feet.y + _cam.pivotHeight, _player.feet.z};
+	const Vec3 back = forwardFromYawPitch(_cam.yaw, _cam.pitch) * -1.0f;
+	// How far back is there room? March a small sphere along the boom.
+	float room = _cam.distance;
+	const int steps = 14;
+	for (int s = 1; s <= steps; ++s) {
+		const float d = _cam.distance * float(s) / float(steps);
+		Vec3 probe = pivot + back * d;
+		if (_world.pushSphere(probe, _cam.boomRadius)) {
+			room = _cam.distance * float(s - 1) / float(steps);
+			break;
+		}
+	}
+	// In at once (never show the inside of a wall), out gently.
+	_boom = room < _boom ? room : _boom + (room - _boom) * min(dt * 4.0f, 1.0f);
+	_cam.pos = pivot + back * _boom;
+	// Pressed against the character there is nothing to see of it but its
+	// inside: with no room behind, the view is (nearly) its own and it is
+	// left out. The camera stays on the boom, so nothing jumps when room
+	// comes back.
+	_heroVisible = _boom > 70.0f;
 }
 
 void App::render() {
@@ -258,6 +311,7 @@ void App::render() {
 	}
 	gfx::setPass(gfx::PASS_WORLD);
 	_world.draw(mul(proj, fd.view), _cam.pos, u32(u64(_clock * 1000.0)));
+	if (_heroVisible) _hero.draw();
 	gfx::setPass(gfx::PASS_BLEND);
 	_world.drawBlended();
 	gfx::frameEnd();

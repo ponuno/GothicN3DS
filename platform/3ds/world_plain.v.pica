@@ -1,0 +1,62 @@
+; The world-only vertex shader of the versions before characters, kept as a
+; fallback: the program uses it (and draws no character) when R is held while
+; it starts. See world.v.pica for the description; this is that shader
+; without the `skinned` branches.
+
+.fvec projection[4], modelView[4]
+.fvec chunk         ; xyz = origin relative to the eye's lattice point, w = position step
+.fvec params        ; x = uv scale, y = 1/255, z = fogA, w = fogB
+.fvec dayDelta      ; xyz = dayLight - 1
+.fvec texOffset     ; xy = texture scroll offset (zw must be 0)
+
+.constf consts(0.0, 1.0, 0.0, 0.0)
+.alias zero consts.xxxx
+.alias one  consts.yyyy
+
+.out outpos position
+.out outtc0 texcoord0
+.out outclr color
+
+.alias inpos v0
+.alias intc  v1
+.alias inclr v2
+
+.proc main
+	; r0 = (position relative to the eye's lattice point, 1)
+	mul r0.xyz, chunk.www, inpos
+	add r0.xyz, chunk.xyz, r0.xyz
+	mov r0.w,   one
+
+	; r1 = view-space position
+	dp4 r1.x, modelView[0], r0
+	dp4 r1.y, modelView[1], r0
+	dp4 r1.z, modelView[2], r0
+	dp4 r1.w, modelView[3], r0
+
+	dp4 outpos.x, projection[0], r1
+	dp4 outpos.y, projection[1], r1
+	dp4 outpos.z, projection[2], r1
+	dp4 outpos.w, projection[3], r1
+
+	mul r2, params.xxxx, intc
+	add r2, texOffset, r2
+	mov outtc0, r2
+
+	; fog factor
+	mul r3.x, params.w, r1.z
+	add r3.x, params.z, -r3.x
+	max r3.x, zero, r3.x
+	min r3.x, one,  r3.x
+
+	; r4 = (light, weight), both 0..1
+	mul r4, params.yyyy, inclr
+	; r5 = 1 + weight * (dayLight - 1)
+	mul r5.xyz, dayDelta, r4.www
+	add r5.xyz, one, r5.xyz
+	mul r4.xyz, r4.xyz, r5.xyz
+
+	mov r4.w, r3.x
+	mov outclr, r4
+
+	end
+.end

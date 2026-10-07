@@ -92,7 +92,10 @@ public:
 	void drawBlended();
 
 	// Collision against the resident chunks (see collision.h).
-	bool rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal) const;
+	// `light`, if given, receives the baked light (r g b) and the daylight
+	// weight of the surface that was hit: what a character standing there is
+	// lit with.
+	bool rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, u8* light = nullptr) const;
 	bool pushSphere(Vec3& center, float radius) const;
 	// Highest water surface under `from`, no lower than from.y - maxDrop.
 	bool waterBelow(Vec3 from, float maxDrop, float& surfaceY) const;

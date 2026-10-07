@@ -100,6 +100,84 @@ inline Mat4 viewLH(Vec3 pos, float yaw, float pitch) {
 	return v;
 }
 
+// ---- rotations and rigid transforms (skeletons) ----
+
+struct Quat {
+	float x, y, z, w; // unit quaternion; rotates a column vector v as q v q*
+};
+
+inline Quat quatIdentity() { return {0, 0, 0, 1}; }
+
+inline Quat quatMul(Quat a, Quat b) { // first b, then a
+	return {a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y, a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+	        a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w, a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z};
+}
+
+inline Quat quatNormalize(Quat q) {
+	const float l = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+	if (l < 1e-12f) return quatIdentity();
+	const float s = 1.0f / l;
+	return {q.x * s, q.y * s, q.z * s, q.w * s};
+}
+
+// Normalised linear interpolation along the shorter arc: cheap, and for the
+// small steps between animation frames indistinguishable from slerp.
+inline Quat quatNlerp(Quat a, Quat b, float t) {
+	const float d = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+	const float s = d < 0 ? -t : t, k = 1.0f - t;
+	return quatNormalize({a.x * k + b.x * s, a.y * k + b.y * s, a.z * k + b.z * s, a.w * k + b.w * s});
+}
+
+inline Quat quatFromYaw(float yaw) { return {0, sinf(yaw * 0.5f), 0, cosf(yaw * 0.5f)}; }
+
+inline Vec3 quatRotate(Quat q, Vec3 v) {
+	const Vec3 u = {q.x, q.y, q.z};
+	const Vec3 t = cross(u, v) * 2.0f;
+	return v + t * q.w + cross(u, t);
+}
+
+// A rigid (or uniformly scaled) transform as three rows of four: the rotation
+// in the 3x3 part, the translation in the last column.
+struct Mat34 {
+	float m[3][4];
+};
+
+inline Mat34 mat34Identity() { return {{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}}}; }
+
+inline Mat34 mat34From(Quat q, Vec3 t) {
+	const float xx = q.x * q.x, yy = q.y * q.y, zz = q.z * q.z;
+	const float xy = q.x * q.y, xz = q.x * q.z, yz = q.y * q.z;
+	const float wx = q.w * q.x, wy = q.w * q.y, wz = q.w * q.z;
+	return {{{1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy), t.x},
+	         {2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx), t.y},
+	         {2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy), t.z}}};
+}
+
+inline Mat34 mul(const Mat34& a, const Mat34& b) { // first b, then a
+	Mat34 o;
+	for (int r = 0; r < 3; ++r) {
+		for (int c = 0; c < 4; ++c) o.m[r][c] = a.m[r][0] * b.m[0][c] + a.m[r][1] * b.m[1][c] + a.m[r][2] * b.m[2][c];
+		o.m[r][3] += a.m[r][3];
+	}
+	return o;
+}
+
+inline Vec3 transformPoint(const Mat34& a, Vec3 p) {
+	return {a.m[0][0] * p.x + a.m[0][1] * p.y + a.m[0][2] * p.z + a.m[0][3],
+	        a.m[1][0] * p.x + a.m[1][1] * p.y + a.m[1][2] * p.z + a.m[1][3],
+	        a.m[2][0] * p.x + a.m[2][1] * p.y + a.m[2][2] * p.z + a.m[2][3]};
+}
+
+// Inverse of a rotation + translation (no scale).
+inline Mat34 invertRigid(const Mat34& a) {
+	Mat34 o;
+	for (int r = 0; r < 3; ++r) {
+		for (int c = 0; c < 3; ++c) o.m[r][c] = a.m[c][r];
+		o.m[r][3] = -(a.m[0][r] * a.m[0][3] + a.m[1][r] * a.m[1][3] + a.m[2][r] * a.m[2][3]);
+	}
+	return o;
+}
+
 // Rendering relative to the eye. Chunk positions are whole steps of a
 // world-wide lattice; subtracting a lattice point near the eye from them is
 // exact, even in the 24-bit floats of the PICA200 vertex shader, as long as

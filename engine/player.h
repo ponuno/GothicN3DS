@@ -15,6 +15,7 @@ struct Input {
 	bool jump = false;      // held
 	bool toggleFly = false; // pressed this frame
 	bool nextWorld = false; // pressed this frame: jump to the next world of the archive (debug)
+	bool toggleCamera = false; // pressed this frame: third person <-> first person
 	float timeStep = 0;     // hours to add to the time of day this frame
 };
 

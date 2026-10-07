@@ -9,6 +9,7 @@
 
 #include <zenkit/Mesh.hh>
 #include <zenkit/Model.hh>
+#include <zenkit/ModelAnimation.hh>
 #include <zenkit/ModelHierarchy.hh>
 #include <zenkit/ModelMesh.hh>
 #include <zenkit/ModelScript.hh>
@@ -91,6 +92,10 @@ const u8 kWaterOpacity = 150;
 void describeMaterial(const zenkit::Material& m, SrcMaterial& sm) {
 	sm.name = m.name;
 	sm.texture = m.texture;
+	sm.color[0] = m.color.r;
+	sm.color[1] = m.color.g;
+	sm.color[2] = m.color.b;
+	sm.hasColor = true;
 	sm.group = u16(m.group);
 	sm.noCollision = m.disable_collision;
 	sm.water = m.group == zenkit::MaterialGroup::WATER;
@@ -113,9 +118,10 @@ void describeMaterial(const zenkit::Material& m, SrcMaterial& sm) {
 
 // Everything that makes two materials draw differently.
 std::string materialKey(const SrcMaterial& m) {
-	char buf[96];
-	std::snprintf(buf, sizeof(buf), "|%d%d%d|%u|%.3f|%.4f|%.4f", int(m.water), int(m.noCollision), int(m.blend),
-	              unsigned(m.opacity), double(m.animFps), double(m.scroll[0]), double(m.scroll[1]));
+	char buf[128];
+	std::snprintf(buf, sizeof(buf), "|%d%d%d|%u|%.3f|%.4f|%.4f|%02x%02x%02x", int(m.water), int(m.noCollision),
+	              int(m.blend), unsigned(m.opacity), double(m.animFps), double(m.scroll[0]), double(m.scroll[1]),
+	              unsigned(m.color[0]), unsigned(m.color[1]), unsigned(m.color[2]));
 	return upper(m.texture) + buf;
 }
 
@@ -972,6 +978,602 @@ std::function<bool(const std::string&, SrcImage&)> textureLoader(std::shared_ptr
 			return false; // unreadable texture: treated like a missing one
 		}
 	};
+}
+
+// ---- characters ----------------------------------------------------------
+
+namespace {
+
+// Standard quaternion (x y z w) of a rotation matrix; scale is divided out.
+void quatFromRows(const M34& m, float q[4]) {
+	float r[3][3];
+	for (int c = 0; c < 3; ++c) {
+		const float len = std::sqrt(m.m[0][c] * m.m[0][c] + m.m[1][c] * m.m[1][c] + m.m[2][c] * m.m[2][c]);
+		for (int k = 0; k < 3; ++k) r[k][c] = len > 1e-9f ? m.m[k][c] / len : (k == c ? 1.0f : 0.0f);
+	}
+	const float tr = r[0][0] + r[1][1] + r[2][2];
+	if (tr > 0) {
+		const float s = std::sqrt(tr + 1.0f) * 2.0f;
+		q[3] = 0.25f * s;
+		q[0] = (r[2][1] - r[1][2]) / s;
+		q[1] = (r[0][2] - r[2][0]) / s;
+		q[2] = (r[1][0] - r[0][1]) / s;
+	} else if (r[0][0] > r[1][1] && r[0][0] > r[2][2]) {
+		const float s = std::sqrt(1.0f + r[0][0] - r[1][1] - r[2][2]) * 2.0f;
+		q[3] = (r[2][1] - r[1][2]) / s;
+		q[0] = 0.25f * s;
+		q[1] = (r[0][1] + r[1][0]) / s;
+		q[2] = (r[0][2] + r[2][0]) / s;
+	} else if (r[1][1] > r[2][2]) {
+		const float s = std::sqrt(1.0f + r[1][1] - r[0][0] - r[2][2]) * 2.0f;
+		q[3] = (r[0][2] - r[2][0]) / s;
+		q[0] = (r[0][1] + r[1][0]) / s;
+		q[1] = 0.25f * s;
+		q[2] = (r[1][2] + r[2][1]) / s;
+	} else {
+		const float s = std::sqrt(1.0f + r[2][2] - r[0][0] - r[1][1]) * 2.0f;
+		q[3] = (r[1][0] - r[0][1]) / s;
+		q[0] = (r[0][2] + r[2][0]) / s;
+		q[1] = (r[1][2] + r[2][1]) / s;
+		q[2] = 0.25f * s;
+	}
+}
+
+// Angle in degrees between two rotations given as quaternions.
+float quatAngle(const float a[4], const float b[4]) {
+	const float d = std::fabs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]);
+	return 2.0f * std::acos(std::min(d, 1.0f)) * 57.29578f;
+}
+
+// "HUM_BODY_NAKED_V0_C0.TGA" -> "HUM_BODY_NAKED_V4_C1.TGA": the game picks
+// the skin of a character by counting up these two numbers in the name.
+std::string variantTexture(const std::string& texture, int variant, int color) {
+	std::string up = upper(texture), out;
+	for (size_t i = 0; i < up.size(); ++i) {
+		const bool digitEnds = i + 3 >= up.size() || !std::isdigit(static_cast<unsigned char>(up[i + 3]));
+		if (digitEnds && up.compare(i, 3, "_V0") == 0) {
+			out += "_V" + std::to_string(variant);
+			i += 2;
+		} else if (digitEnds && up.compare(i, 3, "_C0") == 0) {
+			out += "_C" + std::to_string(color);
+			i += 2;
+		} else {
+			out += up[i];
+		}
+	}
+	return out;
+}
+
+// Rest transforms of every node in model space, without moving the root to
+// the origin (a character's model space has the ground at y = 0).
+std::vector<M34> restPoseStanding(const zenkit::ModelHierarchy& h, std::vector<M34>& local) {
+	const size_t n = h.nodes.size();
+	local.resize(n);
+	std::vector<M34> world(n);
+	std::vector<char> done(n, 0);
+	for (size_t i = 0; i < n; ++i) {
+		local[i] = fromZen(h.nodes[i].transform);
+		const int parent = h.nodes[i].parent_index;
+		if (parent >= 0 && size_t(parent) < n) continue;
+		local[i].m[0][3] += h.root_translation.x;
+		local[i].m[1][3] += h.root_translation.y;
+		local[i].m[2][3] += h.root_translation.z;
+	}
+	for (size_t pass = 0; pass < n; ++pass)
+		for (size_t i = 0; i < n; ++i) {
+			if (done[i]) continue;
+			const int parent = h.nodes[i].parent_index;
+			if (parent < 0 || size_t(parent) >= n) {
+				world[i] = local[i];
+			} else if (done[size_t(parent)]) {
+				world[i] = mul(world[size_t(parent)], local[i]);
+			} else {
+				continue;
+			}
+			done[i] = 1;
+		}
+	return world;
+}
+
+// Adds a ZenGin mesh to a character. `skin`, if given, makes it a soft-skin
+// mesh (positions and bones per vertex index); otherwise it hangs rigidly on
+// `node`, whose rest transform is `xf`.
+struct SkinInfo {
+	std::array<float, 3> pos;
+	int bone[2];
+	float weight1;
+};
+void appendActorMesh(SrcModel& model, const zenkit::MultiResolutionMesh& mrm, const M34& xf, int node,
+                     const std::vector<SkinInfo>* skin, int variant, int color, std::set<std::string>& substituted) {
+	for (const zenkit::SubMesh& sub : mrm.sub_meshes) {
+		SrcModelPart part;
+		describeMaterial(sub.mat, part.material);
+		if (!part.material.texture.empty()) {
+			// The skin variant, if the game has it; the mesh's own texture otherwise.
+			const std::string wanted = variantTexture(part.material.texture, variant, color);
+			SrcImage probe;
+			if (wanted != upper(part.material.texture) && model.loadTexture && model.loadTexture(wanted, probe)) {
+				part.material.texture = wanted;
+				substituted.insert(wanted);
+			}
+		}
+		for (const zenkit::MeshTriangle& tri : sub.triangles) {
+			SrcSkinVertex v[3];
+			bool ok = true;
+			for (int k = 0; k < 3 && ok; ++k) {
+				ok = tri.wedges[k] < sub.wedges.size();
+				if (!ok) break;
+				const zenkit::MeshWedge& w = sub.wedges[tri.wedges[k]];
+				const float n[3] = {w.normal.x, w.normal.y, w.normal.z};
+				if (skin) {
+					ok = w.index < skin->size();
+					if (!ok) break;
+					const SkinInfo& si = (*skin)[w.index];
+					std::copy_n(si.pos.data(), 3, v[k].pos);
+					std::copy_n(n, 3, v[k].normal);
+					v[k].bone[0] = si.bone[0];
+					v[k].bone[1] = si.bone[1];
+					v[k].weight1 = si.weight1;
+				} else {
+					ok = w.index < mrm.positions.size();
+					if (!ok) break;
+					const float p[3] = {mrm.positions[w.index].x, mrm.positions[w.index].y, mrm.positions[w.index].z};
+					xf.point(p, v[k].pos);
+					xf.direction(n, v[k].normal);
+					v[k].bone[0] = v[k].bone[1] = node;
+					v[k].weight1 = 0;
+				}
+				v[k].uv[0] = w.texture.x;
+				v[k].uv[1] = w.texture.y;
+			}
+			if (ok) part.verts.insert(part.verts.end(), v, v + 3);
+		}
+		if (!part.verts.empty()) model.parts.push_back(std::move(part));
+	}
+}
+
+// The animations the hero's movement uses, plus the transitions between
+// them for later.
+const char* const kHeroClips[] = {
+    "S_RUN",          "S_RUNL",         "T_RUN_2_RUNL",  "T_RUNL_2_RUN",  "S_WALK",       "S_WALKL",
+    "T_WALK_2_WALKL", "T_WALKL_2_WALK", "S_SNEAK",       "S_SNEAKL",      "T_RUNSTRAFEL", "T_RUNSTRAFER",
+    "T_RUNTURNL",     "T_RUNTURNR",     "T_JUMPB",       "T_STAND_2_JUMP", "S_JUMP",      "T_JUMP_2_STAND",
+    "T_RUNL_2_JUMP",  "T_JUMP_2_RUNL",  "S_FALLDN",      "T_FALLDN_2_STAND", "S_FALL",    "S_FALLB",
+    "S_SWIM",         "S_SWIMF",        "T_SWIM_2_SWIMF", "T_SWIMF_2_SWIM", "S_SWIMB",    "S_DIVE",
+    "S_DIVEF",        "S_WALKWL",       "S_WALKW",
+};
+
+} // namespace
+
+bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& opt, SrcModel& model) {
+	model = SrcModel {};
+	model.name = opt.name;
+	model.loadTexture = textureLoader(game);
+	const zenkit::Vfs& vfs = game->vfs;
+	const std::string scriptBase = stripExtension(upper(opt.script));
+
+	zenkit::ModelScript script;
+	if (!loadFile(vfs, scriptBase + ".MSB", script) && !loadFile(vfs, scriptBase + ".MDS", script)) {
+		model.notes.push_back("character: " + scriptBase + ".MSB/.MDS not found, no character baked");
+		return false;
+	}
+	// The skeleton is saved under the script's name; older files under the
+	// name of the mesh it was made from.
+	zenkit::ModelHierarchy hierarchy;
+	std::string treeName = scriptBase + ".MDH";
+	if (!loadFile(vfs, treeName, hierarchy)) {
+		treeName = stripExtension(upper(script.skeleton.name)) + ".MDH";
+		if (script.skeleton.name.empty() || !loadFile(vfs, treeName, hierarchy)) {
+			model.notes.push_back("character: no skeleton (" + scriptBase + ".MDH) found, no character baked");
+			return false;
+		}
+	}
+	const size_t n = hierarchy.nodes.size();
+	if (n == 0) throw std::runtime_error(treeName + " has no nodes");
+
+	// ---- skeleton ----
+	std::vector<M34> local;
+	const std::vector<M34> rest = restPoseStanding(hierarchy, local);
+	model.nodes.resize(n);
+	int rootNode = -1, headNode = -1;
+	for (size_t i = 0; i < n; ++i) {
+		SrcNode& node = model.nodes[i];
+		node.name = upper(hierarchy.nodes[i].name);
+		const int parent = hierarchy.nodes[i].parent_index;
+		node.parent = (parent >= 0 && size_t(parent) < n) ? parent : -1;
+		for (int a = 0; a < 3; ++a) node.pos[a] = local[i].m[a][3];
+		quatFromRows(local[i], node.rot);
+		if (node.parent < 0 && rootNode < 0) rootNode = int(i);
+		if (node.name == "BIP01 HEAD") headNode = int(i);
+	}
+
+	// ---- body ----
+	std::set<std::string> substituted;
+	const std::string bodyBase = stripExtension(upper(opt.body));
+	zenkit::ModelMesh body;
+	if (!loadFile(vfs, bodyBase + ".MDM", body)) {
+		model.notes.push_back("character: body mesh " + bodyBase + ".MDM not found, no character baked");
+		return false;
+	}
+	float skinDeviation = 0;
+	size_t manyBones = 0, skinVertices = 0;
+	for (const zenkit::SoftSkinMesh& skin : body.meshes) {
+		std::vector<SkinInfo> info(skin.mesh.positions.size());
+		for (size_t i = 0; i < info.size(); ++i) {
+			SkinInfo& si = info[i];
+			si.pos = {skin.mesh.positions[i].x, skin.mesh.positions[i].y, skin.mesh.positions[i].z};
+			si.bone[0] = si.bone[1] = rootNode < 0 ? 0 : rootNode;
+			si.weight1 = 0;
+			if (i >= skin.weights.size() || skin.weights[i].empty()) continue;
+			// Rest position from all the bones; at run time the two strongest carry the vertex.
+			float sum[3] = {0, 0, 0}, total = 0, best[2] = {0, 0};
+			int bone[2] = {-1, -1};
+			for (const zenkit::SoftSkinWeightEntry& w : skin.weights[i]) {
+				if (w.node_index >= n) continue;
+				const float lp[3] = {w.position.x, w.position.y, w.position.z};
+				float wp[3];
+				rest[w.node_index].point(lp, wp);
+				for (int a = 0; a < 3; ++a) sum[a] += wp[a] * w.weight;
+				total += w.weight;
+				if (w.weight > best[0]) {
+					best[1] = best[0];
+					bone[1] = bone[0];
+					best[0] = w.weight;
+					bone[0] = w.node_index;
+				} else if (w.weight > best[1]) {
+					best[1] = w.weight;
+					bone[1] = w.node_index;
+				}
+			}
+			if (total < 1e-6f || bone[0] < 0) continue;
+			float d2 = 0;
+			for (int a = 0; a < 3; ++a) {
+				const float p = sum[a] / total;
+				d2 += (p - si.pos[size_t(a)]) * (p - si.pos[size_t(a)]);
+				si.pos[size_t(a)] = p;
+			}
+			skinDeviation = std::max(skinDeviation, std::sqrt(d2));
+			si.bone[0] = bone[0];
+			si.bone[1] = bone[1] >= 0 ? bone[1] : bone[0];
+			si.weight1 = bone[1] >= 0 ? best[1] / (best[0] + best[1]) : 0.0f;
+			manyBones += skin.weights[i].size() > 2;
+			++skinVertices;
+		}
+		appendActorMesh(model, skin.mesh, M34 {}, 0, &info, opt.bodyVariant, opt.skinColor, substituted);
+	}
+	// Rigid parts of the body file hang on the node of the same name.
+	for (const auto& kv : body.attachments) {
+		int node = rootNode < 0 ? 0 : rootNode;
+		for (size_t i = 0; i < n; ++i)
+			if (model.nodes[i].name == upper(kv.first)) node = int(i);
+		appendActorMesh(model, kv.second, rest[size_t(node)], node, nullptr, opt.bodyVariant, opt.skinColor, substituted);
+	}
+
+	// ---- head ----
+	std::string headNote, windingNote;
+	if (!opt.head.empty()) {
+		const std::string headBase = stripExtension(upper(opt.head));
+		zenkit::MorphMesh head;
+		if (headNode < 0) {
+			headNote = "; no BIP01 HEAD node, head left out";
+		} else if (!loadFile(vfs, headBase + ".MMB", head)) {
+			headNote = "; head " + headBase + ".MMB not found";
+		} else {
+			appendActorMesh(model, head.mesh, rest[size_t(headNode)], headNode, nullptr, opt.headVariant, opt.skinColor,
+			                substituted);
+			headNote = "; head " + headBase;
+		}
+	}
+	size_t triangles = 0;
+	for (const SrcModelPart& part : model.parts) triangles += part.verts.size() / 3;
+	if (triangles == 0) throw std::runtime_error(bodyBase + ".MDM has no triangles");
+	// Which side of a triangle is its front? Decided as for the world's
+	// objects: a body is a closed shape, its faces must point outwards.
+	{
+		double c[3] = {0, 0, 0}, count = 0, radius = 0, flux = 0, area = 0;
+		for (const SrcModelPart& part : model.parts)
+			for (const SrcSkinVertex& v : part.verts) {
+				for (int a = 0; a < 3; ++a) c[a] += v.pos[a];
+				++count;
+			}
+		for (double& a : c) a /= count;
+		for (const SrcModelPart& part : model.parts) {
+			for (const SrcSkinVertex& v : part.verts) {
+				double d2 = 0;
+				for (int a = 0; a < 3; ++a) d2 += (v.pos[a] - c[a]) * (v.pos[a] - c[a]);
+				radius = std::max(radius, std::sqrt(d2));
+			}
+			for (size_t t = 0; t + 2 < part.verts.size(); t += 3) {
+				const float* p0 = part.verts[t].pos;
+				const float* p1 = part.verts[t + 1].pos;
+				const float* p2 = part.verts[t + 2].pos;
+				const double ax = p1[0] - p0[0], ay = p1[1] - p0[1], az = p1[2] - p0[2];
+				const double bx = p2[0] - p0[0], by = p2[1] - p0[1], bz = p2[2] - p0[2];
+				// Front normal (times twice the area) in a left-handed, CCW-front world.
+				const double nx = -(ay * bz - az * by), ny = -(az * bx - ax * bz), nz = -(ax * by - ay * bx);
+				flux += (p0[0] - c[0]) * nx + (p0[1] - c[1]) * ny + (p0[2] - c[2]) * nz;
+				area += std::sqrt(nx * nx + ny * ny + nz * nz);
+			}
+		}
+		const double score = area > 0 && radius > 0 ? flux / (area * 2.0 * radius) : 0;
+		// A flat or open mesh says nothing either way and is left as it is.
+		const bool flip = score < -0.02;
+		if (flip)
+			for (SrcModelPart& part : model.parts)
+				for (size_t t = 0; t + 2 < part.verts.size(); t += 3) std::swap(part.verts[t + 1], part.verts[t + 2]);
+		char buf[160];
+		std::snprintf(buf, sizeof(buf), "character mesh: %zu triangles, winding %s (score %.3f)", triangles,
+		              flip ? "flipped" : "kept", score);
+		windingNote = buf;
+	}
+	{
+		char buf[320];
+		std::snprintf(buf, sizeof(buf),
+		              "character: %s, skeleton %s (%zu nodes), body %s%s; rest pose within %.1f cm of the stored mesh; "
+		              "%zu of %zu skin vertices hang on more than two bones (the two strongest are kept)",
+		              scriptBase.c_str(), treeName.c_str(), n, bodyBase.c_str(), headNote.c_str(), double(skinDeviation),
+		              manyBones, skinVertices);
+		model.notes.push_back(buf);
+	}
+	model.notes.push_back(windingNote);
+	if (!substituted.empty()) {
+		std::string list;
+		for (const std::string& t : substituted) list += (list.empty() ? "" : ", ") + t;
+		model.notes.push_back("character skin: " + list);
+	}
+	// ---- animations ----
+	std::vector<std::string> wanted = opt.clips;
+	if (wanted.empty()) wanted.assign(std::begin(kHeroClips), std::end(kHeroClips));
+	struct Loaded {
+		std::string name, next;
+		float blendIn = 0.1f, blendOut = 0.1f;
+		int layer = 1;
+		bool moves = false, reversed = false;
+		zenkit::ModelAnimation ani;
+	};
+	std::vector<Loaded> loadedClips;
+	std::vector<std::string> notFound;
+	for (const std::string& rawName : wanted) {
+		const std::string name = upper(rawName);
+		Loaded lc;
+		lc.name = name;
+		std::string file = name;
+		bool described = false;
+		for (const zenkit::MdsAnimation& a : script.animations)
+			if (upper(a.name) == name) {
+				lc.next = upper(a.next);
+				lc.blendIn = a.blend_in;
+				lc.blendOut = a.blend_out;
+				lc.layer = int(a.layer);
+				lc.moves = a.flags & zenkit::AnimationFlags::MOVE;
+				described = true;
+				break;
+			}
+		if (!described)
+			for (const zenkit::MdsAnimationAlias& a : script.aliases)
+				if (upper(a.name) == name) {
+					lc.next = upper(a.next);
+					lc.blendIn = a.blend_in;
+					lc.blendOut = a.blend_out;
+					lc.layer = int(a.layer);
+					lc.moves = a.flags & zenkit::AnimationFlags::MOVE;
+					lc.reversed = a.direction == zenkit::AnimationDirection::BACKWARD;
+					file = upper(a.alias);
+					described = true;
+					break;
+				}
+		// An alias may name another alias (the monsters' scripts do); the
+		// samples are in the file of the animation at the end of the chain.
+		for (int depth = 0; described && depth < 4; ++depth) {
+			bool isAnimation = false, followed = false;
+			for (const zenkit::MdsAnimation& a : script.animations) isAnimation = isAnimation || upper(a.name) == file;
+			if (isAnimation) break;
+			for (const zenkit::MdsAnimationAlias& a : script.aliases)
+				if (upper(a.name) == file && upper(a.alias) != file) {
+					if (a.direction == zenkit::AnimationDirection::BACKWARD) lc.reversed = !lc.reversed;
+					file = upper(a.alias);
+					followed = true;
+					break;
+				}
+			if (!followed) break;
+		}
+		bool have = false;
+		try {
+			have = loadFile(vfs, scriptBase + "-" + file + ".MAN", lc.ani);
+		} catch (const std::exception&) {
+			have = false; // unreadable: treated like a missing one
+		}
+		if (!have || lc.ani.frame_count == 0 || lc.ani.node_count == 0 ||
+		    lc.ani.samples.size() != size_t(lc.ani.frame_count) * lc.ani.node_count ||
+		    lc.ani.node_indices.size() != lc.ani.node_count) {
+			notFound.push_back(name);
+			continue;
+		}
+		bool nodesOk = true;
+		for (uint32_t idx : lc.ani.node_indices) nodesOk = nodesOk && idx < n;
+		if (!nodesOk) {
+			notFound.push_back(name + " (made for another skeleton)");
+			continue;
+		}
+		if (!described) {
+			lc.next = upper(lc.ani.next);
+			lc.layer = int(lc.ani.layer);
+		}
+		loadedClips.push_back(std::move(lc));
+	}
+
+	// ZenGin's sample rotations turn the other way round than its node
+	// matrices do. Rather than trust that, compare both readings with the
+	// skeleton's rest pose over the first frame of every clip: a standing or
+	// walking body is close to its rest pose, its mirror image is not.
+	double asIs = 0, conjugated = 0, offset = 0;
+	size_t compared = 0;
+	for (const Loaded& lc : loadedClips)
+		for (uint32_t t = 0; t < lc.ani.node_count; ++t) {
+			const uint32_t node = lc.ani.node_indices[t];
+			if (model.nodes[node].parent < 0) continue; // the root turns with the walking direction
+			const zenkit::AnimationSample& s = lc.ani.samples[t];
+			const float a[4] = {s.rotation.x, s.rotation.y, s.rotation.z, s.rotation.w};
+			const float b[4] = {-s.rotation.x, -s.rotation.y, -s.rotation.z, s.rotation.w};
+			asIs += quatAngle(a, model.nodes[node].rot);
+			conjugated += quatAngle(b, model.nodes[node].rot);
+			const float d[3] = {s.position.x - model.nodes[node].pos[0], s.position.y - model.nodes[node].pos[1],
+			                    s.position.z - model.nodes[node].pos[2]};
+			offset += std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+			++compared;
+		}
+	const bool conjugate = conjugated <= asIs;
+	if (compared) {
+		char buf[256];
+		std::snprintf(buf, sizeof(buf),
+		              "animations: rotations read %s (mean distance from the rest pose %.0f degrees; the other way %.0f); "
+		              "bone offsets within %.1f cm of the skeleton's on average",
+		              conjugate ? "conjugated" : "as stored", (conjugate ? conjugated : asIs) / double(compared),
+		              (conjugate ? asIs : conjugated) / double(compared), offset / double(compared));
+		model.notes.push_back(buf);
+	}
+
+	for (const Loaded& lc : loadedClips) {
+		SrcClip clip;
+		clip.name = lc.name;
+		clip.next = lc.next;
+		clip.fps = lc.ani.fps > 0 ? lc.ani.fps : 25.0f;
+		clip.layer = lc.layer;
+		clip.blendIn = lc.blendIn;
+		clip.blendOut = lc.blendOut;
+		clip.moves = lc.moves;
+		for (uint32_t idx : lc.ani.node_indices) clip.nodes.push_back(int(idx));
+		const uint32_t frames = lc.ani.frame_count, tracks = lc.ani.node_count;
+		clip.samples.resize(size_t(frames) * tracks);
+		for (uint32_t f = 0; f < frames; ++f) {
+			const uint32_t src = lc.reversed ? frames - 1 - f : f;
+			for (uint32_t t = 0; t < tracks; ++t) {
+				const zenkit::AnimationSample& s = lc.ani.samples[size_t(src) * tracks + t];
+				SrcClipSample& out = clip.samples[size_t(f) * tracks + t];
+				out.pos[0] = s.position.x;
+				out.pos[1] = s.position.y;
+				out.pos[2] = s.position.z;
+				const float sign = conjugate ? -1.0f : 1.0f;
+				out.rot[0] = s.rotation.x * sign;
+				out.rot[1] = s.rotation.y * sign;
+				out.rot[2] = s.rotation.z * sign;
+				out.rot[3] = s.rotation.w;
+			}
+		}
+		model.clips.push_back(std::move(clip));
+	}
+	// Which way does it face? The game moves a character along +Z, so that is
+	// where its walking animation must carry it - and where its toes point.
+	{
+		double travel[2] = {0, 0};
+		std::string witness;
+		for (const char* name : {"S_RUNL", "S_WALKL", "S_RUN", "S_WALK"}) {
+			for (const SrcClip& clip : model.clips) {
+				if (clip.name != name || !clip.moves || !witness.empty()) continue;
+				const size_t tracks = clip.nodes.size(), frames = clip.samples.size() / tracks;
+				for (size_t t = 0; t < tracks; ++t) {
+					if (model.nodes[size_t(clip.nodes[t])].parent >= 0) continue;
+					const double dx = double(clip.samples[(frames - 1) * tracks + t].pos[0]) - double(clip.samples[t].pos[0]);
+					const double dz = double(clip.samples[(frames - 1) * tracks + t].pos[2]) - double(clip.samples[t].pos[2]);
+					if (dx * dx + dz * dz < 10.0 * 10.0) continue; // marching on the spot says nothing
+					travel[0] = dx;
+					travel[1] = dz;
+					witness = clip.name;
+					break;
+				}
+			}
+		}
+		float toe = 0, foot = 0;
+		int toes = 0, feet = 0;
+		for (size_t i = 0; i < n; ++i) {
+			if (model.nodes[i].name.find("TOE") != std::string::npos) {
+				toe += rest[i].m[2][3];
+				++toes;
+			} else if (model.nodes[i].name.find("FOOT") != std::string::npos) {
+				foot += rest[i].m[2][3];
+				++feet;
+			}
+		}
+		const float toesAhead = toes && feet ? toe / float(toes) - foot / float(feet) : 0.0f;
+		// Quarter turns about the vertical that bring "forward" to +Z.
+		int quarters = 0;
+		char why[160] = "";
+		if (!witness.empty()) {
+			const double angle = std::atan2(travel[0], travel[1]); // 0 = along +Z
+			quarters = int(std::lround(-angle / 1.5707963267948966)) & 3;
+			std::snprintf(why, sizeof(why), "%s carries it %.0f cm along %s", witness.c_str(),
+			              std::sqrt(travel[0] * travel[0] + travel[1] * travel[1]),
+			              quarters == 0 ? "+Z" : quarters == 2 ? "-Z" : quarters == 1 ? "-X" : "+X");
+		} else if (toes && feet) {
+			quarters = toesAhead >= 0 ? 0 : 2;
+			std::snprintf(why, sizeof(why), "toes %.1f cm %s the heels", double(std::fabs(toesAhead)),
+			              toesAhead >= 0 ? "in front of" : "behind");
+		}
+		if (quarters) {
+			const float angle = float(quarters) * 1.5707963f;
+			const float cs = std::round(std::cos(angle)), sn = std::round(std::sin(angle));
+			const float half[2] = {std::sin(angle * 0.5f), std::cos(angle * 0.5f)};
+			auto turnVec = [&](float v[3]) {
+				const float x = v[0] * cs + v[2] * sn, z = -v[0] * sn + v[2] * cs;
+				v[0] = x;
+				v[2] = z;
+			};
+			auto turnRot = [&](float q[4]) { // the turn after q
+				const float x = half[1] * q[0] + half[0] * q[2], y = half[1] * q[1] + half[0] * q[3];
+				const float z = half[1] * q[2] - half[0] * q[0], w = half[1] * q[3] - half[0] * q[1];
+				q[0] = x;
+				q[1] = y;
+				q[2] = z;
+				q[3] = w;
+			};
+			for (SrcNode& node : model.nodes)
+				if (node.parent < 0) {
+					turnVec(node.pos);
+					turnRot(node.rot);
+				}
+			for (SrcModelPart& part : model.parts)
+				for (SrcSkinVertex& v : part.verts) {
+					turnVec(v.pos);
+					turnVec(v.normal);
+				}
+			for (SrcClip& clip : model.clips)
+				for (size_t t = 0; t < clip.nodes.size(); ++t) {
+					if (model.nodes[size_t(clip.nodes[t])].parent >= 0) continue;
+					for (size_t f = t; f < clip.samples.size(); f += clip.nodes.size()) {
+						turnVec(clip.samples[f].pos);
+						turnRot(clip.samples[f].rot);
+					}
+				}
+		}
+		if (*why) {
+			char buf[256];
+			if (quarters)
+				std::snprintf(buf, sizeof(buf), "character turned by %d degrees to face +Z (%s)", quarters * 90, why);
+			else
+				std::snprintf(buf, sizeof(buf), "character faces +Z (%s)", why);
+			model.notes.push_back(buf);
+		}
+	}
+	// Where the hips are, at rest and in the first clip: the two must agree,
+	// or the animations are not in the skeleton's space.
+	if (rootNode >= 0 && !loadedClips.empty()) {
+		const Loaded& first = loadedClips[0];
+		for (uint32_t t = 0; t < first.ani.node_count; ++t)
+			if (int(first.ani.node_indices[t]) == rootNode) {
+				char buf[200];
+				std::snprintf(buf, sizeof(buf), "animations: hips %.1f cm above the ground at rest, %.1f cm in %s",
+				              double(model.nodes[size_t(rootNode)].pos[1]), double(first.ani.samples[t].position.y),
+				              first.name.c_str());
+				model.notes.push_back(buf);
+			}
+	}
+	if (!notFound.empty()) {
+		std::string list;
+		for (const std::string& m : notFound) list += (list.empty() ? "" : ", ") + m;
+		model.notes.push_back("animations not found (the character falls back to simpler ones): " + list);
+	}
+	if (model.clips.empty()) model.notes.push_back("WARNING: no animation could be read; the character stands in its rest pose");
+	return true;
 }
 
 void importZenWorld(std::shared_ptr<const ZenGame> game, const ZenImportOptions& opt, SrcScene& scene) {

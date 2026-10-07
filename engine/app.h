@@ -60,6 +60,9 @@ public:
 	const char* worldName() const;
 	// How many times the world was switched (portals and the debug key).
 	u32 worldSwitches() const { return _switches; }
+	// Seconds since init; drives texture animation. Settable for reproducible pictures.
+	double clock() const { return _clock; }
+	void setClock(double seconds) { _clock = seconds; }
 	// True while the camera is below a water surface.
 	bool underwater() const { return _underwater; }
 

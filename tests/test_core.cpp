@@ -7,10 +7,13 @@
 #include "g3ds/tex.h"
 #include "gfx_soft.h"
 #include "importers.h"
+#include "loader.h"
+#include "pacer.h"
 #include "pak_writer.h"
 #include "rg_etc1.h"
 #include "texture_bake.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -18,7 +21,11 @@
 #include <cstring>
 #include <map>
 #include <random>
+#include <stdexcept>
 #include <string>
+#include <vector>
+
+#include <unistd.h>
 
 using namespace g3;
 
@@ -457,7 +464,7 @@ static void testChunker() {
 				const float wz = c.header.origin[2] + float(v.z) * c.header.posScale;
 				const int ix = int(std::lround((wx + 1777.7f) / 333.33f)), iz = int(std::lround((wz - 12345.6f) / 333.33f));
 				seen[{ix, iz}].push_back({wx, wy, wz});
-				CHECK(std::fabs(wx - (float(ix) * 333.33f - 1777.7f)) <= 0.26f && std::fabs(wy - h(ix, iz)) <= 0.26f);
+				CHECK(std::fabs(wx - (float(ix) * 333.33f - 1777.7f)) <= 0.07f && std::fabs(wy - h(ix, iz)) <= 0.07f);
 			}
 		size_t shared = 0;
 		for (const auto& kv : seen) {
@@ -465,17 +472,44 @@ static void testChunker() {
 			for (const auto& p : kv.second) CHECK(p == kv.second[0]);
 		}
 		CHECK(seen.size() == 13 * 13 && shared > 20); // many corners sit in two or more chunks
-		CHECK(std::fabs(sc[0].header.posScale - 0.5f) < 1e-6f);
+		CHECK(std::fabs(sc[0].header.posScale - 0.125f) < 1e-6f);
+		CHECK(sq.stepChunks[0] == sc.size() && sq.tJunctions == 0 && sq.welded == 0);
 
-		// A chunk too large for the base step doubles it until it fits.
-		SrcScene giant;
-		giant.materials.resize(1);
+		// A triangle too large for the base step gets a coarser one - in a part
+		// of its own, so the rest of its cell stays fine. The corners it shares
+		// with ordinary triangles move to the coarse lattice everywhere, so the
+		// two parts still agree about them to the bit.
+		SrcScene giant = seam;
 		SrcTriangle g = seam.triangles[0];
-		g.v[1].pos[0] += 30000.0f;
+		g.v[1] = g.v[2];
+		g.v[2] = seam.triangles[1].v[2]; // one edge of the first quad ...
+		g.v[0].pos[0] -= 30000.0f;       // ... and a corner 300 m away
+		g.v[0].pos[2] = g.v[1].pos[2];
 		giant.triangles.push_back(g);
 		ChunkerStats sg;
 		const std::vector<BakedChunk> gc = buildChunks(giant, {0}, {0}, small, sg);
-		CHECK(gc.size() == 1 && std::fabs(gc[0].header.posScale - 1.0f) < 1e-6f && sg.outputTriangles == 1);
+		CHECK(gc.size() == sc.size() + 1 && sg.outputTriangles == sq.outputTriangles + 1);
+		CHECK(sg.stepChunks[0] == sc.size() && sg.stepChunks[2] == 1);
+		const BakedChunk* coarse = nullptr;
+		for (const BakedChunk& c : gc)
+			if (c.header.posScale > 0.2f) coarse = &c;
+		CHECK(coarse && std::fabs(coarse->header.posScale - 0.5f) < 1e-6f && coarse->vertices.size() == 3);
+		if (coarse) {
+			int matched = 0;
+			for (const WorldVertex& v : coarse->vertices) {
+				const std::array<float, 3> p = {coarse->header.origin[0] + float(v.x) * coarse->header.posScale,
+				                                coarse->header.origin[1] + float(v.y) * coarse->header.posScale,
+				                                coarse->header.origin[2] + float(v.z) * coarse->header.posScale};
+				for (const BakedChunk& c : gc) {
+					if (&c == coarse) continue;
+					for (const WorldVertex& o : c.vertices)
+						matched += p == std::array<float, 3> {c.header.origin[0] + float(o.x) * c.header.posScale,
+						                                      c.header.origin[1] + float(o.y) * c.header.posScale,
+						                                      c.header.origin[2] + float(o.z) * c.header.posScale};
+				}
+			}
+			CHECK(matched >= 2); // both shared corners found, bit for bit, in a fine chunk
+		}
 	}
 
 	// A triangle spanning more texture repeats than 16.16 fixed point holds.
@@ -517,12 +551,12 @@ static void testMath() {
 }
 
 // Bakes one scene into a pak with the pipeline the command-line tool uses.
-static void bakeScenePak(const SrcScene& scene, const std::string& path, const char* name, float chunkSize) {
+static void bakeScenePak(const SrcScene& scene, const std::string& path, const char* name, const ChunkerOptions& chunker) {
 	std::vector<BakeWorld> worlds(1);
 	worlds[0].name = name;
 	worlds[0].scene = scene;
 	BakeOptions opt;
-	opt.chunker.chunkSize = chunkSize;
+	opt.chunker = chunker;
 	opt.tex.maxSize = 32;
 	opt.tex.quality = 0;
 	opt.threads = 2;
@@ -530,6 +564,292 @@ static void bakeScenePak(const SrcScene& scene, const std::string& path, const c
 	PakWriter pak;
 	bakeWorlds(worlds, opt, pak);
 	pak.write(path);
+}
+
+static void bakeScenePak(const SrcScene& scene, const std::string& path, const char* name, float chunkSize) {
+	ChunkerOptions chunker;
+	chunker.chunkSize = chunkSize;
+	bakeScenePak(scene, path, name, chunker);
+}
+
+// A wall the way level designers build them: neighbouring strips cut into
+// different numbers of pieces, so corners of one strip rest on the edges of
+// the next ("T-junctions"), and one strip whose corners are a hair off.
+static void buildSeamWall(SrcScene& scene, bool magentaRoom) {
+	scene.materials.resize(1);
+	scene.materials[0].name = "wall";
+	scene.materials[0].texture = "WALL";
+	scene.loadTexture = [](const std::string&, SrcImage& out) {
+		out.width = out.height = 8;
+		out.rgba.assign(8 * 8 * 4, 255);
+		for (size_t i = 0; i < out.rgba.size(); i += 4) {
+			out.rgba[i] = 40;
+			out.rgba[i + 1] = 160;
+			out.rgba[i + 2] = 40;
+		}
+		return true;
+	};
+	if (magentaRoom) {
+		scene.indoor = true; // no sky: whatever shows through a gap is exactly this colour
+		scene.fogColor[0] = 255;
+		scene.fogColor[1] = 0;
+		scene.fogColor[2] = 255;
+	}
+	scene.hasSpawn = true;
+	const float angle = 0.47f, ox = 1234.567f, oy = 33.33f, oz = -4321.09f;
+	auto at = [&](float along, float up, float noise) {
+		SrcVertex v {};
+		v.pos[0] = ox + along * std::cos(angle) + noise;
+		v.pos[1] = oy + up - noise;
+		v.pos[2] = oz + along * std::sin(angle) + noise;
+		v.uv[0] = along / 100.0f;
+		v.uv[1] = -up / 100.0f;
+		v.rgba[0] = v.rgba[1] = v.rgba[2] = 255;
+		v.rgba[3] = 0;
+		return v;
+	};
+	auto quad = [&](float s0, float s1, float h0, float h1, float noise) {
+		SrcTriangle a, b;
+		a.material = b.material = 0;
+		a.v[0] = at(s0, h0, noise); a.v[1] = at(s1, h0, noise); a.v[2] = at(s1, h1, noise);
+		b.v[0] = at(s0, h0, noise); b.v[1] = at(s1, h1, noise); b.v[2] = at(s0, h1, noise);
+		scene.triangles.push_back(a);
+		scene.triangles.push_back(b);
+	};
+	// Six columns, 2 m wide and 5 m tall, each cut into its own number of rows.
+	const int rows[6] = {1, 3, 2, 5, 1, 4};
+	for (int c = 0; c < 6; ++c)
+		for (int r = 0; r < rows[c]; ++r)
+			quad(float(c) * 200.0f, float(c + 1) * 200.0f, 500.0f * float(r) / float(rows[c]),
+			     500.0f * float(r + 1) / float(rows[c]), 0.0f);
+	// A band along the top, cut into seven and placed a hundredth of a
+	// millimetre off: its corners are not the columns' corners.
+	for (int c = 0; c < 7; ++c) quad(1200.0f * float(c) / 7.0f, 1200.0f * float(c + 1) / 7.0f, 500.0f, 600.0f, 0.001f);
+}
+
+// Total length of the triangle edges that have no partner running the other
+// way through the same two points: the outline of the mesh plus every crack.
+static double openEdgeLength(const std::vector<BakedChunk>& chunks) {
+	using Point = std::array<long long, 3>;
+	std::map<std::pair<Point, Point>, int> edges;
+	for (const BakedChunk& c : chunks)
+		for (size_t i = 0; i + 2 < c.indices.size(); i += 3) {
+			Point p[3];
+			for (int k = 0; k < 3; ++k) {
+				const WorldVertex& v = c.vertices[c.indices[i + size_t(k)]];
+				const i16 q[3] = {v.x, v.y, v.z};
+				for (int a = 0; a < 3; ++a)
+					p[k][size_t(a)] = std::llround((double(c.header.origin[a]) + double(q[a]) * double(c.header.posScale)) * 64.0);
+			}
+			for (int k = 0; k < 3; ++k) ++edges[{p[k], p[(k + 1) % 3]}];
+		}
+	double open = 0;
+	for (const auto& kv : edges) {
+		auto back = edges.find({kv.first.second, kv.first.first});
+		const int unmatched = kv.second - (back == edges.end() ? 0 : back->second);
+		if (unmatched <= 0) continue;
+		double d2 = 0;
+		for (size_t a = 0; a < 3; ++a) {
+			const double d = double(kv.first.first[a] - kv.first.second[a]) / 64.0;
+			d2 += d * d;
+		}
+		open += std::sqrt(d2) * unmatched;
+	}
+	return open;
+}
+
+static void bakeScenePak(const SrcScene& scene, const std::string& path, const char* name, const ChunkerOptions& chunker);
+
+// How many pixels show the background through the wall, seen from 40 cm.
+static int seamPixels(const std::string& path) {
+	App app;
+	if (!app.init(path.c_str(), "seam")) return -1;
+	gfx::softSetCulling(false); // either side of the wall will do
+	const float angle = 0.47f, ox = 1234.567f, oy = 33.33f, oz = -4321.09f;
+	int holes = 0;
+	for (int i = 0; i < 24; ++i) {
+		const float along = 150.0f + 39.0f * float(i), up = 180.0f + float((i * 131) % 240);
+		Camera& cam = app.camera();
+		cam.pos = {ox + along * std::cos(angle) - 40.0f * std::sin(angle), oy + up,
+		           oz + along * std::sin(angle) + 40.0f * std::cos(angle)};
+		cam.yaw = std::atan2(std::sin(angle), -std::cos(angle)) + 0.3f * float(i % 3 - 1);
+		cam.pitch = 0.25f * float(i % 5 - 2);
+		app.world().preload(cam.pos);
+		app.render();
+		const u8* fb = gfx::softFramebuffer();
+		for (int p = 0; p < gfx::SCREEN_W * gfx::SCREEN_H; ++p) {
+			const bool hole = fb[p * 4] > 200 && fb[p * 4 + 1] < 60 && fb[p * 4 + 2] > 200;
+			holes += hole;
+			if (hole && getenv("SEAM_DEBUG")) std::printf("    view %d: hole at %d,%d\n", i, p % gfx::SCREEN_W, p / gfx::SCREEN_W);
+		}
+	}
+	gfx::softSetCulling(true);
+	app.shutdown();
+	return holes;
+}
+
+static void testSeams() {
+	SrcScene wall;
+	buildSeamWall(wall, true);
+	const double outline = 2.0 * (1200.0 + 600.0);
+
+	// The old pipeline: half-centimetre lattice, vertices rounded one by one.
+	ChunkerOptions before;
+	before.chunkSize = 500.0f;
+	before.positionStep = 0.5f;
+	before.seal = false;
+	ChunkerStats sb;
+	const std::vector<BakedChunk> cracked = buildChunks(wall, {0}, {0}, before, sb);
+	const double openBefore = openEdgeLength(cracked);
+
+	ChunkerOptions now;
+	now.chunkSize = 500.0f;
+	ChunkerStats sn;
+	const std::vector<BakedChunk> sealed = buildChunks(wall, {0}, {0}, now, sn);
+	const double openNow = openEdgeLength(sealed);
+	std::printf("  seams: open edges %.0f cm before, %.0f cm sealed (outline %.0f cm); %llu T-junctions, %llu welded, "
+	            "+%llu triangles\n",
+	            openBefore, openNow, outline, static_cast<unsigned long long>(sn.tJunctions),
+	            static_cast<unsigned long long>(sn.welded), static_cast<unsigned long long>(sn.sealTriangles));
+	CHECK(cracked.size() >= 4 && sealed.size() >= 4); // the wall spans several chunks
+	CHECK(openBefore > outline + 3000.0);           // the test wall really has cracks ...
+	CHECK(std::fabs(openNow - outline) < 2.0);      // ... and sealed, only its outline is open
+	CHECK(sn.tJunctions > 15 && sn.sealTriangles > 15 && sn.degenerate == 0);
+	CHECK(sn.outputTriangles == sn.inputTriangles + sn.sealTriangles);
+	CHECK(sb.tJunctions == 0 && sb.sealTriangles == 0 && sb.outputTriangles == sb.inputTriangles);
+	// Nothing moved by more than the tolerance allows, and the wall kept its area.
+	auto area = [](const std::vector<BakedChunk>& chunks) {
+		double sum = 0;
+		for (const BakedChunk& c : chunks)
+			for (size_t i = 0; i + 2 < c.indices.size(); i += 3) {
+				double p[3][3];
+				for (int k = 0; k < 3; ++k) {
+					const WorldVertex& v = c.vertices[c.indices[i + size_t(k)]];
+					p[k][0] = double(v.x) * c.header.posScale;
+					p[k][1] = double(v.y) * c.header.posScale;
+					p[k][2] = double(v.z) * c.header.posScale;
+				}
+				const double a[3] = {p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]};
+				const double b[3] = {p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]};
+				const double n[3] = {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
+				sum += 0.5 * std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+			}
+		return sum;
+	};
+	CHECK(std::fabs(area(sealed) - 1200.0 * 600.0) < 1200.0 * 600.0 * 0.001);
+
+	// A sliver triangle that only exists to fill a T-junction closes up
+	// without taking its neighbours along.
+	{
+		SrcScene sliver;
+		sliver.materials.resize(1);
+		auto v = [](float x, float y) {
+			SrcVertex s {};
+			s.pos[0] = x;
+			s.pos[1] = y;
+			return s;
+		};
+		auto tri = [&](SrcVertex a, SrcVertex b, SrcVertex c) {
+			SrcTriangle t;
+			t.material = 0;
+			t.v[0] = a; t.v[1] = b; t.v[2] = c;
+			sliver.triangles.push_back(t);
+		};
+		tri(v(0, 0), v(200, 0), v(100, 300));     // the big one, edge (0,0)-(200,0) below
+		tri(v(0, 0), v(100, -300), v(100, 0.0f)); // two below it, meeting in the middle of that edge
+		tri(v(100, 0.0f), v(100, -300), v(200, 0));
+		tri(v(0, 0), v(100, 0.0f), v(200, 0));    // zero area: the "fix" some exporters leave behind
+		ChunkerStats ssl;
+		ChunkerOptions one;
+		one.chunkSize = 100000.0f;
+		const std::vector<BakedChunk> sc = buildChunks(sliver, {0}, {0}, one, ssl);
+		CHECK(ssl.inputTriangles == 4 && ssl.degenerate == 1 && ssl.outputTriangles == 4 && ssl.sealTriangles == 1);
+		CHECK(std::fabs(openEdgeLength(sc) - (2.0 * std::sqrt(100.0 * 100.0 + 300.0 * 300.0) * 2.0)) < 1.0);
+	}
+
+	// Random walls: a rectangle cut again and again along random lines, so
+	// that corners end up on edges everywhere, turned to an arbitrary angle,
+	// every piece with float noise of its own. Sealed, each must be watertight
+	// (only its outline open) without losing area.
+	{
+		std::mt19937 rng(2024);
+		auto rnd = [&](float lo, float hi) { return lo + (hi - lo) * float(rng() % 100000) / 100000.0f; };
+		double worstOpen = 0, worstArea = 0;
+		u64 junctions = 0;
+		for (int round = 0; round < 40; ++round) {
+			struct Rect {
+				float s0, h0, s1, h1;
+			};
+			const float width = rnd(300, 2500), height = rnd(200, 900);
+			std::vector<Rect> rects = {{0, 0, width, height}};
+			const int cuts = 3 + int(rng() % 40);
+			for (int c = 0; c < cuts; ++c) {
+				const size_t pick = rng() % rects.size();
+				const Rect r = rects[pick];
+				const bool vertical = (r.s1 - r.s0) > (r.h1 - r.h0) ? rng() % 4 != 0 : rng() % 4 == 0;
+				const float span = vertical ? r.s1 - r.s0 : r.h1 - r.h0;
+				if (span < 12.0f) continue;
+				const float at = (vertical ? r.s0 : r.h0) + span * rnd(0.2f, 0.8f);
+				rects[pick] = vertical ? Rect {r.s0, r.h0, at, r.h1} : Rect {r.s0, r.h0, r.s1, at};
+				rects.push_back(vertical ? Rect {at, r.h0, r.s1, r.h1} : Rect {r.s0, at, r.s1, r.h1});
+			}
+			const float yaw = rnd(0, 6.28f), tilt = rnd(-0.4f, 0.4f);
+			const float o[3] = {rnd(-90000, 90000), rnd(-3000, 3000), rnd(-90000, 90000)};
+			SrcScene sc;
+			sc.materials.resize(1);
+			for (const Rect& r : rects) {
+				const float n[3] = {rnd(-0.004f, 0.004f), rnd(-0.004f, 0.004f), rnd(-0.004f, 0.004f)};
+				auto at = [&](float along, float up) {
+					SrcVertex v {};
+					// A tilted plane: `up` leans out of the vertical.
+					v.pos[0] = o[0] + along * std::cos(yaw) + up * std::sin(tilt) * -std::sin(yaw) + n[0];
+					v.pos[1] = o[1] + up * std::cos(tilt) + n[1];
+					v.pos[2] = o[2] + along * std::sin(yaw) + up * std::sin(tilt) * std::cos(yaw) + n[2];
+					v.uv[0] = along / 128.0f;
+					v.uv[1] = up / 128.0f;
+					v.rgba[0] = u8(rng());
+					v.rgba[3] = 255;
+					return v;
+				};
+				SrcTriangle a, b;
+				a.material = b.material = 0;
+				a.v[0] = at(r.s0, r.h0); a.v[1] = at(r.s1, r.h0); a.v[2] = at(r.s1, r.h1);
+				b.v[0] = at(r.s0, r.h0); b.v[1] = at(r.s1, r.h1); b.v[2] = at(r.s0, r.h1);
+				// Either diagonal.
+				if (rng() % 2) {
+					a.v[2] = at(r.s0, r.h1);
+					b.v[0] = at(r.s1, r.h0);
+				}
+				sc.triangles.push_back(a);
+				sc.triangles.push_back(b);
+			}
+			ChunkerOptions co;
+			co.chunkSize = rnd(400, 4000);
+			ChunkerStats st;
+			const std::vector<BakedChunk> out = buildChunks(sc, {0}, {0}, co, st);
+			junctions += st.tJunctions;
+			worstOpen = std::max(worstOpen, std::fabs(openEdgeLength(out) - 2.0 * (double(width) + double(height))));
+			worstArea = std::max(worstArea, std::fabs(area(out) / (double(width) * double(height)) - 1.0));
+			CHECK(st.outputTriangles == st.inputTriangles + st.sealTriangles - st.degenerate);
+			for (const BakedChunk& c : out) CHECK(std::fabs(c.header.posScale - 0.125f) < 1e-6f);
+		}
+		std::printf("  random walls: %llu T-junctions closed; outline off by <= %.2f cm, area by <= %.4f%%\n",
+		            static_cast<unsigned long long>(junctions), worstOpen, worstArea * 100.0);
+		CHECK(junctions > 500);
+		CHECK(worstOpen < 3.0);    // rounding of the outline itself
+		CHECK(worstArea < 0.002);
+	}
+
+	// The same wall on screen, from as close as the player gets to a wall.
+	const std::string cracksPath = gDir + "/seam-before.pak", sealedPath = gDir + "/seam-sealed.pak";
+	bakeScenePak(wall, cracksPath, "seam", before);
+	bakeScenePak(wall, sealedPath, "seam", now);
+	gfx::init();
+	const int holesBefore = seamPixels(cracksPath), holesNow = seamPixels(sealedPath);
+	gfx::shutdown();
+	std::printf("  seams on screen (24 close-ups): %d background pixels before, %d sealed\n", holesBefore, holesNow);
+	CHECK(holesBefore > 50);
+	CHECK(holesNow == 0);
 }
 
 // Bakes a small synthetic world with the real pipeline and drives the runtime.
@@ -1058,6 +1378,421 @@ static void addBlock(SrcScene& scene, float x0, float x1, float z0, float z1, fl
 	addQuad(scene, c[3], c[0], c[4], c[7], 0);
 }
 
+// ---- background loading ----
+
+// The loader against the plain function it wraps: every chunk and texture of
+// a baked world, through the queue, with and without a thread.
+static void testLoader() {
+	SrcScene scene;
+	SynthOptions so;
+	so.cells = 48;
+	so.huts = 8;
+	so.trees = 60;
+	buildSyntheticScene(so, scene);
+	const std::string path = gDir + "/loader.pak";
+	bakeScenePak(scene, path, "t", 3000.0f);
+
+	Pak pak;
+	CHECK(pak.open(path.c_str()));
+	CHECK(std::string(pak.path()) == path);
+	const PakEntry* we = pak.find("world/t");
+	CHECK(we != nullptr);
+	if (!we) return;
+	std::vector<u8> index(we->size);
+	CHECK(pak.read(*we, index.data()));
+	WorldHeader wh;
+	std::memcpy(&wh, index.data(), sizeof(wh));
+	std::vector<WorldMaterial> materials(wh.materialCount);
+	std::memcpy(materials.data(), index.data() + sizeof(wh), materials.size() * sizeof(WorldMaterial));
+	std::vector<u32> textures(wh.textureCount);
+	std::memcpy(textures.data(), index.data() + sizeof(wh) + materials.size() * sizeof(WorldMaterial), textures.size() * 4);
+	std::vector<ChunkInfo> chunks(wh.chunkCount);
+	std::memcpy(chunks.data(), index.data() + worldBlobSize(wh) - chunks.size() * sizeof(ChunkInfo),
+	            chunks.size() * sizeof(ChunkInfo));
+
+	std::vector<LoadJob> jobs;
+	for (u32 i = 0; i < wh.chunkCount; ++i) {
+		LoadJob j {};
+		j.kind = LOAD_CHUNK;
+		j.index = i;
+		j.entry = *pak.find(chunks[i].entryHash);
+		j.info = chunks[i];
+		jobs.push_back(j);
+	}
+	for (u32 i = 0; i < wh.textureCount; ++i) {
+		LoadJob j {};
+		j.kind = LOAD_TEXTURE;
+		j.index = i;
+		j.entry = *pak.find(textures[i]);
+		jobs.push_back(j);
+	}
+	CHECK(jobs.size() > 40);
+
+	StreamLoader none;
+	CHECK(!none.start((gDir + "/does-not-exist.pak").c_str(), materials.data(), wh.materialCount, true));
+	CHECK(!none.running() && !none.submit(jobs[0]));
+
+	for (int threaded = 0; threaded < 2; ++threaded) {
+		StreamLoader loader;
+		CHECK(loader.start(path.c_str(), materials.data(), wh.materialCount, threaded != 0));
+		CHECK(loader.running() && loader.threaded() == (threaded != 0));
+		size_t next = 0, done = 0, mismatches = 0, colliders = 0;
+		u32 lastChunk = 0;
+		bool inOrder = true;
+		for (int spins = 0; done < jobs.size() && spins < 2000000; ++spins) {
+			while (next < jobs.size() && loader.submit(jobs[next])) ++next;
+			CHECK(loader.outstanding() <= StreamLoader::CAPACITY);
+			LoadKind kind;
+			if (!loader.peek(kind)) {
+				if (threaded) usleep(50);
+				continue;
+			}
+			LoadResult r;
+			CHECK(loader.poll(r));
+			CHECK(r.kind == kind && r.status == LOAD_OK && r.blob && r.size == jobs[done].entry.size);
+			// Results come back in the order the jobs went in.
+			inOrder = inOrder && r.index == jobs[done].index && r.kind == jobs[done].kind;
+			LoadResult ref;
+			StreamLoader::process(pak, jobs[done], materials.data(), wh.materialCount, ref);
+			mismatches += ref.status != r.status || ref.size != r.size || std::memcmp(ref.blob, r.blob, r.size) != 0 ||
+			              ref.collider.triangleCount != r.collider.triangleCount ||
+			              ref.water.triangleCount != r.water.triangleCount || ref.collider.bytes() != r.collider.bytes();
+			if (r.kind == LOAD_CHUNK) {
+				colliders += r.collider.triangleCount > 0;
+				lastChunk = r.index;
+			} else {
+				CHECK(r.collider.triangleCount == 0);
+			}
+			ref.discard();
+			r.discard();
+			CHECK(r.blob == nullptr);
+			++done;
+		}
+		CHECK(done == jobs.size() && mismatches == 0 && inOrder && loader.outstanding() == 0);
+		// (A few chunks hold nothing to stand on: only tree tops or water.)
+		CHECK(colliders > wh.chunkCount / 2 && colliders <= wh.chunkCount && lastChunk == wh.chunkCount - 1);
+		CHECK(loader.takeWorstJobMs() > 0.0f && loader.takeWorstJobMs() == 0.0f);
+
+		// The queue is bounded ...
+		u32 accepted = 0;
+		for (const LoadJob& j : jobs) accepted += loader.submit(j);
+		CHECK(accepted == StreamLoader::CAPACITY && loader.outstanding() == StreamLoader::CAPACITY);
+		// ... and can be emptied in one go, whatever state the jobs are in.
+		loader.cancelAll();
+		LoadResult r;
+		LoadKind kind;
+		CHECK(loader.outstanding() == 0 && !loader.peek(kind) && !loader.poll(r));
+
+		// Data that does not match what the world index promises is refused.
+		LoadJob bad = jobs[0];
+		bad.info.vertexCount = u16(bad.info.vertexCount + 1);
+		LoadJob wrongType = jobs[0];
+		wrongType.kind = LOAD_TEXTURE;
+		LoadJob truncated = jobs[1];
+		truncated.entry.packedSize /= 2;
+		CHECK(loader.submit(bad) && loader.submit(wrongType) && loader.submit(truncated) && loader.submit(jobs[2]));
+		int got = 0;
+		for (int spins = 0; got < 4 && spins < 2000000; ++spins) {
+			if (!loader.poll(r)) {
+				if (threaded) usleep(50);
+				continue;
+			}
+			CHECK(r.status == (got < 3 ? LOAD_BAD_DATA : LOAD_OK) && (got < 3 ? r.blob == nullptr : r.blob != nullptr));
+			r.discard();
+			++got;
+		}
+		CHECK(got == 4);
+
+		// Stopping with work under way leaves nothing behind (the sanitizer
+		// build checks that), and stopping twice is harmless.
+		for (size_t i = 0; i < 6; ++i) loader.submit(jobs[i]);
+		loader.stop();
+		loader.stop();
+		CHECK(!loader.running() && !loader.threaded() && !loader.submit(jobs[0]));
+		// A stopped loader can be started again.
+		CHECK(loader.start(path.c_str(), materials.data(), wh.materialCount, threaded != 0));
+		CHECK(loader.submit(jobs[3]));
+	} // destroyed with a job under way
+}
+
+// The world streamed in the background must end up exactly like the world
+// loaded on the spot - same chunks, same memory, same picture - without ever
+// doing more per frame than it is allowed to.
+static void testStreaming() {
+	const std::string path = gDir + "/loader.pak"; // baked by testLoader
+	SrcScene scene;
+	SynthOptions so;
+	so.cells = 48;
+	so.huts = 8;
+	so.trees = 60;
+	buildSyntheticScene(so, scene);
+	const Vec3 spawn = {scene.spawnPos[0], scene.spawnPos[1], scene.spawnPos[2]};
+	const float dt = 1.0f / 30.0f;
+
+	struct Snapshot {
+		std::vector<bool> resident;
+		u32 bytes = 0, textures = 0, collision = 0;
+		std::vector<u8> frame;
+	};
+	gfx::init();
+	Snapshot shots[3];
+	static const char* names[3] = {"on the frame", "background, no thread", "background, worker thread"};
+	for (int mode = 0; mode < 3; ++mode) {
+		const bool background = mode > 0, threaded = mode == 2;
+		App app;
+		app.world().config().background = background;
+		app.world().config().worker = threaded;
+		CHECK(app.init(path.c_str(), "t"));
+		World& w = app.world();
+		CHECK(w.backgroundStreaming() == background && w.workerThread() == threaded);
+		app.setDrawDistance(6000.0f);
+		app.player().flying = true;
+		w.config().maxLoadsPerFrame = 1;
+		w.config().maxTextureLoadsPerFrame = 2;
+
+		auto distance = [&](u32 i) {
+			const ChunkInfo& ci = w.chunkInfo(i);
+			const Vec3 c = app.camera().pos;
+			const float dx = std::max({ci.bbMin[0] - c.x, c.x - ci.bbMax[0], 0.0f});
+			const float dy = std::max({ci.bbMin[1] - c.y, c.y - ci.bbMax[1], 0.0f});
+			const float dz = std::max({ci.bbMin[2] - c.z, c.z - ci.bbMax[2], 0.0f});
+			return std::sqrt(dx * dx + dy * dy + dz * dz);
+		};
+		// Updates until nothing is missing any more; false if that never happens.
+		auto settle = [&](int limit, bool watch) {
+			std::vector<bool> had(w.stats().chunksTotal);
+			for (u32 i = 0; i < w.stats().chunksTotal; ++i) had[i] = w.chunkResident(i);
+			float lastArrival = 0;
+			bool ordered = true;
+			u32 texturesBefore = w.stats().texturesLoaded;
+			for (int f = 0; f < limit; ++f) {
+				app.update(Input {}, dt);
+				const WorldStats& st = w.stats();
+				if (watch) {
+					CHECK(st.loadsThisFrame <= 1 && st.chunksInFlight <= 2);
+					CHECK(st.texturesLoaded <= texturesBefore + 2 || !background);
+					texturesBefore = st.texturesLoaded;
+					for (u32 i = 0; i < st.chunksTotal; ++i) {
+						if (had[i] || !w.chunkResident(i)) continue;
+						had[i] = true;
+						ordered = ordered && distance(i) >= lastArrival;
+						lastArrival = distance(i);
+					}
+				}
+				if (st.chunksPending == 0 && st.chunksInFlight == 0 && st.texturesWaiting == 0) {
+					if (watch) CHECK(ordered); // nearest first, all the way
+					return true;
+				}
+				if (threaded) usleep(100);
+			}
+			return false;
+		};
+
+		// 1. Standing at the start point until everything around is there.
+		CHECK(w.stats().chunksLoaded == 0);
+		CHECK(settle(200000, true));
+		Snapshot& shot = shots[mode];
+		for (u32 i = 0; i < w.stats().chunksTotal; ++i) shot.resident.push_back(w.chunkResident(i));
+		shot.bytes = w.stats().residentBytes;
+		shot.textures = w.stats().texturesLoaded;
+		shot.collision = w.stats().collisionBytes;
+		app.setClock(5.0); // the water moves: same moment in every mode
+		app.render();
+		shot.frame.assign(gfx::softFramebuffer(), gfx::softFramebuffer() + gfx::SCREEN_W * gfx::SCREEN_H * 4);
+		const u32 near = w.stats().chunksLoaded;
+		CHECK(near > 4 && near < w.stats().chunksTotal && w.stats().loadFailures == 0 && w.stats().budgetRejects == 0);
+		const u32 skyBytes = gfx::memStats().meshBytes + gfx::memStats().textureBytes - w.stats().residentBytes;
+		std::printf("  streaming %-26s %u chunks, %u textures, %.2f MB\n", names[mode], near, shot.textures,
+		            double(shot.bytes) / 1048576.0);
+
+		// 2. Leaving while chunks are on their way: what arrives late is thrown away.
+		app.teleport({1e6f, 0, 1e6f});
+		app.update(Input {}, dt);
+		CHECK(w.stats().chunksLoaded == 0);
+		app.teleport(spawn);
+		app.update(Input {}, dt); // asks for the nearest chunks ...
+		if (background) CHECK(w.stats().chunksInFlight > 0);
+		app.teleport({1e6f, 0, 1e6f}); // ... and is gone before they arrive
+		CHECK(settle(200000, false));
+		CHECK(w.stats().chunksLoaded == 0 && w.stats().residentBytes == 0 && w.stats().texturesLoaded == 0 &&
+		      w.stats().collisionBytes == 0);
+		CHECK(gfx::memStats().meshCount == 1 && gfx::memStats().textureCount == 0); // the sky dome
+
+		// 3. A loading screen in the middle of streaming: everything at once,
+		// and nothing twice afterwards.
+		app.teleport(spawn);
+		app.update(Input {}, dt);
+		app.update(Input {}, dt);
+		w.preload(app.camera().pos);
+		CHECK(w.stats().chunksLoaded == near && w.stats().chunksPending == 0 && w.stats().texturesWaiting == 0);
+		CHECK(w.stats().residentBytes == shot.bytes && w.stats().texturesLoaded == shot.textures);
+		for (int f = 0; f < 30; ++f) {
+			app.update(Input {}, dt);
+			if (threaded) usleep(100);
+		}
+		CHECK(w.stats().chunksLoaded == near && w.stats().chunksInFlight == 0 && w.stats().residentBytes == shot.bytes);
+		CHECK(w.stats().residentBytes == gfx::memStats().meshBytes + gfx::memStats().textureBytes - skyBytes);
+		CHECK(w.stats().collisionBytes == shot.collision);
+
+		// 4. Video memory runs out while streaming: chunks wait, nothing is
+		// written off, and they arrive once there is room.
+		app.teleport({1e6f, 0, 1e6f});
+		CHECK(settle(200000, false) && w.stats().chunksLoaded == 0);
+		app.teleport(spawn);
+		gfx::softSetMemoryLimit(gfx::memStats().meshBytes + 40 * 1024);
+		for (int f = 0; f < 400; ++f) {
+			app.update(Input {}, dt);
+			if (threaded) usleep(100);
+		}
+		const u32 starved = w.stats().chunksLoaded;
+		CHECK(starved > 0 && starved < near && w.stats().budgetRejects > 0 && w.stats().loadFailures == 0);
+		app.render(); // whatever is there can be drawn
+		gfx::softSetMemoryLimit(0);
+		CHECK(settle(200000, false));
+		CHECK(w.stats().chunksLoaded == near && w.stats().loadFailures == 0 && w.stats().residentBytes == shot.bytes &&
+		      w.stats().texturesLoaded == shot.textures);
+
+		// 5. The budget is respected with chunks on their way, too.
+		app.teleport({1e6f, 0, 1e6f});
+		CHECK(settle(200000, false));
+		w.config().memoryBudget = shot.bytes / 2;
+		app.teleport(spawn);
+		u32 peak = 0;
+		for (int f = 0; f < 300; ++f) {
+			app.update(Input {}, dt);
+			peak = std::max(peak, w.stats().residentBytes);
+			if (threaded) usleep(100);
+		}
+		// Chunks are admitted by their mesh size; their textures come on top.
+		CHECK(w.stats().chunksLoaded > 0 && w.stats().chunksLoaded < near && w.stats().chunksPending > 0);
+		CHECK(peak <= shot.bytes / 2 + 256 * 1024);
+		w.config().memoryBudget = 24u << 20;
+
+		// 6. Closed with work under way.
+		app.teleport({1e6f, 0, 1e6f});
+		app.update(Input {}, dt);
+		app.teleport(spawn);
+		app.update(Input {}, dt);
+		app.shutdown();
+		CHECK(gfx::memStats().meshCount == 0 && gfx::memStats().textureCount == 0);
+	}
+	gfx::shutdown();
+	for (int mode = 1; mode < 3; ++mode) {
+		CHECK(shots[mode].resident == shots[0].resident);
+		CHECK(shots[mode].bytes == shots[0].bytes && shots[mode].textures == shots[0].textures &&
+		      shots[mode].collision == shots[0].collision);
+		CHECK(shots[mode].frame == shots[0].frame); // the very same picture
+	}
+}
+
+// Walking through a portal with background streaming on: the old world's
+// loader is stopped, the new world gets one of its own.
+static void testStreamingWorlds() {
+	const std::string path = gDir + "/worlds.pak"; // baked by testWorlds
+	gfx::init();
+	for (int threaded = 0; threaded < 2; ++threaded) {
+		App app;
+		app.world().config().background = true;
+		app.world().config().worker = threaded != 0;
+		CHECK(app.init(path.c_str(), nullptr));
+		World& w = app.world();
+		w.preload(app.camera().pos);
+		const u32 worldHash = w.entryHash();
+		app.player().flying = true;
+		for (int hop = 0; hop < 6; ++hop) {
+			Input in;
+			in.nextWorld = true; // the debug key: next world of the archive
+			app.update(in, 1.0f / 30.0f);
+			CHECK(w.isOpen() && w.backgroundStreaming() && w.workerThread() == (threaded != 0));
+			CHECK((w.entryHash() == worldHash) == (hop % 2 == 1));
+			CHECK(w.stats().chunksLoaded > 0 && w.stats().chunksPending == 0); // preloaded on arrival
+			// Fly off so that the next switch happens with chunks under way.
+			Input fly;
+			fly.moveZ = 1.0f;
+			fly.fast = true;
+			for (int f = 0; f < 20; ++f) app.update(fly, 1.0f / 30.0f);
+			app.render();
+		}
+		CHECK(app.worldSwitches() == 6 && w.stats().loadFailures == 0);
+		app.shutdown();
+		CHECK(gfx::memStats().meshCount == 0 && gfx::memStats().textureCount == 0);
+	}
+	gfx::shutdown();
+}
+
+// ---- frame pacing ----
+
+static void testPacer() {
+	// A stand-in for the console: objects are 40% of a frame's cost.
+	auto cost = [](float scene, float detail) { return scene * (0.6f + 0.4f * detail); };
+
+	// Plenty of room: nothing changes.
+	FramePacer p;
+	for (int f = 0; f < 600; ++f) p.update(cost(0.7f, p.detailScale()));
+	CHECK(p.detailScale() == 1.0f && p.interval() == 1);
+
+	// A view that needs 105% at full detail. The pacer finds a detail level
+	// that fits and stays at 60 fps, without hunting.
+	float worst = 0, lowest = 1, highest = 0;
+	int changes = 0, late = 0;
+	for (int f = 0; f < 1200; ++f) {
+		const float load = cost(1.05f, p.detailScale());
+		const int was = p.interval();
+		p.update(load);
+		changes += p.interval() != was;
+		if (f >= 300) {
+			worst = std::max(worst, load);
+			late += load > 1.0f;
+			lowest = std::min(lowest, p.detailScale());
+			highest = std::max(highest, p.detailScale());
+		}
+	}
+	std::printf("  pacer at 105%%: detail settles at %.0f..%.0f%%, load <= %.0f%%\n", double(lowest * 100.0f),
+	            double(highest * 100.0f), double(worst * 100.0f));
+	CHECK(changes == 0 && p.interval() == 1 && late == 0);
+	CHECK(worst <= 0.92f && lowest > 0.40f && highest < 0.75f && highest - lowest < 0.15f);
+
+	// The first frames of the overload are the only late ones.
+	p.reset();
+	late = 0;
+	for (int f = 0; f < 300; ++f) {
+		const float load = cost(1.05f, p.detailScale());
+		late += load > 1.0f;
+		p.update(load);
+	}
+	CHECK(late >= 1 && late <= 4);
+
+	// The castle gate as measured on the console: 125% of a frame. With these
+	// shares of the cost it does not fit even without objects: one switch to a
+	// steady 30 fps, not a flicker between the two.
+	p.reset();
+	changes = 0;
+	for (int f = 0; f < 900; ++f) {
+		const int was = p.interval();
+		p.update(cost(1.6f, p.detailScale()));
+		changes += p.interval() != was;
+	}
+	CHECK(p.interval() == 2 && changes == 1 && std::fabs(p.detailScale() - p.cfg.minDetail) < 1e-4f);
+	// Hovering just below the limit is no reason to go back ...
+	for (int f = 0; f < 300; ++f) p.update(0.95f);
+	CHECK(p.interval() == 2);
+	// ... a clearly lighter view is, and then the detail returns as well.
+	changes = 0;
+	for (int f = 0; f < 900; ++f) {
+		const int was = p.interval();
+		p.update(cost(0.75f, p.detailScale()));
+		changes += p.interval() != was;
+	}
+	CHECK(p.interval() == 1 && changes == 1 && p.detailScale() > 0.95f);
+
+	// Nonsense input does no harm.
+	p.reset();
+	p.update(std::nanf(""));
+	p.update(-5.0f);
+	p.update(1.0e9f);
+	CHECK(p.detailScale() >= p.cfg.minDetail && p.detailScale() <= 1.0f && p.load() <= 4.0f);
+}
+
 static void testCollision() {
 	// Closest point: face interior, edge and corner regions.
 	const Vec3 a {0, 0, 0}, b {10, 0, 0}, c {0, 0, 10};
@@ -1231,14 +1966,29 @@ static void testSky() {
 
 int main(int argc, char** argv) {
 	gDir = argc > 1 ? argv[1] : ".";
+	const char* only = argc > 2 ? argv[2] : nullptr; // run the tests whose name contains this
 	struct {
 		const char* name;
 		void (*fn)();
-	} tests[] = {{"hash", testHash},     {"pak", testPak},         {"etc1 block decoder", testEtc1BlockDecoder},
-	             {"texture", testTexture}, {"chunker", testChunker}, {"math", testMath},
-	             {"runtime", testRuntime}, {"worlds", testWorlds},       {"collision", testCollision},
+	} tests[] = {{"hash", testHash},
+	             {"pak", testPak},
+	             {"etc1 block decoder", testEtc1BlockDecoder},
+	             {"texture", testTexture},
+	             {"chunker", testChunker},
+	             {"seams", testSeams},
+	             {"math", testMath},
+	             {"runtime", testRuntime},
+	             {"worlds", testWorlds},
+	             {"loader", testLoader},
+	             {"streaming", testStreaming},
+	             {"streaming worlds", testStreamingWorlds},
+	             {"pacer", testPacer},
+	             {"collision", testCollision},
 	             {"sky", testSky}};
 	for (auto& t : tests) {
+		// Later tests reuse the archives earlier ones baked.
+		const bool bakes = std::strcmp(t.name, "worlds") == 0 || std::strcmp(t.name, "loader") == 0;
+		if (only && !std::strstr(t.name, only) && !bakes) continue;
 		const int before = gFailures;
 		std::printf("[ RUN ] %s\n", t.name);
 		t.fn();

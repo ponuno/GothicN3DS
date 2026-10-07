@@ -22,7 +22,9 @@ constexpr u32 WORLD_MAGIC = fourcc('G', '3', 'W', 'D');
 constexpr u32 CHUNK_MAGIC = fourcc('G', '3', 'C', 'H');
 // 3: texture table, animated/scrolling/blended materials, batch bounds and
 //    detail classes, portals between worlds, ladders, indoor worlds.
-constexpr u32 WORLD_VERSION = 3;
+// 4: chunk-local positions are signed (the origin is the middle of the
+//    chunk), on a lattice of 1/8 cm. Same layout as 3.
+constexpr u32 WORLD_VERSION = 4;
 
 constexpr u32 CHUNK_MAX_VERTICES = 65535; // 16-bit indices
 constexpr float WORLD_UV_SCALE = 1.0f / 1024.0f;

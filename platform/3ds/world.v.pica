@@ -4,7 +4,14 @@
 ;   v0  short4  quantised position (w is padding)
 ;   v1  short2  fixed-point texture coordinate
 ;   v2  ubyte4  rgb = baked light, a = daylight weight (255 outdoors, 0 indoors)
-; modelView already contains the chunk origin and position scale.
+;
+; Position: chunk.w is the chunk's position step and chunk.xyz its origin
+; relative to a lattice point next to the eye. Both the product and the sum
+; are exact in the 24-bit floats of this GPU (they are whole lattice steps,
+; fewer than 2^17 of them), so a vertex shared by two chunks leaves this step
+; as the same number from both and the seam between them cannot open.
+; modelView is the same for every chunk: the view rotation plus the small
+; offset from that lattice point to the eye.
 ;
 ; Light:  rgb * lerp(1, dayLight, weight); dayDelta holds dayLight - 1.
 ; Fog:    linear, per vertex: factor = clamp(fogA - viewZ * fogB, 0, 1), 1 = clear.
@@ -12,6 +19,7 @@
 ;         TexEnv stage (see gfx_c3d.cpp). The sky pass sets fogA = 1, fogB = 0.
 
 .fvec projection[4], modelView[4]
+.fvec chunk         ; xyz = chunk origin relative to the eye's lattice point, w = position step
 .fvec params        ; x = uv scale, y = 1/255, z = fogA, w = fogB
 .fvec dayDelta      ; xyz = dayLight - 1
 .fvec texOffset     ; xy = texture scroll offset (zw must be 0)
@@ -29,8 +37,9 @@
 .alias inclr v2
 
 .proc main
-	; r0 = (position, 1)
-	mov r0.xyz, inpos
+	; r0 = (position relative to the eye's lattice point, 1)
+	mul r0.xyz, chunk.www, inpos
+	add r0.xyz, chunk.xyz, r0.xyz
 	mov r0.w,   one
 
 	; r1 = view-space position

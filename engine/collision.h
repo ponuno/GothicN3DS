@@ -19,6 +19,7 @@ struct ChunkCollider {
 	float scale = 1.0f;    // world = origin + local * scale
 	float cellSize = 1.0f; // in local units
 	u32 gridW = 0, gridH = 0;
+	i32 gridX0 = 0, gridZ0 = 0; // local coordinates of the grid's corner (they can be negative)
 
 	// Copies what collision needs out of a chunk: the triangles of every batch
 	// whose material has (flags & flagMask) == flagValue. False on allocation

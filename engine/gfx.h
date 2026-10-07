@@ -20,6 +20,7 @@ constexpr int SCREEN_H = 240;
 
 struct FrameDesc {
 	Mat4 view;
+	Vec3 eye; // the camera position `view` was built from
 	float fovY;
 	float zNear, zFar;
 	// Linear fog on view-space depth, evaluated per vertex (like ZenGin's):
@@ -50,6 +51,13 @@ struct MemStats {
 struct FrameStats {
 	u32 drawsDropped;     // draw calls skipped because the GPU command buffer was full
 	float commandBufferUse; // 0..1, share of the GPU command buffer the frame needed
+	// Timing; all zero where the backend has no display to keep pace with.
+	float frameMs; // from the previous frame's display sync to this one's: what the player sees
+	float cpuMs;   // spent issuing the frame's draw calls
+	float gpuMs;   // spent by the GPU drawing the frame before this one
+	// True if the GPU draws one frame while the CPU issues the next (a frame
+	// then needs the larger of the two times, not their sum).
+	bool overlapped;
 };
 
 bool init();
@@ -65,7 +73,8 @@ void meshDestroy(Mesh* m);
 void frameBegin(const FrameDesc& f);
 // Starts in PASS_WORLD after frameBegin.
 void setPass(Pass pass);
-// Sets the dequantisation transform for the following draws.
+// Sets the dequantisation transform for the following draws:
+// world = origin + position * posScale.
 void setChunkTransform(const float origin[3], float posScale, float uvScale);
 // materialFlags: MaterialFlags from world.h. A null texture draws white.
 // opacity scales the alpha of blended materials; uvOffset is added to the

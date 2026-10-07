@@ -94,16 +94,23 @@ bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const
 	}
 	free(remap);
 
-	// Grid: cells of about 2.5 m, at most 48 x 48.
-	i32 maxX = 0, maxZ = 0;
+	// Grid: cells of about 2.5 m, at most 48 x 48, over the used part of the
+	// chunk (local coordinates are signed: the origin is in the middle).
+	i32 minX = 32767, minZ = 32767, maxX = -32768, maxZ = -32768;
 	for (u32 i = 0; i < triangleCount * 3; ++i) {
-		maxX = max<i32>(maxX, positions[triangles[i] * 3 + 0]);
-		maxZ = max<i32>(maxZ, positions[triangles[i] * 3 + 2]);
+		const i16* p = positions + triangles[i] * 3;
+		minX = min<i32>(minX, p[0]);
+		maxX = max<i32>(maxX, p[0]);
+		minZ = min<i32>(minZ, p[2]);
+		maxZ = max<i32>(maxZ, p[2]);
 	}
+	gridX0 = minX;
+	gridZ0 = minZ;
+	const i32 spanX = maxX - minX, spanZ = maxZ - minZ;
 	cellSize = max(250.0f / scale, 1.0f);
-	gridW = clamp<u32>(u32(float(maxX) / cellSize) + 1, 1, 48);
-	gridH = clamp<u32>(u32(float(maxZ) / cellSize) + 1, 1, 48);
-	cellSize = max(max(float(maxX + 1) / float(gridW), float(maxZ + 1) / float(gridH)), cellSize);
+	gridW = clamp<u32>(u32(float(spanX) / cellSize) + 1, 1, 48);
+	gridH = clamp<u32>(u32(float(spanZ) / cellSize) + 1, 1, 48);
+	cellSize = max(max(float(spanX + 1) / float(gridW), float(spanZ + 1) / float(gridH)), cellSize);
 
 	const u32 cells = gridW * gridH;
 	cellStart = static_cast<u32*>(calloc(cells + 1, sizeof(u32)));
@@ -120,10 +127,10 @@ bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const
 			mnz = min<i32>(mnz, p[2]);
 			mxz = max<i32>(mxz, p[2]);
 		}
-		x0 = clamp<i32>(i32(float(mnx) / cellSize), 0, i32(gridW) - 1);
-		x1 = clamp<i32>(i32(float(mxx) / cellSize), 0, i32(gridW) - 1);
-		z0 = clamp<i32>(i32(float(mnz) / cellSize), 0, i32(gridH) - 1);
-		z1 = clamp<i32>(i32(float(mxz) / cellSize), 0, i32(gridH) - 1);
+		x0 = clamp<i32>(i32(float(mnx - gridX0) / cellSize), 0, i32(gridW) - 1);
+		x1 = clamp<i32>(i32(float(mxx - gridX0) / cellSize), 0, i32(gridW) - 1);
+		z0 = clamp<i32>(i32(float(mnz - gridZ0) / cellSize), 0, i32(gridH) - 1);
+		z1 = clamp<i32>(i32(float(mxz - gridZ0) / cellSize), 0, i32(gridH) - 1);
 	};
 	// Counting sort of triangles into cells.
 	for (u32 t = 0; t < triangleCount; ++t) {
@@ -162,8 +169,9 @@ bool ChunkCollider::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal)
 	const float inv = 1.0f / scale;
 	const float lx = (from.x - origin[0]) * inv, ly = (from.y - origin[1]) * inv, lz = (from.z - origin[2]) * inv;
 	const float drop = maxDrop * inv;
-	if (lx < 0 || lz < 0) return false;
-	const u32 cx = u32(lx / cellSize), cz = u32(lz / cellSize);
+	const float gx = lx - float(gridX0), gz = lz - float(gridZ0);
+	if (gx < 0 || gz < 0) return false;
+	const u32 cx = u32(gx / cellSize), cz = u32(gz / cellSize);
 	if (cx >= gridW || cz >= gridH) return false;
 
 	bool found = false;
@@ -197,8 +205,9 @@ bool ChunkCollider::pushSphere(Vec3& center, float radius) const {
 	Vec3 c = {(center.x - origin[0]) * inv, (center.y - origin[1]) * inv, (center.z - origin[2]) * inv};
 	const float r = radius * inv;
 
-	const float fx0 = (c.x - r) / cellSize, fx1 = (c.x + r) / cellSize;
-	const float fz0 = (c.z - r) / cellSize, fz1 = (c.z + r) / cellSize;
+	const float gx = c.x - float(gridX0), gz = c.z - float(gridZ0);
+	const float fx0 = (gx - r) / cellSize, fx1 = (gx + r) / cellSize;
+	const float fz0 = (gz - r) / cellSize, fz1 = (gz + r) / cellSize;
 	if (fx1 < 0 || fz1 < 0 || fx0 >= float(gridW) || fz0 >= float(gridH)) return false;
 	const u32 x0 = u32(max(fx0, 0.0f)), x1 = min(u32(max(fx1, 0.0f)), gridW - 1);
 	const u32 z0 = u32(max(fz0, 0.0f)), z1 = min(u32(max(fz1, 0.0f)), gridH - 1);

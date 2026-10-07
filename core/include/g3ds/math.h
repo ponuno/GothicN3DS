@@ -100,6 +100,33 @@ inline Mat4 viewLH(Vec3 pos, float yaw, float pitch) {
 	return v;
 }
 
+// Rendering relative to the eye. Chunk positions are whole steps of a
+// world-wide lattice; subtracting a lattice point near the eye from them is
+// exact, even in the 24-bit floats of the PICA200 vertex shader, as long as
+// the result stays below 2^17 steps. A vertex shared by two chunks then
+// reaches the view matrix as the very same number from both, and the seam
+// between them cannot open. `anchor` is that lattice point; `view` is the
+// view matrix for positions relative to it.
+constexpr float EYE_LATTICE = 0.125f; // cm: the bake's finest position step
+
+struct EyeFrame {
+	Mat4 view;
+	float anchor[3];
+};
+
+inline EyeFrame eyeFrame(const Mat4& view, Vec3 eye) {
+	EyeFrame f;
+	f.view = view;
+	const float e[3] = {eye.x, eye.y, eye.z};
+	float d[3];
+	for (int a = 0; a < 3; ++a) {
+		f.anchor[a] = floorf(e[a] / EYE_LATTICE + 0.5f) * EYE_LATTICE;
+		d[a] = f.anchor[a] - e[a];
+	}
+	for (int r = 0; r < 3; ++r) f.view.at(r, 3) = view.at(r, 0) * d[0] + view.at(r, 1) * d[1] + view.at(r, 2) * d[2];
+	return f;
+}
+
 struct Frustum {
 	float p[6][4]; // inward-facing planes: ax + by + cz + d >= 0 is inside
 };

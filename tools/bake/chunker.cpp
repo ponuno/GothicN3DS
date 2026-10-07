@@ -1,11 +1,15 @@
 #include "chunker.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <map>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace g3 {
 
@@ -51,46 +55,294 @@ VertexKey fractionKey(WorldVertex v, i32 u, i32 vv) {
 
 using i64 = long long;
 
+// ---- seam repair: clusters of coinciding vertices ----
+
+struct CellKey {
+	i64 x, y, z;
+	bool operator==(const CellKey& o) const { return x == o.x && y == o.y && z == o.z; }
+};
+
+struct CellKeyHash {
+	size_t operator()(const CellKey& k) const {
+		u64 h = u64(k.x) * 0x9E3779B97F4A7C15ull;
+		h = (h ^ (h >> 29) ^ u64(k.y)) * 0xBF58476D1CE4E5B9ull;
+		h = (h ^ (h >> 32) ^ u64(k.z)) * 0x94D049BB133111EBull;
+		return size_t(h ^ (h >> 31));
+	}
+};
+
+struct P3 {
+	double x, y, z;
+};
+
+// Every source position belongs to one cluster. Equal positions always
+// share one; with `eps` > 0 so do positions closer than that to the first
+// position seen there.
+struct Clusters {
+	std::vector<P3> pos;
+	std::unordered_map<CellKey, u32, CellKeyHash> exact;               // by the bits of the three floats
+	std::unordered_map<CellKey, std::vector<u32>, CellKeyHash> nearby; // cells of 2 * eps
+	double eps = 0;
+	u64 merged = 0;
+
+	u32 find(const float p[3]) {
+		u32 bits[3];
+		for (int a = 0; a < 3; ++a) {
+			const float f = p[a] + 0.0f; // -0 and +0 are the same place
+			std::memcpy(&bits[a], &f, 4);
+		}
+		auto ins = exact.emplace(CellKey {i64(bits[0]), i64(bits[1]), i64(bits[2])}, u32(pos.size()));
+		if (!ins.second) return ins.first->second;
+		const P3 q {double(p[0]), double(p[1]), double(p[2])};
+		if (eps > 0) {
+			const double cell = eps * 2.0;
+			const double f[3] = {q.x / cell, q.y / cell, q.z / cell};
+			i64 lo[3], hi[3];
+			for (int a = 0; a < 3; ++a) {
+				const i64 c = i64(std::floor(f[a]));
+				const bool lower = f[a] - double(c) < 0.5; // anything within eps is in this cell or that neighbour
+				lo[a] = lower ? c - 1 : c;
+				hi[a] = lower ? c : c + 1;
+			}
+			for (i64 z = lo[2]; z <= hi[2]; ++z)
+				for (i64 y = lo[1]; y <= hi[1]; ++y)
+					for (i64 x = lo[0]; x <= hi[0]; ++x) {
+						auto it = nearby.find(CellKey {x, y, z});
+						if (it == nearby.end()) continue;
+						for (u32 c : it->second) {
+							const double dx = pos[c].x - q.x, dy = pos[c].y - q.y, dz = pos[c].z - q.z;
+							if (dx * dx + dy * dy + dz * dz <= eps * eps) {
+								ins.first->second = c;
+								++merged;
+								return c;
+							}
+						}
+					}
+			nearby[CellKey {i64(std::floor(f[0])), i64(std::floor(f[1])), i64(std::floor(f[2]))}].push_back(
+			    u32(pos.size()));
+		}
+		pos.push_back(q);
+		return ins.first->second;
+	}
+};
+
+// A triangle on its way through the chunker: source attributes per corner
+// (the position comes from the corner's cluster).
+struct WorkTri {
+	SrcVertex v[3];
+	u32 c[3];
+	u32 material;
+	u8 detail;
+};
+
+struct SplitPoint {
+	u32 cluster;
+	SrcVertex v; // attributes of the edge's own triangle at that point
+};
+
+struct Span {
+	const SplitPoint* begin = nullptr;
+	const SplitPoint* end = nullptr;
+	bool empty() const { return begin == end; }
+};
+
+// Finds, for every triangle edge, the vertices that lie on it, and cuts the
+// triangles there.
+struct Sealer {
+	const Clusters& clusters;
+	double tol;  // how far from an edge a vertex still counts as lying on it
+	double ends; // how far from the edge's ends it has to be (nearer ones are welded)
+	ChunkerStats& stats;
+	std::vector<WorkTri>& out;
+	static constexpr double kCell = 128.0;
+	std::unordered_map<CellKey, std::vector<u32>, CellKeyHash> grid;
+	// Per undirected edge (smaller cluster first): the clusters on it with
+	// their position along the edge, nearest to the smaller cluster first.
+	std::unordered_map<u64, std::vector<std::pair<double, u32>>> edges;
+
+	Sealer(const Clusters& c, double tolerance, ChunkerStats& st, std::vector<WorkTri>& o)
+	    : clusters(c), tol(tolerance), ends(tolerance * 0.5), stats(st), out(o) {
+		for (u32 i = 0; i < u32(c.pos.size()); ++i) grid[cellOf(c.pos[i])].push_back(i);
+	}
+
+	static CellKey cellOf(const P3& p) {
+		return CellKey {i64(std::floor(p.x / kCell)), i64(std::floor(p.y / kCell)), i64(std::floor(p.z / kCell))};
+	}
+
+	const std::vector<std::pair<double, u32>>& onEdge(u32 a, u32 b) {
+		const u32 lo = std::min(a, b), hi = std::max(a, b);
+		auto ins = edges.emplace((u64(lo) << 32) | hi, std::vector<std::pair<double, u32>>());
+		std::vector<std::pair<double, u32>>& list = ins.first->second;
+		if (!ins.second) return list;
+		const P3 A = clusters.pos[lo], B = clusters.pos[hi];
+		const double dx = B.x - A.x, dy = B.y - A.y, dz = B.z - A.z;
+		const double len2 = dx * dx + dy * dy + dz * dz, len = std::sqrt(len2);
+		if (len <= ends * 2.0) return list;
+		// Walk the edge in short pieces so that only cells near it are visited.
+		const int pieces = int(std::ceil(len / kCell));
+		for (int i = 0; i < pieces; ++i) {
+			const double t0 = double(i) / pieces, t1 = double(i + 1) / pieces;
+			const P3 p0 {A.x + dx * t0, A.y + dy * t0, A.z + dz * t0}, p1 {A.x + dx * t1, A.y + dy * t1, A.z + dz * t1};
+			const CellKey c0 = cellOf(P3 {std::min(p0.x, p1.x) - tol, std::min(p0.y, p1.y) - tol, std::min(p0.z, p1.z) - tol});
+			const CellKey c1 = cellOf(P3 {std::max(p0.x, p1.x) + tol, std::max(p0.y, p1.y) + tol, std::max(p0.z, p1.z) + tol});
+			for (i64 z = c0.z; z <= c1.z; ++z)
+				for (i64 y = c0.y; y <= c1.y; ++y)
+					for (i64 x = c0.x; x <= c1.x; ++x) {
+						auto it = grid.find(CellKey {x, y, z});
+						if (it == grid.end()) continue;
+						for (u32 v : it->second) {
+							if (v == lo || v == hi) continue;
+							const P3& V = clusters.pos[v];
+							const double vx = V.x - A.x, vy = V.y - A.y, vz = V.z - A.z;
+							const double along = (vx * dx + vy * dy + vz * dz) / len; // cm from A
+							// Clear of both ends: a vertex next to a corner is not a T-junction.
+							if (along <= ends || along >= len - ends) continue;
+							const double off2 = vx * vx + vy * vy + vz * vz - along * along;
+							if (off2 > tol * tol) continue;
+							list.emplace_back(along / len, v);
+						}
+					}
+		}
+		std::sort(list.begin(), list.end());
+		list.erase(std::unique(list.begin(), list.end(), [](const auto& l, const auto& r) { return l.second == r.second; }),
+		           list.end());
+		stats.tJunctions += list.size();
+		return list;
+	}
+
+	// The points on the edge from corner i to corner j of `t`, in that order.
+	void pointsOn(const WorkTri& t, int i, int j, std::vector<SplitPoint>& points) {
+		points.clear();
+		const std::vector<std::pair<double, u32>>& list = onEdge(t.c[i], t.c[j]);
+		if (list.empty()) return;
+		const bool forward = t.c[i] < t.c[j];
+		for (size_t n = 0; n < list.size(); ++n) {
+			const std::pair<double, u32>& e = forward ? list[n] : list[list.size() - 1 - n];
+			const float f = float(forward ? e.first : 1.0 - e.first);
+			SplitPoint sp;
+			sp.cluster = e.second;
+			const SrcVertex& a = t.v[i];
+			const SrcVertex& b = t.v[j];
+			for (int k = 0; k < 3; ++k) sp.v.pos[k] = a.pos[k] + (b.pos[k] - a.pos[k]) * f;
+			for (int k = 0; k < 2; ++k) sp.v.uv[k] = a.uv[k] + (b.uv[k] - a.uv[k]) * f;
+			for (int k = 0; k < 4; ++k)
+				sp.v.rgba[k] = u8(std::lround(float(a.rgba[k]) + (float(b.rgba[k]) - float(a.rgba[k])) * f));
+			points.push_back(sp);
+		}
+	}
+
+	struct Corner {
+		u32 cluster;
+		SrcVertex v;
+	};
+
+	u32 emitted = 0;
+
+	void split(const WorkTri& src, const Corner& c0, const Corner& c1, const Corner& c2, Span l01, Span l12, Span l20) {
+		if (c0.cluster == c1.cluster || c1.cluster == c2.cluster || c0.cluster == c2.cluster) {
+			++stats.degenerate; // a sliver that closed up
+			return;
+		}
+		if (l01.empty() && l12.empty() && l20.empty()) {
+			WorkTri t = src;
+			const Corner* cs[3] = {&c0, &c1, &c2};
+			for (int k = 0; k < 3; ++k) {
+				t.v[k] = cs[k]->v;
+				t.c[k] = cs[k]->cluster;
+			}
+			out.push_back(t);
+			++emitted;
+			return;
+		}
+		// Turn the triangle until its first edge is one that has points.
+		if (l01.empty()) {
+			if (!l12.empty())
+				split(src, c1, c2, c0, l12, l20, l01);
+			else
+				split(src, c2, c0, c1, l20, l01, l12);
+			return;
+		}
+		// Cut at the middle point: two triangles of the same winding, each
+		// keeping its share of the points. The new inner edge belongs to these
+		// two alone, so it needs no points of its own.
+		const SplitPoint* m = l01.begin + (l01.end - l01.begin) / 2;
+		const Corner mid {m->cluster, m->v};
+		split(src, c0, mid, c2, Span {l01.begin, m}, Span {}, l20);
+		split(src, mid, c1, c2, Span {m + 1, l01.end}, l12, Span {});
+	}
+
+	void add(const WorkTri& t) {
+		if (t.c[0] == t.c[1] || t.c[1] == t.c[2] || t.c[0] == t.c[2]) {
+			++stats.degenerate;
+			return;
+		}
+		pointsOn(t, 0, 1, _l01);
+		pointsOn(t, 1, 2, _l12);
+		pointsOn(t, 2, 0, _l20);
+		if (_l01.empty() && _l12.empty() && _l20.empty()) {
+			out.push_back(t);
+			return;
+		}
+		emitted = 0;
+		const u64 lost = stats.degenerate;
+		auto span = [](const std::vector<SplitPoint>& v) { return Span {v.data(), v.data() + v.size()}; };
+		split(t, Corner {t.c[0], t.v[0]}, Corner {t.c[1], t.v[1]}, Corner {t.c[2], t.v[2]}, span(_l01), span(_l12),
+		      span(_l20));
+		if (emitted > 0) {
+			stats.sealTriangles += emitted - 1;
+			stats.degenerate = lost; // slivers shaved off a triangle that survived are not lost input
+		} else {
+			stats.degenerate = lost + 1; // the whole triangle was a sliver
+		}
+	}
+
+private:
+	std::vector<SplitPoint> _l01, _l12, _l20;
+};
+
+// ---- quantisation frames ----
+
+// The triangles of one grid cell that share a quantisation frame.
+struct Group {
+	int gx, gz;
+	int k; // step = base step * 2^k
+	std::vector<u32> tris;
+	i64 origin[3] = {0, 0, 0}; // lattice coordinates (base steps) of the chunk origin
+};
+
+const i64 kRange = 32767;  // what an i16 coordinate holds either side of the origin
+const double kFit = 32000; // what a frame is planned for: leaves room for rounding
+
+i64 floorTo(i64 v, int k) { return (v >> k) << k; } // arithmetic shift: rounds towards minus infinity
+
 struct CellBuilder {
-	const SrcScene& scene;
+	const std::vector<WorkTri>& work;
+	const std::vector<std::array<i64, 3>>& lattice; // per cluster, in base steps
 	const std::vector<int>& remap;
 	const std::vector<u8>& order;
 	const ChunkerOptions& opt;
 	ChunkerStats& stats;
 	std::vector<BakedChunk>& out;
+	std::map<std::pair<int, int>, int> nextPart;
 
-	static u8 detailOf(const SrcTriangle& t) { return t.detail < DETAIL_COUNT ? t.detail : u8(DETAIL_COUNT - 1); }
+	static u8 detailOf(const WorkTri& t) { return t.detail < DETAIL_COUNT ? t.detail : u8(DETAIL_COUNT - 1); }
 
-	void build(int gx, int gz, std::vector<u32>& tris) {
-		// One quantisation frame for the whole cell, so parts of a split cell
-		// share exactly the same vertex positions.
-		float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
-		for (u32 t : tris)
-			for (const SrcVertex& v : scene.triangles[t].v)
-				for (int a = 0; a < 3; ++a) {
-					mn[a] = std::min(mn[a], v.pos[a]);
-					mx[a] = std::max(mx[a], v.pos[a]);
-				}
-		// Every chunk quantises on one world-wide lattice: the step is the
-		// base step times a power of two and the origin is a multiple of the
-		// step. A vertex shared by two neighbouring chunks then lands on exactly
-		// the same world position in both, so their borders have no hairline
-		// cracks. (Chunks that need different steps - only those holding a
-		// giant triangle - can still disagree by half a step.)
-		const float extent = std::max({mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2], 1.0f});
-		double step = opt.positionStep;
-		while ((double(extent) + step) / step > 32766.0) step *= 2.0;
+	void build(Group& g) {
+		std::vector<u32>& tris = g.tris;
+		const int gx = g.gx, gz = g.gz;
+		// Every chunk quantises on one world-wide lattice: the step is the base
+		// step times a power of two and the origin is a multiple of the step. A
+		// vertex shared by two chunks then lands on exactly the same world
+		// position in both, so their borders have no hairline cracks.
+		const double step = double(opt.positionStep) * double(i64(1) << g.k);
 		const float posScale = float(step);
-		i64 originSteps[3];
-		for (int a = 0; a < 3; ++a) {
-			originSteps[a] = i64(std::floor(double(mn[a]) / step));
-			mn[a] = float(double(originSteps[a]) * step); // from here on `mn` is the chunk origin
-		}
+		const float mn[3] = {float(double(g.origin[0]) * opt.positionStep), float(double(g.origin[1]) * opt.positionStep),
+		                     float(double(g.origin[2]) * opt.positionStep)}; // the chunk origin
 		stats.maxPosError = std::max(stats.maxPosError, posScale * 0.5f);
 
 		// Batches are contiguous per (draw order, detail class, material).
 		auto sortKey = [&](u32 t) {
-			const SrcTriangle& tri = scene.triangles[t];
+			const WorkTri& tri = work[t];
 			const u32 m = u32(remap[tri.material]);
 			return (u32(order[m]) << 24) | (u32(detailOf(tri)) << 16) | m;
 		};
@@ -99,7 +351,7 @@ struct CellBuilder {
 		// A shared UV origin per material keeps vertices shareable between triangles.
 		std::map<int, std::pair<float, float>> uvBase;
 		for (u32 t : tris) {
-			const SrcTriangle& tri = scene.triangles[t];
+			const WorkTri& tri = work[t];
 			const int m = remap[tri.material];
 			auto it = uvBase.find(m);
 			if (it == uvBase.end()) it = uvBase.emplace(m, std::make_pair(1e30f, 1e30f)).first;
@@ -121,8 +373,8 @@ struct CellBuilder {
 		// and UVs, did not force a split.
 		std::unordered_set<u64> seenPos;
 		std::unordered_map<VertexKey, u16, VertexKeyHash> seenPosUv;
-		int part = 0;
-		u32 cellParts = 0;
+		int& part = nextPart[{gx, gz}];
+		const int firstPart = part;
 
 		auto begin = [&]() {
 			cur = BakedChunk {};
@@ -139,7 +391,10 @@ struct CellBuilder {
 			seenPosUv.clear();
 		};
 		auto flush = [&]() {
-			if (cur.indices.empty()) return;
+			if (cur.indices.empty()) {
+				--part; // nothing came of it
+				return;
+			}
 			cur.header.batchCount = u16(cur.batches.size());
 			cur.header.vertexCount = u16(cur.vertices.size());
 			cur.header.indexCount = u32(cur.indices.size());
@@ -176,13 +431,13 @@ struct CellBuilder {
 			stats.maxChunkTriangles = std::max(stats.maxChunkTriangles, u32(cur.indices.size() / 3));
 			stats.maxChunkVertices = std::max(stats.maxChunkVertices, u32(cur.vertices.size()));
 			stats.maxChunkBatches = std::max(stats.maxChunkBatches, u32(cur.batches.size()));
+			++stats.stepChunks[std::min(g.k, 7)];
 			out.push_back(std::move(cur));
-			++cellParts;
 		};
 
 		begin();
 		for (u32 t : tris) {
-			const SrcTriangle& tri = scene.triangles[t];
+			const WorkTri& tri = work[t];
 			const int material = remap[tri.material];
 
 			// Texture coordinates relative to the material's base; fall back to a
@@ -208,7 +463,8 @@ struct CellBuilder {
 			i32 su[3], sv[3]; // texture coordinates in fixed point, before range limiting
 			for (int k = 0; k < 3; ++k) {
 				const SrcVertex& v = tri.v[k];
-				auto quant = [&](int a) { return i16(i64(std::llround(double(v.pos[a]) / step)) - originSteps[a]); };
+				const std::array<i64, 3>& l = lattice[tri.c[k]];
+				auto quant = [&](int a) { return i16((l[a] - g.origin[a]) >> g.k); };
 				auto quantUv = [&](int a) {
 					float s = (v.uv[a] - base[a]) / WORLD_UV_SCALE;
 					return i32(std::lround(std::clamp(s, -1.0e6f, 1.0e6f)));
@@ -305,7 +561,9 @@ struct CellBuilder {
 			cur.batches.back().indexCount += 3;
 		}
 		flush();
-		if (cellParts > 1) ++stats.splitChunks;
+		// More than one part because of the vertex limit (not because giant
+		// triangles went into a part of their own).
+		if (part - firstPart > 1) ++stats.splitChunks;
 	}
 };
 
@@ -314,20 +572,152 @@ struct CellBuilder {
 std::vector<BakedChunk> buildChunks(const SrcScene& scene, const std::vector<int>& materialRemap,
                                     const std::vector<u8>& materialOrder, const ChunkerOptions& opt,
                                     ChunkerStats& stats) {
-	// Assign every triangle to the grid cell of its centroid (XZ plane).
-	std::map<std::pair<int, int>, std::vector<u32>> cells;
-	for (u32 t = 0; t < scene.triangles.size(); ++t) {
-		const SrcTriangle& tri = scene.triangles[t];
+	const double step0 = double(opt.positionStep);
+
+	// ---- 1. one cluster per place ----
+	Clusters clusters;
+	// Never finer than the lattice: what rounds to one point is one point.
+	clusters.eps = opt.seal ? std::max(double(opt.sealTolerance) * 0.5, step0 * 0.5) : 0.0;
+	std::vector<WorkTri> input;
+	for (const SrcTriangle& tri : scene.triangles) {
 		if (materialRemap[tri.material] < 0) continue;
 		++stats.inputTriangles;
-		const float cx = (tri.v[0].pos[0] + tri.v[1].pos[0] + tri.v[2].pos[0]) / 3.0f;
-		const float cz = (tri.v[0].pos[2] + tri.v[1].pos[2] + tri.v[2].pos[2]) / 3.0f;
+		WorkTri w;
+		for (int k = 0; k < 3; ++k) {
+			w.v[k] = tri.v[k];
+			w.c[k] = clusters.find(tri.v[k].pos);
+		}
+		w.material = tri.material;
+		w.detail = tri.detail;
+		input.push_back(w);
+	}
+	stats.welded = clusters.merged;
+
+	// ---- 2. cut edges at the vertices lying on them ----
+	std::vector<WorkTri> work;
+	if (opt.seal && opt.sealTolerance > 0) {
+		work.reserve(input.size() + input.size() / 8);
+		Sealer sealer(clusters, double(opt.sealTolerance), stats, work);
+		for (const WorkTri& t : input) sealer.add(t);
+		input = std::vector<WorkTri>();
+	} else {
+		for (const WorkTri& t : input) {
+			if (t.c[0] == t.c[1] || t.c[1] == t.c[2] || t.c[0] == t.c[2])
+				++stats.degenerate;
+			else
+				work.push_back(t);
+		}
+		input = std::vector<WorkTri>();
+	}
+
+	// ---- 3. grid cells (by centroid, XZ plane) and their quantisation frames ----
+	std::map<std::pair<int, int>, std::vector<u32>> cells;
+	for (u32 t = 0; t < work.size(); ++t) {
+		const P3 &a = clusters.pos[work[t].c[0]], &b = clusters.pos[work[t].c[1]], &c = clusters.pos[work[t].c[2]];
+		const double cx = (a.x + b.x + c.x) / 3.0, cz = (a.z + b.z + c.z) / 3.0;
 		cells[{int(std::floor(cx / opt.chunkSize)), int(std::floor(cz / opt.chunkSize))}].push_back(t);
+	}
+	// The step a cell is planned for: fine enough, and still reaching half a
+	// cell beyond the cell's own borders.
+	int cellK = 0;
+	while (kFit * step0 * double(i64(1) << cellK) < double(opt.chunkSize)) ++cellK;
+	auto stepFor = [&](double extent, int from) {
+		int k = from;
+		while (extent > 2.0 * kFit * step0 * double(i64(1) << k)) ++k;
+		return k;
+	};
+	auto extentOf = [&](const std::vector<u32>& tris) {
+		double mn[3] = {1e300, 1e300, 1e300}, mx[3] = {-1e300, -1e300, -1e300};
+		for (u32 t : tris)
+			for (u32 c : work[t].c) {
+				const double p[3] = {clusters.pos[c].x, clusters.pos[c].y, clusters.pos[c].z};
+				for (int a = 0; a < 3; ++a) {
+					mn[a] = std::min(mn[a], p[a]);
+					mx[a] = std::max(mx[a], p[a]);
+				}
+			}
+		return std::max({mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]});
+	};
+	std::vector<Group> groups;
+	for (auto& kv : cells) {
+		std::vector<u32>& tris = kv.second;
+		Group g;
+		g.gx = kv.first.first;
+		g.gz = kv.first.second;
+		g.k = stepFor(extentOf(tris), 0);
+		if (g.k <= cellK) {
+			g.tris = std::move(tris);
+			groups.push_back(std::move(g));
+			continue;
+		}
+		// Too large for the planned step: what stays near the cell keeps it,
+		// the giant triangles go into a frame of their own.
+		std::vector<double> ys;
+		for (u32 t : tris)
+			for (u32 c : work[t].c) ys.push_back(clusters.pos[c].y);
+		std::nth_element(ys.begin(), ys.begin() + ys.size() / 2, ys.end());
+		const double centre[3] = {(double(g.gx) + 0.5) * opt.chunkSize, ys[ys.size() / 2], (double(g.gz) + 0.5) * opt.chunkSize};
+		const double reach = kFit * step0 * double(i64(1) << cellK);
+		Group far = g;
+		for (u32 t : tris) {
+			bool inside = true;
+			for (u32 c : work[t].c) {
+				const double p[3] = {clusters.pos[c].x, clusters.pos[c].y, clusters.pos[c].z};
+				for (int a = 0; a < 3; ++a) inside = inside && std::fabs(p[a] - centre[a]) <= reach;
+			}
+			(inside ? g : far).tris.push_back(t);
+		}
+		if (!g.tris.empty()) {
+			g.k = cellK;
+			groups.push_back(std::move(g));
+		}
+		if (!far.tris.empty()) {
+			far.k = stepFor(extentOf(far.tris), cellK);
+			groups.push_back(std::move(far));
+		}
+	}
+
+	// ---- 4. lattice positions ----
+	// A place used by chunks of different steps must exist on the coarsest of
+	// their lattices (which is part of every finer one), or the chunks would
+	// disagree about it.
+	std::vector<std::array<i64, 3>> lattice(clusters.pos.size());
+	std::vector<u8> clusterK(clusters.pos.size());
+	for (bool settled = false; !settled;) {
+		settled = true;
+		std::fill(clusterK.begin(), clusterK.end(), u8(0));
+		for (const Group& g : groups)
+			for (u32 t : g.tris)
+				for (u32 c : work[t].c) clusterK[c] = std::max(clusterK[c], u8(g.k));
+		for (size_t c = 0; c < lattice.size(); ++c) {
+			const double s = step0 * double(i64(1) << clusterK[c]);
+			const double p[3] = {clusters.pos[c].x, clusters.pos[c].y, clusters.pos[c].z};
+			for (int a = 0; a < 3; ++a) lattice[c][size_t(a)] = i64(std::llround(p[a] / s)) << clusterK[c];
+		}
+		for (Group& g : groups) {
+			i64 mn[3] = {INT64_MAX, INT64_MAX, INT64_MAX}, mx[3] = {INT64_MIN, INT64_MIN, INT64_MIN};
+			for (u32 t : g.tris)
+				for (u32 c : work[t].c)
+					for (int a = 0; a < 3; ++a) {
+						mn[a] = std::min(mn[a], lattice[c][size_t(a)]);
+						mx[a] = std::max(mx[a], lattice[c][size_t(a)]);
+					}
+			bool fits = true;
+			for (int a = 0; a < 3; ++a) {
+				g.origin[a] = floorTo(mn[a] + (mx[a] - mn[a]) / 2, g.k);
+				fits = fits && ((mx[a] - g.origin[a]) >> g.k) <= kRange && ((g.origin[a] - mn[a]) >> g.k) <= kRange;
+			}
+			if (!fits) {
+				if (g.k >= 40) throw std::runtime_error("chunker: geometry does not fit any position step");
+				++g.k; // rounding pushed it over the edge: one step coarser, and round again
+				settled = false;
+			}
+		}
 	}
 
 	std::vector<BakedChunk> out;
-	CellBuilder builder {scene, materialRemap, materialOrder, opt, stats, out};
-	for (auto& kv : cells) builder.build(kv.first.first, kv.first.second, kv.second);
+	CellBuilder builder {work, lattice, materialRemap, materialOrder, opt, stats, out, {}};
+	for (Group& g : groups) builder.build(g);
 	return out;
 }
 

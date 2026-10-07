@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
@@ -12,8 +13,10 @@
 #include <map>
 #include <mutex>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <tuple>
+#include <vector>
 
 namespace g3 {
 
@@ -445,9 +448,27 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const BakeOptions& opt, Pa
 		            upShare >= 0.6   ? ""
 		            : upShare >= 0.4 ? " (says nothing here: an indoor world has as much ceiling as floor)"
 		                             : " - WARNING: the world looks inside out, bake again with --flip"));
-		line(format("chunks: %zu (%u cells split), largest %u triangles / %u vertices / %u batches, position step <= %.2f cm",
-		            chunks.size(), cs.splitChunks, cs.maxChunkTriangles, cs.maxChunkVertices, cs.maxChunkBatches,
-		            double(cs.maxPosError) * 2.0));
+		line(format("chunks: %zu (%u cells split), largest %u triangles / %u vertices / %u batches", chunks.size(),
+		            cs.splitChunks, cs.maxChunkTriangles, cs.maxChunkVertices, cs.maxChunkBatches));
+		{
+			// Coarser steps come from giant triangles (sea, far mountains); they
+			// get chunks of their own, so they do not cost their cells precision.
+			std::string steps;
+			for (int k = 0; k < 8; ++k) {
+				if (!cs.stepChunks[k]) continue;
+				steps += format("%s%u at %s%g cm", steps.empty() ? "" : ", ", cs.stepChunks[k], k == 7 ? ">= " : "",
+				                double(opt.chunker.positionStep) * double(1 << k));
+			}
+			line("position step: " + steps);
+		}
+		if (opt.chunker.seal)
+			line(format("seams: %llu vertices welded to a neighbour within %.2f cm, %llu T-junctions closed within %.2f cm "
+			            "(+%llu triangles)",
+			            static_cast<unsigned long long>(cs.welded), double(opt.chunker.sealTolerance) * 0.5,
+			            static_cast<unsigned long long>(cs.tJunctions), double(opt.chunker.sealTolerance),
+			            static_cast<unsigned long long>(cs.sealTriangles)));
+		else
+			line("seams: not repaired (--no-seal)");
 		line(format("draw distance classes: %llu triangles always drawn, %llu medium, %llu small; %llu batches (%.1f per chunk)",
 		            static_cast<unsigned long long>(cs.detailTriangles[DETAIL_ALWAYS]),
 		            static_cast<unsigned long long>(cs.detailTriangles[DETAIL_MEDIUM]),

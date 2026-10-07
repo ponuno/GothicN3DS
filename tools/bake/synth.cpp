@@ -9,6 +9,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <functional>
+#include <string>
+#include <vector>
 
 namespace g3 {
 

@@ -24,13 +24,18 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 

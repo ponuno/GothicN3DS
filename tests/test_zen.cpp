@@ -25,11 +25,18 @@
 
 #include <squish.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 using namespace g3;

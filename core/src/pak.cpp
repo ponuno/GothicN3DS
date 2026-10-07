@@ -40,8 +40,12 @@ bool Pak::open(const char* path) {
 		// The lookup is a binary search, so reject an unsorted table up front.
 		for (u32 i = 1; i < _hdr.entryCount && ok; ++i) ok = _table[i - 1].hash < _table[i].hash;
 	}
-	if (!ok) close();
-	return ok;
+	if (!ok) {
+		close();
+		return false;
+	}
+	snprintf(_path, sizeof(_path), "%s", path);
+	return true;
 }
 
 void Pak::close() {
@@ -54,6 +58,7 @@ void Pak::close() {
 	_names = nullptr;
 	_scratch = nullptr;
 	_scratchCap = 0;
+	_path[0] = 0;
 	_hdr = {};
 }
 

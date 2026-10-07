@@ -3,6 +3,14 @@ target_link_libraries(test_core PRIVATE g3tools g3soft)
 target_compile_options(test_core PRIVATE ${G3DS_WARNINGS})
 add_test(NAME core COMMAND test_core ${CMAKE_CURRENT_BINARY_DIR})
 
+# The console backend (platform/3ds/gfx_c3d.cpp) against a stand-in for libctru
+# and citro3d that checks which buffer and which memory the GPU owns when.
+add_executable(test_frames test_frames.cpp mock3ds/mock3ds.cpp ${CMAKE_SOURCE_DIR}/platform/3ds/gfx_c3d.cpp)
+target_include_directories(test_frames PRIVATE mock3ds ${CMAKE_SOURCE_DIR}/platform/3ds)
+target_link_libraries(test_frames PRIVATE g3tools g3engine)
+target_compile_options(test_frames PRIVATE ${G3DS_WARNINGS})
+add_test(NAME frames COMMAND test_frames ${CMAKE_CURRENT_BINARY_DIR})
+
 # Full chain through the command-line tools: bake -> data.pak -> runtime -> frame.
 add_test(NAME e2e_synth
          COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e.sh synth $<TARGET_FILE:g3ds-bake> $<TARGET_FILE:g3ds-host>

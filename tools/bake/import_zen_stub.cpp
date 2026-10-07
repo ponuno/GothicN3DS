@@ -1,7 +1,10 @@
 // Used when the project is configured with -DG3DS_WITH_ZENKIT=OFF.
 #include "importers.h"
 
+#include <memory>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace g3 {
 

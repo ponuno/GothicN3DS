@@ -69,10 +69,16 @@ bool World::open(Pak* pak, u32 entryHash) {
 	_entryHash = entryHash;
 	_stats = {};
 	_stats.chunksTotal = _hdr.chunkCount;
+	_frame = 0;
+	_textureRetryAt = 0;
+	_chunksInFlight = _inFlightBytes = 0;
+	// Failing to start the loader is not fatal: update() then loads on the spot.
+	if (_cfg.background) _loader.start(pak->path(), _materials, _hdr.materialCount, _cfg.worker);
 	return true;
 }
 
 void World::close() {
+	_loader.stop(); // before the tables it reads go away
 	if (_loaded) {
 		for (u32 i = 0; i < _hdr.chunkCount; ++i)
 			if (_loaded[i].mesh) unloadChunk(i);
@@ -114,46 +120,89 @@ static float aabbDistance(const float mn[3], const float mx[3], Vec3 c) {
 
 float World::distanceTo(u32 index, Vec3 c) const { return aabbDistance(_chunks[index].bbMin, _chunks[index].bbMax, c); }
 
-// Bad data is remembered and never retried. Running out of memory is not:
-// update() tries again, one texture per frame, until it fits.
-void World::loadTexture(u32 texture) {
-	TexSlot& s = _tex[texture];
-	if (s.tex || s.failed) return;
+void World::setWaiting(TexSlot& s, bool waiting) {
+	if (s.waiting == waiting) return;
+	s.waiting = waiting;
+	if (waiting)
+		++_texturesWaiting;
+	else
+		--_texturesWaiting;
+}
 
+bool World::textureJob(u32 texture, LoadJob& job) const {
 	const PakEntry* e = _pak->find(_textures[texture]);
-	u8* blob = (e && e->type == ASSET_TEXTURE && e->size >= sizeof(TexHeader)) ? static_cast<u8*>(_pak->readAlloc(*e))
-	                                                                         : nullptr;
-	bool valid = false;
-	if (blob) {
-		TexHeader h;
-		memcpy(&h, blob, sizeof(h));
-		valid = texValidate(h, e->size - u32(sizeof(TexHeader)));
-		if (valid) {
-			s.tex = gfx::textureCreate(h, blob + sizeof(TexHeader));
-			s.bytes = h.dataSize;
-		}
-		free(blob);
+	if (!e) return false;
+	job = LoadJob {};
+	job.kind = LOAD_TEXTURE;
+	job.index = texture;
+	job.entry = *e;
+	return true;
+}
+
+bool World::chunkJob(u32 index, LoadJob& job) const {
+	const PakEntry* e = _pak->find(_chunks[index].entryHash);
+	if (!e) return false;
+	job = LoadJob {};
+	job.kind = LOAD_CHUNK;
+	job.index = index;
+	job.entry = *e;
+	job.info = _chunks[index];
+	return true;
+}
+
+// Takes a texture the loader has read and checked. Bad data is remembered
+// and never retried. Running out of memory is not: the texture stays
+// `waiting` and update() tries again later.
+void World::finishTexture(LoadResult& r) {
+	TexSlot& s = _tex[r.index];
+	s.requested = false;
+	if (s.refs == 0 || s.tex || s.failed) {
+		r.discard(); // nobody wants it any more
+		return;
 	}
-	if (s.tex) {
-		_stats.residentBytes += s.bytes;
-		++_stats.texturesLoaded;
-		if (s.waiting) --_texturesWaiting;
-		s.waiting = false;
-	} else if (!valid) {
+	if (r.status == LOAD_BAD_DATA) {
 		s.failed = true; // do not hit the SD card again every frame
 		++_stats.loadFailures;
-		if (s.waiting) --_texturesWaiting;
-		s.waiting = false;
-	} else if (!s.waiting) {
-		s.waiting = true;
-		s.bytes = 0;
-		++_texturesWaiting;
+		setWaiting(s, false);
+	} else if (r.status == LOAD_OK) {
+		TexHeader h;
+		memcpy(&h, r.blob, sizeof(h));
+		s.tex = gfx::textureCreate(h, r.blob + sizeof(TexHeader));
+		if (s.tex) {
+			s.bytes = h.dataSize;
+			_stats.residentBytes += s.bytes;
+			_stats.peakResidentBytes = max(_stats.peakResidentBytes, _stats.residentBytes);
+			++_stats.texturesLoaded;
+			setWaiting(s, false);
+		}
 	}
+	if (!s.tex && !s.failed) {
+		setWaiting(s, true);
+		_textureRetryAt = _frame + 30;
+	}
+	r.discard();
+}
+
+void World::loadTextureNow(u32 texture) {
+	TexSlot& s = _tex[texture];
+	if (s.tex || s.failed) return;
+	LoadJob job;
+	LoadResult r {};
+	r.kind = LOAD_TEXTURE;
+	r.index = texture;
+	r.status = LOAD_BAD_DATA;
+	if (textureJob(texture, job)) StreamLoader::process(*_pak, job, _materials, _hdr.materialCount, r);
+	finishTexture(r);
 }
 
 void World::acquireTexture(u32 texture) {
-	++_tex[texture].refs;
-	loadTexture(texture);
+	TexSlot& s = _tex[texture];
+	++s.refs;
+	if (s.tex || s.failed) return;
+	if (_loader.running() && !_immediate)
+		setWaiting(s, true); // update() sends for it
+	else
+		loadTextureNow(texture);
 }
 
 void World::releaseTexture(u32 texture) {
@@ -164,8 +213,7 @@ void World::releaseTexture(u32 texture) {
 		_stats.residentBytes -= s.bytes;
 		--_stats.texturesLoaded;
 	}
-	if (s.waiting) --_texturesWaiting;
-	s.waiting = false;
+	setWaiting(s, false);
 	s.tex = nullptr;
 	s.bytes = 0;
 }
@@ -180,76 +228,71 @@ void World::releaseMaterial(u32 material) {
 	for (u32 f = 0; f < m.frameCount; ++f) releaseTexture(u32(m.texture) + f);
 }
 
-World::LoadResult World::loadChunk(u32 index) {
-	const ChunkInfo& ci = _chunks[index];
-	const PakEntry* e = _pak->find(ci.entryHash);
-	if (!e || e->type != ASSET_CHUNK || e->size != ci.size || e->size < sizeof(ChunkHeader)) return LOAD_BAD_DATA;
-
-	u8* blob = static_cast<u8*>(_pak->readAlloc(*e));
-	if (!blob) return LOAD_BAD_DATA;
-
+// Turns a chunk the loader has read, checked and built colliders for into a
+// resident chunk: the only steps left are the ones that need the GPU.
+LoadStatus World::finishChunk(LoadResult& r) {
+	const u32 index = r.index;
+	if (r.status != LOAD_OK) {
+		const LoadStatus status = r.status;
+		r.discard();
+		return status;
+	}
 	ChunkHeader h;
-	memcpy(&h, blob, sizeof(h));
-	bool ok = h.magic == CHUNK_MAGIC && h.vertexCount == ci.vertexCount && h.indexCount == ci.indexCount &&
-	          h.batchCount == ci.batchCount && h.indexCount % 3 == 0 &&
-	          e->size == chunkBlobSize(h.batchCount, h.vertexCount, h.indexCount);
-
-	// The blob is laid out so every section is naturally aligned.
-	const ChunkBatch* batches = reinterpret_cast<const ChunkBatch*>(blob + sizeof(ChunkHeader));
+	memcpy(&h, r.blob, sizeof(h));
+	const ChunkBatch* batches = reinterpret_cast<const ChunkBatch*>(r.blob + sizeof(ChunkHeader));
 	const WorldVertex* verts = reinterpret_cast<const WorldVertex*>(batches + h.batchCount);
 	const u16* indices = reinterpret_cast<const u16*>(verts + h.vertexCount);
 
-	for (u32 b = 0; ok && b < h.batchCount; ++b) {
-		ok = batches[b].material < _hdr.materialCount && batches[b].firstIndex <= h.indexCount &&
-		     batches[b].indexCount <= h.indexCount - batches[b].firstIndex;
-	}
-	for (u32 i = 0; ok && i < h.indexCount; ++i) ok = indices[i] < h.vertexCount;
-
 	Loaded l {};
-	LoadResult result = ok ? LOAD_OK : LOAD_BAD_DATA;
-	if (ok) {
-		// From here on the data is good; what can still fail is memory.
-		l.batches = static_cast<Batch*>(malloc(size_t(h.batchCount) * sizeof(Batch) + 1));
-		ok = l.batches && l.collider.build(h, batches, verts, indices, _materials, MATF_NO_COLLISION, 0) &&
-		     l.water.build(h, batches, verts, indices, _materials, MATF_WATER, MATF_WATER);
-		l.mesh = ok ? gfx::meshCreate(verts, h.vertexCount, indices, h.indexCount) : nullptr;
-		ok = l.mesh != nullptr;
-		if (!ok) result = LOAD_NO_MEMORY;
-	}
-	if (ok) {
-		for (u32 b = 0; b < h.batchCount; ++b) {
-			const ChunkBatch& src = batches[b];
-			Batch& dst = l.batches[b];
-			dst.material = src.material;
-			dst.detail = src.detail < DETAIL_COUNT ? src.detail : u8(DETAIL_COUNT - 1);
-			dst.firstIndex = src.firstIndex;
-			dst.indexCount = src.indexCount;
-			for (int a = 0; a < 3; ++a) {
-				dst.bbMin[a] = h.origin[a] + float(src.bbMin[a]) * h.posScale;
-				dst.bbMax[a] = h.origin[a] + float(src.bbMax[a]) * h.posScale;
-			}
-			l.hasBlended = l.hasBlended || (_materials[src.material].flags & MATF_TRANSLUCENT) != 0;
-		}
-		l.batchCount = h.batchCount;
-		memcpy(l.origin, h.origin, sizeof(l.origin));
-		l.posScale = h.posScale;
-		l.uvScale = h.uvScale;
-		l.bytes = h.vertexCount * u32(sizeof(WorldVertex)) + h.indexCount * u32(sizeof(u16));
-		l.slot = _stats.chunksLoaded;
-		_resident[l.slot] = index;
-		_loaded[index] = l;
-		_stats.residentBytes += l.bytes;
-		_stats.collisionBytes += l.collider.bytes() + l.water.bytes();
-		++_stats.chunksLoaded;
-		for (u32 b = 0; b < l.batchCount; ++b) acquireMaterial(l.batches[b].material);
-		_stats.peakResidentBytes = max(_stats.peakResidentBytes, _stats.residentBytes);
-	} else {
-		l.collider.release();
-		l.water.release();
+	l.batches = static_cast<Batch*>(malloc(size_t(h.batchCount) * sizeof(Batch) + 1));
+	l.mesh = l.batches ? gfx::meshCreate(verts, h.vertexCount, indices, h.indexCount) : nullptr;
+	if (!l.mesh) {
 		free(l.batches);
+		r.discard();
+		return LOAD_NO_MEMORY;
 	}
-	free(blob);
-	return result;
+	for (u32 b = 0; b < h.batchCount; ++b) {
+		const ChunkBatch& src = batches[b];
+		Batch& dst = l.batches[b];
+		dst.material = src.material;
+		dst.detail = src.detail < DETAIL_COUNT ? src.detail : u8(DETAIL_COUNT - 1);
+		dst.firstIndex = src.firstIndex;
+		dst.indexCount = src.indexCount;
+		for (int a = 0; a < 3; ++a) {
+			dst.bbMin[a] = h.origin[a] + float(src.bbMin[a]) * h.posScale;
+			dst.bbMax[a] = h.origin[a] + float(src.bbMax[a]) * h.posScale;
+		}
+		l.hasBlended = l.hasBlended || (_materials[src.material].flags & MATF_TRANSLUCENT) != 0;
+	}
+	l.batchCount = h.batchCount;
+	memcpy(l.origin, h.origin, sizeof(l.origin));
+	l.posScale = h.posScale;
+	l.uvScale = h.uvScale;
+	l.bytes = h.vertexCount * u32(sizeof(WorldVertex)) + h.indexCount * u32(sizeof(u16));
+	l.collider = r.collider; // ownership moves to the chunk
+	l.water = r.water;
+	r.collider = ChunkCollider {};
+	r.water = ChunkCollider {};
+	l.slot = _stats.chunksLoaded;
+	_resident[l.slot] = index;
+	_loaded[index] = l;
+	_stats.residentBytes += l.bytes;
+	_stats.collisionBytes += l.collider.bytes() + l.water.bytes();
+	++_stats.chunksLoaded;
+	for (u32 b = 0; b < l.batchCount; ++b) acquireMaterial(l.batches[b].material);
+	_stats.peakResidentBytes = max(_stats.peakResidentBytes, _stats.residentBytes);
+	r.discard(); // the blob: its contents now live in the mesh
+	return LOAD_OK;
+}
+
+LoadStatus World::loadChunkNow(u32 index) {
+	LoadJob job;
+	LoadResult r {};
+	r.kind = LOAD_CHUNK;
+	r.index = index;
+	r.status = LOAD_BAD_DATA;
+	if (chunkJob(index, job)) StreamLoader::process(*_pak, job, _materials, _hdr.materialCount, r);
+	return finishChunk(r);
 }
 
 void World::unloadChunk(u32 index) {
@@ -271,10 +314,9 @@ void World::unloadChunk(u32 index) {
 	_visible = 0; // the sorted list of the last draw() may name this chunk
 }
 
-void World::update(Vec3 camera) {
-	_stats.loadsThisFrame = 0;
-	if (!_pak) return;
-
+// Frees chunks that are too far away and lists the missing ones that are
+// near enough in _order/_orderKey. Returns how many are missing.
+u32 World::collectPending(Vec3 camera) {
 	u32 pending = 0;
 	for (u32 i = 0; i < _hdr.chunkCount; ++i) {
 		const float d = distanceTo(i, camera);
@@ -287,36 +329,56 @@ void World::update(Vec3 camera) {
 		}
 	}
 	_visible = 0; // _order is shared scratch space
+	return pending;
+}
 
+// Moves the nearest of entries [n, pending) to position n.
+void World::sortNearest(u32 n, u32 pending) {
+	u32 best = n;
+	for (u32 k = n + 1; k < pending; ++k)
+		if (_orderKey[k] < _orderKey[best]) best = k;
+	const u32 ti = _order[n];
+	_order[n] = _order[best];
+	_order[best] = ti;
+	const float tf = _orderKey[n];
+	_orderKey[n] = _orderKey[best];
+	_orderKey[best] = tf;
+}
+
+void World::update(Vec3 camera) {
+	_stats.loadsThisFrame = 0;
+	if (!_pak) return;
+	++_frame;
+	const u32 pending = collectPending(camera);
+	if (_loader.running() && !_immediate)
+		updateBackground(pending, camera);
+	else
+		updateImmediate(pending);
+	_stats.chunksInFlight = _chunksInFlight;
+	_stats.texturesWaiting = _texturesWaiting;
+}
+
+// Everything on the spot: read, unpack, upload. Simple and predictable, and
+// each load is a hitch as long as the chunk is big.
+void World::updateImmediate(u32 pending) {
 	// Nearest first; only a handful per frame so a selection scan is enough.
 	u32 remaining = pending;
 	const u32 loads = min(pending, _cfg.maxLoadsPerFrame);
 	for (u32 n = 0; n < loads; ++n) {
-		u32 best = n;
-		for (u32 k = n + 1; k < pending; ++k)
-			if (_orderKey[k] < _orderKey[best]) best = k;
-		u32 ti = _order[n];
-		_order[n] = _order[best];
-		_order[best] = ti;
-		float tf = _orderKey[n];
-		_orderKey[n] = _orderKey[best];
-		_orderKey[best] = tf;
-
+		sortNearest(n, pending);
 		const u32 index = _order[n];
-		const ChunkInfo& ci = _chunks[index];
-		const u32 need = u32(ci.vertexCount) * u32(sizeof(WorldVertex)) + ci.indexCount * u32(sizeof(u16));
-		if (_stats.residentBytes + need > _cfg.memoryBudget) {
+		if (_stats.residentBytes + meshBytes(_chunks[index]) > _cfg.memoryBudget) {
 			++_stats.budgetRejects;
 			break; // everything else is farther away; try again next frame
 		}
-		const LoadResult result = loadChunk(index);
-		if (result == LOAD_NO_MEMORY) {
+		const LoadStatus status = loadChunkNow(index);
+		if (status == LOAD_NO_MEMORY) {
 			// The budget said yes, the allocator said no. Same remedy: wait
 			// until something has been unloaded.
 			++_stats.budgetRejects;
 			break;
 		}
-		if (result == LOAD_OK) {
+		if (status == LOAD_OK) {
 			++_stats.loadsThisFrame;
 		} else {
 			_loaded[index].failed = true;
@@ -330,17 +392,115 @@ void World::update(Vec3 camera) {
 	if (_texturesWaiting) {
 		for (u32 i = 0; i < _hdr.textureCount; ++i) {
 			if (!_tex[i].waiting) continue;
-			loadTexture(i);
+			loadTextureNow(i);
 			break;
 		}
 	}
 }
 
+// The loader reads and prepares; this only hands finished work to the GPU, a
+// little each frame, and keeps the loader supplied with the nearest wishes.
+void World::updateBackground(u32 pending, Vec3 camera) {
+	// 1. Finished work, within this frame's allowance.
+	u32 chunksDone = 0, texturesDone = 0;
+	LoadKind kind;
+	while (_loader.peek(kind)) {
+		if (kind == LOAD_CHUNK ? chunksDone >= _cfg.maxLoadsPerFrame : texturesDone >= _cfg.maxTextureLoadsPerFrame) break;
+		LoadResult r;
+		if (!_loader.poll(r)) break;
+		if (r.kind == LOAD_TEXTURE) {
+			++texturesDone;
+			finishTexture(r);
+			continue;
+		}
+		++chunksDone;
+		Loaded& l = _loaded[r.index];
+		l.requested = false;
+		--_chunksInFlight;
+		_inFlightBytes -= meshBytes(_chunks[r.index]);
+		if (r.status == LOAD_OK && distanceTo(r.index, camera) > _cfg.unloadRadius) {
+			r.discard(); // the camera has moved on in the meantime
+			continue;
+		}
+		const LoadStatus status = finishChunk(r);
+		if (status == LOAD_OK) {
+			++_stats.loadsThisFrame;
+		} else if (status == LOAD_BAD_DATA) {
+			_loaded[r.index].failed = true;
+			++_stats.loadFailures;
+		} else {
+			// Out of memory: leave it alone for a second instead of reading it
+			// from the card again every frame.
+			++_stats.budgetRejects;
+			_loaded[r.index].retryAt = _frame + 60;
+		}
+	}
+
+	// 2. New wishes, nearest first. Only a couple at a time, so that what is
+	// being read is still what is wanted when it arrives.
+	u32 missing = 0;
+	for (u32 k = 0; k < pending; ++k) missing += !_loaded[_order[k]].mesh;
+	_stats.chunksPending = missing;
+	const u32 maxInFlight = 2;
+	for (u32 n = 0; n < pending && _chunksInFlight < maxInFlight; ++n) {
+		sortNearest(n, pending);
+		const u32 index = _order[n];
+		Loaded& l = _loaded[index];
+		if (l.mesh || l.requested || l.failed || _frame < l.retryAt) continue;
+		const u32 need = meshBytes(_chunks[index]);
+		if (_stats.residentBytes + _inFlightBytes + need > _cfg.memoryBudget) {
+			++_stats.budgetRejects;
+			break; // everything else is farther away
+		}
+		LoadJob job;
+		if (!chunkJob(index, job)) {
+			l.failed = true;
+			++_stats.loadFailures;
+			continue;
+		}
+		if (!_loader.submit(job)) break;
+		l.requested = true;
+		++_chunksInFlight;
+		_inFlightBytes += need;
+	}
+
+	// 3. Textures of the chunks that have arrived.
+	if (_texturesWaiting && _frame >= _textureRetryAt) {
+		for (u32 i = 0; i < _hdr.textureCount && _loader.outstanding() < StreamLoader::CAPACITY; ++i) {
+			TexSlot& s = _tex[i];
+			if (!s.waiting || s.requested) continue;
+			LoadJob job;
+			if (!textureJob(i, job)) {
+				s.failed = true;
+				++_stats.loadFailures;
+				setWaiting(s, false);
+				continue;
+			}
+			if (!_loader.submit(job)) break;
+			s.requested = true;
+		}
+	}
+}
+
 void World::preload(Vec3 camera) {
+	if (!_pak) return;
+	// Whatever the loader is busy with is about to be loaded right here.
+	if (_loader.running()) {
+		_loader.cancelAll();
+		for (u32 i = 0; i < _hdr.chunkCount; ++i) _loaded[i].requested = false;
+		for (u32 i = 0; i < _hdr.textureCount; ++i) _tex[i].requested = false;
+		_chunksInFlight = 0;
+		_inFlightBytes = 0;
+	}
 	const u32 saved = _cfg.maxLoadsPerFrame;
 	_cfg.maxLoadsPerFrame = 0xFFFFFFFFu;
+	_immediate = true;
 	update(camera);
+	for (u32 i = 0; i < _hdr.textureCount && _texturesWaiting; ++i)
+		if (_tex[i].waiting) loadTextureNow(i);
+	_immediate = false;
 	_cfg.maxLoadsPerFrame = saved;
+	_stats.texturesWaiting = _texturesWaiting;
 }
 
 bool World::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal) const {
@@ -424,7 +584,7 @@ void World::drawBatches(const Loaded& l, bool blended) {
 		const WorldMaterial& m = _materials[batch.material];
 		if (((m.flags & MATF_TRANSLUCENT) != 0) != blended || batch.indexCount == 0) continue;
 		if ((batch.detail != DETAIL_ALWAYS &&
-		     aabbDistance(batch.bbMin, batch.bbMax, _camera) > _cfg.detailDistance[batch.detail]) ||
+		     aabbDistance(batch.bbMin, batch.bbMax, _camera) > _cfg.detailDistance[batch.detail] * _cfg.detailScale) ||
 		    !aabbInFrustum(_frustum, batch.bbMin, batch.bbMax)) {
 			++_stats.batchesCulled;
 			continue;

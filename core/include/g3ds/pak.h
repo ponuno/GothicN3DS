@@ -52,6 +52,8 @@ public:
 	bool open(const char* path);
 	void close();
 	bool isOpen() const { return _file != nullptr; }
+	// The file this archive was opened from (to open it a second time).
+	const char* path() const { return _path; }
 
 	u32 count() const { return _hdr.entryCount; }
 	const PakEntry& entry(u32 i) const { return _table[i]; }
@@ -76,6 +78,7 @@ private:
 	u8* _scratch = nullptr;
 	u32 _scratchCap = 0;
 	u64 _bytesRead = 0;
+	char _path[256] = {0};
 };
 
 } // namespace g3

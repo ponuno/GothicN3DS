@@ -21,10 +21,22 @@ struct BakedChunk {
 
 struct ChunkerOptions {
 	float chunkSize = 4000.0f; // cm
-	// Finest position step, cm. 0.5 cm covers a chunk extent of 163 m; chunks
-	// reaching farther (a giant triangle) double it until they fit.
-	float positionStep = 0.5f;
+	// Finest position step, cm (best a power of two: world positions are then
+	// exact in a float). 1/8 cm covers 82 m around the middle of a chunk; a
+	// chunk reaching farther keeps its ordinary triangles on the fine lattice
+	// and moves the giant ones into a part of their own with a coarser step.
+	float positionStep = 0.125f;
 	u32 maxVertices = CHUNK_MAX_VERTICES;
+	// Seam repair. Rounding positions to a lattice opens gaps where the source
+	// only touched: a vertex resting on the edge of a neighbouring triangle
+	// (a "T-junction") moves off that edge, and two vertices a hair apart can
+	// round to different lattice points. The source has such gaps of its own,
+	// too small to see from a third-person camera and plain from 30 cm.
+	// With `seal`, vertices closer than half the tolerance become one, and an
+	// edge is split at every vertex lying within the tolerance of it, so both
+	// sides of the seam use the same lattice points.
+	bool seal = true;
+	float sealTolerance = 0.5f; // cm
 };
 
 struct ChunkerStats {
@@ -36,6 +48,10 @@ struct ChunkerStats {
 	u64 vertices = 0;
 	u64 uniquePositions = 0; // per chunk: distinct quantised positions ...
 	u64 uniquePosUv = 0;     // ... and distinct position + UV pairs (diagnostics)
+	u64 welded = 0;        // distinct source positions merged into a neighbour closer than half the tolerance
+	u64 tJunctions = 0;    // vertices found on the edge of another triangle (per edge)
+	u64 sealTriangles = 0; // triangles added by splitting those edges
+	u32 stepChunks[8] = {0, 0, 0, 0, 0, 0, 0, 0}; // chunks per position step: base, x2, x4, ... (last: all coarser)
 	u32 splitChunks = 0;   // grid cells that needed more than one part
 	u32 maxChunkTriangles = 0;
 	u32 maxChunkVertices = 0;

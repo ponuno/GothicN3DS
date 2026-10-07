@@ -5,10 +5,14 @@
 #include "importers.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
+#include <memory>
 #include <stdexcept>
+#include <string>
 #include <thread>
+#include <vector>
 
 using namespace g3;
 
@@ -74,6 +78,10 @@ void usage() {
 	          "  --name NAME        asset name of the first world (default: from the file name)\n"
 	          "  --no-follow        world: bake only the worlds named with --zen\n"
 	          "  --chunk CM         chunk edge length (default: 4000)\n"
+	          "  --step CM          finest vertex position step (default: 0.125)\n"
+	          "  --seal CM          close seams: weld vertices and cut edges at vertices resting on\n"
+	          "                     them, within this distance (default: 0.5)\n"
+	          "  --no-seal          leave seams as they are in the source\n"
 	          "  --max-tex N        longest texture edge, power of two, 8..1024 (default: 128)\n"
 	          "  --quality 0|1|2    ETC1 effort (default: 1)\n"
 	          "  --flip             reverse the triangle winding (if the winding check complains)\n"
@@ -119,6 +127,9 @@ int main(int argc, char** argv) {
 			if (a == "-o") out = value();
 			else if (a == "--name") firstName = value();
 			else if (a == "--chunk") opt.chunker.chunkSize = std::stof(value());
+			else if (a == "--step") opt.chunker.positionStep = std::stof(value());
+			else if (a == "--seal") opt.chunker.sealTolerance = std::stof(value());
+			else if (a == "--no-seal") opt.chunker.seal = false;
 			else if (a == "--max-tex") opt.tex.maxSize = std::stoi(value());
 			else if (a == "--quality") opt.tex.quality = std::stoi(value());
 			else if (a == "--threads") opt.threads = unsigned(std::max(1, std::stoi(value())));
@@ -138,6 +149,10 @@ int main(int argc, char** argv) {
 		if (mt < int(TEX_MIN_SIZE) || mt > int(TEX_MAX_SIZE) || (mt & (mt - 1)))
 			throw std::runtime_error("--max-tex must be a power of two between 8 and 1024");
 		if (opt.chunker.chunkSize < 500.0f) throw std::runtime_error("--chunk must be at least 500");
+		if (!(opt.chunker.positionStep >= 0.01f && opt.chunker.positionStep <= 8.0f))
+			throw std::runtime_error("--step must be between 0.01 and 8 (cm)");
+		if (!(opt.chunker.sealTolerance >= 0.0f && opt.chunker.sealTolerance <= 5.0f))
+			throw std::runtime_error("--seal must be between 0 and 5 (cm)");
 		if (synth.cells < 8 || synth.cells > 1024) throw std::runtime_error("--cells must be between 8 and 1024");
 
 		const auto t0 = std::chrono::steady_clock::now();

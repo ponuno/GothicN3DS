@@ -224,6 +224,7 @@ void App::render() {
 
 	gfx::FrameDesc fd {};
 	fd.view = viewLH(_cam.pos, _cam.yaw, _cam.pitch);
+	fd.eye = _cam.pos;
 	fd.fovY = _cam.fovY;
 	fd.zNear = _cam.zNear;
 	fd.zFar = _cam.zFar;

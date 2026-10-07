@@ -2,6 +2,8 @@
 #pragma once
 #include "scene.h"
 
+#include <vector>
+
 namespace g3 {
 
 struct TexBakeOptions {

@@ -3,6 +3,7 @@
 // memory budget, writes screenshots and prints machine-readable statistics.
 #include "app.h"
 #include "gfx_soft.h"
+#include "sys.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -27,6 +28,8 @@ static void usage() {
 	     "  --budget-mb N       world memory budget (default: 24)\n"
 	     "  --draw-distance CM  draw distance (default: 12000)\n"
 	     "  --detail M,S        draw distance of medium and small objects, cm (default: 7000,3500)\n"
+	     "  --stream MODE       how chunks are loaded while moving: sync (default; on the frame),\n"
+	     "                      inline (the background pipeline without a thread), thread (as on the console)\n"
 	     "  --stats FILE        write a JSON summary");
 }
 
@@ -37,6 +40,7 @@ int main(int argc, char** argv) {
 	const char* outPrefix = "frame";
 	const char* statsPath = nullptr;
 	const char* camSpec = nullptr;
+	const char* streamMode = "sync";
 	int frames = 300, shots = 4;
 	bool still = false, cull = true, walk = false;
 	float timeOfDay = 13.0f;
@@ -53,6 +57,7 @@ int main(int argc, char** argv) {
 		else if (arg("--budget-mb")) budgetMb = float(atof(argv[++i]));
 		else if (arg("--draw-distance")) drawDistance = float(atof(argv[++i]));
 		else if (arg("--stats")) statsPath = argv[++i];
+		else if (arg("--stream")) streamMode = argv[++i];
 		else if (arg("--detail")) detailSpec = argv[++i];
 		else if (arg("--time")) timeOfDay = float(atof(argv[++i]));
 		else if (strcmp(argv[i], "--still") == 0) still = true;
@@ -63,7 +68,9 @@ int main(int argc, char** argv) {
 			return 2;
 		}
 	}
-	if (!pakPath || frames < 1) {
+	const bool streamSync = strcmp(streamMode, "sync") == 0, streamInline = strcmp(streamMode, "inline") == 0,
+	           streamThread = strcmp(streamMode, "thread") == 0;
+	if (!pakPath || frames < 1 || !(streamSync || streamInline || streamThread)) {
 		usage();
 		return 2;
 	}
@@ -72,6 +79,8 @@ int main(int argc, char** argv) {
 	gfx::softSetCulling(cull);
 
 	App app;
+	app.world().config().background = !streamSync;
+	app.world().config().worker = streamThread;
 	if (!app.init(pakPath, worldName)) {
 		fprintf(stderr, "error: %s\n", app.error());
 		return 1;
@@ -119,6 +128,8 @@ int main(int argc, char** argv) {
 	int swimFrames = 0, wadeFrames = 0, underwaterFrames = 0;
 	u64 sumTris = 0, sumWritten = 0, sumTested = 0, sumBackface = 0, sumFacing = 0;
 	int saved = 0, groundedFrames = 0;
+	double updateSum = 0, updateWorst = 0;
+	u32 maxInFlight = 0, maxTexturesWaiting = 0;
 
 	for (int f = 0; f < frames; ++f) {
 		Input in;
@@ -135,7 +146,11 @@ int main(int argc, char** argv) {
 			in.lookX = (f / 90) % 2 == 0 ? 0.12f : -0.2f;
 			app.camera().pitch = 0.0f;
 		}
+		const double u0 = g3::sys::timeMs();
 		app.update(in, dt);
+		const double updateMs = g3::sys::timeMs() - u0;
+		updateSum += updateMs;
+		updateWorst = max(updateWorst, updateMs);
 		if (!still && !walk) app.camera().pitch = viewPitch;
 		groundedFrames += app.player().grounded;
 		swimFrames += app.player().swimming;
@@ -153,6 +168,8 @@ int main(int argc, char** argv) {
 		maxLoaded = max(maxLoaded, ws.chunksLoaded);
 		maxPending = max(maxPending, ws.chunksPending);
 		maxLoadsFrame = max(maxLoadsFrame, ws.loadsThisFrame);
+		maxInFlight = max(maxInFlight, ws.chunksInFlight);
+		maxTexturesWaiting = max(maxTexturesWaiting, ws.texturesWaiting);
 		sumTris += ws.trianglesDrawn;
 		sumWritten += ss.pixelsWritten;
 		sumTested += ss.pixelsTested;
@@ -185,6 +202,9 @@ int main(int argc, char** argv) {
 	       static_cast<unsigned long long>(sumCulled / u64(frames)));
 	printf("chunks resident   max %u of %u (pending max %u, loads/frame max %u)\n", maxLoaded, ws.chunksTotal,
 	       maxPending, maxLoadsFrame);
+	printf("streaming         %s%s: update %.3f ms avg, %.3f ms worst on this PC; in flight max %u, textures waiting max %u\n",
+	       streamMode, streamThread && !app.world().workerThread() ? " (no thread: inline)" : "",
+	       updateSum / frames, updateWorst, maxInFlight, maxTexturesWaiting);
 	printf("world memory      now %.2f MB, peak %.2f MB, budget %.0f MB\n", ws.residentBytes / 1048576.0,
 	       ws.peakResidentBytes / 1048576.0, double(budgetMb));
 	printf("  meshes %.2f MB (%u), textures %.2f MB (%u)\n", ms.meshBytes / 1048576.0, ms.meshCount,

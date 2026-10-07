@@ -8,11 +8,20 @@
 //           SELECT toggle fly mode (in fly mode L/R move down/up), START exit.
 // The position is saved on exit and restored on the next start; hold L while
 // starting to begin at the world's start point instead.
+//
+// Switches for comparing on the console, held while the program starts:
+//   B  load chunks on the frame's own thread, as before (no background loading)
+//   X  no frame pacer (fixed object distances, never 30 fps)
+//   Y  citro3d's own frame order: the GPU waits while the CPU issues the draws
 #include "app.h"
+#include "gfx_c3d.h"
+#include "pacer.h"
+#include "sys.h"
 
 #include <3ds.h>
 #include <citro3d.h>
 
+#include <stdarg.h>
 #include <stdio.h>
 
 using g3::App;
@@ -32,6 +41,21 @@ static float stick(int v) {
 	if (f > -dead && f < dead) return 0.0f;
 	f = (f > 0 ? f - dead : f + dead) / (full - dead);
 	return clamp(f, -1.0f, 1.0f);
+}
+
+// The bottom-screen report: laid out once every 30 frames, written a line
+// per frame (printing all of it at once takes several milliseconds).
+static const int kReportLines = 17;
+static char gReport[kReportLines][48];
+static int gReportCount = 0;
+
+static void reportLine(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+static void reportLine(const char* fmt, ...) {
+	if (gReportCount >= kReportLines) return;
+	va_list ap;
+	va_start(ap, fmt);
+	vsnprintf(gReport[gReportCount++], sizeof(gReport[0]), fmt, ap);
+	va_end(ap);
 }
 
 static void waitForStart() {
@@ -54,7 +78,23 @@ int main(int, char**) {
 	APT_CheckNew3DS(&isNew);
 	printf("Gothic 3DS runtime (stage 0)\n%s\n\n", isNew ? "New 3DS" : "Old 3DS: expect a slideshow");
 
+	// Buttons held while starting select what to compare (see the top of this
+	// file). A few refreshes, so that the first reading is not an empty one.
+	u32 startKeys = 0;
+	for (int i = 0; i < 4; ++i) {
+		gspWaitForVBlank();
+		hidScanInput();
+		startKeys |= hidKeysHeld();
+	}
+	const bool background = !(startKeys & KEY_B), pacing = !(startKeys & KEY_X), classic = (startKeys & KEY_Y) != 0;
+	gfx::c3dSetClassicFrames(classic);
+
 	App app;
+	// Chunks are read, unpacked and given their collision grids on a worker
+	// thread; the frame only copies the finished mesh into video memory.
+	g3::StreamConfig& stream = app.world().config();
+	stream.background = background;
+	stream.maxLoadsPerFrame = background ? 1 : 2;
 	bool ok = gfx::init();
 	if (!ok) printf("gfx init failed\n");
 	if (ok && !app.init(kPakPath, nullptr)) {
@@ -75,24 +115,28 @@ int main(int, char**) {
 	float drawDistance = 12000.0f;
 	app.setDrawDistance(drawDistance);
 	// Continue where the last session ended, unless L is held at start.
-	hidScanInput();
-	if (!(hidKeysHeld() & KEY_L) && app.loadState(kStatePath)) drawDistance = app.drawDistance();
+	if (!(startKeys & KEY_L) && app.loadState(kStatePath)) drawDistance = app.drawDistance();
 	printf("loading...\n");
 	app.world().preload(app.camera().pos);
 	consoleClear();
 
-	TickCounter clock;
-	osTickCounterStart(&clock);
 	u32 frame = 0;
-	float msAccum = 0.0f, msWorst = 0.0f, updateAccum = 0.0f;
+	float msAccum = 0.0f, msWorst = 0.0f, updateAccum = 0.0f, updateWorst = 0.0f;
+	u32 lateFrames = 0; // frames of this report that missed their refresh
+	g3::FramePacer pacer;
+	int interval = 1;
+	int reportLines = 0;
 
 	while (aptMainLoop()) {
 		hidScanInput();
 		const u32 down = hidKeysDown(), held = hidKeysHeld();
 		if (down & KEY_START) break;
 
-		osTickCounterUpdate(&clock);
-		const float ms = float(osTickCounterRead(&clock));
+		// The step of the simulation is the time between the last two frames
+		// reaching the display: as even as the display itself, whatever the
+		// work in between took.
+		const gfx::FrameStats timing = gfx::frameStats();
+		const float ms = timing.frameMs > 0.0f ? timing.frameMs : 16.7f * float(interval);
 		const float dt = clamp(ms * 0.001f, 0.001f, 0.1f);
 
 		circlePosition pad, cstick;
@@ -124,16 +168,38 @@ int main(int, char**) {
 		osTickCounterStart(&updateClock);
 		app.update(in, dt);
 		osTickCounterUpdate(&updateClock);
-		updateAccum += float(osTickCounterRead(&updateClock));
+		const float updateMs = float(osTickCounterRead(&updateClock));
+		updateAccum += updateMs;
+		updateWorst = max(updateWorst, updateMs);
 
 		app.render();
 
-		msAccum += ms;
-		msWorst = max(msWorst, ms);
+		// What the frame cost decides how much detail the next one gets, and
+		// whether the display runs at 60 or a steady 30. With overlapped
+		// frames the CPU and the GPU work at the same time and the slower of
+		// the two sets the pace; in citro3d's own order the GPU waits for the
+		// CPU, and a frame takes the sum. (Measured in that order on a New
+		// 3DS: 28% + 97% gave 20.9 ms, which is 125% of 16.7 ms.)
+		const gfx::FrameStats fs = gfx::frameStats();
+		const float load = (fs.overlapped ? max(fs.cpuMs + updateMs, fs.gpuMs) : fs.cpuMs + fs.gpuMs) * 0.06f;
+		// (A world switch or any other pause is not a frame to learn from.)
+		if (pacing && updateMs < 50.0f) {
+			pacer.update(load);
+			app.world().config().detailScale = pacer.detailScale();
+			if (pacer.interval() != interval) {
+				interval = pacer.interval();
+				C3D_FrameRate(interval == 2 ? 30.0f : 60.0f);
+			}
+		}
+
+		if (fs.frameMs > 0.0f) {
+			msAccum += fs.frameMs;
+			msWorst = max(msWorst, fs.frameMs);
+			lateFrames += fs.frameMs > 16.7f * float(interval) * 1.25f;
+		}
 		if (++frame % 30 == 0) {
 			const WorldStats& ws = app.world().stats();
 			const gfx::MemStats mem = gfx::memStats();
-			const gfx::FrameStats fs = gfx::frameStats();
 			const g3::Player& pl = app.player();
 			const char* state = pl.flying     ? "flying (SELECT: walk)"
 			                    : pl.swimming ? "swimming"
@@ -141,35 +207,45 @@ int main(int, char**) {
 			                    : !pl.grounded ? "in the air"
 			                    : pl.waterDepth > 0 ? "wading"
 			                                        : "on the ground";
-			// citro3d reports both in milliseconds; times 6 is percent of a 60 fps frame.
-			printf("\x1b[1;1H");
-			printf("frame  %5.1f ms avg  %5.1f worst   \n", double(msAccum / 30.0f), double(msWorst));
-			printf("cpu %3.0f%%  gpu %3.0f%%  (of 16.7 ms)  \n", double(C3D_GetProcessingTime() * 6.0f),
-			       double(C3D_GetDrawingTime() * 6.0f));
-			printf("update %5.2f ms (streaming)      \n", double(updateAccum / 30.0f));
-			printf("tris %6lu  draws %4lu  chunks %3lu  \n", static_cast<unsigned long>(ws.trianglesDrawn),
-			       static_cast<unsigned long>(ws.drawCalls), static_cast<unsigned long>(ws.chunksDrawn));
-			printf("blended %3lu  culled %4lu          \n", static_cast<unsigned long>(ws.blendedDrawCalls),
-			       static_cast<unsigned long>(ws.batchesCulled));
-			printf("cmdbuf %3.0f%%  dropped draws %lu     \n", double(fs.commandBufferUse * 100.0f),
-			       static_cast<unsigned long>(fs.drawsDropped));
-			printf("resident %3lu/%lu  pending %3lu     \n", static_cast<unsigned long>(ws.chunksLoaded),
-			       static_cast<unsigned long>(ws.chunksTotal), static_cast<unsigned long>(ws.chunksPending));
-			printf("mesh %5.2f MB  tex %5.2f MB       \n", double(mem.meshBytes) / 1048576.0,
-			       double(mem.textureBytes) / 1048576.0);
-			printf("collision %5.0f KB                \n", double(ws.collisionBytes) / 1024.0);
-			printf("linear free %5.1f MB              \n", double(linearSpaceFree()) / 1048576.0);
-			printf("budget rejects %lu  failures %lu   \n", static_cast<unsigned long>(ws.budgetRejects),
-			       static_cast<unsigned long>(ws.loadFailures));
-			printf("draw distance %3.0f m  time %02d:%02d   \n", double(drawDistance / 100.0f),
-			       int(app.environment().timeOfDay), int(app.environment().timeOfDay * 60.0f) % 60);
-			printf("%-22.22s %-16.16s\n", state, app.worldName());
-			printf("pos %7.0f %6.0f %7.0f         \n", double(app.camera().pos.x), double(app.camera().pos.y),
-			       double(app.camera().pos.z));
+			gReportCount = 0;
+			reportLine("frame %5.1f ms avg %5.1f worst", double(msAccum / 30.0f), double(msWorst));
+			reportLine("cpu %3.0f%%  gpu %3.0f%%  load %3.0f%%", double(fs.cpuMs * 6.0f), double(fs.gpuMs * 6.0f),
+			     double(load * 100.0f));
+			reportLine("update %4.2f ms avg %5.1f worst", double(updateAccum / 30.0f), double(updateWorst));
+			reportLine("loader %-6s job %5.1f ms  fly %lu",
+			     !app.world().backgroundStreaming() ? "off" : app.world().workerThread() ? "thread" : "inline",
+			     double(app.world().takeWorstLoadMs()), static_cast<unsigned long>(ws.chunksInFlight));
+			reportLine("detail %3.0f%%  %2d fps  late %2lu/30", double(app.world().config().detailScale * 100.0f),
+			     interval == 2 ? 30 : 60, static_cast<unsigned long>(lateFrames));
+			reportLine("frames %s  pacer %s", fs.overlapped ? "overlapped" : "classic", pacing ? "on" : "off");
+			reportLine("tris %6lu  draws %4lu  chunks %3lu", static_cast<unsigned long>(ws.trianglesDrawn),
+			     static_cast<unsigned long>(ws.drawCalls), static_cast<unsigned long>(ws.chunksDrawn));
+			reportLine("blended %3lu  culled %4lu", static_cast<unsigned long>(ws.blendedDrawCalls),
+			     static_cast<unsigned long>(ws.batchesCulled));
+			reportLine("cmdbuf %3.0f%%  dropped draws %lu", double(fs.commandBufferUse * 100.0f),
+			     static_cast<unsigned long>(fs.drawsDropped));
+			reportLine("resident %3lu/%lu  pending %3lu", static_cast<unsigned long>(ws.chunksLoaded),
+			     static_cast<unsigned long>(ws.chunksTotal), static_cast<unsigned long>(ws.chunksPending));
+			reportLine("mesh %5.2f MB  tex %5.2f MB", double(mem.meshBytes) / 1048576.0, double(mem.textureBytes) / 1048576.0);
+			reportLine("collision %5.0f KB", double(ws.collisionBytes) / 1024.0);
+			reportLine("linear free %5.1f MB", double(linearSpaceFree()) / 1048576.0);
+			reportLine("budget rejects %lu  failures %lu", static_cast<unsigned long>(ws.budgetRejects),
+			     static_cast<unsigned long>(ws.loadFailures));
+			reportLine("draw distance %3.0f m  time %02d:%02d", double(drawDistance / 100.0f), int(app.environment().timeOfDay),
+			     int(app.environment().timeOfDay * 60.0f) % 60);
+			reportLine("%-22.22s %-16.16s", state, app.worldName());
+			reportLine("pos %7.0f %6.0f %7.0f", double(app.camera().pos.x), double(app.camera().pos.y),
+			     double(app.camera().pos.z));
+			reportLines = gReportCount;
 			msAccum = 0.0f;
 			msWorst = 0.0f;
 			updateAccum = 0.0f;
+			updateWorst = 0.0f;
+			lateFrames = 0;
 		}
+		// One line of the report per frame, padded to overwrite the old one.
+		const int row = int(frame % 30);
+		if (row < reportLines) printf("\x1b[%d;1H%-39.39s", row + 1, gReport[row]);
 	}
 
 	app.saveState(kStatePath);

@@ -25,6 +25,12 @@ synth)
 	"$host" --pak "$out/data.pak" --world cave --walk --frames 150 --shots 1 --out "$out/cave" --stats "$out/stats.json"
 	[ "$(num swimFrames)" -gt 30 ] || fail "nobody swam in the cave pool: $(num swimFrames) frames"
 	[ "$(num blendedDrawsMax)" -gt 0 ] || fail "the water was not drawn in the blended pass"
+	# The same flight with chunks streamed in the background, as on the console.
+	for stream in inline thread; do
+		"$host" --pak "$out/data.pak" --frames 150 --shots 1 --stream "$stream" --out "$out/$stream" --stats "$out/stats.json"
+		[ "$(num loadFailures)" = "0" ] || fail "load failures with --stream $stream"
+		[ "$(num chunksLoadedMax)" -gt 20 ] || fail "nothing was streamed in with --stream $stream"
+	done
 	"$host" --pak "$out/data.pak" --frames 150 --shots 2 --time 19.5 --out "$out/frame" --stats "$out/stats.json"
 	;;
 zen)
@@ -53,6 +59,8 @@ awk "BEGIN { exit !($(num backfaceShare) < 0.5) }" || fail "too many back faces:
 [ -s "$out/frame_00.png" ] || fail "no screenshot"
 
 grep -q "winding check" "$out/info.txt" || fail "no winding check in the report"
+grep -q "seams: .* T-junctions closed" "$out/info.txt" || fail "no seam repair in the report"
+grep -q "position step: " "$out/info.txt" || fail "no position step in the report"
 grep -q "inside out" "$out/info.txt" && fail "winding check complained about a correct world"
 
 if [ "$mode" = zen ]; then

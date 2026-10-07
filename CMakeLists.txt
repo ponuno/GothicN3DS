@@ -24,7 +24,9 @@ add_library(lz4hc STATIC third_party/lz4/lz4hc.c)
 target_link_libraries(lz4hc PUBLIC lz4)
 add_library(rg_etc1 STATIC third_party/rg_etc1/rg_etc1.cpp)
 target_include_directories(rg_etc1 PUBLIC third_party/rg_etc1)
-target_compile_options(rg_etc1 PRIVATE -w)
+# Third-party code as it is: no warnings, and its unaligned table reads are
+# not ours to report in a sanitizer build.
+target_compile_options(rg_etc1 PRIVATE -w -fno-sanitize=alignment)
 
 # ---- runtime: the same sources the 3DS Makefile compiles ----
 add_library(g3core STATIC core/src/pak.cpp core/src/tex.cpp)
@@ -32,9 +34,16 @@ target_include_directories(g3core PUBLIC core/include)
 target_link_libraries(g3core PUBLIC lz4)
 target_compile_options(g3core PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
 
-add_library(g3engine STATIC engine/world.cpp engine/app.cpp engine/collision.cpp engine/player.cpp engine/sky.cpp)
+# Threads, locks and the clock for this platform (the 3DS has platform/3ds/sys_3ds.cpp).
+add_library(g3sys STATIC platform/host/sys_host.cpp)
+target_include_directories(g3sys PUBLIC engine core/include)
+target_link_libraries(g3sys PUBLIC Threads::Threads)
+target_compile_options(g3sys PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
+
+add_library(g3engine STATIC engine/world.cpp engine/app.cpp engine/collision.cpp engine/player.cpp engine/sky.cpp
+            engine/loader.cpp engine/pacer.cpp)
 target_include_directories(g3engine PUBLIC engine)
-target_link_libraries(g3engine PUBLIC g3core)
+target_link_libraries(g3engine PUBLIC g3core g3sys)
 target_compile_options(g3engine PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
 
 add_library(g3soft STATIC platform/host/gfx_soft.cpp)

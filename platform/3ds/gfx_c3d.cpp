@@ -13,6 +13,7 @@
 // when it really changes: the GPU command buffer is finite, and overflowing
 // it stops the program (libctru calls svcBreak).
 #include "gfx.h"
+#include "gfx_c3d.h"
 
 #include "world_shbin.h"
 
@@ -49,11 +50,20 @@ DVLB_s* gDvlb = nullptr;
 shaderProgram_s gProgram;
 bool gProgramReady = false;
 bool gReady = false; // C3D_Init succeeded
-int gLocProjection = -1, gLocModelView = -1, gLocParams = -1, gLocDayDelta = -1, gLocTexOffset = -1;
+int gLocProjection = -1, gLocModelView = -1, gLocChunk = -1, gLocParams = -1, gLocDayDelta = -1, gLocTexOffset = -1;
 Pass gPass = PASS_WORLD;
 
 // 1 MB of command buffer: about 5000 draw calls with a texture change each.
 const size_t kCommandBufferBytes = 0x100000;
+// Overlapped frames: the CPU writes one command buffer while the GPU reads
+// the other. A frame of the real game needs 80-140 KB.
+const u32 kOwnBufferWords = 0x80000 / 4;
+u32* gOwnBuffer[2] = {nullptr, nullptr};
+int gOwnIndex = 0;
+bool gClassic = false;
+u32 gClearColor = 0;
+TickCounter gCpuClock, gSyncClock;
+bool gSyncStarted = false;
 // Words kept free for one draw call with every state group dirty, plus the
 // few commands C3D_FrameEnd appends.
 const u32 kDrawReserveWords = 0x400;
@@ -70,8 +80,10 @@ u8 gOpacity = 255;
 bool gFogToBlack = false;
 BlendMode gBlend = BLEND_UNSET;
 float gTexOffset[2] = {0, 0};
+float gAnchor[3] = {0, 0, 0};       // the lattice point next to the eye that positions are relative to
+float gParams[4] = {0, 0, 0, 0};    // last value of the `params` uniform
 MemStats gMem;
-FrameStats gFrameStats = {0, 0.0f};
+FrameStats gFrameStats = {};
 u32 gDropped = 0;
 
 // Engine matrices are column-major; C3D_Mtx stores rows.
@@ -182,9 +194,16 @@ void reap() {
 
 bool init() {
 	gMem = {};
-	gFrameStats = {0, 0.0f};
-	if (!C3D_Init(kCommandBufferBytes)) return false;
+	gFrameStats = {};
+	gSyncStarted = false;
+	gOwnIndex = 0;
+	// With overlapped frames citro3d's own buffer only ever holds empty frames.
+	if (!C3D_Init(gClassic ? kCommandBufferBytes : size_t(C3D_DEFAULT_CMDBUF_SIZE))) return false;
 	gReady = true;
+	if (!gClassic) {
+		for (u32*& b : gOwnBuffer) b = static_cast<u32*>(linearAlloc(kOwnBufferWords * 4));
+		if (!gOwnBuffer[0] || !gOwnBuffer[1]) return false;
+	}
 
 	gTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 	if (!gTarget) return false;
@@ -199,10 +218,13 @@ bool init() {
 
 	gLocProjection = shaderInstanceGetUniformLocation(gProgram.vertexShader, "projection");
 	gLocModelView = shaderInstanceGetUniformLocation(gProgram.vertexShader, "modelView");
+	gLocChunk = shaderInstanceGetUniformLocation(gProgram.vertexShader, "chunk");
 	gLocParams = shaderInstanceGetUniformLocation(gProgram.vertexShader, "params");
 	gLocDayDelta = shaderInstanceGetUniformLocation(gProgram.vertexShader, "dayDelta");
 	gLocTexOffset = shaderInstanceGetUniformLocation(gProgram.vertexShader, "texOffset");
-	if (gLocProjection < 0 || gLocModelView < 0 || gLocParams < 0 || gLocDayDelta < 0 || gLocTexOffset < 0) return false;
+	if (gLocProjection < 0 || gLocModelView < 0 || gLocChunk < 0 || gLocParams < 0 || gLocDayDelta < 0 ||
+	    gLocTexOffset < 0)
+		return false;
 
 	// Matches WorldVertex: short4 position, short2 uv, ubyte4 colour.
 	C3D_AttrInfo* attr = C3D_GetAttrInfo();
@@ -228,6 +250,10 @@ void shutdown() {
 		// buffers of the last frame safe to free.
 		if (gTarget) C3D_RenderTargetDelete(gTarget);
 		reap();
+		for (u32*& b : gOwnBuffer) {
+			if (b) linearFree(b);
+			b = nullptr;
+		}
 		C3D_Fini();
 	}
 	free(gDeadTextures.items);
@@ -337,21 +363,54 @@ void meshDestroy(Mesh* m) {
 	if (!bury(gDeadMeshes, m)) freeMesh(m);
 }
 
+// The display sync of a frame: everything the player sees is paced by the
+// time between two of these.
+static void markSync() {
+	if (gSyncStarted) {
+		osTickCounterUpdate(&gSyncClock);
+		gFrameStats.frameMs = float(osTickCounterRead(&gSyncClock));
+	} else {
+		osTickCounterStart(&gSyncClock);
+		gSyncStarted = true;
+		gFrameStats.frameMs = 0.0f;
+	}
+}
+
 void frameBegin(const FrameDesc& f) {
 	gFrame = f;
-	gInFrame = C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
-	if (!gInFrame) return;
-	reap(); // the previous frame is off the GPU now
-
-	const u32 clear = (u32(f.clearColor[0]) << 24) | (u32(f.clearColor[1]) << 16) | (u32(f.clearColor[2]) << 8) | 0xFFu;
-	C3D_RenderTargetClear(gTarget, C3D_CLEAR_ALL, clear, 0);
-	C3D_FrameDrawOn(gTarget);
+	gClearColor = (u32(f.clearColor[0]) << 24) | (u32(f.clearColor[1]) << 16) | (u32(f.clearColor[2]) << 8) | 0xFFu;
+	if (gClassic) {
+		gInFrame = C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+		if (!gInFrame) return;
+		markSync();
+		reap(); // the previous frame is off the GPU now
+		C3D_RenderTargetClear(gTarget, C3D_CLEAR_ALL, gClearColor, 0);
+		C3D_FrameDrawOn(gTarget);
+	} else {
+		// Overlapped: the GPU may still be drawing the previous frame from
+		// the other buffer. Nothing here touches the GPU or waits for it; the
+		// commands are only written down, and frameEnd() submits them.
+		GPUCMD_SetBuffer(gOwnBuffer[gOwnIndex], kOwnBufferWords, 0);
+		gInFrame = true;
+		// What C3D_FrameDrawOn does, minus its "inside a citro3d frame" check.
+		C3D_SetFrameBuf(&gTarget->frameBuf);
+		C3D_SetViewport(0, 0, gTarget->frameBuf.width, gTarget->frameBuf.height);
+	}
+	osTickCounterStart(&gCpuClock);
 	C3D_BindProgram(&gProgram);
 
 	// Mtx_PerspTilt handles the sideways screen and PICA's -1..0 depth range.
 	C3D_Mtx proj;
 	Mtx_PerspTilt(&proj, f.fovY, C3D_AspectRatioTop, f.zNear, f.zFar, true);
 	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocProjection, &proj);
+	// One view matrix for the whole frame; chunks only differ in `chunk`.
+	const EyeFrame ef = eyeFrame(f.view, f.eye);
+	memcpy(gAnchor, ef.anchor, sizeof(gAnchor));
+	C3D_Mtx mv;
+	toC3D(ef.view, &mv);
+	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocModelView, &mv);
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, 0.0f, 0.0f, 0.0f, 1.0f);
+	gParams[0] = gParams[1] = gParams[2] = gParams[3] = -1.0f; // unknown: the first chunk sends them
 
 	// Start every frame from a known state; from here on only changes are sent.
 	setStage0(true, 255);
@@ -391,9 +450,9 @@ void setPass(Pass pass) {
 
 void setChunkTransform(const float origin[3], float posScale, float uvScale) {
 	if (!gInFrame) return;
-	C3D_Mtx mv;
-	toC3D(mul(gFrame.view, translateScale(origin, posScale)), &mv);
-	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocModelView, &mv);
+	// Lattice positions minus a lattice point: exact, here and in the shader.
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, origin[0] - gAnchor[0], origin[1] - gAnchor[1], origin[2] - gAnchor[2],
+	              posScale);
 	// Fog factor = clamp(fogA - viewZ * fogB); the sky is never fogged.
 	const float range = gFrame.fogEnd - gFrame.fogStart;
 	float fogA = 1.0f, fogB = 0.0f;
@@ -401,7 +460,12 @@ void setChunkTransform(const float origin[3], float posScale, float uvScale) {
 		fogB = 1.0f / range;
 		fogA = gFrame.fogEnd * fogB;
 	}
-	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocParams, uvScale, 1.0f / 255.0f, fogA, fogB);
+	// The same for nearly every chunk of a pass: only sent when it changes.
+	const float params[4] = {uvScale, 1.0f / 255.0f, fogA, fogB};
+	if (memcmp(params, gParams, sizeof(params)) != 0) {
+		memcpy(gParams, params, sizeof(params));
+		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocParams, params[0], params[1], params[2], params[3]);
+	}
 }
 
 void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, float uvOffsetV) {
@@ -442,16 +506,45 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 }
 
 void frameEnd() {
-	// With flags = 0 citro3d flushes the whole linear heap every frame. Since
-	// every buffer and texture is already flushed on creation, passing
-	// GX_CMDLIST_FLUSH here should be a free win - try it once this runs on
-	// hardware (docs/ROADMAP.md).
-	if (gInFrame) {
-		C3D_FrameEnd(0);
-		gFrameStats.drawsDropped = gDropped;
-		gFrameStats.commandBufferUse = C3D_GetCmdBufUsage();
-	}
+	if (!gInFrame) return;
 	gInFrame = false;
+	osTickCounterUpdate(&gCpuClock);
+	gFrameStats.cpuMs = float(osTickCounterRead(&gCpuClock));
+	gFrameStats.drawsDropped = gDropped;
+	gFrameStats.overlapped = !gClassic;
+	if (gClassic) {
+		// With flags = 0 citro3d flushes the whole linear heap out of the CPU
+		// cache here. Measured on a New 3DS that costs next to nothing (the
+		// frame time equalled CPU + GPU time to a quarter of a millisecond),
+		// so the safe default stays.
+		C3D_FrameEnd(0);
+		gFrameStats.commandBufferUse = C3D_GetCmdBufUsage();
+		gFrameStats.gpuMs = C3D_GetDrawingTime(); // of the frame before
+		return;
+	}
+
+	// Overlapped: the frame is written down; now wait for the display and for
+	// the GPU to finish the previous one, then hand this one over.
+	const u32 recorded = gpuCmdBufOffset;
+	gFrameStats.commandBufferUse = float(recorded) / float(kOwnBufferWords);
+	GPUCMD_SetBuffer(nullptr, 0, 0);
+	if (!C3D_FrameBegin(C3D_FRAME_SYNCDRAW)) return; // cannot happen without C3D_FRAME_NONBLOCK; the frame is dropped
+	markSync();
+	gFrameStats.gpuMs = C3D_GetDrawingTime(); // of the frame the GPU has just finished
+	// The GPU is idle: whatever was destroyed while it drew can go. The frame
+	// about to be submitted was recorded after those were destroyed.
+	reap();
+	C3D_RenderTargetClear(gTarget, C3D_CLEAR_ALL, gClearColor, 0);
+	gTarget->used = true; // C3D_FrameEnd copies used targets to the screen
+	// C3D_FrameBegin pointed the command writer at citro3d's own (empty)
+	// buffer; point it back at the end of what was recorded.
+	GPUCMD_SetBuffer(gOwnBuffer[gOwnIndex], kOwnBufferWords, recorded);
+	C3D_FrameEnd(0);
+	gOwnIndex ^= 1; // the GPU reads this buffer now; the next frame is written into the other
+}
+
+void c3dSetClassicFrames(bool classic) {
+	if (!gReady) gClassic = classic;
 }
 
 MemStats memStats() { return gMem; }

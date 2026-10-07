@@ -3,6 +3,10 @@
 // alpha test, blending, per-vertex linear fog, CCW front faces, 16-bit
 // indexed meshes) so the whole data path can be tested without a 3DS.
 // Textures are decoded from the very same PICA-native bytes the console gets.
+// Like the hardware it snaps vertices to a sub-pixel grid and fills with
+// exact integer edge tests and a top-left rule, so two triangles sharing an
+// edge never leave a pixel between them - and a pixel of background showing
+// through is a real gap in the geometry, not a rounding accident.
 #include "gfx_soft.h"
 
 #include <stdlib.h>
@@ -29,7 +33,9 @@ namespace {
 u8 gColor[SCREEN_W * SCREEN_H * 4];
 float gDepth[SCREEN_W * SCREEN_H];
 FrameDesc gFrame;
-Mat4 gProj, gMvp;
+Mat4 gProj, gViewProj;  // gViewProj takes positions relative to gAnchor
+float gAnchor[3] = {0, 0, 0};
+float gChunk[4] = {0, 0, 0, 1}; // chunk origin relative to the anchor, position scale
 float gUvScale = 1.0f;
 float gFogA = 1.0f, gFogB = 0.0f; // fog factor = clamp(A - viewZ * B)
 Pass gPass = PASS_WORLD;
@@ -65,17 +71,40 @@ struct ScreenVert {
 	float uw, vw; // u/w, v/w
 	float r, g, b, a; // already divided by w
 	float fog;        // already divided by w
+	i32 fx, fy;       // screen position in 1/16 pixel
 };
 
-void rasterize(const ScreenVert& a, const ScreenVert& b, const ScreenVert& c, float lod) {
-	const float area = (b.sx - a.sx) * (c.sy - a.sy) - (c.sx - a.sx) * (b.sy - a.sy);
-	if (area == 0.0f) return;
-	const float invArea = 1.0f / area;
+const int kSubpixel = 16;
 
-	int x0 = int(floorf(min(min(a.sx, b.sx), c.sx)));
-	int x1 = int(ceilf(max(max(a.sx, b.sx), c.sx)));
-	int y0 = int(floorf(min(min(a.sy, b.sy), c.sy)));
-	int y1 = int(ceilf(max(max(a.sy, b.sy), c.sy)));
+using i64 = long long;
+
+// Twice the signed area of (a, b, p); positive when p is to the right of
+// a -> b on a screen whose y points down.
+inline i64 edge(const ScreenVert& a, const ScreenVert& b, i64 px, i64 py) {
+	return i64(b.fx - a.fx) * (py - a.fy) - i64(b.fy - a.fy) * (px - a.fx);
+}
+
+// Pixels exactly on an edge belong to the triangle only if the edge is a top
+// or a left one; the neighbour across the edge sees it the other way round.
+inline bool topLeft(const ScreenVert& a, const ScreenVert& b) {
+	const i32 dx = b.fx - a.fx, dy = b.fy - a.fy;
+	return dy < 0 || (dy == 0 && dx > 0);
+}
+
+void rasterize(const ScreenVert& a, const ScreenVert& bIn, const ScreenVert& cIn, float lod) {
+	const i64 area0 = edge(a, bIn, cIn.fx, cIn.fy);
+	if (area0 == 0) return;
+	// Same orientation for both windings: the inside is where all three edge
+	// functions are positive.
+	const ScreenVert& b = area0 > 0 ? bIn : cIn;
+	const ScreenVert& c = area0 > 0 ? cIn : bIn;
+	const i64 area = area0 > 0 ? area0 : -area0;
+	const float invArea = 1.0f / float(area);
+
+	int x0 = min(min(a.fx, b.fx), c.fx) / kSubpixel - 1;
+	int x1 = max(max(a.fx, b.fx), c.fx) / kSubpixel + 1;
+	int y0 = min(min(a.fy, b.fy), c.fy) / kSubpixel - 1;
+	int y1 = max(max(a.fy, b.fy), c.fy) / kSubpixel + 1;
 	x0 = max(x0, 0);
 	y0 = max(y0, 0);
 	x1 = min(x1, SCREEN_W - 1);
@@ -97,14 +126,14 @@ void rasterize(const ScreenVert& a, const ScreenVert& b, const ScreenVert& c, fl
 	const bool depthTest = gPass != PASS_SKY, depthWrite = gPass == PASS_WORLD;
 	const bool count = gPass == PASS_WORLD; // statistics describe the opaque world
 	if (count) ++gStats.trianglesRasterised;
+	const i64 biasBC = topLeft(b, c) ? 0 : 1, biasCA = topLeft(c, a) ? 0 : 1, biasAB = topLeft(a, b) ? 0 : 1;
 
 	for (int y = y0; y <= y1; ++y) {
 		for (int x = x0; x <= x1; ++x) {
-			const float px = float(x) + 0.5f, py = float(y) + 0.5f;
-			float w0 = ((b.sx - px) * (c.sy - py) - (c.sx - px) * (b.sy - py)) * invArea;
-			float w1 = ((c.sx - px) * (a.sy - py) - (a.sx - px) * (c.sy - py)) * invArea;
-			float w2 = 1.0f - w0 - w1;
-			if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+			const i64 px = i64(x) * kSubpixel + kSubpixel / 2, py = i64(y) * kSubpixel + kSubpixel / 2;
+			const i64 e0 = edge(b, c, px, py), e1 = edge(c, a, px, py), e2 = edge(a, b, px, py);
+			if (e0 < biasBC || e1 < biasCA || e2 < biasAB) continue;
+			const float w0 = float(e0) * invArea, w1 = float(e1) * invArea, w2 = float(e2) * invArea;
 
 			const int idx = y * SCREEN_W + x;
 			const float z = a.z * w0 + b.z * w1 + c.z * w2;
@@ -117,7 +146,6 @@ void rasterize(const ScreenVert& a, const ScreenVert& b, const ScreenVert& c, fl
 			float g = (a.g * w0 + b.g * w1 + c.g * w2) * w;
 			float bl = (a.b * w0 + b.b * w1 + c.b * w2) * w;
 			float al = (a.a * w0 + b.a * w1 + c.a * w2) * w;
-
 			if (texels) {
 				const float u = (a.uw * w0 + b.uw * w1 + c.uw * w2) * w;
 				const float v = (a.vw * w0 + b.vw * w1 + c.vw * w2) * w;
@@ -153,6 +181,23 @@ void rasterize(const ScreenVert& a, const ScreenVert& b, const ScreenVert& c, fl
 	}
 }
 
+// Clips a convex polygon against one plane; `dist` >= 0 is inside.
+template <typename Dist> int clipPolygon(const ClipVert* in, int n, ClipVert* out, Dist dist) {
+	int m = 0;
+	for (int i = 0; i < n; ++i) {
+		const ClipVert& cur = in[i];
+		const ClipVert& nxt = in[(i + 1) % n];
+		const float dc = dist(cur), dn = dist(nxt);
+		if (dc >= 0) out[m++] = cur;
+		if ((dc >= 0) != (dn >= 0)) {
+			// Always from the inside vertex, so both triangles sharing this
+			// edge cut it at the very same point.
+			out[m++] = dc >= 0 ? lerpVert(cur, nxt, dc / (dc - dn)) : lerpVert(nxt, cur, dn / (dn - dc));
+		}
+	}
+	return m;
+}
+
 void drawTriangle(const ClipVert in[3]) {
 	// Trivial rejection against the side planes.
 	int outL = 0, outR = 0, outB = 0, outT = 0, outN = 0, outF = 0;
@@ -169,24 +214,26 @@ void drawTriangle(const ClipVert in[3]) {
 		return;
 	}
 
-	// Clip against the near plane (z >= 0); the rest is handled by the scissor.
-	ClipVert poly[4];
-	int n = 0;
-	for (int i = 0; i < 3; ++i) {
-		const ClipVert& cur = in[i];
-		const ClipVert& nxt = in[(i + 1) % 3];
-		const bool curIn = cur.z >= 0, nxtIn = nxt.z >= 0;
-		if (curIn) poly[n++] = cur;
-		if (curIn != nxtIn) poly[n++] = lerpVert(cur, nxt, cur.z / (cur.z - nxt.z));
-	}
+	// Clip against the near plane and a guard band far outside the screen (so
+	// the sub-pixel coordinates stay small); the scissor does the rest.
+	const float kGuard = 16.0f;
+	ClipVert bufA[12], bufB[12];
+	int n = clipPolygon(in, 3, bufA, [](const ClipVert& v) { return v.z; });
+	n = clipPolygon(bufA, n, bufB, [&](const ClipVert& v) { return v.x + kGuard * v.w; });
+	n = clipPolygon(bufB, n, bufA, [&](const ClipVert& v) { return kGuard * v.w - v.x; });
+	n = clipPolygon(bufA, n, bufB, [&](const ClipVert& v) { return v.y + kGuard * v.w; });
+	n = clipPolygon(bufB, n, bufA, [&](const ClipVert& v) { return kGuard * v.w - v.y; });
 	if (n < 3) return;
+	const ClipVert* poly = bufA;
 
-	ScreenVert sv[4];
+	ScreenVert sv[12];
 	for (int i = 0; i < n; ++i) {
 		const ClipVert& p = poly[i];
 		const float invW = 1.0f / max(p.w, 1e-6f);
 		sv[i].sx = (p.x * invW * 0.5f + 0.5f) * float(SCREEN_W);
 		sv[i].sy = (0.5f - p.y * invW * 0.5f) * float(SCREEN_H);
+		sv[i].fx = i32(lroundf(sv[i].sx * float(kSubpixel)));
+		sv[i].fy = i32(lroundf(sv[i].sy * float(kSubpixel)));
 		sv[i].z = p.z * invW;
 		sv[i].invW = invW;
 		sv[i].uw = p.u * invW;
@@ -199,9 +246,13 @@ void drawTriangle(const ClipVert in[3]) {
 	}
 
 	// Screen y points down, so a counter-clockwise (front) triangle has a
-	// negative area here. PICA default: GPU_CULL_BACK_CCW.
-	const float area =
-	    (sv[1].sx - sv[0].sx) * (sv[2].sy - sv[0].sy) - (sv[2].sx - sv[0].sx) * (sv[1].sy - sv[0].sy);
+	// negative area here. PICA default: GPU_CULL_BACK_CCW. Summed over the
+	// whole clipped polygon: its first three corners may be a sliver.
+	float area = 0.0f, uvArea = 0.0f;
+	for (int i = 1; i + 1 < n; ++i) {
+		area += (sv[i].sx - sv[0].sx) * (sv[i + 1].sy - sv[0].sy) - (sv[i + 1].sx - sv[0].sx) * (sv[i].sy - sv[0].sy);
+		uvArea += (poly[i].u - poly[0].u) * (poly[i + 1].v - poly[0].v) - (poly[i + 1].u - poly[0].u) * (poly[i].v - poly[0].v);
+	}
 	if (area >= 0.0f && gPass == PASS_WORLD) {
 		++gStats.trianglesBackface;
 		if (gCull) return;
@@ -210,9 +261,7 @@ void drawTriangle(const ClipVert in[3]) {
 	// One mip level per triangle from the texel/pixel area ratio.
 	float lod = 0.0f;
 	if (gTexture) {
-		const float uvArea = fabsf((poly[1].u - poly[0].u) * (poly[2].v - poly[0].v) -
-		                           (poly[2].u - poly[0].u) * (poly[1].v - poly[0].v)) *
-		                     float(gTexture->width) * float(gTexture->height);
+		uvArea = fabsf(uvArea) * float(gTexture->width) * float(gTexture->height);
 		const float pxArea = fabsf(area);
 		if (pxArea > 1e-3f && uvArea > pxArea) lod = 0.5f * log2f(uvArea / pxArea);
 	}
@@ -296,7 +345,11 @@ void meshDestroy(Mesh* m) {
 void frameBegin(const FrameDesc& f) {
 	gFrame = f;
 	gProj = perspectiveLH(f.fovY, float(SCREEN_W) / float(SCREEN_H), f.zNear, f.zFar);
-	gMvp = mul(gProj, f.view);
+	const EyeFrame ef = eyeFrame(f.view, f.eye);
+	gViewProj = mul(gProj, ef.view);
+	memcpy(gAnchor, ef.anchor, sizeof(gAnchor));
+	gChunk[0] = gChunk[1] = gChunk[2] = 0.0f;
+	gChunk[3] = 1.0f;
 	gPass = PASS_SKY; // force setPass to set the fog terms up
 	setPass(PASS_WORLD);
 	for (int i = 0; i < SCREEN_W * SCREEN_H; ++i) {
@@ -328,7 +381,8 @@ void setPass(Pass pass) {
 }
 
 void setChunkTransform(const float origin[3], float posScale, float uvScale) {
-	gMvp = mul(gProj, mul(gFrame.view, translateScale(origin, posScale)));
+	for (int a = 0; a < 3; ++a) gChunk[a] = origin[a] - gAnchor[a];
+	gChunk[3] = posScale;
 	gUvScale = uvScale;
 }
 
@@ -346,7 +400,10 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 		ClipVert cv[3];
 		for (int k = 0; k < 3; ++k) {
 			const WorldVertex& v = m->vertices[m->indices[firstIndex + i + u32(k)]];
-			const Vec4 c = transform(gMvp, {float(v.x), float(v.y), float(v.z), 1.0f});
+			// The shader's arithmetic: position relative to the anchor first
+			// (exact for lattice positions), then one matrix for every chunk.
+			const Vec4 c = transform(gViewProj, {float(v.x) * gChunk[3] + gChunk[0], float(v.y) * gChunk[3] + gChunk[1],
+			                                     float(v.z) * gChunk[3] + gChunk[2], 1.0f});
 			// clip.w is the view-space depth for a perspective projection.
 			const float fog = clamp(gFogA - c.w * gFogB, 0.0f, 1.0f);
 			// Same arithmetic as the vertex shader: the vertex alpha says how
@@ -368,7 +425,7 @@ void frameEnd() {}
 void releaseDestroyed() {} // nothing is deferred here
 
 MemStats memStats() { return gMem; }
-FrameStats frameStats() { return {0, 0.0f}; }
+FrameStats frameStats() { return FrameStats {}; }
 
 const u8* softFramebuffer() { return gColor; }
 SoftStats softStats() { return gStats; }

@@ -42,7 +42,8 @@ C3D_RenderTarget* gTarget = nullptr;
 DVLB_s* gDvlb = nullptr;
 shaderProgram_s gProgram;
 bool gProgramReady = false;
-int gLocProjection = -1, gLocModelView = -1, gLocParams = -1;
+int gLocProjection = -1, gLocModelView = -1, gLocParams = -1, gLocDayDelta = -1;
+Pass gPass = PASS_WORLD;
 
 FrameDesc gFrame;
 Texture* gBoundTexture = nullptr;
@@ -151,7 +152,8 @@ bool init() {
 	gLocProjection = shaderInstanceGetUniformLocation(gProgram.vertexShader, "projection");
 	gLocModelView = shaderInstanceGetUniformLocation(gProgram.vertexShader, "modelView");
 	gLocParams = shaderInstanceGetUniformLocation(gProgram.vertexShader, "params");
-	if (gLocProjection < 0 || gLocModelView < 0 || gLocParams < 0) return false;
+	gLocDayDelta = shaderInstanceGetUniformLocation(gProgram.vertexShader, "dayDelta");
+	if (gLocProjection < 0 || gLocModelView < 0 || gLocParams < 0 || gLocDayDelta < 0) return false;
 
 	// Matches WorldVertex: short4 position, short2 uv, ubyte4 colour.
 	C3D_AttrInfo* attr = C3D_GetAttrInfo();
@@ -272,9 +274,24 @@ void frameBegin(const FrameDesc& f) {
 
 	setStage0(true);
 	setFogStage(f.fogColor);
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocDayDelta, f.dayLight[0] - 1.0f, f.dayLight[1] - 1.0f, f.dayLight[2] - 1.0f, 0.0f);
+	gPass = PASS_SKY; // force setPass to apply the world state
+	setPass(PASS_WORLD);
 	C3D_AlphaTest(false, GPU_GREATER, 127);
 	gAlphaTest = false;
 	gBoundTexture = nullptr;
+}
+
+void setPass(Pass pass) {
+	if (!gInFrame || pass == gPass) return;
+	gPass = pass;
+	if (pass == PASS_SKY) {
+		C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+		C3D_CullFace(GPU_CULL_NONE);
+	} else {
+		C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
+		C3D_CullFace(GPU_CULL_BACK_CCW);
+	}
 }
 
 void setChunkTransform(const float origin[3], float posScale, float uvScale) {
@@ -282,8 +299,14 @@ void setChunkTransform(const float origin[3], float posScale, float uvScale) {
 	C3D_Mtx mv;
 	toC3D(mul(gFrame.view, translateScale(origin, posScale)), &mv);
 	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocModelView, &mv);
+	// Fog factor = clamp(fogA - viewZ * fogB); the sky is never fogged.
 	const float range = gFrame.fogEnd - gFrame.fogStart;
-	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocParams, uvScale, 1.0f / 255.0f, gFrame.fogEnd, range > 0.0f ? 1.0f / range : 0.0f);
+	float fogA = 1.0f, fogB = 0.0f;
+	if (gPass == PASS_WORLD && range > 0.0f) {
+		fogB = 1.0f / range;
+		fogA = gFrame.fogEnd * fogB;
+	}
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocParams, uvScale, 1.0f / 255.0f, fogA, fogB);
 }
 
 void setMaterial(Texture* t, u32 materialFlags) {

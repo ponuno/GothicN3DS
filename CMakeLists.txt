@@ -32,7 +32,7 @@ target_include_directories(g3core PUBLIC core/include)
 target_link_libraries(g3core PUBLIC lz4)
 target_compile_options(g3core PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
 
-add_library(g3engine STATIC engine/world.cpp engine/app.cpp)
+add_library(g3engine STATIC engine/world.cpp engine/app.cpp engine/collision.cpp engine/player.cpp engine/sky.cpp)
 target_include_directories(g3engine PUBLIC engine)
 target_link_libraries(g3engine PUBLIC g3core)
 target_compile_options(g3engine PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
@@ -51,6 +51,7 @@ set(G3DS_BAKE_SOURCES
     tools/common/pak_writer.cpp
     tools/bake/texture_bake.cpp
     tools/bake/chunker.cpp
+    tools/bake/ground.cpp
     tools/bake/synth.cpp)
 
 if (G3DS_WITH_ZENKIT)

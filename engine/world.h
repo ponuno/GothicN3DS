@@ -3,6 +3,7 @@
 #pragma once
 #include "g3ds/math.h"
 #include "g3ds/pak.h"
+#include "collision.h"
 #include "g3ds/world.h"
 #include "gfx.h"
 
@@ -29,6 +30,7 @@ struct WorldStats {
 	u32 loadFailures;    // corrupt or missing data (cumulative)
 	u32 residentBytes;   // mesh + texture bytes owned by the world
 	u32 peakResidentBytes;
+	u32 collisionBytes;  // CPU-side collision data of the resident chunks
 };
 
 class World {
@@ -52,6 +54,10 @@ public:
 	// Issues draw calls; gfx::frameBegin must have been called.
 	void draw(const Mat4& viewProj, Vec3 camera);
 
+	// Collision against the resident chunks (see collision.h).
+	bool rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal) const;
+	bool pushSphere(Vec3& center, float radius) const;
+
 private:
 	struct Loaded {
 		gfx::Mesh* mesh;
@@ -61,6 +67,7 @@ private:
 		u32 bytes;
 		u16 batchCount;
 		bool failed; // load failed once; never retried
+		ChunkCollider collider;
 	};
 	struct TexSlot {
 		gfx::Texture* tex;

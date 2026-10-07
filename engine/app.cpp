@@ -8,14 +8,22 @@ bool App::init(const char* pakPath, const char* worldName) {
 		return false;
 	}
 	if (!_world.open(&_pak, worldName)) {
-		_error = "world not found in data.pak";
+		_error = "world not found in data.pak (or baked by an older g3ds-bake)";
 		return false;
 	}
 	const WorldHeader& h = _world.header();
-	_cam.pos = {h.spawnPos[0], h.spawnPos[1], h.spawnPos[2]};
 	_cam.yaw = h.spawnYaw;
+	_cam.pitch = 0;
+	teleport({h.spawnPos[0], h.spawnPos[1], h.spawnPos[2]});
 	setDrawDistance(_world.config().drawDistance);
 	return true;
+}
+
+void App::teleport(Vec3 eye) {
+	const bool flying = _player.flying;
+	_player.spawn(eye);
+	_player.flying = flying;
+	_cam.pos = eye;
 }
 
 void App::setDrawDistance(float cm) {
@@ -30,6 +38,7 @@ void App::setDrawDistance(float cm) {
 }
 
 void App::shutdown() {
+	_sky.release();
 	_world.close();
 	_pak.close();
 }
@@ -39,15 +48,20 @@ void App::update(const Input& in, float dt) {
 	_cam.yaw += in.lookX * turn;
 	_cam.pitch = clamp(_cam.pitch + in.lookY * turn, -1.5f, 1.5f);
 
-	const float speed = (in.fast ? 4000.0f : 900.0f) * dt; // cm/s
-	const Vec3 f = forwardFromYawPitch(_cam.yaw, _cam.pitch);
-	const Vec3 r = normalize(cross({0, 1, 0}, f));
-	_cam.pos = _cam.pos + f * (in.moveZ * speed) + r * (in.moveX * speed) + Vec3 {0, in.moveY * speed, 0};
+	_env.timeOfDay += in.timeStep;
+	if (_env.dayLength > 0) _env.timeOfDay += dt * 24.0f / _env.dayLength;
+	while (_env.timeOfDay >= 24.0f) _env.timeOfDay -= 24.0f;
+	while (_env.timeOfDay < 0.0f) _env.timeOfDay += 24.0f;
 
+	// Stream first, so the chunks the player is about to stand on are there.
 	_world.update(_cam.pos);
+	_player.update(_world, in, _cam.yaw, _cam.pitch, dt);
+	_cam.pos = _player.eye();
 }
 
 void App::render() {
+	const SkyColors sky = skyColors();
+
 	gfx::FrameDesc fd {};
 	fd.view = viewLH(_cam.pos, _cam.yaw, _cam.pitch);
 	fd.fovY = _cam.fovY;
@@ -55,10 +69,16 @@ void App::render() {
 	fd.zFar = _cam.zFar;
 	fd.fogStart = _env.fogStart;
 	fd.fogEnd = _env.fogEnd;
-	for (int i = 0; i < 3; ++i) fd.fogColor[i] = fd.clearColor[i] = _env.fogColor[i];
+	for (int i = 0; i < 3; ++i) {
+		fd.fogColor[i] = fd.clearColor[i] = sky.horizon[i];
+		fd.dayLight[i] = sky.light[i];
+	}
 
 	const Mat4 proj = perspectiveLH(_cam.fovY, float(gfx::SCREEN_W) / float(gfx::SCREEN_H), _cam.zNear, _cam.zFar);
 	gfx::frameBegin(fd);
+	gfx::setPass(gfx::PASS_SKY);
+	_sky.draw(_cam.pos, _cam.zFar * 0.5f, sky);
+	gfx::setPass(gfx::PASS_WORLD);
 	_world.draw(mul(proj, fd.view), _cam.pos);
 	gfx::frameEnd();
 }

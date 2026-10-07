@@ -30,7 +30,8 @@ float gDepth[SCREEN_W * SCREEN_H];
 FrameDesc gFrame;
 Mat4 gProj, gMvp;
 float gUvScale = 1.0f;
-float gFogInvRange = 0.0f;
+float gFogA = 1.0f, gFogB = 0.0f; // fog factor = clamp(A - viewZ * B)
+Pass gPass = PASS_WORLD;
 Texture* gTexture = nullptr;
 u32 gMaterialFlags = 0;
 bool gCull = true;
@@ -97,7 +98,7 @@ void rasterize(const ScreenVert& a, const ScreenVert& b, const ScreenVert& c, fl
 			const int idx = y * SCREEN_W + x;
 			const float z = a.z * w0 + b.z * w1 + c.z * w2;
 			++gStats.pixelsTested;
-			if (z >= gDepth[idx]) continue;
+			if (gPass == PASS_WORLD && z >= gDepth[idx]) continue;
 
 			const float invW = a.invW * w0 + b.invW * w1 + c.invW * w2;
 			const float w = 1.0f / invW;
@@ -125,7 +126,7 @@ void rasterize(const ScreenVert& a, const ScreenVert& b, const ScreenVert& c, fl
 			out[1] = u8(clamp(gFrame.fogColor[1] + (g * 255.0f - gFrame.fogColor[1]) * fog, 0.0f, 255.0f));
 			out[2] = u8(clamp(gFrame.fogColor[2] + (bl * 255.0f - gFrame.fogColor[2]) * fog, 0.0f, 255.0f));
 			out[3] = 255;
-			gDepth[idx] = z;
+			if (gPass == PASS_WORLD) gDepth[idx] = z;
 			++gStats.pixelsWritten;
 		}
 	}
@@ -182,7 +183,7 @@ void drawTriangle(const ClipVert in[3]) {
 	    (sv[1].sx - sv[0].sx) * (sv[2].sy - sv[0].sy) - (sv[2].sx - sv[0].sx) * (sv[1].sy - sv[0].sy);
 	if (area >= 0.0f) {
 		++gStats.trianglesBackface;
-		if (gCull) return;
+		if (gCull && gPass == PASS_WORLD) return;
 	}
 
 	// One mip level per triangle from the texel/pixel area ratio.
@@ -273,7 +274,8 @@ void frameBegin(const FrameDesc& f) {
 	gFrame = f;
 	gProj = perspectiveLH(f.fovY, float(SCREEN_W) / float(SCREEN_H), f.zNear, f.zFar);
 	gMvp = mul(gProj, f.view);
-	gFogInvRange = f.fogEnd > f.fogStart ? 1.0f / (f.fogEnd - f.fogStart) : 0.0f;
+	gPass = PASS_SKY; // force setPass to set the fog terms up
+	setPass(PASS_WORLD);
 	for (int i = 0; i < SCREEN_W * SCREEN_H; ++i) {
 		gColor[i * 4 + 0] = f.clearColor[0];
 		gColor[i * 4 + 1] = f.clearColor[1];
@@ -284,6 +286,20 @@ void frameBegin(const FrameDesc& f) {
 	gStats = {};
 	gTexture = nullptr;
 	gMaterialFlags = 0;
+}
+
+void setPass(Pass pass) {
+	if (pass == gPass) return;
+	gPass = pass;
+	if (pass == PASS_SKY) {
+		gFogA = 1.0f;
+		gFogB = 0.0f;
+	} else {
+		const float range = gFrame.fogEnd - gFrame.fogStart;
+		gFogB = range > 0.0f ? 1.0f / range : 0.0f;
+		gFogA = gFrame.fogEnd * gFogB;
+		gStats = {}; // statistics describe the world pass only
+	}
 }
 
 void setChunkTransform(const float origin[3], float posScale, float uvScale) {
@@ -304,9 +320,15 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 			const WorldVertex& v = m->vertices[m->indices[firstIndex + i + u32(k)]];
 			const Vec4 c = transform(gMvp, {float(v.x), float(v.y), float(v.z), 1.0f});
 			// clip.w is the view-space depth for a perspective projection.
-			const float fog = clamp((gFrame.fogEnd - c.w) * gFogInvRange, 0.0f, 1.0f);
+			const float fog = clamp(gFogA - c.w * gFogB, 0.0f, 1.0f);
+			// Same arithmetic as the vertex shader: the vertex alpha says how
+			// strongly the time of day tints the baked light.
+			const float weight = v.a * (1.0f / 255.0f);
+			const float tint[3] = {1.0f + weight * (gFrame.dayLight[0] - 1.0f), 1.0f + weight * (gFrame.dayLight[1] - 1.0f),
+			                       1.0f + weight * (gFrame.dayLight[2] - 1.0f)};
 			cv[k] = {c.x, c.y, c.z, c.w, float(v.u) * gUvScale, float(v.v) * gUvScale,
-			         v.r * (1.0f / 255.0f), v.g * (1.0f / 255.0f), v.b * (1.0f / 255.0f), v.a * (1.0f / 255.0f), fog};
+			         v.r * (1.0f / 255.0f) * tint[0], v.g * (1.0f / 255.0f) * tint[1], v.b * (1.0f / 255.0f) * tint[2],
+			         1.0f, fog};
 		}
 		++gStats.trianglesSubmitted;
 		drawTriangle(cv);

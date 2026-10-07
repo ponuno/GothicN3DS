@@ -18,7 +18,10 @@ fail() { echo "e2e FAIL: $*"; exit 1; }
 case "$mode" in
 synth)
 	"$bake" synth --cells 96 -o "$out/data.pak"
-	"$host" --pak "$out/data.pak" --frames 150 --shots 2 --out "$out/frame" --stats "$out/stats.json"
+	# Walking with collision: the player must spend most of the time on the ground.
+	"$host" --pak "$out/data.pak" --walk --frames 150 --shots 1 --out "$out/walk" --stats "$out/stats.json"
+	[ "$(num groundedFrames)" -gt 100 ] || fail "the walking player was not on the ground: $(num groundedFrames) of 150 frames"
+	"$host" --pak "$out/data.pak" --frames 150 --shots 2 --time 19.5 --out "$out/frame" --stats "$out/stats.json"
 	;;
 zen)
 	# The loose-mesh path and the Gothic-install path must agree.
@@ -51,7 +54,9 @@ if [ "$mode" = zen ]; then
 	# The check must catch a deliberately inverted bake.
 	"$bake" world --game "$fixture/game" --zen FIXTURE.ZEN --flip -o "$out/flipped.pak" | grep -q "inside out" \
 		|| fail "winding check missed an inverted world"
-	grep -q "514 triangles in, 514 out" "$out/info.txt" || fail "world bake lost triangles"
+	# 514 world triangles plus three 12-triangle boxes placed as objects.
+	grep -q "550 triangles in, 550 out" "$out/info.txt" || fail "world bake lost triangles"
+	grep -q "objects: 3 placed" "$out/info.txt" || fail "objects were not baked"
 	grep -q "1 missing" "$out/info.txt" || fail "missing texture was not reported"
 	grep -q "1 cut-out" "$out/info.txt" || fail "cut-out texture was not detected"
 fi

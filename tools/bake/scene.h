@@ -13,7 +13,7 @@ namespace g3 {
 struct SrcVertex {
 	float pos[3];
 	float uv[2]; // v = 0 is the top of the image (Direct3D convention)
-	u8 rgba[4];  // baked static light
+	u8 rgba[4];  // rgb: baked static light; a: daylight weight (255 outdoors, 0 indoors)
 };
 
 struct SrcTriangle {
@@ -26,6 +26,7 @@ struct SrcMaterial {
 	std::string texture; // logical texture name; resolved through SrcScene::loadTexture
 	u16 group = 0;
 	bool water = false;
+	bool noCollision = false; // the player passes through (foliage, water, movers)
 };
 
 struct SrcImage {

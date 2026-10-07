@@ -213,6 +213,7 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 		m.name = names[i];
 		m.texture = std::string(names[i]) + ".TGA";
 		m.water = i == WATER;
+		m.noCollision = i == TREE; // foliage cards: walk through
 		scene.materials.push_back(m);
 	}
 	scene.loadTexture = [](const std::string& name, SrcImage& img) {

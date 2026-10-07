@@ -144,7 +144,8 @@ bool World::loadChunk(u32 index) {
 	Loaded l {};
 	if (ok) {
 		l.batches = static_cast<ChunkBatch*>(malloc(size_t(h.batchCount) * sizeof(ChunkBatch) + 1));
-		l.mesh = l.batches ? gfx::meshCreate(verts, h.vertexCount, indices, h.indexCount) : nullptr;
+		ok = l.batches && l.collider.build(h, batches, verts, indices, _materials);
+		l.mesh = ok ? gfx::meshCreate(verts, h.vertexCount, indices, h.indexCount) : nullptr;
 		ok = l.mesh != nullptr;
 	}
 	if (ok) {
@@ -156,10 +157,12 @@ bool World::loadChunk(u32 index) {
 		l.bytes = h.vertexCount * u32(sizeof(WorldVertex)) + h.indexCount * u32(sizeof(u16));
 		_loaded[index] = l;
 		_stats.residentBytes += l.bytes;
+		_stats.collisionBytes += l.collider.bytes();
 		++_stats.chunksLoaded;
 		for (u32 b = 0; b < l.batchCount; ++b) acquireTexture(l.batches[b].material);
 		_stats.peakResidentBytes = max(_stats.peakResidentBytes, _stats.residentBytes);
 	} else {
+		l.collider.release();
 		free(l.batches);
 	}
 	free(blob);
@@ -172,6 +175,8 @@ void World::unloadChunk(u32 index) {
 	for (u32 b = 0; b < l.batchCount; ++b) releaseTexture(l.batches[b].material);
 	gfx::meshDestroy(l.mesh);
 	free(l.batches);
+	_stats.collisionBytes -= l.collider.bytes();
+	l.collider.release();
 	_stats.residentBytes -= l.bytes;
 	--_stats.chunksLoaded;
 	l = {};
@@ -230,6 +235,40 @@ void World::preload(Vec3 camera) {
 	_cfg.maxLoadsPerFrame = 0xFFFFFFFFu;
 	update(camera);
 	_cfg.maxLoadsPerFrame = saved;
+}
+
+bool World::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal) const {
+	bool found = false;
+	float best = from.y - maxDrop;
+	for (u32 i = 0; i < _hdr.chunkCount; ++i) {
+		if (!_loaded[i].mesh) continue;
+		const ChunkInfo& ci = _chunks[i];
+		if (from.x < ci.bbMin[0] || from.x > ci.bbMax[0] || from.z < ci.bbMin[2] || from.z > ci.bbMax[2]) continue;
+		if (from.y < ci.bbMin[1] || best > ci.bbMax[1]) continue;
+		float y;
+		Vec3 n;
+		// Each chunk only needs to beat the best hit so far.
+		if (_loaded[i].collider.rayDown(from, from.y - best, y, n) && y >= best) {
+			best = y;
+			hitY = y;
+			normal = n;
+			found = true;
+		}
+	}
+	return found;
+}
+
+bool World::pushSphere(Vec3& center, float radius) const {
+	bool moved = false;
+	for (u32 i = 0; i < _hdr.chunkCount; ++i) {
+		if (!_loaded[i].mesh) continue;
+		const ChunkInfo& ci = _chunks[i];
+		if (center.x + radius < ci.bbMin[0] || center.x - radius > ci.bbMax[0] || center.y + radius < ci.bbMin[1] ||
+		    center.y - radius > ci.bbMax[1] || center.z + radius < ci.bbMin[2] || center.z - radius > ci.bbMax[2])
+			continue;
+		moved = _loaded[i].collider.pushSphere(center, radius) || moved;
+	}
+	return moved;
 }
 
 void World::draw(const Mat4& viewProj, Vec3 camera) {

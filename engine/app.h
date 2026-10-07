@@ -1,20 +1,15 @@
-// Platform-independent application layer: owns the pak, the world and a
-// free-fly camera. Platforms feed it input and call update()/render().
+// Platform-independent application layer: owns the pak, the world, the
+// player and the sky. Platforms feed it input and call update()/render().
 #pragma once
 #include "g3ds/pak.h"
+#include "player.h"
+#include "sky.h"
 #include "world.h"
 
 namespace g3 {
 
-struct Input {
-	float moveX = 0, moveZ = 0; // strafe / forward, -1..1
-	float moveY = 0;            // down / up, -1..1
-	float lookX = 0, lookY = 0; // turn right / look up, -1..1
-	bool fast = false;
-};
-
 struct Camera {
-	Vec3 pos {0, 0, 0};
+	Vec3 pos {0, 0, 0}; // follows the player's eyes
 	float yaw = 0, pitch = 0;
 	float fovY = 1.0472f; // 60 degrees
 	float zNear = 20.0f;  // cm
@@ -24,7 +19,8 @@ struct Camera {
 struct Environment {
 	float fogStart = 2500.0f; // cm
 	float fogEnd = 12000.0f;  // cm; keep it at or below the draw distance
-	u8 fogColor[3] = {150, 170, 190};
+	float timeOfDay = 13.0f;  // hours, 0..24
+	float dayLength = 0.0f;   // real seconds per game day; 0 freezes the clock
 };
 
 class App {
@@ -37,16 +33,22 @@ public:
 
 	// Sets draw distance, streaming radii, fog and far plane consistently.
 	void setDrawDistance(float cm);
+	// Moves the player's eyes to `eye` (keeps walking or flying as it was).
+	void teleport(Vec3 eye);
 
 	Camera& camera() { return _cam; }
 	Environment& environment() { return _env; }
+	Player& player() { return _player; }
 	World& world() { return _world; }
 	Pak& pak() { return _pak; }
+	SkyColors skyColors() const { return skyColorsAt(_env.timeOfDay); }
 	const char* error() const { return _error; }
 
 private:
 	Pak _pak;
 	World _world;
+	Player _player;
+	Sky _sky;
 	Camera _cam;
 	Environment _env;
 	const char* _error = "";

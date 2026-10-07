@@ -27,6 +27,14 @@ struct FrameDesc {
 	float fogStart, fogEnd;
 	u8 fogColor[3];
 	u8 clearColor[3];
+	// Time-of-day tint. A vertex's light is multiplied by
+	// lerp(1, dayLight, vertex.a / 255): full effect outdoors, none indoors.
+	float dayLight[3];
+};
+
+enum Pass {
+	PASS_WORLD, // depth tested, back faces culled, fogged
+	PASS_SKY,   // backdrop: no depth, no culling, no fog
 };
 
 struct MemStats {
@@ -47,6 +55,8 @@ Mesh* meshCreate(const WorldVertex* vertices, u32 vertexCount, const u16* indice
 void meshDestroy(Mesh* m);
 
 void frameBegin(const FrameDesc& f);
+// Starts in PASS_WORLD after frameBegin.
+void setPass(Pass pass);
 // Sets the dequantisation transform for the following draws.
 void setChunkTransform(const float origin[3], float posScale, float uvScale);
 // materialFlags: MaterialFlags from world.h. A null texture draws white.

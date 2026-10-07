@@ -410,17 +410,9 @@ static void testMath() {
 	CHECK(fwd.x > 0.99f && std::fabs(fwd.z) < 0.01f);
 }
 
-// Bakes a small synthetic world with the real pipeline and drives the runtime.
-static void testRuntime() {
-	SrcScene scene;
-	SynthOptions so;
-	so.cells = 48;
-	so.huts = 8;
-	so.trees = 60;
-	buildSyntheticScene(so, scene);
-	CHECK(scene.triangles.size() > 4000 && scene.hasSpawn);
-
-	// Minimal bake (the CLI does the same with more reporting).
+// Minimal bake of a scene into a pak (the CLI does the same with more
+// reporting). Textures the scene cannot provide drop their triangles.
+static void bakeScenePak(SrcScene& scene, const std::string& path, const char* name, float chunkSize) {
 	PakWriter pak;
 	std::vector<WorldMaterial> mats;
 	std::vector<int> remap;
@@ -429,21 +421,26 @@ static void testRuntime() {
 	to.quality = 0;
 	for (const SrcMaterial& m : scene.materials) {
 		SrcImage img;
-		if (!scene.loadTexture(m.texture, img)) {
-			remap.push_back(-1); // the deliberately missing one
-			continue;
+		if (!scene.loadTexture || !scene.loadTexture(m.texture, img)) {
+			if (scene.loadTexture) {
+				remap.push_back(-1);
+				continue;
+			}
+			// Scenes without textures (collision tests): a flat grey one.
+			img.width = img.height = 8;
+			img.rgba.assign(8 * 8 * 4, 160);
 		}
 		TexBakeInfo info;
-		const std::string name = "tex/" + m.name;
-		pak.add(name, ASSET_TEXTURE, bakeTexture(img, to, &info));
+		const std::string texName = "tex/" + m.name;
+		pak.add(texName, ASSET_TEXTURE, bakeTexture(img, to, &info));
 		WorldMaterial wm {};
-		wm.textureHash = hashName(name.c_str());
-		wm.flags = info.alpha ? u16(MATF_ALPHA_TEST) : u16(0);
+		wm.textureHash = hashName(texName.c_str());
+		wm.flags = u16((info.alpha ? MATF_ALPHA_TEST : 0) | (m.noCollision ? MATF_NO_COLLISION : 0));
 		remap.push_back(int(mats.size()));
 		mats.push_back(wm);
 	}
 	ChunkerOptions co;
-	co.chunkSize = 3000.0f;
+	co.chunkSize = chunkSize;
 	ChunkerStats st;
 	const std::vector<BakedChunk> chunks = buildChunks(scene, remap, co, st);
 	WorldHeader wh {};
@@ -456,14 +453,15 @@ static void testRuntime() {
 	std::memcpy(wh.spawnPos, scene.spawnPos, sizeof(wh.spawnPos));
 	wh.spawnYaw = scene.spawnYaw;
 	std::vector<ChunkInfo> infos;
+	const std::string prefix = std::string("world/") + name;
 	for (size_t i = 0; i < chunks.size(); ++i) {
-		const std::string name = "world/t/" + std::to_string(i);
+		const std::string chunkName = prefix + "/" + std::to_string(i);
 		const std::vector<u8> blob = chunks[i].serialize();
-		pak.add(name, ASSET_CHUNK, blob);
+		pak.add(chunkName, ASSET_CHUNK, blob);
 		ChunkInfo ci {};
 		std::memcpy(ci.bbMin, chunks[i].bbMin, 12);
 		std::memcpy(ci.bbMax, chunks[i].bbMax, 12);
-		ci.entryHash = hashName(name.c_str());
+		ci.entryHash = hashName(chunkName.c_str());
 		ci.size = u32(blob.size());
 		ci.vertexCount = chunks[i].header.vertexCount;
 		ci.batchCount = chunks[i].header.batchCount;
@@ -479,9 +477,21 @@ static void testRuntime() {
 	std::memcpy(index.data() + sizeof(wh), mats.data(), mats.size() * sizeof(WorldMaterial));
 	std::memcpy(index.data() + sizeof(wh) + mats.size() * sizeof(WorldMaterial), infos.data(),
 	            infos.size() * sizeof(ChunkInfo));
-	pak.add("world/t", ASSET_WORLD, index);
-	const std::string path = gDir + "/runtime.pak";
+	pak.add(prefix, ASSET_WORLD, index);
 	pak.write(path);
+}
+
+// Bakes a small synthetic world with the real pipeline and drives the runtime.
+static void testRuntime() {
+	SrcScene scene;
+	SynthOptions so;
+	so.cells = 48;
+	so.huts = 8;
+	so.trees = 60;
+	buildSyntheticScene(so, scene);
+	CHECK(scene.triangles.size() > 4000 && scene.hasSpawn);
+	const std::string path = gDir + "/runtime.pak";
+	bakeScenePak(scene, path, "t", 3000.0f);
 
 	gfx::init();
 	{
@@ -493,6 +503,7 @@ static void testRuntime() {
 		App app;
 		CHECK(app.init(path.c_str(), "t"));
 		app.setDrawDistance(6000.0f);
+		app.player().flying = true; // a fixed camera at the spawn point
 		World& w = app.world();
 
 		// Streaming is rate limited ...
@@ -505,6 +516,7 @@ static void testRuntime() {
 		CHECK(near > 4 && near < w.stats().chunksTotal && w.stats().chunksPending == 0);
 		CHECK(w.stats().loadFailures == 0);
 		CHECK(w.stats().residentBytes == gfx::memStats().meshBytes + gfx::memStats().textureBytes);
+		CHECK(w.stats().collisionBytes > 0);
 
 		app.render();
 		CHECK(w.stats().trianglesDrawn > 500 && w.stats().chunksDrawn > 0);
@@ -516,17 +528,18 @@ static void testRuntime() {
 		const u8* fb = gfx::softFramebuffer();
 		int distinct = 0;
 		for (int i = 0; i < gfx::SCREEN_W * gfx::SCREEN_H; i += 97)
-			distinct += std::abs(int(fb[i * 4 + 1]) - int(app.environment().fogColor[1])) > 24;
+			distinct += std::abs(int(fb[i * 4 + 1]) - int(app.skyColors().horizon[1])) > 24;
 		CHECK(distinct > 200);
 
 		// Far away from everything: all chunks are released again.
-		app.camera().pos = {1e6f, 0, 1e6f};
+		app.teleport({1e6f, 0, 1e6f});
 		app.update(Input {}, 1.0f / 30.0f);
 		CHECK(w.stats().chunksLoaded == 0 && w.stats().residentBytes == 0 && w.stats().texturesLoaded == 0);
-		CHECK(gfx::memStats().meshCount == 0 && gfx::memStats().textureCount == 0);
+		CHECK(w.stats().collisionBytes == 0);
+		CHECK(gfx::memStats().meshCount == 1 && gfx::memStats().textureCount == 0); // only the sky dome is left
 
 		// A budget too small for the neighbourhood: loading stops, nothing breaks.
-		app.camera().pos = {scene.spawnPos[0], scene.spawnPos[1], scene.spawnPos[2]};
+		app.teleport({scene.spawnPos[0], scene.spawnPos[1], scene.spawnPos[2]});
 		w.config().memoryBudget = 12 * 1024;
 		w.preload(app.camera().pos);
 		CHECK(w.stats().budgetRejects > 0 && w.stats().chunksLoaded > 0 && w.stats().chunksLoaded < near);
@@ -575,6 +588,206 @@ static void testRuntime() {
 	gfx::shutdown();
 }
 
+// A hand-made obstacle course: floor, wall, see-through wall, a low step, a
+// tall block, a gentle ramp and a slope too steep to climb.
+static void addQuad(SrcScene& scene, const float a[3], const float b[3], const float c[3], const float d[3], u32 material) {
+	const float* corners[4] = {a, b, c, d};
+	SrcVertex v[4] = {};
+	for (int k = 0; k < 4; ++k) {
+		std::memcpy(v[k].pos, corners[k], sizeof(float) * 3);
+		v[k].uv[0] = corners[k][0] / 200.0f;
+		v[k].uv[1] = corners[k][2] / 200.0f;
+		v[k].rgba[0] = v[k].rgba[1] = v[k].rgba[2] = 200;
+		v[k].rgba[3] = 255;
+	}
+	SrcTriangle t1, t2;
+	t1.material = t2.material = material;
+	t1.v[0] = v[0]; t1.v[1] = v[1]; t1.v[2] = v[2];
+	t2.v[0] = v[0]; t2.v[1] = v[2]; t2.v[2] = v[3];
+	scene.triangles.push_back(t1);
+	scene.triangles.push_back(t2);
+}
+
+static void addBlock(SrcScene& scene, float x0, float x1, float z0, float z1, float top) {
+	const float c[8][3] = {{x0, 0, z0}, {x1, 0, z0}, {x1, 0, z1}, {x0, 0, z1}, {x0, top, z0}, {x1, top, z0}, {x1, top, z1}, {x0, top, z1}};
+	addQuad(scene, c[4], c[5], c[6], c[7], 0); // top
+	addQuad(scene, c[0], c[1], c[5], c[4], 0);
+	addQuad(scene, c[1], c[2], c[6], c[5], 0);
+	addQuad(scene, c[2], c[3], c[7], c[6], 0);
+	addQuad(scene, c[3], c[0], c[4], c[7], 0);
+}
+
+static void testCollision() {
+	// Closest point: face interior, edge and corner regions.
+	const Vec3 a {0, 0, 0}, b {10, 0, 0}, c {0, 0, 10};
+	Vec3 q = closestPointOnTriangle({2, 5, 2}, a, b, c);
+	CHECK(std::fabs(q.x - 2) < 1e-4f && std::fabs(q.y) < 1e-4f && std::fabs(q.z - 2) < 1e-4f);
+	q = closestPointOnTriangle({5, 3, -4}, a, b, c);
+	CHECK(std::fabs(q.x - 5) < 1e-4f && std::fabs(q.z) < 1e-4f);
+	q = closestPointOnTriangle({-3, 1, -3}, a, b, c);
+	CHECK(std::fabs(q.x) < 1e-4f && std::fabs(q.z) < 1e-4f);
+	q = closestPointOnTriangle({20, 0, 20}, a, b, c);
+	CHECK(std::fabs(q.x - 5) < 1e-3f && std::fabs(q.z - 5) < 1e-3f);
+
+	SrcScene scene;
+	scene.materials.resize(2);
+	scene.materials[0].name = "solid";
+	scene.materials[1].name = "ghost";
+	scene.materials[1].noCollision = true;
+	for (int z = -4; z < 4; ++z)
+		for (int x = -4; x < 4; ++x) {
+			const float x0 = x * 500.0f, z0 = z * 500.0f;
+			const float p[4][3] = {{x0, 0, z0}, {x0 + 500, 0, z0}, {x0 + 500, 0, z0 + 500}, {x0, 0, z0 + 500}};
+			addQuad(scene, p[0], p[1], p[2], p[3], 0);
+		}
+	{
+		const float w[4][3] = {{600, 0, -300}, {600, 0, 300}, {600, 300, 300}, {600, 300, -300}};
+		addQuad(scene, w[0], w[1], w[2], w[3], 0); // wall across +X
+		const float g[4][3] = {{-600, 0, -300}, {-600, 0, 300}, {-600, 300, 300}, {-600, 300, -300}};
+		addQuad(scene, g[0], g[1], g[2], g[3], 1); // same, but without collision
+		addBlock(scene, -200, 200, 600, 1000, 30);    // a step
+		addBlock(scene, -200, 200, -1000, -600, 120); // too tall to walk onto
+		const float tan30 = 0.57735f, tan70 = 2.74748f;
+		const float r[4][3] = {{800, 0, 1200}, {1200, 0, 1200}, {1200, 500 * tan30, 1700}, {800, 500 * tan30, 1700}};
+		addQuad(scene, r[0], r[1], r[2], r[3], 0); // 30 degree ramp
+		const float st[4][3] = {{-1200, 0, 1200}, {-800, 0, 1200}, {-800, 200 * tan70, 1400}, {-1200, 200 * tan70, 1400}};
+		addQuad(scene, st[0], st[1], st[2], st[3], 0); // 70 degree slope
+	}
+	scene.spawnPos[1] = 220.0f;
+	scene.hasSpawn = true;
+	const std::string path = gDir + "/collision.pak";
+	bakeScenePak(scene, path, "c", 1500.0f); // several chunks, so queries cross chunk borders
+
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), "c"));
+	World& w = app.world();
+	w.preload(app.camera().pos);
+	CHECK(w.stats().chunksLoaded > 4 && w.stats().collisionBytes > 0);
+
+	// Raw queries.
+	float y = -1;
+	Vec3 n {};
+	CHECK(w.rayDown({10, 100, 10}, 500, y, n) && std::fabs(y) < 0.2f && n.y > 0.99f);
+	CHECK(w.rayDown({0, 100, 800}, 500, y, n) && std::fabs(y - 30) < 0.2f);  // on the step
+	CHECK(w.rayDown({0, 20, 800}, 500, y, n) && std::fabs(y) < 0.2f);        // from inside it: the floor
+	CHECK(!w.rayDown({10, -50, 10}, 500, y, n));                             // from below the world
+	CHECK(!w.rayDown({9000, 100, 10}, 500, y, n));                           // outside it
+	CHECK(!w.rayDown({10, 900, 10}, 500, y, n));                             // floor farther than the drop
+	CHECK(w.rayDown({1000, 400, 1450}, 800, y, n) && std::fabs(y - 250 * 0.57735f) < 1.0f && n.y > 0.85f && n.y < 0.88f);
+	Vec3 sphere {585, 150, 0};
+	CHECK(w.pushSphere(sphere, 30) && std::fabs(sphere.x - 570) < 0.2f); // pushed off the wall
+	sphere = {540, 150, 0};
+	CHECK(!w.pushSphere(sphere, 30)); // clear of it
+	sphere = {-585, 150, 0};
+	CHECK(!w.pushSphere(sphere, 30)); // the ghost wall does not collide
+
+	// The character controller. One step is 480 cm/s at 30 fps = 16 cm.
+	const float dt = 1.0f / 30.0f;
+	Player& pl = app.player();
+	auto place = [&](float x, float z, float yawDegrees) {
+		app.teleport({x, 220.0f, z});
+		app.camera().yaw = yawDegrees * 0.0174533f;
+		for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
+	};
+	auto walk = [&](int frames, bool jump = false) {
+		float top = -1e9f;
+		for (int i = 0; i < frames; ++i) {
+			Input in;
+			in.moveZ = 1.0f;
+			in.jump = jump && i == 0;
+			app.update(in, dt);
+			top = std::max(top, pl.feet.y);
+		}
+		return top;
+	};
+
+	place(0, 0, 0);
+	CHECK(pl.placed() && pl.grounded && std::fabs(pl.feet.y) < 0.3f);
+	CHECK(std::fabs(app.camera().pos.y - 170.0f) < 1.0f); // eyes settle at eye height
+
+	place(0, 0, 90); // +X, into the wall
+	walk(120);
+	CHECK(pl.feet.x > 560 && pl.feet.x < 571 && pl.grounded);
+
+	place(0, 0, -90); // -X, through the ghost wall
+	walk(60);
+	CHECK(pl.feet.x < -900);
+
+	place(0, 0, 0); // +Z, over the 30 cm step and down again
+	float top = walk(55);
+	CHECK(std::fabs(top - 30) < 0.5f && std::fabs(pl.feet.y - 30) < 0.5f && pl.grounded);
+	walk(30);
+	CHECK(std::fabs(pl.feet.y) < 0.5f && pl.grounded && pl.feet.z > 1300);
+
+	place(0, 0, 180); // -Z, against the 120 cm block
+	top = walk(80);
+	CHECK(pl.feet.z < -560 && pl.feet.z > -572 && top < 1.0f);
+
+	place(1000, 900, 0); // up the 30 degree ramp
+	walk(40);
+	CHECK(pl.grounded && pl.feet.z > 1500 && std::fabs(pl.feet.y - (pl.feet.z - 1200) * 0.57735f) < 2.0f);
+
+	place(-1000, 900, 0); // the 70 degree slope cannot be climbed
+	top = walk(80);
+	CHECK(top < 60.0f && pl.feet.z < 1230);
+
+	place(0, 0, 0); // jump: about v^2 / 2g = 82 cm, then land
+	top = -1e9f;
+	for (int i = 0; i < 40; ++i) {
+		Input in;
+		in.jump = i == 0;
+		app.update(in, dt);
+		top = std::max(top, pl.feet.y);
+	}
+	CHECK(top > 60 && top < 95 && pl.grounded && std::fabs(pl.feet.y) < 0.3f);
+
+	// Dropped from 10 m: falls and lands. (Placement looks 30 m down.)
+	app.teleport({300, 1000.0f + 170.0f, -300});
+	app.update(Input {}, dt);
+	CHECK(pl.placed()); // snapped straight to the ground it found
+	pl.feet.y = 1000;
+	pl.grounded = false;
+	pl.velocityY = 0;
+	int frames = 0;
+	while (!pl.grounded && frames < 200) {
+		app.update(Input {}, dt);
+		++frames;
+	}
+	CHECK(pl.grounded && std::fabs(pl.feet.y) < 0.3f && frames > 20 && frames < 45); // ~1 s for 10 m at 1900 cm/s^2
+
+	// Outside the world there is nothing to stand on: wait, do not fall.
+	app.teleport({6000, 220, 0});
+	for (int i = 0; i < 30; ++i) app.update(Input {}, dt);
+	CHECK(!pl.placed() && std::fabs(pl.feet.y - 50.0f) < 0.01f);
+
+	// Fly mode ignores collision and gravity.
+	place(0, 0, 90);
+	Input fly;
+	fly.toggleFly = true;
+	app.update(fly, dt);
+	CHECK(pl.flying);
+	for (int i = 0; i < 60; ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+	}
+	CHECK(pl.feet.x > 1500 && std::fabs(pl.feet.y) < 1.0f); // straight through the wall
+
+	app.shutdown();
+	CHECK(gfx::memStats().meshCount == 0);
+	gfx::shutdown();
+}
+
+static void testSky() {
+	const SkyColors noon = skyColorsAt(13.0f), night = skyColorsAt(1.0f), wrap = skyColorsAt(25.0f);
+	CHECK(noon.light[0] == 1.0f && noon.light[1] == 1.0f && noon.light[2] == 1.0f);
+	CHECK(night.light[0] < 0.5f && night.zenith[2] < 60);
+	CHECK(wrap.zenith[0] == night.zenith[0] && wrap.horizon[2] == night.horizon[2]);
+	const SkyColors dawn = skyColorsAt(5.75f); // halfway between night and the dawn key
+	CHECK(dawn.light[0] > night.light[0] && dawn.light[0] < 0.78f);
+}
+
 int main(int argc, char** argv) {
 	gDir = argc > 1 ? argv[1] : ".";
 	struct {
@@ -582,7 +795,7 @@ int main(int argc, char** argv) {
 		void (*fn)();
 	} tests[] = {{"hash", testHash},     {"pak", testPak},         {"etc1 block decoder", testEtc1BlockDecoder},
 	             {"texture", testTexture}, {"chunker", testChunker}, {"math", testMath},
-	             {"runtime", testRuntime}};
+	             {"runtime", testRuntime}, {"collision", testCollision}, {"sky", testSky}};
 	for (auto& t : tests) {
 		const int before = gFailures;
 		std::printf("[ RUN ] %s\n", t.name);

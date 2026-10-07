@@ -24,6 +24,8 @@ struct ZenImportOptions {
 	// in our convention (confirmed on the Steam release of Gothic 1), so the
 	// default is to keep it. The baker's winding check warns if that is wrong.
 	bool flipWinding = false;
+	bool objects = true;   // bake static VObs (trees, bridges, huts, ...) into the world
+	bool lightmaps = true; // bake indoor lightmaps into the vertex light
 };
 
 // Throws std::runtime_error with a readable message on failure.

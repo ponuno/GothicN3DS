@@ -21,6 +21,8 @@ static void usage() {
 	     "  --out PREFIX        screenshot prefix (default: frame)\n"
 	     "  --cam X,Y,Z,YAW,PITCH  start pose instead of the baked spawn (cm, degrees)\n"
 	     "  --still             keep the camera still\n"
+	     "  --walk              walk on the ground with collision instead of flying\n"
+	     "  --time H            time of day in hours (default: 13)\n"
 	     "  --no-cull           draw back faces too (winding check)\n"
 	     "  --budget-mb N       world memory budget (default: 24)\n"
 	     "  --draw-distance CM  draw distance (default: 12000)\n"
@@ -34,7 +36,8 @@ int main(int argc, char** argv) {
 	const char* statsPath = nullptr;
 	const char* camSpec = nullptr;
 	int frames = 300, shots = 4;
-	bool still = false, cull = true;
+	bool still = false, cull = true, walk = false;
+	float timeOfDay = 13.0f;
 	float budgetMb = 24.0f, drawDistance = 12000.0f;
 
 	for (int i = 1; i < argc; ++i) {
@@ -48,7 +51,9 @@ int main(int argc, char** argv) {
 		else if (arg("--budget-mb")) budgetMb = float(atof(argv[++i]));
 		else if (arg("--draw-distance")) drawDistance = float(atof(argv[++i]));
 		else if (arg("--stats")) statsPath = argv[++i];
+		else if (arg("--time")) timeOfDay = float(atof(argv[++i]));
 		else if (strcmp(argv[i], "--still") == 0) still = true;
+		else if (strcmp(argv[i], "--walk") == 0) walk = true;
 		else if (strcmp(argv[i], "--no-cull") == 0) cull = false;
 		else {
 			usage();
@@ -71,9 +76,17 @@ int main(int argc, char** argv) {
 	StreamConfig& cfg = app.world().config();
 	cfg.memoryBudget = u32(budgetMb * 1024.0f * 1024.0f);
 	app.setDrawDistance(drawDistance);
-	float viewPitch = -0.22f;
+	app.environment().timeOfDay = timeOfDay;
+	// Three modes: a level flight a few metres up (default), a walk on the
+	// ground with collision (--walk), or a fixed view from the spawn (--still).
+	float viewPitch = walk ? -0.06f : -0.22f;
 	app.camera().pitch = viewPitch;
-	if (!still && !camSpec) app.camera().pos.y += 1000.0f;
+	app.player().flying = !walk;
+	if (!still && !walk && !camSpec) {
+		Vec3 eye = app.camera().pos;
+		eye.y += 1000.0f;
+		app.teleport(eye);
+	}
 
 	if (camSpec) {
 		float x, y, z, yaw, pitch;
@@ -81,7 +94,7 @@ int main(int argc, char** argv) {
 			usage();
 			return 2;
 		}
-		app.camera().pos = {x, y, z};
+		app.teleport({x, y, z});
 		app.camera().yaw = yaw * 0.0174533f;
 		viewPitch = app.camera().pitch = pitch * 0.0174533f;
 	}
@@ -96,21 +109,26 @@ int main(int argc, char** argv) {
 	const float dt = 1.0f / 30.0f;
 	u32 maxTris = 0, maxDraws = 0, maxLoaded = 0, maxPending = 0, maxLoadsFrame = 0;
 	u64 sumTris = 0, sumWritten = 0, sumTested = 0, sumBackface = 0, sumFacing = 0;
-	int saved = 0;
+	int saved = 0, groundedFrames = 0;
 
 	for (int f = 0; f < frames; ++f) {
 		Input in;
-		if (!still) {
-			// A lazy S-curve flight a few metres up: enough to cross chunk
-			// borders and exercise load/unload. There is no collision yet, so
-			// the path stays level and only the view is tilted down.
+		if (walk) {
+			// Walk ahead, weaving a little, and jump now and then.
+			in.moveZ = 1.0f;
+			in.lookX = (f / 90) % 2 == 0 ? 0.12f : -0.2f;
+			in.jump = f % 75 == 40;
+		} else if (!still) {
+			// A lazy S-curve flight: enough to cross chunk borders and exercise
+			// load/unload. The path stays level; only the view is tilted down.
 			in.moveZ = 0.5f; // 20 m/s
 			in.fast = true;
 			in.lookX = (f / 90) % 2 == 0 ? 0.12f : -0.2f;
 			app.camera().pitch = 0.0f;
 		}
 		app.update(in, dt);
-		if (!still) app.camera().pitch = viewPitch;
+		if (!still && !walk) app.camera().pitch = viewPitch;
+		groundedFrames += app.player().grounded;
 		app.render();
 
 		const WorldStats& ws = app.world().stats();
@@ -159,6 +177,11 @@ int main(int argc, char** argv) {
 	// Informational only: from inside a valley most triangles in view belong to
 	// slopes facing away. The baker's area-based winding check is the real test.
 	printf("back faces        %.0f%% of the triangles in view\n", backfaceShare * 100.0);
+	if (walk) {
+		const Vec3 p = app.player().feet;
+		printf("walk              on the ground %d of %d frames, ended at %.0f %.0f %.0f, collision data %.0f KB\n",
+		       groundedFrames, frames, double(p.x), double(p.y), double(p.z), double(ws.collisionBytes) / 1024.0);
+	}
 	printf("budget rejects %u, load failures %u, pak I/O %.2f MB\n", ws.budgetRejects, ws.loadFailures,
 	       double(app.pak().bytesRead()) / 1048576.0);
 
@@ -171,10 +194,10 @@ int main(int argc, char** argv) {
 		fprintf(fp,
 		        "{\"frames\":%d,\"trianglesAvg\":%llu,\"trianglesMax\":%u,\"drawCallsMax\":%u,"
 		        "\"chunksTotal\":%u,\"chunksLoadedMax\":%u,\"peakBytes\":%u,\"budgetRejects\":%u,"
-		        "\"loadFailures\":%u,\"overdraw\":%.3f,\"backfaceShare\":%.3f,\"pixelsWritten\":%llu}\n",
+		        "\"loadFailures\":%u,\"overdraw\":%.3f,\"backfaceShare\":%.3f,\"groundedFrames\":%d,\"pixelsWritten\":%llu}\n",
 		        frames, static_cast<unsigned long long>(sumTris / u64(frames)), maxTris, maxDraws, ws.chunksTotal,
 		        maxLoaded, ws.peakResidentBytes, ws.budgetRejects, ws.loadFailures, double(sumWritten) / screen,
-		        backfaceShare, static_cast<unsigned long long>(sumWritten));
+		        backfaceShare, groundedFrames, static_cast<unsigned long long>(sumWritten));
 		fclose(fp);
 	}
 

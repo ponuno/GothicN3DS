@@ -3,13 +3,17 @@
 ; Input is the 16-byte WorldVertex exactly as it sits in data.pak:
 ;   v0  short4  quantised position (w is padding)
 ;   v1  short2  fixed-point texture coordinate
-;   v2  ubyte4  baked light colour
+;   v2  ubyte4  rgb = baked light, a = daylight weight (255 outdoors, 0 indoors)
 ; modelView already contains the chunk origin and position scale.
-; Fog is linear and per vertex; the factor travels in the colour alpha and is
-; applied by the second TexEnv stage (see gfx_c3d.cpp).
+;
+; Light:  rgb * lerp(1, dayLight, weight); dayDelta holds dayLight - 1.
+; Fog:    linear, per vertex: factor = clamp(fogA - viewZ * fogB, 0, 1), 1 = clear.
+;         The factor travels in the colour alpha and is applied by the second
+;         TexEnv stage (see gfx_c3d.cpp). The sky pass sets fogA = 1, fogB = 0.
 
 .fvec projection[4], modelView[4]
-.fvec params        ; x = uv scale, y = 1/255, z = fog end, w = 1 / (fog end - fog start)
+.fvec params        ; x = uv scale, y = 1/255, z = fogA, w = fogB
+.fvec dayDelta      ; xyz = dayLight - 1
 
 .constf consts(0.0, 1.0, 0.0, 0.0)
 .alias zero consts.xxxx
@@ -42,14 +46,19 @@
 	mul r2, params.xxxx, intc
 	mov outtc0, r2
 
-	; fog factor = clamp((fogEnd - viewZ) / (fogEnd - fogStart), 0, 1); 1 = clear
-	mov r3.x, params.z
-	add r3.x, r3.x, -r1.z
-	mul r3.x, params.w, r3.x
+	; fog factor
+	mul r3.x, params.w, r1.z
+	add r3.x, params.z, -r3.x
 	max r3.x, zero, r3.x
 	min r3.x, one,  r3.x
 
+	; r4 = (light, weight), both 0..1
 	mul r4, params.yyyy, inclr
+	; r5 = 1 + weight * (dayLight - 1)
+	mul r5.xyz, dayDelta, r4.www
+	add r5.xyz, one, r5.xyz
+	mul r4.xyz, r4.xyz, r5.xyz
+
 	mov r4.w, r3.x
 	mov outclr, r4
 

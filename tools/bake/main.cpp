@@ -174,7 +174,8 @@ void bake(SrcScene& scene, const BakeOptions& opt) {
 			wm.textureHash = hashName(fallbackName.c_str());
 			wm.flags |= MATF_NO_TEXTURE;
 		}
-		if (sm.water) wm.flags |= MATF_WATER;
+		if (sm.water) wm.flags |= MATF_WATER | MATF_NO_COLLISION;
+		if (sm.noCollision) wm.flags |= MATF_NO_COLLISION;
 		auto ins = materialIndex.emplace(std::make_pair(wm.textureHash, wm.flags), int(worldMaterials.size()));
 		if (ins.second) worldMaterials.push_back(wm);
 		remap[i] = ins.first->second;
@@ -342,6 +343,8 @@ void usage() {
 	          "  --max-tex N        longest texture edge, power of two, 8..1024 (default: 128)\n"
 	          "  --quality 0|1|2    ETC1 effort (default: 1)\n"
 	          "  --flip             reverse the triangle winding (if the winding check complains)\n"
+	          "  --no-objects       world mesh only, skip trees, bridges and other static objects\n"
+	          "  --no-lightmaps     keep the vertex light on lightmapped (indoor) polygons\n"
 	          "  --threads N        worker threads");
 }
 
@@ -385,6 +388,8 @@ int main(int argc, char** argv) {
 			else if (a == "--zen") zen.zenName = value();
 			else if (a == "--msh") zen.meshFile = value();
 			else if (a == "--textures") zen.textureDir = value();
+			else if (a == "--no-objects") zen.objects = false;
+			else if (a == "--no-lightmaps") zen.lightmaps = false;
 			else if (a == "--flip") zen.flipWinding = true;
 			else if (a == "--no-flip") zen.flipWinding = false; // the default; kept for old command lines
 			else if (a == "--cells") synth.cells = std::stoi(value());

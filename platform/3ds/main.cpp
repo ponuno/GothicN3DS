@@ -2,9 +2,10 @@
 // text console with the numbers that matter for the feasibility check
 // (frame time split into CPU and GPU, triangles, streaming, memory).
 //
-// Controls: Circle Pad move, C-Stick or A/B/X/Y look, L/R down/up,
-//           ZL or ZR (or D-Pad Up) fast, D-Pad Left/Right draw distance,
-//           START exit.
+// Controls: Circle Pad move, C-Stick or A/B/X/Y look, R jump,
+//           ZL or ZR (or D-Pad Up) run fast, D-Pad Left/Right draw distance,
+//           D-Pad Down advance the time of day, SELECT toggle fly mode
+//           (in fly mode L/R move down/up), START exit.
 #include "app.h"
 
 #include <3ds.h>
@@ -99,6 +100,9 @@ int main(int, char**) {
 		if (held & KEY_B) in.lookY = -1.0f;
 		in.moveY = (held & KEY_R ? 1.0f : 0.0f) - (held & KEY_L ? 1.0f : 0.0f);
 		in.fast = (held & (KEY_ZL | KEY_ZR | KEY_DUP)) != 0;
+		in.jump = (held & KEY_R) != 0;
+		in.toggleFly = (down & KEY_SELECT) != 0;
+		if (down & KEY_DDOWN) in.timeStep = 1.0f;
 
 		if (down & (KEY_DLEFT | KEY_DRIGHT)) {
 			drawDistance = clamp(drawDistance + ((down & KEY_DRIGHT) ? 2000.0f : -2000.0f), 4000.0f, 30000.0f);
@@ -130,10 +134,13 @@ int main(int, char**) {
 			       static_cast<unsigned long>(ws.chunksTotal), static_cast<unsigned long>(ws.chunksPending));
 			printf("mesh %5.2f MB  tex %5.2f MB       \n", double(mem.meshBytes) / 1048576.0,
 			       double(mem.textureBytes) / 1048576.0);
+			printf("collision %5.0f KB                \n", double(ws.collisionBytes) / 1024.0);
 			printf("linear free %5.1f MB              \n", double(linearSpaceFree()) / 1048576.0);
 			printf("budget rejects %lu  failures %lu   \n", static_cast<unsigned long>(ws.budgetRejects),
 			       static_cast<unsigned long>(ws.loadFailures));
-			printf("draw distance %3.0f m               \n", double(drawDistance / 100.0f));
+			printf("draw distance %3.0f m  time %02d:%02d   \n", double(drawDistance / 100.0f),
+			       int(app.environment().timeOfDay), int(app.environment().timeOfDay * 60.0f) % 60);
+			printf("%s                    \n", app.player().flying ? "flying (SELECT: walk)" : (app.player().grounded ? "walking, on ground  " : "walking, in the air "));
 			printf("pos %7.0f %6.0f %7.0f         \n", double(app.camera().pos.x), double(app.camera().pos.y),
 			       double(app.camera().pos.z));
 			msAccum = 0.0f;

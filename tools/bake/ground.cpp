@@ -6,7 +6,7 @@
 
 namespace g3 {
 
-void GroundSampler::build(const SrcScene& scene, size_t count) {
+void GroundSampler::build(const SrcScene& scene, size_t count, bool solidOnly) {
 	_scene = &scene;
 	count = std::min(count, scene.triangles.size());
 	float maxX = -1e30f, maxZ = -1e30f;
@@ -36,9 +36,15 @@ void GroundSampler::build(const SrcScene& scene, size_t count) {
 		z1 = std::clamp(int((mxz - _minZ) / _cell), 0, _h - 1);
 	};
 
+	const auto skipped = [&](const SrcTriangle& tri) {
+		if (!solidOnly || tri.material >= scene.materials.size()) return false;
+		const SrcMaterial& m = scene.materials[tri.material];
+		return m.water || m.noCollision;
+	};
 	// Counting sort into cells: count, prefix-sum, fill.
 	_start.assign(size_t(_w) * _h + 1, 0);
 	for (size_t t = 0; t < count; ++t) {
+		if (skipped(scene.triangles[t])) continue;
 		int x0, x1, z0, z1;
 		range(scene.triangles[t], x0, x1, z0, z1);
 		for (int z = z0; z <= z1; ++z)
@@ -48,6 +54,7 @@ void GroundSampler::build(const SrcScene& scene, size_t count) {
 	_items.resize(_start.back());
 	std::vector<u32> fill(_start.begin(), _start.end() - 1);
 	for (size_t t = 0; t < count; ++t) {
+		if (skipped(scene.triangles[t])) continue;
 		int x0, x1, z0, z1;
 		range(scene.triangles[t], x0, x1, z0, z1);
 		for (int z = z0; z <= z1; ++z)

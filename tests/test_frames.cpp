@@ -162,6 +162,9 @@ struct ShaderCheck {
 	float yaw = 0, lean = 0;
 	float light[3] = {1, 1, 1};
 	u32 nextPart = 0;
+	// Skinned draw calls that come before the expected character's: other
+	// characters. Theirs are checked against the palette they were drawn with.
+	unsigned others = 0, otherDraws = 0, otherVertices = 0;
 	// Results.
 	unsigned worldDraws = 0, skinnedDraws = 0, worldVertices = 0, skinnedVertices = 0, blendedVertices = 0, behind = 0;
 	unsigned failed = 0, unexpected = 0, movedBySwitch = 0;
@@ -218,7 +221,12 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 	const bool sky = params[2] == 1.0f && params[3] == 0.0f; // never fogged
 
 	const ModelPart* part = nullptr;
-	if (skinned) {
+	bool other = false;
+	if (skinned && sc.others > 0) {
+		--sc.others;
+		++sc.otherDraws;
+		other = true;
+	} else if (skinned) {
 		++sc.skinnedDraws;
 		while (sc.model && sc.nextPart < sc.model->partCount() && sc.model->part(sc.nextPart).indexCount == 0) ++sc.nextPart;
 		if (!sc.model || sc.nextPart >= sc.model->partCount() || sc.model->part(sc.nextPart).indexCount != call.count) {
@@ -249,7 +257,26 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 
 		// Where the engine's maths puts this vertex.
 		double world[3], wantColor[3];
-		if (skinned) {
+		if (other) {
+			// Somebody else: the two bones of the palette this draw call came
+			// with, weighted, at the place it came with.
+			const double p[3] = {double(v.x) * double(chunk[3]), double(v.y) * double(chunk[3]), double(v.z) * double(chunk[3])};
+			const u32 s0 = v.r / 3u, s1 = v.g / 3u;
+			if (v.r % 3 || v.g % 3 || s0 >= MODEL_PALETTE || s1 >= MODEL_PALETTE) {
+				++sc.unexpected;
+				continue;
+			}
+			const double w = double(v.b) / 255.0;
+			for (int k = 0; k < 3; ++k) {
+				const float* r0 = call.uniforms[locBones + int(s0) * 3 + k];
+				const float* r1 = call.uniforms[locBones + int(s1) * 3 + k];
+				const double a = double(r0[0]) * p[0] + double(r0[1]) * p[1] + double(r0[2]) * p[2] + double(r0[3]);
+				const double b = double(r1[0]) * p[0] + double(r1[1]) * p[1] + double(r1[2]) * p[2] + double(r1[3]);
+				world[k] = double(sc.anchor[k]) + double(chunk[k]) + a + (b - a) * w;
+				wantColor[k] = double(got.color[k]);
+			}
+			++sc.otherVertices;
+		} else if (skinned) {
 			const Vec3 p = {float(v.x) * chunk[3], float(v.y) * chunk[3], float(v.z) * chunk[3]};
 			const u32 s0 = v.r / 3u, s1 = v.g / 3u;
 			if (v.r % 3 || v.g % 3 || s0 >= part->boneCount || s1 >= part->boneCount) {
@@ -364,7 +391,8 @@ static void testShader(const std::string& pak) {
 		app.setDrawDistance(6000.0f);
 		app.environment().timeOfDay = 19.5f;
 		app.world().preload(app.camera().pos);
-		CHECK(app.hero().loaded() && app.thirdPerson());
+		CHECK(app.hero().loaded() && app.thirdPerson() && app.npcs().loaded());
+		u32 inhabitants = 0;
 		const float dt = 1.0f / 30.0f;
 		for (int f = 0; f < 50; ++f) {
 			Input in;
@@ -375,14 +403,19 @@ static void testShader(const std::string& pak) {
 			app.update(in, dt);
 			const bool check = f % 7 == 6;
 			if (check) {
+				// The world's inhabitants are drawn before the hero: how many
+				// draw calls they take is known once the frame has been drawn.
+				app.render();
+				inhabitants = std::max(inhabitants, app.npcs().stats().shown);
 				const Camera& cam = app.camera();
 				sc.beginFrame(viewLH(cam.pos, cam.yaw, cam.pitch), cam.pos, cam.fovY, cam.zNear, cam.zFar);
 				sc.expect(app.hero().model(), app.hero().pose(), app.hero().feet(), app.hero().yaw(), app.hero().light(), app.hero().lean());
+				sc.others = app.npcs().stats().drawCalls;
 				mock3ds::setDrawHook(shaderHook, &sc);
 			}
 			app.render();
 			mock3ds::setDrawHook(nullptr, nullptr);
-			if (check) CHECK(app.heroVisible() && sc.nextPart == app.hero().model().partCount());
+			if (check) CHECK(app.heroVisible() && sc.nextPart == app.hero().model().partCount() && sc.others == 0);
 		}
 		CHECK(app.hero().role() == Hero::RUN && app.hero().speed() > 300.0f);
 		std::printf("  world: %u draw calls, %u vertices: within %.4f px of the engine's projection (%.4f px in the GPU's 24-bit floats); "
@@ -391,6 +424,9 @@ static void testShader(const std::string& pak) {
 		std::printf("  seams: %u points shared between chunks, %u of them split by the GPU's rounding\n", sc.sharedPoints, sc.splitPoints);
 		std::printf("  hero: %u draw calls, %u vertices (%u on two bones): within %.4f px (%.4f px in 24-bit floats)\n", sc.skinnedDraws,
 		            sc.skinnedVertices, sc.blendedVertices, sc.worstSkinPx, sc.worstGpuSkinPx);
+		std::printf("  inhabitants: up to %u in view, %u draw calls, %u vertices, checked against the palettes they were drawn with\n",
+		            inhabitants, sc.otherDraws, sc.otherVertices);
+		CHECK(inhabitants >= 2 && sc.otherDraws > 10 && sc.otherVertices > 300);
 		CHECK(sc.worldDraws > 50 && sc.worldVertices > 5000 && sc.skinnedDraws >= 7 && sc.skinnedVertices > 500);
 		CHECK(sc.blendedVertices > 50);
 		CHECK(sc.failed == 0 && sc.unexpected == 0);
@@ -539,7 +575,7 @@ static void flight(const std::string& pak, bool classic, bool worker) {
 
 	// 0. On foot: the character is drawn after the world, its bone matrices
 	// travel in the same command buffer.
-	unsigned skinnedDraws = 0;
+	unsigned skinnedDraws = 0, inhabitantDraws = 0, inhabitantFrames = 0;
 	mock3ds::setDrawHook(countSkinned, &skinnedDraws);
 	for (int f = 0; f < 40; ++f) {
 		Input in;
@@ -548,9 +584,13 @@ static void flight(const std::string& pak, bool classic, bool worker) {
 		in.jump = f == 20;
 		in.toggleCamera = f == 30; // the last ten frames in first person
 		frame(in);
+		inhabitantDraws += app.npcs().stats().drawCalls;
+		inhabitantFrames += app.npcs().stats().shown > 0;
 	}
 	mock3ds::setDrawHook(nullptr, nullptr);
-	CHECK(skinnedDraws == 30 * app.hero().model().partCount() && !app.thirdPerson());
+	// The hero in thirty of the frames, and whoever of the world's people was in view.
+	CHECK(skinnedDraws == 30 * app.hero().model().partCount() + inhabitantDraws && !app.thirdPerson());
+	CHECK(inhabitantFrames > 20 && inhabitantDraws > 40);
 	app.player().flying = true;
 	app.teleport(home);
 	// 1. A flight across chunk borders: meshes and textures come and go.
@@ -650,8 +690,15 @@ int main(int argc, char** argv) {
 	std::vector<SrcModel> models(2);
 	buildSyntheticActor(models[0]);
 	buildChainModel(models[1], 60);
+	// The built-in script's people stand about in it: more characters, other
+	// models, textures shared between them - all of it through the backend.
+	SrcScript script;
+	buildSyntheticScript(script);
+	BakeScripts scripts;
+	scripts.script = &script;
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead};
 	PakWriter writer;
-	bakeWorlds(worlds, models, bo, writer);
+	bakeWorlds(worlds, models, scripts, bo, writer);
 	const std::string pak = dir + "/frames.pak";
 	writer.write(pak);
 

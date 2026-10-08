@@ -3054,6 +3054,225 @@ static void testSky() {
 	CHECK(dawn.light[0] > night.light[0] && dawn.light[0] < 0.78f);
 }
 
+// The inhabitants: the script's people in the running game.
+static void testInhabitants() {
+	SrcScript script;
+	buildSyntheticScript(script);
+	const auto bake = [&](const std::string& path, const BakeScripts& scripts, BakeResult* result = nullptr) {
+		std::vector<BakeWorld> worlds(2);
+		worlds[0].name = "world";
+		worlds[0].level = "WORLD.ZEN";
+		SynthOptions so;
+		so.cells = 48;
+		so.huts = 6;
+		so.trees = 20;
+		buildSyntheticScene(so, worlds[0].scene);
+		worlds[1].name = "cave";
+		worlds[1].level = "CAVE.ZEN";
+		buildSyntheticCave(worlds[1].scene);
+		std::vector<SrcModel> models(1);
+		buildSyntheticActor(models[0]);
+		BakeOptions bo;
+		bo.chunker.chunkSize = 3000.0f;
+		bo.tex.maxSize = 32;
+		bo.tex.quality = 0;
+		bo.threads = 2;
+		bo.quiet = true;
+		PakWriter writer;
+		const BakeResult r = bakeWorlds(worlds, models, scripts, bo, writer);
+		if (result) *result = r;
+		writer.write(path);
+	};
+	BakeScripts scripts;
+	scripts.script = &script;
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead};
+	const std::string path = gDir + "/people.pak";
+	BakeResult baked;
+	bake(path, scripts, &baked);
+	CHECK(baked.characters == 12 && baked.looks == 6 && baked.looksBaked == 6 && baked.npcModels == 3 + 6 + 4);
+	CHECK(!baked.scriptChecked); // nothing to check a built-in script against
+
+	gfx::init();
+	const float dt = 1.0f / 30.0f;
+	{
+		App app;
+		CHECK(app.init(path.c_str(), nullptr));
+		app.world().preload(app.camera().pos);
+		Npcs& npcs = app.npcs();
+		CHECK(npcs.loaded() && std::string(npcs.worldScript()) == "WORLD");
+		CHECK(npcs.stats().total == 9 && npcs.stats().here == 8 && npcs.game().vm().stats().errors == 0);
+		app.environment().timeOfDay = 8.0f;
+		for (int i = 0; i < 5; ++i) app.update(Input {}, dt);
+		// From the start point, looking at the camp: the gate's two guards, the
+		// digger on the road, the creatures by the wood.
+		CHECK(npcs.stats().near == 7 && npcs.stats().waiting == 0 && npcs.stats().noModel == 0);
+		app.render();
+		const NpcStats first = npcs.stats();
+		CHECK(first.shown >= 3 && first.shown + first.culled == 7 && first.triangles > 300 && first.drawCalls >= first.shown);
+		const gfx::SoftStats ss = gfx::softStats();
+		CHECK(ss.skinnedTriangles == first.triangles + (app.heroVisible() ? app.hero().model().triangles() : 0));
+		// Three skeletons, and a body and a head for most: read once each, textures shared.
+		CHECK(first.models >= 8 && first.models <= 13 && first.loads == first.models && first.textures >= 5);
+		for (int i = 0; i < 30; ++i) {
+			app.update(Input {}, dt);
+			app.render();
+		}
+		CHECK(npcs.stats().loads == first.loads); // standing still reads nothing more
+
+		// Everybody stands on the ground, upright, where the script said.
+		const Game& game = npcs.game();
+		u32 checked = 0;
+		for (u32 i = 0; i < game.npcCount(); ++i) {
+			const GameNpc& n = game.npc(i);
+			if (n.hero || !n.placed) continue;
+			float y;
+			Vec3 normal;
+			if (!app.world().rayDown({n.pos[0], n.pos[1] + 150.0f, n.pos[2]}, 650.0f, y, normal)) continue;
+			CHECK(std::fabs(y - n.pos[1]) < 25.0f);
+			++checked;
+		}
+		CHECK(checked >= 5);
+
+		// Fewer allowed: the nearest ones. None allowed: none.
+		npcs.config().maxShown = 2;
+		app.update(Input {}, dt);
+		app.render();
+		CHECK(npcs.stats().shown <= 2 && npcs.stats().near == 7);
+		npcs.config().maxShown = 0;
+		app.update(Input {}, dt);
+		app.render();
+		CHECK(npcs.stats().shown == 0 && gfx::softStats().skinnedTriangles == (app.heroVisible() ? app.hero().model().triangles() : 0));
+		// A short range: only who stands close.
+		npcs.config().maxShown = 12;
+		npcs.config().range = 700.0f;
+		app.update(Input {}, dt);
+		CHECK(npcs.stats().near >= 1 && npcs.stats().near <= 3);
+		// Everybody at once, one model read per frame: they turn up one after the other.
+		app.teleport({0.0f, 600.0f, 600.0f});
+		npcs.config().range = 20000.0f;
+		npcs.config().maxShown = 16;
+		const u32 loadsBefore = npcs.stats().loads;
+		app.update(Input {}, dt);
+		CHECK(npcs.stats().near == 8 && npcs.stats().loads <= loadsBefore + 1);
+		for (int i = 0; i < 40; ++i) app.update(Input {}, dt);
+		CHECK(npcs.stats().waiting == 0 && npcs.stats().models == 13);
+
+		// Evening: the routines have moved on, three of them to the fire.
+		const u32 movesBefore = game.stats().moves;
+		app.environment().timeOfDay = 21.0f;
+		app.update(Input {}, dt);
+		CHECK(game.stats().moves == movesBefore + 3);
+		u32 atFire = 0;
+		for (u32 i = 0; i < game.npcCount(); ++i) atFire += std::string(game.text(game.npc(i).at)) == "CAMP_FIRE";
+		CHECK(atFire == 3);
+		app.render();
+		CHECK(npcs.stats().shown >= 1);
+
+		// The cave: its own people, the others stay where they are; and back.
+		const u32 loadsOutside = npcs.stats().loads;
+		CHECK(app.enterWorld(hashName("world/cave"), nullptr, 0));
+		CHECK(std::string(npcs.worldScript()) == "CAVE" && npcs.stats().total == 12 && npcs.stats().here == 3);
+		CHECK(npcs.stats().loads > loadsOutside && npcs.stats().models <= 6); // the outside's models have gone
+		for (int i = 0; i < 5; ++i) {
+			app.update(Input {}, dt);
+			app.render();
+		}
+		CHECK(npcs.stats().near == 3 && npcs.stats().waiting == 0);
+		CHECK(app.enterWorld(hashName("world/world"), nullptr, 0));
+		CHECK(npcs.stats().total == 12 && npcs.stats().here == 8 && game.stats().worlds == 2);
+		app.shutdown();
+		CHECK(!npcs.loaded() && npcs.stats().total == 0);
+	}
+	const gfx::MemStats leak = gfx::memStats();
+	CHECK(leak.meshCount == 0 && leak.textureCount == 0);
+
+	// Scripts without models for their people: they are there, nobody is seen.
+	{
+		BakeScripts bare;
+		bare.script = &script;
+		const std::string barePath = gDir + "/people_bare.pak";
+		BakeResult r;
+		bake(barePath, bare, &r);
+		CHECK(r.characters == 12 && r.looks == 6 && r.looksBaked == 0 && r.report.find("nobody is drawn") != std::string::npos);
+		App app;
+		CHECK(app.init(barePath.c_str(), nullptr));
+		app.environment().timeOfDay = 8.0f;
+		app.update(Input {}, dt);
+		app.render();
+		CHECK(app.npcs().loaded() && app.npcs().stats().here == 8 && app.npcs().stats().near == 7);
+		CHECK(app.npcs().stats().noModel == 7 && app.npcs().stats().shown == 0 && app.npcs().stats().loads == 0);
+		app.shutdown();
+	}
+	// A source that has only some of the pieces: heads missing, creatures on
+	// the wrong skeleton, one kind of armour that cannot be read at all.
+	{
+		BakeScripts partial;
+		partial.script = &script;
+		partial.looks.rig = buildSyntheticRig;
+		partial.looks.body = [](const std::string& s, const std::string& mesh, int tex, int skin, SrcModel& m) {
+			if (mesh == "hum_vlkl_armor") throw std::runtime_error("the file is damaged");
+			// Creatures get a man's body: it does not fit their skeleton.
+			return buildSyntheticBody(s == "humans" ? s : "humans", mesh, tex, skin, m);
+		};
+		partial.looks.head = [](const std::string&, const std::string& head, int, int, int, SrcModel& m) {
+			m.notes.push_back(head + " not found");
+			return false;
+		};
+		const std::string partialPath = gDir + "/people_partial.pak";
+		BakeResult r;
+		bake(partialPath, partial, &r);
+		const auto said = [&](const char* text) { return r.report.find(text) != std::string::npos; };
+		CHECK(r.looks == 6 && r.looksBaked == 3 && said("3 bodies, 0 heads"));
+		CHECK(said("body made for another skeleton") && said("body unusable: the file is damaged [humans/hum_vlkl_armor, e.g. VLK_500_DIGGER]"));
+		CHECK(said("head missing (drawn without): hum_head_fighter not found"));
+		App app;
+		CHECK(app.init(partialPath.c_str(), nullptr));
+		app.environment().timeOfDay = 8.0f;
+		for (int i = 0; i < 3; ++i) app.update(Input {}, dt);
+		app.render();
+		const NpcStats& ns = app.npcs().stats();
+		// The two guards and the digger on the road are seen, headless; the creatures are not.
+		CHECK(ns.near == 7 && ns.noModel == 4 && ns.waiting == 0 && ns.shown >= 1 && ns.shown <= 3);
+		app.shutdown();
+	}
+	// An archive whose table of looks or of places is damaged: no crash, nobody shown.
+	{
+		Pak src;
+		CHECK(src.open(path.c_str()));
+		for (const char* victim : {"meta/looks", "world/world/points", "script/gothic"}) {
+			PakWriter w;
+			for (u32 i = 0; i < src.count(); ++i) {
+				const PakEntry& e = src.entry(i);
+				std::vector<u8> data(e.size);
+				CHECK(src.read(e, data.data()));
+				if (e.hash == hashName(victim)) {
+					std::mt19937 rng(e.size);
+					for (size_t k = 16; k < data.size(); k += 3) data[k] = u8(rng());
+				}
+				w.add(src.name(e), AssetType(e.type), data);
+			}
+			const std::string badPath = gDir + "/people_bad.pak";
+			w.write(badPath);
+			App app;
+			CHECK(app.init(badPath.c_str(), nullptr));
+			app.environment().timeOfDay = 8.0f;
+			for (int i = 0; i < 3; ++i) {
+				app.update(Input {}, dt);
+				app.render();
+			}
+			std::printf("       %s damaged: scripts %s, %u characters, %u here, %u shown\n", victim,
+			            app.npcs().loaded() ? "loaded" : "refused", app.npcs().stats().total, app.npcs().stats().here,
+			            app.npcs().stats().shown);
+			if (std::string(victim) == "meta/looks") CHECK(app.npcs().loaded() && app.npcs().stats().here == 8);
+			// (Without the table of places the world has no name the scripts know.)
+			if (std::string(victim) == "world/world/points") CHECK(app.npcs().loaded() && app.npcs().stats().here == 0);
+			if (std::string(victim) == "script/gothic") CHECK(!app.npcs().loaded());
+			app.shutdown();
+		}
+	}
+	gfx::shutdown();
+}
+
 int main(int argc, char** argv) {
 	gDir = argc > 1 ? argv[1] : ".";
 	const char* only = argc > 2 ? argv[2] : nullptr; // run the tests whose name contains this
@@ -3076,6 +3295,7 @@ int main(int argc, char** argv) {
 	             {"collision", testCollision},
 	             {"model", testModel},
 	             {"hero", testHero},
+	             {"inhabitants", testInhabitants},
 	             {"sky", testSky}};
 	for (auto& t : tests) {
 		// Later tests reuse the archives earlier ones baked.

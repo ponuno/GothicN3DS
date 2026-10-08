@@ -129,19 +129,77 @@ void Clip::sample(float time, Pose& pose) const {
 
 // ---- Model ----
 
+// ---- TexturePool ----
+
+gfx::Texture* TexturePool::acquire(Pak& pak, u32 entryHash) {
+	if (!entryHash) return nullptr;
+	for (u32 i = 0; i < _count; ++i)
+		if (_slots[i].hash == entryHash) {
+			++_slots[i].users;
+			return _slots[i].texture;
+		}
+	if (_count == CAPACITY) return nullptr;
+	const PakEntry* te = pak.find(entryHash);
+	if (!te || te->type != ASSET_TEXTURE || te->size < sizeof(TexHeader)) return nullptr;
+	u8* tb = static_cast<u8*>(pak.readAlloc(*te));
+	if (!tb) return nullptr;
+	TexHeader th;
+	memcpy(&th, tb, sizeof(th));
+	gfx::Texture* texture = texValidate(th, te->size - u32(sizeof(TexHeader))) ? gfx::textureCreate(th, tb + sizeof(TexHeader)) : nullptr;
+	free(tb);
+	if (!texture) return nullptr;
+	_slots[_count++] = Slot {entryHash, 1, th.dataSize, texture};
+	_bytes += th.dataSize;
+	return texture;
+}
+
+void TexturePool::drop(gfx::Texture* texture) {
+	if (!texture) return;
+	for (u32 i = 0; i < _count; ++i) {
+		if (_slots[i].texture != texture) continue;
+		if (--_slots[i].users == 0) {
+			gfx::textureDestroy(texture);
+			_bytes -= _slots[i].bytes;
+			_slots[i] = _slots[--_count];
+		}
+		return;
+	}
+}
+
+void TexturePool::release() {
+	for (u32 i = 0; i < _count; ++i) gfx::textureDestroy(_slots[i].texture);
+	_count = 0;
+	_bytes = 0;
+}
+
+// ---- Model ----
+
 bool Model::load(Pak& pak, const char* name) {
-	release();
 	char path[96];
 	snprintf(path, sizeof(path), "model/%s", name);
-	const PakEntry* e = pak.find(path);
+	return loadEntry(pak, hashName(path));
+}
+
+bool Model::sameSkeleton(const Model& o) const {
+	if (!_nodes || !o._nodes || _h.nodeCount != o._h.nodeCount) return false;
+	for (u32 i = 0; i < _h.nodeCount; ++i)
+		if (_nodes[i].parent != o._nodes[i].parent || _nodes[i].nameHash != o._nodes[i].nameHash) return false;
+	return true;
+}
+
+bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool) {
+	release();
+	const PakEntry* e = pak.find(entryHash);
 	if (!e || e->type != ASSET_MODEL || e->size < sizeof(ModelHeader)) return false;
 	u8* blob = static_cast<u8*>(pak.readAlloc(*e));
 	if (!blob) return false;
 
 	memcpy(&_h, blob, sizeof(_h));
 	bool ok = _h.magic == MODEL_MAGIC && _h.version == MODEL_VERSION && _h.nodeCount > 0 &&
-	          _h.nodeCount <= MODEL_MAX_NODES && _h.vertexCount > 0 && _h.vertexCount <= 65535 && _h.indexCount % 3 == 0 &&
-	          _h.blendCount <= 4096 && e->size == modelBlobSize(_h);
+	          _h.nodeCount <= MODEL_MAX_NODES && _h.vertexCount <= 65535 && _h.indexCount % 3 == 0 &&
+	          _h.blendCount <= 4096 && e->size == modelBlobSize(_h) &&
+	          // Without a mesh there are no parts either, but then there are clips.
+	          (_h.vertexCount > 0 ? _h.indexCount > 0 : (_h.partCount == 0 && _h.indexCount == 0 && _h.clipCount > 0));
 	const u8* p = blob + sizeof(ModelHeader);
 	if (ok) {
 		_nodes = static_cast<ModelNode*>(malloc(size_t(_h.nodeCount) * sizeof(ModelNode)));
@@ -182,7 +240,7 @@ bool Model::load(Pak& pak, const char* name) {
 				ok = v.r % 3 == 0 && v.g % 3 == 0 && u32(v.r) / 3 < _parts[i].boneCount && u32(v.g) / 3 < _parts[i].boneCount;
 			}
 	}
-	if (ok) {
+	if (ok && _h.vertexCount) {
 		_mesh = gfx::meshCreate(vertices, _h.vertexCount, indices, _h.indexCount);
 		ok = _mesh != nullptr;
 	}
@@ -199,6 +257,10 @@ bool Model::load(Pak& pak, const char* name) {
 		for (u32 k = 0; k < i && !_textures[i]; ++k)
 			if (_parts[k].texture == _parts[i].texture) _textures[i] = _textures[k];
 		if (_textures[i]) continue;
+		if (pool) {
+			_textures[i] = pool->acquire(pak, _parts[i].texture);
+			continue;
+		}
 		const PakEntry* te = pak.find(_parts[i].texture);
 		if (!te || te->type != ASSET_TEXTURE || te->size < sizeof(TexHeader)) continue;
 		u8* tb = static_cast<u8*>(pak.readAlloc(*te));
@@ -211,6 +273,7 @@ bool Model::load(Pak& pak, const char* name) {
 		}
 		free(tb);
 	}
+	_pool = pool;
 	// Clips: a broken one is simply not there.
 	for (u32 i = 0; i < _h.clipCount; ++i) _clips[i].load(pak, _clipRefs[i].entryHash, _h.nodeCount);
 	return true;
@@ -223,7 +286,10 @@ void Model::release() {
 			gfx::Texture* t = _textures[i];
 			for (u32 k = i; k < _h.partCount; ++k)
 				if (_textures[k] == t) _textures[k] = nullptr;
-			gfx::textureDestroy(t);
+			if (_pool)
+				_pool->drop(t);
+			else
+				gfx::textureDestroy(t);
 		}
 	}
 	if (_mesh) gfx::meshDestroy(_mesh);
@@ -242,6 +308,7 @@ void Model::release() {
 	_parts = nullptr;
 	_clipRefs = nullptr;
 	_mesh = nullptr;
+	_pool = nullptr;
 	_textureBytes = 0;
 	_h = {};
 }
@@ -284,7 +351,7 @@ void Model::worldTransforms(const Pose& pose, Mat34* world) const {
 // 32 KB stack. Drawing happens on one thread.
 static Mat34 gDrawWorld[MODEL_MAX_NODES], gDrawSkin[MODEL_MAX_NODES];
 
-void Model::draw(const Pose& pose, Vec3 origin, float yaw, const float light[3], float lean) const {
+void Model::draw(const Pose& pose, Vec3 origin, float yaw, const float light[3], float lean, const float* scale) const {
 	if (!_mesh) return;
 	Mat34* const world = gDrawWorld;
 	Mat34* const skin = gDrawSkin;
@@ -292,7 +359,10 @@ void Model::draw(const Pose& pose, Vec3 origin, float yaw, const float light[3],
 	// Skin matrices: rest position -> posed position, then turned to face `yaw`.
 	// (Leaning to the right tips the head towards +X: a turn about the model's -Z.)
 	const Quat tip = {0, 0, sinf(-lean * 0.5f), cosf(-lean * 0.5f)};
-	const Mat34 turn = mat34From(quatMul(quatFromYaw(yaw), tip), {0, 0, 0});
+	Mat34 turn = mat34From(quatMul(quatFromYaw(yaw), tip), {0, 0, 0});
+	if (scale)
+		for (int r = 0; r < 3; ++r)
+			for (int c = 0; c < 3; ++c) turn.m[r][c] *= scale[c]; // the model is stretched first, then turned
 	for (u32 i = 0; i < _h.nodeCount; ++i) {
 		Mat34 inv;
 		memcpy(inv.m, _nodes[i].invBind, sizeof(inv.m));

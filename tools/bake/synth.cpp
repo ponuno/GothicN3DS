@@ -459,6 +459,24 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 	// Where the cave's exit leads back to: in front of the gate, facing away.
 	scene.points["CAMP_GATE"] = SrcPoint {{gateX, height(gateX, gateZ + 600.0f), gateZ + 600.0f}, 0.0f};
 
+	// Where the script puts its characters (way points, in the game's terms).
+	const struct {
+		const char* name;
+		float x, z, yaw;
+	} places[] = {{"CAMP_GATE_GUARD_L", -200.0f, campRadius * 1.1f, 0.0f},
+	              {"CAMP_GATE_GUARD_R", 200.0f, campRadius * 1.1f, 0.0f},
+	              {"CAMP_SQUARE", 0.0f, 300.0f, 1.5708f},
+	              {"CAMP_FIRE", 350.0f, -200.0f, 3.14159f},
+	              {"CAMP_SMITH", -500.0f, 500.0f, -1.5708f},
+	              {"CAMP_HUT_1", 900.0f, 900.0f, 0.0f},
+	              {"CAMP_HUT_2", -900.0f, 800.0f, 0.0f},
+	              {"ROAD_1", -250.0f, campRadius * 1.9f - 450.0f, 0.4f},
+	              {"FOREST_SCAVENGER_1", 700.0f, campRadius * 1.9f - 650.0f, -2.0f},
+	              {"FOREST_SCAVENGER_2", 1000.0f, campRadius * 1.9f - 450.0f, 2.5f},
+	              {"FOREST_SCAVENGER_3", 850.0f, campRadius * 1.9f - 300.0f, 1.0f},
+	              {"FOREST_MOLERAT_1", -900.0f, campRadius * 1.9f - 550.0f, 0.0f}};
+	for (const auto& place : places) scene.points[place.name] = SrcPoint {{place.x, height(place.x, place.z), place.z}, place.yaw};
+
 	// Start just outside the gate, looking back at the camp.
 	scene.spawnPos[0] = 0;
 	scene.spawnPos[2] = campRadius * 1.9f;
@@ -554,6 +572,9 @@ void buildSyntheticCave(SrcScene& scene) {
 	portal.point = "CAMP_GATE";
 	scene.portals.push_back(portal);
 	scene.points["CAVE_ENTRY"] = SrcPoint {{0.0f, 0.0f, 900.0f}, 0.0f};
+	scene.points["CAVE_GUARD"] = SrcPoint {{700.0f, 0.0f, 1200.0f}, 3.14159f};
+	scene.points["CAVE_MOLERAT_1"] = SrcPoint {{-800.0f, 0.0f, 1300.0f}, 1.0f};
+	scene.points["CAVE_MOLERAT_2"] = SrcPoint {{900.0f, 0.0f, 3200.0f}, -2.0f};
 
 	scene.spawnPos[0] = 0;
 	scene.spawnPos[1] = 175.0f;

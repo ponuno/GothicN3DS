@@ -8,6 +8,9 @@
 // The output directory is reused by the e2e test. With the sample directory
 // (ZenKit's own tests/samples) a few genuine game files are parsed as well.
 #include "bake.h"
+#include "daedalus.h"
+#include "g3ds/game.h"
+#include "script_check.h"
 #include "g3ds/math.h"
 #include "g3ds/model.h"
 #include "g3ds/pak.h"
@@ -855,6 +858,261 @@ void checkHero(std::shared_ptr<const ZenGame> game, const HeroCase& hc, const fs
 void writeFile(const fs::path& path, const std::vector<std::byte>& data);
 std::vector<std::byte> readFile(const fs::path& path);
 
+// ---- the game's scripts ----
+//
+// A GOTHIC.DAT for the fixture game, compiled from this by the project's own
+// compiler and written in the game's file format: four characters made of the
+// fixture's model files, put into the fixture's two worlds.
+const char* const kFixtureScript = R"(
+class C_NPC { var int id; var string name[5]; var int guild; var func daily_routine; var int aivar[4]; };
+class C_ITEM { var int id; var string name; var int mainflag; var string visual; var string visual_change; var int visual_skin; };
+class C_INFO { var int npc; var int nr; var func condition; var func information; var string description; var int permanent; };
+instance self, other (C_NPC);
+instance hero (C_NPC);
+extern func void Wld_InsertNpc(var int npcInstance, var string spawnPoint);
+extern func void Wld_InsertItem(var int itemInstance, var string spawnPoint);
+extern func void Mdl_SetVisual(var C_NPC n, var string s);
+extern func void Mdl_SetVisualBody(var C_NPC n, var string body, var int bodyTex, var int skin, var string head, var int headTex,
+                                   var int teethTex, var int armor);
+extern func void Mdl_SetModelScale(var C_NPC n, var float x, var float y, var float z);
+extern func void TA_Min(var C_NPC n, var int h1, var int m1, var int h2, var int m2, var func state, var string wp);
+extern func C_NPC Hlp_GetNpc(var int npcInstance);
+extern func int Hlp_IsValidNpc(var C_NPC n);
+extern func int Hlp_Random(var int bound);
+extern func int Npc_KnowsInfo(var C_NPC n, var int info);
+extern func void AI_Output(var C_NPC a, var C_NPC b, var string line);
+extern func void Snd_Play(var string name);
+var int greeted;
+func void ZS_Stand() {};
+instance FIX_ARMOR (C_ITEM) { name = "Coat"; mainflag = 16; visual_change = "Fix_Hero_Body_IO.asc"; };
+instance PC_HERO (C_NPC) {
+	name = "Hero";
+	Mdl_SetVisual(self, "FIX_HERO.MDS");
+	Mdl_SetVisualBody(self, "Fix_Hero_Body", 4, 1, "", 0, 0, -1);
+};
+instance FIX_GUARD (C_NPC) {
+	name = "Guard"; id = 1;
+	Mdl_SetVisual(self, "Fix_Hero.mds");
+	Mdl_SetVisualBody(self, "Fix_Hero_Body", 0, 0, "Fix_Head", 0, 0, -1);
+	Mdl_SetModelScale(self, 1.2, 1, 1.2);
+	daily_routine = Rtn_Guard;
+};
+func void Rtn_Guard() {
+	TA_Min(self, 6, 0, 20, 0, ZS_Stand, "START");
+	TA_Min(self, 20, 0, 6, 0, ZS_Stand, "NOWHERE");
+};
+instance FIX_TWIN (C_NPC) {
+	name = "Twin"; id = 2;
+	Mdl_SetVisual(self, "FIX_HERO.MDS");
+	Mdl_SetVisualBody(self, "FIX_HERO_BODY", 4, 1, "", 0, 0, FIX_ARMOR);
+};
+instance FIX_BACK (C_NPC) {
+	name = "Backwards"; id = 3;
+	Mdl_SetVisual(self, "Fix_Hero3.MDS");
+	Mdl_SetVisualBody(self, "Fix_Hero_Body", 9, 9, "", 0, 0, -1);
+};
+instance FIX_GHOST (C_NPC) {
+	name = "Ghost"; id = 4;
+	Mdl_SetVisual(self, "NoSuch.mds");
+	Mdl_SetVisualBody(self, "NoSuch_Body", 0, 0, "", 0, 0, -1);
+};
+instance DIA_Guard (C_INFO) {
+	npc = FIX_GUARD; nr = 1; condition = DIA_Guard_Cond; information = DIA_Guard_Info; description = "Hello";
+};
+func int DIA_Guard_Cond() { return !Npc_KnowsInfo(other, DIA_Guard) && self.id == 1 && greeted < 3; };
+func void DIA_Guard_Info() { AI_Output(self, other, "DIA_Guard_01"); greeted += self.id + Hlp_Random(5); };
+func void STARTUP_FIXTURE() {
+	Wld_InsertNpc(FIX_GUARD, "START");
+	Wld_InsertNpc(FIX_BACK, "START");
+	Wld_InsertNpc(FIX_GHOST, "START");
+	Wld_InsertItem(FIX_ARMOR, "START");
+	Snd_Play("HORN");
+};
+func void INIT_FIXTURE() {
+	var C_NPC g;
+	g = Hlp_GetNpc(FIX_GUARD);
+	if (Hlp_IsValidNpc(g)) { g.aivar[2] = g.id + 40; };
+};
+func void STARTUP_FIXTURE2() {
+	Wld_InsertNpc(FIX_TWIN, "WP_TEST");
+};
+)";
+
+void checkScripts(std::shared_ptr<const ZenGame> game, const fs::path& dir, bool haveHead) {
+	SrcScript compiled;
+	compileDaedalus(kFixtureScript, compiled);
+	const std::vector<u8> dat = writeScriptDat(compiled);
+	{
+		// Before the file is there: said, and the bake goes on without.
+		SrcScript none;
+		std::vector<u8> bytes;
+		std::vector<std::string> notes;
+		CHECK(!importZenScript(game, none, bytes, notes));
+		CHECK(notes.size() == 1 && notes[0].find("GOTHIC.DAT not found") != std::string::npos);
+	}
+	const fs::path compiledDir = dir / "game" / "_work" / "Data" / "Scripts" / "_compiled";
+	fs::create_directories(compiledDir);
+	writeFile(compiledDir / "Gothic.dat", std::vector<std::byte>(reinterpret_cast<const std::byte*>(dat.data()),
+	                                                             reinterpret_cast<const std::byte*>(dat.data()) + dat.size()));
+
+	// Read back by the game-file reader: the same script.
+	SrcScript script;
+	std::vector<u8> bytes;
+	std::vector<std::string> notes;
+	CHECK(importZenScript(game, script, bytes, notes));
+	CHECK(notes.empty() && bytes == dat && script.code == compiled.code && script.symbols.size() == compiled.symbols.size());
+	bool same = script.symbols.size() == compiled.symbols.size();
+	for (size_t i = 0; same && i < script.symbols.size(); ++i) {
+		const SrcSymbol& a = compiled.symbols[i];
+		const SrcSymbol& b = script.symbols[i];
+		// (A name the compiler made up starts with a character the reader replaces.)
+		const bool named = a.name == b.name || (!a.name.empty() && a.name[0] == '\xFF' && a.name.substr(1) == b.name.substr(1));
+		same = named && a.type == b.type && a.count == b.count && a.isConst == b.isConst && a.hasReturn == b.hasReturn &&
+		       a.member == b.member && a.external == b.external && a.parent == b.parent && a.ints == b.ints &&
+		       a.floats == b.floats && a.strings == b.strings && a.returnType == b.returnType &&
+		       (a.member || (a.type != SCRIPT_FUNC && a.type != SCRIPT_PROTOTYPE && a.type != SCRIPT_INSTANCE) || a.address == b.address);
+		if (!same) std::printf("  symbol %zu (%s) differs\n", i, a.name.c_str());
+	}
+	CHECK(same);
+	{
+		// A file cut short is refused with a reason.
+		writeFile(compiledDir / "Gothic.dat", std::vector<std::byte>(reinterpret_cast<const std::byte*>(dat.data()),
+		                                                             reinterpret_cast<const std::byte*>(dat.data()) + dat.size() / 3));
+		SrcScript cut;
+		std::vector<u8> cutBytes;
+		std::vector<std::string> cutNotes;
+		CHECK(!importZenScript(game, cut, cutBytes, cutNotes));
+		CHECK(cutNotes.size() == 1 && cutNotes[0].find("could not be read") != std::string::npos);
+		writeFile(compiledDir / "Gothic.dat", std::vector<std::byte>(reinterpret_cast<const std::byte*>(dat.data()),
+		                                                             reinterpret_cast<const std::byte*>(dat.data()) + dat.size()));
+	}
+
+	// The pieces of a look, from the game's model files.
+	const LookSource source = zenLookSource(game);
+	SrcModel rig, body, skin, fallback, head, backRig, backBody;
+	CHECK(source.rig("fix_hero", true, rig));
+	CHECK(rig.nodes.size() == HN_COUNT && rig.parts.empty() && rig.clips.size() == 1 && rig.clips[0].name == "S_RUN");
+	CHECK(source.body("fix_hero", "fix_hero_body", 0, 0, body));
+	const auto textureOf = [](const SrcModel& m) {
+		std::string t = m.parts.empty() ? std::string() : m.parts[0].material.texture;
+		for (char& c : t) c = char(std::toupper(static_cast<unsigned char>(c)));
+		return t;
+	};
+	CHECK(body.clips.empty() && body.parts.size() == 1 && textureOf(body) == "FIX_SKIN_V0_C0.TGA");
+	CHECK(modelNote(body, "winding kept (score 0.147; as found for a whole character)"));
+	CHECK(source.body("fix_hero", "fix_hero_body", 4, 1, skin));
+	CHECK(skin.parts.size() == 1 && skin.parts[0].material.texture == "FIX_SKIN_V4_C1.TGA");
+	// A skin the game does not have: the mesh's own texture.
+	CHECK(source.body("fix_hero", "fix_hero_body", 9, 9, fallback));
+	CHECK(fallback.parts.size() == 1 && textureOf(fallback) == "FIX_SKIN_V0_C0.TGA");
+	// Skeleton, body and head of one character are turned alike, whatever each of them is told by.
+	CHECK(source.rig("fix_hero3", false, backRig) && source.body("fix_hero3", "fix_hero_body", 0, 0, backBody));
+	CHECK(backRig.nodes.size() == backBody.nodes.size() && backRig.clips.size() == 1);
+	for (size_t i = 0; i < backRig.nodes.size() && i < backBody.nodes.size(); ++i) {
+		float d = 0;
+		for (int a = 0; a < 3; ++a) d = std::max(d, std::fabs(backRig.nodes[i].pos[a] - backBody.nodes[i].pos[a]));
+		for (int a = 0; a < 4; ++a) d = std::max(d, std::fabs(backRig.nodes[i].rot[a] - backBody.nodes[i].rot[a]));
+		CHECK(d < 1e-5f);
+	}
+	for (size_t i = 0; i < rig.nodes.size() && i < body.nodes.size(); ++i)
+		for (int a = 0; a < 3; ++a) CHECK(std::fabs(rig.nodes[i].pos[a] - body.nodes[i].pos[a]) < 1e-5f);
+	// The body built facing backwards has been turned round: its toe points to +Z like the other's.
+	if (!backBody.parts.empty() && !body.parts.empty())
+		for (size_t k = 0; k < body.parts[0].verts.size() && k < backBody.parts[0].verts.size(); ++k)
+			for (int a = 0; a < 3; ++a) CHECK(std::fabs(body.parts[0].verts[k].pos[a] - backBody.parts[0].verts[k].pos[a]) < 1e-3f);
+	if (haveHead) {
+		CHECK(source.head("fix_hero", "Fix_Head", 0, 0, 0, head));
+		CHECK(!head.parts.empty() && head.clips.empty() && head.nodes.size() == HN_COUNT);
+		size_t verts = 0, onHead = 0;
+		for (const SrcModelPart& part : head.parts)
+			for (const SrcSkinVertex& v : part.verts) {
+				++verts;
+				onHead += v.bone[0] == HN_HEAD && v.bone[1] == HN_HEAD && v.weight1 == 0.0f;
+			}
+		CHECK(verts > 30 && onHead == verts);
+		std::printf("  head: %zu triangles on the head node\n", verts / 3);
+	}
+	SrcModel none;
+	CHECK(!source.head("fix_hero", "nosuch_head", 0, 0, 0, none) && modelNote(none, "NOSUCH_HEAD.MMB not found"));
+	CHECK(!source.body("fix_hero", "nosuch_body", 0, 0, none) && modelNote(none, "NOSUCH_BODY.MDM not found"));
+	CHECK(!source.rig("nosuch", true, none) && modelNote(none, "NOSUCH.MSB/.MDS not found"));
+
+	// The whole bake: scripts checked against the reference interpreter, run
+	// for both worlds, the inhabitants' models baked.
+	std::vector<BakeWorld> worlds(2);
+	worlds[0].name = "fixture";
+	worlds[0].level = "FIXTURE.ZEN";
+	worlds[1].name = "fixture2";
+	worlds[1].level = "Fixture2.zen";
+	ZenImportOptions zo;
+	zo.zenName = "FIXTURE.ZEN";
+	importZenWorld(game, zo, worlds[0].scene);
+	zo.zenName = "FIXTURE2.ZEN";
+	importZenWorld(game, zo, worlds[1].scene);
+	BakeScripts scripts;
+	scripts.script = &script;
+	scripts.dat = &bytes;
+	scripts.looks = source;
+	BakeOptions bo;
+	bo.tex.maxSize = 32;
+	bo.tex.quality = 0;
+	bo.chunker.chunkSize = 2000;
+	bo.quiet = true;
+	PakWriter writer;
+	const BakeResult r = bakeWorlds(worlds, std::vector<SrcModel>(), scripts, bo, writer);
+	const size_t at = r.report.find("== scripts ==");
+	CHECK(at != std::string::npos);
+	if (at != std::string::npos) std::printf("%s", r.report.substr(at).c_str());
+	const auto said = [&](const char* text) { return r.report.find(text) != std::string::npos; };
+	CHECK(r.scriptChecked && r.scriptSame);
+	// The hero, three start-up functions, an item and a dialogue.
+	CHECK(said("checked against the reference interpreter: 6 runs") && said("6 the same") && said("0 different, 0 the reference objected to"));
+	CHECK(r.characters == 5 && r.looks == 4 && r.looksBaked == 3);
+	CHECK(said("world 'fixture': STARTUP_FIXTURE puts 3 characters into it (1 with a daily routine, 2 without), 1 items"));
+	CHECK(said("world 'fixture2': STARTUP_FIXTURE2 puts 1 characters into it"));
+	CHECK(said("the player's character: fix_hero, body fix_hero_body (texture 4, skin 1)"));
+	CHECK(said("SND_PLAY x1") && said("0 complaints, 0 calls given up"));
+	CHECK(said("5 characters with 4 different looks; models for 3 of them (3 characters): 2 skeletons with 2 animations"));
+	CHECK(said("NOSUCH.MSB/.MDS not found") && said("e.g. FIX_GHOST"));
+	CHECK(haveHead ? said("3 bodies, 1 heads") : said("head missing (drawn without)"));
+	CHECK(said("places: ") && said("set on the ground"));
+	const std::string pakPath = (dir / "people.pak").string();
+	writer.write(pakPath);
+	Pak pak;
+	CHECK(pak.open(pakPath.c_str()));
+	const PakEntry* image = pak.find("script/gothic");
+	CHECK(image && image->type == ASSET_SCRIPT);
+	const PakEntry* looks = pak.find("meta/looks");
+	CHECK(looks && looks->size == sizeof(LooksHeader) + 3 * sizeof(LookEntry));
+	for (const char* name : {"world/fixture/points", "world/fixture2/points"}) {
+		const PakEntry* e = pak.find(name);
+		CHECK(e && e->size >= sizeof(PointsHeader));
+		if (!e) continue;
+		std::vector<u8> blob(e->size);
+		CHECK(pak.read(*e, blob.data()));
+		PointsHeader ph;
+		std::memcpy(&ph, blob.data(), sizeof(ph));
+		CHECK(ph.magic == POINTS_MAGIC && e->size == sizeof(ph) + ph.count * sizeof(WorldPoint));
+		CHECK(std::string(ph.script) == (std::string(name) == "world/fixture/points" ? "FIXTURE" : "FIXTURE2"));
+		// In order, and the way point is among them, set on the floor (y = 0 there).
+		const WorldPoint* points = reinterpret_cast<const WorldPoint*>(blob.data() + sizeof(ph));
+		bool ordered = true, found = false;
+		for (u32 i = 0; i < ph.count; ++i) {
+			ordered = ordered && (i == 0 || points[i - 1].nameHash < points[i].nameHash);
+			if (points[i].nameHash == hashName("wp_test")) {
+				found = true;
+				CHECK(std::fabs(points[i].pos[0] - 1000.0f) < 0.01f && std::fabs(points[i].pos[2] - 1200.0f) < 0.01f);
+				// The ground there is at about 50 cm; the file has the point at 20, inside it.
+				CHECK(points[i].pos[1] > 41.0f && points[i].pos[1] < 56.0f && std::fabs(points[i].yaw - 1.5708f) < 0.01f);
+				std::printf("  WP_TEST baked at height %.1f (20.0 in the world file)\n", double(points[i].pos[1]));
+			}
+		}
+		CHECK(ordered && found == (std::string(name) == "world/fixture2/points"));
+	}
+	CHECK(pak.find("model/npc.rig0") && pak.find("model/npc.rig1") && pak.find("model/npc.body0") && pak.find("model/npc.body2"));
+	CHECK(pak.find("anim/npc.rig0/s_run") && !pak.find("model/npc.body3") && pak.find("tex/fix_skin_v0_c0"));
+}
+
 // ---- the game's camera scripts ----
 //
 // A compiled Daedalus script (.DAT) the way the game's compiler writes it:
@@ -1566,6 +1824,8 @@ int main(int argc, char** argv) {
 			addToVfs(anims, (std::string(base) + "-S_WALKL.MAN").c_str(),
 			         buildMan("S_WALKL", "S_WALKL", 25.0f, 1, 4, zenGin, turned));
 		}
+		// A head: one of the game's own morph meshes (ZenKit cannot write them).
+		if (!samples.empty() && fs::exists(samples / "morph0.mmb")) addToVfs(anims, "FIX_HEAD.MMB", readFile(samples / "morph0.mmb"));
 		addToVfs(anims, "FIX_HERO_BODY.MDM", buildHeroMdm(false));
 		addToVfs(anims, "FIX_HERO_BODY_IO.MDM", buildHeroMdm(true));
 		addToVfs(texDir, "FIX_SKIN_V0_C0-C.TEX", saveTexture(32, zenkit::TextureFormat::DXT1, yellowPixel));
@@ -1657,6 +1917,17 @@ int main(int argc, char** argv) {
 			CHECK(modelNote(none, "HUMANS.MSB/.MDS not found"));
 		} catch (const std::exception& ex) {
 			std::printf("FAIL character import threw: %s\n", ex.what());
+			++gFailures;
+		}
+	}
+
+	// ---- the scripts and the people they put into the worlds ----
+	if (game) {
+		std::printf("[ RUN ] scripts from the game directory\n");
+		try {
+			checkScripts(game, dir, !samples.empty() && fs::exists(samples / "morph0.mmb"));
+		} catch (const std::exception& ex) {
+			std::printf("FAIL scripts threw: %s\n", ex.what());
 			++gFailures;
 		}
 	}

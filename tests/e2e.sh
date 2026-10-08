@@ -26,6 +26,12 @@ synth)
 	[ "$(num heroPixels)" -gt 300 ] || fail "the character covers only $(num heroPixels) pixels"
 	[ "$(num heroRunFrames)" -gt 60 ] || fail "the character ran in only $(num heroRunFrames) frames"
 	[ "$(num heroAirFrames)" -gt 5 ] || fail "the character never jumped"
+	# The world is inhabited: the script's people stand where their routines put them.
+	[ "$(num npcsTotal)" = "9" ] || fail "the scripts made $(num npcsTotal) characters, not the hero and eight more"
+	[ "$(num npcsHere)" = "8" ] || fail "$(num npcsHere) characters have a place in the world, not 8"
+	[ "$(num npcsShownMax)" -gt 2 ] || fail "only $(num npcsShownMax) inhabitants were ever on the screen"
+	[ "$(num npcFrames)" -gt 100 ] || fail "inhabitants were drawn in only $(num npcFrames) of 150 frames"
+	[ "$(num scriptErrors)" = "0" ] || fail "the scripts complained"
 	# First person on request: nothing of the character is drawn.
 	"$host" --pak "$out/data.pak" --walk --first-person --frames 30 --shots 1 --out "$out/eyes" --stats "$out/stats.json"
 	[ "$(num heroFrames)" = "0" ] || fail "the character was drawn in first person"
@@ -33,6 +39,8 @@ synth)
 	# (Wading is a walk at the walk animation's pace: it takes a while to reach deep water.)
 	"$host" --pak "$out/data.pak" --world cave --walk --frames 220 --shots 1 --out "$out/cave" --stats "$out/stats.json"
 	[ "$(num swimFrames)" -gt 30 ] || fail "nobody swam in the cave pool: $(num swimFrames) frames"
+	[ "$(num npcsHere)" = "3" ] || fail "the cave has $(num npcsHere) inhabitants, not 3"
+	[ "$(num npcsShownMax)" -gt 0 ] || fail "nobody was seen in the cave"
 	[ "$(num heroSwimFrames)" -gt 30 ] || fail "the character did not swim: $(num heroSwimFrames) frames"
 	[ "$(num blendedDrawsMax)" -gt 0 ] || fail "the water was not drawn in the blended pass"
 	# The same flight with chunks streamed in the background, as on the console.
@@ -41,6 +49,12 @@ synth)
 		[ "$(num loadFailures)" = "0" ] || fail "load failures with --stream $stream"
 		[ "$(num chunksLoadedMax)" -gt 20 ] || fail "nothing was streamed in with --stream $stream"
 	done
+	# Without scripts the worlds are empty, as they used to be.
+	"$bake" synth --cells 32 --no-scripts -o "$out/empty.pak" > "$out/empty.txt"
+	grep -q "== scripts ==" "$out/empty.txt" && fail "--no-scripts baked scripts"
+	"$host" --pak "$out/empty.pak" --walk --frames 10 --shots 0 --stats "$out/stats.json" | grep -q "scripts           none" \
+		|| fail "an archive without scripts was not reported as such"
+	[ "$(num npcsTotal)" = "0" ] || fail "inhabitants without scripts"
 	"$host" --pak "$out/data.pak" --frames 150 --shots 2 --time 19.5 --out "$out/frame" --stats "$out/stats.json"
 	;;
 zen)
@@ -75,7 +89,31 @@ grep -q "seams: .* T-junctions closed" "$out/info.txt" || fail "no seam repair i
 grep -q "position step: " "$out/info.txt" || fail "no position step in the report"
 grep -q "inside out" "$out/info.txt" && fail "winding check complained about a correct world"
 
+if [ "$mode" = synth ]; then
+	grep -q "scripts: the built-in script: .* symbols" "$out/info.txt" || fail "no scripts in the report"
+	grep -q "STARTUP_WORLD puts 8 characters into it (4 with a daily routine, 4 without), 1 items" "$out/info.txt" \
+		|| fail "the start-up did not populate the world"
+	grep -q "STARTUP_CAVE puts 3 characters into it" "$out/info.txt" || fail "the start-up did not populate the cave"
+	grep -q "inhabitants: 12 characters with 6 different looks; models for 6 of them (11 characters): 3 skeletons" "$out/info.txt" \
+		|| fail "the inhabitants' models were not baked"
+	sed -n '/== scripts ==/,$p' "$out/info.txt" | grep -q "WARNING" && fail "the scripts' part of the bake has warnings"
+	grep -q "places: 13 named" "$out/info.txt" || fail "the world's places were not baked"
+fi
+
 if [ "$mode" = zen ]; then
+	# The fixture's scripts: read from GOTHIC.DAT, checked against the reference
+	# interpreter, run for both worlds; the people they name baked from the game's model files.
+	grep -q "scripts: GOTHIC.DAT: 117 symbols" "$out/info.txt" || fail "the game's scripts were not read"
+	grep -q "checked against the reference interpreter: 6 runs (start-up, dialogues, items), 6 the same .* 0 different" "$out/info.txt" \
+		|| fail "the scripts were not checked against the reference interpreter"
+	grep -q "variables at the end the same" "$out/info.txt" || fail "the interpreters disagree about the variables"
+	grep -q "STARTUP_FIXTURE puts 3 characters into it (1 with a daily routine, 2 without), 1 items" "$out/info.txt" \
+		|| fail "the start-up did not populate the world"
+	grep -q "5 characters with 4 different looks; models for 3 of them" "$out/info.txt" || fail "the inhabitants' models were not baked"
+	grep -q "NOSUCH.MSB/.MDS not found" "$out/info.txt" || fail "a look without files was not reported"
+	grep -q '"npcsTotal":4' "$out/stats.json" || fail "the scripts' characters did not reach the runtime"
+	grep -q '"npcsHere":3' "$out/stats.json" || fail "the characters have no place in the world"
+
 	# The check must catch a deliberately inverted bake.
 	"$bake" world --game "$fixture/game" --zen FIXTURE.ZEN --flip -o "$out/flipped.pak" | grep -q "inside out" \
 		|| fail "winding check missed an inverted world"

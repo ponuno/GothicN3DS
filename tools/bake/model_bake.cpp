@@ -60,7 +60,7 @@ struct VertexKey {
 
 } // namespace
 
-ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWriter& pak) {
+ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWriter& pak, ModelBakeShared* shared) {
 	ModelBakeResult result;
 	auto line = [&](const std::string& s) {
 		result.report += s + "\n";
@@ -115,10 +115,21 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 		const std::string& tex = part.material.texture;
 		if (tex.empty() || textureHash.count(tex)) continue;
 		const std::string name = texturePakName(tex);
+		// Another model of this bake may have baked it already.
+		if (shared) {
+			const auto known = shared->textures.find(tex);
+			if (known != shared->textures.end()) {
+				textureHash[tex] = known->second.hash;
+				textureAlpha[tex] = known->second.alpha;
+				if (!known->second.hash) missing.push_back(tex);
+				continue;
+			}
+		}
 		SrcImage img;
 		if (!model.loadTexture || !model.loadTexture(tex, img)) {
 			textureHash[tex] = 0;
 			missing.push_back(tex);
+			if (shared) shared->textures[tex] = ModelBakeShared::Texture {};
 			continue;
 		}
 		TexBakeInfo info;
@@ -130,7 +141,9 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 		}
 		textureHash[tex] = hashName(name.c_str());
 		textureAlpha[tex] = info.alpha;
+		if (shared) shared->textures[tex] = ModelBakeShared::Texture {textureHash[tex], info.alpha};
 	}
+	result.missingTextures = missing;
 
 	// ---- mesh: bounds, then parts by texture and bone palette ----
 	float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
@@ -147,7 +160,13 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 			}
 		}
 	}
-	if (triangles == 0) throw std::runtime_error("model '" + model.name + "' has no triangles");
+	// No mesh at all is a skeleton with its animations; a mesh without
+	// triangles is a mistake.
+	if (triangles == 0 && !model.parts.empty()) throw std::runtime_error("model '" + model.name + "' has no triangles");
+	if (triangles == 0) {
+		if (model.clips.empty()) throw std::runtime_error("model '" + model.name + "' has neither mesh nor animations");
+		for (int a = 0; a < 3; ++a) mn[a] = mx[a] = 0.0f;
+	}
 	float reach = 1.0f;
 	for (int a = 0; a < 3; ++a) reach = std::max({reach, std::fabs(mn[a]), std::fabs(mx[a])});
 	float posScale = 1.0f / 256.0f; // a power of two, like the world's

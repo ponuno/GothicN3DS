@@ -3,6 +3,14 @@ target_link_libraries(test_core PRIVATE g3tools g3soft)
 target_compile_options(test_core PRIVATE ${G3DS_WARNINGS})
 add_test(NAME core COMMAND test_core ${CMAKE_CURRENT_BINARY_DIR})
 
+add_executable(test_script test_script.cpp)
+target_link_libraries(test_script PRIVATE g3tools)
+target_compile_options(test_script PRIVATE ${G3DS_WARNINGS})
+if (G3DS_WITH_ZENKIT)
+    target_compile_definitions(test_script PRIVATE G3DS_WITH_ZENKIT=1)
+endif ()
+add_test(NAME script COMMAND test_script ${CMAKE_CURRENT_BINARY_DIR})
+
 # The console backend (platform/3ds/gfx_c3d.cpp) against a stand-in for libctru
 # and citro3d that checks which buffer and which memory the GPU owns when.
 add_executable(test_frames test_frames.cpp mock3ds/mock3ds.cpp ${CMAKE_SOURCE_DIR}/platform/3ds/gfx_c3d.cpp)

@@ -3,6 +3,7 @@
 #pragma once
 #include "g3ds/pak.h"
 #include "hero.h"
+#include "npcs.h"
 #include "player.h"
 #include "sky.h"
 #include "world.h"
@@ -64,6 +65,10 @@ public:
 	Environment& environment() { return _env; }
 	Player& player() { return _player; }
 	const Hero& hero() const { return _hero; }
+	// The characters the game's scripts put into the world; not loaded with
+	// an archive that has no scripts.
+	Npcs& npcs() { return _npcs; }
+	const Npcs& npcs() const { return _npcs; }
 	// True if the player steers a character (see Input); false with an
 	// archive that has none, and while flying.
 	bool steersHero() const { return _hero.loaded() && !_player.flying; }
@@ -99,6 +104,7 @@ private:
 	World _world;
 	Player _player;
 	Hero _hero;
+	Npcs _npcs;
 	Sky _sky;
 	Camera _cam;
 	Environment _env;

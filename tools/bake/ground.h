@@ -10,8 +10,9 @@ namespace g3 {
 
 class GroundSampler {
 public:
-	// Indexes the first `count` triangles of the scene (the world mesh).
-	void build(const SrcScene& scene, size_t count);
+	// Indexes the first `count` triangles of the scene (the world mesh). With
+	// `solidOnly`, only what can be stood on: no water, no foliage.
+	void build(const SrcScene& scene, size_t count, bool solidOnly = false);
 
 	// Finds the highest surface at or below `y` under (x, z) and returns its
 	// interpolated vertex colour. False if there is nothing below the point.

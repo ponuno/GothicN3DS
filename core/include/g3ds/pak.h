@@ -20,6 +20,7 @@ enum AssetType : u16 {
 	ASSET_META = 4,    // UTF-8 text (bake report)
 	ASSET_MODEL = 5,   // ModelHeader + skeleton + skinned mesh (model.h)
 	ASSET_CLIP = 6,    // ClipHeader + sampled node transforms (model.h)
+	ASSET_SCRIPT = 7,  // ScriptHeader + the game's compiled scripts (script.h)
 };
 
 struct PakHeader {

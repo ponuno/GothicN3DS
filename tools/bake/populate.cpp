@@ -1,0 +1,394 @@
+#include "populate.h"
+
+#include "game.h"
+#include "g3ds/game.h"
+#include "model_bake.h"
+#include "script_check.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <map>
+#include <set>
+#include <stdexcept>
+
+namespace g3 {
+
+namespace {
+
+std::string format(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+std::string format(const char* fmt, ...) {
+	char buf[1024];
+	va_list ap;
+	va_start(ap, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, ap);
+	va_end(ap);
+	return buf;
+}
+
+std::string upper(std::string s) {
+	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return char(std::toupper(c)); });
+	return s;
+}
+
+bool findPoint(void* user, const char* name, float pos[3], float& yaw) {
+	const SrcScene& scene = *static_cast<const SrcScene*>(user);
+	const auto it = scene.points.find(upper(name));
+	if (it == scene.points.end()) return false;
+	std::copy_n(it->second.pos, 3, pos);
+	yaw = it->second.yaw;
+	return true;
+}
+
+struct Look {
+	u32 key = 0;
+	std::string script, body, head, armor;
+	int bodyTex = 0, skin = 0, headTex = 0, teethTex = 0;
+	u32 users = 0;
+	std::string example; // somebody who looks like this
+};
+
+// What a model is made of, to tell two requests for the same thing apart
+// from two for different things: a body in a skin colour its textures do not
+// have is the same model as in the colour they do.
+std::string signature(const std::string& kind, const SrcModel& m) {
+	std::string s = kind;
+	std::vector<std::string> textures;
+	size_t triangles = 0;
+	for (const SrcModelPart& part : m.parts) {
+		textures.push_back(upper(part.material.texture));
+		triangles += part.verts.size() / 3;
+	}
+	std::sort(textures.begin(), textures.end());
+	for (const std::string& t : textures) s += "|" + t;
+	return s + "|" + std::to_string(triangles);
+}
+
+bool sameSkeleton(const SrcModel& a, const SrcModel& b) {
+	if (a.nodes.size() != b.nodes.size()) return false;
+	for (size_t i = 0; i < a.nodes.size(); ++i)
+		if (upper(a.nodes[i].name) != upper(b.nodes[i].name) || a.nodes[i].parent != b.nodes[i].parent) return false;
+	return true;
+}
+
+} // namespace
+
+std::string worldScriptName(const BakeWorld& world) {
+	std::string s = world.level.empty() ? world.name : world.level;
+	const size_t slash = s.find_last_of("/\\");
+	if (slash != std::string::npos) s = s.substr(slash + 1);
+	const size_t dot = s.rfind('.');
+	if (dot != std::string::npos) s.resize(dot);
+	return upper(s);
+}
+
+void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, const BakeOptions& opt, PakWriter& pak,
+                    const std::function<void(const std::string&)>& line, BakeResult& result) {
+	if (!scripts.script) return;
+	const SrcScript& script = *scripts.script;
+	line("== scripts ==");
+	const auto lines = [&](const std::string& text) {
+		size_t at = 0;
+		while (at < text.size()) {
+			const size_t end = text.find('\n', at);
+			line(text.substr(at, end == std::string::npos ? std::string::npos : end - at));
+			if (end == std::string::npos) break;
+			at = end + 1;
+		}
+	};
+
+	// ---- the image ----
+	std::vector<u8> image;
+	try {
+		ScriptBakeResult sr;
+		image = bakeScript(script, sr);
+		lines(sr.report);
+	} catch (const std::exception& ex) {
+		line(std::string("WARNING: scripts not baked: ") + ex.what() + "; the worlds stay empty");
+		return;
+	}
+	const auto fresh = [&]() {
+		u8* blob = static_cast<u8*>(std::malloc(image.size()));
+		if (!blob) throw std::bad_alloc();
+		std::memcpy(blob, image.data(), image.size());
+		return blob;
+	};
+
+	// ---- the same in the reference interpreter ----
+	if (scripts.dat) {
+		ScriptCheckOptions co;
+		co.world = worldScriptName(worlds[0]);
+		for (size_t w = 1; w < worlds.size(); ++w) {
+			co.functions.push_back("STARTUP_" + worldScriptName(worlds[w]));
+			co.functions.push_back("INIT_" + worldScriptName(worlds[w]));
+		}
+		try {
+			const ScriptCheckResult cr = checkScript(*scripts.dat, script, image, co);
+			lines(cr.report);
+			result.scriptChecked = cr.ran;
+			result.scriptSame = cr.ran && cr.differ == 0 && cr.stateSame;
+		} catch (const std::exception& ex) {
+			line(std::string("scripts: not checked against the reference interpreter: ") + ex.what());
+		}
+	}
+
+	// ---- who lives where ----
+	Game game;
+	game.setQuiet(true);
+	if (!game.adopt(fresh(), u32(image.size()))) {
+		line("WARNING: the script machine refuses the baked scripts; the worlds stay empty");
+		return;
+	}
+	pak.add("script/gothic", ASSET_SCRIPT, image);
+
+	std::map<u32, u32> unboundCalls; // calls of engine functions nobody implements, by symbol
+	game.vm().onUnbound([](u32 symbol, void* user) { ++(*static_cast<std::map<u32, u32>*>(user))[symbol]; }, &unboundCalls);
+
+	if (const GameNpc* hero = game.hero()) {
+		const GameLook& l = hero->look;
+		line(format("the player's character: %s, body %s (texture %d, skin %d), head %s (texture %d)", game.text(l.script),
+		            game.text(l.body), l.bodyTex, l.skin, game.text(l.head), l.headTex));
+	} else {
+		line("the scripts have no PC_HERO");
+	}
+	for (size_t w = 0; w < worlds.size(); ++w) {
+		const std::string name = worldScriptName(worlds[w]);
+		const GameStats before = game.stats();
+		const u32 npcsBefore = game.npcCount();
+		const bool hasStartup = script.find("STARTUP_" + name) >= 0;
+		game.enterWorld(name.c_str(), 8.0f, findPoint, &worlds[w].scene);
+		const GameStats& now = game.stats();
+		if (!hasStartup) {
+			line("world '" + worlds[w].name + "': the scripts have no STARTUP_" + name + "; nobody lives there");
+			continue;
+		}
+		u32 creatures = 0;
+		std::vector<std::string> nowhere;
+		for (u32 i = npcsBefore; i < game.npcCount(); ++i) {
+			const GameNpc& n = game.npc(i);
+			creatures += n.routineCount == 0;
+			if (!n.placed) {
+				const std::string where = game.text(n.want);
+				if (std::find(nowhere.begin(), nowhere.end(), where) == nowhere.end()) nowhere.push_back(where);
+			}
+		}
+		std::string l = format("world '%s': STARTUP_%s puts %u characters into it (%u with a daily routine, %u without), %u items",
+		                       worlds[w].name.c_str(), name.c_str(), now.npcs - before.npcs, now.withRoutine - before.withRoutine,
+		                       creatures, now.items - before.items);
+		if (now.notNpc != before.notNpc) l += format("; %u insertions of things that are no characters", now.notNpc - before.notNpc);
+		line(l);
+		if (now.unplaced) {
+			std::string list;
+			for (size_t i = 0; i < nowhere.size() && i < 8; ++i) list += (i ? ", " : "") + nowhere[i];
+			if (nowhere.size() > 8) list += ", ...";
+			line(format("WARNING: %u of them stand at places the world does not have (not drawn): ", now.unplaced) + list);
+		}
+	}
+	result.characters = game.stats().npcs;
+	{
+		const ScriptStats& vs = game.vm().stats();
+		u64 stubbed = 0;
+		std::vector<std::pair<u32, u32>> byCount;
+		for (const auto& [symbol, count] : unboundCalls) {
+			stubbed += count;
+			byCount.push_back({count, symbol});
+		}
+		std::sort(byCount.rbegin(), byCount.rend());
+		std::string list;
+		for (size_t i = 0; i < byCount.size() && i < 12; ++i)
+			list += format("%s%s x%u", i ? ", " : "", script.symbols[byCount[i].second].name.c_str(), byCount[i].first);
+		if (byCount.size() > 12) list += ", ...";
+		line(format("start-up ran %llu instructions; %u complaints, %u calls given up%s%s",
+		            static_cast<unsigned long long>(vs.instructions), vs.errors, vs.aborted,
+		            vs.errors || vs.aborted ? "; the last: " : "", vs.errors || vs.aborted ? vs.lastError : ""));
+		if (!byCount.empty())
+			line(format("engine functions the start-up called that do nothing yet: %zu, called %llu times: ", byCount.size(),
+			            static_cast<unsigned long long>(stubbed)) +
+			     list);
+	}
+
+	// ---- what they look like ----
+	std::map<u32, Look> looks;
+	for (u32 i = 0; i < game.npcCount(); ++i) {
+		const GameNpc& n = game.npc(i);
+		const GameLook& gl = n.look;
+		if (n.hero) continue; // has a model of its own
+		if (gl.script == 0 || (gl.body == 0 && gl.armor == 0)) continue; // no model script, no body: nothing to draw
+		const u32 key = game.lookKey(gl);
+		Look& l = looks[key];
+		if (l.users++ == 0) {
+			l.key = key;
+			l.script = game.text(gl.script);
+			l.body = game.text(gl.body);
+			l.head = game.text(gl.head);
+			l.armor = game.text(gl.armor);
+			l.bodyTex = gl.bodyTex;
+			l.skin = gl.skin;
+			l.headTex = gl.headTex;
+			l.teethTex = gl.teethTex;
+			l.example = n.symbol < script.symbols.size() ? script.symbols[n.symbol].name : std::string("?");
+		}
+	}
+	result.looks = looks.size();
+	if (looks.empty() || !scripts.looks.rig || !scripts.looks.body) {
+		if (!looks.empty()) line(format("%zu looks; no models for them in this bake: nobody is drawn", looks.size()));
+		return;
+	}
+
+	BakeOptions quiet = opt;
+	quiet.quiet = true;
+	ModelBakeShared shared;
+	struct Rig {
+		SrcModel model; // kept: bodies are checked against its skeleton
+		u32 hash = 0;
+	};
+	std::map<std::string, Rig> rigs;
+	std::map<std::string, u32> requested; // body or head as asked for -> model hash (0: cannot be had)
+	std::map<std::string, u32> bySignature;
+	std::map<std::string, u32> problems; // reason -> looks
+	std::vector<LookEntry> entries;
+	size_t bodies = 0, heads = 0, triangles = 0, textures = 0, clipCount = 0;
+	std::set<std::string> missingTextures;
+	u64 bytesBefore = pak.rawBytes(ASSET_MODEL) + pak.rawBytes(ASSET_CLIP), texBefore = pak.rawBytes(ASSET_TEXTURE);
+
+	// One piece of a look: from the source, checked, baked once.
+	const auto piece = [&](const std::string& request, const std::string& kind, const std::string& what, const Rig& rig,
+	                       size_t& counter, const std::function<bool(SrcModel&)>& make, std::string& why) -> u32 {
+		const auto known = requested.find(request);
+		if (known != requested.end()) return known->second;
+		u32& out = requested[request];
+		out = 0;
+		SrcModel m;
+		try {
+			if (!make(m)) {
+				why = m.notes.empty() ? kind + " not found" : m.notes.back();
+				return 0;
+			}
+			if (!sameSkeleton(m, rig.model)) {
+				why = kind + " made for another skeleton";
+				return 0;
+			}
+			m.clips.clear();
+			m.blends.clear();
+			const std::string sig = signature(kind + "|" + what, m);
+			const auto same = bySignature.find(sig);
+			if (same != bySignature.end()) return out = same->second;
+			m.name = "npc." + kind + std::to_string(counter);
+			const ModelBakeResult mr = bakeModel(m, quiet, pak, &shared);
+			++counter;
+			triangles += mr.triangles;
+			textures += mr.textures;
+			missingTextures.insert(mr.missingTextures.begin(), mr.missingTextures.end());
+			out = hashName(("model/" + m.name).c_str());
+			bySignature[sig] = out;
+			return out;
+		} catch (const std::exception& ex) {
+			why = kind + " unusable: " + ex.what();
+			return 0;
+		}
+	};
+
+	for (const auto& [key, l] : looks) {
+		std::string why;
+		// The skeleton and its idle animation.
+		auto rigIt = rigs.find(l.script);
+		if (rigIt == rigs.end()) {
+			Rig rig;
+			try {
+				if (scripts.looks.rig(l.script, !l.head.empty(), rig.model)) {
+					rig.model.parts.clear();
+					rig.model.blends.clear();
+					rig.model.name = "npc.rig" + std::to_string(rigs.size());
+					if (rig.model.clips.empty()) {
+						why = "no animation to stand in";
+					} else {
+						const ModelBakeResult mr = bakeModel(rig.model, quiet, pak, &shared);
+						clipCount += mr.clips;
+						rig.hash = hashName(("model/" + rig.model.name).c_str());
+					}
+				} else {
+					why = rig.model.notes.empty() ? "no skeleton" : rig.model.notes.back();
+				}
+			} catch (const std::exception& ex) {
+				why = std::string("skeleton unusable: ") + ex.what();
+				rig.hash = 0;
+			}
+			rig.model.clips.clear(); // only the skeleton is needed from here on
+			rigIt = rigs.emplace(l.script, std::move(rig)).first;
+			if (!why.empty()) rigIt->second.model.notes.push_back(why);
+		}
+		const Rig& rig = rigIt->second;
+		u32 body = 0, head = 0;
+		if (!rig.hash) {
+			if (why.empty()) why = rig.model.notes.empty() ? "no skeleton" : rig.model.notes.back();
+		} else {
+			const std::string mesh = l.armor.empty() ? l.body : l.armor;
+			body = piece(format("b|%s|%s|%d|%d", l.script.c_str(), mesh.c_str(), l.bodyTex, l.skin), "body", l.script + "/" + mesh,
+			             rig, bodies,
+			             [&](SrcModel& m) { return scripts.looks.body(l.script, mesh, l.bodyTex, l.skin, m); }, why);
+			if (body && !l.head.empty() && scripts.looks.head) {
+				std::string headWhy;
+				head = piece(format("h|%s|%s|%d|%d|%d", l.script.c_str(), l.head.c_str(), l.headTex, l.skin, l.teethTex), "head",
+				             l.script + "/" + l.head, rig, heads,
+				             [&](SrcModel& m) { return scripts.looks.head(l.script, l.head, l.headTex, l.skin, l.teethTex, m); },
+				             headWhy);
+				// A character without its head is still better than none.
+				if (!head) ++problems["head missing (drawn without): " + (headWhy.empty() ? l.head : headWhy)];
+			}
+		}
+		if (!body) {
+			++problems[(why.empty() ? std::string("no body") : why) + " [" + l.script + "/" + (l.armor.empty() ? l.body : l.armor) +
+			           ", e.g. " + l.example + "]"];
+			continue;
+		}
+		entries.push_back(LookEntry {key, rig.hash, body, head});
+	}
+
+	std::sort(entries.begin(), entries.end(), [](const LookEntry& a, const LookEntry& b) { return a.key < b.key; });
+	std::vector<u8> blob(sizeof(LooksHeader) + entries.size() * sizeof(LookEntry));
+	LooksHeader lh {LOOKS_MAGIC, LOOKS_VERSION, u32(entries.size()), 0};
+	std::memcpy(blob.data(), &lh, sizeof(lh));
+	if (!entries.empty()) std::memcpy(blob.data() + sizeof(lh), entries.data(), entries.size() * sizeof(LookEntry));
+	pak.add("meta/looks", ASSET_META, blob);
+
+	size_t rigCount = 0;
+	for (const auto& r : rigs) rigCount += r.second.hash != 0;
+	result.looksBaked = entries.size();
+	result.npcModels = rigCount + bodies + heads;
+	u32 drawn = 0;
+	for (const auto& [key, l] : looks)
+		for (const LookEntry& e : entries)
+			if (e.key == key) drawn += l.users;
+	line(format("inhabitants: %zu characters with %zu different looks; models for %zu of them (%u characters): %zu skeletons "
+	            "with %zu animations, %zu bodies, %zu heads; %zu triangles, %zu textures, %.2f MB of models and %.2f MB of "
+	            "textures",
+	            result.characters, looks.size(), entries.size(), drawn, rigCount, clipCount, bodies, heads, triangles, textures,
+	            double(pak.rawBytes(ASSET_MODEL) + pak.rawBytes(ASSET_CLIP) - bytesBefore) / 1048576.0,
+	            double(pak.rawBytes(ASSET_TEXTURE) - texBefore) / 1048576.0));
+	if (!problems.empty()) {
+		line(format("WARNING: %zu kinds of trouble with the inhabitants' models:", problems.size()));
+		size_t shown = 0;
+		for (const auto& [what, count] : problems) {
+			if (++shown > 16) {
+				line("  ...");
+				break;
+			}
+			line(format("  %u looks: ", count) + what);
+		}
+	}
+	if (!missingTextures.empty()) {
+		std::string list;
+		size_t shown = 0;
+		for (const std::string& t : missingTextures) {
+			if (++shown > 12) break;
+			list += (list.empty() ? "" : ", ") + t;
+		}
+		if (missingTextures.size() > 12) list += ", ...";
+		line(format("WARNING: %zu textures of the inhabitants not found (drawn untextured): ", missingTextures.size()) + list);
+	}
+}
+
+} // namespace g3

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -391,6 +392,190 @@ void buildSyntheticActor(SrcModel& model) {
 	                {"T_SWIM_2_SWIMF", "S_SWIMF", 0.3f, 0.3f}, {"T_SWIMF_2_SWIM", "S_SWIM", 0.3f, 0.3f},
 	                {"T_JUMP_2_RUNL", "S_RUNL", 0.15f, 0.15f}};
 	model.notes.push_back("synthetic test character: 14 nodes, clips named as in Gothic");
+}
+
+// ---- the inhabitants of the synthetic scene ----
+
+namespace {
+
+std::string upperName(std::string s) {
+	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return char(std::toupper(c)); });
+	return s;
+}
+
+// The number after `tag` in a texture name ("..._V3_C1", "_C" -> 1).
+int variantOf(const std::string& name, const char* tag) {
+	const size_t at = name.rfind(tag);
+	return at == std::string::npos ? 0 : std::atoi(name.c_str() + at + std::strlen(tag));
+}
+
+// Clothes and faces by name: what the name says decides the colours, so two
+// looks that differ show it.
+bool paintLook(const std::string& name, SrcImage& out) {
+	const bool isHead = name.find("HEAD") != std::string::npos;
+	const bool isArmor = name.find("ARMOR") != std::string::npos;
+	const bool isHuman = name.compare(0, 4, "HUM_") == 0;
+	u32 h = hashName(name.substr(0, name.find("_V")).c_str());
+	const int v = variantOf(name, "_V"), c = variantOf(name, "_C");
+	static const int skins[4][3] = {{232, 190, 160}, {214, 170, 136}, {170, 122, 90}, {110, 78, 58}};
+	const int* skin = skins[c & 3];
+	out.width = 64;
+	out.height = 32;
+	out.rgba.resize(size_t(64 * 32 * 4));
+	for (int y = 0; y < 32; ++y)
+		for (int x = 0; x < 64; ++x) {
+			u8* p = &out.rgba[size_t(y * 64 + x) * 4];
+			int r, g, b;
+			if (!isHuman) {
+				// A creature's hide: mottled, in a colour of its own.
+				r = 90 + int(h & 63);
+				g = 80 + int((h >> 6) & 63);
+				b = 50 + int((h >> 12) & 31);
+				if (((x * 7 + y * 13) % 11) < 3) { r -= 30; g -= 26; b -= 14; }
+			} else if (isHead) {
+				// Left half: hair and skin all round. Right half: the face.
+				r = skin[0]; g = skin[1]; b = skin[2];
+				if (y < 9) { r = 40 + (v * 37) % 120; g = 30 + (v * 23) % 80; b = 20 + (v * 11) % 40; }
+				if (x >= 32) {
+					const int fx = x - 32;
+					if (y >= 12 && y < 16 && ((fx >= 7 && fx < 12) || (fx >= 20 && fx < 25))) { r = 30; g = 30; b = 40; }
+					if (y >= 23 && y < 25 && fx >= 10 && fx < 22) { r = 150; g = 60; b = 50; }
+				}
+			} else if (isArmor) {
+				// Armour: plates in the colour of its kind, the bare arms in the wearer's.
+				const int base[3] = {70 + int(h & 127), 60 + int((h >> 7) & 63), 50 + int((h >> 13) & 63)};
+				r = base[0]; g = base[1]; b = base[2];
+				if (x >= 32 && y < 16) { r = skin[0]; g = skin[1]; b = skin[2]; }
+				if ((x & 7) == 0 || (y & 7) == 0) { r -= 24; g -= 24; b -= 24; }
+			} else {
+				// The bare body: skin, and trousers by the body texture's number.
+				r = skin[0]; g = skin[1]; b = skin[2];
+				if (y >= 16) { r = 60 + (v * 29) % 70; g = 56 + (v * 17) % 50; b = 44 + (v * 7) % 40; }
+				if (y >= 16 && y < 19) { r = 40; g = 30; b = 20; }
+			}
+			p[0] = u8(std::clamp(r, 0, 255));
+			p[1] = u8(std::clamp(g, 0, 255));
+			p[2] = u8(std::clamp(b, 0, 255));
+			p[3] = 255;
+		}
+	return true;
+}
+
+// A four-legged creature: a body on four legs with a head in front.
+enum CreatureNode { C_ROOT, C_HEAD, C_FL, C_FR, C_BL, C_BR, C_NODES };
+
+void buildCreature(const std::string& script, SrcModel& model) {
+	model = SrcModel {};
+	// Different kinds, different sizes.
+	const float size = 0.6f + float(hashName(script.c_str()) % 5) * 0.12f;
+	const struct {
+		const char* name;
+		int parent;
+		float x, y, z;
+	} rest[C_NODES] = {{"BIP01", -1, 0, 52, 0},           {"BIP01 HEAD", C_ROOT, 0, 10, 46},
+	                   {"BIP01 L FOREARM", C_ROOT, -11, -10, 28}, {"BIP01 R FOREARM", C_ROOT, 11, -10, 28},
+	                   {"BIP01 L CALF", C_ROOT, -11, -10, -28},   {"BIP01 R CALF", C_ROOT, 11, -10, -28}};
+	model.nodes.resize(C_NODES);
+	float w[C_NODES][3];
+	for (int i = 0; i < C_NODES; ++i) {
+		SrcNode& n = model.nodes[size_t(i)];
+		n.name = rest[i].name;
+		n.parent = rest[i].parent;
+		n.pos[0] = rest[i].x * size;
+		n.pos[1] = rest[i].y * size;
+		n.pos[2] = rest[i].z * size;
+		for (int a = 0; a < 3; ++a) w[i][a] = n.pos[a] + (n.parent >= 0 ? w[n.parent][a] : 0.0f);
+	}
+	SrcModelPart body;
+	body.material.name = "creature";
+	addBox(body, {0, 0, w[C_ROOT][1] + 12 * size, w[C_ROOT][1] - 12 * size, 15 * size, 38 * size, C_ROOT, C_ROOT, C_ROOT, 0, 0,
+	              0.0f, 0.0f, 1.0f, 0.5f, false});
+	addBox(body, {0, w[C_HEAD][2], w[C_HEAD][1] + 10 * size, w[C_HEAD][1] - 10 * size, 9 * size, 13 * size, C_HEAD, C_ROOT, C_ROOT,
+	              0.3f, 0.3f, 0.0f, 0.5f, 0.5f, 1.0f, false});
+	for (int leg = C_FL; leg <= C_BR; ++leg)
+		addBox(body, {w[leg][0], w[leg][2], w[leg][1] + 4 * size, 0.0f, 4.5f * size, 4.5f * size, leg, C_ROOT, leg, 0.4f, 0,
+		              0.5f, 0.5f, 1.0f, 1.0f, false});
+	model.parts.push_back(std::move(body));
+	model.loadTexture = paintLook;
+
+	// Standing about: breathing, the head swaying.
+	SrcClip clip;
+	clip.name = "S_FISTRUN";
+	clip.next = "S_FISTRUN";
+	clip.fps = 25.0f;
+	clip.nodes = {C_ROOT, C_HEAD};
+	for (int f = 0; f < 40; ++f) {
+		const float s = std::sin(float(f) / 40.0f * kTau);
+		SrcClipSample root {}, head {};
+		std::copy_n(model.nodes[C_ROOT].pos, 3, root.pos);
+		root.pos[1] += 1.5f * size * s;
+		root.rot[3] = 1.0f;
+		std::copy_n(model.nodes[C_HEAD].pos, 3, head.pos);
+		head.rot[1] = std::sin(0.2f * s);
+		head.rot[3] = std::cos(0.2f * s);
+		clip.samples.push_back(root);
+		clip.samples.push_back(head);
+	}
+	model.clips.push_back(std::move(clip));
+}
+
+bool isSyntheticCreature(const std::string& script) { return script == "scavenger" || script == "molerat"; }
+
+} // namespace
+
+bool buildSyntheticRig(const std::string& script, bool, SrcModel& model) {
+	if (script == "humans") {
+		buildSyntheticActor(model);
+		// Standing is all an inhabitant does.
+		std::vector<SrcClip> stand;
+		for (SrcClip& clip : model.clips)
+			if (clip.name == "S_RUN") stand.push_back(std::move(clip));
+		model.clips = std::move(stand);
+	} else if (isSyntheticCreature(script)) {
+		buildCreature(script, model);
+	} else {
+		model.notes.push_back("the synthetic scene has no '" + script + "'");
+		return false;
+	}
+	model.parts.clear();
+	model.notes.clear();
+	return true;
+}
+
+bool buildSyntheticBody(const std::string& script, const std::string& mesh, int tex, int skin, SrcModel& model) {
+	if (script == "humans") {
+		buildSyntheticActor(model);
+		model.parts.resize(1); // the body; the head is a model of its own
+		model.parts[0].material.texture = upperName(mesh) + "_V" + std::to_string(tex) + "_C" + std::to_string(skin);
+	} else if (isSyntheticCreature(script)) {
+		buildCreature(script, model);
+		model.parts[0].material.texture = upperName(mesh);
+	} else {
+		model.notes.push_back("the synthetic scene has no '" + script + "'");
+		return false;
+	}
+	model.parts[0].material.name = mesh;
+	model.loadTexture = paintLook;
+	model.clips.clear();
+	model.blends.clear();
+	model.notes.clear();
+	return true;
+}
+
+bool buildSyntheticHead(const std::string& script, const std::string& head, int tex, int skin, int, SrcModel& model) {
+	if (script != "humans") {
+		model.notes.push_back("only people have heads of their own in the synthetic scene");
+		return false;
+	}
+	buildSyntheticActor(model);
+	model.parts.erase(model.parts.begin());
+	model.parts[0].material.name = head;
+	model.parts[0].material.texture = upperName(head) + "_V" + std::to_string(tex) + "_C" + std::to_string(skin);
+	model.loadTexture = paintLook;
+	model.clips.clear();
+	model.blends.clear();
+	model.notes.clear();
+	return true;
 }
 
 } // namespace g3

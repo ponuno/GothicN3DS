@@ -34,18 +34,18 @@ int info(const char* path) {
 		std::fprintf(stderr, "error: cannot open '%s' as a G3PK archive\n", path);
 		return 1;
 	}
-	static const char* typeNames[] = {"blob", "texture", "world", "chunk", "meta", "model", "clip"};
-	u64 packed[7] = {}, raw[7] = {};
-	u32 counts[7] = {};
+	static const char* typeNames[] = {"blob", "texture", "world", "chunk", "meta", "model", "clip", "script"};
+	u64 packed[8] = {}, raw[8] = {};
+	u32 counts[8] = {};
 	for (u32 i = 0; i < pak.count(); ++i) {
 		const PakEntry& e = pak.entry(i);
-		const u32 t = e.type < 7 ? e.type : 0;
+		const u32 t = e.type < 8 ? e.type : 0;
 		++counts[t];
 		packed[t] += e.packedSize;
 		raw[t] += e.size;
 	}
 	std::printf("%s: %u entries\n", path, pak.count());
-	for (int t = 0; t < 7; ++t) {
+	for (int t = 0; t < 8; ++t) {
 		if (counts[t])
 			std::printf("  %-8s %5u  %8.2f MB raw  %8.2f MB packed\n", typeNames[t], counts[t], double(raw[t]) / 1048576.0,
 			            double(packed[t]) / 1048576.0);
@@ -73,7 +73,9 @@ void usage() {
 	          "\n"
 	          "world: the first --zen is the world the game starts in (default: WORLD.ZEN, or\n"
 	          "NEWWORLD.ZEN for Gothic 2). Worlds reached through its level-change triggers\n"
-	          "(the mines, the temple, ...) are baked too.\n"
+	          "(the mines, the temple, ...) are baked too. So are the game's scripts (GOTHIC.DAT):\n"
+	          "they are checked against the reference interpreter and run to see who lives in\n"
+	          "the worlds, and those characters' models are baked along.\n"
 	          "\n"
 	          "options:\n"
 	          "  -o FILE            output archive (default: data.pak)\n"
@@ -88,6 +90,7 @@ void usage() {
 	          "  --quality 0|1|2    ETC1 effort (default: 1)\n"
 	          "  --flip             reverse the triangle winding (if the winding check complains)\n"
 	          "  --no-hero          do not bake the player's character (the game stays first-person)\n"
+	          "  --no-scripts       do not bake the game's scripts (the worlds stay empty)\n"
 	          "  --hero-script NAME world: the character's model script (default: HUMANS.MDS)\n"
 	          "  --hero-body NAME   world: its body mesh (default: HUM_BODY_NAKED0)\n"
 	          "  --hero-head NAME   world: its head mesh (default: HUM_HEAD_PONY; \"\" for none)\n"
@@ -125,7 +128,7 @@ int main(int argc, char** argv) {
 		SynthOptions synth;
 		std::string out = "data.pak", firstName, gameDir;
 		std::vector<std::string> levels;
-		bool follow = true, hero = true;
+		bool follow = true, hero = true, withScripts = true;
 		for (int i = 2; i < argc; ++i) {
 			const std::string a = argv[i];
 			auto value = [&]() -> std::string {
@@ -145,6 +148,7 @@ int main(int argc, char** argv) {
 			else if (a == "--zen") levels.push_back(levelFile(value()));
 			else if (a == "--no-follow") follow = false;
 			else if (a == "--no-hero") hero = false;
+			else if (a == "--no-scripts") withScripts = false;
 			else if (a == "--hero-script") actor.script = value();
 			else if (a == "--hero-body") actor.body = value();
 			else if (a == "--hero-head") actor.head = value();
@@ -177,7 +181,15 @@ int main(int argc, char** argv) {
 		std::vector<SrcModel> models;
 		CameraSet camera = defaultCameraSet();
 		bool haveCamera = false;
+		SrcScript script;
+		std::vector<u8> scriptDat;
+		BakeScripts scripts;
 		if (cmd == "synth") {
+			if (withScripts) {
+				buildSyntheticScript(script);
+				scripts.script = &script;
+				scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead};
+			}
 			if (hero) {
 				models.emplace_back();
 				buildSyntheticActor(models.back());
@@ -244,11 +256,17 @@ int main(int argc, char** argv) {
 				importZenCamera(game, camera, worlds[0].scene.notes);
 				haveCamera = true;
 			}
+			// The game's scripts, and through them the people of its worlds.
+			if (withScripts && !worlds.empty() && importZenScript(game, script, scriptDat, worlds[0].scene.notes)) {
+				scripts.script = &script;
+				scripts.dat = &scriptDat;
+				scripts.looks = zenLookSource(game);
+			}
 		}
 		if (!firstName.empty()) worlds[0].name = firstName;
 
 		PakWriter pak;
-		bakeWorlds(worlds, models, opt, pak);
+		bakeWorlds(worlds, models, scripts, opt, pak);
 		if (haveCamera) {
 			const u8* bytes = reinterpret_cast<const u8*>(&camera);
 			pak.add("meta/camera", ASSET_META, std::vector<u8>(bytes, bytes + sizeof(camera)));

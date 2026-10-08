@@ -44,6 +44,9 @@ bool App::init(const char* pakPath, const char* worldName) {
 	_clock = 0;
 	_switches = 0;
 	_portalLock = false;
+	// The game's scripts, if the archive has them, and through them the
+	// people of this world.
+	if (_npcs.load(_pak)) _npcs.enterWorld(_pak, _world, this->worldName(), _player.eye(), _env.timeOfDay);
 	return true;
 }
 
@@ -67,6 +70,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	if (!e || e->type != ASSET_WORLD || worldEntryHash == previous) return false;
 	const float drawDistance = _world.config().drawDistance;
 	// Give the old world's memory back before the new one asks for its own.
+	_npcs.leaveWorld();
 	_world.close();
 	gfx::releaseDestroyed();
 	if (!_world.open(&_pak, worldEntryHash)) {
@@ -85,6 +89,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	_cam.pitch = 0;
 	setDrawDistance(drawDistance); // the far plane depends on the chunk size
 	_world.preload(_cam.pos);
+	_npcs.enterWorld(_pak, _world, worldName(), _player.eye(), _env.timeOfDay);
 	_portalLock = true;
 	++_switches;
 	return true;
@@ -184,6 +189,7 @@ void App::setDrawDistance(float cm) {
 }
 
 void App::shutdown() {
+	_npcs.release();
 	_hero.release();
 	_sky.release();
 	_world.close();
@@ -235,6 +241,7 @@ void App::update(const Input& in, float dt) {
 	// Stream first, so the chunks the player is about to stand on are there.
 	// Around the player, not the camera: the camera may be behind a wall.
 	_world.update(_player.eye());
+	_npcs.update(_pak, _world, _player.eye(), _env.timeOfDay, dt);
 
 	const bool wasFlying = _player.flying;
 	const bool steered = _hero.loaded() && !wasFlying && !in.toggleFly;
@@ -421,7 +428,10 @@ void App::render() {
 		_sky.draw(_cam.pos, _cam.zFar * 0.5f, sky);
 	}
 	gfx::setPass(gfx::PASS_WORLD);
-	_world.draw(mul(proj, fd.view), _cam.pos, u32(u64(_clock * 1000.0)));
+	const Mat4 viewProj = mul(proj, fd.view);
+	_world.draw(viewProj, _cam.pos, u32(u64(_clock * 1000.0)));
+	const float indoorLight[3] = {1, 1, 1};
+	_npcs.draw(viewProj, indoor ? indoorLight : sky.light);
 	if (_heroVisible) _hero.draw();
 	gfx::setPass(gfx::PASS_BLEND);
 	_world.drawBlended();

@@ -1,7 +1,9 @@
 // Scene sources for the baker.
 #pragma once
+#include "bake.h"
 #include "model_src.h"
 #include "scene.h"
+#include "script_src.h"
 
 #include <memory>
 #include <string>
@@ -20,6 +22,11 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene);
 
 // A cave with a pool, reached through the portal of the main synthetic scene.
 void buildSyntheticCave(SrcScene& scene);
+
+// The script that populates the two synthetic worlds, written in Daedalus and
+// compiled by this project's own compiler (daedalus.h).
+const char* syntheticScriptSource();
+void buildSyntheticScript(SrcScript& script);
 
 struct ZenImportOptions {
 	std::string zenName = "WORLD.ZEN"; // world file inside the game's archives
@@ -52,7 +59,11 @@ struct ZenActorOptions {
 	int skinColor = 1;
 	std::string head = "HUM_HEAD_PONY";
 	int headVariant = 9; // ... and of the head
-	std::vector<std::string> clips; // animations to bake; empty: what the hero's movement needs
+	int teethVariant = 0;
+	std::vector<std::string> clips; // animations to bake; empty: what the hero's movement needs ...
+	bool heroClips = true;          // ... unless this is false: then exactly `clips`, which may be none
+	// `body` and `head` may be empty: a head alone, a body alone, or - with
+	// neither - just the skeleton and its animations.
 };
 
 // Fills `model` from the game's files. Returns false, with the reason in
@@ -60,10 +71,19 @@ struct ZenActorOptions {
 // character). Throws std::runtime_error on files that exist but cannot be used.
 bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& opt, SrcModel& model);
 
+// The pieces of the inhabitants' looks (bake.h), from the game's files.
+LookSource zenLookSource(std::shared_ptr<const ZenGame> game);
+
 // The game's own camera set-ups, from its compiled scripts (CAMERA.DAT).
 // Returns false and leaves this project's defaults in `set` if they cannot be
 // read; either way a line for the bake report goes to `notes`.
 struct CameraSet;
 bool importZenCamera(std::shared_ptr<const ZenGame> game, CameraSet& set, std::vector<std::string>& notes);
+
+// The game's compiled scripts (GOTHIC.DAT): the symbols and the code, and the
+// file itself for the check against the reference interpreter. Returns false,
+// with a line for the bake report in `notes`, if they cannot be read.
+bool importZenScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<u8>& dat,
+                     std::vector<std::string>& notes);
 
 } // namespace g3

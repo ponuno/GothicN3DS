@@ -58,7 +58,7 @@ static float stick(int v) {
 
 // The bottom-screen report: laid out once every 30 frames, written a line
 // per frame (printing all of it at once takes several milliseconds).
-static const int kReportLines = 18;
+static const int kReportLines = 21;
 static char gReport[kReportLines][48];
 static int gReportCount = 0;
 
@@ -104,6 +104,7 @@ int main(int, char**) {
 	}
 	const bool background = !(startKeys & KEY_B), pacing = !(startKeys & KEY_X), classic = (startKeys & KEY_Y) != 0;
 	const bool plainShader = (startKeys & KEY_R) != 0;
+	const bool nobody = (startKeys & KEY_SELECT) != 0; // the scripts run, their people are not drawn
 	gfx::c3dSetClassicFrames(classic);
 	gfx::c3dSetPlainShader(plainShader);
 
@@ -136,6 +137,7 @@ int main(int, char**) {
 	// Continue where the last session ended, unless L is held at start.
 	if (!(startKeys & KEY_L) && app.loadState(kStatePath)) drawDistance = app.drawDistance();
 	if ((startKeys & KEY_A) || plainShader) app.setThirdPerson(false);
+	if (nobody || plainShader) app.npcs().config().maxShown = 0;
 	printf("loading...\n");
 	app.world().preload(app.camera().pos);
 	consoleClear();
@@ -274,6 +276,22 @@ int main(int, char**) {
 				     hero.walking() ? "walk " : "", app.thirdPerson() ? "3rd" : "1st", app.cameraSet().fromGame ? "game" : "own");
 			} else {
 				reportLine("hero: none in data.pak");
+			}
+			// The scripts and the people they put into the world.
+			const g3::Npcs& npcs = app.npcs();
+			if (npcs.loaded()) {
+				const g3::NpcStats& ns = npcs.stats();
+				const g3::ScriptStats& vs = npcs.game().vm().stats();
+				reportLine("npcs %2lu shown %2lu near %4lu here%s", static_cast<unsigned long>(ns.shown),
+				     static_cast<unsigned long>(ns.near), static_cast<unsigned long>(ns.here), nobody ? " OFF" : "");
+				reportLine("npc tris %5lu mdl %2lu wait %lu none %lu", static_cast<unsigned long>(ns.triangles),
+				     static_cast<unsigned long>(ns.models), static_cast<unsigned long>(ns.waiting),
+				     static_cast<unsigned long>(ns.noModel));
+				reportLine("script %3.1fMB all %4lu err %lu/%lu", double(npcs.game().vm().imageBytes()) / 1048576.0,
+				     static_cast<unsigned long>(ns.total), static_cast<unsigned long>(vs.errors),
+				     static_cast<unsigned long>(vs.aborted));
+			} else {
+				reportLine("scripts: none in data.pak");
 			}
 			reportLines = gReportCount;
 			msAccum = 0.0f;

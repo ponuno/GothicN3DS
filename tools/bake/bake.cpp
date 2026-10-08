@@ -1,6 +1,10 @@
 #include "bake.h"
 
+#include "ground.h"
 #include "model_bake.h"
+#include "populate.h"
+
+#include "g3ds/game.h"
 
 #include "g3ds/tex.h"
 #include "g3ds/world.h"
@@ -120,7 +124,37 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const BakeOptions& opt, Pa
 
 BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel>& models, const BakeOptions& opt,
                       PakWriter& pak) {
+	return bakeWorlds(worlds, models, BakeScripts(), opt, pak);
+}
+
+BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel>& models, const BakeScripts& scripts,
+                      const BakeOptions& opt, PakWriter& pak) {
 	if (worlds.empty()) throw std::runtime_error("nothing to bake");
+	// Named places are where somebody stands: on the ground under them. (The
+	// game's way points float about a metre above it.)
+	std::vector<std::string> pointNotes(worlds.size());
+	for (size_t w = 0; w < worlds.size(); ++w) {
+		SrcScene& scene = worlds[w].scene;
+		if (scene.points.empty()) continue;
+		GroundSampler ground;
+		ground.build(scene, scene.triangles.size(), true);
+		size_t settled = 0, floating = 0;
+		double drop = 0;
+		for (auto& [name, point] : scene.points) {
+			u8 light[4];
+			float h = 0;
+			if (ground.sample(point.pos[0], point.pos[1] + 60.0f, point.pos[2], light, &h) && h > point.pos[1] - 500.0f) {
+				drop += double(point.pos[1] - h);
+				point.pos[1] = h;
+				++settled;
+			} else {
+				++floating;
+			}
+		}
+		pointNotes[w] = format("places: %zu named (way points and markers), %zu set on the ground (%.0f cm down on average)%s",
+		                       scene.points.size(), settled, settled ? std::max(drop / double(settled), 0.0) : 0.0,
+		                       floating ? format(", %zu with no ground within 5 m below left where they are", floating).c_str() : "");
+	}
 	BakeResult result;
 	auto line = [&](const std::string& s) {
 		result.report += s + "\n";
@@ -477,6 +511,28 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		if (index.size() != worldBlobSize(wh)) throw std::logic_error("world index layout");
 		pak.add("world/" + bw.name, ASSET_WORLD, index);
 
+		// ---- named places, for the scripts ----
+		{
+			std::vector<WorldPoint> points;
+			std::set<u32> seen;
+			for (const auto& [name, point] : scene.points) {
+				const u32 h = hashName(name.c_str());
+				if (!seen.insert(h).second) continue;
+				points.push_back(WorldPoint {h, {point.pos[0], point.pos[1], point.pos[2]}, point.yaw});
+			}
+			std::sort(points.begin(), points.end(), [](const WorldPoint& a, const WorldPoint& b) { return a.nameHash < b.nameHash; });
+			PointsHeader ph {};
+			ph.magic = POINTS_MAGIC;
+			ph.version = POINTS_VERSION;
+			ph.count = u32(points.size());
+			const std::string scriptName = worldScriptName(bw);
+			std::snprintf(ph.script, sizeof(ph.script), "%s", scriptName.c_str());
+			std::vector<u8> blob(sizeof(ph));
+			std::memcpy(blob.data(), &ph, sizeof(ph));
+			append(blob, points);
+			pak.add("world/" + bw.name + "/points", ASSET_META, blob);
+		}
+
 		// ---- report ----
 		line(format("world '%s': %.0f x %.0f x %.0f m, grid %d x %d cells of %.0f m", bw.name.c_str(),
 		            (wh.bbMax[0] - wh.bbMin[0]) / 100.0, (wh.bbMax[1] - wh.bbMin[1]) / 100.0,
@@ -532,6 +588,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		}
 		if (scene.indoor)
 			line(format("indoor world: no sky, background colour %u %u %u", scene.fogColor[0], scene.fogColor[1], scene.fogColor[2]));
+		if (!pointNotes[w].empty()) line(pointNotes[w]);
 		if (!ladders.empty()) line(format("ladders: %zu", ladders.size()));
 		if (!scene.portals.empty()) {
 			std::string list;
@@ -578,6 +635,14 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 	if (heroBaked) {
 		const std::string hero = lower(models[0].name);
 		pak.add("meta/hero", ASSET_META, std::vector<u8>(hero.begin(), hero.end()));
+	}
+
+	// ---- the scripts and the people they put into the worlds ----
+	// (Whatever goes wrong there, the worlds are worth having without it.)
+	try {
+		bakePopulation(worlds, scripts, opt, pak, line, result);
+	} catch (const std::exception& ex) {
+		line(std::string("WARNING: the scripts' part of the bake stopped: ") + ex.what());
 	}
 
 	const std::string& start = worlds[0].name;

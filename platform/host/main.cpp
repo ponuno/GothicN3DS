@@ -135,6 +135,8 @@ int main(int argc, char** argv) {
 	u32 maxInFlight = 0, maxTexturesWaiting = 0;
 	int heroFrames = 0, heroRoleFrames[Hero::ROLE_COUNT] = {};
 	u64 heroPixels = 0;
+	u32 npcShownMax = 0, npcNearMax = 0, npcTrianglesMax = 0, npcWaitingMax = 0, npcNoModelMax = 0;
+	int npcFrames = 0;
 
 	for (int f = 0; f < frames; ++f) {
 		Input in;
@@ -167,6 +169,15 @@ int main(int argc, char** argv) {
 			++heroRoleFrames[app.hero().role()];
 		}
 
+		{
+			const NpcStats& ns = app.npcs().stats();
+			npcShownMax = max(npcShownMax, ns.shown);
+			npcNearMax = max(npcNearMax, ns.near);
+			npcTrianglesMax = max(npcTrianglesMax, ns.triangles);
+			npcWaitingMax = max(npcWaitingMax, ns.waiting);
+			npcNoModelMax = max(npcNoModelMax, ns.noModel);
+			npcFrames += ns.shown > 0;
+		}
 		const WorldStats& ws = app.world().stats();
 		const gfx::SoftStats ss = gfx::softStats();
 		maxTris = max(maxTris, ws.trianglesDrawn);
@@ -242,6 +253,20 @@ int main(int argc, char** argv) {
 	} else {
 		printf("hero              none in the archive: first person\n");
 	}
+	if (app.npcs().loaded()) {
+		const NpcStats& ns = app.npcs().stats();
+		const ScriptStats& vs = app.npcs().game().vm().stats();
+		printf("scripts           %.2f MB image, %llu instructions run, %u complaints, %u calls given up, %u calls of engine "
+		       "functions that do nothing yet\n",
+		       double(app.npcs().game().vm().imageBytes()) / 1048576.0, static_cast<unsigned long long>(vs.instructions),
+		       vs.errors, vs.aborted, vs.stubCalls);
+		printf("inhabitants       %u by the scripts, %u in %s at the end; near max %u, shown max %u (%u triangles) in %d "
+		       "frames; %u models read, %u in memory with %u textures (%.2f MB); waiting max %u, without models max %u\n",
+		       ns.total, ns.here, app.npcs().worldScript(), npcNearMax, npcShownMax, npcTrianglesMax, npcFrames, ns.loads,
+		       ns.models, ns.textures, double(ns.textureBytes) / 1048576.0, npcWaitingMax, npcNoModelMax);
+	} else {
+		printf("scripts           none in the archive: the worlds are empty\n");
+	}
 	if (underwaterFrames) printf("camera under water %d frames\n", underwaterFrames);
 	if (app.worldSwitches()) printf("world switches    %u\n", app.worldSwitches());
 	printf("budget rejects %u, load failures %u, pak I/O %.2f MB\n", ws.budgetRejects, ws.loadFailures,
@@ -259,7 +284,8 @@ int main(int argc, char** argv) {
 		        "\"loadFailures\":%u,\"overdraw\":%.3f,\"backfaceShare\":%.3f,\"groundedFrames\":%d,"
 		        "\"swimFrames\":%d,\"blendedDrawsMax\":%u,\"batchesCulledAvg\":%llu,\"worldSwitches\":%u,"
 		        "\"pixelsWritten\":%llu,\"heroFrames\":%d,\"heroRunFrames\":%d,\"heroAirFrames\":%d,"
-		        "\"heroSwimFrames\":%d,\"heroPixels\":%llu}\n",
+		        "\"heroSwimFrames\":%d,\"heroPixels\":%llu,\"npcsTotal\":%u,\"npcsHere\":%u,\"npcsShownMax\":%u,"
+		        "\"npcFrames\":%d,\"npcLoads\":%u,\"npcTrianglesMax\":%u,\"scriptErrors\":%u}\n",
 		        frames, static_cast<unsigned long long>(sumTris / u64(frames)), maxTris, maxDraws, ws.chunksTotal,
 		        maxLoaded, ws.peakResidentBytes, ws.budgetRejects, ws.loadFailures, double(sumWritten) / screen,
 		        backfaceShare, groundedFrames, swimFrames, maxBlended,
@@ -267,7 +293,9 @@ int main(int argc, char** argv) {
 		        static_cast<unsigned long long>(sumWritten), heroFrames, heroRoleFrames[Hero::RUN],
 		        heroRoleFrames[Hero::JUMP] + heroRoleFrames[Hero::FALL],
 		        heroRoleFrames[Hero::SWIM] + heroRoleFrames[Hero::SWIM_IDLE],
-		        static_cast<unsigned long long>(heroFrames ? heroPixels / u64(heroFrames) : 0));
+		        static_cast<unsigned long long>(heroFrames ? heroPixels / u64(heroFrames) : 0), app.npcs().stats().total,
+		        app.npcs().stats().here, npcShownMax, npcFrames, app.npcs().stats().loads, npcTrianglesMax,
+		        app.npcs().loaded() ? app.npcs().game().vm().stats().errors + app.npcs().game().vm().stats().aborted : 0u);
 		fclose(fp);
 	}
 

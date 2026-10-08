@@ -40,10 +40,17 @@ target_include_directories(g3sys PUBLIC engine core/include)
 target_link_libraries(g3sys PUBLIC Threads::Threads)
 target_compile_options(g3sys PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
 
+# The script machine and the game's rules. The baker runs them too: it has to
+# know what the scripts put into the world to bake what that needs.
+add_library(g3script STATIC engine/script.cpp engine/game.cpp)
+target_include_directories(g3script PUBLIC engine)
+target_link_libraries(g3script PUBLIC g3core)
+target_compile_options(g3script PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
+
 add_library(g3engine STATIC engine/world.cpp engine/app.cpp engine/collision.cpp engine/player.cpp engine/sky.cpp
-            engine/loader.cpp engine/pacer.cpp engine/model.cpp engine/hero.cpp)
+            engine/loader.cpp engine/pacer.cpp engine/model.cpp engine/hero.cpp engine/npcs.cpp)
 target_include_directories(g3engine PUBLIC engine)
-target_link_libraries(g3engine PUBLIC g3core g3sys)
+target_link_libraries(g3engine PUBLIC g3core g3sys g3script)
 target_compile_options(g3engine PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
 
 add_library(g3soft STATIC platform/host/gfx_soft.cpp)
@@ -62,6 +69,10 @@ set(G3DS_BAKE_SOURCES
     tools/bake/bake.cpp
     tools/bake/chunker.cpp
     tools/bake/model_bake.cpp
+    tools/bake/script_bake.cpp
+    tools/bake/populate.cpp
+    tools/bake/daedalus.cpp
+    tools/bake/synth_script.cpp
     tools/bake/synth_actor.cpp
     tools/bake/ground.cpp
     tools/bake/synth.cpp)
@@ -78,14 +89,17 @@ if (G3DS_WITH_ZENKIT)
         GIT_REPOSITORY https://github.com/GothicKit/ZenKit.git
         GIT_TAG ddf27decd5eeb48ec715e6e66e5f5072c51d88ee)
     FetchContent_MakeAvailable(zenkit)
-    list(APPEND G3DS_BAKE_SOURCES tools/bake/import_zen.cpp)
+    # Third-party code as it is: reading nothing into no buffer (a file cut
+    # short) is harmless there and not ours to report in a sanitizer build.
+    target_compile_options(zenkit PRIVATE -fno-sanitize=nonnull-attribute)
+    list(APPEND G3DS_BAKE_SOURCES tools/bake/import_zen.cpp tools/bake/script_check.cpp)
 else ()
     list(APPEND G3DS_BAKE_SOURCES tools/bake/import_zen_stub.cpp)
 endif ()
 
 add_library(g3tools STATIC ${G3DS_BAKE_SOURCES})
 target_include_directories(g3tools PUBLIC tools/common tools/bake)
-target_link_libraries(g3tools PUBLIC g3core lz4hc rg_etc1 Threads::Threads)
+target_link_libraries(g3tools PUBLIC g3core g3script lz4hc rg_etc1 Threads::Threads)
 target_compile_options(g3tools PRIVATE ${G3DS_WARNINGS})
 # The tools are C++20 because ZenKit's headers are; the runtime stays C++17.
 set_target_properties(g3tools PROPERTIES CXX_STANDARD 20)

@@ -53,6 +53,35 @@ private:
 	float _rise = 0;
 };
 
+// Textures several models share: each is loaded once and freed when the last
+// model using it goes.
+class TexturePool {
+public:
+	TexturePool() = default;
+	~TexturePool() { release(); }
+	TexturePool(const TexturePool&) = delete;
+	TexturePool& operator=(const TexturePool&) = delete;
+
+	// The texture stored under this pak entry; null if it is missing, broken
+	// or the pool is full. Every acquire needs its drop.
+	gfx::Texture* acquire(Pak& pak, u32 entryHash);
+	void drop(gfx::Texture* texture);
+	void release();
+	u32 count() const { return _count; }
+	u32 bytes() const { return _bytes; }
+
+private:
+	enum { CAPACITY = 96 };
+	struct Slot {
+		u32 hash;
+		u32 users;
+		u32 bytes;
+		gfx::Texture* texture;
+	};
+	Slot _slots[CAPACITY] = {};
+	u32 _count = 0, _bytes = 0;
+};
+
 class Model {
 public:
 	Model() = default;
@@ -62,8 +91,16 @@ public:
 
 	// Loads "model/<name>" with its textures and all of its clips.
 	bool load(Pak& pak, const char* name);
+	// The same by pak entry; with a pool, textures are shared through it (and
+	// the pool must outlive the model). A model may be a skeleton with clips
+	// and no mesh: it draws nothing, but poses made on it fit every model with
+	// the same skeleton.
+	bool loadEntry(Pak& pak, u32 entryHash, TexturePool* pool = nullptr);
 	void release();
-	bool loaded() const { return _mesh != nullptr; }
+	bool loaded() const { return _nodes != nullptr; }
+	bool hasMesh() const { return _mesh != nullptr; }
+	// True if a pose of `other` can be drawn with this model.
+	bool sameSkeleton(const Model& other) const;
 
 	const ModelHeader& header() const { return _h; }
 	u32 nodeCount() const { return _h.nodeCount; }
@@ -76,6 +113,8 @@ public:
 	const Clip* clip(u32 nameHash) const;
 	const Clip* clip(const char* name) const { return clip(hashName(name)); }
 	u32 clipCount() const { return _h.clipCount; }
+	// The i-th clip, or null if it could not be loaded.
+	const Clip* clipAt(u32 i) const { return i < _h.clipCount && _clips[i].loaded() ? &_clips[i] : nullptr; }
 	// The model script's blend of this name ("T_RUNL_2_WALKL"), or null.
 	const ModelBlend* blend(u32 nameHash) const;
 	u32 blendCount() const { return _h.blendCount; }
@@ -87,8 +126,10 @@ public:
 
 	// Draws the model in `pose`, standing at `origin` and turned by `yaw`
 	// (0 faces +Z), lit with `light`. `lean` tips it sideways about its feet
-	// (radians, positive to its right). Call in PASS_WORLD.
-	void draw(const Pose& pose, Vec3 origin, float yaw, const float light[3], float lean = 0.0f) const;
+	// (radians, positive to its right); `scale` (x, y, z), if given, stretches
+	// it about its feet. Call in PASS_WORLD.
+	void draw(const Pose& pose, Vec3 origin, float yaw, const float light[3], float lean = 0.0f,
+	          const float* scale = nullptr) const;
 	u32 triangles() const { return _h.indexCount / 3; }
 
 private:
@@ -100,6 +141,7 @@ private:
 	Clip* _clips = nullptr;
 	gfx::Mesh* _mesh = nullptr;
 	gfx::Texture** _textures = nullptr; // per part; shared pointers are freed once
+	TexturePool* _pool = nullptr;       // where the textures come from, if not our own
 	u32 _textureBytes = 0;
 };
 

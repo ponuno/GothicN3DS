@@ -31,6 +31,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <cstdio>
 #include <filesystem>
 #include <functional>
@@ -945,6 +946,11 @@ void describeWater(SrcScene& scene) {
 struct ZenGame {
 	zenkit::Vfs vfs;
 	fs::path dir; // the installation: compiled scripts lie there as loose files
+	// Which side of a character mesh's triangles is the front: +1 as stored,
+	// -1 the other, 0 not known yet. All of a game's character meshes come out
+	// of the same exporter, so what has been found for one whole body holds
+	// for every armour and head (which, open as they are, say little alone).
+	mutable int actorWinding = 0;
 };
 
 std::shared_ptr<ZenGame> openZenGame(const std::string& gameDir, std::vector<std::string>& notes) {
@@ -1089,13 +1095,17 @@ struct SkinInfo {
 	float weight1;
 };
 void appendActorMesh(SrcModel& model, const zenkit::MultiResolutionMesh& mrm, const M34& xf, int node,
-                     const std::vector<SkinInfo>* skin, int variant, int color, std::set<std::string>& substituted) {
+                     const std::vector<SkinInfo>* skin, int variant, int color, std::set<std::string>& substituted,
+                     int teeth = -1) {
 	for (const zenkit::SubMesh& sub : mrm.sub_meshes) {
 		SrcModelPart part;
 		describeMaterial(sub.mat, part.material);
 		if (!part.material.texture.empty()) {
 			// The skin variant, if the game has it; the mesh's own texture otherwise.
-			const std::string wanted = variantTexture(part.material.texture, variant, color);
+			// (Teeth and mouth of a head have a number of their own.)
+			const std::string texUp = upper(part.material.texture);
+			const bool isTeeth = teeth >= 0 && (texUp.compare(0, 9, "HUM_TEETH") == 0 || texUp.compare(0, 9, "HUM_MOUTH") == 0);
+			const std::string wanted = variantTexture(part.material.texture, isTeeth ? teeth : variant, color);
 			SrcImage probe;
 			if (wanted != upper(part.material.texture) && model.loadTexture && model.loadTexture(wanted, probe)) {
 				part.material.texture = wanted;
@@ -1212,7 +1222,7 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 	std::set<std::string> substituted;
 	const std::string bodyBase = stripExtension(upper(opt.body));
 	zenkit::ModelMesh body;
-	if (!loadFile(vfs, bodyBase + ".MDM", body)) {
+	if (!bodyBase.empty() && !loadFile(vfs, bodyBase + ".MDM", body)) {
 		model.notes.push_back("character: body mesh " + bodyBase + ".MDM not found, no character baked");
 		return false;
 	}
@@ -1281,16 +1291,21 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 			headNote = "; head " + headBase + ".MMB not found";
 		} else {
 			appendActorMesh(model, head.mesh, rest[size_t(headNode)], headNode, nullptr, opt.headVariant, opt.skinColor,
-			                substituted);
+			                substituted, opt.teethVariant);
 			headNote = "; head " + headBase;
 		}
 	}
 	size_t triangles = 0;
 	for (const SrcModelPart& part : model.parts) triangles += part.verts.size() / 3;
-	if (triangles == 0) throw std::runtime_error(bodyBase + ".MDM has no triangles");
+	if (triangles == 0 && !bodyBase.empty()) throw std::runtime_error(bodyBase + ".MDM has no triangles");
+	if (triangles == 0 && !opt.head.empty()) {
+		// A head on its own that is not there.
+		model.notes.push_back("character" + headNote.substr(headNote.empty() ? 0 : 1));
+		return false;
+	}
 	// Which side of a triangle is its front? Decided as for the world's
 	// objects: a body is a closed shape, its faces must point outwards.
-	{
+	if (triangles) {
 		double c[3] = {0, 0, 0}, count = 0, radius = 0, flux = 0, area = 0;
 		for (const SrcModelPart& part : model.parts)
 			for (const SrcSkinVertex& v : part.verts) {
@@ -1318,13 +1333,19 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		}
 		const double score = area > 0 && radius > 0 ? flux / (area * 2.0 * radius) : 0;
 		// A flat or open mesh says nothing either way and is left as it is.
-		const bool flip = score < -0.02;
+		bool flip = score < -0.02;
+		const bool wholeCharacter = opt.heroClips && !bodyBase.empty();
+		const bool followed = !wholeCharacter && game->actorWinding != 0;
+		if (followed)
+			flip = game->actorWinding < 0;
+		else if (wholeCharacter || std::fabs(score) > 0.15)
+			game->actorWinding = flip ? -1 : 1;
 		if (flip)
 			for (SrcModelPart& part : model.parts)
 				for (size_t t = 0; t + 2 < part.verts.size(); t += 3) std::swap(part.verts[t + 1], part.verts[t + 2]);
 		char buf[160];
-		std::snprintf(buf, sizeof(buf), "character mesh: %zu triangles, winding %s (score %.3f)", triangles,
-		              flip ? "flipped" : "kept", score);
+		std::snprintf(buf, sizeof(buf), "character mesh: %zu triangles, winding %s (score %.3f%s)", triangles,
+		              flip ? "flipped" : "kept", score, followed ? "; as found for a whole character" : "");
 		windingNote = buf;
 	}
 	{
@@ -1336,7 +1357,7 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		              manyBones, skinVertices);
 		model.notes.push_back(buf);
 	}
-	model.notes.push_back(windingNote);
+	if (!windingNote.empty()) model.notes.push_back(windingNote);
 	if (!substituted.empty()) {
 		std::string list;
 		for (const std::string& t : substituted) list += (list.empty() ? "" : ", ") + t;
@@ -1344,7 +1365,17 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 	}
 	// ---- animations ----
 	std::vector<std::string> wanted = opt.clips;
-	const bool standardSet = wanted.empty();
+	const bool standardSet = wanted.empty() && opt.heroClips;
+	// Anything but the hero's own set leaves out the walking animations, which
+	// say which way the model faces: they are read for that and then dropped,
+	// so that every piece of a character - skeleton, body, head - is turned alike.
+	std::set<std::string> witnesses;
+	if (!standardSet)
+		for (const char* w : {"S_RUNL", "S_WALKL", "S_FISTRUNL", "S_FISTWALKL"})
+			if (std::find(wanted.begin(), wanted.end(), w) == wanted.end()) {
+				wanted.push_back(w);
+				witnesses.insert(w);
+			}
 	if (standardSet) {
 		wanted.assign(std::begin(kHeroClips), std::end(kHeroClips));
 		for (const zenkit::MdsAnimation& a : script.animations)
@@ -1425,13 +1456,13 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		if (!have || lc.ani.frame_count == 0 || lc.ani.node_count == 0 ||
 		    lc.ani.samples.size() != size_t(lc.ani.frame_count) * lc.ani.node_count ||
 		    lc.ani.node_indices.size() != lc.ani.node_count) {
-			notFound.push_back(name);
+			if (!witnesses.count(name)) notFound.push_back(name);
 			continue;
 		}
 		bool nodesOk = true;
 		for (uint32_t idx : lc.ani.node_indices) nodesOk = nodesOk && idx < n;
 		if (!nodesOk) {
-			notFound.push_back(name + " (made for another skeleton)");
+			if (!witnesses.count(name)) notFound.push_back(name + " (made for another skeleton)");
 			continue;
 		}
 		if (!described) {
@@ -1507,7 +1538,7 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 	{
 		double travel[2] = {0, 0};
 		std::string witness;
-		for (const char* name : {"S_RUNL", "S_WALKL", "S_RUN", "S_WALK"}) {
+		for (const char* name : {"S_RUNL", "S_WALKL", "S_FISTRUNL", "S_FISTWALKL", "S_RUN", "S_WALK"}) {
 			for (const SrcClip& clip : model.clips) {
 				if (clip.name != name || !clip.moves || !witness.empty()) continue;
 				const size_t tracks = clip.nodes.size(), frames = clip.samples.size() / tracks;
@@ -1612,8 +1643,63 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		for (const std::string& m : notFound) list += (list.empty() ? "" : ", ") + m;
 		model.notes.push_back("animations not found (the character falls back to simpler ones): " + list);
 	}
-	if (model.clips.empty()) model.notes.push_back("WARNING: no animation could be read; the character stands in its rest pose");
+	if (!witnesses.empty())
+		model.clips.erase(std::remove_if(model.clips.begin(), model.clips.end(),
+		                                 [&](const SrcClip& c) { return witnesses.count(c.name) != 0; }),
+		                  model.clips.end());
+	if (model.clips.empty() && (standardSet || !opt.clips.empty()))
+		model.notes.push_back("WARNING: no animation could be read; the character stands in its rest pose");
 	return true;
+}
+
+LookSource zenLookSource(std::shared_ptr<const ZenGame> game) {
+	LookSource source;
+	source.rig = [game](const std::string& script, bool humanoid, SrcModel& model) {
+		ZenActorOptions o;
+		o.script = script;
+		o.body.clear();
+		o.head.clear();
+		o.heroClips = false;
+		// What it stands about in: people unarmed, creatures ready to bite.
+		if (humanoid)
+			o.clips = {"S_RUN", "S_WALK", "S_FISTRUN"};
+		else
+			o.clips = {"S_FISTRUN", "S_RUN", "S_FISTWALK", "S_WALK"};
+		if (!importZenActor(game, o, model)) return false;
+		// The first of them the game has is the one.
+		for (const std::string& name : o.clips) {
+			const auto it = std::find_if(model.clips.begin(), model.clips.end(), [&](const SrcClip& c) { return c.name == name; });
+			if (it == model.clips.end()) continue;
+			SrcClip keep = std::move(*it);
+			model.clips.clear();
+			model.clips.push_back(std::move(keep));
+			break;
+		}
+		if (model.clips.empty()) model.notes.push_back(upper(script) + ": no animation to stand in");
+		return true;
+	};
+	source.body = [game](const std::string& script, const std::string& mesh, int tex, int skin, SrcModel& model) {
+		ZenActorOptions o;
+		o.script = script;
+		o.body = mesh;
+		o.head.clear();
+		o.bodyVariant = tex;
+		o.skinColor = skin;
+		o.heroClips = false;
+		return importZenActor(game, o, model);
+	};
+	source.head = [game](const std::string& script, const std::string& head, int tex, int skin, int teeth, SrcModel& model) {
+		ZenActorOptions o;
+		o.script = script;
+		o.body.clear();
+		o.head = head;
+		o.headVariant = tex;
+		o.skinColor = skin;
+		o.teethVariant = teeth;
+		o.heroClips = false;
+		return importZenActor(game, o, model);
+	};
+	return source;
 }
 
 // ---- the camera ----------------------------------------------------------
@@ -1711,6 +1797,98 @@ bool importZenCamera(std::shared_ptr<const ZenGame> game, CameraSet& set, std::v
 	} catch (const std::exception& ex) {
 		set = defaultCameraSet();
 		notes.push_back(std::string("camera: CAMERA.DAT could not be used (") + ex.what() + "); this project's own set-up is used");
+		return false;
+	}
+}
+
+bool importZenScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<u8>& dat,
+                     std::vector<std::string>& notes) {
+	script = SrcScript();
+	dat.clear();
+	// Compiled scripts are loose files of the installation; a mod may carry them in an archive.
+	const fs::path loose = findNoCase(game->dir, {"_work", "data", "scripts", "_compiled", "gothic.dat"});
+	std::unique_ptr<zenkit::Read> rd;
+	if (!loose.empty() && fs::is_regular_file(loose)) {
+		rd = zenkit::Read::from(loose);
+		script.source = "GOTHIC.DAT";
+	} else if (const zenkit::VfsNode* node = game->vfs.find("GOTHIC.DAT")) {
+		rd = node->open_read();
+		script.source = "GOTHIC.DAT (from an archive)";
+	} else {
+		notes.push_back("scripts: GOTHIC.DAT not found (_work/Data/Scripts/_compiled); the world stays empty");
+		return false;
+	}
+	try {
+		rd->seek(0, zenkit::Whence::END);
+		const size_t size = rd->tell();
+		rd->seek(0, zenkit::Whence::BEG);
+		if (size < 16 || size > (256u << 20)) throw std::runtime_error("its size makes no sense");
+		dat.resize(size);
+		rd->read(dat.data(), size);
+		rd->seek(0, zenkit::Whence::BEG);
+
+		zenkit::DaedalusScript zs;
+		zs.load(rd.get());
+		const u32 codeSize = zs.size();
+		// The code is what the file ends with, after its size.
+		u32 stated = 0;
+		if (size >= u64(codeSize) + 4) std::memcpy(&stated, dat.data() + size - codeSize - 4, 4);
+		if (size < u64(codeSize) + 4 || stated != codeSize) {
+			// Not laid out as expected: this project's own reader may still cope.
+			readScriptDat(dat, script);
+			notes.push_back("scripts: GOTHIC.DAT has something after its code; read with this project's own reader");
+			return true;
+		}
+		script.code.assign(dat.end() - codeSize, dat.end());
+		const auto& symbols = zs.symbols();
+		script.symbols.resize(symbols.size());
+		for (size_t i = 0; i < symbols.size(); ++i) {
+			const zenkit::DaedalusSymbol& z = symbols[i];
+			SrcSymbol& o = script.symbols[i];
+			o.name = upper(z.name());
+			const u32 type = u32(z.type());
+			if (type > SCRIPT_INSTANCE) throw std::runtime_error("the symbol '" + o.name + "' has an unknown type");
+			o.type = ScriptType(type);
+			o.count = z.count();
+			o.isConst = z.is_const();
+			o.hasReturn = z.has_return();
+			o.member = z.is_member();
+			o.external = z.is_external();
+			const u32 rtype = u32(z.rtype());
+			o.returnType = rtype <= SCRIPT_INSTANCE ? ScriptType(rtype) : SCRIPT_VOID;
+			o.parent = i32(z.parent());
+			if (o.parent < -1 || o.parent >= i32(symbols.size())) o.parent = -1;
+			if (o.member) {
+				o.memberOffset = z.offset_as_member();
+				continue;
+			}
+			switch (o.type) {
+			case SCRIPT_INT:
+				for (u32 k = 0; k < o.count; ++k) o.ints.push_back(z.get_int(u16(k)));
+				break;
+			case SCRIPT_FLOAT:
+				for (u32 k = 0; k < o.count; ++k) o.floats.push_back(z.get_float(u16(k)));
+				break;
+			case SCRIPT_STRING:
+				for (u32 k = 0; k < o.count; ++k) o.strings.push_back(z.get_string(u16(k)));
+				break;
+			case SCRIPT_CLASS:
+				o.classSize = z.class_size();
+				break;
+			case SCRIPT_FUNC:
+			case SCRIPT_PROTOTYPE:
+			case SCRIPT_INSTANCE:
+				o.address = z.address();
+				break;
+			default:
+				break;
+			}
+		}
+		return true;
+	} catch (const std::exception& ex) {
+		script = SrcScript();
+		dat.clear();
+		notes.push_back(std::string("scripts: GOTHIC.DAT could not be read (") + ex.what() + "); the world stays empty");
 		return false;
 	}
 }

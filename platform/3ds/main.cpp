@@ -71,6 +71,9 @@ static void reportLine(const char* fmt, ...) {
 	va_end(ap);
 }
 
+// A line at the bottom of the bottom screen (below the report).
+static void exitStep(const char* text) { printf("\x1b[28;1H%-39.39s", text); }
+
 static void waitForStart() {
 	while (aptMainLoop()) {
 		hidScanInput();
@@ -120,6 +123,7 @@ int main(int, char**) {
 		printf("\nPress START to exit.\n");
 		waitForStart();
 		gfx::shutdown();
+		osSetSpeedupEnable(false);
 		gfxExit();
 		return 1;
 	}
@@ -283,9 +287,18 @@ int main(int, char**) {
 		if (row < reportLines) printf("\x1b[%d;1H%-39.39s", row + 1, gReport[row]);
 	}
 
+	// Leaving. Each step says so on the bottom screen first: should the
+	// console ever hang here, the last line tells where.
+	exitStep("exit 1/4: saving the position");
 	app.saveState(kStatePath);
+	exitStep("exit 2/4: closing the world");
 	app.shutdown();
+	exitStep("exit 3/4: closing the graphics");
 	gfx::shutdown();
+	// The CPU mode is the whole system's, not this program's: the launcher
+	// that comes back and the HOME Menu behind it must not inherit it.
+	osSetSpeedupEnable(false);
+	exitStep("exit 4/4: done");
 	gfxExit();
 	return 0;
 }

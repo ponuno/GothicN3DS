@@ -254,18 +254,22 @@ void shutdown() {
 	// Without a working citro3d there is nothing to wait for or to tear down
 	// (and C3D_FrameSync would wait for a VBlank callback that was never installed).
 	if (gReady) {
-		C3D_FrameSync(); // let the last frame reach the screen
-		if (gProgramReady) shaderProgramFree(&gProgram);
-		if (gDvlb) DVLB_Free(gDvlb);
-		// Deleting the target waits for the GPU's queue; only then are the
-		// buffers of the last frame safe to free.
+		// Deleting the target waits for the GPU's queue: the last frame is
+		// through, and only then are its buffers safe to free. (No waiting
+		// for the display here - leaving must not depend on anything that
+		// might not come.)
 		if (gTarget) C3D_RenderTargetDelete(gTarget);
 		reap();
+		// The command writer still points into one of the buffers freed next.
+		GPUCMD_SetBuffer(nullptr, 0, 0);
 		for (u32*& b : gOwnBuffer) {
 			if (b) linearFree(b);
 			b = nullptr;
 		}
+		// As every citro3d program ends: the library first, then what it used.
 		C3D_Fini();
+		if (gProgramReady) shaderProgramFree(&gProgram);
+		if (gDvlb) DVLB_Free(gDvlb);
 	}
 	free(gDeadTextures.items);
 	free(gDeadMeshes.items);

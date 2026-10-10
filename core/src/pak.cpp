@@ -102,6 +102,13 @@ bool Pak::read(const PakEntry& e, void* dst) {
 	return n >= 0 && u32(n) == e.size;
 }
 
+bool Pak::readRange(const PakEntry& e, u32 offset, void* dst, u32 size) {
+	if (!_file || e.codec != PAK_RAW || e.packedSize != e.size || u64(offset) + size > e.size) return false;
+	if (fseek(_file, long(e.offset) + long(offset), SEEK_SET) != 0) return false;
+	_bytesRead += size;
+	return fread(dst, 1, size, _file) == size;
+}
+
 void* Pak::readAlloc(const PakEntry& e) {
 	void* p = malloc(e.size ? e.size : 1);
 	if (p && !read(e, p)) {

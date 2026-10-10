@@ -1,4 +1,5 @@
 #include "bake.h"
+#include "sound_bake.h"
 
 #include "ground.h"
 #include "model_bake.h"
@@ -709,6 +710,23 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			                 "those): ",
 			                 mobs.size(), byScheme.size(), slots.size(), withoutSlots) +
 			          list + (order.size() > 24 ? ", ..." : "");
+		}
+
+		// ---- the world's own sounds ----
+		if (!scene.ambient.empty() && opt.soundRate > 0) {
+			const std::vector<u8> ambient = bakeAmbient(scene.ambient);
+			AmbientHeader ah;
+			std::memcpy(&ah, ambient.data(), sizeof(ah));
+			if (ah.count > 0) {
+				pak.add("world/" + bw.name + "/ambient", ASSET_META, ambient);
+				line(format("ambient sounds: %u placed in world '%s'", ah.count, bw.name.c_str()));
+			}
+		}
+
+		// ---- the world's music zones ----
+		if (!scene.musicZones.empty() && opt.soundRate > 0) {
+			pak.add("world/" + bw.name + "/music", ASSET_META, bakeMusicZones(scene.musicZones));
+			line(format("music zones: %zu in world '%s'", scene.musicZones.size(), bw.name.c_str()));
 		}
 
 		// ---- report ----

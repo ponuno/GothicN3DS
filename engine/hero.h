@@ -36,6 +36,8 @@ public:
 	bool load(Pak& pak);
 	void release();
 	bool loaded() const { return _model.loaded(); }
+	// Told of the sound events of the clips as they play (footsteps, blows).
+	void setSoundHook(const SoundEventHook& hook) { _soundHook = hook; }
 
 	// Puts the character there, standing still and facing `yaw` (after a teleport).
 	void reset(Vec3 feet, float yaw);
@@ -155,6 +157,7 @@ public:
 
 	void cancelUse(); // drops any use/mantle in progress
 private:
+	SoundEventHook _soundHook;
 	enum State { ST_RUN, ST_RUNL, ST_WALK, ST_WALKL, ST_WALKBL, ST_WALKWL, ST_JUMP, ST_FALLDN, ST_FALL, ST_SWIM, ST_SWIMF, ST_SWIMB, ST_COUNT };
 	static constexpr int STAND = ST_COUNT; // the pseudo-state of the transitions' names
 	// The rows of the tables: what is in the hands (WeaponMode), and sneaking.

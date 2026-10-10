@@ -115,7 +115,8 @@ public:
 	// `light`, if given, receives the baked light (r g b) and the daylight
 	// weight of the surface that was hit: what a character standing there is
 	// lit with.
-	bool rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, u8* light = nullptr) const;
+	// `group`, if given, receives the material group of the surface (what a step on it sounds like).
+	bool rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, u8* light = nullptr, u8* group = nullptr) const;
 	bool pushSphere(Vec3& center, float radius) const;
 	// True if nothing solid reaches into the box (a quick "all clear": false
 	// only says that something may be there).

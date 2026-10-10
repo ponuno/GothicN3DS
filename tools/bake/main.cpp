@@ -1,6 +1,7 @@
 // g3ds-bake: turns scenes (the worlds of a Gothic installation or the
 // built-in synthetic test scene) into data.pak for the 3DS runtime.
 #include "bake.h"
+#include "sound_bake.h"
 #include "g3ds/model.h"
 #include "g3ds/tex.h"
 #include "importers.h"
@@ -92,6 +93,10 @@ void usage() {
 	          "  --flip             reverse the triangle winding (if the winding check complains)\n"
 	          "  --no-hero          do not bake the player's character (the game stays first-person)\n"
 	          "  --no-scripts       do not bake the game's scripts (the worlds stay empty)\n"
+	          "  --sound-rate HZ    highest sample rate of the sound effects (default: 22050)\n"
+	          "  --no-sound         bake no sound effects and no ambient sounds\n"
+	          "  --music-dir DIR    folder of WAV renders of the music themes; makes music.pak beside the output\n"
+	          "  --music-rate HZ    highest sample rate of the music (default: 32000)\n"
 	          "  --hero-script NAME world: the character's model script (default: HUMANS.MDS)\n"
 	          "  --hero-body NAME   world: its body mesh (default: HUM_BODY_NAKED0)\n"
 	          "  --hero-head NAME   world: its head mesh (default: HUM_HEAD_PONY; \"\" for none)\n"
@@ -151,6 +156,10 @@ int main(int argc, char** argv) {
 			else if (a == "--no-follow") follow = false;
 			else if (a == "--no-hero") hero = false;
 			else if (a == "--no-scripts") withScripts = false;
+			else if (a == "--sound-rate") opt.soundRate = u32(std::stoul(value()));
+			else if (a == "--no-sound") opt.soundRate = 0;
+			else if (a == "--music-dir") opt.musicDir = value();
+			else if (a == "--music-rate") opt.musicRate = u32(std::stoul(value()));
 			else if (a == "--hero-script") actor.script = value();
 			else if (a == "--hero-body") actor.body = value();
 			else if (a == "--hero-head") actor.head = value();
@@ -197,6 +206,7 @@ int main(int argc, char** argv) {
 				scripts.script = &script;
 				scripts.fight = &fightScript;
 				scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
+				scripts.soundFile = buildSyntheticSound;
 				buildSyntheticDialogue(dialogue);
 				haveDialogue = true;
 			}
@@ -271,6 +281,7 @@ int main(int argc, char** argv) {
 				scripts.script = &script;
 				scripts.dat = &scriptDat;
 				scripts.looks = zenLookSource(game);
+				scripts.soundFile = zenSoundSource(game);
 				// Gothic 1 keeps how its people fight in a file of its own.
 				if (importZenFightScript(game, fightScript, worlds[0].scene.notes)) scripts.fight = &fightScript;
 				// ... and what they say.
@@ -279,7 +290,8 @@ int main(int argc, char** argv) {
 		}
 		if (!firstName.empty()) worlds[0].name = firstName;
 
-		PakWriter pak;
+		PakWriter pak, musicPak;
+		if (!opt.musicDir.empty()) scripts.musicPak = &musicPak;
 		bakeWorlds(worlds, models, scripts, opt, pak);
 		if (haveDialogue) {
 			std::string line;
@@ -291,6 +303,12 @@ int main(int argc, char** argv) {
 			pak.add("meta/camera", ASSET_META, std::vector<u8>(bytes, bytes + sizeof(camera)));
 		}
 		pak.write(out);
+		if (scripts.musicPak && !musicPak.items().empty()) {
+			const size_t slash = out.find_last_of("/\\");
+			const std::string musicPath = (slash == std::string::npos ? std::string() : out.substr(0, slash + 1)) + "music.pak";
+			musicPak.write(musicPath);
+			std::printf("wrote %s: %zu tracks\n", musicPath.c_str(), musicPak.items().size());
+		}
 		const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 		std::printf("wrote %s: %zu worlds, %zu entries in %.1f s\n", out.c_str(), worlds.size(), pak.items().size(), secs);
 		return 0;

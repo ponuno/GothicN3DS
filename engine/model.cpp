@@ -19,9 +19,18 @@ bool Clip::load(Pak& pak, u32 entryHash, u32 nodeCount) {
 	memcpy(&_h, blob, sizeof(_h));
 	const bool hasMotion = (_h.flags & CLIPF_MOVES) != 0;
 	const bool hasFight = (_h.flags & CLIPF_FIGHT) != 0;
+	const bool hasSound = (_h.flags & CLIPF_SOUND) != 0;
+	const u32 plainSize = clipBlobSize(_h.trackCount, _h.frameCount, hasMotion, hasFight);
+	// (The sound block's count is the file's word: the size has to agree with it.)
+	u32 sfxCount = 0;
+	bool soundFits = !hasSound;
+	if (hasSound && e->size >= plainSize + CLIP_SFX_BLOCK_HEAD) {
+		memcpy(&sfxCount, blob + plainSize, sizeof(sfxCount));
+		soundFits = sfxCount <= CLIP_SFX_MAX && e->size == plainSize + clipSfxSize(sfxCount);
+	}
 	bool ok = _h.magic == CLIP_MAGIC && _h.version == CLIP_VERSION && _h.trackCount > 0 && _h.frameCount > 0 &&
-	          _h.fps > 0.0f && _h.trackCount <= MODEL_MAX_NODES &&
-	          e->size == clipBlobSize(_h.trackCount, _h.frameCount, hasMotion, hasFight);
+	          _h.fps > 0.0f && _h.trackCount <= MODEL_MAX_NODES && soundFits &&
+	          (hasSound ? true : e->size == plainSize);
 	const u8* tracks = blob + sizeof(ClipHeader);
 	for (u32 t = 0; ok && t < _h.trackCount; ++t) ok = tracks[t] < nodeCount;
 	if (!ok) {
@@ -48,6 +57,15 @@ bool Clip::load(Pak& pak, u32 entryHash, u32 nodeCount) {
 		f->hits = u8(min<u32>(f->hits, CLIP_FIGHT_BLOWS));
 		f->hitEnds = u8(min<u32>(f->hitEnds, CLIP_FIGHT_BLOWS));
 		f->windows = u8(min<u32>(f->windows, CLIP_FIGHT_BLOWS));
+	}
+	_sfx = nullptr;
+	_sfxCount = 0;
+	if (hasSound && sfxCount > 0) {
+		_sfx = reinterpret_cast<const ClipSfxEvent*>(blob + plainSize + CLIP_SFX_BLOCK_HEAD);
+		_sfxCount = sfxCount;
+		// (A name that runs to the end of its field has no end: give it one.)
+		ClipSfxEvent* events = const_cast<ClipSfxEvent*>(_sfx);
+		for (u32 i = 0; i < sfxCount; ++i) events[i].name[CLIP_SFX_NAME - 1] = 0;
 	}
 	return true;
 }
@@ -96,6 +114,8 @@ void Clip::release() {
 	_samples = nullptr;
 	_motion = nullptr;
 	_fight = nullptr;
+	_sfx = nullptr;
+	_sfxCount = 0;
 	_rise = 0;
 	_bytes = 0;
 	_h = {};
@@ -502,6 +522,8 @@ void Animator::bind(const Model* model) {
 	_fadeTime = 0;
 	_finished = false;
 	_moved = {0, 0, 0};
+	_eventCount = 0;
+	_eventTime = -1.0f;
 	if (model && model->loaded()) {
 		model->restPose(_pose);
 		_from = _pose;
@@ -521,6 +543,7 @@ void Animator::play(const Clip* clip, float blend) {
 	else if (_clip) _clip->sample(_time, _base);
 	_clip = clip;
 	_time = 0;
+	_eventTime = -1.0f;
 	_rate = 1.0f;
 	_finished = false;
 	// Without a time from the caller: the script's, as ZenGin applies it (the
@@ -537,6 +560,7 @@ void Animator::playReversed(const Clip* clip, float blend) {
 	if (_clip) _clip->sample(_time, _base);
 	_clip = clip;
 	_time = clip->duration();
+	_eventTime = clip->duration();
 	_rate = -1.0f;
 	_finished = false;
 	_fadeTime = blend >= 0.0f ? blend : 0.15f;
@@ -548,6 +572,7 @@ void Animator::restart(float blend) {
 	if (!_model || !_clip) return;
 	_from = _pose;
 	_time = 0;
+	_eventTime = -1.0f;
 	_finished = false;
 	_fadeTime = max(blend, 0.0f);
 	_fade = _fadeTime > 0.0f ? 0.0f : 1.0f;
@@ -564,6 +589,7 @@ void Animator::seek(float time, float blend) {
 	time = clamp(time, 0.0f, _clip->duration());
 	_moved = _moved + (_clip->motion(time) - _clip->motion(_time));
 	_time = time;
+	_eventTime = time; // (the frames jumped over make no sound)
 	_finished = !_clip->loops() && _time >= _clip->duration();
 	if (blend > 0.0f) evaluate();
 }
@@ -583,6 +609,32 @@ void Animator::evaluate() {
 	}
 }
 
+// Notes the sound events of `clip` whose time lies in (from, to]. A loop
+// counts its passes: the times are those of the clock that keeps running.
+void Animator::collect(const Clip* clip, float from, float to) {
+	if (!clip || clip->sfxCount() == 0 || !(to > from)) return;
+	const float fps = clip->header().fps;
+	const float d = clip->duration();
+	const bool loop = clip->loops() && d > 0.0f;
+	u32 pass = loop && from > 0.0f ? u32(from / d) : 0;
+	for (u32 guard = 0; guard < 4; ++guard, ++pass) {
+		const float base = loop ? float(pass) * d : 0.0f;
+		if (base > to) break;
+		for (u32 i = 0; i < clip->sfxCount(); ++i) {
+			const float t = base + float(clip->sfx()[i].frame) / fps;
+			if (t > from && t <= to && _eventCount < EVENTS) _events[_eventCount++] = &clip->sfx()[i];
+		}
+		if (!loop) break;
+	}
+}
+
+u32 Animator::takeEvents(const ClipSfxEvent** out, u32 max) {
+	const u32 n = min(_eventCount, max);
+	for (u32 i = 0; i < n; ++i) out[i] = _events[i];
+	_eventCount = 0;
+	return n;
+}
+
 void Animator::advance(float dt) {
 	if (!_model) return;
 	if (_fade < 1.0f) _fade = _fadeTime > 0.0f ? min(_fade + dt / _fadeTime, 1.0f) : 1.0f;
@@ -590,14 +642,14 @@ void Animator::advance(float dt) {
 		const Vec3 before = _clip->motion(_time);
 		_time += dt * _rate;
 		if (_rate < 0.0f) {
-			// Backwards: the way the root went is undone, and it ends at the first frame.
+			// Backwards (putting a weapon away): the character stays where it stands, and it ends at the first frame.
 			if (_time <= 0.0f) {
 				_time = 0.0f;
 				_finished = true;
 			}
-			_moved = _moved + (_clip->motion(_time) - before);
 		} else if (!_clip->loops() && _time >= _clip->duration()) {
 			_moved = _moved + (_clip->motion(_clip->duration()) - before);
+			collect(_clip, _eventTime, _clip->duration());
 			// Over: on to the clip the model script names as the next one.
 			const Clip* next = _clip->header().next ? _model->clip(_clip->header().next) : nullptr;
 			if (next && next != _clip) {
@@ -606,16 +658,25 @@ void Animator::advance(float dt) {
 				// follower's two times.
 				play(next, max(next->header().blendIn, next->header().blendOut));
 				_time = left;
+				collect(next, -1.0f, left);
+				_eventTime = left;
 				_moved = _moved + next->motion(left);
 			} else {
 				_time = _clip->duration();
+				_eventTime = _time;
 				_finished = true;
 			}
 		} else {
 			_moved = _moved + (_clip->motion(_time) - before);
+			collect(_clip, _eventTime, _time);
+			_eventTime = _time;
 			if (_clip->loops()) {
 				const float d = _clip->duration();
-				if (d > 0.0f && _time >= d * 64.0f) _time = fmodf(_time, d); // keep the float precise on long stays
+				if (d > 0.0f && _time >= d * 64.0f) {
+					const float wrapped = fmodf(_time, d);
+					_eventTime -= _time - wrapped;
+					_time = wrapped; // keep the float precise on long stays
+				}
 			}
 		}
 	}

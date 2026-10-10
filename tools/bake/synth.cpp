@@ -592,6 +592,29 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 	scene.spawnPos[1] = height(0, scene.spawnPos[2]) + 175.0f; // eye height
 	scene.spawnYaw = 3.14159f;
 	scene.hasSpawn = true;
+	{
+		// A steady hum 4 m from where the player starts, heard 25 m around.
+		SrcAmbient hum;
+		hum.sound = "SFX_TEST_HUM";
+		hum.pos[0] = scene.spawnPos[0] + 400.0f;
+		hum.pos[1] = scene.spawnPos[1] - 100.0f;
+		hum.pos[2] = scene.spawnPos[2];
+		hum.radius = 2500.0f;
+		hum.mode = 0;
+		hum.volume = 0.8f;
+		scene.ambient.push_back(hum);
+	}
+	{
+		// The whole world is one music zone: TEST_DAY_STD by day, TEST_NGT_STD at night, TEST_FIG in a fight.
+		SrcMusicZone zone;
+		zone.name = "TEST";
+		zone.isDefault = true;
+		for (int k = 0; k < 3; ++k) {
+			zone.bbMin[k] = -1.0e7f;
+			zone.bbMax[k] = 1.0e7f;
+		}
+		scene.musicZones.push_back(zone);
+	}
 	// Things lying in the grass before the start (the world file's oCItem in
 	// the game): to pick up. The scripts put one more at the smith's.
 	{

@@ -46,12 +46,13 @@ void ChunkCollider::release() {
 	free(cellStart);
 	free(cellItems);
 	free(light);
+	free(group);
 	*this = ChunkCollider {};
 }
 
 u32 ChunkCollider::bytes() const {
 	if (!positions) return 0;
-	return vertexCount * 6 + triangleCount * (6 + (light ? 4u : 0u)) + (gridW * gridH + 1) * 4 +
+	return vertexCount * 6 + triangleCount * (6 + (light ? 4u : 0u) + (group ? 1u : 0u)) + (gridW * gridH + 1) * 4 +
 	       (cellStart ? cellStart[gridW * gridH] : 0) * 4;
 }
 
@@ -73,7 +74,8 @@ bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const
 	u16* remap = static_cast<u16*>(malloc(size_t(h.vertexCount) * sizeof(u16) + 2));
 	triangles = static_cast<u16*>(malloc(size_t(tris) * 3 * sizeof(u16)));
 	light = static_cast<u8*>(malloc(size_t(tris) * 4));
-	if (!remap || !triangles || !light) {
+	group = static_cast<u8*>(malloc(size_t(tris)));
+	if (!remap || !triangles || !light || !group) {
 		free(remap);
 		release();
 		return false;
@@ -92,6 +94,7 @@ bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const
 				const WorldVertex& c0 = vertices[v];
 				const WorldVertex& c1 = vertices[indices[batches[b].firstIndex + i + 1]];
 				const WorldVertex& c2 = vertices[indices[batches[b].firstIndex + i + 2]];
+				group[n / 3] = materials[batches[b].material].group;
 				u8* l = light + size_t(n / 3) * 4;
 				l[0] = u8((u32(c0.r) + c1.r + c2.r) / 3);
 				l[1] = u8((u32(c0.g) + c1.g + c2.g) / 3);
@@ -207,7 +210,7 @@ static inline Vec3 localVertex(const i16* positions, u16 index) {
 	return {float(p[0]), float(p[1]), float(p[2])};
 }
 
-bool ChunkCollider::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, u8* lightOut) const {
+bool ChunkCollider::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, u8* lightOut, u8* groupOut) const {
 	if (!triangleCount) return false;
 	// Work in the chunk's quantised space; the scale is uniform, so shapes keep.
 	const float inv = 1.0f / scale;
@@ -249,6 +252,7 @@ bool ChunkCollider::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal,
 		if (n.y < 0) n = n * -1.0f;
 		normal = n;
 		if (lightOut && light) memcpy(lightOut, light + size_t(tri) * 4, 4);
+		if (groupOut && group) *groupOut = group[tri];
 	}
 	if (found) hitY = origin[1] + best * scale;
 	return found;

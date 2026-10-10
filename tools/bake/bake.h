@@ -20,6 +20,9 @@ struct BakeOptions {
 	TexBakeOptions tex;
 	unsigned threads = 1;
 	bool quiet = false; // do not print the report while baking
+	std::string musicDir;  // folder of the WAV renders of the music themes (empty: no music)
+	u32 musicRate = 32000; // highest rate of the music (Hz)
+	u32 soundRate = 22050; // highest sample rate of the sounds (Hz); 0: no sound is baked
 };
 
 struct BakeWorld {
@@ -72,6 +75,9 @@ struct BakeScripts {
 	// The fight AI tables' script (FIGHT.DAT), baked into "script/fight".
 	// Without it the engine looks for the tables in `script`.
 	const SrcScript* fight = nullptr;
+	// The bytes of a sound file of the game by name ("DOOR_OPEN.WAV"); without it no sound is baked.
+	std::function<bool(const std::string& file, std::vector<u8>& bytes)> soundFile;
+	PakWriter* musicPak = nullptr; // where the music goes (bakeMusic); null: none
 	LookSource looks; // without it nobody is drawn
 };
 

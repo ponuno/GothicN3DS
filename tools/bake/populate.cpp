@@ -1,4 +1,5 @@
 #include "populate.h"
+#include "sound_bake.h"
 #include "fight_ai.h"
 #include "fight_clips.h"
 
@@ -246,6 +247,48 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		}
 	} else {
 		line("fight AI: no tables of their own (FIGHT.DAT); the engine looks for them in the scripts");
+	}
+
+	// ---- sounds: the samples the scripts' C_SFX instances name ----
+	if (opt.soundRate > 0 && scripts.soundFile) {
+		try {
+			const SoundBakeResult sb = bakeSounds(game.vm(), scripts.soundFile, opt.soundRate, pak);
+			std::string text = format("sounds: %u C_SFX instances name %u files; %u baked (%.1f MB at up to %u Hz)", sb.instances,
+			                          sb.files, sb.baked, double(sb.bytes) / 1048576.0, opt.soundRate);
+			if (!sb.missing.empty()) {
+				text += format("; %zu are not in the game's files:", sb.missing.size());
+				for (size_t i = 0; i < sb.missing.size() && i < 6; ++i) text += " " + sb.missing[i];
+			}
+			if (!sb.unusable.empty()) {
+				text += format("; %zu could not be used:", sb.unusable.size());
+				for (size_t i = 0; i < sb.unusable.size() && i < 4; ++i) text += " [" + sb.unusable[i] + "]";
+			}
+			line(text);
+		} catch (const std::exception& ex) {
+			line(std::string("WARNING: sounds not baked: ") + ex.what());
+		}
+	} else if (opt.soundRate > 0) {
+		line("sounds: no sound files to read; the game is silent");
+	}
+
+	// ---- music: the renders in --music-dir, into music.pak ----
+	if (!opt.musicDir.empty() && scripts.musicPak) {
+		try {
+			const MusicBakeResult mb = bakeMusic(game.vm(), opt.musicDir, opt.musicRate, *scripts.musicPak);
+			std::string text = format("music: %u C_MUSICTHEME instances name %u tracks; %u baked (%.1f MB at up to %u Hz)", mb.themes,
+			                          mb.files, mb.baked, double(mb.bytes) / 1048576.0, opt.musicRate);
+			if (!mb.missing.empty()) {
+				text += format("; %zu have no WAV in the folder:", mb.missing.size());
+				for (size_t i = 0; i < mb.missing.size() && i < 6; ++i) text += " " + mb.missing[i];
+			}
+			if (!mb.unusable.empty()) {
+				text += format("; %zu could not be used:", mb.unusable.size());
+				for (size_t i = 0; i < mb.unusable.size() && i < 4; ++i) text += " [" + mb.unusable[i] + "]";
+			}
+			line(text);
+		} catch (const std::exception& ex) {
+			line(std::string("WARNING: music not baked: ") + ex.what());
+		}
 	}
 
 	struct Faults {

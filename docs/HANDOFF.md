@@ -414,3 +414,30 @@ Re-bake `data.pak`: **yes** for the density of small objects (the baker now tell
 10. **Menu.** Pages: Pause / Graphics / Game / Controls / Interface / Debug; a note under the list that follows the value of a choice; "Reset graphics". `settings.bin` version 4 (language, density, npcDistance appended; older files keep the defaults for them).
 
 Tests: `settings` (menu pages, languages), new `thinning`; `test_zen` expectations for `SrcTriangle::detail` mask the class (`& 3`). Run by Claude: only `settings`, `thinning`, `detail fade` and the chunker group on the PC build; the rest is the user's. `scripts/check_3ds.sh` clean.
+
+## Round 10 (sound and music; PC only - nothing of this has been heard on the console)
+
+Re-bake `data.pak`: **yes** (samples `sfx/*`, `world/<name>/ambient`, `world/<name>/music`, and the sound events in the clips). The music is a **separate `music.pak`** beside `data.pak`, made by the baker from WAV renders the player provides (`--music-dir DIR`); without it there is simply no music.
+
+**Sound effects**
+- Names come from the scripts: instances of `C_SFX` (`FILE`, `VOL`, `LOOP`, `PITCHOFF`, `PITCHVAR`), resolved by hash at run time. `Snd_Play` / `Snd_Play3D` are bound (`Sound::bindScript`). Nothing of Gothic 1 is hard-coded.
+- `engine/sound.{h,cpp}`: 14 voices (stealing by loudness), sample cache 3 MB (LRU) with a loader thread (own `Pak` handle), sounds wait up to 0.35 s for a sample, distance falloff `(1-x)^1.5` (default range 30 m), equal-power pan, up to 6 ambient voices.
+- Events: `*eventSFX` / `*eventSFXGrnd` of the MDS are baked into the clips (`CLIPF_SOUND`, sound block last in the clip blob) and fired by `Animator::takeEvents` for the hero (`Hero::setSoundHook`) and the inhabitants (`Npcs::setSoundHook`); `App::soundEvent` finds the surface under the feet (`World::rayDown(..., u8* group)`, per-triangle `ChunkCollider::group`) and `Sound::playGround` appends `_METAL/_STONE/_WOOD/_EARTH/_WATER/_SNOW`, falling back to the base name.
+- World sounds: `zCVobSound` / `zCVobSoundDaytime` -> `world/<name>/ambient` (the daytime variant gets a second emitter for `sound_name2`).
+- Backends: `platform/3ds/audio_3ds.cpp` (ndsp, 16 effect channels + stream channel 20; needs `sdmc:/3ds/dspfirm.cdc`, otherwise silent and a message is printed), `platform/host/audio_host.cpp` (records what would sound; simulated clock).
+- Report on exit: `sdmc:/3ds/gothic3ds/sound.txt` - names the game asked for that the scripts or the archive do not know. **Read it first on the console.**
+
+**Music**
+- DirectMusic (`.sgt` + DLS) cannot be decoded here. Convention: the player renders every theme to a WAV named like the stem of `C_MUSICTHEME.file` (`OC_DAY_STD.sgt` -> `OC_DAY_STD.wav`); `--music-dir` bakes them into `music.pak` (`music/<stem>`, raw PCM16, stereo kept, rate capped by `--music-rate`, default 32000; `Pak::readRange` reads in pieces).
+- `engine/music.{h,cpp}`: a worker thread fills 4 buffers of ~1 s, the platform stream (`AudioOut::stream*`) plays them. Theme = zone (`oCZoneMusic` / `oCZoneMusicDefault` -> `world/<name>/music`, highest priority containing the camera, else the default zone) + day/night + situation. Names tried, first existing wins: `{ZONE}_{DAY|NGT|NIGHT}_{STD|THR|FIG}`, `{ZONE}_{SIT}`, then `{ZONE}` (and the STD ones for THR/FIG). Change of theme: fade out 1.2 s, fade in 1.5 s. Only calm / fight are produced (`heroInCombat()`); THR is never asked for yet.
+- Names tried and not found are in `sound.txt` (section "music").
+- Settings v5: `soundVolume` (default 8), `musicVolume` (default 6); menu page "Звук" (Громкость, Музыка), 4 languages.
+
+**Unknown until the real data is seen**
+- units of `PITCHOFF` (treated as semitones, clamped +-12); unset `VOL` = full, otherwise `vol/127`;
+- `zCVobSound` with `initially_playing = false` is still played;
+- how the zone vobs are named in the real worlds: the baker strips `MUSICZONE_`, `MUSIC_`, `ZONE_` prefixes and `_MUSICZONE`, `_MUSIC`, `_ZONE` suffixes (`import_zen.cpp`) - if no music plays, `sound.txt` shows what was tried;
+- the real collision / combat sound names (the engine plays only what the MDS and scripts name).
+- Not done: `Snd_GetDistToSource` etc., hit sounds that the engine would have to derive itself, speech/voices, reverb.
+
+Tests (not run by Claude, as agreed): new `sound`, `music` (host recording backend); `test_script` class count 4 -> 5. Build: host and the ZenKit baker compile; `scripts/check_3ds.sh` clean.

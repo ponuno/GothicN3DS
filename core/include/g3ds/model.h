@@ -108,6 +108,7 @@ enum ClipFlags : u16 {
 	CLIPF_MOVES = 1 << 1, // the root travels: a motion table follows the samples
 	CLIPF_FLY = 1 << 2,   // the script marks it as airborne ("F")
 	CLIPF_FIGHT = 1 << 3, // a ClipFight block follows: the frames that matter in a fight
+	CLIPF_SOUND = 1 << 4, // a ClipSfx block follows the others: the clip's sound events
 };
 
 struct ClipHeader {
@@ -161,6 +162,24 @@ struct ClipFight {
 };
 static_assert(sizeof(ClipFight) == 64, "ClipFight layout");
 
+// The model script's sound tags (*eventSFX, *eventSFXGrnd) of a clip: at
+// `frame` (0 = the first) the sound `name` is played where the character
+// stands. A ground sound is looked up by what the character stands on: the
+// name is followed by the surface ("Run" + "_Earth"), as the game does.
+// The block is a u32 count and then the events, last in the clip's blob.
+constexpr u32 CLIP_SFX_MAX = 8;
+constexpr u32 CLIP_SFX_NAME = 24;
+enum ClipSfxKind : u8 { CLIP_SFX_PLAIN = 0, CLIP_SFX_GROUND = 1 };
+struct ClipSfxEvent {
+	u16 frame;
+	u8 kind;  // ClipSfxKind
+	u8 flags; // bit 0: *EMPTY_SLOT (the sound does not stop another of the same name)
+	float range; // cm: heard no further than this (0: the default)
+	char name[CLIP_SFX_NAME]; // zero-terminated
+};
+static_assert(sizeof(ClipSfxEvent) == 32, "ClipSfxEvent layout");
+constexpr u32 CLIP_SFX_BLOCK_HEAD = 4;
+
 inline u32 clipTrackTableSize(u32 trackCount) { return (trackCount + 3u) & ~3u; }
 
 // Where the samples end (the motion table starts there, 4-byte aligned).
@@ -168,9 +187,11 @@ inline u32 clipSamplesEnd(u32 trackCount, u32 frameCount) {
 	return (u32(sizeof(ClipHeader)) + clipTrackTableSize(trackCount) + trackCount * frameCount * u32(sizeof(ClipSample)) + 3u) & ~3u;
 }
 
+// The blob without the sound block (which has a size of its own: see clipSfxSize).
 inline u32 clipBlobSize(u32 trackCount, u32 frameCount, bool motion, bool fight = false) {
 	return clipSamplesEnd(trackCount, frameCount) + (motion ? (frameCount * 6u + 3u) & ~3u : 0u) + (fight ? u32(sizeof(ClipFight)) : 0u);
 }
+inline u32 clipSfxSize(u32 count) { return CLIP_SFX_BLOCK_HEAD + count * u32(sizeof(ClipSfxEvent)); }
 
 inline u32 modelBlobSize(const ModelHeader& h) {
 	return u32(sizeof(ModelHeader)) + h.nodeCount * u32(sizeof(ModelNode)) + h.partCount * u32(sizeof(ModelPart)) +

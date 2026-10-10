@@ -180,6 +180,19 @@ void stride(float phase, float seconds, float swing, float speed, Pose& p) {
 	p.pos[ROOT][2] = speed * seconds; // the source walks away from the origin
 }
 
+// A clip with a footstep (*eventSFXGrnd) at each of the frames.
+SrcClip withSteps(SrcClip clip, std::vector<int> frames) {
+	for (int f : frames) {
+		SrcClip::Sfx e;
+		e.frame = f;
+		e.ground = true;
+		e.name = "SFX_TEST_STEP";
+		e.range = 1000.0f;
+		clip.sfx.push_back(e);
+	}
+	return clip;
+}
+
 // A clip with the event tags of a fight (frames of the clip).
 SrcClip withFight(SrcClip clip, std::vector<int> hits, std::vector<int> hitEnds, std::vector<int> windows,
                   std::vector<int> parry = {}, int fightMode = -1) {
@@ -437,8 +450,8 @@ void buildSyntheticActor(SrcModel& model) {
 		p.rot[R_ARM] = aboutZ(0.08f + 0.03f * s);
 		p.rot[HEAD] = {0, std::sin(0.1f * s), 0, std::cos(0.1f * s)};
 	}));
-	model.clips.push_back(makeClip("S_RUNL", "S_RUNL", 16, true, [](float phase, float seconds, Pose& p) { stride(phase, seconds, 0.75f, 480.0f, p); }));
-	model.clips.push_back(makeClip("S_WALKL", "S_WALKL", 26, true, [](float phase, float seconds, Pose& p) { stride(phase, seconds, 0.35f, 150.0f, p); }));
+	model.clips.push_back(withSteps(makeClip("S_RUNL", "S_RUNL", 16, true, [](float phase, float seconds, Pose& p) { stride(phase, seconds, 0.75f, 480.0f, p); }), {3, 11}));
+	model.clips.push_back(withSteps(makeClip("S_WALKL", "S_WALKL", 26, true, [](float phase, float seconds, Pose& p) { stride(phase, seconds, 0.35f, 150.0f, p); }), {4, 17}));
 	model.clips.push_back(makeClip("S_JUMP", "S_JUMP", 8, false, [](float phase, float, Pose& p) {
 		const float s = std::sin(phase * kTau);
 		p.rot[L_THIGH] = aboutX(-0.7f);

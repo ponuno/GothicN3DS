@@ -998,6 +998,12 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 	const float prevTime = _anim.time();
 	const Clip* prevClip = _anim.current();
 	_anim.update(dt);
+	{
+		const ClipSfxEvent* events[8];
+		const u32 n = _anim.takeEvents(events, 8);
+		if (_soundHook.fn)
+			for (u32 i = 0; i < n; ++i) _soundHook.fn(_soundHook.user, *events[i], -1);
+	}
 	fightTick(prevTime, prevClip);
 	useTick(dt);
 	const Vec3 moved = turned(_anim.takeMotion(), _yaw);

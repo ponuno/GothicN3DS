@@ -48,6 +48,7 @@ const Item kMain[] = {
     {"Игра", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GAME, "Бой и предметы", nullptr},
     {"Управление", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_CONTROLS, "Схема, камера", nullptr},
     {"Интерфейс", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_INTERFACE, "Язык, подсказки, нижний экран", nullptr},
+    {"Звук", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_SOUND, "Громкость", nullptr},
     {"Отладка", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG, nullptr, nullptr},
     {"Сохранить позицию", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_SAVE, "То же: R + START в игре", nullptr},
     {"Загрузить позицию", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_LOAD, "То же: R + SELECT в игре", nullptr},
@@ -78,6 +79,10 @@ const Item kInterface[] = {
     {"Интерфейс в игре", TOGGLE, &Settings::hud, nullptr, 0, 0, 0, nullptr, 0, "Здоровье, цель, подсказки", nullptr},
     {"Нижний экран", CHOICE, &Settings::report, kBottom, 2, 0, 0, nullptr, 0, "Отчёт: цифры для проверки", nullptr},
 };
+const Item kSound[] = {
+    {"Громкость", RANGE, &Settings::soundVolume, nullptr, 1, 0, 10, "", 0, "Шаги, бой, звуки мира; 0 — без звука", nullptr},
+    {"Музыка", RANGE, &Settings::musicVolume, nullptr, 1, 0, 10, "", 0, "Нужен music.pak рядом с data.pak", nullptr},
+};
 const Item kDebug[] = {
     {"Восприятие жителей", TOGGLE, &Settings::perception, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr},
     {"Жизнь жителей", TOGGLE, &Settings::life, nullptr, 0, 0, 0, nullptr, 0, "Выкл: стоят на местах распорядка", nullptr},
@@ -100,7 +105,8 @@ struct PageDef {
 #define PAGE_OF(title, arr) {title, arr, int(sizeof(arr) / sizeof(arr[0]))}
 const PageDef kPages[Menu::PAGES] = {
     PAGE_OF("Пауза", kMain),         PAGE_OF("Графика", kGraphics),   PAGE_OF("Игра", kGame),
-    PAGE_OF("Управление", kControls), PAGE_OF("Интерфейс", kInterface), PAGE_OF("Отладка", kDebug),
+    PAGE_OF("Управление", kControls), PAGE_OF("Интерфейс", kInterface), PAGE_OF("Звук", kSound),
+    PAGE_OF("Отладка", kDebug),
 };
 #undef PAGE_OF
 

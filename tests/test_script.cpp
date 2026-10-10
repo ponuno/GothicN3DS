@@ -455,8 +455,8 @@ static void testSyntheticScript() {
 	ScriptBakeResult baked;
 	const std::vector<u8> image = bakeScript(src, baked);
 	std::printf("       %s", baked.report.c_str());
-	// (Four classes: the fight AI's C_FightAI is in the script of its own, as in the game.)
-	CHECK(baked.hashClashes == 0 && baked.classes == 4 && baked.instances >= 12 && baked.externals >= 25);
+	// (Five classes: the fight AI's C_FightAI is in the script of its own, as in the game.)
+	CHECK(baked.hashClashes == 0 && baked.classes == 5 && baked.instances >= 12 && baked.externals >= 25);
 	// The fight AI tables, that script of their own, bake into "script/fight".
 	{
 		SrcScript fight;

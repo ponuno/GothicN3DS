@@ -57,6 +57,7 @@
 //            "Растворение" otherwise decides, from the next start)
 #include "lang.h"
 #include "app.h"
+#include "audio_3ds.h"
 #include "gfx_c3d.h"
 #include "pacer.h"
 #include "sys.h"
@@ -93,6 +94,10 @@ static void onApt(APT_HookType hook, void*) {
 // The application: 13 KB, with the character's poses in it. Not a local of
 // main(): the stack is 32 KB.
 static App gApp;
+// The DSP: sound plays through it (without the DSP firmware on the card it stays shut and the game is silent).
+static g3::Audio3ds gAudio;
+// What the sound engine met that the scripts name and the archive lacks.
+static const char* kSoundReportPath = "sdmc:/3ds/gothic3ds/sound.txt";
 
 static float stick(int v) {
 	const float dead = 18.0f, full = 140.0f;
@@ -189,6 +194,9 @@ int main(int, char**) {
 	stream.maxLoadsPerFrame = background ? 1 : 2;
 	stream.clusterCulling = !wholeChunks;
 	if (!dissolve) stream.fadeMs = 0.0f;
+	// Sound before the application, which hands it to the sound engine.
+	if (gAudio.open()) app.setAudio(&gAudio);
+	else printf("no sound: the DSP firmware is missing\n(dump it with DSP1 to sdmc:/3ds/dspfirm.cdc)\n");
 	bool ok = gfx::init();
 	if (!ok) printf("gfx init failed\n");
 	if (ok && !app.init(kPakPath, nullptr)) {
@@ -198,6 +206,7 @@ int main(int, char**) {
 	if (!ok) {
 		printf("\nPress START to exit.\n");
 		waitForStart();
+		gAudio.close();
 		gfx::shutdown();
 		osSetSpeedupEnable(false);
 		gfxExit();
@@ -346,6 +355,7 @@ int main(int, char**) {
 					app.settings().save(kSettingsPath);
 				}
 			}
+			app.soundIdle(dt);
 			app.render();
 		} else {
 			Input in;
@@ -661,7 +671,13 @@ int main(int, char**) {
 	app.settings().save(kSettingsPath);
 	aptUnhook(&gAptCookie);
 	exitStep("exit 2/4: closing the world");
+	if (FILE* sf = fopen(kSoundReportPath, "w")) {
+		app.sound().writeReport(sf);
+		app.music().writeReport(sf);
+		fclose(sf);
+	}
 	app.shutdown();
+	gAudio.close();
 	exitStep("exit 3/4: closing the graphics");
 	gfx::shutdown();
 	// The CPU mode is the whole system's, not this program's: the launcher

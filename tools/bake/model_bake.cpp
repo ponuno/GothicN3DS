@@ -347,7 +347,20 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 		h.frameCount = u16(frames);
 		h.fps = clip.fps;
 		const bool fight = clip.fighting();
-		h.flags = u16((loop ? CLIPF_LOOP : 0) | (!motion.empty() ? CLIPF_MOVES : 0) | (clip.fly ? CLIPF_FLY : 0) | (fight ? CLIPF_FIGHT : 0));
+		// The sound tags, in the order of their frames; what does not fit the block is left out.
+		std::vector<ClipSfxEvent> sfxEvents;
+		for (const SrcClip::Sfx& e : clip.sfx) {
+			if (e.name.empty() || sfxEvents.size() >= CLIP_SFX_MAX) continue;
+			ClipSfxEvent ev {};
+			ev.frame = u16(std::clamp(e.frame, 0, int(frames) - 1));
+			ev.kind = e.ground ? CLIP_SFX_GROUND : CLIP_SFX_PLAIN;
+			ev.flags = e.emptySlot ? 1 : 0;
+			ev.range = e.range > 0.0f ? e.range : 0.0f;
+			std::strncpy(ev.name, e.name.c_str(), CLIP_SFX_NAME - 1);
+			sfxEvents.push_back(ev);
+		}
+		std::stable_sort(sfxEvents.begin(), sfxEvents.end(), [](const ClipSfxEvent& a, const ClipSfxEvent& b) { return a.frame < b.frame; });
+		h.flags = u16((loop ? CLIPF_LOOP : 0) | (!motion.empty() ? CLIPF_MOVES : 0) | (clip.fly ? CLIPF_FLY : 0) | (fight ? CLIPF_FIGHT : 0) | (!sfxEvents.empty() ? CLIPF_SOUND : 0));
 		h.layer = u16(std::clamp(clip.layer, 0, 65535));
 		h.blendIn = std::clamp(clip.blendIn, 0.0f, 5.0f);
 		h.blendOut = std::clamp(clip.blendOut, 0.0f, 5.0f);
@@ -393,6 +406,10 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 			append(blob, cf);
 		}
 		if (blob.size() != clipBlobSize(h.trackCount, h.frameCount, !motion.empty(), fight)) throw std::logic_error("clip layout");
+		if (!sfxEvents.empty()) {
+			append(blob, u32(sfxEvents.size()));
+			for (const ClipSfxEvent& e : sfxEvents) append(blob, e);
+		}
 		const std::string entry = "anim/" + lowerName(model.name) + "/" + lowerName(clip.name);
 		pak.add(entry, ASSET_CLIP, blob);
 		clipBytes += blob.size();

@@ -312,6 +312,8 @@ public:
 	const NpcActor* nearest() const;
 	// ---- fighting (npc_fight.cpp) ----
 	void setHeroLink(const HeroLink& link) { _heroLink = link; }
+	// Told of the sound events of the clips the characters play.
+	void setSoundHook(const SoundEventHook& hook) { _soundHook = hook; }
 	// Which way the player's character faces (the scripts and the fight AI look at it).
 	void setHeroYaw(float yaw) { _heroYaw = yaw; }
 	// A perception for one actor only (PERC_ASSESSTHREAT: the player aims at it).
@@ -374,6 +376,7 @@ public:
 	}
 
 private:
+	SoundEventHook _soundHook;
 	enum { PIECES = 48, ACTORS = 16 }; // three models each
 	typedef NpcPiece Piece;
 

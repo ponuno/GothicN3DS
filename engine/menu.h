@@ -33,7 +33,7 @@ enum MenuAction : u8 {
 
 class Menu {
 public:
-	enum Page : u8 { PAGE_MAIN, PAGE_GRAPHICS, PAGE_GAME, PAGE_CONTROLS, PAGE_INTERFACE, PAGE_DEBUG, PAGES };
+	enum Page : u8 { PAGE_MAIN, PAGE_GRAPHICS, PAGE_GAME, PAGE_CONTROLS, PAGE_INTERFACE, PAGE_SOUND, PAGE_DEBUG, PAGES };
 
 	void open();
 	void close() { _open = false; }

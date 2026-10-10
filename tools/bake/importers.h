@@ -83,6 +83,9 @@ struct ZenActorOptions {
 // character). Throws std::runtime_error on files that exist but cannot be used.
 bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& opt, SrcModel& model);
 
+// The game's sound files by name ("DOOR_OPEN.WAV"), for BakeScripts::soundFile.
+std::function<bool(const std::string&, std::vector<u8>&)> zenSoundSource(std::shared_ptr<const ZenGame> game);
+
 // The pieces of the inhabitants' looks (bake.h), from the game's files.
 LookSource zenLookSource(std::shared_ptr<const ZenGame> game);
 

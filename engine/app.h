@@ -13,6 +13,8 @@
 #include "recorder.h"
 #include "settings.h"
 #include "sky.h"
+#include "sound.h"
+#include "music.h"
 #include "ui.h"
 #include "world.h"
 
@@ -61,6 +63,16 @@ public:
 
 	void update(const Input& in, float dt);
 	void render();
+
+	// ---- sound (sound.h) ----
+	// The platform's output, given before init(); null: no sound. Must outlive the application.
+	void setAudio(AudioOut* out) { _audio = out; }
+	Music& music() { return _music; }
+	const Music& music() const { return _music; }
+	Sound& sound() { return _sound; }
+	const Sound& sound() const { return _sound; }
+	// While update() is not called (the pause menu): lets sounds that ran out go and keeps the volume current.
+	void soundIdle(float dt);
 
 	// Sets draw distance, streaming radii, fog and far plane consistently.
 	void setDrawDistance(float cm);
@@ -215,6 +227,10 @@ public:
 
 private:
 	void checkPortals();
+	void soundEvent(const ClipSfxEvent& event, int npc);
+	void startSound();
+	static void soundEventThunk(void* user, const ClipSfxEvent& event, int npc);
+	static bool soundLocate(void* user, ScriptInstance* who, Vec3& pos);
 	void placeCamera(float dt);
 	bool talkCamera(Vec3& look, Vec3& pos);
 	// The parts of a frame of the game with a character.
@@ -232,6 +248,9 @@ private:
 	bool projectToScreen(Vec3 p, int& x, int& y) const;
 
 	Pak _pak;
+	AudioOut* _audio = nullptr;
+	Sound _sound;
+	Music _music;
 	World _world;
 	Player _player;
 	Hero _hero;

@@ -25,6 +25,7 @@
 #include <zenkit/Vfs.hh>
 #include <zenkit/World.hh>
 #include <zenkit/vobs/MovableObject.hh>
+#include <zenkit/vobs/Sound.hh>
 #include <zenkit/vobs/Trigger.hh>
 #include <zenkit/vobs/Zone.hh>
 #include <zenkit/world/WayNet.hh>
@@ -852,6 +853,60 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 				scene.fogColor[2] = fog->color.b;
 			}
 		}
+		if (vob->type == zenkit::VirtualObjectType::zCVobSound || vob->type == zenkit::VirtualObjectType::zCVobSoundDaytime) {
+			if (const auto* snd = dynamic_cast<const zenkit::VSound*>(vob.get())) {
+				SrcAmbient a;
+				a.pos[0] = vob->position.x;
+				a.pos[1] = vob->position.y;
+				a.pos[2] = vob->position.z;
+				a.radius = snd->radius > 0.0f ? snd->radius : 1500.0f;
+				a.volume = snd->volume > 1.5f ? snd->volume / 100.0f : snd->volume;
+				if (snd->volume <= 0.0f) a.volume = 1.0f;
+				a.mode = snd->mode == zenkit::SoundMode::LOOP ? 0 : snd->mode == zenkit::SoundMode::ONCE ? 1 : 2;
+				a.delayMin = std::max(snd->random_delay - snd->random_delay_var, 0.0f);
+				a.delayMax = snd->random_delay + snd->random_delay_var;
+				a.sound = upper(snd->sound_name);
+				if (const auto* day = dynamic_cast<const zenkit::VSoundDaytime*>(vob.get())) {
+					a.hourFrom = day->start_time;
+					a.hourTo = day->end_time;
+					scene.ambient.push_back(a);
+					// The other sound plays in the hours left over.
+					if (!day->sound_name2.empty()) {
+						SrcAmbient b = a;
+						b.sound = upper(day->sound_name2);
+						b.hourFrom = day->end_time;
+						b.hourTo = day->start_time;
+						scene.ambient.push_back(b);
+					}
+				} else {
+					scene.ambient.push_back(a);
+				}
+			}
+		}
+		if (vob->type == zenkit::VirtualObjectType::oCZoneMusic || vob->type == zenkit::VirtualObjectType::oCZoneMusicDefault) {
+			if (const auto* zone = dynamic_cast<const zenkit::VZoneMusic*>(vob.get())) {
+				SrcMusicZone z;
+				const zenkit::Vec3 mn = vob->bbox.min, mx = vob->bbox.max;
+				const float lo[3] = {mn.x, mn.y, mn.z}, hi[3] = {mx.x, mx.y, mx.z};
+				for (int a = 0; a < 3; ++a) {
+					z.bbMin[a] = std::min(lo[a], hi[a]);
+					z.bbMax[a] = std::max(lo[a], hi[a]);
+				}
+				// The zone's name leads to its themes; what is added to it for the zone itself is taken off.
+				std::string name = upper(vob->vob_name);
+				for (const char* prefix : {"MUSICZONE_", "MUSIC_", "ZONE_"})
+					if (name.rfind(prefix, 0) == 0 && name.size() > std::strlen(prefix)) name = name.substr(std::strlen(prefix));
+				for (const char* suffix : {"_MUSICZONE", "_MUSIC", "_ZONE"})
+					if (name.size() > std::strlen(suffix) && name.compare(name.size() - std::strlen(suffix), std::string::npos, suffix) == 0)
+						name.resize(name.size() - std::strlen(suffix));
+				z.name = name;
+				z.priority = zone->priority;
+				z.ellipsoid = zone->ellipsoid;
+				z.isDefault = vob->type == zenkit::VirtualObjectType::oCZoneMusicDefault;
+				z.volume = zone->volume > 1.5f ? std::min(zone->volume / 100.0f, 1.0f) : (zone->volume > 0.0f ? zone->volume : 1.0f);
+				if (!z.name.empty() || z.isDefault) scene.musicZones.push_back(z);
+			}
+		}
 		if (vob->type == zenkit::VirtualObjectType::oCTriggerChangeLevel) {
 			if (const auto* trigger = dynamic_cast<const zenkit::VTriggerChangeLevel*>(vob.get())) {
 				SrcPortal portal;
@@ -1274,6 +1329,7 @@ std::shared_ptr<ZenGame> openZenGame(const std::string& gameDir, std::vector<std
 }
 
 bool zenGameHasFile(const ZenGame& game, const std::string& name) { return game.vfs.find(name) != nullptr; }
+
 
 std::function<bool(const std::string&, SrcImage&)> textureLoader(std::shared_ptr<const ZenGame> game) {
 	return [game](const std::string& name, SrcImage& out) {
@@ -1742,6 +1798,7 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		// The event tags of a fight (ClipFight), in frames of the clip.
 		std::vector<int> hits, hitEnds, windows, parry;
 		int fightMode = -1;
+		std::vector<SrcClip::Sfx> sfx; // the sound tags (*eventSFX, *eventSFXGrnd)
 	};
 	std::vector<Loaded> loadedClips;
 	std::vector<std::string> notFound;
@@ -1830,6 +1887,25 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 				default: break;
 				}
 			}
+			// The sound tags: a footstep, a swish. (Played backwards a clip would
+			// sound its events in the wrong order; those keep quiet.)
+			for (const zenkit::MdsSoundEffect& e : a.sfx) {
+				SrcClip::Sfx t;
+				t.frame = ownFrame(e.frame);
+				t.name = e.name;
+				t.range = e.range;
+				t.emptySlot = e.empty_slot;
+				lc.sfx.push_back(t);
+			}
+			for (const zenkit::MdsSoundEffectGround& e : a.sfx_ground) {
+				SrcClip::Sfx t;
+				t.frame = ownFrame(e.frame);
+				t.ground = true;
+				t.name = e.name;
+				t.range = e.range;
+				t.emptySlot = e.empty_slot;
+				lc.sfx.push_back(t);
+			}
 			// The lists rise frame after frame; a stray value at the end (ZenKit
 			// reads one more when the text ends in a space) goes.
 			for (std::vector<int>* list : {&lc.hits, &lc.hitEnds, &lc.windows, &lc.parry})
@@ -1913,6 +1989,7 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		clip.windows = lc.windows;
 		clip.parry = lc.parry;
 		clip.fightModeFrame = lc.fightMode;
+		clip.sfx = lc.sfx;
 		for (uint32_t idx : lc.ani.node_indices) clip.nodes.push_back(int(idx));
 		const uint32_t frames = lc.ani.frame_count, tracks = lc.ani.node_count;
 		clip.samples.resize(size_t(frames) * tracks);
@@ -2162,7 +2239,36 @@ fs::path findNoCase(fs::path root, std::initializer_list<const char*> parts) {
 	return root;
 }
 
+
 } // namespace
+
+// The game's sound files by name: in an archive (Sounds.vdf), or loose in the
+// installation's sound folder.
+std::function<bool(const std::string&, std::vector<u8>&)> zenSoundSource(std::shared_ptr<const ZenGame> game) {
+	return [game](const std::string& file, std::vector<u8>& bytes) {
+		try {
+			std::unique_ptr<zenkit::Read> rd;
+			if (const zenkit::VfsNode* node = game->vfs.find(upper(file))) {
+				rd = node->open_read();
+			} else {
+				const std::string name = lower(file);
+				fs::path loose = findNoCase(game->dir, {"_work", "data", "sound", "sfx", name.c_str()});
+				if (loose.empty()) loose = findNoCase(game->dir, {"_work", "data", "sound", name.c_str()});
+				if (loose.empty() || !fs::is_regular_file(loose)) return false;
+				rd = zenkit::Read::from(loose);
+			}
+			rd->seek(0, zenkit::Whence::END);
+			const size_t size = rd->tell();
+			rd->seek(0, zenkit::Whence::BEG);
+			if (size == 0 || size > (64u << 20)) return false;
+			bytes.resize(size);
+			rd->read(bytes.data(), size);
+			return true;
+		} catch (const std::exception&) {
+			return false; // unreadable: treated like a missing one
+		}
+	};
+}
 
 bool importZenCamera(std::shared_ptr<const ZenGame> game, CameraSet& set, std::vector<std::string>& notes) {
 	set = defaultCameraSet();

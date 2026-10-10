@@ -54,6 +54,9 @@ struct Settings {
 	u8 language = 0;         // Lang (lang.h): 0 Russian, 1 English, 2 Polish, 3 German
 	u8 density = 0;          // small objects drawn: 0 all, 1 three layers of four, 2 two of four (needs data baked with the layers)
 	u8 npcDistance = 1;      // how far the inhabitants are drawn: 0 20 m, 1 30 m, 2 45 m
+	// Version 5: sound.
+	u8 soundVolume = 8;      // 0 (mute) .. 10
+	u8 musicVolume = 6;      // 0 (mute) .. 10
 
 	// Clamps every value into its range (after reading a file of another version).
 	void sanitize();

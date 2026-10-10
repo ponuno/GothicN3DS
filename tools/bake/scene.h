@@ -100,6 +100,28 @@ struct SrcWorldItem {
 	int amount = 1;
 };
 
+// A sound the world has placed in itself (zCVobSound): a campfire's crackle,
+// water, the wind (g3ds/sound.h, AmbientSound).
+struct SrcAmbient {
+	std::string sound; // the script instance's name
+	float pos[3];
+	float radius = 1500.0f;
+	int mode = 0;      // AmbientMode
+	float volume = 1.0f; // 0..1
+	float hourFrom = 0, hourTo = 0; // equal: all day
+	float delayMin = 0, delayMax = 0;
+};
+
+// A music zone (zCZoneMusic), g3ds/sound.h MusicZone.
+struct SrcMusicZone {
+	std::string name; // the theme's base name ("OC": OC_DAY_STD ...)
+	float bbMin[3], bbMax[3];
+	int priority = 0;
+	bool ellipsoid = false;
+	bool isDefault = false;
+	float volume = 1.0f;
+};
+
 struct SrcImage {
 	int width = 0, height = 0;
 	std::vector<u8> rgba; // top-down
@@ -126,6 +148,8 @@ struct SrcScene {
 	std::vector<std::pair<u32, u32>> wayEdges;
 	std::vector<SrcWayPoint> freePoints;
 	std::vector<SrcMob> mobs;
+	std::vector<SrcAmbient> ambient;
+	std::vector<SrcMusicZone> musicZones;
 	std::vector<SrcWorldItem> items; // the world file's things (the scripts add theirs when baked)
 	std::vector<std::string> notes; // importer remarks for the bake report
 };

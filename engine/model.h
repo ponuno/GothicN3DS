@@ -44,6 +44,9 @@ public:
 	float rise() const { return _rise; }
 	// The frames that matter in a fight (g3ds/model.h), or null.
 	const ClipFight* fight() const { return _fight; }
+	// The sound events of the model script (g3ds/model.h), in the order of their frames.
+	u32 sfxCount() const { return _sfxCount; }
+	const ClipSfxEvent* sfx() const { return _sfx; }
 	// Seconds into the clip of a frame of it.
 	float frameTime(u32 frame) const { return float(frame) / _h.fps; }
 
@@ -56,6 +59,8 @@ private:
 	const ClipSample* _samples = nullptr;
 	const i16* _motion = nullptr;
 	const ClipFight* _fight = nullptr;
+	const ClipSfxEvent* _sfx = nullptr;
+	u32 _sfxCount = 0;
 	float _rise = 0;
 	u32 _bytes = 0;
 };
@@ -182,6 +187,14 @@ private:
 };
 
 // Plays clips on a model's skeleton, fading from one to the next.
+// Who is told of the sound events of the clips (a footstep at frame 6 of the
+// run) as characters play them. `npc` is the character's number in the game,
+// -1 for the one the player steers.
+struct SoundEventHook {
+	void (*fn)(void* user, const ClipSfxEvent& event, int npc) = nullptr;
+	void* user = nullptr;
+};
+
 class Animator {
 public:
 	void bind(const Model* model);
@@ -211,6 +224,10 @@ public:
 	// when it is needed.
 	void advance(float dt);
 	void evaluate();
+	// The sound events (a footstep, a swish of the sword) whose frames the clips
+	// have passed since the last call; at most `max` are given, the oldest
+	// first. The pointers stay valid as long as the clips do.
+	u32 takeEvents(const ClipSfxEvent** out, u32 max);
 	// Where the clips have carried the character since the last call (model
 	// space, see Clip::motion), across hand-overs from a clip to its follower.
 	Vec3 takeMotion();
@@ -228,6 +245,13 @@ private:
 	float _fade = 1.0f, _fadeTime = 0; // 0..1 progress of the fade from _from
 	bool _finished = false;
 	Vec3 _moved {0, 0, 0};
+	// Sound events passed and not yet taken; _eventTime: how far into the
+	// clip they have been looked for (negative: from the clip's very start).
+	static constexpr u32 EVENTS = 8;
+	const ClipSfxEvent* _events[EVENTS] = {};
+	u32 _eventCount = 0;
+	float _eventTime = -1.0f;
+	void collect(const Clip* clip, float from, float to);
 	Pose _pose, _from;
 	Pose _base; // what the nodes without a track in the clip keep (see play())
 };

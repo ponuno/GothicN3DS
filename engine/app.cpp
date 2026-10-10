@@ -59,6 +59,7 @@ bool App::init(const char* pakPath, const char* worldName) {
 	link.hit = heroHitThunk;
 	link.user = this;
 	_npcs.setHeroLink(link);
+	startSound();
 	// The overlay (menus, the HUD): without it the game still runs.
 	_ui.init();
 	// The bottom screen's inventory (a picture of its own, drawn by the processor).
@@ -124,6 +125,9 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	}
 	_portalLock = true;
 	++_switches;
+	_sound.stopAll();
+	_sound.enterWorld(_pak, worldName());
+	_music.enterWorld(_pak, worldName());
 	return true;
 }
 
@@ -245,6 +249,8 @@ void App::setDrawDistance(float cm) {
 }
 
 void App::shutdown() {
+	_music.shutdown();
+	_sound.shutdown();
 	_ui.release();
 	_panel.release();
 	_loot.release();
@@ -331,7 +337,8 @@ void App::update(const Input& in, float dt) {
 		talkUpdate(fightIn, dt);
 		fightInput(fightIn, dt);
 		Input heroIn = steerInput(in, dt);
-		const bool handsBusy = _hero.usingItem() || _panel.open() || _chest.stage != CH_NONE || talking();
+		// (A job that has the weapon put away and the item to take stands the character too: no step in the frame between.)
+		const bool handsBusy = _hero.usingItem() || _job.stage == JOB_PUTAWAY || _job.stage == JOB_START || _panel.open() || _chest.stage != CH_NONE || talking();
 		if (handsBusy) {
 			// Drinking or eating, or looking into the inventory: the character
 			// stands (it cannot jump off either). The camera still turns.
@@ -390,6 +397,9 @@ void App::update(const Input& in, float dt) {
 	checkPortals();
 	const double t3 = sys::timeMs();
 	placeCamera(dt);
+	_sound.setListener(_cam.pos, _cam.yaw);
+	_sound.update(dt, _env.timeOfDay);
+	_music.update(dt, _cam.pos, _env.timeOfDay, heroInCombat() ? MUSIC_FIGHT : MUSIC_CALM);
 	_times.stream = float(t1 - t0);
 	_times.npcs = float(t2 - t1);
 	_times.script = _npcs.stats().scriptMs;
@@ -1001,6 +1011,8 @@ void App::applySettings() {
 	nc.alive = _settings.life != 0;
 	nc.fights = _settings.fights != 0;
 	_scheme = ControlScheme(_settings.scheme);
+	_sound.setVolume(float(_settings.soundVolume) / 10.0f);
+	_music.setVolume(float(_settings.musicVolume) / 10.0f);
 	const bool third = !_settings.firstPerson;
 	if (third != _thirdPerson) {
 		_thirdPerson = third;
@@ -1098,6 +1110,85 @@ bool App::projectToScreen(Vec3 p, int& x, int& y) const {
 	x = int((c.x / c.w * 0.5f + 0.5f) * float(gfx::SCREEN_W));
 	y = int((0.5f - c.y / c.w * 0.5f) * float(gfx::SCREEN_H));
 	return x > -50 && x < gfx::SCREEN_W + 50 && y > -50 && y < gfx::SCREEN_H + 50;
+}
+
+} // namespace g3
+
+// ---- sound ----
+
+namespace g3 {
+
+void App::soundEventThunk(void* user, const ClipSfxEvent& event, int npc) { static_cast<App*>(user)->soundEvent(event, npc); }
+
+bool App::soundLocate(void* user, ScriptInstance* who, Vec3& pos) {
+	App& app = *static_cast<App*>(user);
+	if (!app._npcs.loaded()) return false;
+	const int i = app._npcs.game().indexOf(who);
+	if (i < 0) return false;
+	const GameNpc& n = app._npcs.game().npc(u32(i));
+	pos = {n.pos[0], n.pos[1], n.pos[2]};
+	return true;
+}
+
+// Starts the sound engine on the scripts' machine and tells it of the world.
+void App::startSound() {
+	if (!_audio || !_npcs.loaded()) return;
+	// A few megabytes of samples at hand: the footsteps, the doors, the blows.
+	if (!_sound.init(_pak, &_npcs.game().vm(), _audio, 3u * 1024u * 1024u, true)) return;
+	_sound.setVolume(float(_settings.soundVolume) / 10.0f);
+	_sound.bindScript(&App::soundLocate, this);
+	_sound.enterWorld(_pak, worldName());
+	// Music: music.pak beside data.pak, if the player has made one.
+	{
+		char path[320];
+		snprintf(path, sizeof(path), "%s", _pak.path());
+		char* slash = strrchr(path, '/');
+		char* bslash = strrchr(path, '\\');
+		if (bslash > slash) slash = bslash;
+		snprintf(slash ? slash + 1 : path, sizeof(path) - (slash ? u32(slash + 1 - path) : 0), "music.pak");
+		if (_music.init(path, &_npcs.game().vm(), _audio, true)) {
+			_music.setVolume(float(_settings.musicVolume) / 10.0f);
+			_music.enterWorld(_pak, worldName());
+		}
+	}
+	SoundEventHook hook;
+	hook.fn = &App::soundEventThunk;
+	hook.user = this;
+	_hero.setSoundHook(hook);
+	_npcs.setSoundHook(hook);
+}
+
+// A footstep, a swish of the sword: an event of the model script's, at the
+// moment the clip reaches its frame.
+void App::soundEvent(const ClipSfxEvent& event, int npc) {
+	if (!_sound.ready()) return;
+	Vec3 at = _player.feet;
+	if (npc >= 0) {
+		if (!_npcs.loaded()) return;
+		const GameNpc& n = _npcs.game().npc(u32(npc));
+		at = {n.pos[0], n.pos[1], n.pos[2]};
+	}
+	const float range = event.range > 0.0f ? event.range : 1000.0f;
+	// Out of earshot: not worth finding the ground for.
+	if (length(at - _cam.pos) > range * 1.2f) return;
+	if (event.kind == CLIP_SFX_GROUND) {
+		u8 group = 0;
+		if (npc < 0 && _player.swimming) {
+			group = 5;
+		} else {
+			float y;
+			Vec3 normal;
+			if (!_world.rayDown({at.x, at.y + 40.0f, at.z}, 140.0f, y, normal, nullptr, &group)) group = 0;
+		}
+		_sound.playGround(event.name, group, &at, 1.0f, range);
+	} else {
+		_sound.play(event.name, &at, 1.0f, range);
+	}
+}
+
+void App::soundIdle(float dt) {
+	_sound.update(dt, _env.timeOfDay);
+	_music.update(dt, _cam.pos, _env.timeOfDay, MUSIC_CALM);
 }
 
 } // namespace g3

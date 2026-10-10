@@ -21,6 +21,7 @@ enum AssetType : u16 {
 	ASSET_MODEL = 5,   // ModelHeader + skeleton + skinned mesh (model.h)
 	ASSET_CLIP = 6,    // ClipHeader + sampled node transforms (model.h)
 	ASSET_SCRIPT = 7,  // ScriptHeader + the game's compiled scripts (script.h)
+	ASSET_SOUND = 8,   // SoundHeader + 16-bit mono samples (sound.h)
 };
 
 struct PakHeader {
@@ -67,6 +68,8 @@ public:
 
 	// dst must hold e.size bytes.
 	bool read(const PakEntry& e, void* dst);
+	// `size` bytes from `offset` into an entry stored raw (music: read in pieces).
+	bool readRange(const PakEntry& e, u32 offset, void* dst, u32 size);
 	// malloc'ed buffer of e.size bytes, or nullptr. Caller frees with free().
 	void* readAlloc(const PakEntry& e);
 

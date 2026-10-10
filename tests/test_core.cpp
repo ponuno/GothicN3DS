@@ -1,7 +1,9 @@
 // Unit and integration tests for the data path: archive, texture layout,
 // chunker, streaming. Usage: test_core <scratch dir>
 #include "app.h"
+#include "audio_host.h"
 #include "bake.h"
+#include "sound_bake.h"
 #include "chunker.h"
 #include "daedalus.h"
 #include "g3ds/pak.h"
@@ -21,6 +23,8 @@
 
 #include <algorithm>
 #include <array>
+#include <filesystem>
+#include <fstream>
 #include <cmath>
 #include <set>
 #include <climits>
@@ -3802,6 +3806,363 @@ static void testHero() {
 	gfx::shutdown();
 }
 
+// ---- sound ----
+
+// A mono IMA ADPCM file of `samples`, 256-byte blocks (for the decoder's test).
+static std::vector<u8> imaWav(const std::vector<i16>& samples, u32 rate) {
+	static const int step[89] = {7,     8,     9,     10,    11,    12,    13,    14,    16,    17,    19,    21,    23,    25,    28,
+	                             31,    34,    37,    41,    45,    50,    55,    60,    66,    73,    80,    88,    97,    107,   118,
+	                             130,   143,   157,   173,   190,   209,   230,   253,   279,   307,   337,   371,   408,   449,   494,
+	                             544,   598,   658,   724,   796,   876,   963,   1060,  1166,  1282,  1411,  1552,  1707,  1878,  2066,
+	                             2272,  2499,  2749,  3024,  3327,  3660,  4026,  4428,  4871,  5358,  5894,  6484,  7132,  7845,  8630,
+	                             9493,  10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767};
+	static const int adjust[8] = {-1, -1, -1, -1, 2, 4, 6, 8};
+	const u32 block = 256, perBlock = (block - 4) * 2 + 1;
+	std::vector<u8> data;
+	for (size_t at = 0; at + perBlock <= samples.size(); at += perBlock) {
+		int predictor = samples[at], index = 0;
+		data.push_back(u8(predictor & 0xFF));
+		data.push_back(u8((predictor >> 8) & 0xFF));
+		data.push_back(u8(index));
+		data.push_back(0);
+		for (u32 n = 0; n < (block - 4) * 2; n += 2) {
+			u8 byte = 0;
+			for (u32 half = 0; half < 2; ++half) {
+				const int target = samples[at + 1 + n + half];
+				int diff = target - predictor, code = 0;
+				if (diff < 0) {
+					code = 8;
+					diff = -diff;
+				}
+				int st = step[index], delta = st >> 3;
+				if (diff >= st) { code |= 4; diff -= st; delta += st; }
+				st >>= 1;
+				if (diff >= st) { code |= 2; diff -= st; delta += st; }
+				st >>= 1;
+				if (diff >= st) { code |= 1; delta += st; }
+				predictor = std::clamp(predictor + ((code & 8) ? -delta : delta), -32768, 32767);
+				index = std::clamp(index + adjust[code & 7], 0, 88);
+				byte = u8(byte | (code << (half * 4)));
+			}
+			data.push_back(byte);
+		}
+	}
+	std::vector<u8> w(44 + data.size());
+	const auto put32 = [&](size_t at, u32 v) { for (int i = 0; i < 4; ++i) w[at + size_t(i)] = u8(v >> (8 * i)); };
+	const auto put16 = [&](size_t at, u16 v) { w[at] = u8(v); w[at + 1] = u8(v >> 8); };
+	std::memcpy(w.data(), "RIFF", 4);
+	put32(4, u32(36 + data.size()));
+	std::memcpy(w.data() + 8, "WAVEfmt ", 8);
+	put32(16, 16);
+	put16(20, 0x11);
+	put16(22, 1);
+	put32(24, rate);
+	put32(28, rate * block / perBlock);
+	put16(32, u16(block));
+	put16(34, 4);
+	std::memcpy(w.data() + 36, "data", 4);
+	put32(40, u32(data.size()));
+	std::copy(data.begin(), data.end(), w.begin() + 44);
+	return w;
+}
+
+// Lets the sound engine's loading thread and the host's clock run until `count` sounds have started.
+static bool soundWait(Sound& sound, HostAudio& audio, u32 count) {
+	for (int i = 0; i < 600; ++i) {
+		sound.update(0.01f, 12.0f);
+		audio.advance(0.01f);
+		if (audio.startedCount() >= count) return true;
+		usleep(2000);
+	}
+	return false;
+}
+
+static void testMusic() {
+	namespace fs = std::filesystem;
+	const std::string dir = gDir + "/music_wavs";
+	fs::create_directories(dir);
+	// Three renders of 2.5 s at 22.05 kHz; the files are named as the scripts' themes name them.
+	const auto writeTone = [&](const char* name, double freq) {
+		std::vector<i16> tone(55125);
+		for (size_t i = 0; i < tone.size(); ++i) tone[i] = i16(std::lround(8000.0 * std::sin(double(i) * freq)));
+		const std::vector<u8> wav = makeWav(tone, 22050);
+		std::ofstream(dir + "/" + name, std::ios::binary).write(reinterpret_cast<const char*>(wav.data()), std::streamsize(wav.size()));
+	};
+	writeTone("TEST_DAY_STD.wav", 0.05);
+	writeTone("test_ngt_std.WAV", 0.08);
+	writeTone("TEST_FIG.wav", 0.11);
+
+	SrcScript script;
+	buildSyntheticScript(script);
+	std::vector<BakeWorld> worlds(1);
+	worlds[0].name = "world";
+	worlds[0].level = "WORLD.ZEN";
+	SynthOptions so;
+	so.cells = 48;
+	so.huts = 6;
+	so.trees = 20;
+	buildSyntheticScene(so, worlds[0].scene);
+	std::vector<SrcModel> models(1);
+	buildSyntheticActor(models[0]);
+	BakeScripts scripts;
+	scripts.script = &script;
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
+	scripts.soundFile = buildSyntheticSound;
+	PakWriter musicPak;
+	scripts.musicPak = &musicPak;
+	BakeOptions bo;
+	bo.chunker.chunkSize = 3000.0f;
+	bo.tex.maxSize = 32;
+	bo.tex.quality = 0;
+	bo.threads = 2;
+	bo.quiet = true;
+	bo.musicDir = dir;
+	PakWriter writer;
+	bakeWorlds(worlds, models, scripts, bo, writer);
+	CHECK(writer.has("world/world/music"));
+	CHECK(musicPak.has("music/test_day_std") && musicPak.has("music/test_ngt_std") && musicPak.has("music/test_fig"));
+	CHECK(!writer.has("music/test_day_std")); // (the tracks are not in data.pak)
+	const std::string sub = gDir + "/music_game";
+	fs::create_directories(sub);
+	writer.write(sub + "/data.pak");
+	musicPak.write(sub + "/music.pak");
+
+	gfx::init();
+	{
+		HostAudio audio;
+		App app;
+		app.setAudio(&audio);
+		CHECK(app.init((sub + "/data.pak").c_str(), nullptr));
+		Music& music = app.music();
+		CHECK(music.ready());
+		const auto run = [&](float seconds, Vec3 at, float hours, MusicSituation sit) {
+			for (float t = 0; t < seconds; t += 0.05f) {
+				music.update(0.05f, at, hours, sit);
+				audio.advance(0.05f);
+				usleep(300);
+			}
+		};
+		run(4.0f, {0, 0, 0}, 12.0f, MUSIC_CALM);
+		CHECK(std::string(music.zone()) == "TEST" && std::string(music.theme()) == "TEST_DAY_STD");
+		CHECK(audio.streamIsOpen() && audio.streamRate() == 22050 && audio.streamChannels() == 1);
+		CHECK(audio.streamQueued() >= 4); // 2.5 s of track, looping: more than it holds is queued
+		CHECK(music.level() > 0.99f);
+		// (Day-theme volume is unset in the scripts: full; master 0.6.)
+		CHECK(std::fabs(audio.streamLevel() - 0.6f) < 0.02f);
+		// Night: fade out, the other track fades in.
+		run(1.0f, {0, 0, 0}, 23.0f, MUSIC_CALM);
+		CHECK(music.level() < 0.9f || std::string(music.theme()) == "TEST_NGT_STD");
+		run(4.0f, {0, 0, 0}, 23.0f, MUSIC_CALM);
+		CHECK(std::string(music.theme()) == "TEST_NGT_STD" && music.level() > 0.99f);
+		// A fight has a theme of its own.
+		run(5.0f, {0, 0, 0}, 23.0f, MUSIC_FIGHT);
+		CHECK(std::string(music.theme()) == "TEST_FIG");
+		// Volume 0: silence, the stream closes.
+		music.setVolume(0.0f);
+		run(3.0f, {0, 0, 0}, 23.0f, MUSIC_FIGHT);
+		CHECK(!audio.streamIsOpen() && std::string(music.theme()).empty());
+		music.setVolume(0.6f);
+		run(4.0f, {0, 0, 0}, 12.0f, MUSIC_CALM);
+		CHECK(audio.streamIsOpen() && std::string(music.theme()) == "TEST_DAY_STD");
+		app.shutdown();
+		CHECK(audio.liveBlocks() == 0);
+	}
+	// Without music.pak: no music, no harm.
+	{
+		fs::remove(sub + "/music.pak");
+		HostAudio audio;
+		App app;
+		app.setAudio(&audio);
+		CHECK(app.init((sub + "/data.pak").c_str(), nullptr));
+		CHECK(!app.music().ready());
+		app.shutdown();
+	}
+}
+
+static void testSound() {
+	// ---- the WAV reader, the resampler, the blob ----
+	std::vector<i16> tone(8820);
+	for (size_t i = 0; i < tone.size(); ++i) tone[i] = i16(std::lround(10000.0 * std::sin(double(i) * 0.05)));
+	{
+		SrcSound s;
+		std::string why;
+		CHECK(decodeWav(makeWav(tone, 44100), s, why) && s.rate == 44100 && s.samples == tone);
+		resampleSound(s, 22050);
+		CHECK(s.rate == 22050 && s.samples.size() == tone.size() / 2);
+		// (A slow tone survives the averaging: about the same shape at half the length.)
+		CHECK(std::abs(int(s.samples[1000]) - int(tone[2000])) < 400);
+		const std::vector<u8> blob = encodeSound(s);
+		SoundHeader h;
+		std::memcpy(&h, blob.data(), sizeof(h));
+		CHECK(blob.size() == soundBytes(h) && soundValid(h, u32(blob.size())));
+		CHECK(!soundValid(h, u32(blob.size()) - 2));
+		CHECK(soundEntryHash("STEP_STONE.WAV") == hashName("sfx/step_stone"));
+		SrcSound unchanged = s;
+		resampleSound(unchanged, 44100);
+		CHECK(unchanged.samples == s.samples);
+		CHECK(!decodeWav({1, 2, 3}, s, why) && !why.empty());
+		// IMA ADPCM: a lossy copy of the tone.
+		std::vector<i16> longTone(2000);
+		for (size_t i = 0; i < longTone.size(); ++i) longTone[i] = i16(std::lround(9000.0 * std::sin(double(i) * 0.03)));
+		SrcSound ima;
+		CHECK(decodeWav(imaWav(longTone, 22050), ima, why) && ima.rate == 22050 && ima.samples.size() >= 1900);
+		double err = 0;
+		for (size_t i = 0; i < ima.samples.size(); ++i) err = std::max(err, std::fabs(double(ima.samples[i]) - double(longTone[i])));
+		CHECK(err < 900.0);
+	}
+
+	// ---- the sound engine, on a baked game ----
+	SrcScript script;
+	buildSyntheticScript(script);
+	std::vector<BakeWorld> worlds(2);
+	worlds[0].name = "world";
+	worlds[0].level = "WORLD.ZEN";
+	SynthOptions so;
+	so.cells = 48;
+	so.huts = 6;
+	so.trees = 20;
+	buildSyntheticScene(so, worlds[0].scene);
+	worlds[1].name = "cave";
+	worlds[1].level = "CAVE.ZEN";
+	buildSyntheticCave(worlds[1].scene);
+	std::vector<SrcModel> models(1);
+	buildSyntheticActor(models[0]);
+	BakeScripts scripts;
+	scripts.script = &script;
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
+	scripts.soundFile = buildSyntheticSound;
+	BakeOptions bo;
+	bo.chunker.chunkSize = 3000.0f;
+	bo.tex.maxSize = 32;
+	bo.tex.quality = 0;
+	bo.threads = 2;
+	bo.quiet = true;
+	PakWriter writer;
+	bakeWorlds(worlds, models, scripts, bo, writer);
+	CHECK(writer.has("sfx/step") && writer.has("sfx/step_stone") && writer.has("sfx/hum"));
+	CHECK(writer.has("world/world/ambient") && !writer.has("world/cave/ambient"));
+	const std::string path = gDir + "/sound.pak";
+	writer.write(path);
+	// The same with sound switched off: nothing of it in the archive.
+	{
+		bo.soundRate = 0;
+		PakWriter silent;
+		std::vector<BakeWorld> again(2);
+		again[0].name = "world";
+		again[0].level = "WORLD.ZEN";
+		buildSyntheticScene(so, again[0].scene);
+		again[1].name = "cave";
+		again[1].level = "CAVE.ZEN";
+		buildSyntheticCave(again[1].scene);
+		bakeWorlds(again, models, scripts, bo, silent);
+		CHECK(!silent.has("sfx/step") && !silent.has("world/world/ambient"));
+		bo.soundRate = 22050;
+	}
+
+	gfx::init();
+	{
+		HostAudio audio;
+		App app;
+		app.setAudio(&audio);
+		CHECK(app.init(path.c_str(), nullptr));
+		Sound& sound = app.sound();
+		CHECK(sound.ready() && sound.volume() > 0.79f && sound.volume() < 0.81f);
+		CHECK(sound.knows("SFX_TEST_STEP") && sound.knows("sfx_test_hum") && !sound.knows("SFX_NO_SUCH_THING"));
+		CHECK(sound.stats().ambient == 1);
+		CHECK(app.hero().loaded());
+
+		// A sound without a place: both ears the same, the scripts' volume and ours (100/127 * 0.8).
+		sound.setListener({0, 0, 0}, 0.0f);
+		const u32 before = audio.startedCount();
+		sound.play("SFX_TEST_STEP", nullptr);
+		CHECK(soundWait(sound, audio, before + 1));
+		CHECK(audio.last().rate == 22050 && audio.last().frames == 4410 && !audio.last().loop);
+		CHECK(std::fabs(audio.last().left - audio.last().right) < 0.001f);
+		CHECK(std::fabs(audio.last().left - 100.0f / 127.0f * 0.8f) < 0.01f);
+		const SoundStats s1 = sound.stats();
+		CHECK(s1.played >= 1 && s1.loads >= 1 && s1.unknown == 0);
+
+		// With a place: louder in the ear it is nearer to; beyond its range not at all.
+		const Vec3 right = {300, 0, 100}, left = {-300, 0, 100}, far = {6000, 0, 0};
+		u32 n = audio.startedCount();
+		sound.play("SFX_TEST_STEP", &right);
+		CHECK(audio.startedCount() == n + 1 && audio.last().right > audio.last().left * 1.5f);
+		n = audio.startedCount();
+		sound.play("SFX_TEST_STEP", &left);
+		CHECK(audio.startedCount() == n + 1 && audio.last().left > audio.last().right * 1.5f);
+		n = audio.startedCount();
+		sound.play("SFX_TEST_STEP", &far);
+		CHECK(audio.startedCount() == n && sound.stats().culled >= 1);
+		// The listener turns to face +X: what is on +X is dead ahead.
+		sound.setListener({0, 0, 0}, 1.5707963f);
+		const Vec3 ahead = {300, 0, 0};
+		sound.play("SFX_TEST_STEP", &ahead);
+		CHECK(std::fabs(audio.last().left - audio.last().right) < 0.02f);
+		sound.setListener({0, 0, 0}, 0.0f);
+		// A short range carries less far.
+		n = audio.startedCount();
+		sound.play("SFX_TEST_STEP", &right, 1.0f, 200.0f);
+		CHECK(audio.startedCount() == n);
+
+		// What the ground is made of: the extended name when the scripts have one.
+		CHECK(Sound::surfaceSuffix(2) && std::strcmp(Sound::surfaceSuffix(2), "_STONE") == 0 && !Sound::surfaceSuffix(0));
+		n = audio.startedCount();
+		sound.playGround("SFX_TEST_STEP", 2, nullptr);
+		CHECK(soundWait(sound, audio, n + 1) && audio.last().frames == 6615);
+		n = audio.startedCount();
+		sound.playGround("SFX_TEST_STEP", 4, nullptr); // (no "_EARTH": the plain step)
+		CHECK(audio.startedCount() == n + 1 && audio.last().frames == 4410);
+
+		// The scripts' own calls.
+		ScriptVm& vm = app.npcs().game().vm();
+		n = audio.startedCount();
+		vm.call(vm.find("SNDTEST"));
+		CHECK(audio.startedCount() == n + 1 && vm.stats().errors == 0);
+		const u32 unknownBefore = sound.stats().unknown;
+		sound.play("SFX_NOT_THERE", nullptr);
+		CHECK(sound.stats().unknown == unknownBefore + 1);
+
+		// Volume: 0 is silence, and a sound already playing follows it.
+		app.settings().soundVolume = 0;
+		app.applySettings();
+		n = audio.startedCount();
+		sound.play("SFX_TEST_STEP", nullptr);
+		CHECK(audio.startedCount() == n);
+		app.settings().soundVolume = 10;
+		app.applySettings();
+		CHECK(sound.volume() == 1.0f);
+		sound.stopAll();
+
+		// Running: the clip's footsteps sound, the hum of the world is heard.
+		app.settings().soundVolume = 8;
+		app.applySettings();
+		const float dt = 1.0f / 30.0f;
+		const u32 steps0 = audio.startedCount();
+		Input run;
+		run.moveZ = 1.0f;
+		u32 stepSounds = 0, lastCount = audio.startedCount();
+		bool hum = false;
+		for (int i = 0; i < 200; ++i) {
+			app.update(run, dt);
+			audio.advance(dt);
+			if (audio.startedCount() > lastCount) {
+				lastCount = audio.startedCount();
+				if (audio.last().frames == 4410 || audio.last().frames == 6615) ++stepSounds;
+				if (audio.last().loop) hum = true;
+			}
+			usleep(1500);
+		}
+		CHECK(audio.startedCount() > steps0);
+		CHECK(stepSounds >= 3);
+		CHECK(hum && app.sound().stats().ambient == 1);
+
+		// Leaving the world takes the world's own sounds with it.
+		app.shutdown();
+		CHECK(audio.liveBlocks() == 0);
+	}
+	gfx::shutdown();
+}
+
 static void testSky() {
 	const SkyColors noon = skyColorsAt(13.0f), night = skyColorsAt(1.0f), wrap = skyColorsAt(25.0f);
 	CHECK(noon.light[0] == 1.0f && noon.light[1] == 1.0f && noon.light[2] == 1.0f);
@@ -6197,6 +6558,8 @@ int main(int argc, char** argv) {
              {"chests", testChests},
              {"dialogs", testDialogs},
 	             {"settings", testSettings},
+	             {"music", testMusic},
+             {"sound", testSound},
 	             {"sky", testSky}};
 	for (auto& t : tests) {
 		// Later tests reuse the archives earlier ones baked.

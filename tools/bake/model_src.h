@@ -52,6 +52,15 @@ struct SrcClip {
 	// ClipFight), in frames of this clip.
 	std::vector<int> hits, hitEnds, windows, parry;
 	int fightModeFrame = -1;
+	// The model script's sound tags (*eventSFX, *eventSFXGrnd), in frames of this clip.
+	struct Sfx {
+		int frame = 0;
+		bool ground = false;
+		bool emptySlot = false;
+		float range = 0;
+		std::string name;
+	};
+	std::vector<Sfx> sfx;
 	bool fighting() const { return !hits.empty() || !hitEnds.empty() || !windows.empty() || !parry.empty() || fightModeFrame >= 0; }
 };
 

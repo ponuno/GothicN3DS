@@ -182,6 +182,7 @@ void Npcs::wake(NpcActor& a) {
 	// Everybody in a rhythm of his own.
 	a.anim.advance(float(a.npc % 97) * 0.37f);
 	(void)a.anim.takeMotion();
+	a.anim.takeEvents(nullptr, 0); // (the steps of the time before it was seen make no sound)
 	// (What it was doing is forgotten with the model: it starts its state over.)
 	a.phase = NpcActor::IDLE;
 	a.action = NpcAction();
@@ -1044,6 +1045,12 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 	a.animPrev = a.anim.time();
 	a.animClip = a.anim.current();
 	a.anim.advance(dt);
+	{
+		const ClipSfxEvent* events[8];
+		const u32 count = a.anim.takeEvents(events, 8);
+		if (_soundHook.fn)
+			for (u32 i = 0; i < count; ++i) _soundHook.fn(_soundHook.user, *events[i], int(a.npc));
+	}
 	const Vec3 moved = a.anim.takeMotion();
 	bool walked = false;
 	if (a.carried && (moved.x != 0.0f || moved.z != 0.0f)) {

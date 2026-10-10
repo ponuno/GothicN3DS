@@ -49,12 +49,12 @@ target_compile_options(g3script PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rt
 
 add_library(g3engine STATIC engine/world.cpp engine/app.cpp engine/collision.cpp engine/player.cpp engine/sky.cpp
             engine/loader.cpp engine/pacer.cpp engine/model.cpp engine/hero.cpp engine/npcs.cpp engine/waynet.cpp engine/mobs.cpp engine/npc_ai.cpp engine/npc_perc.cpp engine/npc_dialog.cpp engine/dialog_text.cpp engine/app_talk.cpp engine/recorder.cpp
-            engine/npc_fight.cpp engine/ui.cpp engine/menu.cpp engine/settings.cpp engine/hud.cpp engine/inventory.cpp engine/panel.cpp engine/loot.cpp engine/chests.cpp engine/containers.cpp engine/lang.cpp)
+            engine/npc_fight.cpp engine/ui.cpp engine/menu.cpp engine/settings.cpp engine/hud.cpp engine/inventory.cpp engine/panel.cpp engine/loot.cpp engine/chests.cpp engine/containers.cpp engine/lang.cpp engine/sound.cpp engine/music.cpp)
 target_include_directories(g3engine PUBLIC engine)
 target_link_libraries(g3engine PUBLIC g3core g3sys g3script)
 target_compile_options(g3engine PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
 
-add_library(g3soft STATIC platform/host/gfx_soft.cpp)
+add_library(g3soft STATIC platform/host/gfx_soft.cpp platform/host/audio_host.cpp)
 target_include_directories(g3soft PUBLIC platform/host)
 target_link_libraries(g3soft PUBLIC g3engine m)
 target_compile_options(g3soft PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
@@ -72,6 +72,7 @@ set(G3DS_BAKE_SOURCES
     tools/bake/model_bake.cpp
     tools/bake/script_bake.cpp
     tools/bake/populate.cpp
+    tools/bake/sound_bake.cpp
     tools/bake/item_icon.cpp
     tools/bake/fight_ai.cpp
     tools/bake/dialogue_bake.cpp

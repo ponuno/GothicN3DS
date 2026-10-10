@@ -92,6 +92,19 @@ bool Game::bindAll() {
 	_mVisualSkin = _vm.findMember("C_ITEM", "VISUAL_SKIN");
 	_mWear = _vm.findMember("C_ITEM", "WEAR");
 	_mMainFlag = _vm.findMember("C_ITEM", "MAINFLAG");
+	_mWp = _vm.findMember("C_NPC", "WP");
+	_mStartState = _vm.findMember("C_NPC", "START_AISTATE");
+	_mSensesRange = _vm.findMember("C_NPC", "SENSES_RANGE");
+	_mGuild = _vm.findMember("C_NPC", "GUILD");
+	// (Each must be what the engine takes it for, whatever the scripts declare.)
+	const auto must = [&](u32& member, u8 type) {
+		if (member != SCRIPT_NONE && _vm.symbol(member).type != type) member = SCRIPT_NONE;
+	};
+	must(_mWp, SCRIPT_STRING);
+	must(_mSensesRange, SCRIPT_INT);
+	must(_mGuild, SCRIPT_INT);
+	if (_mStartState != SCRIPT_NONE && _vm.symbol(_mStartState).type != SCRIPT_FUNC && _vm.symbol(_mStartState).type != SCRIPT_INT)
+		_mStartState = SCRIPT_NONE;
 
 	const struct {
 		const char* name;
@@ -178,6 +191,18 @@ u32 Game::lookKey(const GameLook& l) const {
 	mix(u32(u16(l.bodyTex)) | (u32(u16(l.skin)) << 16));
 	mix(u32(u16(l.headTex)) | (u32(u16(l.teethTex)) << 16));
 	return h ? h : 1u;
+}
+
+const char* const* Game::lifeFunctions(u32& count) {
+	static const char* const names[] = {
+	    "AI_GOTOWP",         "AI_GOTOFP",          "AI_GOTONEXTFP",     "AI_GOTONPC",        "AI_ALIGNTOWP",     "AI_ALIGNTOFP",
+	    "AI_TURNTONPC",      "AI_PLAYANI",         "AI_PLAYANIBS",      "AI_WAIT",           "AI_STANDUP",       "AI_STANDUPQUICK",
+	    "AI_SETWALKMODE",    "AI_STARTSTATE",      "AI_CONTINUEROUTINE", "AI_TELEPORT",      "NPC_CLEARAIQUEUE", "NPC_GETDISTTOWP",
+	    "NPC_GETDISTTONPC",  "NPC_GETDISTTOPLAYER", "NPC_GETNEARESTWP", "NPC_GETNEXTWP",     "NPC_ISONFP",       "WLD_ISFPAVAILABLE",
+	    "WLD_ISNEXTFPAVAILABLE", "NPC_ISINSTATE",  "NPC_WASINSTATE",    "NPC_GETSTATETIME",  "NPC_SETSTATETIME", "NPC_GETBODYSTATE",
+	    "NPC_SETPERCTIME",   "WLD_DETECTNPC",      "NPC_CANSEENPC"};
+	count = u32(sizeof(names) / sizeof(names[0]));
+	return names;
 }
 
 u32 Game::countLooks() const {
@@ -301,15 +326,57 @@ const GameRoutine* Game::routineAt(const GameNpc& n, float hours) const {
 	return &_routines[n.routineFirst];
 }
 
+int Game::indexOf(const ScriptInstance* inst) const {
+	if (!inst) return -1;
+	const size_t index = reinterpret_cast<size_t>(inst->user);
+	return index >= 1 && index <= _npcCount && _npcs[index - 1].object == inst ? int(index - 1) : -1;
+}
+
+u32 Game::behaviour(const GameNpc& n) const {
+	if (n.routineCount) return n.state;
+	if (_mStartState == SCRIPT_NONE || !n.object) return 0;
+	const u32 fn = u32(_vm.getInt(_mStartState, 0, n.object));
+	return _vm.isPlainFunction(fn) ? fn : 0u;
+}
+
+float Game::sensesRange(const GameNpc& n) const {
+	const i32 r = _mSensesRange != SCRIPT_NONE && n.object ? _vm.getInt(_mSensesRange, 0, n.object) : 0;
+	return r > 0 ? float(r) : 0.0f;
+}
+
+void Game::setHeroPlace(const float pos[3], float yaw) {
+	if (_hero == SCRIPT_NONE) return;
+	GameNpc& h = _npcs[_hero];
+	memcpy(h.pos, pos, sizeof(h.pos));
+	h.yaw = yaw;
+	h.placed = true;
+	h.world = _world;
+}
+
+void Game::settle(u32 index, PointFinder find, void* user) {
+	if (index >= _npcCount || _npcs[index].hero) return;
+	GameNpc& n = _npcs[index];
+	n.active = false;
+	placeNow(n, find, user);
+}
+
 void Game::place(GameNpc& n, float hours, PointFinder find, void* user) {
 	const GameRoutine* r = routineAt(n, hours);
 	const GameText at = r ? r->point : n.spawn;
 	n.state = r ? r->state : 0u;
 	if (n.moved && n.want == at) return;
 	n.want = at;
+	// The scripts know where the character is to be through its "wp".
+	if (_mWp != SCRIPT_NONE && n.object) _vm.setString(_mWp, 0, n.object, text(at));
+	if (n.active && n.placed) return; // it walks there itself
+	placeNow(n, find, user);
+}
+
+void Game::placeNow(GameNpc& n, PointFinder find, void* user) {
+	const GameText at = n.want;
 	n.at = at;
 	n.placed = find && at != 0 && find(user, text(at), n.pos, n.yaw);
-	if (!n.placed && r && n.spawn != 0 && find) {
+	if (!n.placed && n.routineCount && n.spawn != 0 && find) {
 		// A routine that names a place the world lacks: where the script put him.
 		n.placed = find(user, text(n.spawn), n.pos, n.yaw);
 		if (n.placed) n.at = n.spawn;
@@ -320,7 +387,7 @@ void Game::place(GameNpc& n, float hours, PointFinder find, void* user) {
 	// Several at one place stand around it, not inside each other.
 	u32 others = 0;
 	for (const GameNpc* o = _npcs; o != &n; ++o)
-		if (o->placed && o->world == n.world && o->at == n.at && !o->hero) ++others;
+		if (o->placed && o->world == n.world && o->at == n.at && !o->hero && !o->active) ++others;
 	if (others) {
 		const float angle = n.yaw + float(others) * 2.4f;
 		const float radius = min(70.0f + 45.0f * float(others), 400.0f);

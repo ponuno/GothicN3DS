@@ -22,6 +22,9 @@
 //   Y  citro3d's own frame order: the GPU waits while the CPU issues the draws
 //   A  first person from the start (the character is not drawn until Y is pressed)
 //   R  the vertex shader of the versions before characters; no character at all
+//   SELECT   the inhabitants are not drawn (the scripts run all the same)
+//   D-Pad Up the inhabitants only stand where their routine has them: no
+//            states, no walking - as in the version before they lived
 #include "app.h"
 #include "gfx_c3d.h"
 #include "pacer.h"
@@ -58,7 +61,7 @@ static float stick(int v) {
 
 // The bottom-screen report: laid out once every 30 frames, written a line
 // per frame (printing all of it at once takes several milliseconds).
-static const int kReportLines = 21;
+static const int kReportLines = 22;
 static char gReport[kReportLines][48];
 static int gReportCount = 0;
 
@@ -105,6 +108,7 @@ int main(int, char**) {
 	const bool background = !(startKeys & KEY_B), pacing = !(startKeys & KEY_X), classic = (startKeys & KEY_Y) != 0;
 	const bool plainShader = (startKeys & KEY_R) != 0;
 	const bool nobody = (startKeys & KEY_SELECT) != 0; // the scripts run, their people are not drawn
+	const bool standing = (startKeys & KEY_DUP) != 0;  // they stand: no states, no walking
 	gfx::c3dSetClassicFrames(classic);
 	gfx::c3dSetPlainShader(plainShader);
 
@@ -138,6 +142,7 @@ int main(int, char**) {
 	if (!(startKeys & KEY_L) && app.loadState(kStatePath)) drawDistance = app.drawDistance();
 	if ((startKeys & KEY_A) || plainShader) app.setThirdPerson(false);
 	if (nobody || plainShader) app.npcs().config().maxShown = 0;
+	app.npcs().config().alive = !standing;
 	printf("loading...\n");
 	app.world().preload(app.camera().pos);
 	consoleClear();
@@ -148,6 +153,7 @@ int main(int, char**) {
 	g3::FramePacer pacer;
 	int interval = 1;
 	int reportLines = 0;
+	u32 lastStateCalls = 0;
 
 	while (aptMainLoop()) {
 		hidScanInput();
@@ -282,14 +288,22 @@ int main(int, char**) {
 			if (npcs.loaded()) {
 				const g3::NpcStats& ns = npcs.stats();
 				const g3::ScriptStats& vs = npcs.game().vm().stats();
-				reportLine("npcs %2lu shown %2lu near %4lu here%s", static_cast<unsigned long>(ns.shown),
-				     static_cast<unsigned long>(ns.near), static_cast<unsigned long>(ns.here), nobody ? " OFF" : "");
+				reportLine("npcs %2lu/%2lu in %2.0f m of %4lu%s", static_cast<unsigned long>(ns.shown),
+				     static_cast<unsigned long>(ns.near), double(ns.reach / 100.0f), static_cast<unsigned long>(ns.here),
+				     nobody ? " OFF" : "");
 				reportLine("npc tris %5lu mdl %2lu wait %lu none %lu", static_cast<unsigned long>(ns.triangles),
 				     static_cast<unsigned long>(ns.models), static_cast<unsigned long>(ns.waiting),
 				     static_cast<unsigned long>(ns.noModel));
-				reportLine("script %3.1fMB all %4lu err %lu/%lu", double(npcs.game().vm().imageBytes()) / 1048576.0,
+				// Their life: how many live and walk, animations in memory, state
+				// functions called a second, ways not found + characters put at their goal.
+				reportLine("life %2lu wlk %2lu ani %3luK st %3lu/s x%lu%s", static_cast<unsigned long>(ns.actors),
+				     static_cast<unsigned long>(ns.walking), static_cast<unsigned long>(ns.clipBytes / 1024),
+				     static_cast<unsigned long>((ns.stateCalls - lastStateCalls) * 2),
+				     static_cast<unsigned long>(ns.noPath + ns.snapped + ns.clipsRefused), standing ? " OFF" : "");
+				lastStateCalls = ns.stateCalls;
+				reportLine("script %3.1fMB all %4lu err %lu/%lu nul %lu", double(npcs.game().vm().imageBytes()) / 1048576.0,
 				     static_cast<unsigned long>(ns.total), static_cast<unsigned long>(vs.errors),
-				     static_cast<unsigned long>(vs.aborted));
+				     static_cast<unsigned long>(vs.aborted), static_cast<unsigned long>(vs.nullAccess));
 			} else {
 				reportLine("scripts: none in data.pak");
 			}

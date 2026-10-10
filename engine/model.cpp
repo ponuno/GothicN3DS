@@ -29,6 +29,7 @@ bool Clip::load(Pak& pak, u32 entryHash, u32 nodeCount) {
 		return false;
 	}
 	_blob = blob;
+	_bytes = e->size;
 	_tracks = tracks;
 	// 2-byte aligned: the header and the padded track table are multiples of 4.
 	_samples = reinterpret_cast<const ClipSample*>(tracks + clipTrackTableSize(_h.trackCount));
@@ -85,6 +86,7 @@ void Clip::release() {
 	_samples = nullptr;
 	_motion = nullptr;
 	_rise = 0;
+	_bytes = 0;
 	_h = {};
 }
 
@@ -187,7 +189,42 @@ bool Model::sameSkeleton(const Model& o) const {
 	return true;
 }
 
-bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool) {
+u32 Model::clipBytes() const {
+	u32 bytes = 0;
+	for (u32 i = 0; i < _h.clipCount; ++i) bytes += _clips[i].bytes();
+	return bytes;
+}
+
+bool Model::hasClip(u32 nameHash) const {
+	for (u32 i = 0; i < _h.clipCount; ++i)
+		if (_clipRefs[i].nameHash == nameHash) return true;
+	return false;
+}
+
+const Clip* Model::fetch(Pak& pak, u32 nameHash, u32& inMemory, u32 budget) {
+	const Clip* first = nullptr;
+	// The clip and what follows it ("T_STAND_2_SIT", then "S_SIT").
+	for (int hops = 0; hops < 4 && nameHash; ++hops) {
+		u32 at = _h.clipCount;
+		for (u32 i = 0; i < _h.clipCount; ++i)
+			if (_clipRefs[i].nameHash == nameHash) at = i;
+		if (at == _h.clipCount) break;
+		Clip& c = _clips[at];
+		if (!c.loaded() && !_clipTried[at]) {
+			const PakEntry* e = pak.find(_clipRefs[at].entryHash);
+			if (!e || inMemory + e->size > budget) break; // (not marked as tried: there may be room later)
+			_clipTried[at] = 1;
+			if (c.load(pak, _clipRefs[at].entryHash, _h.nodeCount)) inMemory += c.bytes();
+		}
+		if (!c.loaded()) break;
+		if (!first) first = &c;
+		if (c.loops() || c.header().next == nameHash) break;
+		nameHash = c.header().next;
+	}
+	return first;
+}
+
+bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool, bool lazyClips) {
 	release();
 	const PakEntry* e = pak.find(entryHash);
 	if (!e || e->type != ASSET_MODEL || e->size < sizeof(ModelHeader)) return false;
@@ -208,8 +245,9 @@ bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool) {
 		_blends = static_cast<ModelBlend*>(malloc(size_t(_h.blendCount) * sizeof(ModelBlend) + 1));
 		// Zeroed memory is a valid, empty Clip (and nothing here needs operator new).
 		_clips = static_cast<Clip*>(calloc(size_t(_h.clipCount) + 1, sizeof(Clip)));
+		_clipTried = static_cast<u8*>(calloc(size_t(_h.clipCount) + 1, 1));
 		_textures = static_cast<gfx::Texture**>(calloc(size_t(_h.partCount) + 1, sizeof(gfx::Texture*)));
-		ok = _nodes && _parts && _clipRefs && _blends && _clips && _textures;
+		ok = _nodes && _parts && _clipRefs && _blends && _clips && _clipTried && _textures;
 	}
 	const WorldVertex* vertices = nullptr;
 	const u16* indices = nullptr;
@@ -275,7 +313,10 @@ bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool) {
 	}
 	_pool = pool;
 	// Clips: a broken one is simply not there.
-	for (u32 i = 0; i < _h.clipCount; ++i) _clips[i].load(pak, _clipRefs[i].entryHash, _h.nodeCount);
+	for (u32 i = 0; i < _h.clipCount && !lazyClips; ++i) {
+		_clipTried[i] = 1;
+		_clips[i].load(pak, _clipRefs[i].entryHash, _h.nodeCount);
+	}
 	return true;
 }
 
@@ -296,6 +337,8 @@ void Model::release() {
 	if (_clips)
 		for (u32 i = 0; i < _h.clipCount; ++i) _clips[i].release();
 	free(_clips);
+	free(_clipTried);
+	_clipTried = nullptr;
 	free(_textures);
 	free(_nodes);
 	free(_parts);
@@ -351,10 +394,8 @@ void Model::worldTransforms(const Pose& pose, Mat34* world) const {
 // 32 KB stack. Drawing happens on one thread.
 static Mat34 gDrawWorld[MODEL_MAX_NODES], gDrawSkin[MODEL_MAX_NODES];
 
-void Model::draw(const Pose& pose, Vec3 origin, float yaw, const float light[3], float lean, const float* scale) const {
-	if (!_mesh) return;
+void Model::skinMatrices(const Pose& pose, float yaw, float lean, const float* scale, Mat34* skin) const {
 	Mat34* const world = gDrawWorld;
-	Mat34* const skin = gDrawSkin;
 	worldTransforms(pose, world);
 	// Skin matrices: rest position -> posed position, then turned to face `yaw`.
 	// (Leaning to the right tips the head towards +X: a turn about the model's -Z.)
@@ -368,6 +409,10 @@ void Model::draw(const Pose& pose, Vec3 origin, float yaw, const float light[3],
 		memcpy(inv.m, _nodes[i].invBind, sizeof(inv.m));
 		skin[i] = mul(turn, mul(world[i], inv));
 	}
+}
+
+void Model::drawSkinned(const Mat34* skin, Vec3 origin, const float light[3]) const {
+	if (!_mesh) return;
 	float palette[MODEL_PALETTE * 12];
 	gfx::SkinDraw sd {};
 	sd.bones = palette;
@@ -385,6 +430,12 @@ void Model::draw(const Pose& pose, Vec3 origin, float yaw, const float light[3],
 		gfx::setMaterial(_textures[i], part.flags);
 		gfx::drawSkinned(_mesh, part.firstIndex, part.indexCount, sd);
 	}
+}
+
+void Model::draw(const Pose& pose, Vec3 origin, float yaw, const float light[3], float lean, const float* scale) const {
+	if (!_mesh) return;
+	skinMatrices(pose, yaw, lean, scale, gDrawSkin);
+	drawSkinned(gDrawSkin, origin, light);
 }
 
 // ---- Animator ----
@@ -444,7 +495,7 @@ void Animator::evaluate() {
 	}
 }
 
-void Animator::update(float dt) {
+void Animator::advance(float dt) {
 	if (!_model) return;
 	if (_fade < 1.0f) _fade = _fadeTime > 0.0f ? min(_fade + dt / _fadeTime, 1.0f) : 1.0f;
 	if (_clip) {
@@ -473,7 +524,6 @@ void Animator::update(float dt) {
 			}
 		}
 	}
-	evaluate();
 }
 
 Vec3 Animator::takeMotion() {

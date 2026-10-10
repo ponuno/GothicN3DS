@@ -22,6 +22,7 @@
 #include <zenkit/Texture.hh>
 #include <zenkit/Vfs.hh>
 #include <zenkit/World.hh>
+#include <zenkit/vobs/MovableObject.hh>
 #include <zenkit/vobs/Trigger.hh>
 #include <zenkit/vobs/Zone.hh>
 #include <zenkit/world/WayNet.hh>
@@ -364,6 +365,8 @@ struct FlatMesh {
 	// vertex positions stored with the mesh (a self-check of the pose maths).
 	u32 skinnedParts = 0;
 	float skinDeviation = 0;
+	// For the report: the files it was read from, and (models) what it is made of.
+	std::string source, parts;
 
 	void finish() {
 		float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
@@ -471,15 +474,27 @@ void appendModel(FlatMesh& out, const zenkit::ModelHierarchy* hierarchy, const z
 	float base[3] = {0, 0, 0};
 	if (hierarchy) pose = restPose(*hierarchy, base);
 
+	const auto describe = [&](const std::string& what, const zenkit::MultiResolutionMesh& mrm) {
+		size_t triangles = 0;
+		std::string textures;
+		for (const zenkit::SubMesh& sub : mrm.sub_meshes) {
+			triangles += sub.triangles.size();
+			if (textures.find(upper(sub.mat.texture)) == std::string::npos) textures += (textures.empty() ? "" : " ") + upper(sub.mat.texture);
+		}
+		out.parts += (out.parts.empty() ? "" : "; ") + what + " " + std::to_string(triangles) + " tris " + textures;
+	};
 	// Rigid parts hang on the node of the same name.
 	for (const auto& kv : mesh.attachments) {
 		M34 xf;
+		bool found = false;
 		if (hierarchy)
 			for (size_t i = 0; i < hierarchy->nodes.size(); ++i)
 				if (upper(hierarchy->nodes[i].name) == upper(kv.first)) {
 					xf = pose[i];
+					found = true;
 					break;
 				}
+		describe("node " + upper(kv.first) + (found || !hierarchy ? "" : " (not in the tree)"), kv.second);
 		appendMrm(out, kv.second, xf);
 	}
 	// Skinned parts: each vertex is a weighted sum of bone-local positions.
@@ -510,6 +525,7 @@ void appendModel(FlatMesh& out, const zenkit::ModelHierarchy* hierarchy, const z
 			}
 		}
 		++out.skinnedParts;
+		describe("skin", skin.mesh);
 		appendMrm(out, skin.mesh, M34 {}, &positions);
 	}
 }
@@ -552,10 +568,23 @@ FlatPtr loadVisual(const zenkit::Vfs& vfs, const std::string& name, std::string&
 			appendMrm(*flat, morph.mesh, M34 {});
 		} else if (ext == "MDS" || ext == "ASC" || ext == "MDL" || ext == "MDM") {
 			flat->kind = VisualKind::Model;
-			// A model script names its skeleton and, mostly, takes the mesh from
-			// the same file; some register their meshes separately instead.
-			std::string treeBase = base, meshBase = base;
-			if (ext == "MDS") {
+			// Where a model's files are. Its own name first; a model script
+			// may name another file for the skeleton ("meshAndTree") and say
+			// that the mesh in there is not this model's (DONT_USE_MESH) -
+			// then the meshes it registers are, and the skeleton's own mesh
+			// is only the last resort.
+			struct Candidate {
+				std::string mesh, tree, model; // an .MDM with an .MDH, or an .MDL
+			};
+			std::vector<Candidate> candidates;
+			std::string scriptNote;
+			// (A visual named as an .ASC is its own files first; its script, if
+			// it has one, only where those are missing.)
+			if (ext != "MDS") {
+				candidates.push_back({base, base, ""});
+				candidates.push_back({"", "", base});
+			}
+			if (ext == "MDS" || ext == "ASC") {
 				zenkit::ModelScript script;
 				bool have = false;
 				try {
@@ -564,21 +593,53 @@ FlatPtr loadVisual(const zenkit::Vfs& vfs, const std::string& name, std::string&
 					have = false; // unreadable script: fall back to the visual's own name
 				}
 				if (have && !script.skeleton.name.empty()) {
-					treeBase = meshBase = stripExtension(upper(script.skeleton.name));
-					if (script.skeleton.disable_mesh && !script.meshes.empty()) meshBase = stripExtension(upper(script.meshes[0]));
+					const std::string skel = stripExtension(upper(script.skeleton.name));
+					scriptNote = "script: tree " + skel + (script.skeleton.disable_mesh ? " without its mesh" : "");
+					for (const std::string& m : script.meshes) scriptNote += ", registers " + stripExtension(upper(m));
+					if (!script.skeleton.disable_mesh) {
+						candidates.push_back({skel, skel, ""});
+						candidates.push_back({"", "", skel});
+					} else {
+						// The skeleton is saved under the script's name, or under the
+						// name of the file it was made from.
+						const std::string tree = vfs.find(base + ".MDH") ? base : skel;
+						for (const std::string& m : script.meshes) candidates.push_back({stripExtension(upper(m)), tree, ""});
+						candidates.push_back({"", "", base});
+						candidates.push_back({base, base, ""});
+						candidates.push_back({skel, skel, ""}); // borrowed: better than nothing
+						candidates.push_back({"", "", skel});
+					}
 				}
 			}
-			zenkit::ModelHierarchy hierarchy;
-			zenkit::ModelMesh mesh;
-			zenkit::Model model;
-			if (loadFile(vfs, meshBase + ".MDM", mesh)) {
-				const bool haveHierarchy = loadFile(vfs, treeBase + ".MDH", hierarchy);
-				appendModel(*flat, haveHierarchy ? &hierarchy : nullptr, mesh);
-			} else if (loadFile(vfs, treeBase + ".MDL", model)) {
-				appendModel(*flat, &model.hierarchy, model.mesh);
-			} else {
-				return nullptr;
+			candidates.push_back({base, base, ""});
+			candidates.push_back({"", "", base});
+			bool loaded = false;
+			for (const Candidate& c : candidates) {
+				zenkit::ModelHierarchy hierarchy;
+				zenkit::ModelMesh mesh;
+				zenkit::Model model;
+				if (!c.model.empty()) {
+					if (!loadFile(vfs, c.model + ".MDL", model)) continue;
+					appendModel(*flat, &model.hierarchy, model.mesh);
+					flat->source = c.model + ".MDL";
+				} else {
+					if (!loadFile(vfs, c.mesh + ".MDM", mesh)) continue;
+					// The skeleton on its own, or the one inside a whole model.
+					bool haveHierarchy = loadFile(vfs, c.tree + ".MDH", hierarchy);
+					std::string treeFile = c.tree + ".MDH";
+					if (!haveHierarchy && loadFile(vfs, c.tree + ".MDL", model)) {
+						hierarchy = model.hierarchy;
+						haveHierarchy = true;
+						treeFile = c.tree + ".MDL";
+					}
+					appendModel(*flat, haveHierarchy ? &hierarchy : nullptr, mesh);
+					flat->source = c.mesh + ".MDM" + (haveHierarchy ? " + " + treeFile : " (no tree)");
+				}
+				loaded = true;
+				break;
 			}
+			if (!loaded) return nullptr;
+			if (!scriptNote.empty()) flat->source += " [" + scriptNote + "]";
 		} else {
 			return nullptr;
 		}
@@ -673,7 +734,21 @@ struct ObjectStats {
 	u64 triangles = 0;
 	std::set<std::string> missing;
 	std::map<std::string, std::string> unreadable; // name -> reason
+	// Things that give light, for the report: fire places (oCMobFire) by
+	// visual, and every visual whose name says lamp, torch or fire.
+	struct Fire {
+		u32 count = 0;
+		std::string slot, tree;
+	};
+	std::map<std::string, Fire> fires;
+	std::map<std::string, u32> lights;
 };
+
+bool namedLikeLight(const std::string& upperName) {
+	for (const char* word : {"LAMP", "LANTERN", "LATERN", "TORCH", "FACKEL", "FIRE", "FEUER", "LIGHT", "CANDLE", "KERZE", "SCONCE"})
+		if (upperName.find(word) != std::string::npos) return true;
+	return false;
+}
 
 // Objects smaller than this (bounding radius, cm) are only drawn near the camera.
 const float kSmallRadius = 160.0f, kMediumRadius = 450.0f;
@@ -695,6 +770,9 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 				scene.points[upper(vob->vob_name)] = point;
 			else
 				scene.points.emplace(upper(vob->vob_name), point);
+			// Spots are the free points of the people's routines.
+			if (vob->type == zenkit::VirtualObjectType::zCVobSpot)
+				scene.freePoints.push_back(SrcWayPoint {upper(vob->vob_name), {point.pos[0], point.pos[1], point.pos[2]}, point.yaw});
 		}
 		if (vob->type == zenkit::VirtualObjectType::oCMobLadder) {
 			SrcLadder ladder;
@@ -734,9 +812,20 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 		if (vob->type == zenkit::VirtualObjectType::zCVobLevelCompo || vob->type == zenkit::VirtualObjectType::oCItem ||
 		    vob->type == zenkit::VirtualObjectType::oCNpc)
 			continue;
+		if (vob->type == zenkit::VirtualObjectType::oCMobFire) {
+			const auto* fire = dynamic_cast<const zenkit::VFire*>(vob.get());
+			const std::string visual = vob->visual && !vob->visual->name.empty() ? upper(vob->visual->name) : std::string("(no visual)");
+			ObjectStats::Fire& f = stats.fires[visual + (vob->show_visual ? "" : " (hidden)")];
+			++f.count;
+			if (fire) {
+				f.slot = upper(fire->slot);
+				f.tree = upper(fire->vob_tree);
+			}
+		}
 		if (!vob->show_visual || !vob->visual || vob->visual->name.empty()) continue;
 		const std::string name = upper(vob->visual->name);
 		const std::string ext = extensionOf(name);
+		if (namedLikeLight(name)) ++stats.lights[name];
 
 		if (ext == "PFX") {
 			++stats.particles;
@@ -912,6 +1001,54 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 		                      " particle effects, " + std::to_string(stats.sprites) + " camera-facing sprites, " +
 		                      std::to_string(stats.unsupported) + " other");
 	if (unlit) scene.notes.push_back("objects: " + std::to_string(unlit) + " have no ground below them, lit with the world average");
+	// Models that were not read from files of their own name, and everything
+	// that gives light: what each was built from, to compare with the game.
+	{
+		std::string list;
+		size_t n = 0;
+		for (const auto& kv : cache) {
+			if (!kv.second || kv.second->kind != VisualKind::Model) continue;
+			const std::string base = stripExtension(kv.first);
+			if (kv.second->source.compare(0, base.size() + 1, base + ".") == 0) continue;
+			if (++n <= 24) list += (list.empty() ? "" : "; ") + kv.first + " <- " + kv.second->source;
+		}
+		if (n) scene.notes.push_back("models read from files of another name: " + std::to_string(n) + ": " + list + (n > 24 ? "; ..." : ""));
+	}
+	if (!stats.fires.empty()) {
+		u32 fireCount = 0;
+		for (const auto& kv : stats.fires) fireCount += kv.second.count;
+		scene.notes.push_back("fire places: " + std::to_string(fireCount) + " objects of " + std::to_string(stats.fires.size()) +
+		                      " kinds (their flames are not drawn yet):");
+		size_t n = 0;
+		for (const auto& kv : stats.fires) {
+			if (++n > 24) {
+				scene.notes.push_back("  ...");
+				break;
+			}
+			const std::string visual = kv.first.substr(0, kv.first.find(" ("));
+			const auto it = cache.find(visual);
+			std::string made = it == cache.end() || !it->second ? "not drawn" : it->second->source + ": " + it->second->parts;
+			if (made.size() > 420) made = made.substr(0, 420) + "...";
+			scene.notes.push_back("  " + kv.first + " x" + std::to_string(kv.second.count) + ", fire " + (kv.second.tree.empty() ? "-" : kv.second.tree) +
+			                      " at " + (kv.second.slot.empty() ? "-" : kv.second.slot) + " <- " + made);
+		}
+	}
+	if (!stats.lights.empty()) {
+		std::string list;
+		size_t n = 0;
+		for (const auto& kv : stats.lights) {
+			if (stats.fires.count(kv.first)) continue; // listed above
+			if (++n > 40) {
+				list += "; ...";
+				break;
+			}
+			const auto it = cache.find(kv.first);
+			const bool drawn = it != cache.end() && it->second;
+			list += (list.empty() ? "" : "; ") + kv.first + " x" + std::to_string(kv.second) +
+			        (!drawn ? " (not drawn)" : it->second->source.empty() ? "" : " <- " + it->second->source);
+		}
+		if (n) scene.notes.push_back("other objects named like lights: " + list);
+	}
 	for (const auto& kv : stats.unreadable)
 		scene.notes.push_back("WARNING: object visual " + kv.first + " could not be read: " + kv.second);
 	if (!stats.missing.empty()) {
@@ -1401,8 +1538,8 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 	};
 	std::vector<Loaded> loadedClips;
 	std::vector<std::string> notFound;
-	for (const std::string& rawName : wanted) {
-		const std::string name = upper(rawName);
+	for (size_t wantedAt = 0; wantedAt < wanted.size(); ++wantedAt) {
+		const std::string name = upper(wanted[wantedAt]);
 		Loaded lc;
 		lc.name = name;
 		std::string file = name;
@@ -1432,6 +1569,13 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 					described = true;
 					break;
 				}
+		// Asked for whatever the scripts might name: what this model does not
+		// have is none of its business.
+		if (!described && opt.onlyDeclared) continue;
+		// What an animation leads into is wanted along with it ("T_STAND_2_SIT", then "S_SIT").
+		if (described && opt.onlyDeclared && !lc.next.empty() && lc.next != name &&
+		    std::find(wanted.begin(), wanted.end(), lc.next) == wanted.end())
+			wanted.push_back(lc.next);
 		// An alias may name another alias (the monsters' scripts do); the
 		// samples are in the file of the animation at the end of the chain.
 		for (int depth = 0; described && depth < 4; ++depth) {
@@ -1654,28 +1798,28 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 
 LookSource zenLookSource(std::shared_ptr<const ZenGame> game) {
 	LookSource source;
-	source.rig = [game](const std::string& script, bool humanoid, SrcModel& model) {
+	source.rig = [game](const std::string& script, bool, const std::set<std::string>& wanted, SrcModel& model) {
 		ZenActorOptions o;
 		o.script = script;
 		o.body.clear();
 		o.head.clear();
 		o.heroClips = false;
-		// What it stands about in: people unarmed, creatures ready to bite.
-		if (humanoid)
-			o.clips = {"S_RUN", "S_WALK", "S_FISTRUN"};
-		else
-			o.clips = {"S_FISTRUN", "S_RUN", "S_FISTWALK", "S_WALK"};
-		if (!importZenActor(game, o, model)) return false;
-		// The first of them the game has is the one.
-		for (const std::string& name : o.clips) {
-			const auto it = std::find_if(model.clips.begin(), model.clips.end(), [&](const SrcClip& c) { return c.name == name; });
-			if (it == model.clips.end()) continue;
-			SrcClip keep = std::move(*it);
-			model.clips.clear();
-			model.clips.push_back(std::move(keep));
-			break;
+		o.onlyDeclared = true;
+		// Standing and going, for people and (the "FIST" ones) for creatures ...
+		for (const char* mode : {"RUN", "WALK", "FISTRUN", "FISTWALK"}) {
+			const std::string m = mode;
+			for (const std::string& name : {"S_" + m, "S_" + m + "L", "T_" + m + "_2_" + m + "L", "T_" + m + "L_2_" + m}) o.clips.push_back(name);
 		}
-		if (model.clips.empty()) model.notes.push_back(upper(script) + ": no animation to stand in");
+		// ... and whatever the scripts name that this model has.
+		for (const std::string& name : wanted)
+			if (std::find(o.clips.begin(), o.clips.end(), name) == o.clips.end()) o.clips.push_back(name);
+		if (!importZenActor(game, o, model)) return false;
+		bool stands = false;
+		for (const SrcClip& c : model.clips) stands = stands || c.name == "S_RUN" || c.name == "S_WALK" || c.name == "S_FISTRUN" || c.name == "S_FISTWALK";
+		if (!stands) {
+			model.clips.clear();
+			model.notes.push_back(upper(script) + ": no animation to stand in");
+		}
 		return true;
 	};
 	source.body = [game](const std::string& script, const std::string& mesh, int tex, int skin, SrcModel& model) {
@@ -1905,12 +2049,22 @@ void importZenWorld(std::shared_ptr<const ZenGame> game, const ZenImportOptions&
 	scene.indoor = world.world_bsp_tree.mode == zenkit::BspTreeType::INDOOR;
 
 	// Way points first: named objects of the same name take precedence.
-	if (world.way_net)
+	if (world.way_net) {
+		std::map<const zenkit::WayPoint*, u32> index;
 		for (const auto& wp : world.way_net->points) {
 			if (!wp || wp->name.empty()) continue;
-			scene.points[upper(wp->name)] =
-			    SrcPoint {{wp->position.x, wp->position.y, wp->position.z}, std::atan2(wp->direction.x, wp->direction.z)};
+			const float yaw = std::atan2(wp->direction.x, wp->direction.z);
+			scene.points[upper(wp->name)] = SrcPoint {{wp->position.x, wp->position.y, wp->position.z}, yaw};
+			// (ZenGin keeps the points no way leads to apart; they are points of
+			// the net all the same, places one can be sent to.)
+			index[wp.get()] = u32(scene.wayPoints.size());
+			scene.wayPoints.push_back(SrcWayPoint {upper(wp->name), {wp->position.x, wp->position.y, wp->position.z}, yaw});
 		}
+		for (const auto& edge : world.way_net->edges) {
+			const auto a = index.find(edge.first.get()), b = index.find(edge.second.get());
+			if (a != index.end() && b != index.end() && a->second != b->second) scene.wayEdges.push_back({a->second, b->second});
+		}
+	}
 	if (opt.objects) {
 		appendObjects(world, game->vfs, version, scene);
 	} else {

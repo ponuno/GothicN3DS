@@ -864,7 +864,7 @@ std::vector<std::byte> readFile(const fs::path& path);
 // compiler and written in the game's file format: four characters made of the
 // fixture's model files, put into the fixture's two worlds.
 const char* const kFixtureScript = R"(
-class C_NPC { var int id; var string name[5]; var int guild; var func daily_routine; var int aivar[4]; };
+class C_NPC { var int id; var string name[5]; var int guild; var func daily_routine; var int aivar[4]; var string wp; };
 class C_ITEM { var int id; var string name; var int mainflag; var string visual; var string visual_change; var int visual_skin; };
 class C_INFO { var int npc; var int nr; var func condition; var func information; var string description; var int permanent; };
 instance self, other (C_NPC);
@@ -883,7 +883,11 @@ extern func int Npc_KnowsInfo(var C_NPC n, var int info);
 extern func void AI_Output(var C_NPC a, var C_NPC b, var string line);
 extern func void Snd_Play(var string name);
 var int greeted;
-func void ZS_Stand() {};
+extern func void AI_GotoWP(var C_NPC n, var string wp);
+extern func void AI_PlayAni(var C_NPC n, var string ani);
+extern func void AI_Wait(var C_NPC n, var float seconds);
+func void ZS_Stand() { AI_GotoWP(self, self.wp); AI_PlayAni(self, "t_JumpB"); };
+func int ZS_Stand_Loop() { AI_Wait(self, 1); return 0; };
 instance FIX_ARMOR (C_ITEM) { name = "Coat"; mainflag = 16; visual_change = "Fix_Hero_Body_IO.asc"; };
 instance PC_HERO (C_NPC) {
 	name = "Hero";
@@ -990,8 +994,16 @@ void checkScripts(std::shared_ptr<const ZenGame> game, const fs::path& dir, bool
 	// The pieces of a look, from the game's model files.
 	const LookSource source = zenLookSource(game);
 	SrcModel rig, body, skin, fallback, head, backRig, backBody;
-	CHECK(source.rig("fix_hero", true, rig));
-	CHECK(rig.nodes.size() == HN_COUNT && rig.parts.empty() && rig.clips.size() == 1 && rig.clips[0].name == "S_RUN");
+	// The skeleton with what it stands and goes in, and of the animations the
+	// scripts name the ones this model's script declares.
+	CHECK(source.rig("fix_hero", true, {"T_JUMPB", "S_NOSUCH", "T_STAND_2_SIT"}, rig));
+	{
+		std::string names;
+		for (const SrcClip& c : rig.clips) names += c.name + " ";
+		std::printf("  rig clips: %s\n", names.c_str());
+		CHECK(names == "S_RUN T_RUN_2_RUNL S_WALK S_WALKL T_JUMPB ");
+	}
+	CHECK(rig.nodes.size() == HN_COUNT && rig.parts.empty() && !modelNote(rig, "animations not found"));
 	CHECK(source.body("fix_hero", "fix_hero_body", 0, 0, body));
 	const auto textureOf = [](const SrcModel& m) {
 		std::string t = m.parts.empty() ? std::string() : m.parts[0].material.texture;
@@ -1006,8 +1018,8 @@ void checkScripts(std::shared_ptr<const ZenGame> game, const fs::path& dir, bool
 	CHECK(source.body("fix_hero", "fix_hero_body", 9, 9, fallback));
 	CHECK(fallback.parts.size() == 1 && textureOf(fallback) == "FIX_SKIN_V0_C0.TGA");
 	// Skeleton, body and head of one character are turned alike, whatever each of them is told by.
-	CHECK(source.rig("fix_hero3", false, backRig) && source.body("fix_hero3", "fix_hero_body", 0, 0, backBody));
-	CHECK(backRig.nodes.size() == backBody.nodes.size() && backRig.clips.size() == 1);
+	CHECK(source.rig("fix_hero3", false, {}, backRig) && source.body("fix_hero3", "fix_hero_body", 0, 0, backBody));
+	CHECK(backRig.nodes.size() == backBody.nodes.size() && backRig.clips.size() >= 2);
 	for (size_t i = 0; i < backRig.nodes.size() && i < backBody.nodes.size(); ++i) {
 		float d = 0;
 		for (int a = 0; a < 3; ++a) d = std::max(d, std::fabs(backRig.nodes[i].pos[a] - backBody.nodes[i].pos[a]));
@@ -1035,7 +1047,7 @@ void checkScripts(std::shared_ptr<const ZenGame> game, const fs::path& dir, bool
 	SrcModel none;
 	CHECK(!source.head("fix_hero", "nosuch_head", 0, 0, 0, none) && modelNote(none, "NOSUCH_HEAD.MMB not found"));
 	CHECK(!source.body("fix_hero", "nosuch_body", 0, 0, none) && modelNote(none, "NOSUCH_BODY.MDM not found"));
-	CHECK(!source.rig("nosuch", true, none) && modelNote(none, "NOSUCH.MSB/.MDS not found"));
+	CHECK(!source.rig("nosuch", true, {}, none) && modelNote(none, "NOSUCH.MSB/.MDS not found"));
 
 	// The whole bake: scripts checked against the reference interpreter, run
 	// for both worlds, the inhabitants' models baked.
@@ -1072,7 +1084,10 @@ void checkScripts(std::shared_ptr<const ZenGame> game, const fs::path& dir, bool
 	CHECK(said("world 'fixture2': STARTUP_FIXTURE2 puts 1 characters into it"));
 	CHECK(said("the player's character: fix_hero, body fix_hero_body (texture 4, skin 1)"));
 	CHECK(said("SND_PLAY x1") && said("0 complaints, 0 calls given up"));
-	CHECK(said("5 characters with 4 different looks; models for 3 of them (3 characters): 2 skeletons with 2 animations"));
+	CHECK(said("5 characters with 4 different looks; models for 3 of them (3 characters): 2 skeletons with 10 animations"));
+	// The scripts name one animation, and the skeleton that has it got it.
+	CHECK(said("animations: the scripts name or imply 1; baked per skeleton: fix_hero 5, fix_hero3 5"));
+	CHECK(said(" 1 states, "));
 	CHECK(said("NOSUCH.MSB/.MDS not found") && said("e.g. FIX_GHOST"));
 	CHECK(haveHead ? said("3 bodies, 1 heads") : said("head missing (drawn without)"));
 	CHECK(said("places: ") && said("set on the ground"));
@@ -1109,8 +1124,35 @@ void checkScripts(std::shared_ptr<const ZenGame> game, const fs::path& dir, bool
 		}
 		CHECK(ordered && found == (std::string(name) == "world/fixture2/points"));
 	}
+	// The way net: the three way points (the lone one too), the way between
+	// two of them, the two spots as free points.
+	CHECK(said("way net: 3 points, 1 connections") && said("1 points without any; 2 free points"));
+	{
+		const PakEntry* e = pak.find("world/fixture2/waynet");
+		CHECK(e && e->size > sizeof(WayNetHeader) && !pak.find("world/fixture/waynet"));
+		std::vector<u8> blob(e ? e->size : sizeof(WayNetHeader));
+		if (e) CHECK(pak.read(*e, blob.data()));
+		WayNetHeader wh {};
+		std::memcpy(&wh, blob.data(), sizeof(wh));
+		CHECK(wh.magic == WAYNET_MAGIC && wh.nodeCount == 3 && wh.edgeCount == 2 && wh.freeCount == 2);
+		if (e && wh.nodeCount == 3 && wh.freeCount == 2) {
+			const WayNode* nodes = reinterpret_cast<const WayNode*>(blob.data() + sizeof(wh));
+			const u16* edges = reinterpret_cast<const u16*>(nodes + 3);
+			const FreePoint* free = reinterpret_cast<const FreePoint*>(blob.data() + sizeof(wh) + 3 * sizeof(WayNode) + 4);
+			const char* names = reinterpret_cast<const char*>(free + 2);
+			CHECK(std::string(names + nodes[0].name) == "WP_TEST" && nodes[0].edgeCount == 0);
+			CHECK(std::string(names + nodes[1].name) == "WP_A" && std::string(names + nodes[2].name) == "WP_B");
+			CHECK(nodes[1].edgeCount == 1 && edges[nodes[1].firstEdge] == 2 && nodes[2].edgeCount == 1 && edges[nodes[2].firstEdge] == 1);
+			CHECK(nodes[1].nameHash == hashName("wp_a") && std::fabs(nodes[1].pos[0] - 1500.0f) < 0.01f && std::fabs(nodes[1].yaw) < 0.01f);
+			// On the ground, not at the height the file has them.
+			CHECK(nodes[1].pos[1] != 90.0f && std::fabs(nodes[1].pos[1]) < 80.0f);
+			std::set<std::string> spots = {names + free[0].name, names + free[1].name};
+			CHECK(spots.count("ARRIVAL") && spots.count("FP_SIT_BENCH_01"));
+		}
+	}
 	CHECK(pak.find("model/npc.rig0") && pak.find("model/npc.rig1") && pak.find("model/npc.body0") && pak.find("model/npc.body2"));
 	CHECK(pak.find("anim/npc.rig0/s_run") && !pak.find("model/npc.body3") && pak.find("tex/fix_skin_v0_c0"));
+	CHECK(pak.find("anim/npc.rig0/t_jumpb") && pak.find("anim/npc.rig0/s_walkl"));
 }
 
 // ---- the game's camera scripts ----
@@ -1774,6 +1816,19 @@ int main(int argc, char** argv) {
 		spot->position = zenkit::Vec3 {2000.0f, 50.0f, 2500.0f};
 		world2.world_vobs.push_back(spot);
 		world2.world_vobs.push_back(makePortal("fixture.zen", "START", 500, 500));
+		for (const char* lamp : {"Fix_Lamp.mds", "FIX_LAMP2.MDS", "FIX_LAMP3.MDS", "FIX_LAMP3.MDS"}) {
+			auto fire = std::make_shared<zenkit::VFire>();
+			fire->type = zenkit::VirtualObjectType::oCMobFire;
+			auto vis = std::make_shared<zenkit::VisualModel>();
+			vis->type = zenkit::VisualType::MODEL;
+			vis->name = lamp;
+			fire->visual = vis;
+			fire->show_visual = true;
+			fire->position = zenkit::Vec3 {3000.0f, 100.0f, 3000.0f};
+			fire->slot = "Bip01 Fire";
+			fire->vob_tree = "FIRETREE_LAMP.ZEN";
+			world2.world_vobs.push_back(fire);
+		}
 		auto waypoint = std::make_shared<zenkit::WayPoint>();
 		waypoint->name = "WP_TEST";
 		waypoint->position = zenkit::Vec3 {1000, 20, 1200};
@@ -1782,6 +1837,24 @@ int main(int argc, char** argv) {
 		waypoint->under_water = false;
 		waypoint->free_point = true; // not part of any edge
 		world2.way_net->points.push_back(waypoint);
+		// Two more with a way between them, and a spot beside it.
+		std::shared_ptr<zenkit::WayPoint> ends[2];
+		for (int k = 0; k < 2; ++k) {
+			ends[k] = std::make_shared<zenkit::WayPoint>();
+			ends[k]->name = k ? "wp_b" : "WP_A";
+			ends[k]->position = zenkit::Vec3 {1500.0f + 1000.0f * float(k), 90.0f, 2600.0f};
+			ends[k]->direction = zenkit::Vec3 {0, 0, 1};
+			ends[k]->water_depth = 0;
+			ends[k]->under_water = false;
+			ends[k]->free_point = false;
+			world2.way_net->points.push_back(ends[k]);
+		}
+		world2.way_net->edges.push_back({ends[0], ends[1]});
+		auto seat = std::make_shared<zenkit::VSpot>();
+		seat->type = zenkit::VirtualObjectType::zCVobSpot;
+		seat->vob_name = "FP_Sit_Bench_01";
+		seat->position = zenkit::Vec3 {2400.0f, 80.0f, 2700.0f};
+		world2.world_vobs.push_back(seat);
 
 		zenkit::Vfs vfs;
 		zenkit::VfsNode& worlds = vfs.mkdir("_WORK/DATA/WORLDS");
@@ -1807,6 +1880,23 @@ int main(int argc, char** argv) {
 		addToVfs(anims, "FIX_GATE.MDH", mdh);
 		addToVfs(anims, "FIX_GATE.MDM", mdm);
 		addToVfs(anims, "FIX_MILL.MDL", mdl);
+		// Three fire places whose model scripts borrow the gate's skeleton but
+		// not its mesh. The first has files of its own name, the second
+		// registers a mesh, the third has nothing: only that one may fall back
+		// on the mesh it was told not to use.
+		addToVfs(anims, "FIX_LAMP.MDL", mdl);
+		{
+			zenkit::VfsNode& scripts = vfs.mkdir("_WORK/DATA/ANIMS");
+			const auto text = [](const std::string& t) {
+				const std::byte* b = reinterpret_cast<const std::byte*>(t.data());
+				return std::vector<std::byte>(b, b + t.size());
+			};
+			addToVfs(scripts, "FIX_LAMP.MDS", text("Model (\"FIX_LAMP\")\n{\n\tmeshAndTree (\"Fix_Gate.asc\" DONT_USE_MESH)\n\taniEnum\n\t{\n\t}\n}\n"));
+			addToVfs(scripts, "FIX_LAMP2.MDS",
+			         text("Model (\"FIX_LAMP2\")\n{\n\tmeshAndTree (\"Fix_Mill.asc\" DONT_USE_MESH)\n\tregisterMesh (\"Fix_Gate.asc\")\n"
+			              "\taniEnum\n\t{\n\t}\n}\n"));
+			addToVfs(scripts, "FIX_LAMP3.MDS", text("Model (\"FIX_LAMP3\")\n{\n\tmeshAndTree (\"Fix_Gate.asc\" DONT_USE_MESH)\n\taniEnum\n\t{\n\t}\n}\n"));
+		}
 
 		// The character: script, skeleton, body, three clips' worth of files
 		// and both skins. A second script has its clips stored the other way
@@ -1881,6 +1971,15 @@ int main(int argc, char** argv) {
 			CHECK(!second.hasSpawn && hasNote(second, "no zCVobStartpoint"));
 			CHECK(second.indoor && second.fogColor[0] == 30 && second.fogColor[1] == 20 && second.fogColor[2] == 10);
 			CHECK(second.ladders.empty());
+			// The fire places: each from the right files, and all of it on record.
+			for (const std::string& n : second.notes)
+				if (n.find("fire") != std::string::npos || n.find("FIX_LAMP") != std::string::npos) std::printf("  %s\n", n.c_str());
+			CHECK(hasNote(second, "fire places: 4 objects of 3 kinds"));
+			CHECK(hasNote(second, "FIX_LAMP.MDS x1, fire FIRETREE_LAMP.ZEN at BIP01 FIRE <- FIX_LAMP.MDL [script: tree FIX_GATE without its mesh]"));
+			CHECK(hasNote(second, "FIX_LAMP2.MDS x1, fire FIRETREE_LAMP.ZEN at BIP01 FIRE <- FIX_GATE.MDM + FIX_MILL.MDL"));
+			CHECK(hasNote(second, "FIX_LAMP3.MDS x2, fire FIRETREE_LAMP.ZEN at BIP01 FIRE <- FIX_GATE.MDM + FIX_GATE.MDH"));
+			CHECK(hasNote(second, "models read from files of another name: 2: FIX_LAMP2.MDS <- FIX_GATE.MDM"));
+			CHECK(hasNote(second, "node ") && hasNote(second, " tris "));
 		} catch (const std::exception& ex) {
 			std::printf("FAIL import threw: %s\n", ex.what());
 			++gFailures;

@@ -31,6 +31,9 @@ static void usage() {
 	     "  --detail M,S        draw distance of medium and small objects, cm (default: 7000,3500)\n"
 	     "  --stream MODE       how chunks are loaded while moving: sync (default; on the frame),\n"
 	     "                      inline (the background pipeline without a thread), thread (as on the console)\n"
+	     "  --to-time H         let the clock run from --time to this hour over the frames (routines move on)\n"
+	     "  --standing          the inhabitants only stand where their routine has them (no states, no walking)\n"
+	     "  --who               list at the end what each inhabitant near the camera is doing\n"
 	     "  --stats FILE        write a JSON summary");
 }
 
@@ -44,7 +47,8 @@ int main(int argc, char** argv) {
 	const char* streamMode = "sync";
 	int frames = 300, shots = 4;
 	bool still = false, cull = true, walk = false, firstPerson = false;
-	float timeOfDay = 13.0f;
+	float timeOfDay = 13.0f, toTime = -1.0f;
+	bool standing = false, who = false;
 	float budgetMb = 24.0f, drawDistance = 12000.0f;
 
 	for (int i = 1; i < argc; ++i) {
@@ -61,6 +65,9 @@ int main(int argc, char** argv) {
 		else if (arg("--stream")) streamMode = argv[++i];
 		else if (arg("--detail")) detailSpec = argv[++i];
 		else if (arg("--time")) timeOfDay = float(atof(argv[++i]));
+		else if (arg("--to-time")) toTime = float(atof(argv[++i]));
+		else if (strcmp(argv[i], "--standing") == 0) standing = true;
+		else if (strcmp(argv[i], "--who") == 0) who = true;
 		else if (strcmp(argv[i], "--still") == 0) still = true;
 		else if (strcmp(argv[i], "--walk") == 0) walk = true;
 		else if (strcmp(argv[i], "--first-person") == 0) firstPerson = true;
@@ -95,6 +102,7 @@ int main(int argc, char** argv) {
 		return 2;
 	}
 	app.environment().timeOfDay = timeOfDay;
+	app.npcs().config().alive = !standing;
 	app.setThirdPerson(!firstPerson);
 	// Three modes: a level flight a few metres up (default), a walk on the
 	// ground with collision (--walk), or a fixed view from the spawn (--still).
@@ -137,6 +145,7 @@ int main(int argc, char** argv) {
 	u64 heroPixels = 0;
 	u32 npcShownMax = 0, npcNearMax = 0, npcTrianglesMax = 0, npcWaitingMax = 0, npcNoModelMax = 0;
 	int npcFrames = 0;
+	u32 npcActorsMax = 0, npcWalkingMax = 0;
 
 	for (int f = 0; f < frames; ++f) {
 		Input in;
@@ -153,6 +162,13 @@ int main(int argc, char** argv) {
 			in.lookX = (f / 90) % 2 == 0 ? 0.12f : -0.2f;
 			app.camera().pitch = 0.0f;
 		}
+		if (toTime >= 0.0f) {
+			// (Over midnight if the end is the earlier hour.)
+			const float span = toTime >= timeOfDay ? toTime - timeOfDay : toTime + 24.0f - timeOfDay;
+			app.environment().timeOfDay = fmodf(timeOfDay + span * float(f) / float(frames > 1 ? frames - 1 : 1), 24.0f);
+		}
+		npcActorsMax = max(npcActorsMax, app.npcs().stats().actors);
+		npcWalkingMax = max(npcWalkingMax, app.npcs().stats().walking);
 		const double u0 = g3::sys::timeMs();
 		app.update(in, dt);
 		const double updateMs = g3::sys::timeMs() - u0;
@@ -256,14 +272,29 @@ int main(int argc, char** argv) {
 	if (app.npcs().loaded()) {
 		const NpcStats& ns = app.npcs().stats();
 		const ScriptStats& vs = app.npcs().game().vm().stats();
-		printf("scripts           %.2f MB image, %llu instructions run, %u complaints, %u calls given up, %u calls of engine "
-		       "functions that do nothing yet\n",
+		printf("scripts           %.2f MB image, %llu instructions run, %u complaints, %u calls given up, %u uses of members of no "
+		       "object, %u calls of engine functions that do nothing yet\n",
 		       double(app.npcs().game().vm().imageBytes()) / 1048576.0, static_cast<unsigned long long>(vs.instructions),
-		       vs.errors, vs.aborted, vs.stubCalls);
+		       vs.errors, vs.aborted, vs.nullAccess, vs.stubCalls);
 		printf("inhabitants       %u by the scripts, %u in %s at the end; near max %u, shown max %u (%u triangles) in %d "
 		       "frames; %u models read, %u in memory with %u textures (%.2f MB); waiting max %u, without models max %u\n",
 		       ns.total, ns.here, app.npcs().worldScript(), npcNearMax, npcShownMax, npcTrianglesMax, npcFrames, ns.loads,
 		       ns.models, ns.textures, double(ns.textureBytes) / 1048576.0, npcWaitingMax, npcNoModelMax);
+		printf("life              %s: %u living at most, %u walking at once; %u state functions called, %u actions carried out "
+		       "(%u dropped); ways: %u found, %u not, %u characters put at their goal; animations: %u read, %.2f MB in memory, "
+		       "%u missing, %u refused; way net: %u points, %u free points\n",
+		       standing ? "off (--standing)" : "on", npcActorsMax, npcWalkingMax, ns.stateCalls, ns.actions, ns.queueFull, ns.paths,
+		       ns.noPath, ns.snapped, ns.clips, double(ns.clipBytes) / 1048576.0, ns.clipsMissing, ns.clipsRefused,
+		       app.npcs().wayNet().nodeCount(), app.npcs().wayNet().freeCount());
+		if (who)
+			for (u32 i = 0; i < app.npcs().actorCount(); ++i) {
+				const NpcActor& a = app.npcs().actor(i);
+				if (!a.used) continue;
+				const GameNpc& n = app.npcs().game().npc(a.npc);
+				printf("  %-22.22s %-8s at %7.0f %6.0f %7.0f, %4.0f m away, %3.0f s in its state\n", app.npcs().game().nameOf(n),
+				       app.npcs().doing(a), double(n.pos[0]), double(n.pos[1]), double(n.pos[2]), double(sqrtf(a.dist2)) / 100.0,
+				       double(a.stateTime));
+			}
 	} else {
 		printf("scripts           none in the archive: the worlds are empty\n");
 	}
@@ -285,7 +316,8 @@ int main(int argc, char** argv) {
 		        "\"swimFrames\":%d,\"blendedDrawsMax\":%u,\"batchesCulledAvg\":%llu,\"worldSwitches\":%u,"
 		        "\"pixelsWritten\":%llu,\"heroFrames\":%d,\"heroRunFrames\":%d,\"heroAirFrames\":%d,"
 		        "\"heroSwimFrames\":%d,\"heroPixels\":%llu,\"npcsTotal\":%u,\"npcsHere\":%u,\"npcsShownMax\":%u,"
-		        "\"npcFrames\":%d,\"npcLoads\":%u,\"npcTrianglesMax\":%u,\"scriptErrors\":%u}\n",
+		        "\"npcFrames\":%d,\"npcLoads\":%u,\"npcTrianglesMax\":%u,\"scriptErrors\":%u,\"npcActorsMax\":%u,"
+		        "\"npcWalkingMax\":%u,\"npcStateCalls\":%u,\"npcPaths\":%u,\"npcSnapped\":%u,\"npcClips\":%u}\n",
 		        frames, static_cast<unsigned long long>(sumTris / u64(frames)), maxTris, maxDraws, ws.chunksTotal,
 		        maxLoaded, ws.peakResidentBytes, ws.budgetRejects, ws.loadFailures, double(sumWritten) / screen,
 		        backfaceShare, groundedFrames, swimFrames, maxBlended,
@@ -295,7 +327,9 @@ int main(int argc, char** argv) {
 		        heroRoleFrames[Hero::SWIM] + heroRoleFrames[Hero::SWIM_IDLE],
 		        static_cast<unsigned long long>(heroFrames ? heroPixels / u64(heroFrames) : 0), app.npcs().stats().total,
 		        app.npcs().stats().here, npcShownMax, npcFrames, app.npcs().stats().loads, npcTrianglesMax,
-		        app.npcs().loaded() ? app.npcs().game().vm().stats().errors + app.npcs().game().vm().stats().aborted : 0u);
+		        app.npcs().loaded() ? app.npcs().game().vm().stats().errors + app.npcs().game().vm().stats().aborted : 0u,
+		        npcActorsMax, npcWalkingMax, app.npcs().stats().stateCalls, app.npcs().stats().paths, app.npcs().stats().snapped,
+		        app.npcs().stats().clips);
 		fclose(fp);
 	}
 

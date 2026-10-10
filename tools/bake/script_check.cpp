@@ -360,9 +360,18 @@ std::string globalsOf(const SrcScript& s, const std::function<i32(u32, u32)>& ge
 	count = 0;
 	for (size_t i = 0; i < s.symbols.size(); ++i) {
 		const SrcSymbol& sym = s.symbols[i];
-		if (sym.type != SCRIPT_INT || sym.member || sym.isConst) continue;
-		for (u32 k = 0; k < std::max<u32>(sym.count, 1); ++k) {
-			const i32 v = get(u32(i), k);
+		// (Parameters of the engine's functions are in the table too, without
+		// any room for a value: count 0.)
+		if (sym.type != SCRIPT_INT || sym.member || sym.isConst || sym.count == 0) continue;
+		for (u32 k = 0; k < sym.count; ++k) {
+			i32 v = 0;
+			try {
+				v = get(u32(i), k);
+			} catch (const std::exception&) {
+				all += sym.name + "[" + std::to_string(k) + "] cannot be read\n";
+				++count;
+				continue;
+			}
 			++count;
 			if (v) all += sym.name + "[" + std::to_string(k) + "]=" + std::to_string(v) + "\n";
 		}
@@ -421,6 +430,18 @@ ScriptCheckResult compare(const std::vector<u8>& dat, const SrcScript& script, c
 	}
 	Ours ours {vm};
 	Engine<Ours> ourEngine(ours, script);
+	// What our machine finds fault with, by kind and by the function it happens in.
+	struct Faults {
+		const SrcScript* script;
+		std::map<std::string, u32> kinds;
+	} faults {&script, {}};
+	vm.onError(
+	    [](const char* what, u32 function, u32, void* user) {
+		    Faults& f = *static_cast<Faults*>(user);
+		    const std::string where = function < f.script->symbols.size() ? f.script->symbols[function].name : std::string("?");
+		    if (f.kinds.size() < 4096) ++f.kinds[std::string(what) + " in " + where];
+	    },
+	    &faults);
 	for (size_t i = 0; i < script.symbols.size(); ++i)
 		if (script.symbols[i].type == SCRIPT_FUNC && script.symbols[i].external)
 			vm.bindSymbol(u32(i), [](ScriptVm& m, void* user) { static_cast<Engine<Ours>*>(user)->external(m.callee()); },
@@ -513,11 +534,20 @@ ScriptCheckResult compare(const std::vector<u8>& dat, const SrcScript& script, c
 	std::snprintf(buf, sizeof(buf),
 	              "scripts: checked against the reference interpreter: %u runs (start-up, dialogues, items), %u the same "
 	              "with %llu engine calls and objects, %u different, %u the reference objected to; %u variables at the "
-	              "end %s; ours: %llu instructions, %u complaints\n",
+	              "end %s; ours: %llu instructions, %u complaints, %u calls given up, %u uses of members of no object\n",
 	              r.runs, r.same, static_cast<unsigned long long>(r.calls), r.differ, r.objected, count,
 	              r.stateSame ? "the same" : "DIFFERENT", static_cast<unsigned long long>(vm.stats().instructions),
-	              vm.stats().errors + vm.stats().aborted);
+	              vm.stats().errors, vm.stats().aborted, vm.stats().nullAccess);
 	r.report = buf;
+	if (!faults.kinds.empty()) {
+		std::vector<std::pair<u32, std::string>> byCount;
+		for (const auto& [what, n] : faults.kinds) byCount.push_back({n, what});
+		std::sort(byCount.rbegin(), byCount.rend());
+		std::string list;
+		for (size_t i = 0; i < byCount.size() && i < 6; ++i) list += (i ? "; " : "") + byCount[i].second + " x" + std::to_string(byCount[i].first);
+		r.report += "scripts: where our machine found fault during the check (" + std::to_string(byCount.size()) + " places): " + list +
+		            (byCount.size() > 6 ? "; ..." : "") + "\n";
+	}
 	if (!r.detail.empty()) r.report += r.detail;
 	return r;
 }

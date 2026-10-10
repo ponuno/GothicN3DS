@@ -7,6 +7,8 @@
 
 namespace g3 {
 
+Npcs::Npcs() {}
+
 bool Npcs::load(Pak& pak) {
 	release();
 	if (!_game.load(pak)) return false;
@@ -27,11 +29,13 @@ bool Npcs::load(Pak& pak) {
 		}
 		free(blob);
 	}
+	bindAi();
 	_stats.total = _game.npcCount();
 	return true;
 }
 
 void Npcs::release() {
+	for (NpcActor& a : _actors) a = NpcActor();
 	for (Piece& p : _pieces) {
 		p.model.release();
 		p.hash = 0;
@@ -39,17 +43,17 @@ void Npcs::release() {
 		p.failed = false;
 	}
 	_pool.release();
+	_net.release();
 	_game.release();
 	free(_looks);
 	free(_points);
-	free(_standing);
 	_looks = nullptr;
 	_points = nullptr;
-	_standing = nullptr;
-	_lookCount = _pointCount = _standingCount = 0;
-	_shownCount = 0;
+	_lookCount = _pointCount = 0;
 	_script[0] = 0;
 	_stats = NpcStats {};
+	_clipBytes = 0;
+	_pak = nullptr;
 	_frame = 0;
 	_clock = 0;
 	_hours = -1.0f;
@@ -85,14 +89,31 @@ const LookEntry* Npcs::lookOf(const GameLook& look) const {
 	return lo < _lookCount && _looks[lo].key == key ? &_looks[lo] : nullptr;
 }
 
+const NpcActor* Npcs::actorOf(u32 npcIndex) const {
+	for (const NpcActor& a : _actors)
+		if (a.used && a.npc == npcIndex) return &a;
+	return nullptr;
+}
+
+// An actor goes back to being wherever its routine wants it.
+void Npcs::retire(NpcActor& a) {
+	if (!a.used) return;
+	_net.drop(a.npc);
+	if (_game.loaded() && a.npc < _game.npcCount()) _game.settle(a.npc, findPoint, this);
+	a = NpcActor();
+}
+
 void Npcs::leaveWorld() {
+	for (NpcActor& a : _actors) retire(a);
+	_net.dropAll();
 	for (Piece& p : _pieces) {
 		p.model.release();
 		p.hash = 0;
 		p.used = 0;
 		p.failed = false;
 	}
-	_shownCount = 0;
+	_clipBytes = 0;
+	_stats.clipBytes = 0;
 }
 
 void Npcs::enterWorld(Pak& pak, const World& world, const char* asset, Vec3 eye, float hours) {
@@ -127,23 +148,17 @@ void Npcs::enterWorld(Pak& pak, const World& world, const char* asset, Vec3 eye,
 		const char* slash = strrchr(asset, '/');
 		snprintf(_script, sizeof(_script), "%s", slash ? slash + 1 : asset);
 	}
+	_net.load(pak, asset); // a world without paths: its people stand
 
+	_pak = &pak;
 	_game.enterWorld(_script, hours, findPoint, this);
 	_hours = hours;
 	_stats.total = _game.npcCount();
-	// Everybody may stand somewhere else now.
-	if (_standingCount < _game.npcCount()) {
-		Standing* grown = static_cast<Standing*>(realloc(static_cast<void*>(_standing), size_t(_game.npcCount()) * sizeof(Standing)));
-		if (grown) {
-			for (u32 i = _standingCount; i < _game.npcCount(); ++i) grown[i] = Standing {};
-			_standing = grown;
-			_standingCount = _game.npcCount();
-		}
-	}
-	for (u32 i = 0; i < _standingCount; ++i) _standing[i].moved = 0xFFFFFFFFu;
+	_reach = min(_cfg.range, world.config().drawDistance);
 	// Whoever is around the player is there when the world appears.
 	++_frame;
 	select(pak, world, eye, 0xFFFFu);
+	_pak = nullptr;
 }
 
 // A model by its archive entry, read now if `loadsLeft` allows. Null if it
@@ -158,7 +173,7 @@ Npcs::Piece* Npcs::piece(Pak& pak, u32 hash, u32& loadsLeft) {
 			// Memory may have been short for a moment: another go every few seconds.
 			if (_frame - p.failedAt < 240 || loadsLeft == 0) return nullptr;
 			--loadsLeft;
-			p.failed = !p.model.loadEntry(pak, hash, &_pool);
+			p.failed = !p.model.loadEntry(pak, hash, &_pool, true);
 			p.failedAt = _frame;
 			++_stats.loads;
 			return p.failed ? nullptr : &p;
@@ -168,108 +183,190 @@ Npcs::Piece* Npcs::piece(Pak& pak, u32 hash, u32& loadsLeft) {
 		if (!spare || (p.hash == 0 && spare->hash != 0) || (p.hash != 0 && spare->hash != 0 && p.used < spare->used)) spare = &p;
 	}
 	if (!spare || loadsLeft == 0) return nullptr;
+	// (Nobody is drawn with it any more - but an actor waiting for another of
+	// its models may still be bound to it.)
+	for (NpcActor& a : _actors)
+		if (a.used && (a.rig == spare || a.body == spare || a.head == spare)) {
+			if (a.rig == spare) {
+				a.anim.bind(nullptr);
+				a.idle = nullptr;
+				a.ready = false;
+			}
+			a.rig = a.rig == spare ? nullptr : a.rig;
+			a.body = a.body == spare ? nullptr : a.body;
+			a.head = a.head == spare ? nullptr : a.head;
+		}
 	--loadsLeft;
+	_clipBytes -= min(_clipBytes, spare->model.clipBytes());
 	spare->model.release();
 	spare->hash = hash;
 	spare->used = _frame;
-	spare->failed = !spare->model.loadEntry(pak, hash, &_pool);
+	spare->failed = !spare->model.loadEntry(pak, hash, &_pool, true);
 	spare->failedAt = _frame;
 	++_stats.loads;
 	return spare->failed ? nullptr : spare;
 }
 
+void Npcs::ground(NpcActor& a, const World& world, float above) {
+	GameNpc& n = _game.npcMut(a.npc);
+	float y;
+	Vec3 normal;
+	u8 light[4];
+	if (!world.rayDown({n.pos[0], n.pos[1] + above, n.pos[2]}, above + 500.0f, y, normal, light)) return;
+	n.pos[1] = y;
+	memcpy(a.light, light, sizeof(a.light));
+	a.grounded = true;
+}
+
 void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
-	const u32 want = min<u32>(_cfg.maxShown, SHOWN);
-	const float range2 = _cfg.range * _cfg.range;
-	_shownCount = 0;
+	const u32 want = min<u32>(_cfg.maxShown, ACTORS);
+	const float range2 = _reach * _reach, keep2 = (_reach + 300.0f) * (_reach + 300.0f);
+	// The nearest: a short list kept in order. Who is an actor already stays
+	// one a little longer, so that nobody flickers at the edge.
+	u32 chosen[ACTORS];
+	float key[ACTORS], dist2[ACTORS];
+	u32 count = 0;
 	_stats.here = _stats.near = _stats.waiting = _stats.noModel = 0;
+	_stats.reach = _reach;
 	for (u32 i = 0; i < _game.npcCount(); ++i) {
 		const GameNpc& n = _game.npc(i);
 		if (n.hero || n.world != _game.currentWorld() || !n.placed) continue;
 		++_stats.here;
 		const float dx = n.pos[0] - eye.x, dy = n.pos[1] - eye.y, dz = n.pos[2] - eye.z;
 		const float d2 = dx * dx + dy * dy + dz * dz;
-		if (d2 > range2) continue;
+		if (d2 > keep2) continue;
+		const bool isActor = n.active || actorOf(i) != nullptr;
+		if (d2 > range2 && !isActor) continue;
 		++_stats.near;
-		// Among the nearest? (A short list kept in order.)
-		u32 at = _shownCount;
-		while (at > 0 && _shown[at - 1].dist2 > d2) --at;
+		const float k = isActor ? d2 * 0.7f : d2;
+		u32 at = count;
+		while (at > 0 && key[at - 1] > k) --at;
 		if (at >= want) continue;
-		if (_shownCount < want) ++_shownCount;
-		for (u32 k = _shownCount - 1; k > at; --k) _shown[k] = _shown[k - 1];
-		_shown[at] = Shown {i, d2, nullptr, nullptr, nullptr};
+		if (count < want) ++count;
+		for (u32 j = count - 1; j > at; --j) {
+			chosen[j] = chosen[j - 1];
+			key[j] = key[j - 1];
+			dist2[j] = dist2[j - 1];
+		}
+		chosen[at] = i;
+		key[at] = k;
+		dist2[at] = d2;
 	}
-	for (u32 k = 0; k < _shownCount; ++k) {
-		Shown& s = _shown[k];
-		const GameNpc& n = _game.npc(s.npc);
+	// (What the actors are made of stays in memory while this goes on.)
+	for (NpcActor& a : _actors)
+		if (a.used) {
+			Piece* const parts[3] = {a.rig, a.body, a.head};
+			for (Piece* p : parts)
+				if (p) p->used = _frame;
+		}
+	// Who is no longer among them goes back to his routine's place ...
+	for (NpcActor& a : _actors) {
+		if (!a.used) continue;
+		bool still = false;
+		for (u32 k = 0; k < count && !still; ++k) still = chosen[k] == a.npc;
+		if (!still) retire(a);
+	}
+	// ... and who is new becomes an actor.
+	for (u32 k = 0; k < count; ++k) {
+		NpcActor* a = nullptr;
+		for (NpcActor& x : _actors)
+			if (x.used && x.npc == chosen[k]) a = &x;
+		if (!a) {
+			for (NpcActor& x : _actors)
+				if (!x.used && !a) a = &x;
+			if (!a) continue;
+			*a = NpcActor();
+			a->used = true;
+			a->npc = chosen[k];
+			a->movedSeen = _game.npc(chosen[k]).moved;
+		}
+		a->dist2 = dist2[k];
+		GameNpc& n = _game.npcMut(a->npc);
+		n.active = _cfg.alive;
 		const LookEntry* look = lookOf(n.look);
 		if (!look) {
 			++_stats.noModel;
+			a->ready = false;
 			continue;
 		}
-		s.rig = piece(pak, look->rig, loadsLeft);
-		s.body = piece(pak, look->body, loadsLeft);
-		s.head = look->head ? piece(pak, look->head, loadsLeft) : nullptr;
+		Piece* rig = piece(pak, look->rig, loadsLeft);
+		Piece* body = piece(pak, look->body, loadsLeft);
+		Piece* head = look->head ? piece(pak, look->head, loadsLeft) : nullptr;
 		// Pieces that do not fit together are as good as missing.
-		if (s.rig && s.body && !s.body->model.sameSkeleton(s.rig->model)) s.body = nullptr;
-		if (s.rig && s.head && !s.head->model.sameSkeleton(s.rig->model)) s.head = nullptr;
-		if (!s.rig || !s.body) ++_stats.waiting;
-
-		// Where exactly it stands: on the ground there, in the ground's light.
-		if (s.npc >= _standingCount) continue;
-		Standing& st = _standing[s.npc];
-		if (st.moved != n.moved) {
-			st = Standing {};
-			st.moved = n.moved;
-			st.y = n.pos[1];
+		if (rig && body && !body->model.sameSkeleton(rig->model)) body = nullptr;
+		if (rig && head && !head->model.sameSkeleton(rig->model)) head = nullptr;
+		if (rig != a->rig) {
+			a->rig = rig;
+			a->anim.bind(rig ? &rig->model : nullptr);
+			a->idle = nullptr;
+			if (rig) wake(*a);
 		}
-		if (!st.grounded) {
-			float y;
-			Vec3 normal;
-			u8 light[4];
-			if (world.rayDown({n.pos[0], n.pos[1] + 150.0f, n.pos[2]}, 650.0f, y, normal, light)) {
-				st.grounded = true;
-				st.y = y;
-				memcpy(st.light, light, sizeof(st.light));
-			}
+		a->body = body;
+		a->head = head;
+		a->ready = rig && body;
+		if (!a->ready) ++_stats.waiting;
+		// Put somewhere else by its routine (nobody lives while `alive` is off).
+		if (a->movedSeen != n.moved) {
+			a->movedSeen = n.moved;
+			a->grounded = false;
 		}
+		if (!a->grounded) ground(*a, world, 150.0f);
 	}
 	u32 models = 0;
 	for (const Piece& p : _pieces) models += p.hash != 0 && !p.failed;
 	_stats.models = models;
 	_stats.textures = _pool.count();
 	_stats.textureBytes = _pool.bytes();
+	_stats.clipBytes = _clipBytes;
 }
 
 void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt) {
 	if (!loaded()) return;
+	_pak = &pak;
 	_clock += dt;
 	++_frame;
+	// No further than the world is drawn, and under load no further than the
+	// small things of the world: they go first, then come back.
+	const StreamConfig& sc = world.config();
+	_reach = min(_cfg.range * clamp(sc.detailScale, 0.4f, 1.0f), sc.drawDistance);
 	// The clock has moved on by a minute or more: so may the routines have.
+	float hoursPassed = 0;
 	if (fabsf(hours - _hours) >= 1.0f / 60.0f) {
+		hoursPassed = hours - _hours;
+		if (hoursPassed < 0.0f) hoursPassed += 24.0f; // over midnight
+		if (_hours < 0.0f || hoursPassed > 23.0f) hoursPassed = 0; // (set back by a minute, not on by a day)
 		_game.setTime(hours, findPoint, this);
 		_hours = hours;
 	}
+	const float feet[3] = {eye.x, eye.y - 170.0f, eye.z};
+	_game.setHeroPlace(feet, 0.0f);
 	select(pak, world, eye, _cfg.loadsPerFrame);
+	u32 actors = 0, walking = 0;
+	for (NpcActor& a : _actors) {
+		if (!a.used || !a.ready) continue;
+		tick(a, world, dt, hoursPassed);
+		++actors;
+		walking += a.phase == NpcActor::MOVING;
+	}
+	_stats.actors = actors;
+	_stats.walking = walking;
+	_stats.clipBytes = _clipBytes;
+	_pak = nullptr;
 }
 
 void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 	_stats.shown = _stats.culled = _stats.triangles = _stats.drawCalls = 0;
-	if (!loaded() || !_shownCount) return;
+	if (!loaded()) return;
 	const Frustum frustum = frustumFromViewProj(viewProj);
-	static Pose pose; // 2.7 KB that are better not on the console's stack
-	for (u32 k = 0; k < _shownCount; ++k) {
-		const Shown& s = _shown[k];
-		if (!s.rig || !s.body) continue;
-		const GameNpc& n = _game.npc(s.npc);
-		const Standing* st = s.npc < _standingCount ? &_standing[s.npc] : nullptr;
-		const Vec3 feet = {n.pos[0], st ? st->y : n.pos[1], n.pos[2]};
-		const Model& rig = s.rig->model;
-		const Model& body = s.body->model;
+	for (NpcActor& a : _actors) {
+		if (!a.used || !a.ready || !a.rig || !a.body) continue;
+		const GameNpc& n = _game.npc(a.npc);
+		const Vec3 feet = {n.pos[0], n.pos[1], n.pos[2]};
+		const Model& body = a.body->model;
 		// Out of view? A box around the body where it stands, turned any way.
 		const ModelHeader& bh = body.header();
 		float reach = 0;
-		for (int a = 0; a < 3; a += 2) reach = max(reach, max(fabsf(bh.bbMin[a]), fabsf(bh.bbMax[a])));
+		for (int k = 0; k < 3; k += 2) reach = max(reach, max(fabsf(bh.bbMin[k]), fabsf(bh.bbMax[k])));
 		const float grow = max(n.look.scale[0], max(n.look.scale[1], n.look.scale[2]));
 		reach = reach * grow + 40.0f;
 		const float mn[3] = {feet.x - reach, feet.y - 20.0f, feet.z - reach};
@@ -278,25 +375,25 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 			++_stats.culled;
 			continue;
 		}
-		// Standing about, everybody in a rhythm of his own.
-		rig.restPose(pose);
-		if (const Clip* idle = rig.clipAt(0)) idle->sample(_clock + float(s.npc % 97) * 0.37f, pose);
+		a.anim.evaluate();
 		float light[3];
-		const u8* l = st ? st->light : nullptr;
 		for (int i = 0; i < 3; ++i) {
-			const float baked = l ? float(l[i]) * (1.0f / 255.0f) : 1.0f;
-			const float sky = l ? float(l[3]) * (1.0f / 255.0f) : 1.0f;
+			const float baked = float(a.light[i]) * (1.0f / 255.0f);
+			const float sky = float(a.light[3]) * (1.0f / 255.0f);
 			light[i] = max(baked * (1.0f + sky * (dayLight[i] - 1.0f)) * 1.15f, 0.22f);
 		}
 		const bool scaled = n.look.scale[0] != 1.0f || n.look.scale[1] != 1.0f || n.look.scale[2] != 1.0f;
 		const float* scale = scaled ? n.look.scale : nullptr;
-		body.draw(pose, feet, n.yaw, light, 0.0f, scale);
+		// Body and head are on one skeleton: its bone matrices serve both.
+		static Mat34 skin[MODEL_MAX_NODES];
+		body.skinMatrices(a.anim.pose(), n.yaw, 0.0f, scale, skin);
+		body.drawSkinned(skin, feet, light);
 		_stats.triangles += body.triangles();
 		_stats.drawCalls += body.partCount();
-		if (s.head) {
-			s.head->model.draw(pose, feet, n.yaw, light, 0.0f, scale);
-			_stats.triangles += s.head->model.triangles();
-			_stats.drawCalls += s.head->model.partCount();
+		if (a.head) {
+			a.head->model.drawSkinned(skin, feet, light);
+			_stats.triangles += a.head->model.triangles();
+			_stats.drawCalls += a.head->model.partCount();
 		}
 		++_stats.shown;
 	}

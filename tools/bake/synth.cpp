@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 #include <cstring>
 #include <functional>
 #include <string>
@@ -475,7 +476,43 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 	              {"FOREST_SCAVENGER_2", 1000.0f, campRadius * 1.9f - 450.0f, 2.5f},
 	              {"FOREST_SCAVENGER_3", 850.0f, campRadius * 1.9f - 300.0f, 1.0f},
 	              {"FOREST_MOLERAT_1", -900.0f, campRadius * 1.9f - 550.0f, 0.0f}};
-	for (const auto& place : places) scene.points[place.name] = SrcPoint {{place.x, height(place.x, place.z), place.z}, place.yaw};
+	for (const auto& place : places) {
+		scene.points[place.name] = SrcPoint {{place.x, height(place.x, place.z), place.z}, place.yaw};
+		scene.wayPoints.push_back(SrcWayPoint {place.name, {place.x, height(place.x, place.z), place.z}, place.yaw});
+	}
+	// The paths between them: out of the gate from either guard post, along
+	// the road and into the wood; inside from the square to everything.
+	// (Nobody walks through the palisade: the gate posts connect only through
+	// the gate itself.)
+	scene.wayPoints.push_back(SrcWayPoint {"CAMP_GATE", {0.0f, height(0.0f, campRadius), campRadius}, 0.0f});
+	const auto wayIndex = [&](const char* name) {
+		for (size_t i = 0; i < scene.wayPoints.size(); ++i)
+			if (scene.wayPoints[i].name == name) return u32(i);
+		throw std::logic_error(std::string("no way point ") + name);
+	};
+	const char* const ways[][2] = {{"CAMP_GATE_GUARD_L", "CAMP_GATE"},   {"CAMP_GATE_GUARD_R", "CAMP_GATE"}, {"CAMP_GATE", "CAMP_SQUARE"},
+	                               {"CAMP_SQUARE", "CAMP_FIRE"},         {"CAMP_SQUARE", "CAMP_SMITH"},      {"CAMP_FIRE", "CAMP_HUT_1"},
+	                               {"CAMP_SMITH", "CAMP_HUT_2"},         {"CAMP_SQUARE", "CAMP_HUT_2"},      {"CAMP_GATE_GUARD_L", "ROAD_1"},
+	                               {"CAMP_GATE_GUARD_R", "ROAD_1"},      {"ROAD_1", "FOREST_MOLERAT_1"},     {"ROAD_1", "FOREST_SCAVENGER_1"},
+	                               {"FOREST_SCAVENGER_1", "FOREST_SCAVENGER_2"}, {"FOREST_SCAVENGER_2", "FOREST_SCAVENGER_3"},
+	                               {"FOREST_SCAVENGER_3", "ROAD_1"}};
+	for (const auto& way : ways) scene.wayEdges.push_back({wayIndex(way[0]), wayIndex(way[1])});
+	// Free points: seats round the fire, a place to stand and talk, and spots
+	// the creatures roam between.
+	const struct {
+		const char* name;
+		float x, z, yaw;
+	} spots[] = {{"FP_SIT_CAMPFIRE_01", 350.0f + 170.0f, -200.0f, -1.5708f},
+	             {"FP_SIT_CAMPFIRE_02", 350.0f - 170.0f, -200.0f, 1.5708f},
+	             {"FP_SIT_CAMPFIRE_03", 350.0f, -200.0f - 170.0f, 0.0f},
+	             {"FP_SMALLTALK_SQUARE_01", -120.0f, 380.0f, 1.5708f},
+	             {"FP_SMALLTALK_SQUARE_02", 120.0f, 380.0f, -1.5708f},
+	             {"FP_GUARD_GATE_L", -200.0f, campRadius * 1.1f + 60.0f, 0.0f},
+	             {"FP_ROAM_FOREST_01", 600.0f, campRadius * 1.9f - 500.0f, 0.5f},
+	             {"FP_ROAM_FOREST_02", 1150.0f, campRadius * 1.9f - 600.0f, 2.0f},
+	             {"FP_ROAM_FOREST_03", 900.0f, campRadius * 1.9f - 150.0f, -1.0f},
+	             {"FP_ROAM_FOREST_04", -1000.0f, campRadius * 1.9f - 400.0f, 3.0f}};
+	for (const auto& spot : spots) scene.freePoints.push_back(SrcWayPoint {spot.name, {spot.x, height(spot.x, spot.z), spot.z}, spot.yaw});
 
 	// Start just outside the gate, looking back at the camp.
 	scene.spawnPos[0] = 0;
@@ -575,6 +612,13 @@ void buildSyntheticCave(SrcScene& scene) {
 	scene.points["CAVE_GUARD"] = SrcPoint {{700.0f, 0.0f, 1200.0f}, 3.14159f};
 	scene.points["CAVE_MOLERAT_1"] = SrcPoint {{-800.0f, 0.0f, 1300.0f}, 1.0f};
 	scene.points["CAVE_MOLERAT_2"] = SrcPoint {{900.0f, 0.0f, 3200.0f}, -2.0f};
+	for (const char* name : {"CAVE_ENTRY", "CAVE_GUARD", "CAVE_MOLERAT_1", "CAVE_MOLERAT_2"}) {
+		const SrcPoint& p = scene.points[name];
+		scene.wayPoints.push_back(SrcWayPoint {name, {p.pos[0], p.pos[1], p.pos[2]}, p.yaw});
+	}
+	scene.wayEdges = {{0, 1}, {0, 2}, {1, 3}};
+	scene.freePoints.push_back(SrcWayPoint {"FP_ROAM_CAVE_01", {-500.0f, 0.0f, 1700.0f}, 0.0f});
+	scene.freePoints.push_back(SrcWayPoint {"FP_ROAM_CAVE_02", {-900.0f, 0.0f, 1000.0f}, 1.0f});
 
 	scene.spawnPos[0] = 0;
 	scene.spawnPos[1] = 175.0f;

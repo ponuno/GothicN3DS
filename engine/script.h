@@ -26,6 +26,8 @@ struct ScriptInstance {
 
 struct ScriptStats {
 	u32 errors = 0;           // things a well-formed script does not do
+	u32 nullAccess = 0;       // members read or written through no object: answered with a zero.
+	                          // The game's own scripts do it; the original shrugs it off too.
 	u32 aborted = 0;          // calls given up (runaway loop, broken code)
 	u32 stubCalls = 0;        // calls of externals nobody has bound
 	u64 instructions = 0;
@@ -63,6 +65,11 @@ public:
 	u32 classOf(u32 symbol) const;
 	// The member `member` of class `cls` ("C_NPC", "NAME"), or SCRIPT_NONE.
 	u32 findMember(const char* cls, const char* member) const;
+	// The state that begins with this function (its loop and its end), or
+	// null if the function is no state's beginning.
+	const ScriptState* stateOf(u32 start) const;
+	// A script function with code of its own (no external, no variable).
+	bool isPlainFunction(u32 symbol) const;
 	// The n-th parameter of a function.
 	u32 parameter(u32 function, u32 n) const { return function + 1 + n; }
 
@@ -72,6 +79,8 @@ public:
 	// has one. False if the scripts have no such external.
 	bool bind(const char* name, External fn, void* user);
 	bool bindSymbol(u32 symbol, External fn, void* user);
+	// True if the external function `symbol` has been given an implementation.
+	bool isBound(u32 symbol) const;
 	// Inside an external: the symbol of the function being called.
 	u32 callee() const { return _fp ? _frames[_fp - 1].function : SCRIPT_NONE; }
 	// Called for an external nobody has bound, after its arguments were
@@ -86,6 +95,9 @@ public:
 	// first. A result, if it has one, is left on the stack. False if the call
 	// was abandoned.
 	bool call(u32 function);
+	// Calls a script function that takes nothing and gives its result: an
+	// integer, or 0 if it returns none, is no such function or was abandoned.
+	i32 callInt(u32 function);
 	// Makes an object of the class `instanceSymbol` belongs to and runs the
 	// instance's code on it (with SELF referring to it, as the engine does).
 	ScriptInstance* create(u32 instanceSymbol);
@@ -121,6 +133,15 @@ public:
 	u32 selfSymbol() const { return _self; }
 	u32 otherSymbol() const { return _other; }
 	u32 heroSymbol() const { return _hero; }
+
+	// Called for every complaint and every access through no object: what it
+	// is, the function it happened in and the symbol concerned (SCRIPT_NONE
+	// where there is none). For reports.
+	typedef void (*ErrorHook)(const char* what, u32 function, u32 symbol, void* user);
+	void onError(ErrorHook fn, void* user) {
+		_onError = fn;
+		_onErrorUser = user;
+	}
 
 	const ScriptStats& stats() const { return _stats; }
 	// Instructions one call() may take, with everything it sets off, before
@@ -159,6 +180,7 @@ private:
 	Slot pop();
 	bool popRef(Slot& out);
 	void fail(const char* what);
+	void complain(const char* what, u32 symbol) const;
 	void abandon(const char* what);
 	u8* memberPtr(const ScriptSymbol& s, u32 index, const ScriptInstance* ctx, u32 bytes) const;
 	const char* stringAt(u32 symbol, u32 index, const ScriptInstance* ctx) const;
@@ -170,6 +192,7 @@ private:
 	ScriptHeader _h {};
 	const ScriptSymbol* _symbols = nullptr;
 	const ScriptFunction* _functions = nullptr;
+	const ScriptState* _states = nullptr;
 	const u8* _code = nullptr;
 	i32* _data = nullptr;              // the image's, written in place
 	const char** _strings = nullptr;   // per slot: into the image, or owned
@@ -182,6 +205,8 @@ private:
 	Bound* _externals = nullptr;
 	void (*_unbound)(u32, void*) = nullptr;
 	void* _unboundUser = nullptr;
+	ErrorHook _onError = nullptr;
+	void* _onErrorUser = nullptr;
 
 	ScriptInstance** _instances = nullptr; // all alive
 	u32 _instanceCount = 0, _instanceCap = 0, _serial = 0;

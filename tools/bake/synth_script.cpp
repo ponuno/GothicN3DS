@@ -37,6 +37,13 @@ const int DEFAULT = 0;
 const int TRUE = 1;
 const int FALSE = 0;
 
+const int NPC_RUN  = 0;
+const int NPC_WALK = 1;
+const int LOOP_CONTINUE = 0;
+const int LOOP_END      = 1;
+const int BS_SIT = 65547;         // 11, with free hands
+const int PERC_ASSESSPLAYER = 1;
+
 const int AIV_WASDEFEATED = 3;
 const int AIV_PARTYMEMBER = 12;
 
@@ -160,6 +167,30 @@ extern func void   EquipItem(var C_NPC n, var int itemInstance);
 extern func void   AI_Output(var C_NPC a, var C_NPC b, var string text);
 extern func void   AI_StopProcessInfos(var C_NPC n);
 extern func void   PrintDebug(var string text);
+extern func void   AI_GotoWP(var C_NPC n, var string wp);
+extern func void   AI_GotoFP(var C_NPC n, var string fp);
+extern func void   AI_GotoNextFP(var C_NPC n, var string fp);
+extern func void   AI_AlignToWP(var C_NPC n);
+extern func void   AI_AlignToFP(var C_NPC n);
+extern func void   AI_PlayAni(var C_NPC n, var string ani);
+extern func void   AI_PlayAniBS(var C_NPC n, var string ani, var int bodyState);
+extern func void   AI_Wait(var C_NPC n, var float seconds);
+extern func void   AI_StandUp(var C_NPC n);
+extern func void   AI_SetWalkmode(var C_NPC n, var int mode);
+extern func void   AI_StartState(var C_NPC n, var func state, var int doFinalize, var string wp);
+extern func void   AI_ContinueRoutine(var C_NPC n);
+extern func void   AI_TurnToNpc(var C_NPC n, var C_NPC to);
+extern func int    Npc_GetDistToWP(var C_NPC n, var string wp);
+extern func int    Npc_IsOnFP(var C_NPC n, var string fp);
+extern func int    Wld_IsFPAvailable(var C_NPC n, var string fp);
+extern func int    Wld_IsNextFPAvailable(var C_NPC n, var string fp);
+extern func int    Npc_GetStateTime(var C_NPC n);
+extern func void   Npc_SetStateTime(var C_NPC n, var int seconds);
+extern func int    Npc_GetBodyState(var C_NPC n);
+extern func void   Npc_SetPercTime(var C_NPC n, var float seconds);
+extern func void   Npc_PercEnable(var C_NPC n, var int perception, var func reaction);
+extern func int    Npc_IsInState(var C_NPC n, var func state);
+extern func string Npc_GetNearestWP(var C_NPC n);
 
 // ---------------------------------------------------------------- helpers
 var int Kapitel;
@@ -181,15 +212,128 @@ func void B_SetAttributes(var C_NPC slf, var int strength, var int hitpoints) {
 	slf.level = (strength + hitpoints / 10) / 8;
 };
 
-// The states of the daily routine.
-func void ZS_Guard()        {};
-func int  ZS_Guard_Loop()   { return 0; };
-func void ZS_Guard_End()    {};
-func void ZS_Stand()        {};
-func void ZS_Sleep()        {};
-func void ZS_SitAround()    {};
-func void ZS_Smith()        {};
-func void ZS_MM_AllScheduler() {};
+// The states of the daily routine, in the manner of the original's: each
+// is a function that begins it, a "_Loop" called while it lasts and an
+// "_End". They tell the engine what the character is to do.
+func void ZS_Guard() {
+	Npc_SetPercTime(self, 1);
+	Npc_PercEnable(self, PERC_ASSESSPLAYER, B_AssessSC);
+	AI_StandUp(self);
+	AI_SetWalkmode(self, NPC_WALK);
+	AI_GotoWP(self, self.wp);
+	AI_AlignToWP(self);
+	AI_PlayAni(self, "T_STAND_2_LGUARD");
+};
+func int ZS_Guard_Loop() {
+	if (Hlp_Random(100) < 10) { AI_PlayAni(self, "T_LGUARD_SCRATCH"); };
+	AI_Wait(self, 1);
+	return LOOP_CONTINUE;
+};
+func void ZS_Guard_End() {
+	AI_PlayAni(self, "T_LGUARD_2_STAND");
+};
+func void B_AssessSC() {};
+
+func void ZS_Stand() {
+	AI_StandUp(self);
+	AI_SetWalkmode(self, NPC_WALK);
+	AI_GotoWP(self, self.wp);
+	AI_AlignToWP(self);
+};
+func int ZS_Stand_Loop() {
+	if (Npc_GetStateTime(self) > 15) {
+		Npc_SetStateTime(self, 0);
+		AI_PlayAni(self, "T_SEARCH");
+	};
+	AI_Wait(self, 1);
+	return LOOP_CONTINUE;
+};
+func void ZS_Stand_End() {};
+
+func void ZS_SitAround() {
+	AI_StandUp(self);
+	AI_SetWalkmode(self, NPC_WALK);
+	if (Npc_GetDistToWP(self, self.wp) > 300) { AI_GotoWP(self, self.wp); };
+};
+func int ZS_SitAround_Loop() {
+	if (!Npc_IsOnFP(self, "SIT")) {
+		if (Wld_IsFPAvailable(self, "SIT")) {
+			AI_GotoFP(self, "SIT");
+			AI_AlignToFP(self);
+			AI_PlayAniBS(self, "T_STAND_2_SIT", BS_SIT);
+		};
+	};
+	AI_Wait(self, 1);
+	return LOOP_CONTINUE;
+};
+func void ZS_SitAround_End() {
+	AI_StandUp(self);
+};
+
+func void ZS_Smith() {
+	AI_StandUp(self);
+	AI_SetWalkmode(self, NPC_RUN);
+	AI_GotoWP(self, self.wp);
+	AI_AlignToWP(self);
+};
+func int ZS_Smith_Loop() {
+	AI_PlayAni(self, "T_SEARCH");
+	AI_Wait(self, 2);
+	return LOOP_CONTINUE;
+};
+func void ZS_Smith_End() {};
+
+// (No beds here: sleeping is sitting down by the hut.)
+func void ZS_Sleep() {
+	AI_StandUp(self);
+	AI_SetWalkmode(self, NPC_WALK);
+	AI_GotoWP(self, self.wp);
+	AI_AlignToWP(self);
+	AI_PlayAniBS(self, "T_STAND_2_SIT", BS_SIT);
+};
+func int ZS_Sleep_Loop() {
+	AI_Wait(self, 1);
+	return LOOP_CONTINUE;
+};
+func void ZS_Sleep_End() {
+	AI_StandUp(self);
+};
+
+// Creatures have no routine: they start in a state that picks, by the hour,
+// what they do for a while.
+func void ZS_MM_AllScheduler() {
+	Npc_SetPercTime(self, 1);
+	if (Wld_IsTime(22, 0, 6, 0)) { AI_StartState(self, ZS_MM_Rtn_Sleep, 1, ""); }
+	else                         { AI_StartState(self, ZS_MM_Rtn_Roam, 1, ""); };
+};
+func void ZS_MM_Rtn_Sleep() {
+	AI_SetWalkmode(self, NPC_WALK);
+	AI_PlayAni(self, "T_STAND_2_SLEEP");
+};
+func int ZS_MM_Rtn_Sleep_Loop() {
+	if (!Wld_IsTime(22, 0, 6, 0)) { return LOOP_END; };
+	AI_Wait(self, 1);
+	return LOOP_CONTINUE;
+};
+func void ZS_MM_Rtn_Sleep_End() {
+	AI_StandUp(self);
+};
+func void ZS_MM_Rtn_Roam() {
+	AI_SetWalkmode(self, NPC_WALK);
+};
+func int ZS_MM_Rtn_Roam_Loop() {
+	if (Wld_IsTime(22, 0, 6, 0)) { return LOOP_END; };
+	if (Npc_GetStateTime(self) > 4) {
+		Npc_SetStateTime(self, 0);
+		if (Wld_IsNextFPAvailable(self, "FP_ROAM")) {
+			AI_GotoNextFP(self, "FP_ROAM");
+			AI_PlayAni(self, "T_WARN");
+		};
+	};
+	AI_Wait(self, 0.5);
+	return LOOP_CONTINUE;
+};
+func void ZS_MM_Rtn_Roam_End() {};
 
 func void TA_Guard(var int start_h, var int start_m, var int stop_h, var int stop_m, var string waypoint) {
 	TA_Min(self, start_h, start_m, stop_h, stop_m, ZS_Guard, waypoint);

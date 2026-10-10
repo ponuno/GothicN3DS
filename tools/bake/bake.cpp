@@ -135,7 +135,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 	std::vector<std::string> pointNotes(worlds.size());
 	for (size_t w = 0; w < worlds.size(); ++w) {
 		SrcScene& scene = worlds[w].scene;
-		if (scene.points.empty()) continue;
+		if (scene.points.empty() && scene.wayPoints.empty() && scene.freePoints.empty()) continue;
 		GroundSampler ground;
 		ground.build(scene, scene.triangles.size(), true);
 		size_t settled = 0, floating = 0;
@@ -151,7 +151,16 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				++floating;
 			}
 		}
-		pointNotes[w] = format("places: %zu named (way points and markers), %zu set on the ground (%.0f cm down on average)%s",
+		// The way net's points and the free points are the same kind of place.
+		for (std::vector<SrcWayPoint>* list : {&scene.wayPoints, &scene.freePoints})
+			for (SrcWayPoint& point : *list) {
+				u8 light[4];
+				float h = 0;
+				if (ground.sample(point.pos[0], point.pos[1] + 60.0f, point.pos[2], light, &h) && h > point.pos[1] - 500.0f)
+					point.pos[1] = h;
+			}
+		if (!scene.points.empty())
+			pointNotes[w] = format("places: %zu named (way points and markers), %zu set on the ground (%.0f cm down on average)%s",
 		                       scene.points.size(), settled, settled ? std::max(drop / double(settled), 0.0) : 0.0,
 		                       floating ? format(", %zu with no ground within 5 m below left where they are", floating).c_str() : "");
 	}
@@ -533,6 +542,75 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			pak.add("world/" + bw.name + "/points", ASSET_META, blob);
 		}
 
+		// ---- the way net ----
+		std::string wayNote;
+		if (!scene.wayPoints.empty() || !scene.freePoints.empty()) {
+			if (scene.wayPoints.size() > 65534) throw std::runtime_error("world '" + bw.name + "' has too many way points");
+			const u32 n = u32(scene.wayPoints.size());
+			std::vector<std::vector<u16>> next(n);
+			size_t connections = 0;
+			for (const auto& [a, b] : scene.wayEdges) {
+				if (a >= n || b >= n || a == b) continue;
+				if (std::find(next[a].begin(), next[a].end(), u16(b)) != next[a].end()) continue;
+				next[a].push_back(u16(b));
+				next[b].push_back(u16(a));
+				++connections;
+			}
+			std::string names;
+			const auto nameAt = [&](const std::string& name) {
+				const u32 at = u32(names.size());
+				names += name;
+				names.push_back('\0');
+				return at;
+			};
+			std::vector<WayNode> nodes(n);
+			std::vector<u16> edges;
+			size_t isolated = 0;
+			double length = 0;
+			for (u32 i = 0; i < n; ++i) {
+				const SrcWayPoint& wp = scene.wayPoints[i];
+				WayNode& node = nodes[i];
+				std::copy_n(wp.pos, 3, node.pos);
+				node.yaw = wp.yaw;
+				node.nameHash = hashName(wp.name.c_str());
+				node.name = nameAt(wp.name);
+				node.firstEdge = u32(edges.size());
+				node.edgeCount = u16(std::min<size_t>(next[i].size(), 65535));
+				node.reserved = 0;
+				edges.insert(edges.end(), next[i].begin(), next[i].begin() + node.edgeCount);
+				isolated += next[i].empty();
+				for (u16 k : next[i]) {
+					const SrcWayPoint& o = scene.wayPoints[k];
+					length += 0.5 * std::sqrt(double((o.pos[0] - wp.pos[0]) * (o.pos[0] - wp.pos[0]) + (o.pos[1] - wp.pos[1]) * (o.pos[1] - wp.pos[1]) +
+					                                 (o.pos[2] - wp.pos[2]) * (o.pos[2] - wp.pos[2])));
+				}
+			}
+			std::vector<FreePoint> free(scene.freePoints.size());
+			for (size_t i = 0; i < free.size(); ++i) {
+				std::copy_n(scene.freePoints[i].pos, 3, free[i].pos);
+				free[i].yaw = scene.freePoints[i].yaw;
+				free[i].name = nameAt(scene.freePoints[i].name);
+			}
+			while (names.size() % 4) names.push_back('\0');
+			WayNetHeader nh {};
+			nh.magic = WAYNET_MAGIC;
+			nh.version = WAYNET_VERSION;
+			nh.nodeCount = n;
+			nh.edgeCount = u32(edges.size());
+			nh.freeCount = u32(free.size());
+			nh.nameBytes = u32(names.size());
+			std::vector<u8> blob(sizeof(nh));
+			std::memcpy(blob.data(), &nh, sizeof(nh));
+			append(blob, nodes);
+			append(blob, edges);
+			while (blob.size() % 4) blob.push_back(0);
+			append(blob, free);
+			blob.insert(blob.end(), names.begin(), names.end());
+			pak.add("world/" + bw.name + "/waynet", ASSET_META, blob);
+			wayNote = format("way net: %u points, %zu connections (%.1f km of paths), %zu points without any; %zu free points", n,
+			                 connections, length / 100000.0, isolated, free.size());
+		}
+
 		// ---- report ----
 		line(format("world '%s': %.0f x %.0f x %.0f m, grid %d x %d cells of %.0f m", bw.name.c_str(),
 		            (wh.bbMax[0] - wh.bbMin[0]) / 100.0, (wh.bbMax[1] - wh.bbMin[1]) / 100.0,
@@ -589,6 +667,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		if (scene.indoor)
 			line(format("indoor world: no sky, background colour %u %u %u", scene.fogColor[0], scene.fogColor[1], scene.fogColor[2]));
 		if (!pointNotes[w].empty()) line(pointNotes[w]);
+		if (!wayNote.empty()) line(wayNote);
 		if (!ladders.empty()) line(format("ladders: %zu", ladders.size()));
 		if (!scene.portals.empty()) {
 			std::string list;

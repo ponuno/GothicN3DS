@@ -54,6 +54,10 @@ struct GameNpc {
 	float yaw = 0;
 	u32 state = 0;         // what it is doing by its routine (a script function), 0 for none
 	u32 moved = 0;         // counts its changes of place
+	// Somebody else moves it about (it is near the player and lives its day,
+	// see npcs.h): a new time of day changes what its routine wants, not
+	// where it is.
+	bool active = false;
 };
 
 struct GameStats {
@@ -95,6 +99,26 @@ public:
 
 	u32 npcCount() const { return _npcCount; }
 	const GameNpc& npc(u32 i) const { return _npcs[i]; }
+	GameNpc& npcMut(u32 i) { return _npcs[i]; }
+	// The character a script object belongs to, or -1.
+	int indexOf(const ScriptInstance* inst) const;
+	// What the character does when left to itself: the state of its routine
+	// at this hour, or - without a routine - the state the scripts gave it to
+	// start with (creatures). A script function, 0 for none.
+	u32 behaviour(const GameNpc& n) const;
+	// Puts a character where its routine wants it right now and takes it
+	// out of anybody's hands (`active` off).
+	void settle(u32 index, PointFinder find, void* user);
+	// Where the player is, for the scripts' questions about the hero.
+	void setHeroPlace(const float pos[3], float yaw);
+	float hours() const { return _hours; }
+	// The way point the scripts read as the character's ("self.wp").
+	void setWayPoint(GameNpc& n, const char* name) {
+		if (_mWp != SCRIPT_NONE && n.object && name) _vm.setString(_mWp, 0, n.object, name);
+	}
+	// Members of the characters' class the engine reads.
+	i32 guildOf(const GameNpc& n) const { return _mGuild != SCRIPT_NONE && n.object ? _vm.getInt(_mGuild, 0, n.object) : 0; }
+	float sensesRange(const GameNpc& n) const;
 	const GameNpc* hero() const { return _hero != SCRIPT_NONE ? &_npcs[_hero] : nullptr; }
 	const GameRoutine& routine(u32 i) const { return _routines[i]; }
 	const char* text(GameText id) const { return id < _textCount ? _texts[id] : ""; }
@@ -104,6 +128,10 @@ public:
 	// A number that stands for a look's meshes and textures: the same in the
 	// baker and on the console, which is how baked models are found.
 	u32 lookKey(const GameLook& look) const;
+	// The engine functions that only mean something to characters living
+	// their day (npcs.h binds them): their names, upper case. Here so that
+	// the baker, which runs no lives, can tell what is done from what is not.
+	static const char* const* lifeFunctions(u32& count);
 	// How many different looks the characters have.
 	u32 countLooks() const;
 	// No "script: ..." lines in the log (the tests break things on purpose).
@@ -132,6 +160,7 @@ private:
 	const Armor* armorOf(u32 itemSymbol);
 	void runIfPresent(const char* prefix, const char* script);
 	void place(GameNpc& n, float hours, PointFinder find, void* user);
+	void placeNow(GameNpc& n, PointFinder find, void* user);
 	const GameRoutine* routineAt(const GameNpc& n, float hours) const;
 
 	// The engine functions the scripts call.
@@ -178,7 +207,8 @@ private:
 	// Symbols of the scripts this code reads.
 	u32 _clsNpc = SCRIPT_NONE, _clsItem = SCRIPT_NONE;
 	u32 _mRoutine = SCRIPT_NONE, _mName = SCRIPT_NONE, _mVisualChange = SCRIPT_NONE, _mVisualSkin = SCRIPT_NONE,
-	    _mWear = SCRIPT_NONE, _mMainFlag = SCRIPT_NONE;
+	    _mWear = SCRIPT_NONE, _mMainFlag = SCRIPT_NONE, _mWp = SCRIPT_NONE, _mStartState = SCRIPT_NONE,
+	    _mSensesRange = SCRIPT_NONE, _mGuild = SCRIPT_NONE;
 };
 
 } // namespace g3

@@ -487,9 +487,15 @@ private:
 					p.type = type.type;
 					p.count = 1;
 					p.parent = type.cls;
-					if (p.type == SCRIPT_INT) p.ints.assign(1, 0);
-					if (p.type == SCRIPT_FLOAT) p.floats.assign(1, 0.0f);
-					if (p.type == SCRIPT_STRING) p.strings.assign(1, std::string());
+					if (external) {
+						// The game's own compiler gives the parameters of an engine
+						// function a place in the table, but no room for a value.
+						p.count = 0;
+					} else {
+						if (p.type == SCRIPT_INT) p.ints.assign(1, 0);
+						if (p.type == SCRIPT_FLOAT) p.floats.assign(1, 0.0f);
+						if (p.type == SCRIPT_STRING) p.strings.assign(1, std::string());
+					}
 					add(p, line);
 					++_s.symbols[fn].count;
 				} while (acceptOp(","));

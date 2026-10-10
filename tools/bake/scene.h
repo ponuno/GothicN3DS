@@ -64,6 +64,12 @@ struct SrcPoint {
 	float yaw;
 };
 
+struct SrcWayPoint {
+	std::string name; // upper case
+	float pos[3];
+	float yaw;
+};
+
 struct SrcImage {
 	int width = 0, height = 0;
 	std::vector<u8> rgba; // top-down
@@ -84,6 +90,11 @@ struct SrcScene {
 	std::vector<SrcPortal> portals;
 	std::vector<SrcLadder> ladders;
 	std::map<std::string, SrcPoint> points; // named places (upper case): arrival points of portals
+	// The way net: its points, the connections between them (pairs of
+	// indices), and the free points beside it.
+	std::vector<SrcWayPoint> wayPoints;
+	std::vector<std::pair<u32, u32>> wayEdges;
+	std::vector<SrcWayPoint> freePoints;
 	std::vector<std::string> notes; // importer remarks for the bake report
 };
 

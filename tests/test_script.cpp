@@ -303,7 +303,16 @@ func int UsesSloppy() { return Sloppy(1, 2) + 5; };
 
 	// Members without an object: zero, a complaint, no crash.
 	vm.setInstance(vm.selfSymbol(), nullptr);
-	CHECK(m.callInt("LOST") == 0 && vm.stats().errors > 0);
+	// (Counted apart from complaints: the game's own scripts do it.)
+	static std::string fault;
+	fault.clear();
+	vm.onError([](const char* what, u32 function, u32, void* user) {
+		fault = std::string(what) + "@" + std::to_string(function == static_cast<ScriptVm*>(user)->find("LOST"));
+	}, &vm);
+	CHECK(m.callInt("LOST") == 0 && vm.stats().errors == 0 && vm.stats().nullAccess == 1);
+	// (A returned variable is read by whoever takes the result: here the host.)
+	CHECK(fault == "a member was used without an object@0");
+	vm.onError(nullptr, nullptr);
 	CHECK(vm.getInt(mId, 0, nullptr) == 0);
 	vm.setInt(mStats, 3, a, 1); // past the array
 	vm.setString(mId, 0, a, "no");

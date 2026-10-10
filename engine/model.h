@@ -25,6 +25,7 @@ public:
 	bool load(Pak& pak, u32 entryHash, u32 nodeCount);
 	void release();
 	bool loaded() const { return _blob != nullptr; }
+	u32 bytes() const { return _bytes; }
 
 	const ClipHeader& header() const { return _h; }
 	bool loops() const { return (_h.flags & CLIPF_LOOP) != 0; }
@@ -51,6 +52,7 @@ private:
 	const ClipSample* _samples = nullptr;
 	const i16* _motion = nullptr;
 	float _rise = 0;
+	u32 _bytes = 0;
 };
 
 // Textures several models share: each is loaded once and freed when the last
@@ -95,7 +97,10 @@ public:
 	// the pool must outlive the model). A model may be a skeleton with clips
 	// and no mesh: it draws nothing, but poses made on it fit every model with
 	// the same skeleton.
-	bool loadEntry(Pak& pak, u32 entryHash, TexturePool* pool = nullptr);
+	// With `lazyClips` no clip is read now: each is read when fetch() first
+	// asks for it (a model of a world's people has hundreds, of which a
+	// place needs a few).
+	bool loadEntry(Pak& pak, u32 entryHash, TexturePool* pool = nullptr, bool lazyClips = false);
 	void release();
 	bool loaded() const { return _nodes != nullptr; }
 	bool hasMesh() const { return _mesh != nullptr; }
@@ -112,6 +117,15 @@ public:
 	// The clip with this name hash (hashName("S_RUNL")), or null.
 	const Clip* clip(u32 nameHash) const;
 	const Clip* clip(const char* name) const { return clip(hashName(name)); }
+	// The same, reading the clip from the archive if it has not been yet -
+	// and the clips that follow it, so that it can be played through. Null if
+	// the model has none of that name, it cannot be read, or reading it would
+	// take the clips in memory past `budget` bytes (`inMemory` is that count,
+	// kept by the caller across its models).
+	const Clip* fetch(Pak& pak, u32 nameHash, u32& inMemory, u32 budget);
+	bool hasClip(u32 nameHash) const;
+	// Bytes of the clips that are in memory.
+	u32 clipBytes() const;
 	u32 clipCount() const { return _h.clipCount; }
 	// The i-th clip, or null if it could not be loaded.
 	const Clip* clipAt(u32 i) const { return i < _h.clipCount && _clips[i].loaded() ? &_clips[i] : nullptr; }
@@ -130,6 +144,11 @@ public:
 	// it about its feet. Call in PASS_WORLD.
 	void draw(const Pose& pose, Vec3 origin, float yaw, const float light[3], float lean = 0.0f,
 	          const float* scale = nullptr) const;
+	// The two halves of draw(), for several models on one skeleton (a body
+	// and its head): the bone matrices are worked out once - `skin` gets
+	// nodeCount of them - and each model is drawn with them.
+	void skinMatrices(const Pose& pose, float yaw, float lean, const float* scale, Mat34* skin) const;
+	void drawSkinned(const Mat34* skin, Vec3 origin, const float light[3]) const;
 	u32 triangles() const { return _h.indexCount / 3; }
 
 private:
@@ -139,6 +158,7 @@ private:
 	ModelClipRef* _clipRefs = nullptr;
 	ModelBlend* _blends = nullptr;
 	Clip* _clips = nullptr;
+	u8* _clipTried = nullptr; // per clip: reading it has been tried
 	gfx::Mesh* _mesh = nullptr;
 	gfx::Texture** _textures = nullptr; // per part; shared pointers are freed once
 	TexturePool* _pool = nullptr;       // where the textures come from, if not our own
@@ -156,7 +176,15 @@ public:
 	void restart(float blend);
 	// Playback speed of the current clip; 1 is as authored.
 	void setRate(float rate) { _rate = rate; }
-	void update(float dt);
+	void update(float dt) {
+		advance(dt);
+		evaluate();
+	}
+	// update() in two halves, for a character nobody sees: time and motion
+	// move on with advance(), and the pose is only worked out - evaluate() -
+	// when it is needed.
+	void advance(float dt);
+	void evaluate();
 	// Where the clips have carried the character since the last call (model
 	// space, see Clip::motion), across hand-overs from a clip to its follower.
 	Vec3 takeMotion();
@@ -168,8 +196,6 @@ public:
 	bool finished() const { return _finished; }
 
 private:
-	void evaluate();
-
 	const Model* _model = nullptr;
 	const Clip* _clip = nullptr;
 	float _time = 0, _rate = 1.0f;

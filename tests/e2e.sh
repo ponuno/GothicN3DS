@@ -32,6 +32,23 @@ synth)
 	[ "$(num npcsShownMax)" -gt 2 ] || fail "only $(num npcsShownMax) inhabitants were ever on the screen"
 	[ "$(num npcFrames)" -gt 100 ] || fail "inhabitants were drawn in only $(num npcFrames) of 150 frames"
 	[ "$(num scriptErrors)" = "0" ] || fail "the scripts complained"
+	[ "$(num npcStateCalls)" -gt 20 ] || fail "the inhabitants' states were not run: $(num npcStateCalls) calls"
+	# They live their day: when the evening comes, the guard leaves his post
+	# for the fire - along the paths, on his own feet.
+	"$host" --pak "$out/data.pak" --still --cam 250,330,3300,188,-8 --time 19.9 --to-time 20.4 --frames 900 --shots 0 \
+		--who --stats "$out/stats.json" > "$out/evening.txt"
+	grep -q "^life              on: " "$out/evening.txt" || fail "no report of the inhabitants' life"
+	grep -q "Thorus .* at " "$out/evening.txt" || fail "--who does not list the inhabitants"
+	[ "$(num npcWalkingMax)" -gt 0 ] || fail "nobody walked when the evening came"
+	[ "$(num npcPaths)" -gt 0 ] || fail "no way was found through the net"
+	[ "$(num npcSnapped)" = "0" ] || fail "$(num npcSnapped) inhabitants could not walk to where they were going"
+	[ "$(num npcClips)" -gt 8 ] || fail "only $(num npcClips) animations were read"
+	[ "$(num scriptErrors)" = "0" ] || fail "the scripts complained in the evening"
+	# On request they only stand, as they used to.
+	"$host" --pak "$out/data.pak" --still --time 19.9 --to-time 20.4 --frames 200 --shots 0 --standing --stats "$out/stats.json" \
+		| grep -q "^life              off" || fail "--standing did not switch the inhabitants' life off"
+	[ "$(num npcStateCalls)" = "0" ] || fail "states were run with --standing"
+	[ "$(num npcWalkingMax)" = "0" ] || fail "somebody walked with --standing"
 	# First person on request: nothing of the character is drawn.
 	"$host" --pak "$out/data.pak" --walk --first-person --frames 30 --shots 1 --out "$out/eyes" --stats "$out/stats.json"
 	[ "$(num heroFrames)" = "0" ] || fail "the character was drawn in first person"
@@ -98,12 +115,15 @@ if [ "$mode" = synth ]; then
 		|| fail "the inhabitants' models were not baked"
 	sed -n '/== scripts ==/,$p' "$out/info.txt" | grep -q "WARNING" && fail "the scripts' part of the bake has warnings"
 	grep -q "places: 13 named" "$out/info.txt" || fail "the world's places were not baked"
+	grep -q "way net: 13 points, 15 connections" "$out/info.txt" || fail "the way net was not baked"
+	grep -q "life: the scripts have 7 states; the people of these worlds are put into 6: " "$out/info.txt" || fail "the states were not looked through"
+	grep -q "life: the states call 20 engine functions, 19 of which the engine carries out" "$out/info.txt" || fail "the states' needs were not reported"
 fi
 
 if [ "$mode" = zen ]; then
 	# The fixture's scripts: read from GOTHIC.DAT, checked against the reference
 	# interpreter, run for both worlds; the people they name baked from the game's model files.
-	grep -q "scripts: GOTHIC.DAT: 117 symbols" "$out/info.txt" || fail "the game's scripts were not read"
+	grep -q "scripts: GOTHIC.DAT: 129 symbols" "$out/info.txt" || fail "the game's scripts were not read"
 	grep -q "checked against the reference interpreter: 6 runs (start-up, dialogues, items), 6 the same .* 0 different" "$out/info.txt" \
 		|| fail "the scripts were not checked against the reference interpreter"
 	grep -q "variables at the end the same" "$out/info.txt" || fail "the interpreters disagree about the variables"
@@ -113,6 +133,12 @@ if [ "$mode" = zen ]; then
 	grep -q "NOSUCH.MSB/.MDS not found" "$out/info.txt" || fail "a look without files was not reported"
 	grep -q '"npcsTotal":4' "$out/stats.json" || fail "the scripts' characters did not reach the runtime"
 	grep -q '"npcsHere":3' "$out/stats.json" || fail "the characters have no place in the world"
+	# ... and they live: the one with a routine is in its state, which sends
+	# it to its place and has it play an animation of the game's.
+	grep -q "way net: 3 points, 1 connections" "$out/info.txt" || fail "the way net of the second world was not baked"
+	grep -q "life: the scripts have 1 states" "$out/info.txt" || fail "the states were not found"
+	grep -q '"npcStateCalls":[1-9]' "$out/stats.json" || fail "the state of the fixture's guard was not run"
+	grep -q '"npcClips":[2-9]' "$out/stats.json" || fail "the animation the state asks for was not read"
 
 	# The check must catch a deliberately inverted bake.
 	"$bake" world --game "$fixture/game" --zen FIXTURE.ZEN --flip -o "$out/flipped.pak" | grep -q "inside out" \

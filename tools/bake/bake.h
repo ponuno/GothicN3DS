@@ -9,6 +9,7 @@
 #include "texture_bake.h"
 
 #include <functional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -45,9 +46,11 @@ struct BakeResult {
 // model.notes, if there is no such thing. Names are lower case, without
 // extension, as the scripts give them ("humans", "hum_grdm_armor").
 struct LookSource {
-	// The skeleton of a model script with the animation a character stands
-	// about in, and no mesh. `humanoid`: it has a head of its own.
-	std::function<bool(const std::string& script, bool humanoid, SrcModel& model)> rig;
+	// The skeleton of a model script with its animations, and no mesh: those
+	// a character stands and goes about in, and of the names in `wanted`
+	// (animations the scripts mention, upper case) the ones this model has.
+	// `humanoid`: it has a head of its own.
+	std::function<bool(const std::string& script, bool humanoid, const std::set<std::string>& wanted, SrcModel& model)> rig;
 	// A body or an armour, in the texture variant `tex` and skin colour `skin`.
 	std::function<bool(const std::string& script, const std::string& mesh, int tex, int skin, SrcModel& model)> body;
 	std::function<bool(const std::string& script, const std::string& head, int tex, int skin, int teeth, SrcModel& model)> head;

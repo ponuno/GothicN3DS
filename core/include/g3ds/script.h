@@ -9,7 +9,7 @@
 // addresses are the original's too.
 //
 //   ScriptHeader | ScriptSymbol[symbolCount] | ScriptFunction[functionCount] |
-//   i32 data[dataCount] | u32 stringOffset[stringCount] | char strings[stringBytes] |
+//   ScriptState[stateCount] | i32 data[dataCount] | u32 stringOffset[stringCount] | char strings[stringBytes] |
 //   u8 code[codeSize]                                  (every table padded to 4 bytes)
 #pragma once
 #include "g3ds/base.h"
@@ -17,7 +17,7 @@
 namespace g3 {
 
 constexpr u32 SCRIPT_MAGIC = fourcc('G', '3', 'S', 'C');
-constexpr u32 SCRIPT_VERSION = 1;
+constexpr u32 SCRIPT_VERSION = 2;
 constexpr u32 SCRIPT_NONE = 0xFFFFFFFFu;
 
 enum ScriptType : u8 {
@@ -49,7 +49,8 @@ struct ScriptHeader {
 	u32 codeSize;
 	u32 instanceSlots; // one per symbol that can refer to an instance
 	u32 externalCount; // externals are numbered 0 .. externalCount - 1
-	u32 reserved[6];
+	u32 stateCount;
+	u32 reserved[5];
 };
 static_assert(sizeof(ScriptHeader) == 64, "ScriptHeader layout");
 
@@ -81,6 +82,17 @@ struct ScriptFunction {
 	u32 symbol;
 };
 static_assert(sizeof(ScriptFunction) == 8, "ScriptFunction layout");
+
+// A state of a character's behaviour: the function that begins it, and the
+// ones the engine finds by its name - "<name>_LOOP", called again and again
+// while the state lasts, and "<name>_END". Sorted by `start`; SCRIPT_NONE
+// for a function the scripts do not have.
+struct ScriptState {
+	u32 start;
+	u32 loop;
+	u32 end;
+};
+static_assert(sizeof(ScriptState) == 12, "ScriptState layout");
 
 // The original's opcodes.
 enum ScriptOp : u8 {

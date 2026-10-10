@@ -144,6 +144,17 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	}
 	pak.add("script/gothic", ASSET_SCRIPT, image);
 
+	struct Faults {
+		const SrcScript* script;
+		std::map<std::string, u32> kinds;
+	} faults {&script, {}};
+	game.vm().onError(
+	    [](const char* what, u32 function, u32, void* user) {
+		    Faults& f = *static_cast<Faults*>(user);
+		    const std::string where = function < f.script->symbols.size() ? f.script->symbols[function].name : std::string("?");
+		    if (f.kinds.size() < 4096) ++f.kinds[std::string(what) + " in " + where];
+	    },
+	    &faults);
 	std::map<u32, u32> unboundCalls; // calls of engine functions nobody implements, by symbol
 	game.vm().onUnbound([](u32 symbol, void* user) { ++(*static_cast<std::map<u32, u32>*>(user))[symbol]; }, &unboundCalls);
 
@@ -201,13 +212,139 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		for (size_t i = 0; i < byCount.size() && i < 12; ++i)
 			list += format("%s%s x%u", i ? ", " : "", script.symbols[byCount[i].second].name.c_str(), byCount[i].first);
 		if (byCount.size() > 12) list += ", ...";
-		line(format("start-up ran %llu instructions; %u complaints, %u calls given up%s%s",
-		            static_cast<unsigned long long>(vs.instructions), vs.errors, vs.aborted,
-		            vs.errors || vs.aborted ? "; the last: " : "", vs.errors || vs.aborted ? vs.lastError : ""));
+		line(format("start-up ran %llu instructions; %u complaints, %u calls given up, %u uses of members of no object%s%s",
+		            static_cast<unsigned long long>(vs.instructions), vs.errors, vs.aborted, vs.nullAccess,
+		            vs.errors || vs.aborted ? "; the last complaint: " : "", vs.errors || vs.aborted ? vs.lastError : ""));
+		if (!faults.kinds.empty()) {
+			std::vector<std::pair<u32, std::string>> faultsByCount;
+			for (const auto& [what, n] : faults.kinds) faultsByCount.push_back({n, what});
+			std::sort(faultsByCount.rbegin(), faultsByCount.rend());
+			std::string where;
+			for (size_t i = 0; i < faultsByCount.size() && i < 8; ++i)
+				where += (i ? "; " : "") + faultsByCount[i].second + " x" + std::to_string(faultsByCount[i].first);
+			line("where: " + where + (faultsByCount.size() > 8 ? "; ..." : ""));
+		}
 		if (!byCount.empty())
 			line(format("engine functions the start-up called that do nothing yet: %zu, called %llu times: ", byCount.size(),
 			            static_cast<unsigned long long>(stubbed)) +
 			     list);
+	}
+
+	// ---- what they do all day ----
+	// States are run on the console only; what can be said here is which
+	// states the routines use, and which engine functions the states call
+	// that the engine does not carry out yet.
+	try {
+		// Where every function's code begins and ends, and who is who.
+		std::map<u32, u32> byAddress; // address -> symbol
+		std::map<std::string, u32> byName;
+		for (u32 i = 0; i < script.symbols.size(); ++i) {
+			const SrcSymbol& sym = script.symbols[i];
+			if (sym.member) continue;
+			const bool code = (sym.type == SCRIPT_FUNC && sym.isConst && !sym.external) || sym.type == SCRIPT_PROTOTYPE ||
+			                  (sym.type == SCRIPT_INSTANCE && sym.isConst);
+			if (code && sym.address < script.code.size()) byAddress.emplace(sym.address, i);
+			if (sym.type == SCRIPT_FUNC && sym.isConst && !sym.external && !sym.name.empty()) byName.emplace(sym.name, i);
+		}
+		const auto scan = [&](u32 fn, std::set<u32>& callees, std::set<u32>& externals) {
+			const SrcSymbol& sym = script.symbols[fn];
+			auto next = byAddress.upper_bound(sym.address);
+			const u32 end = next == byAddress.end() ? u32(script.code.size()) : next->first;
+			for (u32 at = sym.address; at < end;) {
+				const u8 op = script.code[at];
+				const u32 size = op == OP_PUSHVV ? 6u
+				                 : (op == OP_BL || op == OP_BE || op == OP_PUSHI || op == OP_PUSHV || op == OP_PUSHVI || op == OP_B ||
+				                    op == OP_BZ || op == OP_GMOVI)
+				                       ? 5u
+				                       : 1u;
+				if (at + size > end) break;
+				u32 operand = 0;
+				if (size >= 5) std::memcpy(&operand, &script.code[at + 1], 4);
+				if (op == OP_BL) {
+					const auto target = byAddress.find(operand);
+					if (target != byAddress.end()) callees.insert(target->second);
+				} else if (op == OP_BE && operand < script.symbols.size() && script.symbols[operand].external) {
+					externals.insert(operand);
+				}
+				at += size;
+			}
+		};
+		struct StateUse {
+			std::set<u32> externals;
+		};
+		std::map<u32, StateUse> states; // by the function that begins the state
+		std::map<u32, std::pair<std::set<u32>, std::set<u32>>> scanned; // function -> callees, externals
+		size_t reached = 0;
+		for (const auto& [name, fn] : byName) {
+			std::vector<u32> entry = {fn};
+			for (const char* suffix : {"_LOOP", "_END"}) {
+				const auto it = byName.find(name + suffix);
+				if (it != byName.end()) entry.push_back(it->second);
+			}
+			if (entry.size() < 2) continue;
+			StateUse& use = states[fn];
+			std::set<u32> seen(entry.begin(), entry.end());
+			std::vector<u32> todo = entry;
+			while (!todo.empty()) {
+				const u32 f = todo.back();
+				todo.pop_back();
+				auto it = scanned.find(f);
+				if (it == scanned.end()) {
+					it = scanned.emplace(f, std::pair<std::set<u32>, std::set<u32>>()).first;
+					scan(f, it->second.first, it->second.second);
+				}
+				use.externals.insert(it->second.second.begin(), it->second.second.end());
+				for (u32 callee : it->second.first)
+					if (seen.insert(callee).second && script.symbols[callee].type == SCRIPT_FUNC) todo.push_back(callee);
+			}
+			reached = std::max(reached, scanned.size());
+		}
+		// What the people of these worlds are in by their routines, and the creatures to start with.
+		std::map<u32, u32> inUse;
+		for (u32 i = 0; i < game.npcCount(); ++i) {
+			const GameNpc& n = game.npc(i);
+			if (n.hero) continue;
+			std::set<u32> own;
+			for (u32 k = 0; k < n.routineCount; ++k) own.insert(game.routine(n.routineFirst + k).state);
+			if (!n.routineCount)
+				if (const u32 fn = game.behaviour(n)) own.insert(fn);
+			for (u32 fn : own) ++inUse[fn];
+		}
+		u32 lifeCount = 0;
+		const char* const* lifeNames = Game::lifeFunctions(lifeCount);
+		const auto done = [&](u32 external) {
+			if (game.vm().isBound(external)) return true;
+			for (u32 k = 0; k < lifeCount; ++k)
+				if (script.symbols[external].name == lifeNames[k]) return true;
+			return false;
+		};
+		std::map<u32, u32> missing; // external -> states that call it
+		std::set<u32> called;
+		for (const auto& [fn, use] : states)
+			for (u32 external : use.externals) {
+				called.insert(external);
+				if (!done(external)) ++missing[external];
+			}
+		std::vector<std::pair<u32, u32>> byUse;
+		for (const auto& [fn, count] : inUse) byUse.push_back({count, fn});
+		std::sort(byUse.rbegin(), byUse.rend());
+		std::string list;
+		for (size_t i = 0; i < byUse.size() && i < 20; ++i)
+			list += format("%s%s x%u", i ? ", " : "", script.symbols[byUse[i].second].name.c_str(), byUse[i].first);
+		line(format("life: the scripts have %zu states; the people of these worlds are put into %zu: ", states.size(), byUse.size()) +
+		     list + (byUse.size() > 20 ? ", ..." : ""));
+		byUse.clear();
+		for (const auto& [external, count] : missing) byUse.push_back({count, external});
+		std::sort(byUse.rbegin(), byUse.rend());
+		list.clear();
+		for (size_t i = 0; i < byUse.size() && i < 40; ++i)
+			list += format("%s%s x%u", i ? ", " : "", script.symbols[byUse[i].second].name.c_str(), byUse[i].first);
+		line(format("life: the states call %zu engine functions, %zu of which the engine carries out; the others do nothing yet, by "
+		            "the number of states that call them: ",
+		            called.size(), called.size() - missing.size()) +
+		     (list.empty() ? "none" : list) + (byUse.size() > 40 ? ", ..." : ""));
+	} catch (const std::exception& ex) {
+		line(std::string("life: the states could not be looked through: ") + ex.what());
 	}
 
 	// ---- what they look like ----
@@ -238,6 +375,34 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		return;
 	}
 
+	// Animations the scripts name: every text in them that looks like one
+	// ("T_STAND_2_SIT", "S_LGUARD", "R_SCRATCHHEAD"). Which of them a model
+	// has is for its source to say.
+	std::set<std::string> aniNames;
+	for (const SrcSymbol& sym : script.symbols) {
+		if (sym.type != SCRIPT_STRING || sym.member) continue;
+		for (const std::string& text : sym.strings) {
+			if (text.size() < 3 || text.size() > 31 || text[1] != '_') continue;
+			const std::string name = upper(text);
+			if (name[0] != 'T' && name[0] != 'S' && name[0] != 'R') continue;
+			if (name.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") != std::string::npos) continue;
+			aniNames.insert(name);
+		}
+	}
+	// Getting up again is never named: the engine works it out from what the
+	// character is in ("T_STAND_2_SIT" or "S_SIT" needs "T_SIT_2_STAND").
+	{
+		std::set<std::string> back;
+		for (const std::string& name : aniNames) {
+			std::string in;
+			if (name.compare(0, 2, "S_") == 0) in = name.substr(2);
+			const size_t to = name.rfind("_2_");
+			if (name.compare(0, 2, "T_") == 0 && to != std::string::npos) in = name.substr(to + 3);
+			if (!in.empty() && in != "STAND") back.insert("T_" + in + "_2_STAND");
+		}
+		aniNames.insert(back.begin(), back.end());
+	}
+	std::string rigNotes;
 	BakeOptions quiet = opt;
 	quiet.quiet = true;
 	ModelBakeShared shared;
@@ -252,7 +417,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	std::vector<LookEntry> entries;
 	size_t bodies = 0, heads = 0, triangles = 0, textures = 0, clipCount = 0;
 	std::set<std::string> missingTextures;
-	u64 bytesBefore = pak.rawBytes(ASSET_MODEL) + pak.rawBytes(ASSET_CLIP), texBefore = pak.rawBytes(ASSET_TEXTURE);
+	const u64 modelsBefore = pak.rawBytes(ASSET_MODEL), clipsBefore = pak.rawBytes(ASSET_CLIP), texBefore = pak.rawBytes(ASSET_TEXTURE);
 
 	// One piece of a look: from the source, checked, baked once.
 	const auto piece = [&](const std::string& request, const std::string& kind, const std::string& what, const Rig& rig,
@@ -298,7 +463,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		if (rigIt == rigs.end()) {
 			Rig rig;
 			try {
-				if (scripts.looks.rig(l.script, !l.head.empty(), rig.model)) {
+				if (scripts.looks.rig(l.script, !l.head.empty(), aniNames, rig.model)) {
 					rig.model.parts.clear();
 					rig.model.blends.clear();
 					rig.model.name = "npc.rig" + std::to_string(rigs.size());
@@ -307,6 +472,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 					} else {
 						const ModelBakeResult mr = bakeModel(rig.model, quiet, pak, &shared);
 						clipCount += mr.clips;
+						rigNotes += format("%s%s %zu", rigNotes.empty() ? "" : ", ", l.script.c_str(), mr.clips);
 						rig.hash = hashName(("model/" + rig.model.name).c_str());
 					}
 				} else {
@@ -363,11 +529,12 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		for (const LookEntry& e : entries)
 			if (e.key == key) drawn += l.users;
 	line(format("inhabitants: %zu characters with %zu different looks; models for %zu of them (%u characters): %zu skeletons "
-	            "with %zu animations, %zu bodies, %zu heads; %zu triangles, %zu textures, %.2f MB of models and %.2f MB of "
-	            "textures",
+	            "with %zu animations, %zu bodies, %zu heads; %zu triangles, %zu textures, %.2f MB of models, %.2f MB of "
+	            "animations and %.2f MB of textures",
 	            result.characters, looks.size(), entries.size(), drawn, rigCount, clipCount, bodies, heads, triangles, textures,
-	            double(pak.rawBytes(ASSET_MODEL) + pak.rawBytes(ASSET_CLIP) - bytesBefore) / 1048576.0,
+	            double(pak.rawBytes(ASSET_MODEL) - modelsBefore) / 1048576.0, double(pak.rawBytes(ASSET_CLIP) - clipsBefore) / 1048576.0,
 	            double(pak.rawBytes(ASSET_TEXTURE) - texBefore) / 1048576.0));
+	line(format("animations: the scripts name or imply %zu; baked per skeleton: ", aniNames.size()) + rigNotes);
 	if (!problems.empty()) {
 		line(format("WARNING: %zu kinds of trouble with the inhabitants' models:", problems.size()));
 		size_t shown = 0;

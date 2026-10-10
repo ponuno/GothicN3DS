@@ -62,6 +62,9 @@ struct ZenActorOptions {
 	int teethVariant = 0;
 	std::vector<std::string> clips; // animations to bake; empty: what the hero's movement needs ...
 	bool heroClips = true;          // ... unless this is false: then exactly `clips`, which may be none
+	// `clips` is a wish list: what the model script does not declare is
+	// passed over without a word, and what a clip leads into comes along.
+	bool onlyDeclared = false;
 	// `body` and `head` may be empty: a head alone, a body alone, or - with
 	// neither - just the skeleton and its animations.
 };

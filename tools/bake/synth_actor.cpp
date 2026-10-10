@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
+#include <functional>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -498,46 +500,155 @@ void buildCreature(const std::string& script, SrcModel& model) {
 	model.parts.push_back(std::move(body));
 	model.loadTexture = paintLook;
 
-	// Standing about: breathing, the head swaying.
-	SrcClip clip;
-	clip.name = "S_FISTRUN";
-	clip.next = "S_FISTRUN";
-	clip.fps = 25.0f;
-	clip.nodes = {C_ROOT, C_HEAD};
-	for (int f = 0; f < 40; ++f) {
-		const float s = std::sin(float(f) / 40.0f * kTau);
-		SrcClipSample root {}, head {};
-		std::copy_n(model.nodes[C_ROOT].pos, 3, root.pos);
-		root.pos[1] += 1.5f * size * s;
-		root.rot[3] = 1.0f;
-		std::copy_n(model.nodes[C_HEAD].pos, 3, head.pos);
-		head.rot[1] = std::sin(0.2f * s);
-		head.rot[3] = std::cos(0.2f * s);
-		clip.samples.push_back(root);
-		clip.samples.push_back(head);
-	}
-	model.clips.push_back(std::move(clip));
+	// Its animations, named as the game's creatures have them (they are
+	// always "in fist mode"): standing, going at a walk and at a run, lying
+	// down to sleep and getting up again.
+	struct Step {
+		float rootY = 0, rootZ = 0, pitch = 0, headYaw = 0, headPitch = 0, legs = 0;
+	};
+	const auto make = [&](const char* name, const char* next, int frames, bool moves, const std::function<void(float, float, Step&)>& fn) {
+		SrcClip clip;
+		clip.name = name;
+		clip.next = next;
+		clip.fps = 25.0f;
+		clip.moves = moves;
+		clip.blendIn = clip.blendOut = 0.2f;
+		clip.nodes = {C_ROOT, C_HEAD, C_FL, C_FR, C_BL, C_BR};
+		for (int f = 0; f < frames; ++f) {
+			Step st;
+			fn(float(f) / float(frames), float(f) / clip.fps, st);
+			for (int node = 0; node < C_NODES; ++node) {
+				SrcClipSample sample {};
+				std::copy_n(model.nodes[size_t(node)].pos, 3, sample.pos);
+				sample.rot[3] = 1.0f;
+				if (node == C_ROOT) {
+					sample.pos[1] += st.rootY * size;
+					sample.pos[2] += st.rootZ * size;
+					sample.rot[0] = std::sin(st.pitch * 0.5f);
+					sample.rot[3] = std::cos(st.pitch * 0.5f);
+				} else if (node == C_HEAD) {
+					// (Yaw, then pitch.)
+					const float cy = std::cos(st.headYaw * 0.5f), sy = std::sin(st.headYaw * 0.5f);
+					const float cp = std::cos(st.headPitch * 0.5f), sp = std::sin(st.headPitch * 0.5f);
+					sample.rot[0] = cy * sp;
+					sample.rot[1] = sy * cp;
+					sample.rot[2] = -sy * sp;
+					sample.rot[3] = cy * cp;
+				} else {
+					// Diagonal pairs swing together.
+					const float swing = st.legs * ((node == C_FL || node == C_BR) ? 1.0f : -1.0f);
+					sample.rot[0] = std::sin(swing * 0.5f);
+					sample.rot[3] = std::cos(swing * 0.5f);
+				}
+				clip.samples.push_back(sample);
+			}
+		}
+		model.clips.push_back(std::move(clip));
+	};
+	for (const char* stand : {"S_FISTRUN", "S_FISTWALK"})
+		make(stand, stand, 40, false, [](float phase, float, Step& st) {
+			const float sw = std::sin(phase * kTau);
+			st.rootY = 1.5f * sw;
+			st.headYaw = 0.2f * sw;
+		});
+	make("S_FISTWALKL", "S_FISTWALKL", 20, true, [](float phase, float seconds, Step& st) {
+		st.rootZ = 110.0f * seconds;
+		st.rootY = 1.0f * std::sin(phase * 2.0f * kTau);
+		st.legs = 0.45f * std::sin(phase * kTau);
+	});
+	make("S_FISTRUNL", "S_FISTRUNL", 12, true, [](float phase, float seconds, Step& st) {
+		st.rootZ = 420.0f * seconds;
+		st.rootY = 3.0f * std::sin(phase * 2.0f * kTau);
+		st.legs = 0.8f * std::sin(phase * kTau);
+	});
+	make("T_STAND_2_SLEEP", "S_SLEEP", 15, false, [](float phase, float, Step& st) {
+		st.rootY = -30.0f * phase;
+		st.legs = 0.0f;
+		st.headPitch = 0.5f * phase;
+	});
+	make("S_SLEEP", "S_SLEEP", 50, false, [](float phase, float, Step& st) {
+		st.rootY = -30.0f + 1.0f * std::sin(phase * kTau);
+		st.headPitch = 0.5f;
+	});
+	make("T_SLEEP_2_STAND", "S_FISTRUN", 12, false, [](float phase, float, Step& st) {
+		st.rootY = -30.0f * (1.0f - phase);
+		st.headPitch = 0.5f * (1.0f - phase);
+	});
+	make("T_WARN", "S_FISTRUN", 20, false, [](float phase, float, Step& st) {
+		st.pitch = -0.25f * std::sin(phase * kTau * 0.5f);
+		st.headPitch = -0.4f * std::sin(phase * kTau * 0.5f);
+	});
+}
+
+// What the people of the camp do beside standing and going: sitting on the
+// ground, standing guard, a look around.
+void addInhabitantClips(SrcModel& model) {
+	const auto sit = [](float down, Pose& p) {
+		p.pos[ROOT][1] -= 52.0f * down;
+		p.rot[L_THIGH] = p.rot[R_THIGH] = aboutX(-1.45f * down);
+		p.rot[L_CALF] = p.rot[R_CALF] = aboutX(1.2f * down);
+		p.rot[CHEST] = aboutX(0.15f * down);
+	};
+	model.clips.push_back(makeClip("T_STAND_2_SIT", "S_SIT", 20, false, [sit](float phase, float, Pose& p) { sit(phase, p); }));
+	model.clips.push_back(makeClip("S_SIT", "S_SIT", 50, false, [sit](float phase, float, Pose& p) {
+		sit(1.0f, p);
+		p.rot[HEAD] = aboutX(0.06f * std::sin(phase * kTau));
+	}));
+	model.clips.push_back(makeClip("T_SIT_2_STAND", "S_RUN", 18, false, [sit](float phase, float, Pose& p) { sit(1.0f - phase, p); }));
+	const auto guard = [](float in, Pose& p) {
+		p.rot[L_ARM] = aboutX(-0.9f * in);
+		p.rot[R_ARM] = aboutX(-0.9f * in);
+		p.rot[L_FOREARM] = aboutX(-1.3f * in);
+		p.rot[R_FOREARM] = aboutX(-1.3f * in);
+	};
+	model.clips.push_back(makeClip("T_STAND_2_LGUARD", "S_LGUARD", 12, false, [guard](float phase, float, Pose& p) { guard(phase, p); }));
+	model.clips.push_back(makeClip("S_LGUARD", "S_LGUARD", 60, false, [guard](float phase, float, Pose& p) {
+		guard(1.0f, p);
+		p.rot[CHEST] = aboutX(0.02f * std::sin(phase * kTau));
+	}));
+	model.clips.push_back(makeClip("T_LGUARD_2_STAND", "S_RUN", 10, false, [guard](float phase, float, Pose& p) { guard(1.0f - phase, p); }));
+	model.clips.push_back(makeClip("T_LGUARD_SCRATCH", "S_LGUARD", 25, false, [guard](float phase, float, Pose& p) {
+		guard(1.0f, p);
+		p.rot[R_ARM] = aboutX(-0.9f - 1.4f * std::sin(phase * kTau * 0.5f));
+	}));
+	model.clips.push_back(makeClip("T_SEARCH", "S_RUN", 40, false, [](float phase, float, Pose& p) {
+		const float turn = 0.7f * std::sin(phase * kTau);
+		p.rot[HEAD] = {0, std::sin(turn * 0.5f), 0, std::cos(turn * 0.5f)};
+	}));
+	// Going at a walk begins and ends with a step of its own.
+	model.clips.push_back(makeClip("T_WALKL_2_WALK", "S_WALK", 6, true, [](float phase, float seconds, Pose& p) {
+		stride(0.0f, 0.0f, 0.4f * (1.0f - phase), 0.0f, p);
+		const float whole = 5.0f / 25.0f;
+		p.pos[ROOT][2] = 150.0f * seconds - 0.5f * 150.0f * seconds * seconds / whole; // from 150 cm/s to rest
+	}));
 }
 
 bool isSyntheticCreature(const std::string& script) { return script == "scavenger" || script == "molerat"; }
 
 } // namespace
 
-bool buildSyntheticRig(const std::string& script, bool, SrcModel& model) {
+bool buildSyntheticRig(const std::string& script, bool, const std::set<std::string>& wanted, SrcModel& model) {
+	// Of all it can do: standing and going, and what the scripts name.
+	std::set<std::string> keep = {"S_RUN", "S_RUNL", "S_WALK", "S_WALKL", "T_RUN_2_RUNL", "T_RUNL_2_RUN", "T_WALK_2_WALKL",
+	                              "T_WALKL_2_WALK", "S_FISTRUN", "S_FISTRUNL", "S_FISTWALK", "S_FISTWALKL"};
+	keep.insert(wanted.begin(), wanted.end());
 	if (script == "humans") {
 		buildSyntheticActor(model);
-		// Standing is all an inhabitant does.
-		std::vector<SrcClip> stand;
-		for (SrcClip& clip : model.clips)
-			if (clip.name == "S_RUN") stand.push_back(std::move(clip));
-		model.clips = std::move(stand);
+		addInhabitantClips(model);
 	} else if (isSyntheticCreature(script)) {
 		buildCreature(script, model);
 	} else {
 		model.notes.push_back("the synthetic scene has no '" + script + "'");
 		return false;
 	}
+	// (What a kept animation leads into is kept with it.)
+	for (int pass = 0; pass < 3; ++pass)
+		for (const SrcClip& clip : model.clips)
+			if (keep.count(clip.name) && !clip.next.empty()) keep.insert(clip.next);
+	model.clips.erase(std::remove_if(model.clips.begin(), model.clips.end(), [&](const SrcClip& c) { return keep.count(c.name) == 0; }),
+	                  model.clips.end());
 	model.parts.clear();
+	model.blends.clear();
 	model.notes.clear();
 	return true;
 }

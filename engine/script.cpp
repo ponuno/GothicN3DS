@@ -42,13 +42,14 @@ bool ScriptVm::adopt(u8* blob, u32 size) {
 		ok = h.magic == SCRIPT_MAGIC && h.version == SCRIPT_VERSION && h.symbolCount > 0 && h.symbolCount < (1u << 24) &&
 		     h.functionCount < (1u << 24) && h.dataCount < (1u << 26) && h.stringCount < (1u << 24) &&
 		     h.stringBytes < (1u << 28) && h.codeSize < (1u << 28) && h.instanceSlots < (1u << 24) &&
-		     h.externalCount < (1u << 16);
+		     h.externalCount < (1u << 16) && h.stateCount < (1u << 20);
 	}
-	u32 atSymbols = 0, atFunctions = 0, atData = 0, atOffsets = 0, atStrings = 0, atCode = 0;
+	u32 atSymbols = 0, atFunctions = 0, atStates = 0, atData = 0, atOffsets = 0, atStrings = 0, atCode = 0;
 	if (ok) {
 		atSymbols = sizeof(ScriptHeader);
 		atFunctions = atSymbols + h.symbolCount * u32(sizeof(ScriptSymbol));
-		atData = atFunctions + h.functionCount * u32(sizeof(ScriptFunction));
+		atStates = atFunctions + h.functionCount * u32(sizeof(ScriptFunction));
+		atData = atStates + h.stateCount * u32(sizeof(ScriptState));
 		atOffsets = atData + h.dataCount * 4u;
 		atStrings = atOffsets + h.stringCount * 4u;
 		atCode = atStrings + align4(h.stringBytes);
@@ -56,6 +57,7 @@ bool ScriptVm::adopt(u8* blob, u32 size) {
 	}
 	const ScriptSymbol* symbols = reinterpret_cast<const ScriptSymbol*>(blob + atSymbols);
 	const ScriptFunction* functions = reinterpret_cast<const ScriptFunction*>(blob + atFunctions);
+	const ScriptState* states = reinterpret_cast<const ScriptState*>(blob + atStates);
 	const u32* offsets = reinterpret_cast<const u32*>(blob + atOffsets);
 	const char* strings = reinterpret_cast<const char*>(blob + atStrings);
 	// Nothing in the tables may point outside them: the interpreter trusts
@@ -65,7 +67,14 @@ bool ScriptVm::adopt(u8* blob, u32 size) {
 		const u32 n = s.count ? s.count : 1u;
 		ok = s.type <= SCRIPT_INSTANCE && s.parent >= -1 && s.parent < i32(h.symbolCount);
 		if (!ok) break;
-		if (s.flags & SCRIPTF_MEMBER) continue; // checked against the instance on every access
+		if (s.flags & SCRIPTF_MEMBER) {
+			// Checked against the instance on every access. (A member is a
+			// variable: an engine function among them is nonsense, and would be
+			// taken at its word about where its implementation is kept.)
+			ok = !(s.flags & SCRIPTF_EXTERNAL);
+			if (!ok) break;
+			continue;
+		}
 		switch (s.type) {
 		case SCRIPT_INT:
 		case SCRIPT_FLOAT:
@@ -97,6 +106,16 @@ bool ScriptVm::adopt(u8* blob, u32 size) {
 	for (u32 i = 0; ok && i < h.functionCount; ++i)
 		ok = functions[i].symbol < h.symbolCount && functions[i].address < h.codeSize &&
 		     (i == 0 || functions[i - 1].address < functions[i].address);
+	for (u32 i = 0; ok && i < h.stateCount; ++i) {
+		// Each of the three is a script function that takes nothing, or none.
+		const u32 fns[3] = {states[i].start, states[i].loop, states[i].end};
+		for (int k = 0; ok && k < 3; ++k) {
+			if (k > 0 && fns[k] == SCRIPT_NONE) continue;
+			ok = fns[k] < h.symbolCount && symbols[fns[k]].type == SCRIPT_FUNC && (symbols[fns[k]].flags & SCRIPTF_CONST) &&
+			     !(symbols[fns[k]].flags & (SCRIPTF_EXTERNAL | SCRIPTF_MEMBER)) && symbols[fns[k]].value != SCRIPT_NONE;
+		}
+		ok = ok && (i == 0 || states[i - 1].start < states[i].start);
+	}
 	for (u32 i = 0; ok && i < h.stringCount; ++i) ok = offsets[i] == SCRIPT_NONE || offsets[i] < h.stringBytes;
 	if (ok && h.stringBytes) ok = strings[h.stringBytes - 1] == 0;
 	if (ok) {
@@ -118,6 +137,7 @@ bool ScriptVm::adopt(u8* blob, u32 size) {
 	_h = h;
 	_symbols = symbols;
 	_functions = functions;
+	_states = states;
 	_data = reinterpret_cast<i32*>(blob + atData);
 	_code = blob + atCode;
 	for (u32 i = 0; i < h.stringCount; ++i) _strings[i] = offsets[i] == SCRIPT_NONE ? "" : strings + offsets[i];
@@ -161,6 +181,7 @@ void ScriptVm::release() {
 	_blob = nullptr;
 	_symbols = nullptr;
 	_functions = nullptr;
+	_states = nullptr;
 	_data = nullptr;
 	_code = nullptr;
 	_blobSize = 0;
@@ -218,6 +239,36 @@ bool ScriptVm::bindSymbol(u32 s, External fn, void* user) {
 	return true;
 }
 
+const ScriptState* ScriptVm::stateOf(u32 start) const {
+	u32 lo = 0, hi = _h.stateCount;
+	while (lo < hi) {
+		const u32 mid = (lo + hi) / 2;
+		if (_states[mid].start < start)
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	return lo < _h.stateCount && _states[lo].start == start ? &_states[lo] : nullptr;
+}
+
+bool ScriptVm::isPlainFunction(u32 symbol) const {
+	if (symbol >= _h.symbolCount) return false;
+	const ScriptSymbol& s = _symbols[symbol];
+	return s.type == SCRIPT_FUNC && (s.flags & SCRIPTF_CONST) && !(s.flags & (SCRIPTF_EXTERNAL | SCRIPTF_MEMBER)) &&
+	       s.value != SCRIPT_NONE;
+}
+
+i32 ScriptVm::callInt(u32 function) {
+	if (!isPlainFunction(function) || _symbols[function].count != 0) return 0;
+	if (!call(function)) return 0;
+	return (_symbols[function].flags & SCRIPTF_RETURN) ? popInt() : 0;
+}
+
+bool ScriptVm::isBound(u32 s) const {
+	return s < _h.symbolCount && _symbols[s].type == SCRIPT_FUNC && (_symbols[s].flags & SCRIPTF_EXTERNAL) &&
+	       _externals[_symbols[s].value].fn != nullptr;
+}
+
 u32 ScriptVm::functionAt(u32 address) const {
 	u32 lo = 0, hi = _h.functionCount;
 	while (lo < hi) {
@@ -232,9 +283,17 @@ u32 ScriptVm::functionAt(u32 address) const {
 
 // ---- errors ----
 
-void ScriptVm::fail(const char* what) {
+void ScriptVm::fail(const char* what) { complain(what, SCRIPT_NONE); }
+
+// Something a well-formed script does not do. Counted, kept as the last
+// complaint, and passed on to whoever wants to know more.
+void ScriptVm::complain(const char* what, u32 symbol) const {
 	++_stats.errors;
-	snprintf(_stats.lastError, sizeof(_stats.lastError), "%s (at %u)", what, unsigned(_pc));
+	if (symbol != SCRIPT_NONE)
+		snprintf(_stats.lastError, sizeof(_stats.lastError), "%s (symbol %u, at %u)", what, unsigned(symbol), unsigned(_pc));
+	else
+		snprintf(_stats.lastError, sizeof(_stats.lastError), "%s (at %u)", what, unsigned(_pc));
+	if (_onError) _onError(what, _fp ? _frames[_fp - 1].function : SCRIPT_NONE, symbol, _onErrorUser);
 }
 
 void ScriptVm::abandon(const char* what) {
@@ -359,14 +418,14 @@ ScriptInstance* ScriptVm::popInstance() {
 
 u8* ScriptVm::memberPtr(const ScriptSymbol& s, u32 index, const ScriptInstance* ctx, u32 bytes) const {
 	if (!ctx) {
-		++_stats.errors;
-		snprintf(_stats.lastError, sizeof(_stats.lastError), "a member was used without an instance");
+		// (The game's own scripts do this now and then; the answer is a zero.)
+		++_stats.nullAccess;
+		if (_onError) _onError("a member was used without an object", _fp ? _frames[_fp - 1].function : SCRIPT_NONE, SCRIPT_NONE, _onErrorUser);
 		return nullptr;
 	}
 	const u64 at = u64(s.value) + u64(index) * bytes;
 	if (at + bytes > ctx->size) {
-		++_stats.errors;
-		snprintf(_stats.lastError, sizeof(_stats.lastError), "a member lies outside its instance");
+		complain("a member lies outside its object", SCRIPT_NONE);
 		return nullptr;
 	}
 	return const_cast<u8*>(ctx->data()) + at;
@@ -376,8 +435,7 @@ i32 ScriptVm::getInt(u32 symbol, u32 index, const ScriptInstance* ctx) const {
 	if (symbol >= _h.symbolCount) return 0;
 	const ScriptSymbol& s = _symbols[symbol];
 	if ((s.type != SCRIPT_INT && s.type != SCRIPT_FUNC) || index >= (s.count ? s.count : 1u)) {
-		++_stats.errors;
-		snprintf(_stats.lastError, sizeof(_stats.lastError), "symbol %u was read as an integer", unsigned(symbol));
+		complain("a symbol was read as an integer that is none", symbol);
 		return 0;
 	}
 	i32 v = 0;
@@ -393,8 +451,7 @@ float ScriptVm::getFloat(u32 symbol, u32 index, const ScriptInstance* ctx) const
 	if (symbol >= _h.symbolCount) return 0.0f;
 	const ScriptSymbol& s = _symbols[symbol];
 	if (s.type != SCRIPT_FLOAT || index >= (s.count ? s.count : 1u)) {
-		++_stats.errors;
-		snprintf(_stats.lastError, sizeof(_stats.lastError), "symbol %u was read as a float", unsigned(symbol));
+		complain("a symbol was read as a float that is none", symbol);
 		return 0.0f;
 	}
 	float v = 0;
@@ -411,8 +468,7 @@ const char* ScriptVm::stringAt(u32 symbol, u32 index, const ScriptInstance* ctx)
 	if (symbol >= _h.symbolCount) return "";
 	const ScriptSymbol& s = _symbols[symbol];
 	if (s.type != SCRIPT_STRING || index >= (s.count ? s.count : 1u)) {
-		++_stats.errors;
-		snprintf(_stats.lastError, sizeof(_stats.lastError), "symbol %u was read as a string", unsigned(symbol));
+		complain("a symbol was read as a string that is none", symbol);
 		return "";
 	}
 	if (s.flags & SCRIPTF_MEMBER) {

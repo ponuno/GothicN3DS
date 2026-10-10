@@ -221,6 +221,24 @@ std::vector<u8> bakeScript(const SrcScript& script, ScriptBakeResult& result) {
 		functions.swap(unique);
 	}
 
+	// States: every function that has a "_LOOP" or an "_END" to its name.
+	std::vector<ScriptState> states;
+	{
+		const auto plain = [&](u32 i) {
+			const SrcSymbol& s = script.symbols[i];
+			return s.type == SCRIPT_FUNC && s.isConst && !s.external && !isMember[i] && symbols[i].value != SCRIPT_NONE;
+		};
+		const auto companion = [&](const std::string& name) {
+			const auto it = byHash.find(hashName(name.c_str()));
+			return it != byHash.end() && plain(it->second) ? it->second : SCRIPT_NONE;
+		};
+		for (u32 i = 0; i < n; ++i) {
+			if (!plain(i) || script.symbols[i].name.empty() || symbols[i].nameHash == 0) continue;
+			const u32 loop = companion(script.symbols[i].name + "_LOOP"), end = companion(script.symbols[i].name + "_END");
+			if (loop != SCRIPT_NONE || end != SCRIPT_NONE) states.push_back({i, loop, end});
+		}
+	}
+
 	ScriptHeader h {};
 	h.magic = SCRIPT_MAGIC;
 	h.version = SCRIPT_VERSION;
@@ -232,12 +250,14 @@ std::vector<u8> bakeScript(const SrcScript& script, ScriptBakeResult& result) {
 	h.codeSize = codeSize;
 	h.instanceSlots = instanceSlots;
 	h.externalCount = externals;
+	h.stateCount = u32(states.size());
 	if (externals >= (1u << 16)) throw std::runtime_error("the script has too many externals");
 
 	std::vector<u8> out;
 	append(out, h);
 	for (const ScriptSymbol& s : symbols) append(out, s);
 	for (const ScriptFunction& f : functions) append(out, f);
+	for (const ScriptState& st : states) append(out, st);
 	for (i32 v : data) append(out, v);
 	for (u32 v : stringOffsets) append(out, v);
 	out.insert(out.end(), stringPool.begin(), stringPool.end());
@@ -250,10 +270,10 @@ std::vector<u8> bakeScript(const SrcScript& script, ScriptBakeResult& result) {
 	result.externals = externals;
 	char buf[400];
 	std::snprintf(buf, sizeof(buf),
-	              "scripts: %s: %u symbols, %u functions and instances (%u instances), %u externals, %u classes with %u "
-	              "members, %.0f KB of code, %.0f KB of text; image %.2f MB\n",
+	              "scripts: %s: %u symbols, %u functions and instances (%u instances), %u externals, %u states, %u classes "
+	              "with %u members, %.0f KB of code, %.0f KB of text; image %.2f MB\n",
 	              script.source.empty() ? "?" : script.source.c_str(), n, result.functions, result.instances, externals,
-	              result.classes, members, double(codeSize) / 1024.0, double(stringPool.size()) / 1024.0,
+	              h.stateCount, result.classes, members, double(codeSize) / 1024.0, double(stringPool.size()) / 1024.0,
 	              double(out.size()) / 1048576.0);
 	result.report += buf;
 	if (result.hashClashes) {

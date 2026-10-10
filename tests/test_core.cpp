@@ -3,11 +3,13 @@
 #include "app.h"
 #include "bake.h"
 #include "chunker.h"
+#include "daedalus.h"
 #include "g3ds/pak.h"
 #include "g3ds/tex.h"
 #include "gfx_soft.h"
 #include "importers.h"
 #include "loader.h"
+#include "waynet.h"
 #include "model_bake.h"
 #include "pacer.h"
 #include "pak_writer.h"
@@ -18,6 +20,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <set>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -3101,6 +3105,8 @@ static void testInhabitants() {
 		Npcs& npcs = app.npcs();
 		CHECK(npcs.loaded() && std::string(npcs.worldScript()) == "WORLD");
 		CHECK(npcs.stats().total == 9 && npcs.stats().here == 8 && npcs.game().vm().stats().errors == 0);
+		// Here everybody just stands where his routine has him; their life is testLife's.
+		npcs.config().alive = false;
 		app.environment().timeOfDay = 8.0f;
 		for (int i = 0; i < 5; ++i) app.update(Input {}, dt);
 		// From the start point, looking at the camp: the gate's two guards, the
@@ -3132,6 +3138,24 @@ static void testInhabitants() {
 			++checked;
 		}
 		CHECK(checked >= 5);
+
+		// Under load characters are shown less far, like the world's small
+		// things, and never further than the world itself is drawn.
+		CHECK(npcs.stats().reach == 3000.0f);
+		app.world().config().detailScale = 0.5f;
+		app.update(Input {}, dt);
+		CHECK(npcs.stats().reach == 1500.0f && npcs.stats().near < 7);
+		app.world().config().detailScale = 0.1f;
+		app.update(Input {}, dt);
+		CHECK(npcs.stats().reach == 1200.0f);
+		app.world().config().detailScale = 1.0f;
+		const float drawDistance = app.drawDistance();
+		app.setDrawDistance(2000.0f);
+		app.update(Input {}, dt);
+		CHECK(npcs.stats().reach == 2000.0f);
+		app.setDrawDistance(drawDistance);
+		app.update(Input {}, dt);
+		CHECK(npcs.stats().reach == 3000.0f && npcs.stats().near == 7);
 
 		// Fewer allowed: the nearest ones. None allowed: none.
 		npcs.config().maxShown = 2;
@@ -3273,6 +3297,724 @@ static void testInhabitants() {
 	gfx::shutdown();
 }
 
+// The way net on its own: shortest ways, free points, damaged data.
+static void testWayNet() {
+	std::mt19937 rng(11);
+	const auto bake = [&](const SrcScene& src, const std::string& path) {
+		std::vector<BakeWorld> worlds(1);
+		worlds[0].name = "net";
+		worlds[0].level = "NET.ZEN";
+		SrcScene& scene = worlds[0].scene;
+		scene = src;
+		scene.materials.resize(1);
+		scene.materials[0].name = "floor";
+		const float p[4][3] = {{-9000, 0, -9000}, {9000, 0, -9000}, {9000, 0, 9000}, {-9000, 0, 9000}};
+		addQuad(scene, p[0], p[1], p[2], p[3], 0);
+		BakeOptions bo;
+		bo.tex.maxSize = 16;
+		bo.tex.quality = 0;
+		bo.quiet = true;
+		PakWriter writer;
+		bakeWorlds(worlds, bo, writer);
+		writer.write(path);
+	};
+	// A random net: 120 points, each tied to a few of its neighbours; some left alone.
+	SrcScene scene;
+	const u32 n = 120;
+	for (u32 i = 0; i < n; ++i) {
+		char name[16];
+		std::snprintf(name, sizeof(name), "WP_%03u", i);
+		scene.wayPoints.push_back(SrcWayPoint {name, {float(rng() % 16000) - 8000.0f, 50.0f, float(rng() % 16000) - 8000.0f}, 0.3f});
+	}
+	std::vector<std::vector<float>> dist(n, std::vector<float>(n, 1e30f));
+	const auto length = [&](u32 a, u32 b) {
+		const float* p = scene.wayPoints[a].pos;
+		const float* q = scene.wayPoints[b].pos;
+		return std::sqrt((p[0] - q[0]) * (p[0] - q[0]) + (p[2] - q[2]) * (p[2] - q[2]));
+	};
+	for (u32 i = 0; i < n - 10; ++i) {
+		// The three nearest.
+		std::vector<u32> order;
+		for (u32 k = 0; k < n - 10; ++k)
+			if (k != i) order.push_back(k);
+		std::partial_sort(order.begin(), order.begin() + 3, order.end(), [&](u32 a, u32 b) { return length(i, a) < length(i, b); });
+		for (int k = 0; k < 3; ++k) scene.wayEdges.push_back({i, order[size_t(k)]});
+	}
+	scene.wayEdges.push_back({5, 5});   // nonsense the baker drops
+	scene.wayEdges.push_back({3, 500});
+	for (int i = 0; i < 12; ++i) {
+		char name[32];
+		std::snprintf(name, sizeof(name), i % 3 == 0 ? "FP_SIT_%02d" : "FP_ROAM_%02d", i);
+		scene.freePoints.push_back(SrcWayPoint {name, {float(i) * 100.0f, 30.0f, 0.0f}, 1.0f});
+	}
+	const std::string path = gDir + "/waynet.pak";
+	bake(scene, path);
+	Pak pak;
+	CHECK(pak.open(path.c_str()));
+	WayNet net;
+	CHECK(!net.load(pak, "world/nowhere") && !net.loaded() && net.nodeCount() == 0);
+	CHECK(net.load(pak, "world/net") && net.nodeCount() == n && net.freeCount() == 12);
+	// On the ground (the floor is at 0), named, found by name in any case.
+	CHECK(net.node(7).pos[1] == 0.0f && net.freePoint(3).pos[1] == 0.0f && net.node(7).yaw == 0.3f);
+	CHECK(std::string(net.nodeName(7)) == "WP_007" && net.findNode("wp_007") == 7 && net.findNode("WP_999") == -1 && net.findNode("") == -1);
+	CHECK(std::string(net.freeName(4)) == "FP_ROAM_04");
+
+	// Every connection once from each end; the reference: all pairs, the slow way.
+	std::vector<std::vector<bool>> tied(n, std::vector<bool>(n, false));
+	for (const auto& [a, b] : scene.wayEdges)
+		if (a < n && b < n && a != b) tied[a][b] = tied[b][a] = true;
+	const auto edge = [&](u32 a, u32 b) {
+		const float* p = net.node(a).pos;
+		const float* q = net.node(b).pos;
+		return std::sqrt((p[0] - q[0]) * (p[0] - q[0]) + (p[1] - q[1]) * (p[1] - q[1]) + (p[2] - q[2]) * (p[2] - q[2])) + 1.0f;
+	};
+	for (u32 a = 0; a < n; ++a) {
+		dist[a][a] = 0;
+		for (u32 b = 0; b < n; ++b)
+			if (tied[a][b]) dist[a][b] = edge(a, b);
+	}
+	for (u32 k = 0; k < n; ++k)
+		for (u32 a = 0; a < n; ++a)
+			for (u32 b = 0; b < n; ++b) dist[a][b] = std::min(dist[a][b], dist[a][k] + dist[k][b]);
+	u32 ways = 0, none = 0;
+	float worst = 0;
+	for (int round = 0; round < 3000; ++round) {
+		const u32 a = rng() % n, b = rng() % n;
+		u16 out[256];
+		const u32 count = net.path(a, b, out, 256);
+		if (a == b || dist[a][b] > 1e29f) {
+			CHECK(count == 0);
+			++none;
+			continue;
+		}
+		CHECK(count > 0 && count <= 256 && out[count - 1] == b);
+		// Every step along a connection, and the whole no longer than the shortest.
+		float sum = 0;
+		u32 at = a;
+		bool connected = true;
+		for (u32 k = 0; k < count && k < 256; ++k) {
+			connected = connected && tied[at][out[k]];
+			sum += edge(at, out[k]);
+			at = out[k];
+		}
+		CHECK(connected);
+		worst = std::max(worst, std::fabs(sum - dist[a][b]));
+		++ways;
+		// A short list gets the first steps and the true count.
+		u16 few[2];
+		CHECK(net.path(a, b, few, 2) == count && few[0] == out[0] && (count < 2 || few[1] == out[1]));
+	}
+	std::printf("       %u ways through a net of %u points checked against all-pairs search (worst difference %.3f cm), %u pairs without a way\n",
+	            ways, n, double(worst), none);
+	CHECK(ways > 2000 && none > 100 && worst < 0.5f);
+	CHECK(net.path(0, 9999, nullptr, 0) == 0 && net.path(9999, 0, nullptr, 0) == 0);
+	// The nearest node, and the nearest but one.
+	for (int round = 0; round < 200; ++round) {
+		const float at[3] = {float(rng() % 16000) - 8000.0f, 0.0f, float(rng() % 16000) - 8000.0f};
+		u32 best = 0;
+		for (u32 i = 1; i < n; ++i)
+			if (length(i, i) == 0 && std::hypot(net.node(i).pos[0] - at[0], net.node(i).pos[2] - at[2]) <
+			                             std::hypot(net.node(best).pos[0] - at[0], net.node(best).pos[2] - at[2]))
+				best = i;
+		CHECK(net.nearestNode(at) == int(best));
+		const int second = net.nearestNode(at, int(best));
+		CHECK(second >= 0 && second != int(best));
+	}
+
+	// Free points: by a word of the name, the nearest in reach, one holder each.
+	const float origin[3] = {0, 0, 0}, far[3] = {5000, 0, 0};
+	CHECK(net.findFree(origin, "SIT", 1) == 0 && net.findFree(origin, "sit", 1) == 0 && net.findFree(origin, "ROAM", 1) == 1);
+	CHECK(net.findFree(origin, "FP_", 1) == 0 && net.findFree(origin, "BED", 1) == -1 && net.findFree(origin, "", 1) == -1);
+	CHECK(net.findFree(far, "SIT", 1) == -1); // too far away
+	CHECK(net.nameContains(3, "SIT_03") && !net.nameContains(3, "SIT_04") && !net.nameContains(99, "SIT"));
+	net.hold(0, 1);
+	CHECK(net.heldBy(1) == 0 && net.findFree(origin, "SIT", 1) == 0); // its own is still there for it
+	CHECK(net.findFree(origin, "SIT", 2) == 3);                      // for the next one the next
+	CHECK(net.findFree(origin, "SIT", 1, 0) == 3);                   // and for itself if it wants another
+	net.hold(0, 2);                                                  // taken: stays the first one's
+	CHECK(net.heldBy(1) == 0 && net.heldBy(2) == -1);
+	net.hold(3, 1);                                                  // one each: the first is let go
+	CHECK(net.heldBy(1) == 3 && net.findFree(origin, "SIT", 2) == 0);
+	net.hold(77, 2);
+	net.hold(-1, 2);
+	CHECK(net.heldBy(2) == -1);
+	net.drop(1);
+	CHECK(net.heldBy(1) == -1);
+	net.hold(6, 9);
+	net.dropAll();
+	CHECK(net.heldBy(9) == -1);
+
+	// Damaged data: refused, or at least harmless.
+	const PakEntry* e = pak.find("world/net/waynet");
+	CHECK(e != nullptr);
+	std::vector<u8> good(e ? e->size : 0);
+	if (e) CHECK(pak.read(*e, good.data()));
+	int loaded = 0, refused = 0;
+	for (int round = 0; round < 400 && !good.empty(); ++round) {
+		std::vector<u8> bad = good;
+		const int hits = 1 + int(rng() % 4);
+		for (int k = 0; k < hits; ++k) {
+			const size_t at = round < 100 ? 8 + rng() % 24 : 8 + rng() % (bad.size() - 8);
+			bad[at] = rng() % 2 ? u8(rng()) : u8(bad[at] ^ (1u << (rng() % 8)));
+		}
+		if (round % 50 == 49) bad.resize(bad.size() - 1 - rng() % 64);
+		PakWriter w;
+		w.add("world/net/waynet", ASSET_META, bad);
+		const std::string badPath = gDir + "/waynet_bad.pak";
+		w.write(badPath);
+		Pak bp;
+		CHECK(bp.open(badPath.c_str()));
+		WayNet b;
+		if (!b.load(bp, "world/net")) {
+			++refused;
+			continue;
+		}
+		++loaded;
+		u16 out[64];
+		for (int k = 0; k < 40 && b.nodeCount(); ++k) {
+			(void)b.path(rng() % b.nodeCount(), rng() % b.nodeCount(), out, 64);
+			const float at[3] = {float(rng() % 16000) - 8000.0f, 0.0f, float(rng() % 16000) - 8000.0f};
+			(void)b.nearestNode(at);
+			(void)b.findNode(b.nodeName(rng() % b.nodeCount()));
+			const int fp = b.findFree(at, "ROAM", u32(k));
+			b.hold(fp, u32(k));
+		}
+	}
+	std::printf("       %d damaged nets used, %d refused\n", loaded, refused);
+	CHECK(loaded > 50 && refused > 50);
+}
+
+// The two synthetic worlds with a script of the caller's and the people it names.
+static BakeResult bakeLifeWorlds(const std::string& source, const std::string& path, std::vector<BakeWorld>& worlds) {
+	SrcScript script;
+	compileDaedalus(source, script);
+	worlds.assign(2, BakeWorld());
+	worlds[0].name = "world";
+	worlds[0].level = "WORLD.ZEN";
+	SynthOptions so;
+	so.cells = 48;
+	so.huts = 6;
+	so.trees = 20;
+	buildSyntheticScene(so, worlds[0].scene);
+	worlds[1].name = "cave";
+	worlds[1].level = "CAVE.ZEN";
+	buildSyntheticCave(worlds[1].scene);
+	std::vector<SrcModel> models(1);
+	buildSyntheticActor(models[0]);
+	BakeOptions bo;
+	bo.chunker.chunkSize = 3000.0f;
+	bo.tex.maxSize = 32;
+	bo.tex.quality = 0;
+	bo.threads = 2;
+	bo.quiet = true;
+	BakeScripts scripts;
+	scripts.script = &script;
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead};
+	PakWriter writer;
+	const BakeResult r = bakeWorlds(worlds, models, scripts, bo, writer);
+	writer.write(path);
+	return r;
+}
+
+// The inhabitants' life: states run by the scripts, walking the way net.
+static void testLife() {
+	// The built-in script, and with it somebody who asks the engine questions
+	// and writes the answers down.
+	std::string source = syntheticScriptSource();
+	const std::string hook = "func void STARTUP_SUB_CAMP() {";
+	CHECK(source.find(hook) != std::string::npos);
+	source.replace(source.find(hook), hook.size(), hook + "\n\tWld_InsertNpc(VLK_502_Probe, \"CAMP_SQUARE\");");
+	source += R"(
+var int probe_dist_wp; var int probe_dist_none; var int probe_state; var int probe_detect; var int probe_other; var int probe_dist_npc;
+var int probe_see; var int probe_time; var int probe_body; var int probe_fp; var int probe_hero; var int probe_loops; var int probe_ended;
+var string probe_wp; var string probe_own; var int probe_see_first;
+extern func int Wld_DetectNpc(var C_NPC n, var int npcInstance, var func state, var int guild);
+extern func int Npc_CanSeeNpc(var C_NPC a, var C_NPC b);
+func void ZS_Probe() { AI_GotoWP(self, self.wp); AI_AlignToWP(self); probe_own = self.wp; };
+func int ZS_Probe_Loop() {
+	probe_loops += 1;
+	probe_dist_wp = Npc_GetDistToWP(self, "camp_fire");
+	probe_dist_none = Npc_GetDistToWP(self, "NO_SUCH_WP");
+	probe_wp = Npc_GetNearestWP(self);
+	probe_state = Npc_IsInState(self, ZS_Probe) + 10 * Npc_IsInState(self, ZS_Guard);
+	probe_detect = Wld_DetectNpc(self, -1, ZS_Smith, GIL_VLK);
+	if (probe_detect) {
+		probe_other = other.id;
+		probe_dist_npc = Npc_GetDistToNpc(self, other);
+		if (probe_loops == 1) { probe_see_first = Npc_CanSeeNpc(self, other) + 10 * Npc_CanSeeNpc(other, self); };
+		if (probe_loops == 3) { AI_TurnToNpc(self, other); };
+		probe_see = Npc_CanSeeNpc(self, other) + 10 * Npc_CanSeeNpc(other, self);
+	};
+	probe_hero = Npc_GetDistToNpc(self, hero);
+	probe_time = Npc_GetStateTime(self);
+	probe_body = Npc_GetBodyState(self);
+	probe_fp = Wld_IsFPAvailable(self, "SMALLTALK") + 10 * Wld_IsFPAvailable(self, "NOSUCH") + 100 * Npc_IsOnFP(self, "SMALLTALK");
+	AI_Wait(self, 1);
+	return LOOP_CONTINUE;
+};
+func void ZS_Probe_End() { probe_ended += 1; };
+instance VLK_502_Probe (Npc_Default) {
+	name = "Probe"; guild = GIL_VLK; id = 502; senses_range = 3000;
+	Mdl_SetVisual(self, "HUMANS.MDS");
+	Mdl_SetVisualBody(self, "hum_body_Naked0", 3, 1, "Hum_Head_Pony", 9, 2, -1);
+	daily_routine = Rtn_start_502;
+};
+func void Rtn_start_502() {
+	TA_Min(self, 0, 0, 22, 0, ZS_Probe, "CAMP_SQUARE");
+	TA_Min(self, 22, 0, 24, 0, ZS_Stand, "CAMP_SQUARE");
+};
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/life.pak";
+	{
+		const BakeResult r = bakeLifeWorlds(source, path, worlds);
+		const auto said = [&](const char* text) { return r.report.find(text) != std::string::npos; };
+		// Of the animations the scripts name each skeleton got the ones it has.
+		CHECK(said("animations: the scripts name or imply 9; baked per skeleton: humans 15, scavenger 8, molerat 8"));
+		CHECK(said("way net: 13 points, 15 connections") && said("10 free points") && said(" 8 states, "));
+		// What the states need of the engine is on record.
+		CHECK(said("life: the scripts have 8 states; the people of these worlds are put into 7: ZS_MM_ALLSCHEDULER x6, ZS_GUARD x3"));
+		CHECK(said("of which the engine carries out; the others do nothing yet, by the number of states that call them: NPC_PERCENABLE x1"));
+	}
+	const SrcScene& scene = worlds[0].scene; // (its places are on the ground now)
+	const auto wayPoint = [&](const char* name) -> const SrcWayPoint& {
+		for (const SrcWayPoint& wp : scene.wayPoints)
+			if (wp.name == name) return wp;
+		throw std::logic_error(std::string("no way point ") + name);
+	};
+	// How far a place is from the nearest connection of the net.
+	const auto offTheNet = [&](const float pos[3]) {
+		float best = 1e30f;
+		for (const auto& [a, b] : scene.wayEdges) {
+			const float* p = scene.wayPoints[a].pos;
+			const float* q = scene.wayPoints[b].pos;
+			const float ex = q[0] - p[0], ez = q[2] - p[2];
+			const float t = std::clamp(((pos[0] - p[0]) * ex + (pos[2] - p[2]) * ez) / (ex * ex + ez * ez), 0.0f, 1.0f);
+			best = std::min(best, std::hypot(pos[0] - (p[0] + ex * t), pos[2] - (p[2] + ez * t)));
+		}
+		return best;
+	};
+	const i32 kBsStand = (1 << 15) | (1 << 16), kBsSit = 11 | (1 << 16);
+
+	gfx::init();
+	for (int variant = 0; variant < 4; ++variant) {
+		// The same day at three frame rates; and once with next to no memory
+		// for animations.
+		const float dt = variant == 1 ? 1.0f / 20.0f : variant == 2 ? 1.0f / 60.0f : 1.0f / 30.0f;
+		const bool poor = variant == 3;
+		App app;
+		CHECK(app.init(path.c_str(), nullptr));
+		app.world().preload(app.camera().pos);
+		Npcs& npcs = app.npcs();
+		const Game& game = npcs.game();
+		const WayNet& net = npcs.wayNet();
+		CHECK(net.loaded() && net.nodeCount() == 13 && net.freeCount() == 10);
+		npcs.config().range = 20000.0f;
+		npcs.config().maxShown = 16;
+		if (poor) npcs.config().clipBudget = 9000;
+		app.setDrawDistance(20000.0f);
+		app.environment().timeOfDay = 8.0f;
+		const auto who = [&](const char* instance) -> u32 {
+			const u32 sym = game.vm().find(instance);
+			for (u32 i = 0; i < game.npcCount(); ++i)
+				if (game.npc(i).symbol == sym) return i;
+			throw std::logic_error(std::string("nobody is ") + instance);
+		};
+		const u32 thorus = who("GRD_200_THORUS"), jackal = who("GRD_201_JACKAL"), smith = who("VLK_500_DIGGER"),
+		          walker = who("VLK_501_DIGGER"), probe = who("VLK_502_PROBE");
+		const auto global = [&](const char* name) { return game.vm().getInt(game.vm().find(name)); };
+		const auto text = [&](const char* name) { return std::string(game.vm().getString(game.vm().find(name))); };
+		const auto away = [&](u32 npc, const float pos[3]) {
+			return std::hypot(game.npc(npc).pos[0] - pos[0], game.npc(npc).pos[2] - pos[2]);
+		};
+		const auto trace = [&](const char* when) {
+			if (variant != 0) return;
+			std::printf("       -- %s (%.2f h): %u actors, %u walking; %u state calls, %u actions, %u clips read (%u KB)\n", when,
+			            double(app.environment().timeOfDay), npcs.stats().actors, npcs.stats().walking, npcs.stats().stateCalls,
+			            npcs.stats().actions, npcs.stats().clips, npcs.stats().clipBytes / 1024);
+			for (u32 i = 0; i < npcs.actorCount(); ++i) {
+				const NpcActor& a = npcs.actor(i);
+				if (!a.used) continue;
+				const GameNpc& n = game.npc(a.npc);
+				std::printf("          %-15s %-7s at %5.0f %4.0f %5.0f facing %5.2f; way point %2d, free point %2d\n", game.nameOf(n),
+				            npcs.doing(a), double(n.pos[0]), double(n.pos[1]), double(n.pos[2]), double(n.yaw), a.atNode, a.atFree);
+			}
+		};
+		// Runs the game on, watching one of the characters: how fast it goes,
+		// how far it strays from the paths, whether it stays on the ground.
+		struct Watch {
+			float fastest = 0, farthestOff = 0, worstGround = 0, travelled = 0;
+			bool throughGate = false;
+		};
+		const auto run = [&](float seconds, u32 watched, Watch* w, const float* until = nullptr) {
+			for (int i = 0; i < int(seconds / dt); ++i) {
+				const GameNpc before = game.npc(watched);
+				app.update(Input {}, dt);
+				if (i % 7 == 0) app.render();
+				if (!w) continue;
+				const GameNpc& n = game.npc(watched);
+				const float step = std::hypot(n.pos[0] - before.pos[0], n.pos[2] - before.pos[2]);
+				w->fastest = std::max(w->fastest, step / dt);
+				w->travelled += step;
+				if (!until || away(watched, until) > 260.0f) w->farthestOff = std::max(w->farthestOff, offTheNet(n.pos));
+				w->throughGate = w->throughGate || (std::fabs(n.pos[0]) < 60.0f && std::fabs(n.pos[2] - 2600.0f) < 60.0f);
+				float y;
+				Vec3 normal;
+				if (app.world().rayDown({n.pos[0], n.pos[1] + 100.0f, n.pos[2]}, 400.0f, y, normal))
+					w->worstGround = std::max(w->worstGround, std::fabs(y - n.pos[1]));
+			}
+		};
+
+		// ---- morning: everybody takes up what the routine says ----
+		run(16.0f, thorus, nullptr);
+		trace("morning");
+		CHECK(npcs.stats().actors == 9 && npcs.stats().waiting == 0 && npcs.stats().noModel == 0);
+		const u32 zsGuard = game.vm().find("ZS_GUARD"), zsSit = game.vm().find("ZS_SITAROUND"), zsSleep = game.vm().find("ZS_SLEEP");
+		for (const u32 guard : {thorus, jackal}) {
+			const NpcActor* a = npcs.actorOf(guard);
+			CHECK(a && a->ready && a->state == zsGuard && a->started && (poor || std::string(a->stance) == "LGUARD"));
+			if (!a) continue;
+			const SrcWayPoint& post = wayPoint(guard == thorus ? "CAMP_GATE_GUARD_L" : "CAMP_GATE_GUARD_R");
+			CHECK(away(guard, post.pos) < 60.0f && std::fabs(game.npc(guard).yaw - post.yaw) < 0.01f && a->atNode >= 0);
+			CHECK(std::string(net.nodeName(u32(a->atNode))) == post.name && game.npc(guard).active);
+			if (!poor) CHECK(a->anim.current() && (a->anim.current() == a->rig->model.clip("S_LGUARD") || a->phase == NpcActor::PLAYING));
+		}
+		CHECK(away(smith, wayPoint("CAMP_SMITH").pos) < 60.0f && away(walker, wayPoint("ROAD_1").pos) < 60.0f);
+		// The creatures are in the state their scheduler chose, each at a spot of its own.
+		{
+			std::set<int> spots;
+			u32 roaming = 0;
+			for (u32 i = 0; i < npcs.actorCount(); ++i) {
+				const NpcActor& a = npcs.actor(i);
+				if (!a.used || game.npc(a.npc).routineCount) continue;
+				CHECK(a.fist && a.state == game.vm().find("ZS_MM_RTN_ROAM") && a.prevState == game.vm().find("ZS_MM_ALLSCHEDULER"));
+				++roaming;
+				if (a.atFree >= 0) {
+					CHECK(net.nameContains(u32(a.atFree), "FP_ROAM") && net.heldBy(a.npc) == a.atFree);
+					spots.insert(a.atFree);
+				}
+			}
+			CHECK(roaming == 4 && spots.size() >= 3);
+		}
+		// What the engine told the one who asked.
+		CHECK(global("PROBE_LOOPS") >= 10 && global("PROBE_ENDED") == 0 && text("PROBE_OWN") == "CAMP_SQUARE");
+		CHECK(std::abs(global("PROBE_DIST_WP") - 610) < 60 && global("PROBE_DIST_NONE") == INT_MAX && text("PROBE_WP") == "CAMP_SQUARE");
+		CHECK(global("PROBE_STATE") == 1 && global("PROBE_DETECT") == 1 && global("PROBE_OTHER") == 500);
+		CHECK(std::abs(global("PROBE_DIST_NPC") - 538) < 60);
+		// The square's way point faces +X and the smithy, to its west, faces
+		// west: at first neither sees the other. Then the one turns round.
+		CHECK(global("PROBE_SEE_FIRST") == 0 && global("PROBE_SEE") == 1);
+		{
+			const GameNpc& p = game.npc(probe);
+			const GameNpc& o = game.npc(smith);
+			CHECK(std::fabs(p.yaw - std::atan2(o.pos[0] - p.pos[0], o.pos[2] - p.pos[2])) < 0.02f);
+		}
+		CHECK(global("PROBE_BODY") == kBsStand && global("PROBE_FP") == 1 && global("PROBE_TIME") >= 10);
+		{
+			const Vec3 eye = app.player().eye();
+			const GameNpc& p = game.npc(probe);
+			const float d = std::sqrt((p.pos[0] - eye.x) * (p.pos[0] - eye.x) + (p.pos[1] - eye.y + 170.0f) * (p.pos[1] - eye.y + 170.0f) +
+			                          (p.pos[2] - eye.z) * (p.pos[2] - eye.z));
+			CHECK(std::fabs(float(global("PROBE_HERO")) - d) < 3.0f);
+		}
+
+		// ---- evening: the routines move on, and people walk ----
+		const float thorusTime = npcs.actorOf(thorus) ? npcs.actorOf(thorus)->stateTime : 0.0f;
+		app.environment().timeOfDay = 20.5f;
+		Watch w;
+		const SrcWayPoint& fire = wayPoint("CAMP_FIRE");
+		run(8.0f, jackal, &w, fire.pos);
+		trace("eight seconds into the evening");
+		CHECK(npcs.actorOf(jackal) && npcs.actorOf(jackal)->phase == NpcActor::MOVING && npcs.stats().walking >= 2);
+		CHECK(npcs.actorOf(jackal)->state == zsSit && npcs.actorOf(jackal)->prevState == zsGuard && npcs.actorOf(jackal)->stance[0] == 0);
+		run(34.0f, jackal, &w, fire.pos);
+		trace("evening");
+		{
+			// The guard has walked from the gate to the fire: through the gate
+			// and along the paths, at a walk, on the ground - and sat down.
+			const NpcActor* a = npcs.actorOf(jackal);
+			CHECK(a && a->atFree >= 0 && net.nameContains(u32(a->atFree), "SIT") && (poor || std::string(a->stance) == "SIT"));
+			if (variant == 0)
+				std::printf("       the guard's way to the fire: %.0f cm, at most %.0f cm/s, %.0f cm off the paths, %.1f cm off the ground\n",
+				            double(w.travelled), double(w.fastest), double(w.farthestOff), double(w.worstGround));
+			CHECK(w.throughGate && w.travelled > 3200.0f && w.travelled < 4200.0f && w.farthestOff < 100.0f && w.worstGround < 3.0f);
+			CHECK(w.fastest < 260.0f); // S_WALKL goes at 150 cm/s
+			if (a && a->atFree >= 0) {
+				const FreePoint& seat = net.freePoint(u32(a->atFree));
+				CHECK(away(jackal, seat.pos) < 80.0f && std::fabs(game.npc(jackal).yaw - seat.yaw) < 0.01f);
+				if (!poor) CHECK(a->bodyState == kBsSit);
+			}
+			// The digger from the smithy sits at another seat; the one from the
+			// road stands at the fire's way point; the first guard has not moved.
+			const NpcActor* b = npcs.actorOf(smith);
+			CHECK(b && b->atFree >= 0 && a && b->atFree != a->atFree && net.heldBy(smith) == b->atFree && net.heldBy(jackal) == a->atFree);
+			const NpcActor* c = npcs.actorOf(walker);
+			CHECK(c && c->atNode >= 0 && std::string(net.nodeName(u32(c->atNode))) == "CAMP_FIRE" && away(walker, fire.pos) < 60.0f);
+			const NpcActor* t = npcs.actorOf(thorus);
+			CHECK(t && t->state == zsGuard && t->stateTime > thorusTime + 40.0f && away(thorus, wayPoint("CAMP_GATE_GUARD_L").pos) < 60.0f);
+		}
+
+		// ---- night: to the huts; the creatures lie down ----
+		app.environment().timeOfDay = 23.75f;
+		Watch night;
+		run(45.0f, jackal, &night);
+		trace("night");
+		{
+			const NpcActor* a = npcs.actorOf(jackal);
+			CHECK(a && a->state == zsSleep && a->prevState == zsSit && a->atFree == -1 && net.heldBy(jackal) == -1);
+			CHECK(away(jackal, wayPoint("CAMP_HUT_1").pos) < 60.0f && (poor || std::string(a->stance) == "SIT"));
+			CHECK(night.farthestOff < 190.0f && night.travelled > 1000.0f); // (the seat is 1.7 m off the path)
+			u32 asleep = 0;
+			for (u32 i = 0; i < npcs.actorCount(); ++i) {
+				const NpcActor& c = npcs.actor(i);
+				if (c.used && c.fist) asleep += c.state == game.vm().find("ZS_MM_RTN_SLEEP") && (poor || std::string(c.stance) == "SLEEP");
+			}
+			CHECK(asleep == 4);
+			// The one who asked has been through the end of his state, once.
+			CHECK(global("PROBE_ENDED") == 1 && npcs.actorOf(probe) && npcs.actorOf(probe)->state == game.vm().find("ZS_STAND"));
+		}
+
+		// ---- and morning again: back to the posts ----
+		app.environment().timeOfDay = 8.0f;
+		run(50.0f, jackal, nullptr);
+		trace("the next morning");
+		{
+			const NpcActor* a = npcs.actorOf(jackal);
+			CHECK(a && a->state == zsGuard && away(jackal, wayPoint("CAMP_GATE_GUARD_R").pos) < 60.0f && (poor || std::string(a->stance) == "LGUARD"));
+			u32 awake = 0;
+			for (u32 i = 0; i < npcs.actorCount(); ++i) {
+				const NpcActor& c = npcs.actor(i);
+				if (c.used && c.fist) awake += c.state == game.vm().find("ZS_MM_RTN_ROAM") && c.stance[0] == 0;
+			}
+			CHECK(awake == 4);
+		}
+		const NpcStats ns = npcs.stats();
+		if (variant == 0 || poor)
+			std::printf("       %s: %u ways found, %u not, %u put at their goal, %u actions dropped, %u animations missing, %u refused; "
+			            "%u animations read, %u KB; scripts: %u/%u complaints, %u through no object\n",
+			            poor ? "with 9 KB for animations" : "a day", ns.paths, ns.noPath, ns.snapped, ns.queueFull, ns.clipsMissing,
+			            ns.clipsRefused, ns.clips, ns.clipBytes / 1024, game.vm().stats().errors, game.vm().stats().aborted,
+			            game.vm().stats().nullAccess);
+		CHECK(ns.paths >= 6 && ns.noPath == 0 && ns.snapped == 0 && ns.queueFull == 0 && ns.clipsMissing == 0);
+		CHECK(game.vm().stats().errors == 0 && game.vm().stats().aborted == 0 && game.vm().stats().nullAccess == 0);
+		// (What everybody stands in was read before the budget was cut.)
+		CHECK(poor ? (ns.clipsRefused > 0 && ns.clips <= 4) : (ns.clipsRefused == 0 && ns.clips >= 15 && ns.clipBytes > 40000));
+
+		// ---- the player leaves: everybody is simply where his routine has him ----
+		if (variant == 0) {
+			app.environment().timeOfDay = 20.5f;
+			run(6.0f, jackal, nullptr); // on their way to the fire
+			CHECK(npcs.actorOf(jackal) && npcs.actorOf(jackal)->phase == NpcActor::MOVING);
+			npcs.config().range = 400.0f;
+			app.teleport({-7000.0f, 900.0f, -7000.0f});
+			run(0.5f, jackal, nullptr);
+			CHECK(npcs.stats().actors == 0 && npcs.stats().near == 0 && npcs.actorOf(jackal) == nullptr);
+			u32 atFire = 0;
+			for (const u32 npc : {jackal, smith, walker}) {
+				CHECK(!game.npc(npc).active && net.heldBy(npc) == -1);
+				atFire += away(npc, fire.pos) < 200.0f && std::string(game.text(game.npc(npc).at)) == "CAMP_FIRE";
+			}
+			CHECK(atFire == 3);
+			// Coming back, they begin where the routine has them.
+			npcs.config().range = 20000.0f;
+			run(20.0f, jackal, nullptr);
+			CHECK(npcs.stats().actors == 9 && npcs.actorOf(jackal) && std::string(npcs.actorOf(jackal)->stance) == "SIT");
+			// Into the cave and back while they live: nothing left behind.
+			CHECK(app.enterWorld(hashName("world/cave"), nullptr, 0));
+			run(8.0f, jackal, nullptr);
+			CHECK(npcs.stats().actors == 3 && npcs.wayNet().nodeCount() == 4 && !game.npc(jackal).active);
+			u32 caveGuard = 0;
+			for (u32 i = 0; i < npcs.actorCount(); ++i)
+				caveGuard += npcs.actor(i).used && npcs.actor(i).state == zsGuard && std::string(npcs.actor(i).stance) == "LGUARD";
+			CHECK(caveGuard == 1);
+			CHECK(app.enterWorld(hashName("world/world"), nullptr, 0));
+			run(3.0f, jackal, nullptr);
+			CHECK(npcs.stats().actors == 9);
+		}
+		app.shutdown();
+	}
+	const gfx::MemStats leak = gfx::memStats();
+	CHECK(leak.meshCount == 0 && leak.textureCount == 0);
+
+	// A world whose way net or scripts are damaged: people stand, nothing breaks.
+	{
+		Pak src;
+		CHECK(src.open(path.c_str()));
+		for (const char* victim : {"world/world/waynet", "script/gothic", "anim/npc.rig0/s_walkl"}) {
+			for (int round = 0; round < 6; ++round) {
+				PakWriter w;
+				bool hit = false;
+				for (u32 i = 0; i < src.count(); ++i) {
+					const PakEntry& e = src.entry(i);
+					std::vector<u8> data(e.size);
+					CHECK(src.read(e, data.data()));
+					if (e.hash == hashName(victim)) {
+						hit = true;
+						std::mt19937 rng(u32(round) * 77u + e.size);
+						if (round == 0)
+							data.resize(data.size() / 2);
+						else
+							for (int k = 0; k < 1 + round * 3; ++k) data[16 + rng() % (data.size() - 16)] = u8(rng());
+					}
+					w.add(src.name(e), AssetType(e.type), data);
+				}
+				CHECK(hit);
+				const std::string badPath = gDir + "/life_bad.pak";
+				w.write(badPath);
+				App app;
+				CHECK(app.init(badPath.c_str(), nullptr));
+				app.world().preload(app.camera().pos);
+				app.npcs().game().setQuiet(true);
+				app.npcs().config().range = 20000.0f;
+				app.npcs().config().maxShown = 16;
+				app.setDrawDistance(20000.0f);
+				for (const float hour : {8.0f, 20.5f, 23.75f}) {
+					app.environment().timeOfDay = hour;
+					for (int i = 0; i < 240; ++i) {
+						app.update(Input {}, 1.0f / 30.0f);
+						if (i % 16 == 0) app.render();
+					}
+				}
+				for (u32 i = 0; i < app.npcs().game().npcCount(); ++i) {
+					const GameNpc& n = app.npcs().game().npc(i);
+					CHECK(std::isfinite(n.pos[0]) && std::isfinite(n.pos[1]) && std::isfinite(n.pos[2]) && std::isfinite(n.yaw));
+				}
+				app.shutdown();
+			}
+		}
+	}
+
+	// Scripts that do everything wrong: states that start themselves, send
+	// people to places that are not there, to nobody, fill the queue, empty
+	// it, set clocks back. Nothing may break, and time must not stand still.
+	{
+		std::string chaos = syntheticScriptSource();
+		std::string inserts = hook;
+		for (const char* at : {"CAMP_SQUARE", "CAMP_FIRE", "CAMP_SMITH", "ROAD_1", "NO_SUCH_PLACE", "CAMP_GATE_GUARD_L"})
+			inserts += std::string("\n\tWld_InsertNpc(VLK_600_Chaos, \"") + at + "\");";
+		chaos.replace(chaos.find(hook), hook.size(), inserts);
+		std::string flood;
+		for (int i = 0; i < 40; ++i) flood += "AI_Wait(self, 0.02); ";
+		chaos += R"(
+var int chaos_starts; var int chaos_loops; var int chaos_ends;
+extern func void AI_GotoNpc(var C_NPC n, var C_NPC to);
+extern func void AI_Teleport(var C_NPC n, var string wp);
+extern func void Npc_ClearAIQueue(var C_NPC n);
+extern func int Npc_WasInState(var C_NPC n, var func state);
+extern func string Npc_GetNextWP(var C_NPC n);
+extern func int Npc_GetDistToPlayer(var C_NPC n);
+func void ZS_Chaos() {
+	chaos_starts += 1;
+	AI_GotoWP(self, "NO_SUCH"); AI_GotoWP(self, ""); AI_GotoFP(self, "NOSUCH"); AI_GotoFP(self, ""); AI_GotoNextFP(self, "");
+	AI_PlayAni(self, "T_NO_SUCH_ANI"); AI_PlayAni(self, ""); AI_PlayAniBS(self, "S_SIT", -5);
+	AI_PlayAni(self, "T_THIS_NAME_IS_MUCH_TOO_LONG_FOR_ANY_ANIMATION_THERE_EVER_WAS_2_STAND_2_");
+	AI_Wait(self, -1); AI_Wait(self, 0);
+	AI_AlignToWP(self); AI_AlignToFP(self);
+	AI_TurnToNpc(self, other); AI_GotoNpc(self, other); AI_GotoNpc(self, self); AI_TurnToNpc(self, self);
+	AI_GotoWP(other, "CAMP_FIRE"); AI_StandUp(other); AI_Wait(other, 1);
+	AI_Teleport(self, "NOWHERE");
+};
+func int ZS_Chaos_Loop() {
+	var int i;
+	chaos_loops += 1;
+	i = Hlp_Random(12);
+	if (i == 0) { Npc_ClearAIQueue(self); AI_GotoWP(self, "CAMP_HUT_2"); };
+	if (i == 1) {
+		if (Hlp_Random(3) == 0) { AI_StartState(self, B_AssessSC, 0, "CAMP_FIRE"); AI_Wait(self, 5); }   // no state at all
+		else                    { AI_StartState(self, ZS_Chaos2, 0, "CAMP_SMITH"); };
+	};
+	if (i == 2) { AI_Teleport(self, "CAMP_HUT_1"); AI_GotoWP(self, "FOREST_SCAVENGER_3"); };
+	if (i == 3) { AI_GotoNpc(self, hero); AI_TurnToNpc(self, hero); };
+	if (i == 4) { AI_SetWalkmode(self, 77); AI_GotoWP(self, "FOREST_MOLERAT_1"); AI_SetWalkmode(self, -3); };
+	if (i == 5) { AI_PlayAniBS(self, "T_STAND_2_SIT", BS_SIT); AI_GotoNextFP(self, "FP_"); AI_PlayAni(self, "T_STAND_2_LGUARD"); };
+	if (i == 6) { Npc_SetStateTime(self, -5); Npc_SetPercTime(self, -1); AI_Wait(self, 100000); AI_ContinueRoutine(self); };
+	if (i == 7) { )" + flood + R"( };
+	if (i == 8) { other = Hlp_GetNpc(GRD_200_Thorus); AI_GotoNpc(self, other); AI_GotoFP(self, "SIT"); AI_AlignToFP(self); };
+	if (i == 9) { chaos_ends += Npc_WasInState(self, ZS_Chaos2) + Npc_GetDistToPlayer(self) * 0 + Hlp_StrCmp(Npc_GetNextWP(self), ""); };
+	if (i == 10) { AI_StartState(self, ZS_Chaos, 1, "ROAD_1"); AI_StartState(self, ZS_Guard, 1, "CAMP_GATE"); };
+	return i == 11;
+};
+func void ZS_Chaos_End() { chaos_ends += 1; AI_StartState(self, ZS_Chaos, 0, ""); AI_GotoWP(self, self.wp); };
+func void ZS_Chaos2() { AI_StartState(self, ZS_Chaos, 1, "CAMP_SQUARE"); };
+func int ZS_Chaos2_Loop() { return 1; };
+instance VLK_600_Chaos (Npc_Default) {
+	name = "Chaos"; guild = GIL_VLK; id = 600; senses_range = 100000;
+	Mdl_SetVisual(self, "HUMANS.MDS");
+	Mdl_SetVisualBody(self, "hum_body_Naked0", 3, 1, "Hum_Head_Pony", 9, 2, -1);
+	daily_routine = Rtn_start_600;
+};
+func void Rtn_start_600() {
+	TA_Min(self, 0, 0, 12, 0, ZS_Chaos, "CAMP_SQUARE");
+	TA_Min(self, 12, 0, 18, 0, ZS_Chaos2, "CAMP_FIRE");
+	TA_Min(self, 18, 0, 24, 0, ZS_Chaos, "NO_SUCH_PLACE_EITHER");
+};
+)";
+		std::vector<BakeWorld> chaosWorlds;
+		const std::string chaosPath = gDir + "/life_chaos.pak";
+		bakeLifeWorlds(chaos, chaosPath, chaosWorlds);
+		App app;
+		CHECK(app.init(chaosPath.c_str(), nullptr));
+		app.world().preload(app.camera().pos);
+		Npcs& npcs = app.npcs();
+		npcs.game().setQuiet(true);
+		npcs.config().range = 20000.0f;
+		npcs.config().maxShown = 16;
+		app.setDrawDistance(20000.0f);
+		std::mt19937 rng(5);
+		u32 walkingMax = 0;
+		for (int i = 0; i < 30 * 150; ++i) {
+			if (i % 300 == 0) app.environment().timeOfDay = float(rng() % 24) + 0.5f;
+			if (i % 700 == 699) app.teleport({float(rng() % 4000) - 2000.0f, 700.0f, float(rng() % 6000) - 1000.0f});
+			if (i % 1100 == 1099) npcs.config().range = (rng() % 2) ? 20000.0f : 900.0f;
+			Input in;
+			in.moveZ = (i / 200) % 2 ? 1.0f : 0.0f;
+			in.lookX = 0.3f;
+			app.update(in, 1.0f / 30.0f);
+			if (i % 11 == 0) app.render();
+			walkingMax = std::max(walkingMax, npcs.stats().walking);
+			if (i % 450 == 449 && getenv("G3_TRACE")) {
+				std::printf("   frame %d: %u actors, starts %d\n", i, npcs.stats().actors, npcs.game().vm().getInt(npcs.game().vm().find("CHAOS_STARTS")));
+				for (u32 k = 0; k < npcs.actorCount(); ++k) {
+					const NpcActor& a = npcs.actor(k);
+					if (!a.used || std::string(npcs.game().nameOf(npcs.game().npc(a.npc))) != "Chaos") continue;
+					std::printf("      %s state %u started %d action %d queue %u wait %.1f phase %d stance '%s' loopWait %.2f\n", npcs.doing(a), a.state,
+					            int(a.started), int(a.action.kind), unsigned(a.queueCount), double(a.wait), int(a.phase), a.stance, double(a.loopWait));
+				}
+			}
+		}
+		const Game& game = npcs.game();
+		for (u32 i = 0; i < game.npcCount(); ++i) {
+			const GameNpc& n = game.npc(i);
+			CHECK(std::isfinite(n.pos[0]) && std::isfinite(n.pos[1]) && std::isfinite(n.pos[2]) && std::isfinite(n.yaw));
+			CHECK(std::fabs(n.pos[0]) < 30000.0f && std::fabs(n.pos[2]) < 30000.0f);
+		}
+		const NpcStats& ns = npcs.stats();
+		const auto global = [&](const char* name) { return game.vm().getInt(game.vm().find(name)); };
+		std::printf("       chaos: %d starts, %d loops, %d ends; %u state calls, %u actions, %u dropped; up to %u walking; %u ways, %u "
+		            "without, %u put at their goal; %u animations missing; scripts %u/%u, %u through no object\n",
+		            global("CHAOS_STARTS"), global("CHAOS_LOOPS"), global("CHAOS_ENDS"), ns.stateCalls, ns.actions, ns.queueFull,
+		            walkingMax, ns.paths, ns.noPath, ns.snapped, ns.clipsMissing, game.vm().stats().errors, game.vm().stats().aborted,
+		            game.vm().stats().nullAccess);
+		CHECK(global("CHAOS_STARTS") > 40 && global("CHAOS_LOOPS") > 50 && global("CHAOS_ENDS") > 10);
+		CHECK(ns.queueFull > 0 && ns.clipsMissing > 0 && walkingMax >= 2 && ns.paths > 20);
+		CHECK(game.vm().stats().aborted == 0 && game.vm().stats().errors == 0);
+		// Whatever they did to each other, the others' day went on.
+		u32 guards = 0;
+		for (u32 i = 0; i < npcs.actorCount(); ++i) guards += npcs.actor(i).used && npcs.actor(i).state == game.vm().find("ZS_GUARD");
+		app.environment().timeOfDay = 8.0f;
+		npcs.config().range = 20000.0f;
+		app.teleport({0.0f, 600.0f, 3300.0f});
+		for (int i = 0; i < 30 * 40; ++i) app.update(Input {}, 1.0f / 30.0f);
+		const NpcActor* thorus = nullptr;
+		for (u32 i = 0; i < npcs.actorCount(); ++i)
+			if (npcs.actor(i).used && game.npc(npcs.actor(i).npc).symbol == game.vm().find("GRD_200_THORUS")) thorus = &npcs.actor(i);
+		CHECK(thorus && thorus->state == game.vm().find("ZS_GUARD") && std::string(thorus->stance) == "LGUARD");
+		(void)guards;
+		app.shutdown();
+	}
+	gfx::shutdown();
+}
+
 int main(int argc, char** argv) {
 	gDir = argc > 1 ? argv[1] : ".";
 	const char* only = argc > 2 ? argv[2] : nullptr; // run the tests whose name contains this
@@ -3296,6 +4038,8 @@ int main(int argc, char** argv) {
 	             {"model", testModel},
 	             {"hero", testHero},
 	             {"inhabitants", testInhabitants},
+	             {"way net", testWayNet},
+	             {"life", testLife},
 	             {"sky", testSky}};
 	for (auto& t : tests) {
 		// Later tests reuse the archives earlier ones baked.

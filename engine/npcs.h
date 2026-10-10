@@ -1,28 +1,47 @@
 // The inhabitants: the characters the game's scripts put into the worlds
-// (game.h), shown where their daily routines have them.
+// (game.h), shown where their daily routines have them - and, near the
+// player, living their day the way the scripts say.
 //
-// Only those near the player are shown, and only their models are in memory.
-// A character is three models that share a skeleton: the "rig" has the
-// skeleton and the animation it stands about in, body and head have a mesh
-// each ("meta/looks" says which three a look needs). Everybody stands; that
-// they go about their day is for later.
+// Models. A character is three models that share a skeleton: the "rig" has
+// the skeleton and the animations, body and head have a mesh each
+// ("meta/looks" says which three a look needs). Only the models of those
+// near the player are in memory, and of a rig's animations only the ones
+// somebody has needed so far.
+//
+// Life. The characters nearest to the player are "actors". An actor is in a
+// state - what its routine has it do at this hour ("ZS_Guard"), or what a
+// creature starts with - and a state is three script functions: one that
+// begins it, one called again and again while it lasts, one that ends it.
+// Those functions tell the engine what the character is to do next:
+// AI_GotoWP, AI_AlignToWP, AI_PlayAni, AI_Wait ... - a queue of actions the
+// actor carries out one after the other: it walks along the way net, turns,
+// sits down. When the hour of another routine entry comes the state is
+// ended and the next one begun, which is what makes the camp get up in the
+// morning. Whoever is too far away to be an actor simply is where his
+// routine wants him.
 #pragma once
 #include "game.h"
 #include "model.h"
+#include "waynet.h"
 #include "world.h"
+
+#include <string.h>
 
 namespace g3 {
 
 struct NpcConfig {
-	float range = 3000.0f; // cm: how far away a character is still shown
+	float range = 3000.0f; // cm: how far away a character is still shown (less under load, see update())
 	u32 maxShown = 12;     // at most this many, the nearest (up to 16)
 	u32 loadsPerFrame = 1; // models read from the archive per frame (each is a hitch)
+	u32 clipBudget = 1536u * 1024u; // bytes of animations in memory at most
+	bool alive = true;     // false: everybody just stands where his routine has him
 };
 
 struct NpcStats {
 	u32 total = 0;     // characters the scripts have made, in all worlds
 	u32 here = 0;      // in this world, at a place it has
-	u32 near = 0;      // within range
+	u32 near = 0;      // within reach
+	float reach = 0;   // how far characters are shown right now, cm
 	u32 shown = 0;     // drawn in the last frame
 	u32 culled = 0;    // near but out of view
 	u32 waiting = 0;   // near, their models not read yet
@@ -33,11 +52,121 @@ struct NpcStats {
 	u32 loads = 0;     // models read since the start
 	u32 textures = 0;  // textures in memory, and their size
 	u32 textureBytes = 0;
+	// Life.
+	u32 actors = 0;       // characters living their day right now
+	u32 walking = 0;      // of them on their way somewhere
+	u32 clips = 0;        // animations read since the world was entered
+	u32 clipBytes = 0;    // animations in memory
+	u32 clipsRefused = 0; // animations not read because the budget was spent
+	u32 clipsMissing = 0; // animations the scripts asked for that the model does not have
+	u32 stateCalls = 0;   // script functions of states called since the start
+	u32 actions = 0;      // actions carried out since the start
+	u32 queueFull = 0;    // actions dropped because a queue was full
+	u32 paths = 0;        // ways found through the net
+	u32 noPath = 0;       // ways not found (walked straight instead)
+	u32 snapped = 0;      // characters put at their goal because they could not get there
+};
+
+// What an actor has been told to do.
+enum NpcActionKind : u8 {
+	NPC_ACT_NONE,
+	NPC_ACT_GOTO_NODE,  // i: way node
+	NPC_ACT_GOTO_POS,   // pos, i: free point or -1
+	NPC_ACT_GOTO_NEXT_FP, // text: the word to look for
+	NPC_ACT_GOTO_NPC,   // i: character
+	NPC_ACT_ALIGN,      // to the point it stands at
+	NPC_ACT_TURN_NPC,   // i: character
+	NPC_ACT_PLAY_ANI,   // text: name; i: body state or -1
+	NPC_ACT_WAIT,       // f: seconds
+	NPC_ACT_STAND_UP,
+	NPC_ACT_WALK_MODE,  // i
+	NPC_ACT_START_STATE, // fn; i: run the old state's end first; text: way point
+	NPC_ACT_CONTINUE_ROUTINE,
+	NPC_ACT_TELEPORT,   // pos (xyz, yaw)
+};
+
+struct NpcAction {
+	u8 kind = NPC_ACT_NONE;
+	i32 i = 0;
+	float f = 0;
+	u32 fn = 0;
+	union {
+		char text[32];
+		float pos[4];
+	};
+	NpcAction() { memset(text, 0, sizeof(text)); }
+};
+
+// One of the models in memory.
+struct NpcPiece {
+	u32 hash = 0;
+	u32 used = 0; // frame it was last needed in
+	bool failed = false; // could not be read (out of memory, say): tried again after a while
+	u32 failedAt = 0;
+	Model model;
+};
+
+// A character near the player.
+struct NpcActor {
+	enum { QUEUE = 24, PATH = 40 };
+	enum Mode : u8 { WALK = 1, RUN = 0 }; // as the scripts count them (NPC_RUN, NPC_WALK)
+	enum Phase : u8 { IDLE, TURNING, MOVING, PLAYING, WAITING };
+
+	bool used = false;
+	bool ready = false;    // its models are in memory
+	u32 npc = 0;           // Game's index
+	float dist2 = 0;       // to the player, squared
+	NpcPiece* rig = nullptr;
+	NpcPiece* body = nullptr;
+	NpcPiece* head = nullptr;
+	Animator anim;
+	bool fist = false;     // a creature: its animations are the "fist" ones (S_FISTRUN ...)
+	u32 movedSeen = 0;     // GameNpc::moved it was last put on the ground for
+	// Where it stands.
+	bool grounded = false; // the ground under it has been found
+	u8 light[4] = {255, 255, 255, 255};
+	// Its state.
+	u32 state = 0;         // the function that begins it; 0: between states
+	u32 loopFn = SCRIPT_NONE, endFn = SCRIPT_NONE;
+	u32 prevState = 0;
+	bool started = false;
+	bool routineState = false; // begun by the routine or the start-up state, not by AI_StartState alone
+	u32 routineFn = 0;         // what the routine wanted when the state began ...
+	GameText routineAt = 0;    // ... and where
+	float stateTime = 0;       // seconds in the state
+	float stateHours = 0;      // game hours in it
+	float loopWait = 0;        // seconds to the next call of the loop
+	float percTime = 0;        // Npc_SetPercTime, seconds
+	int other = -1;            // "other" of its state functions (a character), -1 for nobody
+	// What it is doing.
+	NpcAction queue[QUEUE];
+	u8 queueHead = 0, queueCount = 0;
+	NpcAction action; // the one being carried out (NPC_ACT_NONE: none)
+	Phase phase = IDLE;
+	float wait = 0;        // seconds left of a wait or an animation
+	float turnTo = 0;      // yaw to turn to
+	u16 path[PATH];
+	u8 pathCount = 0, pathAt = 0;
+	int goalNode = -1;     // where the way leads (a path may be longer than `path` holds)
+	float target[3] = {0, 0, 0};
+	float stuck = 0;       // seconds without getting closer
+	float bestDist = 0;
+	bool carried = false;  // animations move it (a walk, and the steps that end one)
+	float settle = 0;      // seconds the steps that end a walk still take
+	// How it holds itself.
+	u8 walkMode = RUN;
+	char stance[24] = "";  // "" standing; else what it is in: "SIT", "LGUARD", "SLEEP" ...
+	i32 bodyState = -1;    // as the scripts last said (AI_PlayAniBS), -1: by what it does
+	int atNode = -1;       // the way node it stands at
+	int atFree = -1;       // the free point it stands at (it holds it)
+	bool attached = false; // it stands at a point that says which way to face ...
+	float attachYaw = 0;   // ... this way
+	const Clip* idle = nullptr; // what it falls back into
 };
 
 class Npcs {
 public:
-	Npcs() = default;
+	Npcs();
 	~Npcs() { release(); }
 	Npcs(const Npcs&) = delete;
 	Npcs& operator=(const Npcs&) = delete;
@@ -55,7 +184,8 @@ public:
 	// The world is about to be closed: the models go (the next world wants
 	// the memory before its people are known).
 	void leaveWorld();
-	// Once per frame: the clock, who is near, whose models are still to read.
+	// Once per frame: the clock, who is near, whose models are still to
+	// read, and a step of everybody's life. `eye` is the player's.
 	void update(Pak& pak, const World& world, Vec3 eye, float hours, float dt);
 	// Call in PASS_WORLD. `dayLight` as for the world (1 1 1 indoors).
 	void draw(const Mat4& viewProj, const float dayLight[3]);
@@ -64,37 +194,89 @@ public:
 	const NpcStats& stats() const { return _stats; }
 	Game& game() { return _game; }
 	const Game& game() const { return _game; }
+	const WayNet& wayNet() const { return _net; }
 	// The world's name in the scripts ("WORLD"), "" before a world is entered.
 	const char* worldScript() const { return _script; }
+	// The actor a character is right now, or null.
+	const NpcActor* actorOf(u32 npcIndex) const;
+	u32 actorCount() const { return ACTORS; }
+	const NpcActor& actor(u32 i) const { return _actors[i]; }
+	// What an actor is doing, in a word (for reports).
+	const char* doing(const NpcActor& a) const;
 
 private:
-	enum { PIECES = 48, SHOWN = 16 }; // three models each
-	struct Piece {
-		u32 hash = 0;
-		u32 used = 0; // frame it was last needed in
-		bool failed = false; // could not be read (out of memory, say): tried again after a while
-		u32 failedAt = 0;
-		Model model;
-	};
-	// What the game does not keep about a character: where it stands exactly.
-	struct Standing {
-		u32 moved = 0xFFFFFFFFu; // GameNpc::moved this was made for
-		bool grounded = false;
-		float y = 0;
-		u8 light[4] = {255, 255, 255, 255};
-	};
-	struct Shown {
-		u32 npc;
-		float dist2;
-		Piece* rig;
-		Piece* body;
-		Piece* head;
-	};
+	enum { PIECES = 48, ACTORS = 16 }; // three models each
+	typedef NpcPiece Piece;
 
 	static bool findPoint(void* self, const char* name, float pos[3], float& yaw);
 	const LookEntry* lookOf(const GameLook& look) const;
 	Piece* piece(Pak& pak, u32 hash, u32& loadsLeft);
 	void select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft);
+	void retire(NpcActor& a);
+	void ground(NpcActor& a, const World& world, float above);
+
+	// ---- life (npc_ai.cpp) ----
+	void bindAi();
+	void wake(NpcActor& a);
+	void tick(NpcActor& a, const World& world, float dt, float hoursPassed);
+	void tickState(NpcActor& a);
+	void startState(NpcActor& a, u32 fn, bool finalizeOld, const char* wp, bool byRoutine);
+	void clearState(NpcActor& a, bool finalize);
+	i32 invoke(NpcActor& a, u32 fn);
+	bool begin(NpcActor& a, const World& world);
+	bool carryOn(NpcActor& a, const World& world, float dt);
+	bool walkTo(NpcActor& a, const float target[3], float radius, float dt, bool last);
+	bool turn(NpcActor& a, float yaw, float rate, float dt);
+	bool taken(const NpcActor& a, const float pos[3]) const;
+	void startWalking(NpcActor& a);
+	void stopWalking(NpcActor& a);
+	bool standUp(NpcActor& a);
+	bool playAni(NpcActor& a, const char* name, i32 bodyState);
+	void fallBack(NpcActor& a, float blend);
+	void planWay(NpcActor& a, int node);
+	void attachTo(NpcActor& a, int node, int freePoint);
+	void clearQueue(NpcActor& a);
+	bool push(NpcActor* a, const NpcAction& act);
+	void pushFront(NpcActor& a, const NpcAction& act);
+	const Clip* clip(NpcActor& a, const char* name);
+	const Clip* modeClip(NpcActor& a, const char* pattern, bool orOtherMode);
+	NpcActor* actorFor(ScriptInstance* inst);
+	int npcFor(ScriptInstance* inst) const { return _game.indexOf(inst); }
+	i32 bodyStateOf(const NpcActor& a) const;
+	static float distance(const float a[3], const float b[3]);
+
+	// The engine functions of life the scripts call.
+	static void xGotoWp(ScriptVm& vm, void* user);
+	static void xGotoFp(ScriptVm& vm, void* user);
+	static void xGotoNextFp(ScriptVm& vm, void* user);
+	static void xGotoNpc(ScriptVm& vm, void* user);
+	static void xAlign(ScriptVm& vm, void* user);
+	static void xTurnToNpc(ScriptVm& vm, void* user);
+	static void xPlayAni(ScriptVm& vm, void* user);
+	static void xPlayAniBs(ScriptVm& vm, void* user);
+	static void xWait(ScriptVm& vm, void* user);
+	static void xStandUp(ScriptVm& vm, void* user);
+	static void xSetWalkMode(ScriptVm& vm, void* user);
+	static void xStartState(ScriptVm& vm, void* user);
+	static void xContinueRoutine(ScriptVm& vm, void* user);
+	static void xTeleport(ScriptVm& vm, void* user);
+	static void xClearQueue(ScriptVm& vm, void* user);
+	static void xDistToWp(ScriptVm& vm, void* user);
+	static void xDistToNpc(ScriptVm& vm, void* user);
+	static void xDistToPlayer(ScriptVm& vm, void* user);
+	static void xNearestWp(ScriptVm& vm, void* user);
+	static void xNextWp(ScriptVm& vm, void* user);
+	static void xIsOnFp(ScriptVm& vm, void* user);
+	static void xIsFpAvailable(ScriptVm& vm, void* user);
+	static void xIsNextFpAvailable(ScriptVm& vm, void* user);
+	static void xIsInState(ScriptVm& vm, void* user);
+	static void xWasInState(ScriptVm& vm, void* user);
+	static void xGetStateTime(ScriptVm& vm, void* user);
+	static void xSetStateTime(ScriptVm& vm, void* user);
+	static void xGetBodyState(ScriptVm& vm, void* user);
+	static void xSetPercTime(ScriptVm& vm, void* user);
+	static void xDetectNpc(ScriptVm& vm, void* user);
+	static void xCanSeeNpc(ScriptVm& vm, void* user);
 
 	Game _game;
 	NpcConfig _cfg;
@@ -104,15 +286,17 @@ private:
 	WorldPoint* _points = nullptr;
 	u32 _pointCount = 0;
 	char _script[32] = "";
-	Standing* _standing = nullptr;
-	u32 _standingCount = 0;
+	WayNet _net;
 	TexturePool _pool;
 	Piece _pieces[PIECES];
-	Shown _shown[SHOWN];
-	u32 _shownCount = 0;
+	NpcActor _actors[ACTORS];
+	Pak* _pak = nullptr; // while update() or enterWorld() runs
+	u32 _clipBytes = 0;
+	u32 _victim = SCRIPT_NONE; // the scripts' global of that name
 	u32 _frame = 0;
 	float _clock = 0;
 	float _hours = -1.0f;
+	float _reach = 3000.0f; // how far characters are shown right now, cm
 };
 
 } // namespace g3

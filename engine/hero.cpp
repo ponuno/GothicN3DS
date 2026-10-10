@@ -500,16 +500,29 @@ bool Hero::canAnimateUse(const char* scheme) const {
 }
 
 bool Hero::useItem(const char* scheme, float seconds, float moment) {
+	const Clip *in = nullptr, *hold = nullptr, *out = nullptr;
+	if (loaded() && scheme && *scheme) {
+		in = useClip(_model, "T_%s_STAND_2_S0", scheme);
+		hold = useClip(_model, "S_%s_S0", scheme);
+		out = useClip(_model, "T_%s_S0_2_STAND", scheme);
+	}
+	return beginUse(in, hold, out, seconds, moment);
+}
+
+bool Hero::pickUp(float seconds, float moment) {
+	if (!loaded()) return false;
+	return beginUse(_model.clip("T_STAND_2_IGET"), _model.clip("S_IGET"), _model.clip("T_IGET_2_STAND"), seconds, moment);
+}
+
+bool Hero::beginUse(const Clip* in, const Clip* hold, const Clip* out, float seconds, float moment) {
 	if (!loaded() || _down || _reel || _body != GROUNDED || _weapon != WEAPON_NONE || drawing() || usingItem()) return false;
 	const Clip* cur = _anim.current();
 	if (_blow.clip && cur == _blow.clip) return false;
 	_use = Use();
 	_sneak = false;
-	if (scheme && *scheme) {
-		_use.in = useClip(_model, "T_%s_STAND_2_S0", scheme);
-		_use.hold = useClip(_model, "S_%s_S0", scheme);
-		_use.out = useClip(_model, "T_%s_S0_2_STAND", scheme);
-	}
+	_use.in = in;
+	_use.hold = in ? hold : nullptr;
+	_use.out = in ? out : nullptr;
 	if (_use.in) {
 		_use.phase = USE_IN;
 		_use.at = _use.in->duration();

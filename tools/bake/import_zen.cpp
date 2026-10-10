@@ -738,6 +738,41 @@ double outwardScore(const FlatMesh& mesh) {
 	return area > 0 ? flux / (area * 2.0 * double(mesh.radius)) : 0;
 }
 
+// The rotation whose matrix has these columns (model space -> world) as a
+// quaternion (x y z w).
+void quatFromColumns(float xx, float xy, float xz, float yx, float yy, float yz, float zx, float zy, float zz, float q[4]) {
+	// m[row][column]: column 0 is (xx, xy, xz).
+	const float m00 = xx, m10 = xy, m20 = xz, m01 = yx, m11 = yy, m21 = yz, m02 = zx, m12 = zy, m22 = zz;
+	const float trace = m00 + m11 + m22;
+	if (trace > 0.0f) {
+		const float t = std::sqrt(trace + 1.0f) * 2.0f;
+		q[3] = 0.25f * t;
+		q[0] = (m21 - m12) / t;
+		q[1] = (m02 - m20) / t;
+		q[2] = (m10 - m01) / t;
+	} else if (m00 > m11 && m00 > m22) {
+		const float t = std::sqrt(1.0f + m00 - m11 - m22) * 2.0f;
+		q[3] = (m21 - m12) / t;
+		q[0] = 0.25f * t;
+		q[1] = (m01 + m10) / t;
+		q[2] = (m02 + m20) / t;
+	} else if (m11 > m22) {
+		const float t = std::sqrt(1.0f + m11 - m00 - m22) * 2.0f;
+		q[3] = (m02 - m20) / t;
+		q[0] = (m01 + m10) / t;
+		q[1] = 0.25f * t;
+		q[2] = (m12 + m21) / t;
+	} else {
+		const float t = std::sqrt(1.0f + m22 - m00 - m11) * 2.0f;
+		q[3] = (m10 - m01) / t;
+		q[0] = (m02 + m20) / t;
+		q[1] = (m12 + m21) / t;
+		q[2] = 0.25f * t;
+	}
+	const float len = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+	for (int k = 0; k < 4; ++k) q[k] = len > 0.0f ? q[k] / len : (k == 3 ? 1.0f : 0.0f);
+}
+
 // ---- world objects (VObs) ------------------------------------------------
 
 struct ObjectInstance {
@@ -831,6 +866,19 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 			}
 		}
 
+		// A thing lying about: which (the script instance), where, how turned.
+		if (vob->type == zenkit::VirtualObjectType::oCItem) {
+			if (const auto* item = dynamic_cast<const zenkit::VItem*>(vob.get()); item && !item->instance.empty()) {
+				SrcWorldItem wi;
+				wi.instance = upper(item->instance);
+				wi.pos[0] = vob->position.x;
+				wi.pos[1] = vob->position.y;
+				wi.pos[2] = vob->position.z;
+				const zenkit::Vec3* c = vob->rotation.columns;
+				quatFromColumns(c[0].x, c[0].y, c[0].z, c[1].x, c[1].y, c[1].z, c[2].x, c[2].y, c[2].z, wi.rot);
+				scene.items.push_back(wi);
+			}
+		}
 		// The level component's "visual" is the world mesh itself; items and
 		// NPCs get their looks from the scripts.
 		if (vob->type == zenkit::VirtualObjectType::zCVobLevelCompo || vob->type == zenkit::VirtualObjectType::oCItem ||
@@ -1979,6 +2027,44 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 
 LookSource zenLookSource(std::shared_ptr<const ZenGame> game) {
 	LookSource source;
+	// A thing lying about: its mesh (".3DS", compiled to ".MRM"; a few are
+	// morph meshes or models), one node, turned as the world file turns it.
+	source.item = [game](const std::string& visual, SrcModel& model) {
+		FlatPtr flat;
+		std::string why;
+		for (const char* ext : {".3DS", ".MMS", ".ASC", ".MDS"}) {
+			std::string w;
+			flat = loadVisual(game->vfs, upper(visual) + ext, w);
+			if (flat && !flat->subs.empty()) break;
+			if (!w.empty()) why = w;
+			flat = nullptr;
+		}
+		if (!flat) {
+			model.notes.push_back(why.empty() ? upper(visual) + ": no mesh" : upper(visual) + ": " + why);
+			return false;
+		}
+		flat->finish();
+		const bool flip = outwardScore(*flat) < -0.05;
+		model.nodes.assign(1, SrcNode {});
+		model.nodes[0].name = "ITEM";
+		for (const FlatSub& sub : flat->subs) {
+			SrcModelPart part;
+			part.material = sub.material;
+			for (size_t t = 0; t + 2 < sub.verts.size(); t += 3)
+				for (int k = 0; k < 3; ++k) {
+					const FlatVertex& v = sub.verts[t + size_t(flip ? (k == 0 ? 0 : 3 - k) : k)];
+					SrcSkinVertex sv;
+					std::copy_n(v.pos, 3, sv.pos);
+					std::copy_n(v.normal, 3, sv.normal);
+					std::copy_n(v.uv, 2, sv.uv);
+					sv.bone[0] = sv.bone[1] = 0;
+					part.verts.push_back(sv);
+				}
+			if (!part.verts.empty()) model.parts.push_back(std::move(part));
+		}
+		model.loadTexture = textureLoader(game);
+		return !model.parts.empty();
+	};
 	source.rig = [game](const std::string& script, bool, const std::set<std::string>& wanted, SrcModel& model) {
 		ZenActorOptions o;
 		o.script = script;

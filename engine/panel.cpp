@@ -503,7 +503,6 @@ void InventoryPanel::drawBars(const InventoryView& v) {
 	};
 	bar(9, 152, v.hp, v.hpMax, HP, HP_LIGHT);
 	bar(168, 311, v.mana, v.manaMax, MANA, MANA_LIGHT);
-	if (v.combat) _canvas.fill(156, 7, 164, 13, 0xC8463CFFu); // (in a fight: armour and rings stay)
 }
 
 void InventoryPanel::drawTabs(const InventoryView&) {

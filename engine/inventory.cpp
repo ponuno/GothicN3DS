@@ -320,11 +320,6 @@ bool App::equipItem(u32 symbol, const GameItemInfo& it, u8 kind) {
 	                  : kind == IK_ARMOR  ? h.armorItem == symbol
 	                  : kind == IK_AMULET ? _amulet == symbol
 	                                      : (_rings[0] == symbol || _rings[1] == symbol);
-	const bool clothes = kind == IK_ARMOR || kind == IK_AMULET || kind == IK_RING;
-	if (clothes && heroInCombat()) {
-		itemMessage(worn ? "В бою не снять" : "В бою не переодеться");
-		return false;
-	}
 	if (!worn && !meetsNeeds(it, why, sizeof(why))) {
 		itemMessage(why);
 		return false;
@@ -509,6 +504,22 @@ void App::itemsUpdate(Input& in, float dt) {
 			}
 		}
 	}
+	// A thing on the ground in reach, hands empty: A picks it up.
+	_lootTarget = -1;
+	if (hi >= 0 && _job.stage == JOB_NONE && _hero.loaded() && !_hero.down() && _hero.weapon() == WEAPON_NONE && !_hero.drawing() &&
+	    !_panel.open() && !_player.swimming && !_player.climbing) {
+		const Vec3 feet = _player.feet;
+		_lootTarget = _loot.nearest(feet, _hero.yaw(), 150.0f, 1.0f);
+		if (_lootTarget >= 0 && (in.confirm || in.attack)) {
+			_job = ItemJob();
+			_job.stage = JOB_START;
+			_job.pickup = true;
+			_job.loot = u32(_lootTarget);
+			_job.symbol = _loot.item(u32(_lootTarget)).symbol;
+			in.confirm = in.attack = false;
+			_invStamp = 0;
+		}
+	}
 	if (_job.stage == JOB_NONE) {
 		if (_queued != NONE && !_hero.down()) {
 			const u32 q = _queued;
@@ -558,9 +569,10 @@ void App::itemsUpdate(Input& in, float dt) {
 	case JOB_START: {
 		const bool drink = it && kindOf(g, *it) == IK_POTION;
 		const char* scheme = it ? g.text(it->scheme) : "";
-		// Without the animations: a potion takes a second, food two (the item works 60% in).
-		const float seconds = drink ? 1.2f : 2.0f;
-		if (_hero.useItem(scheme, seconds, seconds * 0.6f)) {
+		// Without the animations: a potion takes a second, food two (the item works 60% in);
+		// picking up, 0.7 s (in hand at 0.4).
+		const float seconds = _job.pickup ? 0.7f : drink ? 1.2f : 2.0f;
+		if (_job.pickup ? _hero.pickUp(seconds, 0.4f) : _hero.useItem(scheme, seconds, seconds * 0.6f)) {
 			_job.stage = JOB_USING;
 			_job.wait = 0;
 			const GameNpc& h = g.npc(u32(hi));
@@ -572,7 +584,17 @@ void App::itemsUpdate(Input& in, float dt) {
 		break;
 	}
 	case JOB_USING:
-		if (_hero.useMoment() && !_job.applied) {
+		if (_hero.useMoment() && !_job.applied && _job.pickup) {
+			_job.applied = true;
+			if (it && _loot.take(_job.loot)) {
+				const i32 n = _loot.item(_job.loot).amount;
+				g.giveItems(u32(hi), _job.symbol, n);
+				++_itemStats.pickedUp;
+				if (n > 1) snprintf(buf, sizeof(buf), "Взято: %s ×%ld", name, static_cast<long>(n));
+				else snprintf(buf, sizeof(buf), "Взято: %s", name);
+				itemMessage(buf, false);
+			}
+		} else if (_hero.useMoment() && !_job.applied) {
 			_job.applied = true;
 			if (!it || g.itemCount(u32(hi), _job.symbol) <= 0) {
 				snprintf(buf, sizeof(buf), "Нет: %s", name);
@@ -685,7 +707,9 @@ const InventoryView& App::inventory() {
 		switch (_job.stage) {
 		case JOB_PUTAWAY: snprintf(v.busyText, sizeof(v.busyText), "Убирает оружие…"); break;
 		case JOB_START:
-		case JOB_USING: snprintf(v.busyText, sizeof(v.busyText), "%s %s", drink ? "Пьёт:" : "Ест:", name); break;
+		case JOB_USING:
+			snprintf(v.busyText, sizeof(v.busyText), "%s %s", _job.pickup ? "Поднимает:" : drink ? "Пьёт:" : "Ест:", name);
+			break;
 		case JOB_REDRAW: snprintf(v.busyText, sizeof(v.busyText), "Снова берёт оружие…"); break;
 		default: snprintf(v.busyText, sizeof(v.busyText), "Меняет оружие: %s", name); break;
 		}
@@ -984,13 +1008,33 @@ bool App::loadInventory(FILE* f) {
 // ---- the top screen: the info box, the quick slots, the hints ----
 
 bool App::itemOverlay() const {
-	return _inv.present && (_panel.inspecting() > 0.0f || _panel.cursor() || _panel.assigning() || _job.stage != JOB_NONE);
+	return _inv.present && (_panel.inspecting() > 0.0f || _panel.cursor() || _panel.assigning() || (_job.stage != JOB_NONE && !_job.pickup));
 }
 
 void App::drawItemHud() {
 	const int W = gfx::SCREEN_W, H = gfx::SCREEN_H;
 	const InventoryView& v = inventory();
 	if (!v.present) return;
+	if (_lootTarget >= 0 && u32(_lootTarget) < _loot.count()) {
+		// The thing in reach: its name over it, as the original shows what is
+		// in focus, and what A does.
+		const LootItem& li = _loot.item(u32(_lootTarget));
+		Game& g = _npcs.game();
+		const GameItemInfo* it = g.itemInfo(li.symbol);
+		char name[48], line[80];
+		scriptText(it ? g.text(it->description ? it->description : it->name) : "", name, sizeof(name));
+		if (li.amount > 1) snprintf(line, sizeof(line), "%s ×%ld", name, static_cast<long>(li.amount));
+		else snprintf(line, sizeof(line), "%s", name);
+		int x, y;
+		if (projectToScreen({li.pos.x, li.pos.y + 40.0f, li.pos.z}, x, y)) {
+			const int w = _ui.measure(line) + 30;
+			y = clamp(y - 30, 20, H - 60);
+			_ui.rect(x - w / 2, y - 2, x + w / 2, y + Ui::lineHeight() + 1, 0x0A0C10A0u);
+			_ui.rect(x - w / 2 + 3, y + 1, x - w / 2 + 16, y + Ui::lineHeight() - 1, 0xC4C8CCFFu);
+			_ui.text(x - w / 2 + 10, y - 1, "A", 0x1C2024FFu, ui::TEXT, ui::CENTER, false);
+			_ui.text(x - w / 2 + 21, y, line, ui::WHITE);
+		}
+	}
 	const bool info = itemOverlay();
 	const bool cross = info || _quickHint;
 	const int line = Ui::lineHeight();
@@ -1054,9 +1098,8 @@ void App::drawItemHud() {
 		x += kw + 4;
 		x += _ui.text(x, y, what, on ? 0xD8D6D0FFu : ui::DARK) + 10;
 	};
-	const bool locked = e && v.combat && (e->kind == IK_ARMOR || e->kind == IK_AMULET || e->kind == IK_RING);
-	const bool can = e && (e->flags & ITEMF_ACTION) && !locked && !((e->flags & ITEMF_BLOCKED) && !(e->flags & ITEMF_EQUIPPED));
-	const char* action = !e ? "—" : locked ? "В бою нельзя" : e->action[0] ? e->action : "—";
+	const bool can = e && (e->flags & ITEMF_ACTION) && !((e->flags & ITEMF_BLOCKED) && !(e->flags & ITEMF_EQUIPPED));
+	const char* action = !e ? "—" : e->action[0] ? e->action : "—";
 	if (_panel.assigning()) {
 		hint("\xE2\x86\x91\xE2\x86\x92\xE2\x86\x93\xE2\x86\x90", "слот", true);
 		hint("B", "Отмена", true);

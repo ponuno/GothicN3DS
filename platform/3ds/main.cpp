@@ -548,9 +548,12 @@ int main(int, char**) {
 				reportLine("npcs %2lu/%2lu in %2.0f m of %4lu%s", static_cast<unsigned long>(ns.shown),
 				     static_cast<unsigned long>(ns.near), double(ns.reach / 100.0f), static_cast<unsigned long>(ns.here),
 				     nobody ? " OFF" : "");
-				reportLine("npc tris %5lu mdl %2lu wait %lu none %lu", static_cast<unsigned long>(ns.triangles),
+				// (it: things lying about - taken / all of this world, drawn, looks without a model.)
+				const g3::LootStats& ls = app.loot().stats();
+				reportLine("ntri %5lu m%2lu w%lu n%lu it%lu/%lu d%lu x%lu", static_cast<unsigned long>(ns.triangles),
 				     static_cast<unsigned long>(ns.models), static_cast<unsigned long>(ns.waiting),
-				     static_cast<unsigned long>(ns.noModel));
+				     static_cast<unsigned long>(ns.noModel), static_cast<unsigned long>(ls.taken), static_cast<unsigned long>(ls.count),
+				     static_cast<unsigned long>(ls.drawn), static_cast<unsigned long>(ls.noModel));
 				// Their life: how many live and walk, animations in memory, state
 				// functions called a second, ways not found + characters put at their goal.
 				// ("use": beds, benches and the like in use; in "x" also the

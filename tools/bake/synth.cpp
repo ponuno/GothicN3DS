@@ -568,6 +568,29 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 	scene.spawnPos[1] = height(0, scene.spawnPos[2]) + 175.0f; // eye height
 	scene.spawnYaw = 3.14159f;
 	scene.hasSpawn = true;
+	// Things lying in the grass before the start (the world file's oCItem in
+	// the game): to pick up. The scripts put one more at the smith's.
+	{
+		const struct {
+			const char* instance;
+			float dx, dz, yaw;
+			int amount;
+		} kLying[] = {{"ITFOAPPLE", 40.0f, -170.0f, 0.3f, 1},
+		              {"ITFO_POTION_HEALTH_01", -60.0f, -200.0f, 0.0f, 1},
+		              {"ITMW_CLUB", 120.0f, -260.0f, 1.2f, 1},
+		              {"ITMINUGGET", -150.0f, -300.0f, 0.0f, 5}};
+		for (const auto& l : kLying) {
+			SrcWorldItem it;
+			it.instance = l.instance;
+			it.pos[0] = scene.spawnPos[0] + l.dx;
+			it.pos[2] = scene.spawnPos[2] + l.dz;
+			it.pos[1] = height(it.pos[0], it.pos[2]);
+			it.rot[1] = std::sin(l.yaw * 0.5f);
+			it.rot[3] = std::cos(l.yaw * 0.5f);
+			it.amount = l.amount;
+			scene.items.push_back(it);
+		}
+	}
 	scene.notes.push_back("synthetic scene: " + std::to_string(N) + "x" + std::to_string(N) + " terrain cells, " +
 	                      std::to_string(opt.huts) + " huts, " + std::to_string(placed) + " trees, " +
 	                      std::to_string(barrels) + " barrels, " + std::to_string(crates) + " crates");

@@ -86,6 +86,14 @@ struct SrcMob {
 	std::vector<SrcMobSlot> slots;
 };
 
+// A thing lying about (g3ds/game.h, WorldItem).
+struct SrcWorldItem {
+	std::string instance; // the item's script instance, upper case: "ITFOAPPLE"
+	float pos[3];
+	float rot[4] = {0, 0, 0, 1}; // quaternion: model space -> world
+	int amount = 1;
+};
+
 struct SrcImage {
 	int width = 0, height = 0;
 	std::vector<u8> rgba; // top-down
@@ -112,6 +120,7 @@ struct SrcScene {
 	std::vector<std::pair<u32, u32>> wayEdges;
 	std::vector<SrcWayPoint> freePoints;
 	std::vector<SrcMob> mobs;
+	std::vector<SrcWorldItem> items; // the world file's things (the scripts add theirs when baked)
 	std::vector<std::string> notes; // importer remarks for the bake report
 };
 

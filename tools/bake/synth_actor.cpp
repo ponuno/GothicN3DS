@@ -957,6 +957,61 @@ bool buildSyntheticBody(const std::string& script, const std::string& mesh, int 
 	return true;
 }
 
+// A thing lying about: a box of the thing's proportions, in a colour of its
+// own (a long flat one for weapons, a tall one for bottles, a small one for the rest).
+bool buildSyntheticItem(const std::string& visual, SrcModel& model) {
+	float hx = 6, hy = 6, hz = 6;
+	if (visual.find("itmw") == 0) {
+		hx = 3;
+		hy = 2;
+		hz = visual.find("2h") != std::string::npos ? 60 : 40;
+	} else if (visual.find("potion") != std::string::npos || visual.find("beer") != std::string::npos) {
+		hx = hz = 4;
+		hy = 10;
+	} else if (visual.find("itrw") == 0) {
+		hx = 2;
+		hy = 2;
+		hz = 50;
+	}
+	model.nodes.assign(1, SrcNode {});
+	model.nodes[0].name = "ITEM";
+	SrcModelPart part;
+	part.material.name = visual;
+	part.material.texture = "ITEM_" + upperName(visual);
+	// Six faces, counter-clockwise seen from outside; standing on y = 0.
+	const float c[8][3] = {{-hx, 0, -hz}, {hx, 0, -hz}, {hx, 2 * hy, -hz}, {-hx, 2 * hy, -hz},
+	                       {-hx, 0, hz},  {hx, 0, hz},  {hx, 2 * hy, hz},  {-hx, 2 * hy, hz}};
+	const int faces[6][4] = {{0, 3, 2, 1}, {4, 5, 6, 7}, {0, 4, 7, 3}, {1, 2, 6, 5}, {3, 7, 6, 2}, {0, 1, 5, 4}};
+	const float normals[6][3] = {{0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, -1, 0}};
+	const float uv[4][2] = {{0, 1}, {0, 0}, {1, 0}, {1, 1}};
+	for (int f = 0; f < 6; ++f)
+		for (int k : {0, 1, 2, 0, 2, 3}) {
+			SrcSkinVertex v;
+			std::memcpy(v.pos, c[faces[f][k]], sizeof(v.pos));
+			std::memcpy(v.normal, normals[f], sizeof(v.normal));
+			v.uv[0] = uv[k][0];
+			v.uv[1] = uv[k][1];
+			v.bone[0] = v.bone[1] = 0;
+			part.verts.push_back(v);
+		}
+	model.parts.assign(1, std::move(part));
+	model.loadTexture = [](const std::string& name, SrcImage& out) {
+		if (name.compare(0, 5, "ITEM_") != 0) return false;
+		u32 h = 2166136261u;
+		for (char ch : name) h = (h ^ u8(ch)) * 16777619u;
+		out.width = out.height = 8;
+		out.rgba.assign(8 * 8 * 4, 255);
+		for (int i = 0; i < 64; ++i) {
+			const int shade = (i % 8 == 0 || i / 8 == 0) ? 60 : 0; // (an edge, to see it turn)
+			out.rgba[size_t(i) * 4 + 0] = u8(std::max(int(80 + (h & 127)) - shade, 0));
+			out.rgba[size_t(i) * 4 + 1] = u8(std::max(int(80 + ((h >> 8) & 127)) - shade, 0));
+			out.rgba[size_t(i) * 4 + 2] = u8(std::max(int(80 + ((h >> 16) & 127)) - shade, 0));
+		}
+		return true;
+	};
+	return true;
+}
+
 bool buildSyntheticHead(const std::string& script, const std::string& head, int tex, int skin, int, SrcModel& model) {
 	if (script != "humans") {
 		model.notes.push_back("only people have heads of their own in the synthetic scene");

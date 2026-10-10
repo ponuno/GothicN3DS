@@ -47,6 +47,7 @@ static void usage() {
 	     "  --inventory         the faults menu's set of things; the bottom screen is touched as a player would:\n"
 	     "                      a potion chosen and drunk, a ring put on, food held into a quick slot and used;\n"
 	     "                      the bottom screen is saved next to each shot (PREFIX_bottom_NN.png)\n"
+	     "  --pickup            the character walks to the things lying about and picks them up (A)\n"
 	     "  --stats FILE        write a JSON summary");
 }
 
@@ -156,7 +157,7 @@ int main(int argc, char** argv) {
 	bool still = false, cull = true, walk = false, firstPerson = false;
 	float timeOfDay = 13.0f, toTime = -1.0f;
 	bool standing = false, who = false, wholeChunks = false;
-	bool console = false, fight = false, sword = false, inventory = false;
+	bool console = false, fight = false, sword = false, inventory = false, pickup = false;
 	int menuPage = -1;
 	float budgetMb = 24.0f, drawDistance = 12000.0f;
 
@@ -183,6 +184,7 @@ int main(int argc, char** argv) {
 		else if (strcmp(argv[i], "--fight") == 0) fight = true;
 		else if (strcmp(argv[i], "--sword") == 0) sword = true;
 		else if (strcmp(argv[i], "--inventory") == 0) inventory = true;
+		else if (strcmp(argv[i], "--pickup") == 0) pickup = walk = true;
 		else if (strcmp(argv[i], "--standing") == 0) standing = true;
 		else if (strcmp(argv[i], "--who") == 0) who = true;
 		else if (strcmp(argv[i], "--whole-chunks") == 0) wholeChunks = true;
@@ -414,6 +416,32 @@ int main(int argc, char** argv) {
 		npcActorsMax = max(npcActorsMax, app.npcs().stats().actors);
 		npcWalkingMax = max(npcWalkingMax, app.npcs().stats().walking);
 		if (inventory && !fight) in = Input(); // (standing, to watch)
+		if (pickup) {
+			// To the nearest thing still lying there; A when it is in reach.
+			in = Input();
+			const Loot& loot = app.loot();
+			const Vec3 feet = app.player().feet;
+			int best = -1;
+			float bestD = 1e30f;
+			for (u32 k = 0; k < loot.count(); ++k) {
+				const LootItem& li = loot.item(k);
+				const float d = std::hypot(li.pos.x - feet.x, li.pos.z - feet.z);
+				if (!li.taken && d < bestD) {
+					bestD = d;
+					best = int(k);
+				}
+			}
+			if (app.lootTarget() >= 0) {
+				in.confirm = f % 8 == 0;
+			} else if (best >= 0 && bestD < 3000.0f) {
+				const LootItem& li = loot.item(u32(best));
+				float err = atan2f(li.pos.x - feet.x, li.pos.z - feet.z) - app.hero().yaw();
+				while (err > 3.14159265f) err -= 6.2831853f;
+				while (err < -3.14159265f) err += 6.2831853f;
+				in.moveX = clamp(err * 2.0f, -1.0f, 1.0f);
+				in.moveZ = fabsf(err) < 0.5f ? 0.6f : 0.0f;
+			}
+		}
 		if (inventory) {
 			PanelInput pin;
 			touchAt(f, pin);
@@ -611,6 +639,11 @@ int main(int argc, char** argv) {
 		       app.hero().down() ? "down" : "standing", int(app.heroHitPoints()), int(app.heroHitPointsMax()), ns.blows, ns.parried,
 		       ns.knockedOut, ns.killed, ns.moves,
 		       ns.fightAi == 'F' ? "FIGHT.DAT" : ns.fightAi == 'S' ? "the scripts" : "none read", ns.movesUntabled);
+	}
+	if (pickup || inventory) {
+		const LootStats& ls = app.loot().stats();
+		printf("things lying about %u in this world, %u taken (%u picked up by the character), %u drawn in the last frame, %u looks in memory, %u without one\n",
+		       ls.count, ls.taken, app.itemStats().pickedUp, ls.drawn, ls.models, ls.noModel);
 	}
 	if (inventory) {
 		const InventoryView& v = app.inventory();

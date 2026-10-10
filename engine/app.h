@@ -4,6 +4,7 @@
 #include "g3ds/pak.h"
 #include "hero.h"
 #include "inventory.h"
+#include "loot.h"
 #include "menu.h"
 #include "npcs.h"
 #include "panel.h"
@@ -173,8 +174,8 @@ public:
 	u32 quickSlot(int slot) const { return slot >= 0 && slot < QUICK_SLOTS ? _quick[slot] : SCRIPT_NONE; }
 	// Something is being used or waits for the character's hands.
 	bool itemBusy() const { return _job.stage != 0; }
-	// Armour and rings stay as they are: a weapon in hand, a blow less than 5 s
-	// ago, or an armed enemy close by.
+	// In a fight: a weapon in hand, a blow less than 5 s ago, or an enemy
+	// close by that is after the character.
 	bool heroInCombat() const;
 	// Rings and the amulet worn (SCRIPT_NONE for none).
 	u32 ring(int i) const { return i >= 0 && i < 2 ? _rings[i] : SCRIPT_NONE; }
@@ -182,6 +183,11 @@ public:
 	// The faults menu's: a set of things of every kind the scripts define, to
 	// try the inventory with. Returns how many kinds were given.
 	u32 giveItemKit();
+	// The things lying about in this world, and the one the character could
+	// pick up now (A, hands empty; -1 for none).
+	const Loot& loot() const { return _loot; }
+	Loot& loot() { return _loot; }
+	int lootTarget() const { return _lootTarget; }
 	// The platform says R is held: the quick slots are shown on the top screen.
 	void setQuickHint(bool on) { _quickHint = on; }
 	struct ItemStats {
@@ -189,6 +195,7 @@ public:
 		u32 refused = 0;     // requests turned down (in a fight, too weak ...)
 		u32 interrupted = 0; // spoilt by a blow
 		u32 changed = 0;     // weapons, armour and rings put on or taken off
+		u32 pickedUp = 0;    // things picked up from the ground
 	};
 	const ItemStats& itemStats() const { return _itemStats; }
 
@@ -275,6 +282,8 @@ private:
 		u32 symbol = 0xFFFFFFFFu;
 		float wait = 0;     // seconds in this stage
 		bool applied = false;
+		bool pickup = false; // picking a thing up from the ground (Loot index `loot`)
+		u32 loot = 0;
 		i32 before[6] = {}; // the attributes before the use (to say what it did)
 	};
 	ItemJob _job;
@@ -291,6 +300,8 @@ private:
 	ItemStats _itemStats;
 	InventoryView _inv;
 	InventoryPanel _panel;
+	Loot _loot;
+	int _lootTarget = -1;
 };
 
 } // namespace g3

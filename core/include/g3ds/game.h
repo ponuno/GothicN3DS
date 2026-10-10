@@ -117,6 +117,36 @@ struct MobSlot {
 };
 static_assert(sizeof(MobSlot) == 20, "MobSlot layout");
 
+// "world/<name>/items": the things lying about in a world - placed in the
+// world file (oCItem) and by its start-up scripts (Wld_InsertItem), in that
+// order (a thing's index is what state.bin keeps of it once taken).
+//   ItemsHeader | WorldItem[count]
+// Each is drawn with the model "model/item.<visual>", the visual the item's
+// script gives (C_ITEM.VISUAL, lower case, without extension).
+constexpr u32 ITEMS_MAGIC = fourcc('G', '3', 'I', 'T');
+constexpr u32 ITEMS_VERSION = 1;
+
+struct ItemsHeader {
+	u32 magic;
+	u32 version;
+	u32 count;
+	u32 fromScripts; // how many of them the start-up scripts put (the last ones)
+};
+static_assert(sizeof(ItemsHeader) == 16, "ItemsHeader layout");
+
+enum WorldItemFlags : u32 {
+	WORLD_ITEM_SCRIPT = 1 << 0, // put there by Wld_InsertItem
+};
+
+struct WorldItem {
+	float pos[3];
+	float rot[4];     // quaternion (x y z w): the item's model space -> the world
+	u32 instance;     // hashName of the item's instance ("ITFOAPPLE"): the script symbol
+	i32 amount;       // how many lie there (1 mostly)
+	u32 flags;        // WorldItemFlags
+};
+static_assert(sizeof(WorldItem) == 40, "WorldItem layout");
+
 // "meta/looks": which baked models show a character of a given look. The key
 // is Game::lookKey of the look (model script, body or armour, head and their
 // texture variants), computed alike by the baker and by the game.

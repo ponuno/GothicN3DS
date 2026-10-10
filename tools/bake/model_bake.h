@@ -35,6 +35,8 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 bool buildSyntheticRig(const std::string& script, bool humanoid, const std::set<std::string>& wanted, SrcModel& model);
 bool buildSyntheticBody(const std::string& script, const std::string& mesh, int tex, int skin, SrcModel& model);
 bool buildSyntheticHead(const std::string& script, const std::string& head, int tex, int skin, int teeth, SrcModel& model);
+// A thing lying about in the synthetic scene: a box of its proportions.
+bool buildSyntheticItem(const std::string& visual, SrcModel& model);
 
 // The test character of the synthetic scene: a jointed figure with the clips
 // the hero needs (stand, run, walk, jump, fall, swim), named as in Gothic.

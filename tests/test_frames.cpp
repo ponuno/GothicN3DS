@@ -440,7 +440,7 @@ static void testShader(const std::string& pak) {
 				const Camera& cam = app.camera();
 				sc.beginFrame(viewLH(cam.pos, cam.yaw, cam.pitch), cam.pos, cam.fovY, cam.zNear, cam.zFar);
 				sc.expect(app.hero().model(), app.hero().pose(), app.hero().feet(), app.hero().yaw(), app.hero().light(), app.hero().lean());
-				sc.others = app.npcs().stats().drawCalls;
+				sc.others = app.npcs().stats().drawCalls + app.loot().stats().drawCalls; // (and the things lying about)
 				mock3ds::setDrawHook(shaderHook, &sc);
 			}
 			app.render();
@@ -553,7 +553,7 @@ static void testDefaultShader(const std::string& pak) {
 				const Camera& cam = app.camera();
 				sc.beginFrame(viewLH(cam.pos, cam.yaw, cam.pitch), cam.pos, cam.fovY, cam.zNear, cam.zFar);
 				sc.expect(app.hero().model(), app.hero().pose(), app.hero().feet(), app.hero().yaw(), app.hero().light(), app.hero().lean());
-				sc.others = app.npcs().stats().drawCalls;
+				sc.others = app.npcs().stats().drawCalls + app.loot().stats().drawCalls; // (and the things lying about)
 				mock3ds::setDrawHook(shaderHook, &sc);
 			}
 			app.render();
@@ -783,7 +783,7 @@ static void flight(const std::string& pak, bool classic, bool worker) {
 		in.jump = f == 20;
 		in.toggleCamera = f == 30; // the last ten frames in first person
 		frame(in);
-		inhabitantDraws += app.npcs().stats().drawCalls;
+		inhabitantDraws += app.npcs().stats().drawCalls + app.loot().stats().drawCalls; // (and things lying about)
 		inhabitantFrames += app.npcs().stats().shown > 0;
 	}
 	mock3ds::setDrawHook(nullptr, nullptr);
@@ -895,7 +895,7 @@ int main(int argc, char** argv) {
 	buildSyntheticScript(script);
 	BakeScripts scripts;
 	scripts.script = &script;
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
 	PakWriter writer;
 	bakeWorlds(worlds, models, scripts, bo, writer);
 	const std::string pak = dir + "/frames.pak";

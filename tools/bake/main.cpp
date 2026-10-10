@@ -194,7 +194,7 @@ int main(int argc, char** argv) {
 				buildSyntheticFightScript(fightScript);
 				scripts.script = &script;
 				scripts.fight = &fightScript;
-				scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead};
+				scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
 			}
 			if (hero) {
 				models.emplace_back();

@@ -3840,7 +3840,7 @@ static void testInhabitants() {
 	};
 	BakeScripts scripts;
 	scripts.script = &script;
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
 	const std::string path = gDir + "/people.pak";
 	BakeResult baked;
 	bake(path, scripts, &baked);
@@ -3867,7 +3867,8 @@ static void testInhabitants() {
 		const NpcStats first = npcs.stats();
 		CHECK(first.shown >= 3 && first.shown + first.culled == 7 && first.triangles > 300 && first.drawCalls >= first.shown);
 		const gfx::SoftStats ss = gfx::softStats();
-		CHECK(ss.skinnedTriangles == first.triangles + (app.heroVisible() ? app.hero().model().triangles() : 0));
+		// (The things lying about are drawn the same way.)
+		CHECK(ss.skinnedTriangles == first.triangles + app.loot().stats().triangles + (app.heroVisible() ? app.hero().model().triangles() : 0));
 		// Three skeletons, and a body and a head for most: read once each, textures shared.
 		CHECK(first.models >= 8 && first.models <= 13 && first.loads == first.models && first.textures >= 5);
 		for (int i = 0; i < 30; ++i) {
@@ -3916,7 +3917,8 @@ static void testInhabitants() {
 		npcs.config().maxShown = 0;
 		app.update(Input {}, dt);
 		app.render();
-		CHECK(npcs.stats().shown == 0 && gfx::softStats().skinnedTriangles == (app.heroVisible() ? app.hero().model().triangles() : 0));
+		CHECK(npcs.stats().shown == 0 &&
+		      gfx::softStats().skinnedTriangles == app.loot().stats().triangles + (app.heroVisible() ? app.hero().model().triangles() : 0));
 		// A short range: only who stands close.
 		npcs.config().maxShown = 12;
 		npcs.config().range = 700.0f;
@@ -4266,7 +4268,7 @@ static BakeResult bakeLifeWorlds(const std::string& source, const std::string& p
 		buildSyntheticFightScript(fight);
 		scripts.fight = &fight;
 	}
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
 	PakWriter writer;
 	const BakeResult r = bakeWorlds(worlds, models, scripts, bo, writer);
 	writer.write(path);
@@ -5413,7 +5415,7 @@ static void testInventory() {
 		for (; frames < 30 * 5 && app.itemBusy(); ++frames) app.update(Input {}, dt);
 		CHECK(frames >= 55 && frames <= 75 && g.hitPoints(g.npc(hero)) == 28);
 	}
-	// 4. Armour: not in a fight (a weapon in hand), on when calm; it protects.
+	// 4. Armour: on and off, in a fight as well; it protects.
 	// A ring's own function adds its protection, and takes it away again.
 	{
 		const u32 protEdge = g.vm().findMember("C_NPC", "PROTECTION");
@@ -5422,9 +5424,9 @@ static void testInventory() {
 		draw.fistSlot = true;
 		app.update(draw, dt);
 		run(1.0f);
-		const u32 refused = app.itemStats().refused;
-		CHECK(app.heroInCombat() && !app.itemAction(armor) && app.itemStats().refused == refused + 1);
-		CHECK(g.npc(hero).armorItem != armor);
+		// (In a fight too, as in the original: the armour goes on and off.)
+		CHECK(app.heroInCombat() && app.itemAction(armor) && g.npc(hero).armorItem == armor);
+		CHECK(app.itemAction(armor) && g.npc(hero).armorItem != armor);
 		Input away;
 		away.fistSlot = true;
 		app.update(away, dt);
@@ -5522,6 +5524,43 @@ static void testInventory() {
 		const u16 px = panel.canvas().pixel(x - 30, y - 14); // (inside the chosen cell, clear of its picture)
 		const int r = (px >> 11) << 3, b = (px & 31) << 3;
 		CHECK(b > r + 20);
+	}
+	// 7. Things lying about: four from the world file and the smith's sword
+	// from the start-up script. Walked up to, A picks one up (the character
+	// stands meanwhile); it stays taken across the worlds and in state.bin.
+	{
+		Loot& loot = app.loot();
+		CHECK(loot.count() == 5 && loot.stats().taken == 0);
+		u32 scriptItems = 0;
+		int appleAt = -1;
+		for (u32 k = 0; k < loot.count(); ++k) {
+			scriptItems += (loot.item(k).flags & WORLD_ITEM_SCRIPT) != 0;
+			if (loot.item(k).symbol == apple) appleAt = int(k);
+		}
+		CHECK(scriptItems == 1 && appleAt >= 0);
+		if (appleAt < 0) return;
+		// (Nobody hostile near: the pick-up is not spoilt.)
+		run(1.0f);
+		const LootItem& li = loot.item(u32(appleAt));
+		const std::string statePath = gDir + "/loot-before.bin";
+		CHECK(app.saveState(statePath.c_str()));
+		app.camera().yaw = 0.0f;
+		app.teleport({li.pos.x, li.pos.y + 170.0f, li.pos.z - 70.0f});
+		run(1.0f);
+		app.render();
+		CHECK(app.lootTarget() == appleAt && loot.stats().drawn >= 1);
+		const i32 apples = g.itemCount(hero, apple);
+		Input a;
+		a.confirm = true;
+		app.update(a, dt);
+		int frames = 0;
+		for (; frames < 90 && app.itemBusy(); ++frames) app.update(Input {}, dt);
+		CHECK(li.taken && g.itemCount(hero, apple) == apples + 1 && app.itemStats().pickedUp == 1 && app.lootTarget() != appleAt);
+		const std::string after = gDir + "/loot-after.bin";
+		CHECK(app.saveState(after.c_str()));
+		CHECK(app.enterWorld(hashName("world/cave"), nullptr, 0) && app.loot().count() == 0);
+		CHECK(app.loadState(after.c_str()) && app.loot().count() == 5 && app.loot().item(u32(appleAt)).taken);
+		CHECK(app.loadState(statePath.c_str()) && !app.loot().item(u32(appleAt)).taken);
 	}
 	app.shutdown();
 	gfx::shutdown();

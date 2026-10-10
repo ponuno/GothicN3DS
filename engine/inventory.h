@@ -14,8 +14,8 @@
 //    its animation, if the menu says so.
 //  * Until the item is at the mouth the use can be called off (a blow, the
 //    weapon key); from then on the character is committed.
-//  * Armour, rings and amulets are not changed in a fight: with a weapon in
-//    hand, within 5 s of a blow, or with an armed enemy close by.
+//  * Armour, rings and amulets may be changed in a fight, as in the original:
+//    what it costs is the time the inventory is open (the character stands).
 //  * What an item takes (C_ITEM.COND_ATR/COND_VALUE: strength ...) it takes.
 //  * One thing at a time: a second request waits for the first (one waits,
 //    the newest), a request for what is already being used is ignored.
@@ -129,7 +129,7 @@ struct InventoryView {
 	bool present = false; // a character with scripts: there is an inventory
 	i32 hp = 0, hpMax = 0, mana = 0, manaMax = 0;
 	i32 ore = 0;          // the ore nuggets carried (the money of the colony)
-	bool combat = false;  // armour and rings stay as they are
+	bool combat = false;  // the character is in a fight (for the reports)
 	bool busy = false;    // something is being used (or waits for the hands)
 	float busyShare = 0;  // how far, 0..1
 	char busyText[96] = "";

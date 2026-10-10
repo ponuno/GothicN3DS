@@ -508,7 +508,8 @@ static void testSyntheticScript() {
 		const ScriptCheckResult r = checkScript(dat, src, image, opt);
 		std::printf("       %s", r.report.c_str());
 		CHECK(r.ran && r.differ == 0 && r.objected == 0 && r.stateSame);
-		CHECK(r.runs == 1 + 4 + 4 + 2 && r.same == r.runs && r.calls > 60);
+		// (The 13 things of the inventory's test items are made once each too.)
+		CHECK(r.runs == 1 + 4 + 4 + 2 + 13 && r.same == r.runs && r.calls > 60);
 	}
 #endif
 }

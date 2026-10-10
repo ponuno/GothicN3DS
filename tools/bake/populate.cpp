@@ -267,12 +267,14 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	} else {
 		line("the scripts have no PC_HERO");
 	}
+	std::vector<u16> gameWorld(worlds.size(), 0xFFFF); // the game's index of each world
 	for (size_t w = 0; w < worlds.size(); ++w) {
 		const std::string name = worldScriptName(worlds[w]);
 		const GameStats before = game.stats();
 		const u32 npcsBefore = game.npcCount();
 		const bool hasStartup = script.find("STARTUP_" + name) >= 0;
 		game.enterWorld(name.c_str(), 8.0f, findPoint, &worlds[w].scene);
+		gameWorld[w] = game.currentWorld();
 		const GameStats& now = game.stats();
 		if (!hasStartup) {
 			line("world '" + worlds[w].name + "': the scripts have no STARTUP_" + name + "; nobody lives there");
@@ -701,6 +703,118 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		}
 		if (missingTextures.size() > 12) list += ", ...";
 		line(format("WARNING: %zu textures of the inhabitants not found (drawn untextured): ", missingTextures.size()) + list);
+	}
+
+	// ---- the things lying about: the world files' and the start-up scripts' ----
+	{
+		std::map<std::string, u32> unknown;  // instances the scripts do not have
+		std::map<std::string, u32> nowhere;  // places Wld_InsertItem names that the world lacks
+		std::map<std::string, u32> visuals;  // visual -> how many lie about
+		size_t fromFiles = 0, fromScripts = 0;
+		for (size_t w = 0; w < worlds.size(); ++w) {
+			const SrcScene& scene = worlds[w].scene;
+			std::vector<WorldItem> table;
+			const auto add = [&](u32 symbol, const float pos[3], const float rot[4], i32 amount, u32 flags) {
+				const GameItemInfo* info = game.itemInfo(symbol);
+				if (!info) return;
+				WorldItem wi {};
+				std::copy_n(pos, 3, wi.pos);
+				std::copy_n(rot, 4, wi.rot);
+				wi.instance = game.vm().symbol(symbol).nameHash;
+				wi.amount = std::max(amount, i32(1));
+				wi.flags = flags;
+				table.push_back(wi);
+				++visuals[game.text(info->visual)];
+			};
+			for (const SrcWorldItem& it : scene.items) {
+				const u32 s = game.vm().findHash(hashName(it.instance.c_str()));
+				if (s == SCRIPT_NONE || !game.isItem(s)) {
+					++unknown[it.instance];
+					continue;
+				}
+				add(s, it.pos, it.rot, it.amount, 0);
+			}
+			const size_t files = table.size();
+			for (u32 d = 0; d < game.dropCount(); ++d) {
+				const GameDrop& drop = game.drop(d);
+				if (drop.world != gameWorld[w]) continue;
+				float pos[3], yaw = 0;
+				const std::string where = game.text(drop.point);
+				bool found = findPoint(const_cast<SrcScene*>(&scene), where.c_str(), pos, yaw);
+				for (const auto* list : {&scene.wayPoints, &scene.freePoints})
+					for (const SrcWayPoint& p : *list)
+						if (!found && p.name == upper(where)) {
+							std::copy_n(p.pos, 3, pos);
+							yaw = p.yaw;
+							found = true;
+						}
+				if (!found) {
+					++nowhere[where];
+					continue;
+				}
+				const float rot[4] = {0, std::sin(yaw * 0.5f), 0, std::cos(yaw * 0.5f)};
+				add(drop.symbol, pos, rot, 1, WORLD_ITEM_SCRIPT);
+			}
+			fromFiles += files;
+			fromScripts += table.size() - files;
+			std::vector<u8> itemsBlob(sizeof(ItemsHeader) + table.size() * sizeof(WorldItem));
+			const ItemsHeader ih {ITEMS_MAGIC, ITEMS_VERSION, u32(table.size()), u32(table.size() - files)};
+			std::memcpy(itemsBlob.data(), &ih, sizeof(ih));
+			if (!table.empty()) std::memcpy(itemsBlob.data() + sizeof(ih), table.data(), table.size() * sizeof(WorldItem));
+			pak.add("world/" + worlds[w].name + "/items", ASSET_META, itemsBlob);
+		}
+		// Their models: one per visual, "model/item.<visual>".
+		size_t baked = 0, itemTriangles = 0;
+		std::map<std::string, std::string> missing;
+		const u64 itemBytesBefore = pak.rawBytes(ASSET_MODEL);
+		for (const auto& [visual, count] : visuals) {
+			if (visual.empty()) continue;
+			SrcModel m;
+			try {
+				if (!scripts.looks.item || !scripts.looks.item(visual, m)) {
+					missing[visual] = m.notes.empty() ? "no mesh" : m.notes.back();
+					continue;
+				}
+				m.clips.clear();
+				m.name = "item." + visual;
+				const ModelBakeResult mr = bakeModel(m, quiet, pak, &shared);
+				itemTriangles += mr.triangles;
+				missingTextures.insert(mr.missingTextures.begin(), mr.missingTextures.end());
+				++baked;
+			} catch (const std::exception& ex) {
+				missing[visual] = ex.what();
+			}
+		}
+		line(format("things lying about: %zu (%zu from the world files, %zu from the start-up scripts) of %zu kinds of look; "
+		            "%zu models baked, %zu triangles, %.2f MB",
+		            fromFiles + fromScripts, fromFiles, fromScripts, visuals.size(), baked, itemTriangles,
+		            double(pak.rawBytes(ASSET_MODEL) - itemBytesBefore) / 1048576.0));
+		const auto listOf = [](const std::map<std::string, u32>& m) {
+			std::string list;
+			size_t shown = 0;
+			for (const auto& [name, n] : m) {
+				if (++shown > 10) {
+					list += ", ...";
+					break;
+				}
+				list += format("%s%s x%u", list.empty() ? "" : ", ", name.c_str(), n);
+			}
+			return list;
+		};
+		if (!unknown.empty()) line(format("WARNING: %zu kinds of things in the world files the scripts do not know (left out): ", unknown.size()) + listOf(unknown));
+		if (!nowhere.empty()) line(format("WARNING: the scripts put things at %zu places the worlds lack (left out): ", nowhere.size()) + listOf(nowhere));
+		if (!missing.empty()) {
+			std::string list;
+			size_t shown = 0;
+			for (const auto& [v, why] : missing) {
+				if (++shown > 8) {
+					list += "; ...";
+					break;
+				}
+				list += (list.empty() ? "" : "; ") + why;
+			}
+			line(format("WARNING: %zu looks of things not baked (they lie there unseen): ", missing.size()) + list);
+		}
 	}
 }
 

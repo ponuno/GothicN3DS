@@ -48,7 +48,10 @@ bool App::init(const char* pakPath, const char* worldName) {
 	_portalLock = false;
 	// The game's scripts, if the archive has them, and through them the
 	// people of this world.
-	if (_npcs.load(_pak)) _npcs.enterWorld(_pak, _world, this->worldName(), _player.eye(), _env.timeOfDay);
+	if (_npcs.load(_pak)) {
+		_npcs.enterWorld(_pak, _world, this->worldName(), _player.eye(), _env.timeOfDay);
+		_loot.enterWorld(_pak, this->worldName(), _world.entryHash(), _npcs.game());
+	}
 	HeroLink link;
 	link.hit = heroHitThunk;
 	link.user = this;
@@ -87,6 +90,8 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	const float drawDistance = _world.config().drawDistance;
 	// Give the old world's memory back before the new one asks for its own.
 	_npcs.leaveWorld();
+	_loot.leaveWorld();
+	_lootTarget = -1;
 	_world.close();
 	gfx::releaseDestroyed();
 	if (!_world.open(&_pak, worldEntryHash)) {
@@ -106,6 +111,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	setDrawDistance(drawDistance); // the far plane depends on the chunk size
 	_world.preload(_cam.pos);
 	_npcs.enterWorld(_pak, _world, worldName(), _player.eye(), _env.timeOfDay);
+	if (_npcs.loaded()) _loot.enterWorld(_pak, worldName(), _world.entryHash(), _npcs.game());
 	_portalLock = true;
 	++_switches;
 	return true;
@@ -163,6 +169,7 @@ bool App::saveState(const char* path) const {
 	if (!f) return false;
 	const bool ok = fwrite(&s, sizeof(s), 1, f) == 1;
 	saveInventory(f);
+	_loot.saveTaken(f);
 	return (fclose(f) == 0) && ok;
 }
 
@@ -205,7 +212,7 @@ bool App::loadState(const char* path) {
 	// player through it on arrival.
 	_portalLock = true;
 	// What was carried and worn (version 2).
-	if (s.version >= 2) loadInventory(f);
+	if (s.version >= 2 && loadInventory(f)) _loot.loadTaken(f);
 	fclose(f);
 	return true;
 }
@@ -224,6 +231,7 @@ void App::setDrawDistance(float cm) {
 void App::shutdown() {
 	_ui.release();
 	_panel.release();
+	_loot.release();
 	_npcs.release();
 	_hero.release();
 	_sky.release();
@@ -280,6 +288,7 @@ void App::update(const Input& in, float dt) {
 	_world.update(_player.eye());
 	const double t1 = sys::timeMs();
 	_npcs.update(_pak, _world, _player.eye(), _env.timeOfDay, dt);
+	if (_npcs.loaded()) _loot.update(_pak, _world, _npcs.game(), _player.eye());
 	const double t2 = sys::timeMs();
 
 	const bool wasFlying = _player.flying;
@@ -506,6 +515,7 @@ void App::render() {
 	_world.draw(viewProj, _cam.pos, u32(u64(_clock * 1000.0)));
 	const float indoorLight[3] = {1, 1, 1};
 	_npcs.draw(viewProj, indoor ? indoorLight : sky.light);
+	_loot.draw(_cam.pos, indoor ? indoorLight : sky.light);
 	if (_heroVisible) _hero.draw();
 	gfx::setPass(gfx::PASS_BLEND);
 	_world.drawBlended();

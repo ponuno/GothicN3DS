@@ -68,6 +68,8 @@ inline std::vector<std::string> itemUseClipNames() {
 			}
 			out.push_back(name);
 		}
+	// Picking a thing up from the ground.
+	for (const char* name : {"T_STAND_2_IGET", "S_IGET", "T_IGET_2_STAND"}) out.push_back(name);
 	return out;
 }
 

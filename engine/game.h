@@ -99,6 +99,14 @@ struct GameItem {
 	i32 count;
 };
 
+// A thing a start-up script put into the world (Wld_InsertItem): which, at
+// which named place. The baker places them; the game takes them from the archive.
+struct GameDrop {
+	u16 world;
+	u32 symbol;
+	GameText point;
+};
+
 struct GameStats {
 	u32 npcs = 0;        // characters the scripts have put into the worlds
 	u32 withRoutine = 0;
@@ -179,6 +187,9 @@ public:
 	// away), in the order they were first given.
 	u32 itemStackCount() const { return _itemCount; }
 	const GameItem& itemStack(u32 i) const { return _items[i]; }
+	// What the start-up scripts put into the worlds (Wld_InsertItem), in order.
+	u32 dropCount() const { return _dropCount; }
+	const GameDrop& drop(u32 i) const { return _drops[i]; }
 	// Counts every change of what anybody carries (the inventory redraws on it).
 	u32 itemsVersion() const { return _itemsVersion; }
 	// True if `symbol` is an item instance of the scripts.
@@ -344,6 +355,8 @@ private:
 	u32 _guildCount = 0;
 	GameItem* _items = nullptr;
 	u32 _itemCount = 0, _itemCap = 0, _itemsVersion = 0;
+	GameDrop* _drops = nullptr;
+	u32 _dropCount = 0, _dropCap = 0;
 	float _percRange[PERC_TYPES];
 	World* _worlds = nullptr;
 	u32 _worldCount = 0, _worldCap = 0;

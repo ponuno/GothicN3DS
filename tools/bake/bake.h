@@ -56,6 +56,10 @@ struct LookSource {
 	// A body or an armour, in the texture variant `tex` and skin colour `skin`.
 	std::function<bool(const std::string& script, const std::string& mesh, int tex, int skin, SrcModel& model)> body;
 	std::function<bool(const std::string& script, const std::string& head, int tex, int skin, int teeth, SrcModel& model)> head;
+	// A thing lying about in the worlds: the mesh of the visual its script
+	// gives (lower case, without extension), one node. May be empty: the
+	// things are placed, and not drawn.
+	std::function<bool(const std::string& visual, SrcModel& model)> item;
 };
 
 // The game's scripts: baked into the archive, run to see who lives in the

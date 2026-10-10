@@ -49,7 +49,7 @@ target_compile_options(g3script PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rt
 
 add_library(g3engine STATIC engine/world.cpp engine/app.cpp engine/collision.cpp engine/player.cpp engine/sky.cpp
             engine/loader.cpp engine/pacer.cpp engine/model.cpp engine/hero.cpp engine/npcs.cpp engine/waynet.cpp engine/mobs.cpp engine/npc_ai.cpp engine/npc_perc.cpp engine/recorder.cpp
-            engine/npc_fight.cpp engine/ui.cpp engine/menu.cpp engine/settings.cpp engine/hud.cpp engine/inventory.cpp engine/panel.cpp)
+            engine/npc_fight.cpp engine/ui.cpp engine/menu.cpp engine/settings.cpp engine/hud.cpp engine/inventory.cpp engine/panel.cpp engine/loot.cpp)
 target_include_directories(g3engine PUBLIC engine)
 target_link_libraries(g3engine PUBLIC g3core g3sys g3script)
 target_compile_options(g3engine PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)

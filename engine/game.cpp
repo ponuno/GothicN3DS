@@ -68,6 +68,9 @@ void Game::release() {
 	free(_worlds);
 	free(_guildAtt);
 	free(_items);
+	free(_drops);
+	_drops = nullptr;
+	_dropCount = _dropCap = 0;
 	free(_itemInfos);
 	_itemInfos = nullptr;
 	_itemInfoCount = _itemInfoCap = 0;
@@ -833,9 +836,12 @@ void Game::xInsertNpc(ScriptVm& vm, void* user) {
 }
 
 void Game::xInsertItem(ScriptVm& vm, void* user) {
-	(void)vm.popString();
-	(void)vm.popInt();
-	++static_cast<Game*>(user)->_stats.items;
+	Game& g = *static_cast<Game*>(user);
+	const GameText point = g.intern(vm.popString(), false);
+	const i32 item = vm.popInt();
+	++g._stats.items;
+	if (item < 0 || !g.isItem(u32(item)) || !grow(g._drops, g._dropCap, g._dropCount + 1, 64)) return;
+	g._drops[g._dropCount++] = GameDrop {g._world, u32(item), point};
 }
 
 void Game::xSetVisual(ScriptVm& vm, void* user) {

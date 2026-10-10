@@ -117,6 +117,10 @@ public:
 	// False if it cannot now: hands not empty, not standing on the ground,
 	// down, reeling, already using something.
 	bool useItem(const char* scheme, float seconds, float moment);
+	// Picking a thing up from the ground: "T_STAND_2_IGET", "S_IGET",
+	// "T_IGET_2_STAND" as the model has them; the same rules as useItem (the
+	// moment is when the hand is at the ground).
+	bool pickUp(float seconds, float moment);
 	bool usingItem() const { return _use.phase != USE_NONE; }
 	// True for the frame the item does its work (it is drunk, eaten).
 	bool useMoment() const { return _use.moment; }
@@ -147,6 +151,7 @@ private:
 	void fightTick(float prevTime, const Clip* prevClip);
 	void useTick(float dt);
 	void cancelUse();
+	bool beginUse(const Clip* in, const Clip* hold, const Clip* out, float seconds, float moment);
 
 	Model _model;
 	Animator _anim;

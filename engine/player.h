@@ -56,9 +56,9 @@ struct PlayerConfig {
 	float floatSpeed = 220.0f; // cm/s the body rises to the surface with
 	float climbSpeed = 170.0f; // cm/s up or down a ladder
 	float driveGravity = 981.0f; // cm/s^2 for a driven body: the original's
-	float ledgeReach = 195.0f;   // highest ledge (above the feet) the hands of a jumping body take hold of
+	float ledgeReach = 250.0f;   // highest ledge (above the feet) the hands of a jumping body take hold of
 	float ledgeMin = 55.0f;      // lowest: below, a jump simply lands on it
-	float ledgeRange = 70.0f;    // how far ahead of the body's edge the wall may be, cm
+	float ledgeRange = 90.0f;    // how far ahead of the body's edge the wall may be, cm
 };
 
 // Movement decided elsewhere: by the animated character, which goes where
@@ -107,6 +107,16 @@ public:
 	// rises above the feet by between ledgeMin and ledgeReach and has floor
 	// on top of it with room to stand. For a body in a jump.
 	bool probeLedge(const World& world, float yaw, Ledge& out) const;
+	// What the probes found (the console's report): how many were made and how
+	// many found a ledge, why the last found none (1 nothing ahead, 2 a slope
+	// or already over it, 3 no floor on top, 4 no room to stand, 5 too high,
+	// 6 too steep to stand on) and the height of the last candidate.
+	struct LedgeStats {
+		u32 probes = 0, found = 0;
+		u8 why = 0;
+		float height = 0;
+	};
+	const LedgeStats& ledgeStats() const { return _ledgeStats; }
 	// An animation is putting the body (Drive::place) this frame.
 	bool placedByAnimation() const { return _mantle; }
 	// False until the ground under the spawn point has been found.
@@ -132,6 +142,7 @@ public:
 	// on top of it, and times the body was off the ground for 1.5 s without
 	// getting 30 cm anywhere and was stood on the nearest floor.
 	u32 popUps = 0, unstuck = 0;
+	mutable LedgeStats _ledgeStats;
 	static constexpr float kStuckTime = 1.5f, kStuckDistance = 30.0f;
 
 private:

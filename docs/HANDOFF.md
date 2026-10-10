@@ -363,3 +363,7 @@ Request: (1) grab ledges when jumping, (2) pickup animation, (3) containers/ches
 4. `data.pak` MUST be rebaked (chests table, hero reach/chest clips). Old pak: ledge uses the fallback pose, chests have no table.
 5. Console: nothing of this round was run on the 3DS (UI layout of the chest page, the lock page, the stoop, the climb). `build-zk/` was not rebuilt in this session (it is the build with ZenKit; `build/` here is configured with ZenKit via `FETCHCONTENT_SOURCE_DIR_ZENKIT` and builds `test_zen`/`e2e_zen` as well).
 6. Ledge from water (climbing out of a pool by a jump) is switched off; the original has it (`T_SWIM_2_JUMPUP`-like clips). Needs its own state.
+
+### Console feedback after round 7 (10.10 night)
+- Ledge: a jump at a rock wall (~2.3 m shelf) did not grab. Changed blind: `ledgeReach` 250, `ledgeRange` 90, top check softer (3 depths, push <= 22 cm, floor n.y >= 0.45, height diff 40). The bottom report now has `ledge probes N found M why W h H` (Player::LedgeStats; why 1 nothing ahead, 2 slope/already over, 3 no floor on top, 4 no room, 5 too high, 6 too steep). Ask the user for that line after a jump at the wall.
+- Pickup: the torso bent sideways (procedural stoop used the root's forward, wrong for the real skeleton). Now `Model::turnNodeAbout` with the axis across the shoulders from the pose. Probably the real `T_STAND_2_IGET` clip was missing in the user's pak: ask for the bake report line `character: animations of reaching ...` and rebake.

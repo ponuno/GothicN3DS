@@ -238,7 +238,7 @@ private:
 	};
 	Use _use;
 	float _stoop = 0; // how far bent over, 0..1 (drawn by updatePose)
-	int _spine[3] = {-1, -1, -1}, _headNode = -1;
+	int _spine[3] = {-1, -1, -1}, _headNode = -1, _armNodes[2] = {-1, -1};
 	void mobTick(float dt);
 };
 

@@ -521,6 +521,13 @@ int main(int, char**) {
 			reportLine("pos %7.0f %6.0f %7.0f u%lu/%lu sd%lu%s", double(eye.x), double(eye.y), double(eye.z),
 			     static_cast<unsigned long>(pl.popUps), static_cast<unsigned long>(pl.unstuck), static_cast<unsigned long>(slopeWrites),
 			     slopeFailed ? "!" : "");
+			{
+				// Jumps at walls: probes made, ledges found, why the last found none
+				// (Player::LedgeStats), the candidate's height above the feet.
+				const g3::Player::LedgeStats& lg = pl.ledgeStats();
+				reportLine("ledge probes %lu found %lu why %d h %.0f", static_cast<unsigned long>(lg.probes), static_cast<unsigned long>(lg.found),
+				     int(lg.why), double(lg.height));
+			}
 			const g3::Hero& hero = app.hero();
 			if (plainShader) {
 				reportLine("hero off: plain shader (R at start)");

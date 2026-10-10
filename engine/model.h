@@ -145,6 +145,9 @@ public:
 	// looks - in model space, whatever way the node's own axes point. The
 	// way it looks is reckoned from where the root faces.
 	void turnNode(Pose& pose, int node, float yaw, float pitch) const;
+	// Turns a node of `pose` by `angle` about `axis` (a unit vector in model
+	// space, through the node's own place), whatever way its own axes point.
+	void turnNodeAbout(Pose& pose, int node, Vec3 axis, float angle) const;
 	// Node transforms in model space for `pose` (`world`, nodeCount entries).
 	void worldTransforms(const Pose& pose, Mat34* world) const;
 

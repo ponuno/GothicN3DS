@@ -149,6 +149,8 @@ bool Hero::load(Pak& pak) {
 	_spine[1] = _model.findNode(hashName("BIP01 SPINE1"));
 	_spine[2] = _model.findNode(hashName("BIP01 SPINE2"));
 	_headNode = _model.findNode(hashName("BIP01 HEAD"));
+	_armNodes[0] = _model.findNode(hashName("BIP01 L UPPERARM"));
+	_armNodes[1] = _model.findNode(hashName("BIP01 R UPPERARM"));
 	_stoop = 0;
 	_restY = _model.node(0).restPos[1];
 	_anim.bind(&_model);
@@ -995,9 +997,19 @@ void Hero::updatePose(float dt) {
 	_drawn.pos[0].y += (_restY - _drawn.pos[0].y) * _hipMix;
 	if (_stoop > 0.01f) {
 		// Bent forward from the waist, the head up a little to see ahead.
+		// (About the axis across the shoulders - found from where the arms and thighs
+		// are in this pose, not from any bone's own axes, which differ from skeleton to skeleton.)
 		static const float kBend[3] = {0.5f, 0.45f, 0.25f};
-		for (int k = 0; k < 3; ++k) _model.turnNode(_drawn, _spine[k], 0.0f, kBend[k] * _stoop);
-		_model.turnNode(_drawn, _headNode, 0.0f, -0.3f * _stoop);
+		Vec3 across = {1, 0, 0};
+		if (_armNodes[0] >= 0 && _armNodes[1] >= 0) {
+			Mat34 world[MODEL_MAX_NODES];
+			_model.worldTransforms(_drawn, world);
+			const Vec3 d = {world[_armNodes[1]].m[0][3] - world[_armNodes[0]].m[0][3], 0.0f, world[_armNodes[1]].m[2][3] - world[_armNodes[0]].m[2][3]};
+			const float len = sqrtf(d.x * d.x + d.z * d.z);
+			if (len > 1.0f) across = {d.x / len, 0.0f, d.z / len};
+		}
+		for (int k = 0; k < 3; ++k) _model.turnNodeAbout(_drawn, _spine[k], across, kBend[k] * _stoop);
+		_model.turnNodeAbout(_drawn, _headNode, across, -0.3f * _stoop);
 	}
 }
 

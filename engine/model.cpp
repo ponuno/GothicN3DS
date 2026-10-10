@@ -466,6 +466,18 @@ void Model::turnNode(Pose& pose, int node, float yaw, float pitch) const {
 	pose.rot[node] = quatNormalize(quatMul(inv, quatMul(turn, quatMul(parent, pose.rot[node]))));
 }
 
+void Model::turnNodeAbout(Pose& pose, int node, Vec3 axis, float angle) const {
+	if (!_nodes || node < 0 || u32(node) >= _h.nodeCount) return;
+	int chain[MODEL_MAX_NODES], depth = 0;
+	for (int k = _nodes[node].parent; k >= 0 && depth < int(MODEL_MAX_NODES); k = _nodes[k].parent) chain[depth++] = k;
+	Quat parent = quatIdentity();
+	while (depth > 0) parent = quatMul(parent, pose.rot[chain[--depth]]);
+	const float s = sinf(angle * 0.5f);
+	const Quat turn = {axis.x * s, axis.y * s, axis.z * s, cosf(angle * 0.5f)};
+	const Quat inv = {-parent.x, -parent.y, -parent.z, parent.w};
+	pose.rot[node] = quatNormalize(quatMul(inv, quatMul(turn, quatMul(parent, pose.rot[node]))));
+}
+
 // ---- Animator ----
 
 void Animator::bind(const Model* model) {

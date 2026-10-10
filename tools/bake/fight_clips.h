@@ -1,0 +1,57 @@
+// The animations of fighting. The scripts never name them - the engine
+// makes their names up from the weapon in hand ("S_1HRUN", "T_FISTATTACKMOVE"),
+// as ZenGin does and as OpenGothic's AnimationSolver lays out - so the baker
+// has to bring them along by itself: for the player's character, and for
+// every skeleton of the inhabitants (what a model script does not declare is
+// passed over, see ZenActorOptions::onlyDeclared).
+#pragma once
+#include <string>
+#include <vector>
+
+namespace g3 {
+
+// The weapon words of the names: fists (creatures always fight "with fists"),
+// one-handed and two-handed weapons.
+inline const std::vector<std::string>& fightWeapons() {
+	static const std::vector<std::string> w = {"FIST", "1H", "2H"};
+	return w;
+}
+
+// Standing and going with a weapon in hand: the states the transitions
+// between which are wanted too ("T_1HRUN_2_1HRUNL").
+inline std::vector<std::string> fightStates() {
+	std::vector<std::string> out;
+	for (const std::string& w : fightWeapons())
+		for (const char* s : {"RUN", "RUNL", "WALK", "WALKL"}) out.push_back(w + s);
+	return out;
+}
+
+// `hero`: the player's character gets sneaking too.
+inline std::vector<std::string> fightClipNames(bool hero) {
+	std::vector<std::string> out;
+	for (const std::string& w : fightWeapons()) {
+		for (const char* f : {"S_%RUN", "S_%RUNL", "S_%WALK", "S_%WALKL", "T_%RUNSTRAFEL", "T_%RUNSTRAFER", "T_%WALKWSTRAFEL",
+		                      "T_%WALKWSTRAFER", "T_%RUNTURNL", "T_%RUNTURNR", "T_%WALKTURNL", "T_%WALKTURNR", "T_%JUMPB",
+		                      "T_%PARADEJUMPB", "S_%ATTACK", "T_%ATTACKL", "T_%ATTACKR", "T_%ATTACKMOVE", "T_%PARADE_O",
+		                      "T_%PARADE_0", "T_%PARADE_0_A2", "T_%PARADE_0_A3", "T_%SFINISH", "T_RUN_2_%", "T_%_2_%RUN",
+		                      "T_%RUN_2_%", "T_%_2_RUN", "T_MOVE_2_%MOVE", "T_%MOVE_2_MOVE"}) {
+			std::string name;
+			for (const char* c = f; *c; ++c) {
+				if (*c == '%') name += w;
+				else name += *c;
+			}
+			out.push_back(name);
+		}
+	}
+	for (const char* name : {"T_STUMBLE", "T_STUMBLEB", "T_GOTHIT", "T_DEAD", "T_DEADB", "S_DEAD", "S_DEADB", "T_STAND_2_WOUNDED",
+	                         "S_WOUNDED", "T_WOUNDED_2_STAND", "T_STAND_2_WOUNDEDB", "S_WOUNDEDB", "T_WOUNDEDB_2_STAND",
+	                         "T_WOUNDED_TRY", "T_WOUNDED_2_DEAD", "T_WOUNDEDB_2_DEADB", "T_SURPRISE_CW", "T_SURPRISE_CCW"})
+		out.push_back(name);
+	if (hero)
+		for (const char* name : {"S_SNEAK", "S_SNEAKL", "S_SNEAKBL", "T_SNEAK_2_SNEAKL", "T_SNEAKL_2_SNEAK", "T_SNEAKTURNL",
+		                         "T_SNEAKTURNR", "T_SNEAKSTRAFEL", "T_SNEAKSTRAFER", "T_SNEAKBL_2_SNEAK", "T_SNEAK_2_SNEAKBL"})
+			out.push_back(name);
+	return out;
+}
+
+} // namespace g3

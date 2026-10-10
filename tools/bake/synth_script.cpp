@@ -64,6 +64,54 @@ const int AIV_SEENPLAYER = 4;
 const int AIV_WASDEFEATED = 3;
 const int AIV_PARTYMEMBER = 12;
 
+// Fighting (the original's Fight.d, AI_Constants.d, Species.d - the parts of
+// them the engine reads, and the states that use them).
+const int GIL_HUMAN = 1;
+const int GIL_SEPERATOR_HUM = 16;
+const int GIL_MAX = 24;
+const int PERC_ASSESSFIGHTER = 3;
+const int PERC_ASSESSMURDER = 6;
+const int PERC_ASSESSDEFEAT = 7;
+const int PERC_ASSESSDAMAGE = 8;
+const int PERC_ASSESSOTHERSDAMAGE = 9;
+const int PERC_ASSESSTHREAT = 10;
+const int PERC_ASSESSFIGHTSOUND = 13;
+const int PERC_DRAWWEAPON = 24;
+const int BS_RUN = 3;
+const int BS_STUMBLE = 21;
+const int BS_UNCONSCIOUS = 22;
+const int BS_DEAD = 23;
+const int BS_HIT = 32794;          // 26, interruptable
+const int BS_PARADE = 27;
+const int FMODE_NONE = 0;
+const int FMODE_FIST = 1;
+const int FMODE_MELEE = 2;
+const int ITEM_KAT_NF = 1 << 1;
+const int ITEM_KAT_FF = 1 << 2;
+const int ITEM_SWD = 1 << 14;
+const int ITEM_2HD_SWD = 1 << 16;
+const int ITEM_2HD_AXE = 1 << 17;
+const int DAM_BLUNT = 2;
+const int DAM_EDGE = 4;
+const int DAM_INDEX_BLUNT = 1;
+const int DAM_INDEX_EDGE = 2;
+const int DAM_CRITICAL_MULTIPLIER = 2;
+const int HAI_TIME_UNCONSCIOUS = 20;
+const int MOVE_RUN = 1;
+const int MOVE_JUMPBACK = 3;
+const int MOVE_TURN = 4;
+const int MOVE_STRAFE = 5;
+const int MOVE_ATTACK = 6;
+const int MOVE_SIDEATTACK = 7;
+const int MOVE_FRONTATTACK = 8;
+const int MOVE_TRIPLEATTACK = 9;
+const int MOVE_PARADE = 17;
+const int MOVE_WAIT = 19;
+const int MAX_MOVE = 6;
+const int FAI_HUMAN_STRONG = 3;
+const int FAI_SCAVENGER = 15;
+const int FAI_MOLERAT = 17;
+
 const string NAME_Guard  = "Guard";
 const string NAME_Digger = "Digger";
 
@@ -144,6 +192,17 @@ class C_INFO {
 	var string description;
 	var int    trade;
 	var int    permanent;
+};
+
+class C_FightAI {
+	var int move[MAX_MOVE];
+};
+
+class C_GILVALUES {
+	var int fight_range_base[GIL_MAX];
+	var int fight_range_fist[GIL_MAX];
+	var int fight_range_1ha[GIL_MAX];
+	var int fight_range_2ha[GIL_MAX];
 };
 
 instance self, other (C_NPC);
@@ -229,6 +288,13 @@ extern func int    AI_UseMob(var C_NPC n, var string scheme, var int targetState
 extern func int    Wld_IsMobAvailable(var C_NPC n, var string scheme);
 extern func int    Wld_GetMobState(var C_NPC n, var string scheme);
 extern func string Npc_GetDetectedMob(var C_NPC n);
+extern func void   AI_Attack(var C_NPC n);
+extern func void   AI_ReadyMeleeWeapon(var C_NPC n);
+extern func void   AI_RemoveWeapon(var C_NPC n);
+extern func void   AI_EquipBestMeleeWeapon(var C_NPC n);
+extern func int    Npc_GetNextTarget(var C_NPC n);
+extern func int    Npc_IsInFightMode(var C_NPC n, var int mode);
+extern func int    Npc_HasEquippedMeleeWeapon(var C_NPC n);
 
 // ---------------------------------------------------------------- helpers
 var int Kapitel;
@@ -255,6 +321,7 @@ func void B_SetAttributes(var C_NPC slf, var int strength, var int hitpoints) {
 // "_End". They tell the engine what the character is to do.
 func void ZS_Guard() {
 	Npc_SetPercTime(self, 1);
+	Npc_PercEnable(self, PERC_ASSESSDAMAGE, B_ReactToDamage);
 	Npc_PercEnable(self, PERC_ASSESSPLAYER, B_AssessSC);
 	Npc_PercEnable(self, PERC_ASSESSWARN, B_AssessWarn);
 	AI_StandUp(self);
@@ -295,12 +362,18 @@ func void B_AssessWarn() {
 func void InitPerceptions() {
 	Perc_SetRange(PERC_ASSESSWARN, 3000);
 };
-// (There is no fighting yet: the engine does not begin this state.)
+// Fighting, in the manner of the original's ZS_MM_Attack and ZS_Attack: the
+// target is set, and the loop has the engine choose a move (AI_Attack) until
+// the enemy is down or gone.
 func void ZS_MM_Attack() {
-	AI_GotoNpc(self, other);
+	Npc_PercEnable(self, PERC_ASSESSDAMAGE, B_MM_ReactToDamage);
+	AI_SetWalkmode(self, NPC_RUN);
 };
 func int ZS_MM_Attack_Loop() {
-	AI_Wait(self, 1);
+	Npc_GetTarget(self);
+	if (Npc_IsDead(other) || Npc_IsInState(other, ZS_Unconscious)) { return LOOP_END; };
+	if (Npc_GetDistToNpc(self, other) > 2500) { return LOOP_END; };
+	AI_Attack(self);
 	return LOOP_CONTINUE;
 };
 func void ZS_MM_Attack_End() {};
@@ -310,8 +383,63 @@ func void B_MM_AssessEnemy() {
 	Npc_SetTarget(self, other);
 	AI_StartState(self, ZS_MM_Attack, 0, "");
 };
+var int mm_hurt;
+func void B_MM_ReactToDamage() {
+	mm_hurt += 1;
+	Npc_SetTarget(self, other);
+	if (!Npc_IsInState(self, ZS_MM_Attack)) { AI_StartState(self, ZS_MM_Attack, 0, ""); };
+};
+var int attacks_begun;
+func void ZS_Attack() {
+	attacks_begun += 1;
+	Npc_PercEnable(self, PERC_ASSESSDAMAGE, B_CombatReactToDamage);
+	Npc_GetTarget(self);
+	AI_StandUp(self);
+	AI_EquipBestMeleeWeapon(self);
+	AI_ReadyMeleeWeapon(self);
+	AI_SetWalkmode(self, NPC_RUN);
+};
+func int ZS_Attack_Loop() {
+	Npc_GetTarget(self);
+	if (Npc_IsDead(other) || Npc_IsInState(other, ZS_Unconscious)) {
+		if (!Npc_GetNextTarget(self)) { return LOOP_END; };
+	};
+	if (Npc_GetDistToNpc(self, other) > 1500) { return LOOP_END; };
+	AI_Attack(self);
+	return LOOP_CONTINUE;
+};
+func void ZS_Attack_End() {
+	AI_RemoveWeapon(self);
+};
+func void B_CombatReactToDamage() {
+	Npc_SetTarget(self, other);
+};
+var int damage_noticed;
+func void B_ReactToDamage() {
+	damage_noticed += 1;
+	Npc_SetTarget(self, other);
+	AI_StartState(self, ZS_Attack, 0, "");
+};
+// Down: knocked out for a while, or dead for good.
+var int knocked_out;
+func void ZS_Unconscious() {
+	knocked_out += 1;
+};
+func int ZS_Unconscious_Loop() {
+	if (Npc_GetStateTime(self) > HAI_TIME_UNCONSCIOUS) { return LOOP_END; };
+	AI_Wait(self, 1);
+	return LOOP_CONTINUE;
+};
+func void ZS_Unconscious_End() {
+	AI_StandUp(self);
+};
+var int deaths;
+func void ZS_Dead() {
+	deaths += 1;
+};
 
 func void ZS_Stand() {
+	Npc_PercEnable(self, PERC_ASSESSDAMAGE, B_ReactToDamage);
 	AI_StandUp(self);
 	AI_SetWalkmode(self, NPC_WALK);
 	AI_GotoWP(self, self.wp);
@@ -434,6 +562,7 @@ func void ZS_MM_Rtn_Sleep_End() {
 };
 func void ZS_MM_Rtn_Roam() {
 	Npc_PercEnable(self, PERC_ASSESSENEMY, B_MM_AssessEnemy);
+	Npc_PercEnable(self, PERC_ASSESSDAMAGE, B_MM_ReactToDamage);
 	AI_SetWalkmode(self, NPC_WALK);
 };
 func int ZS_MM_Rtn_Roam_Loop() {
@@ -499,11 +628,51 @@ instance VLK_ARMOR_L (Armor_Default) {
 
 instance ItMw_Sword (C_ITEM) {
 	name = "Sword";
+	mainflag = ITEM_KAT_NF;
+	flags = ITEM_SWD;
+	damagetype = DAM_EDGE;
 	damagetotal = 30;
+	range = 100;
 	value = 100 + damagetotal * 3;
 	visual = "ItMw_1H_Sword_01.3DS";
 	description = name;
 };
+
+instance ItMw_Club (C_ITEM) {
+	name = "Club";
+	mainflag = ITEM_KAT_NF;
+	flags = ITEM_SWD;
+	damagetype = DAM_BLUNT;
+	damagetotal = 12;
+	range = 80;
+	value = 20;
+	visual = "ItMw_1H_Club_01.3DS";
+	description = name;
+};
+
+// ---------------------------------------------------------------- fighting
+instance Gil_Values (C_GILVALUES) {
+	fight_range_base[GIL_HUMAN] = 60;
+	fight_range_fist[GIL_HUMAN] = 50;
+	fight_range_base[GIL_SCAVENGER] = 75;
+	fight_range_fist[GIL_SCAVENGER] = 80;
+	fight_range_base[GIL_MOLERAT] = 70;
+	fight_range_fist[GIL_MOLERAT] = 70;
+};
+// The fight AI: per tactic, the moves a fighter picks from in each situation.
+instance FA_ENEMY_PREHIT_3 (C_FightAI) { move[0] = MOVE_PARADE; move[1] = MOVE_JUMPBACK; move[2] = MOVE_SIDEATTACK; move[3] = MOVE_WAIT; };
+instance FA_MY_W_FOCUS_3 (C_FightAI) { move[0] = MOVE_ATTACK; move[1] = MOVE_TRIPLEATTACK; move[2] = MOVE_FRONTATTACK; move[3] = MOVE_STRAFE; };
+instance FA_MY_W_NOFOCUS_3 (C_FightAI) { move[0] = MOVE_TURN; };
+instance FA_MY_W_RUNTO_3 (C_FightAI) { move[0] = MOVE_TURN; };
+instance FA_MY_W_STRAFE_3 (C_FightAI) { move[0] = MOVE_TURN; };
+instance FA_MY_G_FOCUS_3 (C_FightAI) { move[0] = MOVE_RUN; };
+instance FA_MY_G_FK_NOFOCUS_3 (C_FightAI) { move[0] = MOVE_RUN; };
+instance FA_ENEMY_PREHIT_15 (C_FightAI) { move[0] = MOVE_JUMPBACK; move[1] = MOVE_ATTACK; };
+instance FA_MY_W_FOCUS_15 (C_FightAI) { move[0] = MOVE_ATTACK; move[1] = MOVE_ATTACK; move[2] = MOVE_WAIT; };
+instance FA_MY_W_NOFOCUS_15 (C_FightAI) { move[0] = MOVE_TURN; };
+instance FA_MY_W_STRAFE_15 (C_FightAI) { move[0] = MOVE_JUMPBACK; move[1] = MOVE_TURN; };
+instance FA_MY_G_FOCUS_15 (C_FightAI) { move[0] = MOVE_RUN; };
+instance FA_MY_G_FK_NOFOCUS_15 (C_FightAI) { move[0] = MOVE_RUN; };
 
 // ---------------------------------------------------------------- characters
 prototype Npc_Default (C_NPC) {
@@ -537,6 +706,7 @@ instance GRD_200_Thorus (Npc_Default) {
 	id = 200;
 	flags = NPC_FLAG_IMMORTAL;
 	B_SetAttributes(self, 100, 400);
+	fight_tactic = FAI_HUMAN_STRONG;
 	Mdl_SetVisual(self, "HUMANS.MDS");
 	Mdl_ApplyOverlayMds(self, "Humans_Militia.mds");
 	Mdl_SetVisualBody(self, "hum_body_Naked0", 0, 1, "Hum_Head_Fighter", 12, 0, GRD_ARMOR_M);
@@ -558,6 +728,7 @@ instance GRD_201_Jackal (Npc_Default) {
 	voice = 7;
 	id = 201;
 	B_SetAttributes(self, 60, 220);
+	fight_tactic = FAI_HUMAN_STRONG;
 	Mdl_SetVisual(self, "HUMANS.MDS");
 	Mdl_SetVisualBody(self, "hum_body_Naked0", 0, 2, "Hum_Head_Bald", 4, 1, GRD_ARMOR_M);
 	B_Scale(self);
@@ -577,6 +748,7 @@ instance VLK_500_Digger (Npc_Default) {
 	voice = 2;
 	id = 500;
 	B_SetAttributes(self, 15, 70);
+	fight_tactic = FAI_HUMAN_STRONG;
 	Mdl_SetVisual(self, "HUMANS.MDS");
 	Mdl_SetVisualBody(self, "hum_body_Naked0", 3, 0, "Hum_Head_Thief", 70, 2, VLK_ARMOR_L);
 	B_Scale(self);
@@ -629,6 +801,10 @@ prototype Mst_Default_Scavenger (C_NPC) {
 	attribute[ATR_STRENGTH]      = 10;
 	attribute[ATR_HITPOINTS_MAX] = 46;
 	attribute[ATR_HITPOINTS]     = 46;
+	protection[DAM_INDEX_BLUNT]  = 5;
+	protection[DAM_INDEX_EDGE]   = 5;
+	damagetype = DAM_EDGE;
+	fight_tactic = FAI_SCAVENGER;
 	senses_range = 2500;
 	start_aistate = ZS_MM_AllScheduler;
 };

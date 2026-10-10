@@ -20,6 +20,7 @@
 // morning. Whoever is too far away to be an actor simply is where his
 // routine wants him.
 #pragma once
+#include "fight.h"
 #include "game.h"
 #include "mobs.h"
 #include "model.h"
@@ -37,6 +38,17 @@ struct NpcConfig {
 	u32 clipBudget = 1536u * 1024u; // bytes of animations in memory at most
 	bool alive = true;     // false: everybody just stands where his routine has him
 	bool perceive = true;  // false: nobody notices anybody (Npc_PercEnable is taken note of, nothing more)
+	bool fights = true;    // false: the states of attack are not begun, as before fighting
+};
+
+// What the inhabitants need of the player's character in a fight, and how
+// their blows reach it (the application decides what a blow does to it).
+struct HeroLink {
+	bool prehit = false;   // a blow of the player's is on its way (the enemies' fight AI fends it off)
+	bool running = false;
+	// An inhabitant's blow lands on the player's character.
+	void (*hit)(void* user, u32 attacker) = nullptr;
+	void* user = nullptr;
 };
 
 struct NpcStats {
@@ -73,8 +85,14 @@ struct NpcStats {
 	float scriptMs = 0;   // milliseconds the last update() spent inside the scripts' functions
 	// Perception.
 	u32 perceived = 0;    // reactions called since the start (the player seen, an enemy, a passive perception)
-	u32 fightsRefused = 0; // states of fighting the scripts asked for and did not get (there is no fighting yet)
+	u32 fightsRefused = 0; // states of fighting the scripts asked for and did not get (fights switched off)
 	u32 looking = 0;      // actors looking at somebody right now
+	// Fighting.
+	u32 fighting = 0;     // actors with a weapon in hand right now
+	u32 blows = 0;        // blows that landed since the start ...
+	u32 parried = 0;      // ... and that were fended off
+	u32 knockedOut = 0, killed = 0;
+	u32 moves = 0;        // moves of the fight AI begun
 };
 
 // What an actor has been told to do.
@@ -96,6 +114,16 @@ enum NpcActionKind : u8 {
 	NPC_ACT_USE_MOB,    // text: the kind of thing ("BENCH"); i: the state to take it to, -1: leave it
 	NPC_ACT_LOOK,       // i: character to look at, -1: straight ahead again
 	NPC_ACT_SAY,        // i: character spoken to or -1; text: what (an SVM name, "$WHATDOYOUWANT")
+	// Fighting (npc_fight.cpp).
+	NPC_ACT_ATTACK,     // a move of the fight AI against the target
+	NPC_ACT_DRAW,       // i: the WeaponMode to take in hand (WEAPON_NONE: the best there is)
+	NPC_ACT_UNDRAW,     // put the weapon away
+	NPC_ACT_DODGE,      // a hop back
+	NPC_ACT_FLEE,       // f: seconds of running away from the target
+	NPC_ACT_FINISH,     // i: the one lying there, to be finished off
+	NPC_ACT_WHIRL,      // i: character to whirl round to
+	NPC_ACT_TURN_AWAY,  // i: character to turn the back on
+	NPC_ACT_EQUIP_BEST, // the best melee weapon it carries
 };
 
 struct NpcAction {
@@ -200,6 +228,20 @@ struct NpcActor {
 	int lookAt = -1;
 	float headYaw = 0, headPitch = 0;
 	char said[24] = ""; // the last thing it said (AI_OutputSVM), for reports
+	// Fighting (npc_fight.cpp): the steps of the move in hand, when the next
+	// may begin, the blow in play, being hit.
+	u8 steps[6] = {};
+	u8 stepCount = 0, stepAt = 0;
+	float faiWait = 0;     // seconds before the next step
+	bool hitFlag = false;  // hit since the last move: the next comes from MY_W_STRAFE
+	BlowTracker blow;
+	float stumble = -1;    // seconds of reeling from a blow (no steps meanwhile); below 0 the time since, down to -1
+	float animPrev = 0;    // where the animation was the frame before (for the frame a blow lands at)
+	const Clip* animClip = nullptr;
+	float flee = 0;        // seconds of fleeing left
+	u8 drawTo = 0xFF;      // WeaponMode being taken in hand (0xFF: none)
+	float drawAt = -1.0f;  // seconds into the draw where it changes hands
+	bool hitFromBehind = false;
 };
 
 class Npcs {
@@ -251,6 +293,32 @@ public:
 	i32 bodyState(const NpcActor& a) const { return bodyStateOf(a); }
 	// The actor nearest to the player that has its models, or null.
 	const NpcActor* nearest() const;
+	// ---- fighting (npc_fight.cpp) ----
+	void setHeroLink(const HeroLink& link) { _heroLink = link; }
+	// Which way the player's character faces (the scripts and the fight AI look at it).
+	void setHeroYaw(float yaw) { _heroYaw = yaw; }
+	// A perception for one actor only (PERC_ASSESSTHREAT: the player aims at it).
+	void perceiveSingle(u32 receiver, const char* percName, int other);
+	// A blow of `attacker` (the player's character, or an actor) reaches
+	// `victim`: parried, or damage, reactions, maybe down. Returns the damage
+	// done, -1 if it was fended off or could not be done.
+	i32 strike(u32 attacker, u32 victim, bool fromBehind);
+	// The player's character does something the inhabitants about perceive
+	// (the scripts' PERC_DRAWWEAPON, PERC_ASSESSFIGHTSOUND ...): a passive
+	// perception sent by `sender` with OTHER and VICTIM as given.
+	void sendPerception(const char* percName, u32 sender, int other, int victim);
+	// The same with the scripts' number.
+	void sendPerception(i32 perc, u32 sender, int other, int victim);
+	// Somebody has gone down (HP, scripts' state ZS_Unconscious or ZS_Dead):
+	// called for the player's character too, to tell those about.
+	void goDown(u32 npc, int attacker, bool dead, bool fromBehind);
+	// The inhabitants' weapon in hand: whether it is drawn, for the HUD.
+	bool isDown(u32 npc) const { return npc < _game.npcCount() && _game.npc(npc).down != DOWN_NONE; }
+	// Of the actors, the one in front of `eye` looking along `yaw` that best
+	// fits (near, in the middle of the view), not down; `except`: skip that
+	// one; `side` +1/-1: only those to the right/left of `from`'s direction.
+	int pickTarget(const float pos[3], float yaw, float range, float halfAngle, int except = -1, int side = 0, bool hostileOnly = false) const;
+
 	// The thing of that kind a character would use now: the nearest free
 	// one it can see from where it stands (the scripts' Wld_IsMobAvailable,
 	// AI_UseMob), or -1.
@@ -305,6 +373,52 @@ private:
 	void releaseMob(NpcActor& a);
 	bool useMob(NpcActor& a, const World& world, float dt);
 	int findMob(u32 npc, const char* kind, int except) const;
+
+	// ---- fighting (npc_fight.cpp) ----
+	void bindFight();
+	bool beginFight(NpcActor& a, const World& world);   // begin() for the fight actions
+	bool carryOnFight(NpcActor& a, const World& world, float dt);
+	void tickFight(NpcActor& a, float dt);               // blows landing, being hit, drawing
+	bool fetchMove(NpcActor& a);
+	bool doStep(NpcActor& a, const World& world, float dt);
+	bool startDraw(NpcActor& a, u8 mode);
+	bool attackClipPlay(NpcActor& a, int kind);          // 0 ahead, 1 left, 2 right
+	bool inFocus(const NpcActor& a, u32 target, float halfAngle) const;
+	float distanceTo(const NpcActor& a, u32 target) const;
+	bool targetValid(const NpcActor& a) const;
+	bool prehit(u32 npc) const;
+	void fightIdle(NpcActor& a, float blend);
+	const Clip* weaponClip(NpcActor& a, const char* pattern);
+	void endFightState(NpcActor& a);
+	int nextTarget(const NpcActor& a, bool set);
+	static void xAttack(ScriptVm& vm, void* user);
+	static void xReadyMelee(ScriptVm& vm, void* user);
+	static void xDrawWeapon(ScriptVm& vm, void* user);
+	static void xRemoveWeapon(ScriptVm& vm, void* user);
+	static void xEquipBestMelee(ScriptVm& vm, void* user);
+	static void xDodge(ScriptVm& vm, void* user);
+	static void xFlee(ScriptVm& vm, void* user);
+	static void xFinishingMove(ScriptVm& vm, void* user);
+	static void xWhirlAround(ScriptVm& vm, void* user);
+	static void xTurnAway(ScriptVm& vm, void* user);
+	static void xGetNextTarget(ScriptVm& vm, void* user);
+	static void xIsNextTargetAvailable(ScriptVm& vm, void* user);
+	static void xNoAction(ScriptVm& vm, void* user);
+	// The fight AI tables, per tactic: the moves of each situation (0 = none).
+	enum { TACTICS = 40 };
+	struct FaiTable {
+		bool read;
+		u8 moves[FS_COUNT][6];
+	};
+	FaiTable _fai[TACTICS] = {};
+	u8 moveOf(i32 scriptMove) const;
+	i32 _scriptMoves[FM_COUNT] = {};
+	HeroLink _heroLink;
+	float _heroYaw = 0;
+	u32 _fnUnconscious = SCRIPT_NONE, _fnDead = SCRIPT_NONE;
+	i32 _bsHit = 0, _bsParade = 0, _bsStumble = 0, _bsDead = 0, _bsUnconscious = 0, _bsRun = 3;
+	i32 _percDamage = -1, _percOthersDamage = -1, _percFightSound = -1, _percDefeat = -1, _percMurder = -1, _percFighter = -1,
+	    _percBody = -1, _percDrawWeapon = -1, _percRemoveWeapon = -1, _percThreat = -1;
 
 	// ---- perception (npc_perc.cpp) ----
 	void bindPerception();

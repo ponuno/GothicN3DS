@@ -1,5 +1,7 @@
 #include "game.h"
 
+#include "fight.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -66,6 +68,11 @@ void Game::release() {
 	free(_worlds);
 	free(_guildAtt);
 	free(_items);
+	free(_itemInfos);
+	_itemInfos = nullptr;
+	_itemInfoCount = _itemInfoCap = 0;
+	_gilValues = nullptr; // (the machine's, gone with it)
+	_gilTried = false;
 	_guildAtt = nullptr;
 	_items = nullptr;
 	_guildCount = _itemCount = _itemCap = 0;
@@ -107,6 +114,27 @@ bool Game::bindAll() {
 	const auto must = [&](u32& member, u8 type) {
 		if (member != SCRIPT_NONE && _vm.symbol(member).type != type) member = SCRIPT_NONE;
 	};
+	_mProtection = _vm.findMember("C_NPC", "PROTECTION");
+	_mDamage = _vm.findMember("C_NPC", "DAMAGE");
+	_mDamageType = _vm.findMember("C_NPC", "DAMAGETYPE");
+	_iFlags = _vm.findMember("C_ITEM", "FLAGS");
+	_iDamageType = _vm.findMember("C_ITEM", "DAMAGETYPE");
+	_iDamageTotal = _vm.findMember("C_ITEM", "DAMAGETOTAL");
+	_iDamage = _vm.findMember("C_ITEM", "DAMAGE");
+	_iRange = _vm.findMember("C_ITEM", "RANGE");
+	_iVisual = _vm.findMember("C_ITEM", "VISUAL");
+	_iProtection = _vm.findMember("C_ITEM", "PROTECTION");
+	_iName = _vm.findMember("C_ITEM", "NAME");
+	must(_mProtection, SCRIPT_INT);
+	must(_mDamage, SCRIPT_INT);
+	must(_mDamageType, SCRIPT_INT);
+	must(_mMainFlag, SCRIPT_INT);
+	must(_iFlags, SCRIPT_INT);
+	must(_iDamageType, SCRIPT_INT);
+	must(_iDamageTotal, SCRIPT_INT);
+	must(_iDamage, SCRIPT_INT);
+	must(_iRange, SCRIPT_INT);
+	must(_iProtection, SCRIPT_INT);
 	must(_mWp, SCRIPT_STRING);
 	must(_mSensesRange, SCRIPT_INT);
 	must(_mGuild, SCRIPT_INT);
@@ -166,6 +194,18 @@ bool Game::bindAll() {
 	             {"NPC_SETTARGET", xSetTarget},
 	             {"NPC_GETTARGET", xGetTarget},
 	             {"PERC_SETRANGE", xSetPercRange},
+	             {"NPC_HASEQUIPPEDMELEEWEAPON", xHasEquippedMelee},
+	             {"NPC_HASEQUIPPEDRANGEDWEAPON", xHasEquippedRanged},
+	             {"NPC_HASEQUIPPEDWEAPON", xHasEquippedWeapon},
+	             {"NPC_ISINFIGHTMODE", xIsInFightMode},
+	             {"NPC_HASREADIEDWEAPON", xHasReadiedWeapon},
+	             {"NPC_HASREADIEDMELEEWEAPON", xHasReadiedMelee},
+	             {"NPC_HASREADIEDRANGEDWEAPON", xHasReadiedRanged},
+	             {"NPC_CHANGEATTRIBUTE", xChangeAttribute},
+	             {"NPC_SETTOFISTMODE", xSetToFistMode},
+	             {"NPC_SETTOFIGHTMODE", xSetToFightMode},
+	             {"NPC_GETACTIVESPELL", xReturnMinusOne},
+	             {"NPC_GETTRUEGUILD", xGetTrueGuild},
 	             // Lines for the developers' log: there is nobody to read them.
 	             {"PRINTDEBUG", xNothing},
 	             {"PRINTDEBUGINST", xNothing},
@@ -318,7 +358,7 @@ void Game::xSetTempAttitude(ScriptVm& vm, void* user) {
 void Game::xIsDead(ScriptVm& vm, void* user) {
 	Game& g = *static_cast<Game*>(user);
 	const GameNpc* n = g.npcOf(vm.popInstance());
-	vm.pushInt(n && g.hitPoints(*n) <= 0);
+	vm.pushInt(n && (n->down == DOWN_DEAD || g.hitPoints(*n) <= 0));
 }
 
 void Game::xSetTarget(ScriptVm& vm, void* user) {
@@ -334,6 +374,99 @@ void Game::xGetTarget(ScriptVm& vm, void* user) {
 	const bool has = n && n->target >= 0 && u32(n->target) < g._npcCount;
 	if (has) vm.setInstance(vm.otherSymbol(), g._npcs[n->target].object);
 	vm.pushInt(has);
+}
+
+void Game::xHasEquippedMelee(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const GameNpc* n = g.npcOf(vm.popInstance());
+	vm.pushInt(n && n->melee != SCRIPT_NONE);
+}
+
+void Game::xHasEquippedRanged(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const GameNpc* n = g.npcOf(vm.popInstance());
+	vm.pushInt(n && n->ranged != SCRIPT_NONE);
+}
+
+void Game::xHasEquippedWeapon(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const GameNpc* n = g.npcOf(vm.popInstance());
+	vm.pushInt(n && (n->melee != SCRIPT_NONE || n->ranged != SCRIPT_NONE));
+}
+
+// Npc_IsInFightMode(npc, FMODE_...): the scripts' numbers, read by name.
+void Game::xIsInFightMode(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 mode = vm.popInt();
+	const GameNpc* n = g.npcOf(vm.popInstance());
+	if (!n) {
+		vm.pushInt(0);
+		return;
+	}
+	bool in = false;
+	if (mode == g.constant("FMODE_NONE", 0)) in = n->weapon == WEAPON_NONE;
+	else if (mode == g.constant("FMODE_FIST", 1)) in = n->weapon == WEAPON_FIST;
+	else if (mode == g.constant("FMODE_MELEE", 2)) in = n->weapon == WEAPON_1H || n->weapon == WEAPON_2H;
+	vm.pushInt(in); // (ranged weapons and magic: not yet)
+}
+
+void Game::xHasReadiedWeapon(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const GameNpc* n = g.npcOf(vm.popInstance());
+	vm.pushInt(n && n->weapon != WEAPON_NONE && n->weapon != WEAPON_FIST);
+}
+
+void Game::xHasReadiedMelee(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const GameNpc* n = g.npcOf(vm.popInstance());
+	vm.pushInt(n && (n->weapon == WEAPON_1H || n->weapon == WEAPON_2H));
+}
+
+void Game::xHasReadiedRanged(ScriptVm& vm, void* user) {
+	(void)vm.popInstance();
+	(void)user;
+	vm.pushInt(0);
+}
+
+void Game::xChangeAttribute(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 value = vm.popInt(), index = vm.popInt();
+	GameNpc* n = g.npcOf(vm.popInstance());
+	if (!n) return;
+	i32 v = g.attributeOf(*n, index) + value;
+	if (index == 0) {
+		// Hit points stay within 0 and their maximum.
+		v = clamp(v, i32(0), max(g.attributeOf(*n, 1), i32(1)));
+	}
+	g.setAttribute(*n, index, v);
+}
+
+void Game::xSetToFistMode(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	if (GameNpc* n = g.npcOf(vm.popInstance())) n->weapon = WEAPON_FIST;
+}
+
+// Npc_SetToFightMode(npc, weapon): the weapon in hand at once.
+void Game::xSetToFightMode(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 item = vm.popInt();
+	GameNpc* n = g.npcOf(vm.popInstance());
+	if (!n) return;
+	if (item >= 0) g.equip(u32(n - g._npcs), u32(item));
+	const GameItemInfo* it = n->melee != SCRIPT_NONE ? g.itemInfo(n->melee) : nullptr;
+	const i32 twoHanded = g.constant("ITEM_2HD_SWD", 1 << 16) | g.constant("ITEM_2HD_AXE", 1 << 17);
+	n->weapon = it ? ((it->flags & twoHanded) ? WEAPON_2H : WEAPON_1H) : WEAPON_FIST;
+}
+
+void Game::xReturnMinusOne(ScriptVm& vm, void*) {
+	(void)vm.popInstance();
+	vm.pushInt(-1);
+}
+
+void Game::xGetTrueGuild(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const GameNpc* n = g.npcOf(vm.popInstance());
+	vm.pushInt(n ? g.guildOf(*n) : 0);
 }
 
 void Game::xSetPercRange(ScriptVm& vm, void* user) {
@@ -402,7 +535,12 @@ const char* const* Game::lifeFunctions(u32& count) {
 	    "NPC_GETDETECTEDMOB",
 	    // Perception (npc_perc.cpp).
 	    "NPC_PERCENABLE",    "NPC_PERCDISABLE",    "NPC_PERCEIVEALL",   "NPC_SENDPASSIVEPERC", "AI_LOOKATNPC",   "AI_STOPLOOKAT",
-	    "AI_OUTPUTSVM",      "AI_OUTPUTSVM_OVERLAY", "NPC_CANSEENPCFREELOS", "AI_QUICKLOOK"};
+	    "AI_OUTPUTSVM",      "AI_OUTPUTSVM_OVERLAY", "NPC_CANSEENPCFREELOS", "AI_QUICKLOOK",
+	    // Fighting (npc_fight.cpp).
+	    "AI_ATTACK",         "AI_READYMELEEWEAPON", "AI_READYRANGEDWEAPON", "AI_DRAWWEAPON",   "AI_REMOVEWEAPON",
+	    "AI_EQUIPBESTMELEEWEAPON", "AI_DODGE",     "AI_FLEE",           "AI_FINISHINGMOVE",  "AI_WHIRLAROUND",   "AI_TURNAWAY",
+	    "NPC_GETNEXTTARGET", "NPC_ISNEXTTARGETAVAILABLE", "AI_POINTATNPC", "AI_STOPPOINTAT", "AI_EQUIPBESTRANGEDWEAPON",
+	    "AI_STOPAIM"};
 	count = u32(sizeof(names) / sizeof(names[0]));
 	return names;
 }
@@ -559,6 +697,14 @@ void Game::settle(u32 index, PointFinder find, void* user) {
 	if (index >= _npcCount || _npcs[index].hero) return;
 	GameNpc& n = _npcs[index];
 	n.active = false;
+	if (n.weapon != WEAPON_FIST) n.weapon = WEAPON_NONE; // (a creature's teeth stay where they are)
+	n.target = -1;
+	// The dead stay where they fell; the knocked out come to (out of sight).
+	if (n.down == DOWN_DEAD) return;
+	if (n.down == DOWN_UNCONSCIOUS) {
+		n.down = DOWN_NONE;
+		if (hitPoints(n) < 1) setAttribute(n, 0, 1);
+	}
 	placeNow(n, find, user);
 }
 
@@ -566,6 +712,7 @@ void Game::place(GameNpc& n, float hours, PointFinder find, void* user) {
 	const GameRoutine* r = routineAt(n, hours);
 	const GameText at = r ? r->point : n.spawn;
 	n.state = r ? r->state : 0u;
+	if (n.down == DOWN_DEAD && n.placed) return;
 	if (n.moved && n.want == at) return;
 	n.want = at;
 	// The scripts know where the character is to be through its "wp".
@@ -664,6 +811,23 @@ void Game::xSetVisualBody(ScriptVm& vm, void* user) {
 	n->look.headTex = i16(headTex);
 	n->look.teethTex = i16(teethTex);
 	n->look.armor = worn && worn->wearable ? worn->mesh : GameText(0);
+	// (The armour is put on, too: it protects.)
+	if (worn && worn->wearable) g.wear(*n, u32(armor));
+}
+
+// Puts an armour on: its protection is added to the character's (and the
+// old one's taken off), as the original's equipping does.
+void Game::wear(GameNpc& n, u32 armor) {
+	if (n.armorItem == armor || _mProtection == SCRIPT_NONE || !n.object) return;
+	const auto apply = [&](u32 item, i32 sign) {
+		const GameItemInfo* it = item != SCRIPT_NONE ? itemInfo(item) : nullptr;
+		if (!it) return;
+		for (u32 k = 0; k < 8 && k < _vm.symbol(_mProtection).count; ++k)
+			_vm.setInt(_mProtection, k, n.object, _vm.getInt(_mProtection, k, n.object) + sign * it->protection[k]);
+	};
+	apply(n.armorItem, -1);
+	apply(armor, 1);
+	n.armorItem = armor;
 }
 
 void Game::xSetModelScale(ScriptVm& vm, void* user) {
@@ -714,9 +878,17 @@ void Game::xEquipItem(ScriptVm& vm, void* user) {
 	const i32 item = vm.popInt();
 	ScriptInstance* const inst = vm.popInstance();
 	const Armor* worn = item >= 0 ? g.armorOf(u32(item)) : nullptr;
+	// A weapon: in its place on the belt or the back, taken in hand in a fight.
+	const GameItemInfo* it = item >= 0 ? g.itemInfo(u32(item)) : nullptr;
 	GameNpc* n = g.npcOf(inst);
-	if (!n || !worn || !worn->wearable) return;
+	if (!n) return;
+	if (it && (it->mainflag & (g.constant("ITEM_KAT_NF", 1 << 1) | g.constant("ITEM_KAT_FF", 1 << 2)))) {
+		g.equip(u32(n - g._npcs), u32(item));
+		return;
+	}
+	if (!worn || !worn->wearable) return;
 	n->look.armor = worn->mesh;
+	g.wear(*n, u32(item));
 }
 
 void Game::xGetNpc(ScriptVm& vm, void*) {

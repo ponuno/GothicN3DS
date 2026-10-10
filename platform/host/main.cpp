@@ -39,6 +39,11 @@ static void usage() {
 	     "  --probe-fps N       the probe's frame rate (default: 30; the console runs at 60)\n"
 	     "  --probe-grid M      probe every point within M metres of X,Z, a metre apart (default: 0)\n"
 	     "  --whole-chunks      draw all of every chunk in view, not only its clusters in view (for comparing)\n"
+	     "  --console           the console's controls (the stick goes where the camera looks; default: classic)\n"
+	     "  --menu PAGE         open the pause menu at a page (0 pause, 1 graphics, 2 controls, 3 faults) for the shots\n"
+	     "  --fight             the character is put 8 m from the nearest enemy and fights it (with the best weapon\n"
+	     "                      the scripts have if --sword): what happened is printed at the end\n"
+	     "  --sword             with --fight: a sword in hand rather than fists\n"
 	     "  --stats FILE        write a JSON summary");
 }
 
@@ -148,6 +153,8 @@ int main(int argc, char** argv) {
 	bool still = false, cull = true, walk = false, firstPerson = false;
 	float timeOfDay = 13.0f, toTime = -1.0f;
 	bool standing = false, who = false, wholeChunks = false;
+	bool console = false, fight = false, sword = false;
+	int menuPage = -1;
 	float budgetMb = 24.0f, drawDistance = 12000.0f;
 
 	for (int i = 1; i < argc; ++i) {
@@ -168,6 +175,10 @@ int main(int argc, char** argv) {
 		else if (arg("--slope-probe")) probeSpec = argv[++i];
 		else if (arg("--probe-fps")) probeFps = atoi(argv[++i]);
 		else if (arg("--probe-grid")) probeGrid = atoi(argv[++i]);
+		else if (arg("--menu")) menuPage = atoi(argv[++i]);
+		else if (strcmp(argv[i], "--console") == 0) console = true;
+		else if (strcmp(argv[i], "--fight") == 0) fight = true;
+		else if (strcmp(argv[i], "--sword") == 0) sword = true;
 		else if (strcmp(argv[i], "--standing") == 0) standing = true;
 		else if (strcmp(argv[i], "--who") == 0) who = true;
 		else if (strcmp(argv[i], "--whole-chunks") == 0) wholeChunks = true;
@@ -208,6 +219,8 @@ int main(int argc, char** argv) {
 	app.environment().timeOfDay = timeOfDay;
 	app.npcs().config().alive = !standing;
 	app.setThirdPerson(!firstPerson);
+	if (console) app.setScheme(CONTROLS_CONSOLE);
+	if (fight) walk = true;
 	// Three modes: a level flight a few metres up (default), a walk on the
 	// ground with collision (--walk), or a fixed view from the spawn (--still).
 	float viewPitch = walk ? -0.06f : -0.22f;
@@ -237,6 +250,46 @@ int main(int argc, char** argv) {
 	// What a loading screen would do.
 	app.world().preload(app.camera().pos);
 	if (probeSpec) return slopeProbe(app, probeSpec, probeFps, probeGrid);
+	if (menuPage >= 0) {
+		app.menu().open();
+		MenuInput mi;
+		for (int k = 0; k < menuPage && menuPage < Menu::PAGES; ++k) {
+			mi = MenuInput();
+			mi.down = true;
+			app.menu().update(mi, app.settings());
+		}
+		mi = MenuInput();
+		mi.confirm = menuPage > 0 && menuPage < Menu::PAGES;
+		app.menu().update(mi, app.settings());
+	}
+	// --fight: next to the nearest enemy of the character's in this world.
+	int fightWith = -1;
+	int heroIndex = -1;
+	if (fight && app.npcs().loaded() && app.npcs().game().hero()) {
+		Game& g = app.npcs().game();
+		heroIndex = int(g.hero() - &g.npc(0));
+		float best = 1e30f;
+		for (u32 i = 0; i < g.npcCount(); ++i) {
+			const GameNpc& n = g.npc(i);
+			if (n.hero || !n.placed || n.world != g.currentWorld() || g.attitude(i, u32(heroIndex)) != 0) continue;
+			const float d = n.pos[0] * n.pos[0] + n.pos[2] * n.pos[2];
+			if (d < best) {
+				best = d;
+				fightWith = int(i);
+			}
+		}
+		if (fightWith < 0) {
+			fprintf(stderr, "error: nobody in this world is hostile to the character\n");
+			return 1;
+		}
+		const GameNpc& e = g.npc(u32(fightWith));
+		app.camera().yaw = 0;
+		app.teleport({e.pos[0], e.pos[1] + 400.0f, e.pos[2] - 800.0f});
+		app.world().preload(app.camera().pos);
+		if (sword) app.menuAction(MENU_GIVE_WEAPON, nullptr);
+		printf("fight: %s (%d hit points) against %s (%d)\n", g.nameOf(g.npc(u32(heroIndex))), int(g.hitPoints(g.npc(u32(heroIndex)))),
+		       g.nameOf(e), int(g.hitPoints(e)));
+	}
 
 	const float dt = 1.0f / 30.0f;
 	u32 maxTris = 0, maxDraws = 0, maxBlended = 0, maxLoaded = 0, maxPending = 0, maxLoadsFrame = 0;
@@ -255,9 +308,42 @@ int main(int argc, char** argv) {
 	g3::UpdateTimes timeSum;
 	u64 collQueries = 0, collItems = 0, collTests = 0;
 
+	int fightBlows = 0, fightDrawn = -1, fightDown = -1;
 	for (int f = 0; f < frames; ++f) {
 		Input in;
-		if (walk) {
+		if (fight && heroIndex >= 0) {
+			// Weapon in hand, at the enemy: turn to it, close in, strike again and again.
+			Game& g = app.npcs().game();
+			const GameNpc& e = g.npc(u32(fightWith));
+			const Vec3 feet = app.player().feet;
+			const float dx = e.pos[0] - feet.x, dz = e.pos[2] - feet.z;
+			const float d = sqrtf(dx * dx + dz * dz);
+			float err = atan2f(dx, dz) - app.hero().yaw();
+			while (err > 3.14159265f) err -= 6.2831853f;
+			while (err < -3.14159265f) err += 6.2831853f;
+			if (app.hero().weapon() == WEAPON_NONE && !app.hero().drawing() && f > 10 && e.down == DOWN_NONE) {
+				if (sword) in.meleeSlot = true;
+				else in.fistSlot = true;
+			}
+			if (fightDrawn < 0 && app.hero().weapon() != WEAPON_NONE) fightDrawn = f;
+			if (e.down == DOWN_NONE) {
+				const bool closeIn = d > g.meleeRange(u32(heroIndex), u32(fightWith)) - 20.0f;
+				if (console) {
+					// The stick held towards the enemy, as the camera sees it.
+					const float want = atan2f(dx, dz) - app.camera().yaw;
+					in.moveX = closeIn ? sinf(want) : 0.0f;
+					in.moveZ = closeIn ? cosf(want) : 0.0f;
+					err = 0.0f; // (the character turns to its target by itself)
+				} else {
+					in.moveX = clamp(err * 2.0f, -1.0f, 1.0f);
+					in.moveZ = closeIn && fabsf(err) < 0.6f ? 1.0f : 0.0f;
+				}
+				in.attack = d < g.meleeRange(u32(heroIndex), u32(fightWith)) + 20.0f && fabsf(err) < 0.5f && f % 6 == 0;
+				fightBlows += in.attack;
+			} else if (fightDown < 0) {
+				fightDown = f;
+			}
+		} else if (walk) {
 			// Walk ahead, weaving a little, and jump now and then.
 			in.moveZ = 1.0f;
 			in.lookX = (f / 90) % 2 == 0 ? 0.12f : -0.2f;
@@ -434,6 +520,22 @@ int main(int argc, char** argv) {
 			}
 	} else {
 		printf("scripts           none in the archive: the worlds are empty\n");
+	}
+	if (fight && heroIndex >= 0) {
+		Game& g = app.npcs().game();
+		const GameNpc& e = g.npc(u32(fightWith));
+		const App::FightStats& fs = app.fightStats();
+		const NpcStats& ns = app.npcs().stats();
+		char downAt[40] = "";
+		if (fightDown >= 0) snprintf(downAt, sizeof(downAt), " (down at frame %d)", fightDown);
+		printf("fight             weapon in hand after %d frames; %d attacks pressed, %u blows landed (last %d damage), %u taken, "
+		       "%u fended off by the character, %u dodged; the enemy %s with %d hit points%s; the character %s with %d of %d; "
+		       "inhabitants: %u blows, %u parried, %u knocked out, %u killed, %u moves of the fight AI\n",
+		       fightDrawn, fightBlows, fs.blowsLanded, int(fs.lastDamage), fs.blowsTaken, fs.parried, fs.dodged,
+		       e.down == DOWN_DEAD ? "dead" : e.down == DOWN_UNCONSCIOUS ? "knocked out" : "standing", int(g.hitPoints(e)),
+		       downAt,
+		       app.hero().down() ? "down" : "standing", int(app.heroHitPoints()), int(app.heroHitPointsMax()), ns.blows, ns.parried,
+		       ns.knockedOut, ns.killed, ns.moves);
 	}
 	if (underwaterFrames) printf("camera under water %d frames\n", underwaterFrames);
 	if (app.worldSwitches()) printf("world switches    %u\n", app.worldSwitches());

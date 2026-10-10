@@ -180,6 +180,175 @@ void stride(float phase, float seconds, float swing, float speed, Pose& p) {
 	p.pos[ROOT][2] = speed * seconds; // the source walks away from the origin
 }
 
+// A clip with the event tags of a fight (frames of the clip).
+SrcClip withFight(SrcClip clip, std::vector<int> hits, std::vector<int> hitEnds, std::vector<int> windows,
+                  std::vector<int> parry = {}, int fightMode = -1) {
+	clip.hits = std::move(hits);
+	clip.hitEnds = std::move(hitEnds);
+	clip.windows = std::move(windows);
+	clip.parry = std::move(parry);
+	clip.fightModeFrame = fightMode;
+	return clip;
+}
+
+// Fists up, or a sword held out in front with the right hand.
+void guardPose(bool sword, float amount, Pose& p) {
+	if (sword) {
+		p.rot[R_ARM] = aboutX(-0.9f * amount);
+		p.rot[R_FOREARM] = aboutX(-0.6f * amount);
+		p.rot[L_ARM] = aboutZ(-0.25f * amount);
+	} else {
+		p.rot[L_ARM] = aboutX(-1.1f * amount);
+		p.rot[R_ARM] = aboutX(-1.1f * amount);
+		p.rot[L_FOREARM] = p.rot[R_FOREARM] = aboutX(-1.6f * amount);
+	}
+	p.rot[L_THIGH] = aboutX(-0.15f * amount);
+	p.rot[R_THIGH] = aboutX(0.15f * amount);
+	p.rot[L_CALF] = p.rot[R_CALF] = aboutX(0.2f * amount);
+}
+
+// Blows: an arm goes out and back over `phase` 0..1 of the blow; the body leans in.
+void blow(bool sword, int arm, float phase, Pose& p) {
+	const float out = std::sin(std::min(phase, 1.0f) * kTau * 0.5f);
+	guardPose(sword, 1.0f, p);
+	if (arm == 0) {
+		p.rot[R_ARM] = aboutX(-1.1f - 0.5f * out);
+		p.rot[R_FOREARM] = aboutX(-1.6f * (1.0f - out));
+	} else if (arm == 1) {
+		p.rot[L_ARM] = aboutX(-1.1f - 0.5f * out);
+		p.rot[L_FOREARM] = aboutX(-1.6f * (1.0f - out));
+	} else {
+		// A swing across from one side (arm 2: from the left, 3: from the right).
+		const float side = arm == 2 ? 1.0f : -1.0f;
+		p.rot[R_ARM] = quatMul(Quat {0, std::sin(side * (0.9f - 1.8f * out) * 0.5f), 0, std::cos(side * (0.9f - 1.8f * out) * 0.5f)}, aboutX(-1.4f));
+	}
+	p.rot[CHEST] = aboutX(0.25f * out);
+}
+
+void addFightClips(SrcModel& model) {
+	// With fists and with a one-handed weapon: standing ready, going, drawing
+	// and putting away (the weapon changes hands half way), attacking - a combo
+	// of blows - fending off, hopping back, stepping aside.
+	for (int sword = 0; sword < 2; ++sword) {
+		const std::string w = sword ? "1H" : "FIST";
+		const bool sw = sword != 0;
+		model.clips.push_back(makeClip(("S_" + w + "RUN").c_str(), ("S_" + w + "RUN").c_str(), 40, false, [sw](float phase, float, Pose& p) {
+			guardPose(sw, 1.0f, p);
+			p.pos[ROOT][1] += 1.5f * std::sin(phase * kTau);
+		}));
+		model.clips.push_back(makeClip(("S_" + w + "RUNL").c_str(), ("S_" + w + "RUNL").c_str(), 16, true, [sw](float phase, float seconds, Pose& p) {
+			stride(phase, seconds, 0.6f, 400.0f, p);
+			Pose g = restPose();
+			guardPose(sw, 1.0f, g);
+			p.rot[L_ARM] = g.rot[L_ARM];
+			p.rot[R_ARM] = g.rot[R_ARM];
+			p.rot[L_FOREARM] = g.rot[L_FOREARM];
+			p.rot[R_FOREARM] = g.rot[R_FOREARM];
+		}));
+		model.clips.push_back(withFight(makeClip(("T_" + w + "_2_" + w + "RUN").c_str(), ("S_" + w + "RUN").c_str(), 12, false,
+		                                         [sw](float phase, float, Pose& p) { guardPose(sw, phase, p); }),
+		                                {}, {}, {}, {}, 6));
+		model.clips.push_back(withFight(makeClip(("T_" + w + "RUN_2_" + w).c_str(), "S_RUN", 12, false,
+		                                         [sw](float phase, float, Pose& p) { guardPose(sw, 1.0f - phase, p); }),
+		                                {}, {}, {}, {}, 6));
+		if (sw) {
+			// Three blows, each ending where the next begins; pressing again in a
+			// blow's window goes on with the next one.
+			model.clips.push_back(withFight(makeClip("S_1HATTACK", "S_1HRUN", 48, false,
+			                                         [](float phase, float, Pose& p) {
+				                                         const float t = phase * 3.0f;
+				                                         const int k = std::min(int(t), 2);
+				                                         blow(true, k == 1 ? 2 : k == 2 ? 3 : 0, t - float(k), p);
+			                                         }),
+			                                {7, 23, 39}, {15, 31, 47}, {3, 15, 19, 31, 35, 47}));
+			model.clips.push_back(withFight(makeClip("T_1HATTACKL", "S_1HRUN", 16, false, [](float phase, float, Pose& p) { blow(true, 2, phase, p); }),
+			                                {7}, {15}, {}));
+			model.clips.push_back(withFight(makeClip("T_1HATTACKR", "S_1HRUN", 16, false, [](float phase, float, Pose& p) { blow(true, 3, phase, p); }),
+			                                {7}, {15}, {}));
+		} else {
+			model.clips.push_back(withFight(makeClip("S_FISTATTACK", "S_FISTRUN", 30, false,
+			                                         [](float phase, float, Pose& p) {
+				                                         const float t = phase * 2.0f;
+				                                         const int k = std::min(int(t), 1);
+				                                         blow(false, k, t - float(k), p);
+			                                         }),
+			                                {6, 21}, {14, 29}, {2, 14, 17, 29}));
+		}
+		model.clips.push_back(withFight(makeClip(("T_" + w + "ATTACKMOVE").c_str(), ("S_" + w + "RUN").c_str(), 16, true,
+		                                         [sw](float phase, float seconds, Pose& p) {
+			                                         blow(sw, 0, phase, p);
+			                                         p.pos[ROOT][2] = 250.0f * seconds;
+		                                         }),
+		                                {7}, {15}, {}));
+		model.clips.push_back(withFight(makeClip(("T_" + w + "PARADE_O").c_str(), ("S_" + w + "RUN").c_str(), 14, false,
+		                                         [sw](float phase, float, Pose& p) {
+			                                         guardPose(sw, 1.0f, p);
+			                                         const float up = std::sin(phase * kTau * 0.5f);
+			                                         p.rot[L_ARM] = p.rot[R_ARM] = aboutX(-1.1f - 0.9f * up);
+		                                         }),
+		                                {}, {}, {}, {1, 12}));
+		model.clips.push_back(makeClip(sw ? "T_1HJUMPB" : "T_FISTPARADEJUMPB", ("S_" + w + "RUN").c_str(), 11, true, [sw](float phase, float, Pose& p) {
+			guardPose(sw, 1.0f, p);
+			const float arc = std::sin(phase * kTau * 0.5f);
+			p.pos[ROOT][1] += 10.0f * arc;
+			p.pos[ROOT][2] = -90.0f * phase;
+		}));
+		for (int right = 0; right < 2; ++right) {
+			const float side = right ? 1.0f : -1.0f;
+			model.clips.push_back(makeClip(("T_" + w + (right ? "RUNSTRAFER" : "RUNSTRAFEL")).c_str(), ("S_" + w + "RUN").c_str(), 13, true,
+			                               [side, sw](float phase, float, Pose& p) {
+				                               guardPose(sw, 1.0f, p);
+				                               p.pos[ROOT][0] = side * 60.0f * phase;
+			                               }));
+		}
+	}
+	// Hit, knocked out, killed.
+	for (int back = 0; back < 2; ++back) {
+		const float dir = back ? 1.0f : -1.0f;
+		model.clips.push_back(makeClip(back ? "T_STUMBLEB" : "T_STUMBLE", "S_RUN", 10, true, [dir](float phase, float, Pose& p) {
+			const float a = std::sin(phase * kTau * 0.5f);
+			p.rot[CHEST] = aboutX(0.4f * dir * a);
+			p.pos[ROOT][2] = -25.0f * dir * phase * -1.0f;
+		}));
+		const auto lying = [dir](float down, Pose& p) {
+			p.pos[ROOT][1] -= 78.0f * down;
+			p.rot[ROOT] = aboutX(1.5f * dir * down);
+			p.rot[L_ARM] = aboutZ(-1.2f * down);
+			p.rot[R_ARM] = aboutZ(1.2f * down);
+		};
+		model.clips.push_back(makeClip(back ? "T_DEADB" : "T_DEAD", back ? "S_DEADB" : "S_DEAD", 20, false,
+		                               [lying](float phase, float, Pose& p) { lying(phase, p); }));
+		model.clips.push_back(makeClip(back ? "S_DEADB" : "S_DEAD", back ? "S_DEADB" : "S_DEAD", 10, false,
+		                               [lying](float, float, Pose& p) { lying(1.0f, p); }));
+	}
+	const auto wounded = [](float down, Pose& p) {
+		p.pos[ROOT][1] -= 55.0f * down;
+		p.rot[L_THIGH] = p.rot[R_THIGH] = aboutX(-1.6f * down);
+		p.rot[L_CALF] = p.rot[R_CALF] = aboutX(2.2f * down);
+		p.rot[CHEST] = aboutX(0.7f * down);
+		p.rot[HEAD] = aboutX(0.4f * down);
+	};
+	model.clips.push_back(makeClip("T_STAND_2_WOUNDED", "S_WOUNDED", 15, false, [wounded](float phase, float, Pose& p) { wounded(phase, p); }));
+	model.clips.push_back(makeClip("S_WOUNDED", "S_WOUNDED", 40, false, [wounded](float phase, float, Pose& p) {
+		wounded(1.0f, p);
+		p.rot[CHEST] = aboutX(0.7f + 0.05f * std::sin(phase * kTau));
+	}));
+	model.clips.push_back(makeClip("T_WOUNDED_2_STAND", "S_RUN", 20, false, [wounded](float phase, float, Pose& p) { wounded(1.0f - phase, p); }));
+	// Sneaking: crouched, slowly.
+	const auto crouch = [](Pose& p) {
+		p.pos[ROOT][1] -= 18.0f;
+		p.rot[L_THIGH] = p.rot[R_THIGH] = aboutX(-0.5f);
+		p.rot[L_CALF] = p.rot[R_CALF] = aboutX(0.9f);
+		p.rot[CHEST] = aboutX(0.35f);
+	};
+	model.clips.push_back(makeClip("S_SNEAK", "S_SNEAK", 40, false, [crouch](float, float, Pose& p) { crouch(p); }));
+	model.clips.push_back(makeClip("S_SNEAKL", "S_SNEAKL", 30, true, [crouch](float phase, float seconds, Pose& p) {
+		stride(phase, seconds, 0.3f, 120.0f, p);
+		p.pos[ROOT][1] -= 18.0f;
+		p.rot[CHEST] = aboutX(0.35f);
+	}));
+}
+
 } // namespace
 
 void buildSyntheticActor(SrcModel& model) {
@@ -392,6 +561,7 @@ void buildSyntheticActor(SrcModel& model) {
 			p.rot[L_THIGH] = p.rot[R_THIGH] = aboutX(-0.9f * crouch);
 			p.rot[L_CALF] = p.rot[R_CALF] = aboutX(1.6f * crouch);
 		}));
+	addFightClips(model);
 	// Where the script has no animation for a change, it names a fade.
 	model.blends = {{"T_RUNL_2_WALKL", "S_WALKL", 0.2f, 0.2f}, {"T_WALKL_2_RUNL", "S_RUNL", 0.2f, 0.2f},
 	                {"T_SWIM_2_SWIMF", "S_SWIMF", 0.3f, 0.3f}, {"T_SWIMF_2_SWIM", "S_SWIM", 0.3f, 0.3f},
@@ -507,7 +677,7 @@ void buildCreature(const std::string& script, SrcModel& model) {
 	// always "in fist mode"): standing, going at a walk and at a run, lying
 	// down to sleep and getting up again.
 	struct Step {
-		float rootY = 0, rootZ = 0, pitch = 0, headYaw = 0, headPitch = 0, legs = 0;
+		float rootY = 0, rootZ = 0, pitch = 0, headYaw = 0, headPitch = 0, legs = 0, roll = 0;
 	};
 	const auto make = [&](const char* name, const char* next, int frames, bool moves, const std::function<void(float, float, Step&)>& fn) {
 		SrcClip clip;
@@ -527,8 +697,13 @@ void buildCreature(const std::string& script, SrcModel& model) {
 				if (node == C_ROOT) {
 					sample.pos[1] += st.rootY * size;
 					sample.pos[2] += st.rootZ * size;
-					sample.rot[0] = std::sin(st.pitch * 0.5f);
-					sample.rot[3] = std::cos(st.pitch * 0.5f);
+					// (Pitch, then roll onto its side.)
+					const float cp = std::cos(st.pitch * 0.5f), sp = std::sin(st.pitch * 0.5f);
+					const float cr = std::cos(st.roll * 0.5f), sr = std::sin(st.roll * 0.5f);
+					sample.rot[0] = cr * sp;
+					sample.rot[1] = -sr * sp;
+					sample.rot[2] = sr * cp;
+					sample.rot[3] = cr * cp;
 				} else if (node == C_HEAD) {
 					// (Yaw, then pitch.)
 					const float cy = std::cos(st.headYaw * 0.5f), sy = std::sin(st.headYaw * 0.5f);
@@ -580,6 +755,29 @@ void buildCreature(const std::string& script, SrcModel& model) {
 	make("T_WARN", "S_FISTRUN", 20, false, [](float phase, float, Step& st) {
 		st.pitch = -0.25f * std::sin(phase * kTau * 0.5f);
 		st.headPitch = -0.4f * std::sin(phase * kTau * 0.5f);
+	});
+	// Fighting: a bite (the blow lands at frame 7), a hop back, being hit,
+	// falling over dead.
+	make("S_FISTATTACK", "S_FISTRUN", 18, false, [](float phase, float, Step& st) {
+		const float lunge = std::sin(std::min(phase * 1.3f, 1.0f) * kTau * 0.5f);
+		st.pitch = 0.2f * lunge;
+		st.rootZ = 0.0f;
+		st.headPitch = 0.5f * lunge;
+	});
+	model.clips.back().hits = {7};
+	model.clips.back().hitEnds = {15};
+	make("T_FISTPARADEJUMPB", "S_FISTRUN", 10, true, [](float phase, float, Step& st) {
+		st.rootZ = -80.0f * phase;
+		st.rootY = 8.0f * std::sin(phase * kTau * 0.5f);
+	});
+	make("T_STUMBLE", "S_FISTRUN", 9, false, [](float phase, float, Step& st) { st.pitch = -0.3f * std::sin(phase * kTau * 0.5f); });
+	make("T_DEAD", "S_DEAD", 15, false, [](float phase, float, Step& st) {
+		st.roll = 1.5f * phase;
+		st.rootY = -18.0f * phase;
+	});
+	make("S_DEAD", "S_DEAD", 10, false, [](float, float, Step& st) {
+		st.roll = 1.5f;
+		st.rootY = -18.0f;
 	});
 }
 

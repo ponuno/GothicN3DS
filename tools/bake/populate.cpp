@@ -1,4 +1,5 @@
 #include "populate.h"
+#include "fight_clips.h"
 
 #include "game.h"
 #include "g3ds/game.h"
@@ -521,6 +522,10 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			line(format("things to use: the worlds have %zu kinds; the scripts name %zu of them: ", there.size(), usedCount) +
 			     (used.empty() ? "none" : used) + (unused.empty() ? "" : "; not named: " + unused));
 	}
+	// Fighting: the engine names those animations itself (fight_clips.h).
+	std::set<std::string> rigNames = aniNames;
+	size_t fightNames = 0;
+	for (const std::string& name : fightClipNames(false)) fightNames += rigNames.insert(name).second;
 	std::string rigNotes;
 	std::vector<std::string> mobClipNotes;
 	BakeOptions quiet = opt;
@@ -583,7 +588,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		if (rigIt == rigs.end()) {
 			Rig rig;
 			try {
-				if (scripts.looks.rig(l.script, !l.head.empty(), aniNames, rig.model)) {
+				if (scripts.looks.rig(l.script, !l.head.empty(), rigNames, rig.model)) {
 					rig.model.parts.clear();
 					rig.model.blends.clear();
 					rig.model.name = "npc.rig" + std::to_string(rigs.size());
@@ -658,8 +663,8 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	{
 		size_t named = 0, families = 0;
 		for (const std::string& name : aniNames) (name.back() == '*' ? families : named) += 1;
-		line(format("animations: the scripts name or imply %zu%s; baked per skeleton: ", named,
-		            families ? format(", and using the things they name takes %zu families more", families).c_str() : "") +
+		line(format("animations: the scripts name or imply %zu%s; fighting %zu more; baked per skeleton: ", named,
+		            families ? format(", and using the things they name takes %zu families more", families).c_str() : "", fightNames) +
 		     rigNotes);
 	}
 	for (const std::string& note : mobClipNotes) line(note);

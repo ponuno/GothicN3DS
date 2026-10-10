@@ -12,10 +12,13 @@ struct C3D_Mtx {
 	C3D_FVec r[4];
 };
 void Mtx_PerspTilt(C3D_Mtx* mtx, float fovy, float aspect, float nearZ, float farZ, bool isLeftHanded);
+void Mtx_OrthoTilt(C3D_Mtx* mtx, float left, float right, float bottom, float top, float nearZ, float farZ, bool isLeftHanded);
 
 struct C3D_Tex {
 	void* data;
 	u32 size;
+	u16 height, width;
+	GPU_TEXCOLOR fmt;
 };
 struct C3D_TexInitParams {
 	u16 width, height;

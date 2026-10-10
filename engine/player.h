@@ -23,6 +23,20 @@ struct Input {
 	bool nextWorld = false; // pressed this frame: jump to the next world of the archive (debug)
 	bool toggleCamera = false; // pressed this frame: third person <-> first person
 	float timeStep = 0;     // hours to add to the time of day this frame
+	// The console scheme (App): the character turns towards this heading
+	// by itself, quickly, instead of being turned by moveX and lookX.
+	bool steer = false;
+	float steerYaw = 0;
+	bool toggleSneak = false; // pressed this frame: sneaking on and off
+	// Fighting (the application's business; the controller ignores these).
+	bool attack = false;      // pressed: a blow (with a weapon in hand)
+	bool parry = false;       // held: fending blows off
+	bool drawWeapon = false;  // pressed: the last weapon in hand, or away with it
+	bool meleeSlot = false;   // pressed: the melee weapon (or the fists without one)
+	bool fistSlot = false;    // pressed: the fists
+	bool focus = false;       // pressed: lock on to the enemy in front, or let go
+	float switchTarget = 0;   // -1 / +1 pressed: the next target to the left / right
+	bool confirm = false;     // pressed: A (to get up again after death)
 };
 
 struct PlayerConfig {

@@ -475,6 +475,52 @@ void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin) 
 	gStats.skinnedPixels += gStats.pixelsWritten - writtenBefore;
 }
 
+Texture* uiTextureCreate(u16 w, u16 h, const u8* coverage) {
+	const auto pot = [](u32 v) { return v >= 8 && v <= 1024 && (v & (v - 1)) == 0; };
+	if (!coverage || !pot(w) || !pot(h) || !fits(u32(w) * h)) return nullptr;
+	Texture* t = static_cast<Texture*>(calloc(1, sizeof(Texture)));
+	if (!t) return nullptr;
+	t->width = w;
+	t->height = h;
+	t->mipCount = 1;
+	t->level[0] = static_cast<u8*>(malloc(size_t(w) * h * 4));
+	if (!t->level[0]) {
+		free(t);
+		return nullptr;
+	}
+	// As the console holds it: 4 bits of coverage, as brightness and as alpha.
+	for (u32 i = 0; i < u32(w) * h; ++i) {
+		const u8 c = u8((coverage[i] >> 4) * 17);
+		for (int k = 0; k < 4; ++k) t->level[0][i * 4 + u32(k)] = c;
+	}
+	t->bytes = 0; // (MemStats are the world's and the characters')
+	return t;
+}
+
+void uiDraw(Texture* t, const UiQuad* quads, u32 count) {
+	if (!t || !quads || !t->level[0]) return;
+	for (u32 q = 0; q < count && q < UI_MAX_QUADS; ++q) {
+		const UiQuad& in = quads[q];
+		const int x0 = max<int>(in.x0, 0), y0 = max<int>(in.y0, 0), x1 = min<int>(in.x1, SCREEN_W), y1 = min<int>(in.y1, SCREEN_H);
+		const float du = float(in.u1 - in.u0) / float(max(in.x1 - in.x0, 1)), dv = float(in.v1 - in.v0) / float(max(in.y1 - in.y0, 1));
+		const float alpha = float(in.rgba[3]) * (1.0f / 255.0f);
+		for (int y = y0; y < y1; ++y) {
+			const int ty = clamp(int(float(in.v0) + (float(y - in.y0) + 0.5f) * dv), 0, int(t->height) - 1);
+			for (int x = x0; x < x1; ++x) {
+				const int tx = clamp(int(float(in.u0) + (float(x - in.x0) + 0.5f) * du), 0, int(t->width) - 1);
+				const u8* tex = t->level[0] + (ty * t->width + tx) * 4;
+				const float a = float(tex[3]) * (1.0f / 255.0f) * alpha;
+				if (a <= 0.0f) continue;
+				u8* out = gColor + (y * SCREEN_W + x) * 4;
+				for (int ch = 0; ch < 3; ++ch) {
+					const float src = float(tex[ch]) * float(in.rgba[ch]) * (1.0f / 255.0f);
+					out[ch] = u8(clamp(src * a + float(out[ch]) * (1.0f - a), 0.0f, 255.0f));
+				}
+			}
+		}
+	}
+}
+
 void frameEnd() {}
 
 void releaseDestroyed() {} // nothing is deferred here

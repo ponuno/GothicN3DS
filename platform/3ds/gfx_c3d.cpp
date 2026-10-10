@@ -37,7 +37,7 @@ namespace gfx {
 
 struct Texture {
 	C3D_Tex tex;
-	u32 bytes;
+	u32 bytes; // counted in MemStats (0 for the overlay's own: it is not the world's)
 };
 
 struct Mesh {
@@ -98,6 +98,15 @@ float gParams[4] = {0, 0, 0, 0};    // last value of the `params` uniform
 MemStats gMem;
 FrameStats gFrameStats = {};
 u32 gDropped = 0;
+// The overlay's quads (uiDraw): written into one of two vertex buffers while
+// the GPU may still read the other (the frame before), and drawn with one
+// index buffer of quads that never changes.
+WorldVertex* gUiVertices[2] = {nullptr, nullptr};
+u16* gUiIndices = nullptr;
+int gUiBuffer = 0;
+u32 gUiUsed = 0; // quads written this frame
+bool gUiPass = false;
+C3D_BufInfo gUiBufInfo;
 
 // Engine matrices are column-major; C3D_Mtx stores rows.
 void toC3D(const Mat4& m, C3D_Mtx* out) {
@@ -309,6 +318,16 @@ bool init() {
 	C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
 	C3D_AlphaTest(false, GPU_GREATER, 127);
 	gAlphaTestOn = false;
+
+	for (WorldVertex*& v : gUiVertices) v = static_cast<WorldVertex*>(linearAlloc(UI_MAX_QUADS * 4 * sizeof(WorldVertex)));
+	gUiIndices = static_cast<u16*>(linearAlloc(UI_MAX_QUADS * 6 * sizeof(u16)));
+	if (!gUiVertices[0] || !gUiVertices[1] || !gUiIndices) return false;
+	for (u32 q = 0; q < UI_MAX_QUADS; ++q) {
+		static const u16 corners[6] = {0, 1, 2, 2, 1, 3};
+		for (int k = 0; k < 6; ++k) gUiIndices[q * 6 + k] = u16(q * 4 + corners[k]);
+	}
+	GSPGPU_FlushDataCache(gUiIndices, UI_MAX_QUADS * 6 * sizeof(u16));
+	gUiBuffer = 0;
 	return true;
 }
 
@@ -336,6 +355,14 @@ void shutdown() {
 		if (gProgramReady) shaderProgramFree(&gProgram);
 		if (gDvlb) DVLB_Free(gDvlb);
 	}
+	// (Only ever allocated after citro3d was up, and freed after it is down:
+	// the GPU no longer reads them.)
+	for (WorldVertex*& v : gUiVertices) {
+		if (v) linearFree(v);
+		v = nullptr;
+	}
+	if (gUiIndices) linearFree(gUiIndices);
+	gUiIndices = nullptr;
 	free(gDeadTextures.items);
 	free(gDeadMeshes.items);
 	gDeadTextures = {};
@@ -396,8 +423,10 @@ void textureDestroy(Texture* t) {
 		C3D_TexBind(0, nullptr);
 		gBoundTexture = nullptr;
 	}
-	gMem.textureBytes -= t->bytes;
-	--gMem.textureCount;
+	if (t->bytes) {
+		gMem.textureBytes -= t->bytes;
+		--gMem.textureCount;
+	}
 	if (!bury(gDeadTextures, t)) freeTexture(t);
 }
 
@@ -520,10 +549,12 @@ void frameBegin(const FrameDesc& f) {
 	gBoundTexture = nullptr;
 	gBoundMesh = nullptr;
 	gDropped = 0;
+	gUiUsed = 0;
+	gUiPass = false;
 }
 
 void setPass(Pass pass) {
-	if (!gInFrame || pass == gPass) return;
+	if (!gInFrame || gUiPass || pass == gPass) return;
 	setFade(1.0f); // (dissolving is for the opaque world only)
 	gPass = pass;
 	if (pass == PASS_SKY) {
@@ -651,9 +682,129 @@ void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin) 
 	C3D_DrawElements(GPU_TRIANGLES, int(indexCount), C3D_UNSIGNED_SHORT, m->indices + firstIndex);
 }
 
+Texture* uiTextureCreate(u16 w, u16 h, const u8* coverage) {
+	const auto pot = [](u32 v) { return v >= 8 && v <= 1024 && (v & (v - 1)) == 0; };
+	if (!coverage || !pot(w) || !pot(h)) return nullptr;
+	Texture* t = static_cast<Texture*>(calloc(1, sizeof(Texture)));
+	if (!t) return nullptr;
+	// 4-bit luminance and 4-bit alpha, both the coverage: the same whichever
+	// nibble the GPU takes for which.
+	if (!C3D_TexInit(&t->tex, w, h, GPU_LA4)) {
+		releaseDestroyed();
+		if (!C3D_TexInit(&t->tex, w, h, GPU_LA4)) {
+			free(t);
+			return nullptr;
+		}
+	}
+	u8* texels = static_cast<u8*>(t->tex.data);
+	for (u32 y = 0; y < h; ++y) {
+		// Rows from the bottom, 8x8 tiles in raster order, Morton order in a tile
+		// (as the world's textures are stored, see g3ds/tex.h).
+		const u32 sy = h - 1u - y, ty = sy & 7u;
+		for (u32 x = 0; x < w; ++x) {
+			const u8 c = coverage[y * w + x] >> 4;
+			const u32 at = (x & 1u) | ((ty & 1u) << 1) | ((x & 2u) << 1) | ((ty & 2u) << 2) | ((x & 4u) << 2) | ((ty & 4u) << 3);
+			texels[((sy >> 3) * (w >> 3) + (x >> 3)) * 64u + at] = u8(c | (c << 4));
+		}
+	}
+	C3D_TexFlush(&t->tex);
+	C3D_TexSetFilter(&t->tex, GPU_NEAREST, GPU_NEAREST);
+	C3D_TexSetWrap(&t->tex, GPU_REPEAT, GPU_REPEAT);
+	t->bytes = 0; // (MemStats are the world's and the characters')
+	return t;
+}
+
+// The overlay goes through the world's own shader: an orthographic projection
+// of the screen in pixels, no view, no chunk offset, no daylight, no fog. The
+// vertex alpha is the shader's daylight weight, so a quad's alpha comes from
+// the texture stage's constant instead - one draw call per run of equal alpha.
+static void beginUi(Texture* t) {
+	setFade(1.0f);
+	gUiPass = true;
+	gPass = PASS_SKY; // (no fog terms; setPass is shut until the next frame)
+	C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+	C3D_CullFace(GPU_CULL_NONE);
+	gAlphaTest = false;
+	applyAlphaTest();
+	setBlend(BLEND_ALPHA);
+	if (gFogToBlack) setFogStage(false);
+	setSkinned(false);
+	setTexOffset(0.0f, 0.0f);
+	C3D_Mtx proj, identity;
+	Mtx_OrthoTilt(&proj, 0.0f, float(SCREEN_W), float(SCREEN_H), 0.0f, -1.0f, 1.0f, true);
+	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocProjection, &proj);
+	memset(&identity, 0, sizeof(identity));
+	identity.r[0].x = identity.r[1].y = identity.r[2].z = identity.r[3].w = 1.0f;
+	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocModelView, &identity);
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, 0.0f, 0.0f, 0.0f, 1.0f);
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocDayDelta, 0.0f, 0.0f, 0.0f, 0.0f);
+	const float uvScale = t ? 1.0f / (16.0f * float(t->tex.width)) : 0.0f;
+	gParams[0] = uvScale;
+	gParams[1] = 1.0f / 255.0f;
+	gParams[2] = 1.0f;
+	gParams[3] = 0.0f;
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocParams, gParams[0], gParams[1], gParams[2], gParams[3]);
+}
+
+void uiDraw(Texture* t, const UiQuad* quads, u32 count) {
+	if (!gInFrame || !t || !quads || count == 0) return;
+	if (gpuCmdBufOffset + kDrawReserveWords * 2 > gpuCmdBufSize) {
+		++gDropped;
+		return;
+	}
+	count = min(count, UI_MAX_QUADS - gUiUsed);
+	if (count == 0) return;
+	beginUi(t);
+	if (gBoundTexture != t) {
+		C3D_TexBind(0, &t->tex);
+		gBoundTexture = t;
+	}
+	const u32 first = gUiUsed;
+	WorldVertex* v = gUiVertices[gUiBuffer] + first * 4;
+	const float vScale = float(t->tex.width) / float(t->tex.height);
+	for (u32 q = 0; q < count; ++q) {
+		const UiQuad& in = quads[q];
+		const i16 xs[2] = {in.x0, in.x1}, ys[2] = {in.y0, in.y1};
+		const u16 us[2] = {in.u0, in.u1}, vs[2] = {in.v0, in.v1};
+		for (int c = 0; c < 4; ++c) {
+			WorldVertex& o = v[q * 4 + c];
+			o.x = xs[c & 1];
+			o.y = ys[c >> 1];
+			o.z = 0;
+			o.w = 1;
+			o.u = i16(us[c & 1] * 16);
+			o.v = i16(float(vs[c >> 1]) * 16.0f * vScale);
+			o.r = in.rgba[0];
+			o.g = in.rgba[1];
+			o.b = in.rgba[2];
+			o.a = 0;
+		}
+	}
+	GSPGPU_FlushDataCache(v, count * 4 * sizeof(WorldVertex));
+	gUiUsed += count;
+	BufInfo_Init(&gUiBufInfo);
+	BufInfo_Add(&gUiBufInfo, gUiVertices[gUiBuffer], sizeof(WorldVertex), 3, 0x210);
+	C3D_SetBufInfo(&gUiBufInfo);
+	gBoundMesh = nullptr;
+	// Runs of equal alpha.
+	for (u32 q = 0; q < count;) {
+		u32 end = q + 1;
+		while (end < count && quads[end].rgba[3] == quads[q].rgba[3]) ++end;
+		if (gpuCmdBufOffset + kDrawReserveWords > gpuCmdBufSize) {
+			++gDropped;
+			break;
+		}
+		const u8 alpha = quads[q].rgba[3];
+		if (!gTextured || alpha != gOpacity) setStage0(true, alpha);
+		C3D_DrawElements(GPU_TRIANGLES, int((end - q) * 6), C3D_UNSIGNED_SHORT, gUiIndices + (first + q) * 6);
+		q = end;
+	}
+}
+
 void frameEnd() {
 	if (!gInFrame) return;
 	gInFrame = false;
+	gUiBuffer ^= 1; // the GPU reads this frame's quads; the next frame writes the other buffer
 	osTickCounterUpdate(&gCpuClock);
 	gFrameStats.cpuMs = float(osTickCounterRead(&gCpuClock));
 	gFrameStats.drawsDropped = gDropped;

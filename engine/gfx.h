@@ -106,6 +106,26 @@ struct SkinDraw {
 };
 // Uses the material set with setMaterial. PASS_WORLD only.
 void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin);
+// ---- the 2D overlay: menus and the HUD ----
+// Drawn last, over the picture: no depth, no fog, no culling, blended by
+// alpha. A quad is an axis-aligned rectangle of the screen (pixels, origin
+// top left, x1 and y1 not included) showing a rectangle of the texture
+// (texels), the texel multiplied by the colour. The texture is white with
+// the given coverage as alpha (and as brightness: a half-covered texel is
+// half as bright, the same on both backends).
+struct UiQuad {
+	i16 x0, y0, x1, y1;
+	u16 u0, v0, u1, v1;
+	u8 rgba[4];
+};
+// `coverage`: w * h bytes, rows from the top, 0..255. Freed with textureDestroy.
+Texture* uiTextureCreate(u16 w, u16 h, const u8* coverage);
+// After the frame's 3D passes, before frameEnd. Quads of one alpha are one
+// draw call: keep them together.
+void uiDraw(Texture* t, const UiQuad* quads, u32 count);
+// Most quads a frame can draw (the rest is dropped).
+constexpr u32 UI_MAX_QUADS = 1500;
+
 void frameEnd();
 
 // Destroyed textures and meshes may stay allocated until the GPU has finished

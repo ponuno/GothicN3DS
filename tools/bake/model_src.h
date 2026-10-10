@@ -48,6 +48,11 @@ struct SrcClip {
 	bool fly = false;       // marked as airborne in the model script
 	std::vector<int> nodes; // animated nodes
 	std::vector<SrcClipSample> samples; // frame after frame, one sample per animated node
+	// The model script's event tags that matter in a fight (g3ds/model.h,
+	// ClipFight), in frames of this clip.
+	std::vector<int> hits, hitEnds, windows, parry;
+	int fightModeFrame = -1;
+	bool fighting() const { return !hits.empty() || !hitEnds.empty() || !windows.empty() || !parry.empty() || fightModeFrame >= 0; }
 };
 
 // "aniBlend": a fade standing in for a transition animation.

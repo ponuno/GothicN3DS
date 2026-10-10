@@ -257,7 +257,8 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 		const bool isActor = n.active || actorOf(i) != nullptr;
 		if (d2 > range2 && !isActor) continue;
 		++_stats.near;
-		const float k = isActor ? d2 * 0.7f : d2;
+		// (The dead come last: the living need the places more.)
+		const float k = (isActor ? d2 * 0.7f : d2) * (n.down == DOWN_DEAD ? 4.0f : 1.0f);
 		u32 at = count;
 		while (at > 0 && key[at - 1] > k) --at;
 		if (at >= want) continue;
@@ -360,17 +361,19 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 		_hours = hours;
 	}
 	const float feet[3] = {eye.x, eye.y - 170.0f, eye.z};
-	_game.setHeroPlace(feet, 0.0f);
+	_game.setHeroPlace(feet, _heroYaw);
 	select(pak, world, eye, _cfg.loadsPerFrame);
-	u32 actors = 0, walking = 0, looking = 0;
+	u32 actors = 0, walking = 0, looking = 0, fighting = 0;
 	for (NpcActor& a : _actors) {
 		if (!a.used || !a.ready) continue;
 		tick(a, world, dt, hoursPassed);
 		++actors;
 		walking += a.phase == NpcActor::MOVING;
 		looking += a.lookAt >= 0;
+		fighting += _game.npc(a.npc).weapon != WEAPON_NONE;
 	}
 	_stats.looking = looking;
+	_stats.fighting = fighting;
 	u32 inUse = 0;
 	for (const NpcActor& a : _actors) inUse += a.used && a.mob >= 0 && a.mobStage >= NpcActor::MOB_ENTERING;
 	_stats.mobsInUse = inUse;

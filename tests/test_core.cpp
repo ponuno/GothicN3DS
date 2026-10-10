@@ -2676,7 +2676,8 @@ static void testModel() {
 		CHECK(r.triangles == 59 * 4 && r.parts >= 3 && r.largestPalette == MODEL_PALETTE && r.clips == 2 && r.textures == 1);
 		CHECK(r.report.find("skeleton: 60 nodes") != std::string::npos);
 		const ModelBakeResult a = bakeModel(actor, bo, writer);
-		CHECK(a.parts == 2 && a.clips == 20 && a.largestPalette <= MODEL_PALETTE);
+		CHECK(a.parts == 2 && a.clips == 53 && a.largestPalette <= MODEL_PALETTE);
+		CHECK(a.report.find("S_1HATTACK 1.88s 3 blows") != std::string::npos && a.report.find("T_FISTPARADE_O 0.52s parry") != std::string::npos);
 		CHECK(a.report.find("blends: 5: T_RUNL_2_WALKL 0.20s") != std::string::npos);
 		CHECK(a.report.find("T_STAND_2_JUMP 0.48s 239cm/s up 74cm") != std::string::npos);
 		writer.write(path);
@@ -2989,7 +2990,27 @@ static void testModel() {
 	{
 		// The test character: loops wrap, moving clips know their speed.
 		Model m;
-		CHECK(m.load(pak, "hero") && m.nodeCount() == 14 && m.clipCount() == 20 && m.blendCount() == 5);
+		CHECK(m.load(pak, "hero") && m.nodeCount() == 14 && m.clipCount() == 53 && m.blendCount() == 5);
+		// The frames of a fight come through: three blows of a combo, each
+		// with its window and its end; a parry's frames; where a draw changes hands.
+		{
+			const Clip* attack = m.clip("S_1HATTACK");
+			const Clip* parry = m.clip("T_1HPARADE_O");
+			const Clip* draw = m.clip("T_1H_2_1HRUN");
+			CHECK(attack && parry && draw && m.clip("S_RUN") && !m.clip("S_RUN")->fight());
+			if (attack && parry && draw) {
+				const ClipFight* f = attack->fight();
+				CHECK(f && f->hits == 3 && f->hit[0] == 7 && f->hit[1] == 23 && f->hit[2] == 39 && f->hitEnds == 3 && f->hitEnd[2] == 47);
+				CHECK(f && f->windows == 3 && f->window[2] == 19 && f->window[3] == 31 && f->parry[0] == CLIP_NO_FRAME);
+				const float fps = attack->header().fps;
+				CHECK(std::fabs(blowTime(f, 1, fps) - 23.0f / 25.0f) < 1e-5f && blowTime(f, 3, fps) < 0.0f);
+				CHECK(std::fabs(blowEnd(f, 2, fps) - 47.0f / 25.0f) < 1e-5f);
+				CHECK(inComboWindow(f, 0, fps, 0.3f) && !inComboWindow(f, 0, fps, 0.7f) && inComboWindow(f, 1, fps, 1.0f) && !inComboWindow(f, 3, fps, 1.0f));
+				const ClipFight* p = parry->fight();
+				CHECK(p && p->hits == 0 && p->parry[0] == 1 && p->parry[1] == 12 && inParry(p, fps, 0.1f) && !inParry(p, fps, 0.5f));
+				CHECK(draw->fight() && draw->fight()->fightMode == 6 && std::fabs(draw->frameTime(6) - 0.24f) < 1e-5f);
+			}
+		}
 		const Clip* run = m.clip("S_RUNL");
 		const Clip* walk = m.clip("S_WALKL");
 		const Clip* stand = m.clip("S_RUN");
@@ -4458,15 +4479,15 @@ func void Rtn_start_502() {
 		const auto said = [&](const char* text) { return r.report.find(text) != std::string::npos; };
 		if (getenv("G3_TRACE")) std::puts(r.report.c_str());
 		// Of the animations the scripts name each skeleton got the ones it has.
-		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 8 families more; baked per "
-		           "skeleton: humans 30, scavenger 8, molerat 8"));
+		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 8 families more; fighting 105 "
+		           "more; baked per skeleton: humans 61, scavenger 13, molerat 13"));
 		// The things of the camp, and which of them the scripts know.
 		CHECK(said("things to use: 6 of 5 kinds, with 7 places to stand at (1 have none: nobody can use those): BEDHIGH x2"));
 		CHECK(said("things to use: the worlds have 5 kinds; the scripts name 4 of them: BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: CHESTBIG"));
-		CHECK(said("way net: 13 points, 15 connections") && said("10 free points") && said(" 9 states, "));
+		CHECK(said("way net: 13 points, 15 connections") && said("10 free points") && said(" 11 states, "));
 		// What the states need of the engine is on record.
-		CHECK(said("life: the scripts have 9 states; the people of these worlds are put into 7: ZS_MM_ALLSCHEDULER x6, ZS_GUARD x3"));
-		CHECK(said("life: the states call 34 engine functions, 34 of which the engine carries out; the others do nothing yet, by the number of states that call them: none"));
+		CHECK(said("life: the scripts have 11 states; the people of these worlds are put into 7: ZS_MM_ALLSCHEDULER x6, ZS_GUARD x3"));
+		CHECK(said("life: the states call 40 engine functions, 40 of which the engine carries out; the others do nothing yet, by the number of states that call them: none"));
 	}
 	const SrcScene& scene = worlds[0].scene; // (its places are on the ground now)
 	const auto wayPoint = [&](const char* name) -> const SrcWayPoint& {
@@ -4515,6 +4536,9 @@ func void Rtn_start_502() {
 		};
 		npcs.config().range = 20000.0f;
 		npcs.config().maxShown = 16;
+		// (A day of the camp's life: the creatures by the wood would see the
+		// guards and fight them. Fighting has a test of its own.)
+		npcs.config().fights = false;
 		if (poor) npcs.config().clipBudget = 9000;
 		app.setDrawDistance(20000.0f);
 		app.environment().timeOfDay = 8.0f;
@@ -5051,6 +5075,7 @@ func void Rtn_start_600() {
 		npcs.game().setQuiet(true);
 		npcs.config().range = 20000.0f;
 		npcs.config().maxShown = 16;
+		npcs.config().fights = false; // (the creatures would kill the diggers: a day of life is what is tested here)
 		app.setDrawDistance(20000.0f);
 		std::mt19937 rng(5);
 		u32 walkingMax = 0;
@@ -5107,6 +5132,221 @@ func void Rtn_start_600() {
 	gfx::shutdown();
 }
 
+
+// Fighting (fight.h, npc_fight.cpp): the damage the rules give, going down,
+// the inhabitants striking back, the player's character with a weapon in
+// hand, and the console's target lock.
+static void testFight() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/fight.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	const auto nearest = [](const Game& g, const char* name, Vec3 from) {
+		int best = -1;
+		float bestD = 1e30f;
+		for (u32 i = 0; i < g.npcCount(); ++i) {
+			const GameNpc& n = g.npc(i);
+			if (!n.placed || n.world != g.currentWorld() || std::strcmp(g.nameOf(n), name) != 0) continue;
+			const float d = std::hypot(n.pos[0] - from.x, n.pos[2] - from.z);
+			if (d < bestD) {
+				bestD = d;
+				best = int(i);
+			}
+		}
+		return best;
+	};
+	// 1. The rules, blow by blow.
+	{
+		App app;
+		CHECK(app.init(path.c_str(), nullptr));
+		app.world().preload(app.camera().pos);
+		Npcs& npcs = app.npcs();
+		Game& g = npcs.game();
+		g.setQuiet(true);
+		npcs.config().range = 20000.0f;
+		const auto global = [&](const char* name) { return g.vm().getInt(g.vm().find(name)); };
+		CHECK(g.hero() != nullptr);
+		const u32 hero = u32(g.hero() - &g.npc(0));
+		const int scav = nearest(g, "Scavenger", {0, 0, 0}), digger = nearest(g, "Digger", {0, 0, 0});
+		const int guard = nearest(g, "Guard", {0, 0, 0});
+		CHECK(scav >= 0 && digger >= 0 && guard >= 0);
+		if (scav < 0 || digger < 0 || guard < 0) return;
+		for (int i = 0; i < 30; ++i) app.update(Input {}, 1.0f / 30.0f);
+		// Bare hands against the beast's hide: strength less its protection; a sword adds its damage.
+		const i32 str = g.attributeOf(g.npc(hero), g.constant("ATR_STRENGTH", 4));
+		g.npcMut(hero).weapon = WEAPON_FIST;
+		CHECK(g.meleeDamage(hero, u32(scav)) == std::max(str - 5, i32(0)));
+		CHECK(app.menuAction(MENU_GIVE_WEAPON, nullptr) && g.npc(hero).melee != SCRIPT_NONE);
+		g.npcMut(hero).weapon = WEAPON_1H;
+		CHECK(g.meleeDamage(hero, u32(scav)) == str + 30 - 5);
+		CHECK(g.meleeRange(hero, u32(scav)) > 100.0f && g.meleeRange(hero, u32(scav)) < 400.0f);
+		// Struck until dead: down for good, in ZS_Dead, never up again.
+		const i32 scavHp = g.hitPoints(g.npc(u32(scav)));
+		CHECK(scavHp > 0);
+		const u32 deathsBefore = u32(global("DEATHS"));
+		for (int blow = 0; blow < 10 && !npcs.isDown(u32(scav)); ++blow) npcs.strike(hero, u32(scav), false);
+		CHECK(g.npc(u32(scav)).down == DOWN_DEAD && g.hitPoints(g.npc(u32(scav))) == 0);
+		for (int i = 0; i < 60; ++i) app.update(Input {}, 1.0f / 30.0f);
+		CHECK(u32(global("DEATHS")) == deathsBefore + 1 && npcs.stats().killed >= 1);
+		CHECK(npcs.strike(hero, u32(scav), false) < 0); // (the dead take no more blows)
+		// A person beaten by somebody not hostile to it is only knocked out:
+		// one hit point left, ZS_Unconscious, and up again after a while.
+		CHECK(g.attitude(u32(digger), hero) != g.constant("ATT_HOSTILE", 0));
+		for (int blow = 0; blow < 40 && !npcs.isDown(u32(digger)); ++blow) npcs.strike(hero, u32(digger), false);
+		CHECK(g.npc(u32(digger)).down == DOWN_UNCONSCIOUS && g.hitPoints(g.npc(u32(digger))) == 1);
+		for (int i = 0; i < 30; ++i) app.update(Input {}, 1.0f / 30.0f);
+		CHECK(global("KNOCKED_OUT") == 1);
+		for (int i = 0; i < 30 * 30 && npcs.isDown(u32(digger)); ++i) app.update(Input {}, 1.0f / 30.0f);
+		CHECK(!npcs.isDown(u32(digger)) && g.hitPoints(g.npc(u32(digger))) >= 1);
+		// Struck, the guard takes note and fights back (its state's reaction to damage).
+		const i32 noticed = global("DAMAGE_NOTICED"), begun = global("ATTACKS_BEGUN");
+		const int scav2 = nearest(g, "Scavenger", {g.npc(u32(guard)).pos[0], 0, g.npc(u32(guard)).pos[2]});
+		CHECK(scav2 >= 0 && scav2 != scav);
+		// (Armour: no harm done, but a blow all the same. The state begins
+		// once what the guard is doing - a second's wait - is done.)
+		CHECK(npcs.strike(u32(scav2 >= 0 ? scav2 : scav), u32(guard), false) == 0);
+		for (int i = 0; i < 75; ++i) app.update(Input {}, 1.0f / 30.0f);
+		CHECK(global("DAMAGE_NOTICED") == noticed + 1 && global("ATTACKS_BEGUN") >= begun + 1);
+		// (The beast is far off: the guard gives up the chase - its loop's
+		// rule - and is back at its post.)
+		CHECK(g.npc(u32(guard)).target == scav2 && npcs.actorOf(u32(guard)) && !npcs.isDown(u32(guard)));
+		app.shutdown();
+	}
+	// 2. The player's character against a beast, sword in hand, as the
+	// player would: close in, strike again and again. The console's
+	// controls: the weapon drawn, the beast becomes the locked target.
+	{
+		App app;
+		CHECK(app.init(path.c_str(), nullptr));
+		app.settings().scheme = CONTROLS_CONSOLE;
+		app.settings().immortal = 1;
+		app.applySettings();
+		CHECK(app.scheme() == CONTROLS_CONSOLE);
+		Npcs& npcs = app.npcs();
+		Game& g = npcs.game();
+		g.setQuiet(true);
+		const u32 hero = u32(g.hero() - &g.npc(0));
+		const int scav = nearest(g, "Scavenger", {0, 0, 0});
+		CHECK(scav >= 0);
+		if (scav < 0) return;
+		const GameNpc& e = g.npc(u32(scav));
+		app.teleport({e.pos[0], e.pos[1] + 400.0f, e.pos[2] - 600.0f});
+		app.world().preload(app.camera().pos);
+		CHECK(app.menuAction(MENU_GIVE_WEAPON, nullptr));
+		bool locked = false, landed = false;
+		int pressed = 0, frames = 0;
+		for (; frames < 30 * 40 && e.down == DOWN_NONE; ++frames) {
+			Input in;
+			const Vec3 feet = app.player().feet;
+			const float dx = e.pos[0] - feet.x, dz = e.pos[2] - feet.z;
+			const float d = std::hypot(dx, dz);
+			if (frames == 5) in.meleeSlot = true;
+			if (app.hero().weapon() != WEAPON_NONE) {
+				// The stick held towards the beast (the camera's yaw is the stick's frame).
+				const float want = std::atan2(dx, dz) - app.camera().yaw;
+				const float range = g.meleeRange(hero, u32(scav));
+				if (d > range - 30.0f) {
+					in.steer = true;
+					in.steerYaw = want;
+					in.moveX = std::sin(want);
+					in.moveZ = std::cos(want);
+				}
+				in.attack = d < range + 20.0f && frames % 8 == 0;
+				pressed += in.attack;
+			}
+			app.update(in, 1.0f / 30.0f);
+			locked |= app.target() == scav && app.targetLocked();
+			landed |= app.fightStats().blowsLanded > 0;
+		}
+		std::printf("  the character against a scavenger: %d frames, %d attacks pressed, %u landed, %u taken; locked on: %s\n", frames,
+		            pressed, app.fightStats().blowsLanded, app.fightStats().blowsTaken, locked ? "yes" : "no");
+		CHECK(locked && landed && e.down == DOWN_DEAD);
+		CHECK(!app.hero().down() && app.heroHitPoints() > 0); // (immortal)
+		// Put away: no target held any more after a while.
+		Input away;
+		away.drawWeapon = true;
+		app.update(away, 1.0f / 30.0f);
+		for (int i = 0; i < 60; ++i) app.update(Input {}, 1.0f / 30.0f);
+		CHECK(app.hero().weapon() == WEAPON_NONE && !app.targetLocked());
+		app.shutdown();
+	}
+	gfx::shutdown();
+}
+
+// Settings (settings.bin) and the pause menu.
+static void testSettings() {
+	const std::string path = gDir + "/settings.bin";
+	{
+		Settings s;
+		s.drawMetres = 170;
+		s.objects = OBJECTS_STEADY;
+		s.frameRate = FRAMES_30;
+		s.cameraSpeed = 9;
+		s.invertY = 1;
+		s.immortal = 1;
+		CHECK(s.save(path.c_str()));
+		Settings t;
+		CHECK(t.load(path.c_str()) && std::memcmp(&s, &t, sizeof(s)) == 0);
+		CHECK(t.drawDistanceCm() == 17000.0f && t.minDetail() > 0.99f);
+		// Out of range: clamped. A broken file: the defaults stay.
+		Settings u;
+		u.drawMetres = 5;
+		u.cameraSpeed = 200;
+		u.objects = 77;
+		u.sanitize();
+		CHECK(u.drawMetres >= 40 && u.cameraSpeed <= 10 && u.objects < 3);
+		FILE* f = std::fopen(path.c_str(), "r+b");
+		CHECK(f != nullptr);
+		if (f) {
+			std::fseek(f, 14, SEEK_SET);
+			std::fputc(0x5A, f);
+			std::fclose(f);
+		}
+		Settings v;
+		CHECK(!v.load(path.c_str()) && v.drawMetres == Settings().drawMetres && v.cameraSpeed == Settings().cameraSpeed);
+		CHECK(!v.load((gDir + "/no_such_settings.bin").c_str()));
+	}
+	{
+		Menu m;
+		Settings s;
+		m.open();
+		CHECK(m.isOpen() && m.page() == Menu::PAGE_MAIN && m.selected() == 0);
+		MenuInput down, up, right, left, ok, back, start;
+		down.down = true;
+		up.up = true;
+		right.right = true;
+		left.left = true;
+		ok.confirm = true;
+		back.back = true;
+		start.close = true;
+		m.update(down, s);
+		CHECK(m.selected() == 1 && std::strcmp(m.label(Menu::PAGE_MAIN, 1), "Графика") == 0);
+		CHECK(m.update(ok, s) == MENU_NONE && m.page() == Menu::PAGE_GRAPHICS);
+		CHECK(m.update(right, s) == MENU_CHANGED && s.drawMetres == 130);
+		CHECK(m.update(left, s) == MENU_CHANGED && m.update(left, s) == MENU_CHANGED && s.drawMetres == 110);
+		char value[32];
+		m.value(Menu::PAGE_GRAPHICS, 0, s, value, sizeof(value));
+		CHECK(std::strcmp(value, "110 м") == 0);
+		m.update(down, s);
+		CHECK(m.update(right, s) == MENU_CHANGED && s.objects == OBJECTS_BALANCED);
+		CHECK(m.update(back, s) == MENU_NONE && m.page() == Menu::PAGE_MAIN && m.selected() == 1);
+		m.update(up, s);
+		m.update(up, s); // (round to the last)
+		CHECK(m.selected() == m.itemCount(Menu::PAGE_MAIN) - 1 && m.update(ok, s) == MENU_EXIT);
+		CHECK(m.update(start, s) == MENU_CLOSED && !m.isOpen());
+		// Every line fits the panel (320 pixels, 8 of margin either side).
+		Ui ui;
+		int widest = 0;
+		for (int p = 0; p < Menu::PAGES; ++p)
+			for (int i = 0; i < m.itemCount(Menu::Page(p)); ++i) {
+				m.value(Menu::Page(p), i, s, value, sizeof(value));
+				widest = std::max({widest, ui.measure(m.label(Menu::Page(p), i)) + ui.measure(value) + 40, ui.measure(m.note(Menu::Page(p), i))});
+			}
+		CHECK(widest <= 304);
+		CHECK(ui.measure("Вы погибли", ui::TITLE) > ui.measure("Вы погибли", ui::TEXT));
+	}
+}
+
 int main(int argc, char** argv) {
 	gDir = argc > 1 ? argv[1] : ".";
 	const char* only = argc > 2 ? argv[2] : nullptr; // run the tests whose name contains this
@@ -5134,6 +5374,8 @@ int main(int argc, char** argv) {
 	             {"way net", testWayNet},
 	             {"mobs", testMobs},
 	             {"life", testLife},
+	             {"fight", testFight},
+	             {"settings", testSettings},
 	             {"sky", testSky}};
 	for (auto& t : tests) {
 		// Later tests reuse the archives earlier ones baked.

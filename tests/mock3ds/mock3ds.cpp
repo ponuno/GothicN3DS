@@ -571,7 +571,22 @@ void Mtx_PerspTilt(C3D_Mtx* mtx, float fovx, float invaspect, float nearZ, float
 	mtx->r[2].z = -mtx->r[3].z * nearZ / (nearZ - farZ);
 }
 
+// As in citro3d (source/maths/mtx_orthotilt.c).
+void Mtx_OrthoTilt(C3D_Mtx* mtx, float left, float right, float bottom, float top, float nearZ, float farZ, bool isLeftHanded) {
+	memset(mtx, 0, sizeof(*mtx));
+	mtx->r[0].y = 2.0f / (top - bottom);
+	mtx->r[0].w = (bottom + top) / (bottom - top);
+	mtx->r[1].x = 2.0f / (left - right);
+	mtx->r[1].w = (left + right) / (right - left);
+	mtx->r[2].z = isLeftHanded ? 1.0f / (farZ - nearZ) : 1.0f / (nearZ - farZ);
+	mtx->r[2].w = 0.5f * (nearZ + farZ) / (nearZ - farZ) - 0.5f;
+	mtx->r[3].w = 1.0f;
+}
+
 bool C3D_TexInitWithParams(C3D_Tex* tex, void*, C3D_TexInitParams p) {
+	tex->width = p.width;
+	tex->height = p.height;
+	tex->fmt = p.format;
 	u32 size = 0;
 	for (u32 l = 0; l <= p.maxLevel; ++l) size += (u32(p.width) >> l) * (u32(p.height) >> l) * (p.format == GPU_ETC1 ? 4 : 8) / 8; // (ETC1A4 and A8: a byte a texel)
 	tex->data = linearAlloc(size);

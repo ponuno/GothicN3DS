@@ -1,45 +1,50 @@
-// Entry point for the 3DS build. Top screen: the world. Bottom screen: a
-// text console with the numbers that matter for the feasibility check
-// (frame time split into CPU and GPU, triangles, streaming, memory).
+// Entry point for the 3DS build. Top screen: the world, the HUD and the
+// pause menu. Bottom screen: a text console with the numbers that matter for
+// the feasibility check (frame time split into CPU and GPU, triangles,
+// streaming, memory) - or, with the report switched off in the menu, the
+// buttons.
 //
-// Controls, as in the original game - the character is steered, the view
-// follows it:
-//   Circle Pad    up: run (a slight push: walk), down: hop back, left/right: turn
-//   C-Stick       left/right: turn (faster), up/down: tilt the view
-//   L / R         step left / right
-//   B             jump          X  walk <-> run          Y  third <-> first person
-//   D-Pad         left/right: draw distance, down: time of day, up: next world (debug)
-//   SELECT        fly mode (a free camera: Circle Pad move, C-Stick or A/B/X/Y look,
-//                 L/R down/up, ZL or ZR fast)
+// Controls (the console scheme, after Gothic Classic on the consoles; the
+// menu's "Управление" switches to the classic scheme of the PC original):
+//   Circle Pad    go where it points, as the camera sees it (a slight push: walk)
+//   C-Stick       turn the camera about the character; locked on: flick left or right
+//                 for the next target to that side
+//   B             jump            A  attack (with the Circle Pad left/right: a blow to the side);
+//                                    hold for a combo: press again as a blow ends
+//   Y             parry (held)    X  draw the last weapon / put it away
+//   ZL            melee weapon (fists without one)     ZR  fists
+//   D-Pad Up      lock on to the enemy in front / let go
+//   D-Pad Down    sneak on / off
+//   L             quick magic (not yet)    R  quick access (not yet)
+//   START         pause menu: continue, graphics, controls, faults, save, leave
+//   SELECT        inventory (not yet)
+//   R + START     save the position       R + SELECT  load it
 //   L+R+SELECT    write the last 5 seconds of the character's movement to
 //                 sdmc:/3ds/gothic3ds/slope.txt (added at its end): press it where the
 //                 character is stuck. The "pos" line counts the files written ("sd").
-//   START         exit
-// An archive without a character is walked with the free camera, too (R jumps).
-// The position is saved on exit and restored on the next start; hold L while
-// starting to begin at the world's start point instead.
+//   START+SELECT  held for a second: leave at once (for testing)
+// Classic scheme: Circle Pad up: run, down: hop back, left/right: turn; C-Stick
+// turns faster and tilts the view; L / R step aside; the rest as above.
+// Flying, the next world and the time of day are in the menu's "Отладка".
+// The position is saved on leaving and restored on the next start; hold L while
+// starting to begin at the world's start point instead. The menu's settings are
+// kept in sdmc:/3ds/gothic3ds/settings.bin.
 //
 // Switches for comparing on the console, held while the program starts:
 //   B  load chunks on the frame's own thread, as before (no background loading)
 //   X  no frame pacer (fixed object distances, never 30 fps)
 //   Y  citro3d's own frame order: the GPU waits while the CPU issues the draws
-//   A  first person from the start (the character is not drawn until Y is pressed)
+//   A  first person from the start (sets the menu's "Вид от первого лица")
 //   R  the vertex shader of the versions before characters; no character at all
 //   SELECT   the inhabitants are not drawn (the scripts run all the same)
 //   D-Pad Up the inhabitants only stand where their routine has them: no
 //            states, no walking - as in the version before they lived
 //   ZL       whole chunks are drawn, as before they were cut into clusters
 //            (what the clusters save shows in "tris" and "gpu")
-//   D-Pad Down  steady objects: small and medium objects are drawn farther
-//            out (60 and 100 m instead of 35 and 70) and the pacer never
-//            takes them away - it goes to 30 fps instead when the frame is
-//            too heavy; nobody comes and goes with the load either
-//   D-Pad Left  nobody perceives anything (the inhabitants do not notice the
-//            player or each other), as before perception
-//   D-Pad Right objects dissolve in and out at their distance instead of
-//            appearing at once (StreamConfig::fadeMs; a shader of its own,
-//            world_fade.v.pica). Off by default until seen to work on the
-//            console: the first build with it always on gave a black screen
+//   D-Pad Down  steady objects (sets the menu's "Объекты: Устойчиво")
+//   D-Pad Left  nobody perceives anything (sets the menu's "Восприятие: Выкл")
+//   D-Pad Right objects appear at once, without dissolving (the menu's
+//            "Растворение" otherwise decides, from the next start)
 #include "app.h"
 #include "gfx_c3d.h"
 #include "pacer.h"
@@ -64,6 +69,15 @@ static const char* kPakPath = "sdmc:/3ds/gothic3ds/data.pak";
 static const char* kStatePath = "sdmc:/3ds/gothic3ds/state.bin";
 // Where L+R+SELECT writes the movement recorder.
 static const char* kSlopePath = "sdmc:/3ds/gothic3ds/slope.txt";
+// The menu's settings.
+static const char* kSettingsPath = "sdmc:/3ds/gothic3ds/settings.bin";
+
+// The HOME Menu was opened: the game stands still in its pause menu meanwhile.
+static volatile bool gSuspended = false;
+static aptHookCookie gAptCookie;
+static void onApt(APT_HookType hook, void*) {
+	if (hook == APTHOOK_ONSUSPEND || hook == APTHOOK_ONSLEEP) gSuspended = true;
+}
 
 // The application: 13 KB, with the character's poses in it. Not a local of
 // main(): the stack is 32 KB.
@@ -128,9 +142,13 @@ int main(int, char**) {
 	const bool nobody = (startKeys & KEY_SELECT) != 0; // the scripts run, their people are not drawn
 	const bool standing = (startKeys & KEY_DUP) != 0;  // they stand: no states, no walking
 	const bool wholeChunks = (startKeys & KEY_ZL) != 0; // no culling inside chunks
-	const bool steady = (startKeys & KEY_DDOWN) != 0;   // objects drawn farther, never taken away by the pacer
-	const bool blind = (startKeys & KEY_DLEFT) != 0;    // no perception
-	const bool dissolve = (startKeys & KEY_DRIGHT) != 0; // objects dissolve in and out (a shader of its own)
+	const bool steadyKey = (startKeys & KEY_DDOWN) != 0; // objects drawn farther, never taken away by the pacer
+	const bool blind = (startKeys & KEY_DLEFT) != 0;     // no perception
+	g3::Settings settings;
+	const bool hadSettings = settings.load(kSettingsPath);
+	// Objects dissolve in and out (a shader of its own): as the menu says,
+	// unless D-Pad Right is held.
+	const bool dissolve = settings.dissolve && !(startKeys & KEY_DRIGHT);
 	gfx::c3dSetClassicFrames(classic);
 	gfx::c3dSetPlainShader(plainShader);
 	gfx::c3dSetFadeShader(dissolve);
@@ -143,10 +161,6 @@ int main(int, char**) {
 	stream.maxLoadsPerFrame = background ? 1 : 2;
 	stream.clusterCulling = !wholeChunks;
 	if (!dissolve) stream.fadeMs = 0.0f;
-	if (steady) {
-		stream.detailDistance[g3::DETAIL_MEDIUM] = 10000.0f;
-		stream.detailDistance[g3::DETAIL_SMALL] = 6000.0f;
-	}
 	bool ok = gfx::init();
 	if (!ok) printf("gfx init failed\n");
 	if (ok && !app.init(kPakPath, nullptr)) {
@@ -165,24 +179,36 @@ int main(int, char**) {
 	// The linear heap, where meshes and textures live, is 32 MB; the command
 	// buffer and the frame buffers are in it too.
 	app.world().config().memoryBudget = 20u << 20;
-	float drawDistance = 12000.0f;
-	app.setDrawDistance(drawDistance);
 	// Continue where the last session ended, unless L is held at start.
-	if (!(startKeys & KEY_L) && app.loadState(kStatePath)) drawDistance = app.drawDistance();
-	if ((startKeys & KEY_A) || plainShader) app.setThirdPerson(false);
+	const bool hadState = !(startKeys & KEY_L) && app.loadState(kStatePath);
+	// The settings: the draw distance of an older state.bin counts once, for
+	// a settings.bin that is not there yet.
+	if (!hadSettings && hadState) settings.drawMetres = g3::u8(g3::clamp(int(app.drawDistance() / 1000.0f + 0.5f) * 10, 40, 200));
+	if (steadyKey) settings.objects = g3::OBJECTS_STEADY;
+	if ((startKeys & KEY_A) || plainShader) settings.firstPerson = 1;
+	if (blind) settings.perception = 0;
+	if (standing) settings.life = 0;
+	app.settings() = settings;
+	app.applySettings();
+	app.setStatePath(kStatePath);
 	if (nobody || plainShader) app.npcs().config().maxShown = 0;
-	app.npcs().config().alive = !standing;
-	app.npcs().config().perceive = !blind;
 	printf("loading...\n");
 	app.world().preload(app.camera().pos);
 	consoleClear();
+	aptHook(&gAptCookie, onApt, nullptr);
+	hidSetRepeatParameters(24, 6);
 
 	u32 frame = 0;
 	float msAccum = 0.0f, msWorst = 0.0f, updateAccum = 0.0f, updateWorst = 0.0f;
 	u32 lateFrames = 0; // frames of this report that missed their refresh
 	u32 lastPerceived = 0;
 	g3::FramePacer pacer;
-	if (steady) pacer.cfg.minDetail = 1.0f; // (too heavy: 30 fps, the objects stay)
+	const auto pace = [&]() {
+		const g3::Settings& st = app.settings();
+		pacer.cfg.minDetail = st.minDetail(); // (steady: too heavy means 30 fps, the objects stay)
+		pacer.cfg.halfOnly = st.frameRate == g3::FRAMES_30;
+	};
+	pace();
 	int interval = 1;
 	int reportLines = 0;
 	u32 lastStateCalls = 0;
@@ -192,11 +218,22 @@ int main(int, char**) {
 	float lastYaw = app.camera().yaw;      // how fast the view turns: the pacer gives no objects back meanwhile
 	u32 fadingSum = 0;                     // batches drawn dissolving, summed over a report
 	bool slopeFailed = false;
+	float leaveHeld = 0;                   // START+SELECT held this long: leave
+	bool shoulderAlone = false;            // R went down with nothing else: quick access on release
+	bool flicked = false;                  // the C-Stick was flicked aside (locked on: the next target)
+	bool reportShown = true;
 
 	while (aptMainLoop()) {
 		hidScanInput();
-		const u32 down = hidKeysDown(), held = hidKeysHeld();
-		if (down & KEY_START) break;
+		const u32 down = hidKeysDown(), held = hidKeysHeld(), repeat = hidKeysDownRepeat();
+		g3::Menu& menu = app.menu();
+		if (gSuspended) {
+			gSuspended = false;
+			if (!menu.isOpen()) menu.open();
+		}
+		// START+SELECT held for a second: out at once (for testing).
+		leaveHeld = (held & KEY_START) && (held & KEY_SELECT) ? leaveHeld + 1.0f / 60.0f : 0.0f;
+		if (leaveHeld > 1.0f) break;
 
 		// The step of the simulation is the time between the last two frames
 		// reaching the display: as even as the display itself, whatever the
@@ -209,71 +246,126 @@ int main(int, char**) {
 		hidCircleRead(&pad);
 		hidCstickRead(&cstick);
 
-		Input in;
-		in.moveX = stick(pad.dx);
-		in.moveZ = stick(pad.dy);
-		in.lookX = stick(cstick.dx);
-		in.lookY = stick(cstick.dy);
-		if (app.steersHero()) {
-			in.strafe = (held & KEY_R ? 1.0f : 0.0f) - (held & KEY_L ? 1.0f : 0.0f);
-			in.jump = (held & KEY_B) != 0;
-			in.toggleWalk = (down & KEY_X) != 0;
-			in.toggleCamera = (down & KEY_Y) != 0 && !plainShader;
+		// ---- the pause menu: the game stands still ----
+		bool record = false;
+		float updateMs = 0;
+		if (menu.isOpen()) {
+			g3::MenuInput mi;
+			mi.up = (repeat & (KEY_DUP | KEY_CPAD_UP)) != 0;
+			mi.down = (repeat & (KEY_DDOWN | KEY_CPAD_DOWN)) != 0;
+			mi.left = (repeat & (KEY_DLEFT | KEY_CPAD_LEFT)) != 0;
+			mi.right = (repeat & (KEY_DRIGHT | KEY_CPAD_RIGHT)) != 0;
+			mi.confirm = (down & KEY_A) != 0;
+			mi.back = (down & KEY_B) != 0;
+			mi.close = (down & KEY_START) != 0;
+			const g3::MenuAction act = menu.update(mi, app.settings());
+			if (act == g3::MENU_CHANGED) {
+				app.applySettings();
+				pace();
+				app.settings().save(kSettingsPath);
+			} else if (act == g3::MENU_EXIT) {
+				break;
+			} else if (act != g3::MENU_NONE && act != g3::MENU_CLOSED) {
+				app.menuAction(act, kStatePath);
+			}
+			app.render();
 		} else {
-			if (held & KEY_A) in.lookX = 1.0f;
-			if (held & KEY_Y) in.lookX = -1.0f;
-			if (held & KEY_X) in.lookY = 1.0f;
-			if (held & KEY_B) in.lookY = -1.0f;
-			in.moveY = (held & KEY_R ? 1.0f : 0.0f) - (held & KEY_L ? 1.0f : 0.0f);
-			in.jump = (held & KEY_R) != 0;
-			in.fast = (held & (KEY_ZL | KEY_ZR)) != 0;
-		}
-		// L+R+SELECT: the movement recorder to the SD card, not fly mode.
-		const bool record = (down & KEY_SELECT) && (held & KEY_L) && (held & KEY_R);
-		in.toggleFly = (down & KEY_SELECT) && !record;
-		in.nextWorld = (down & KEY_DUP) != 0;
-		if (down & KEY_DDOWN) in.timeStep = 1.0f;
+			Input in;
+			in.moveX = stick(pad.dx);
+			in.moveZ = stick(pad.dy);
+			in.lookX = stick(cstick.dx);
+			in.lookY = stick(cstick.dy);
+			const bool console = app.scheme() == g3::CONTROLS_CONSOLE;
+			// R and L+R combinations first: they are not their single buttons.
+			const bool rHeld = (held & KEY_R) != 0;
+			record = (down & KEY_SELECT) && (held & KEY_L) && rHeld;
+			const bool quickSave = (down & KEY_START) && rHeld, quickLoad = (down & KEY_SELECT) && rHeld && !record;
+			if (app.steersHero()) {
+				in.jump = (held & KEY_B) != 0;
+				in.attack = in.confirm = (down & KEY_A) != 0;
+				in.parry = (held & KEY_Y) != 0;
+				in.drawWeapon = (down & KEY_X) != 0;
+				in.meleeSlot = (down & KEY_ZL) != 0;
+				in.fistSlot = (down & KEY_ZR) != 0;
+				in.focus = (down & KEY_DUP) != 0;
+				in.toggleSneak = (down & KEY_DDOWN) != 0;
+				if (console) {
+					// Locked on: the C-Stick flicked aside picks the next target.
+					if (app.targetLocked()) {
+						if (!flicked && (in.lookX > 0.7f || in.lookX < -0.7f)) {
+							in.switchTarget = in.lookX > 0.0f ? 1.0f : -1.0f;
+							flicked = true;
+						}
+						if (in.lookX < 0.3f && in.lookX > -0.3f) flicked = false;
+						in.lookX = 0;
+					}
+					if ((down & KEY_L) && !rHeld) app.toast("Быстрой магии пока нет");
+				} else {
+					in.strafe = (held & KEY_R ? 1.0f : 0.0f) - (held & KEY_L ? 1.0f : 0.0f);
+				}
+				// R alone, let go: quick access (not yet).
+				if (down & KEY_R) shoulderAlone = true;
+				if (held & ~(KEY_R | KEY_CPAD_UP | KEY_CPAD_DOWN | KEY_CPAD_LEFT | KEY_CPAD_RIGHT | KEY_CSTICK_UP | KEY_CSTICK_DOWN |
+				             KEY_CSTICK_LEFT | KEY_CSTICK_RIGHT))
+					shoulderAlone = false;
+				if ((hidKeysUp() & KEY_R) && shoulderAlone && console) {
+					app.toast("Быстрого доступа пока нет");
+					shoulderAlone = false;
+				}
+				if ((down & KEY_SELECT) && !rHeld && !(held & KEY_START)) app.toast("Инвентаря пока нет");
+			} else {
+				// Flying (the menu's "Отладка"): a free camera.
+				if (held & KEY_A) in.lookX = 1.0f;
+				if (held & KEY_Y) in.lookX = -1.0f;
+				if (held & KEY_X) in.lookY = 1.0f;
+				if (held & KEY_B) in.lookY = -1.0f;
+				in.moveY = (held & KEY_R ? 1.0f : 0.0f) - (held & KEY_L ? 1.0f : 0.0f);
+				in.jump = (held & KEY_R) != 0;
+				in.fast = (held & (KEY_ZL | KEY_ZR)) != 0;
+			}
+			if (quickSave) {
+				app.toast(app.saveState(kStatePath) ? "Позиция сохранена" : "Не удалось сохранить");
+			} else if (quickLoad) {
+				app.toast(app.loadState(kStatePath) ? "Позиция загружена" : "Сохранённой позиции нет");
+			} else if ((down & KEY_START) && !(held & KEY_SELECT)) {
+				menu.open();
+			}
+			TickCounter updateClock;
+			osTickCounterStart(&updateClock);
+			app.update(in, dt);
+			osTickCounterUpdate(&updateClock);
+			updateMs = float(osTickCounterRead(&updateClock));
+			updateAccum += updateMs;
+			updateWorst = max(updateWorst, updateMs);
+			{
+				const g3::UpdateTimes& ut = app.times();
+				partSum.stream += ut.stream;
+				partSum.npcs += ut.npcs;
+				partSum.script += ut.script;
+				partSum.player += ut.player;
+				partSum.camera += ut.camera;
+				collQueries += g3::collisionStats().queries;
+				collTests += g3::collisionStats().tests;
+			}
 
-		if (down & (KEY_DLEFT | KEY_DRIGHT)) {
-			drawDistance = clamp(drawDistance + ((down & KEY_DRIGHT) ? 2000.0f : -2000.0f), 4000.0f, 30000.0f);
-			app.setDrawDistance(drawDistance);
-		}
+			if (record) {
+				// After the update, so that the frame the keys were pressed in is in it.
+				const g3::Player& pl = app.player();
+				const g3::Vec3 eye = pl.eye();
+				char title[160];
+				snprintf(title, sizeof(title), "%s at %02d:%02d, pos %.0f %.0f %.0f, popped out of the rock %lu, unstuck %lu, record %lu",
+				         app.worldName(), int(app.environment().timeOfDay), int(app.environment().timeOfDay * 60.0f) % 60, double(eye.x),
+				         double(eye.y), double(eye.z), static_cast<unsigned long>(pl.popUps), static_cast<unsigned long>(pl.unstuck),
+				         static_cast<unsigned long>(slopeWrites + 1));
+				FILE* f = fopen(kSlopePath, "a");
+				const bool written = f && app.moves().write(f, title);
+				if (f) fclose(f);
+				if (written) ++slopeWrites;
+				slopeFailed = !written;
+			}
 
-		TickCounter updateClock;
-		osTickCounterStart(&updateClock);
-		app.update(in, dt);
-		osTickCounterUpdate(&updateClock);
-		const float updateMs = float(osTickCounterRead(&updateClock));
-		updateAccum += updateMs;
-		updateWorst = max(updateWorst, updateMs);
-		{
-			const g3::UpdateTimes& ut = app.times();
-			partSum.stream += ut.stream;
-			partSum.npcs += ut.npcs;
-			partSum.script += ut.script;
-			partSum.player += ut.player;
-			partSum.camera += ut.camera;
-			collQueries += g3::collisionStats().queries;
-			collTests += g3::collisionStats().tests;
-		}
-
-		if (record) {
-			// After the update, so that the frame the keys were pressed in is in it.
-			const g3::Player& pl = app.player();
-			const g3::Vec3 eye = pl.eye();
-			char title[160];
-			snprintf(title, sizeof(title), "%s at %02d:%02d, pos %.0f %.0f %.0f, popped out of the rock %lu, unstuck %lu, record %lu",
-			         app.worldName(), int(app.environment().timeOfDay), int(app.environment().timeOfDay * 60.0f) % 60, double(eye.x),
-			         double(eye.y), double(eye.z), static_cast<unsigned long>(pl.popUps), static_cast<unsigned long>(pl.unstuck),
-			         static_cast<unsigned long>(slopeWrites + 1));
-			FILE* f = fopen(kSlopePath, "a");
-			const bool written = f && app.moves().write(f, title);
-			if (f) fclose(f);
-			if (written) ++slopeWrites;
-			slopeFailed = !written;
-		}
-
-		app.render();
+			app.render();
+		} // (not in the menu)
 
 		// What the frame cost decides how much detail the next one gets, and
 		// whether the display runs at 60 or a steady 30. With overlapped
@@ -310,7 +402,7 @@ int main(int, char**) {
 			const WorldStats& ws = app.world().stats();
 			const gfx::MemStats mem = gfx::memStats();
 			const g3::Player& pl = app.player();
-			const char* state = pl.flying     ? "flying (SELECT: walk)"
+			const char* state = pl.flying     ? "flying (menu: faults)"
 			                    : pl.swimming ? "swimming"
 			                    : pl.climbing ? "on a ladder"
 			                    : !pl.grounded ? "in the air"
@@ -338,7 +430,8 @@ int main(int, char**) {
 			else
 				reportLine("detail %3.0f%%  %2d fps  late %2lu/30 fd off", double(app.world().config().detailScale * 100.0f),
 				     interval == 2 ? 30 : 60, static_cast<unsigned long>(lateFrames));
-			reportLine("frames %s  pacer %s%s", fs.overlapped ? "overlapped" : "classic", pacing ? "on" : "off", steady ? " STEADY" : "");
+			reportLine("frames %s  pacer %s%s", fs.overlapped ? "overlapped" : "classic", pacing ? "on" : "off",
+			     app.settings().objects == g3::OBJECTS_STEADY ? " STEADY" : app.settings().objects == g3::OBJECTS_BALANCED ? " BALANCE" : "");
 			// Triangles drawn, of those in the chunks in view (the rest is what
 			// the clusters save); draw calls; chunks.
 			reportLine("tris %6lu/%6lu dr %4lu ch %2lu%s", static_cast<unsigned long>(ws.trianglesDrawn),
@@ -350,12 +443,12 @@ int main(int, char**) {
 			     static_cast<unsigned long>(fs.drawsDropped));
 			reportLine("resident %3lu/%lu  pending %3lu", static_cast<unsigned long>(ws.chunksLoaded),
 			     static_cast<unsigned long>(ws.chunksTotal), static_cast<unsigned long>(ws.chunksPending));
-			reportLine("mesh %5.2f MB  tex %5.2f MB", double(mem.meshBytes) / 1048576.0, double(mem.textureBytes) / 1048576.0);
-			reportLine("collision %5.0f KB", double(ws.collisionBytes) / 1024.0);
-			reportLine("linear free %5.1f MB", double(linearSpaceFree()) / 1048576.0);
-			reportLine("budget rejects %lu  failures %lu", static_cast<unsigned long>(ws.budgetRejects),
-			     static_cast<unsigned long>(ws.loadFailures));
-			reportLine("draw distance %3.0f m  time %02d:%02d", double(drawDistance / 100.0f), int(app.environment().timeOfDay),
+			// (Meshes, textures and collision of the world; free linear memory; chunks refused for the budget, failed.)
+			reportLine("mesh %5.2f tex %5.2f MB col %5.0fK", double(mem.meshBytes) / 1048576.0, double(mem.textureBytes) / 1048576.0,
+			     double(ws.collisionBytes) / 1024.0);
+			reportLine("linear free %5.1f MB rej %lu fail %lu", double(linearSpaceFree()) / 1048576.0,
+			     static_cast<unsigned long>(ws.budgetRejects), static_cast<unsigned long>(ws.loadFailures));
+			reportLine("draw distance %3.0f m  time %02d:%02d", double(app.drawDistance() / 100.0f), int(app.environment().timeOfDay),
 			     int(app.environment().timeOfDay * 60.0f) % 60);
 			reportLine("%-22.22s %-16.16s", state, app.worldName());
 			// The player's eyes, wherever the camera hangs behind them.
@@ -369,8 +462,9 @@ int main(int, char**) {
 			if (plainShader) {
 				reportLine("hero off: plain shader (R at start)");
 			} else if (hero.loaded()) {
-				static const char* const kRoles[g3::Hero::ROLE_COUNT] = {"stand", "run", "walk", "back", "step",
-				                                                         "turn",  "jump", "fall", "swim", "float"};
+				static const char* const kRoles[g3::Hero::ROLE_COUNT] = {"stand", "run",   "walk",  "back", "step",
+				                                                         "turn",  "jump",  "fall",  "swim", "float",
+				                                                         "attack", "parry", "hit", "down", "draw"};
 				reportLine("hero %-5s %3.0f cm/s %s%s cam %s", kRoles[hero.role()], double(hero.speed()),
 				     hero.walking() ? "walk " : "", app.thirdPerson() ? "3rd" : "1st", app.cameraSet().fromGame ? "game" : "own");
 			} else {
@@ -394,7 +488,7 @@ int main(int, char**) {
 				reportLine("life %2lu wlk %lu use %lu ani %3luK st %2lu/s x%lu%s", static_cast<unsigned long>(ns.actors),
 				     static_cast<unsigned long>(ns.walking), static_cast<unsigned long>(ns.mobsInUse),
 				     static_cast<unsigned long>(ns.clipBytes / 1024), static_cast<unsigned long>((ns.stateCalls - lastStateCalls) * 2),
-				     static_cast<unsigned long>(ns.noPath + ns.snapped + ns.clipsRefused + ns.mobsFailed), standing ? " OFF" : "");
+				     static_cast<unsigned long>(ns.noPath + ns.snapped + ns.clipsRefused + ns.mobsFailed), app.npcs().config().alive ? "" : " OFF");
 				lastStateCalls = ns.stateCalls;
 				reportLine("script %3.1fMB all %4lu err %lu/%lu nul %lu", double(npcs.game().vm().imageBytes()) / 1048576.0,
 				     static_cast<unsigned long>(ns.total), static_cast<unsigned long>(vs.errors),
@@ -421,13 +515,26 @@ int main(int, char**) {
 					reportLine("ani %-24.24s %-8.8s", npcs.animationName(*a), npcs.doing(*a));
 				}
 				// What they notice: reactions a second, how many look at
-				// somebody, fights the scripts wanted (there are none yet), and
-				// what the nearest said last.
+				// somebody, fights the scripts wanted that were not begun (the
+				// menu's "Драки жителей" off), and what the nearest said last.
 				const g3::NpcActor* near = npcs.nearest();
-				reportLine("perc %2lu/s look %lu fight %lu%s %-12.12s", static_cast<unsigned long>((ns.perceived - lastPerceived) * 2),
-				     static_cast<unsigned long>(ns.looking), static_cast<unsigned long>(ns.fightsRefused), blind ? " OFF" : "",
+				reportLine("perc %2lu/s look %lu nf %lu%s %-12.12s", static_cast<unsigned long>((ns.perceived - lastPerceived) * 2),
+				     static_cast<unsigned long>(ns.looking), static_cast<unsigned long>(ns.fightsRefused), app.npcs().config().perceive ? "" : " OFF",
 				     near && near->said[0] ? near->said : "");
 				lastPerceived = ns.perceived;
+				// Fighting: what the character holds, its hit points, the target;
+				// blows landed and taken by it, and of everybody: blows, parried,
+				// knocked out, killed, moves of the fight AI.
+				{
+					const g3::App::FightStats& fst = app.fightStats();
+					const int t = app.target();
+					reportLine("fight %s hp %ld/%ld %s%-8.8s", g3::weaponWord(app.hero().weapon())[0] ? g3::weaponWord(app.hero().weapon()) : "-",
+					     static_cast<long>(app.heroHitPoints()), static_cast<long>(app.heroHitPointsMax()), app.targetLocked() ? "@" : "",
+					     t >= 0 ? npcs.game().nameOf(npcs.game().npc(g3::u32(t))) : "");
+					reportLine("blows %lu/%lu all %lu par %lu ko %lu dead %lu ai %lu", static_cast<unsigned long>(fst.blowsLanded),
+					     static_cast<unsigned long>(fst.blowsTaken), static_cast<unsigned long>(ns.blows), static_cast<unsigned long>(ns.parried),
+					     static_cast<unsigned long>(ns.knockedOut), static_cast<unsigned long>(ns.killed), static_cast<unsigned long>(ns.moves));
+				}
 			} else {
 				reportLine("scripts: none in data.pak");
 			}
@@ -442,14 +549,29 @@ int main(int, char**) {
 			fadingSum = 0;
 		}
 		// One line of the report per frame, padded to overwrite the old one.
+		// (Switched off in the menu: the buttons instead.)
+		const bool wantReport = app.settings().report != 0;
+		if (wantReport != reportShown) {
+			reportShown = wantReport;
+			consoleClear();
+			if (!wantReport) {
+				static const char* const kHelp[] = {"Gothic 3DS", "", "Stick      go        C-Stick  camera", "B          jump      A        attack",
+				                                    "Y          parry     X        weapon", "ZL         melee     ZR       fists",
+				                                    "D-Up       lock on   D-Down   sneak", "START      menu      R+START  save",
+				                                    "R+SELECT   load", "", "The numbers: menu > Graphics", "  > Report on the bottom screen"};
+				for (unsigned k = 0; k < sizeof(kHelp) / sizeof(kHelp[0]); ++k) printf("\x1b[%u;2H%s", k + 2, kHelp[k]);
+			}
+		}
 		const int row = int(frame % 30);
-		if (row < reportLines) printf("\x1b[%d;1H%-39.39s", row + 1, gReport[row]);
+		if (reportShown && row < reportLines) printf("\x1b[%d;1H%-39.39s", row + 1, gReport[row]);
 	}
 
 	// Leaving. Each step says so on the bottom screen first: should the
 	// console ever hang here, the last line tells where.
 	exitStep("exit 1/4: saving the position");
 	app.saveState(kStatePath);
+	app.settings().save(kSettingsPath);
+	aptUnhook(&gAptCookie);
 	exitStep("exit 2/4: closing the world");
 	app.shutdown();
 	exitStep("exit 3/4: closing the graphics");

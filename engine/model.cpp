@@ -18,9 +18,10 @@ bool Clip::load(Pak& pak, u32 entryHash, u32 nodeCount) {
 	if (!blob) return false;
 	memcpy(&_h, blob, sizeof(_h));
 	const bool hasMotion = (_h.flags & CLIPF_MOVES) != 0;
+	const bool hasFight = (_h.flags & CLIPF_FIGHT) != 0;
 	bool ok = _h.magic == CLIP_MAGIC && _h.version == CLIP_VERSION && _h.trackCount > 0 && _h.frameCount > 0 &&
 	          _h.fps > 0.0f && _h.trackCount <= MODEL_MAX_NODES &&
-	          e->size == clipBlobSize(_h.trackCount, _h.frameCount, hasMotion);
+	          e->size == clipBlobSize(_h.trackCount, _h.frameCount, hasMotion, hasFight);
 	const u8* tracks = blob + sizeof(ClipHeader);
 	for (u32 t = 0; ok && t < _h.trackCount; ++t) ok = tracks[t] < nodeCount;
 	if (!ok) {
@@ -38,6 +39,15 @@ bool Clip::load(Pak& pak, u32 entryHash, u32 nodeCount) {
 	if (hasMotion) {
 		_motion = reinterpret_cast<const i16*>(blob + clipSamplesEnd(_h.trackCount, _h.frameCount));
 		for (u32 f = 0; f < _h.frameCount; ++f) _rise = max(_rise, float(_motion[f * 3 + 1]) * _h.motionScale);
+	}
+	_fight = nullptr;
+	if (hasFight) {
+		_fight = reinterpret_cast<const ClipFight*>(blob + clipBlobSize(_h.trackCount, _h.frameCount, hasMotion, false));
+		// (Counts beyond the table are the file's lie, not a reason to read past it.)
+		ClipFight* f = const_cast<ClipFight*>(_fight);
+		f->hits = u8(min<u32>(f->hits, CLIP_FIGHT_BLOWS));
+		f->hitEnds = u8(min<u32>(f->hitEnds, CLIP_FIGHT_BLOWS));
+		f->windows = u8(min<u32>(f->windows, CLIP_FIGHT_BLOWS));
 	}
 	return true;
 }
@@ -85,6 +95,7 @@ void Clip::release() {
 	_tracks = nullptr;
 	_samples = nullptr;
 	_motion = nullptr;
+	_fight = nullptr;
 	_rise = 0;
 	_bytes = 0;
 	_h = {};
@@ -502,6 +513,14 @@ void Animator::restart(float blend) {
 	_fadeTime = max(blend, 0.0f);
 	_fade = _fadeTime > 0.0f ? 0.0f : 1.0f;
 	evaluate();
+}
+
+void Animator::seek(float time) {
+	if (!_model || !_clip) return;
+	time = clamp(time, 0.0f, _clip->duration());
+	_moved = _moved + (_clip->motion(time) - _clip->motion(_time));
+	_time = time;
+	_finished = !_clip->loops() && _time >= _clip->duration();
 }
 
 void Animator::evaluate() {

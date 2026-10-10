@@ -619,6 +619,124 @@ static void testPlainShader(const std::string& pak) {
 	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
 }
 
+
+// The overlay (HUD, pause menu): flat quads in screen pixels through the
+// world's shader with an orthographic projection turned for the 3DS's
+// sideways screen. A quad's corners must land on their pixels, its colour
+// must be the vertex's, its texture coordinates the texels of the font.
+struct UiCheck {
+	unsigned draws = 0, vertices = 0, failed = 0;
+	double worstPx = 0, worstColor = 0, worstTex = 0, worstDepth = 0;
+	float texW = 0, texH = 0;
+};
+
+static void uiHook(const mock3ds::DrawCall& call, void* user) {
+	UiCheck& uc = *static_cast<UiCheck*>(user);
+	const float* chunk = call.uniforms[8];
+	const float* params = call.uniforms[9];
+	// The overlay's draws: unit chunk transform, no fog, identity model view (c4..c7).
+	const float* mv = call.uniforms[4];
+	const bool ui = chunk[0] == 0 && chunk[1] == 0 && chunk[2] == 0 && chunk[3] == 1 && params[2] == 1 && params[3] == 0 &&
+	                mv[0] == 1 && mv[1] == 0 && call.uniforms[5][1] == 1 && call.uniforms[6][2] == 1 && (call.bools & 1) == 0;
+	if (!ui) return;
+	++uc.draws;
+	for (unsigned i = 0; i < call.count; ++i) {
+		const u16 index = call.indices[i];
+		WorldVertex v;
+		std::memcpy(&v, static_cast<const u8*>(call.vertices) + size_t(index) * call.stride, sizeof(v));
+		mock3ds::ShadedVertex got;
+		if (!mock3ds::shadeVertex(call, index, got, true)) {
+			++uc.failed;
+			continue;
+		}
+		++uc.vertices;
+		const double w = got.position[3];
+		// 400 x 240 pixels, y down; the screen is the framebuffer turned: its x along the 240.
+		const double wantX = 1.0 - double(v.y) / 120.0, wantY = 1.0 - double(v.x) / 200.0;
+		uc.worstPx = std::max({uc.worstPx, std::fabs(got.position[0] / w - wantX) * 120.0, std::fabs(got.position[1] / w - wantY) * 200.0});
+		const double z = got.position[2] / w;
+		uc.worstDepth = std::max(uc.worstDepth, z < -1.0 ? -1.0 - z : z > 0.0 ? z : 0.0);
+		const u8 rgb[3] = {v.r, v.g, v.b};
+		for (int k = 0; k < 3; ++k) uc.worstColor = std::max(uc.worstColor, std::fabs(double(got.color[k]) - rgb[k] / 255.0));
+		if (uc.texW > 0) {
+			uc.worstTex = std::max({uc.worstTex, std::fabs(double(got.texcoord[0]) * uc.texW - v.u / 16.0),
+			                        std::fabs(double(got.texcoord[1]) * uc.texH - v.v / 16.0 * uc.texH / uc.texW)});
+		}
+	}
+}
+
+static void testOverlay(const std::string& pak) {
+	mock3ds::reset();
+	gfx::c3dSetClassicFrames(false);
+	CHECK(gfx::init());
+	// 1. Quads of known places, straight through the backend.
+	{
+		u8 coverage[32 * 16];
+		for (int i = 0; i < 32 * 16; ++i) coverage[i] = u8(i * 7);
+		gfx::Texture* t = gfx::uiTextureCreate(32, 16, coverage);
+		CHECK(t != nullptr);
+		const gfx::MemStats before = gfx::memStats();
+		UiCheck uc;
+		uc.texW = 32;
+		uc.texH = 16;
+		mock3ds::setDrawHook(uiHook, &uc);
+		for (int f = 0; f < 4; ++f) {
+			gfx::FrameDesc fd {};
+			fd.view = viewLH({0, 0, 0}, 0, 0);
+			fd.fovY = 1.0f;
+			fd.zNear = 10.0f;
+			fd.zFar = 1000.0f;
+			fd.fogStart = 900.0f;
+			fd.fogEnd = 1000.0f;
+			fd.dayLight[0] = fd.dayLight[1] = fd.dayLight[2] = 1.0f;
+			gfx::frameBegin(fd);
+			gfx::UiQuad q[3] = {
+			    {0, 0, 400, 240, 0, 0, 32, 16, {255, 0, 0, 255}},
+			    {10, 20, 42, 36, 3, 4, 7, 9, {0, 128, 255, 128}},
+			    {-5, 230, 13, 250, 31, 15, 32, 16, {1, 2, 3, 40}},
+			};
+			gfx::uiDraw(t, q, 3);
+			gfx::frameEnd();
+		}
+		mock3ds::setDrawHook(nullptr, nullptr);
+		std::printf("  overlay: %u draw calls, %u vertices: within %.4f px, colour %.5f, texels %.4f\n", uc.draws, uc.vertices,
+		            uc.worstPx, uc.worstColor, uc.worstTex);
+		// Three quads, two alphas runs and one more: three draws a frame.
+		CHECK(uc.draws == 12 && uc.vertices == 4 * 18 && uc.failed == 0);
+		CHECK(uc.worstPx < 0.02 && uc.worstColor < 1e-3 && uc.worstTex < 0.01 && uc.worstDepth == 0);
+		CHECK(gfx::memStats().textureBytes == before.textureBytes); // not world memory
+		gfx::textureDestroy(t);
+	}
+	// 2. The application's overlay: the HUD, a message, the menu open over a
+	// running world, both frame buffers of quads in turn.
+	{
+		App app;
+		CHECK(app.init(pak.c_str(), nullptr));
+		app.setDrawDistance(6000.0f);
+		app.world().preload(app.camera().pos);
+		UiCheck uc;
+		mock3ds::setDrawHook(uiHook, &uc);
+		for (int f = 0; f < 60; ++f) {
+			Input in;
+			in.moveZ = 1.0f;
+			if (f == 10) app.toast("Проверка: ёжик «ü»");
+			if (f == 30) app.menu().open();
+			app.update(in, 1.0f / 60.0f);
+			app.render();
+		}
+		mock3ds::setDrawHook(nullptr, nullptr);
+		std::printf("  application overlay: %u draw calls, %u vertices: within %.4f px, colour %.5f; %u quads dropped\n", uc.draws,
+		            uc.vertices, uc.worstPx, uc.worstColor, app.ui().dropped());
+		CHECK(app.ui().ready() && uc.draws >= 30 && uc.vertices > 30 * 40 && uc.failed == 0);
+		CHECK(uc.worstPx < 0.02 && uc.worstColor < 1e-3 && uc.worstDepth == 0 && app.ui().dropped() == 0);
+		CHECK(gfx::frameStats().drawsDropped == 0);
+		app.shutdown();
+	}
+	gfx::shutdown();
+	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
+	if (mock3ds::violations()) printViolations("in the overlay");
+}
+
 static void flight(const std::string& pak, bool classic, bool worker) {
 	mock3ds::reset();
 	gfx::c3dSetClassicFrames(classic);
@@ -791,6 +909,8 @@ int main(int argc, char** argv) {
 	testDefaultShader(pak);
 	std::printf("[ RUN ] the fallback shader without characters\n");
 	testPlainShader(pak);
+	std::printf("[ RUN ] the overlay\n");
+	testOverlay(pak);
 	std::printf("[ RUN ] frame orders\n");
 	flight(pak, true, false);
 	flight(pak, false, false);

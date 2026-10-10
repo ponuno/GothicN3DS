@@ -2,7 +2,8 @@
 // animated the way ZenGin does it.
 //
 //  * The player steers the character, not the camera: forward and back along
-//    where it faces, left and right turn it.
+//    where it faces, left and right turn it. (The console scheme of the
+//    application steers it by a heading instead: Input::steer.)
 //  * The character goes where its animation carries it (root motion): the
 //    body is moved by what the animation's root does from frame to frame, so
 //    starting, stopping, a hop back or a jump look and travel as authored.
@@ -11,7 +12,14 @@
 //    one (an animation, or a fade of scripted length), from standing through
 //    "T_STAND_2_B", to standing through "T_A_2_STAND". A transition is played
 //    to its end before anything else may follow.
+//  * With a weapon in hand the same states have the weapon's word in their
+//    names ("S_1HRUNL", "T_FISTRUN_2_FISTRUNL"); sneaking has its own
+//    ("S_SNEAKL"). Each is a row of the tables below.
+//  * Fighting (fight.h): taking a weapon in hand and putting it away, blows
+//    and their combos (a press within a blow's window goes on with the next
+//    blow), parrying, hopping back, reeling from a blow, going down.
 #pragma once
+#include "fight.h"
 #include "model.h"
 #include "player.h"
 
@@ -20,7 +28,7 @@ namespace g3 {
 class Hero {
 public:
 	// What the character is doing, in broad terms (for display and tests).
-	enum Role { IDLE, RUN, WALK, BACK, STRAFE, TURN, JUMP, FALL, SWIM, SWIM_IDLE, ROLE_COUNT };
+	enum Role { IDLE, RUN, WALK, BACK, STRAFE, TURN, JUMP, FALL, SWIM, SWIM_IDLE, ATTACK, PARRY, HIT, DOWN, DRAW, ROLE_COUNT };
 	// What the body is in.
 	enum Body { GROUNDED, TAKEOFF, AIRBORNE, SWIMMING };
 
@@ -55,6 +63,7 @@ public:
 	float speed() const { return _speed; } // horizontal, cm/s
 	Vec3 feet() const { return _feet; }
 	bool walking() const { return _walkMode; }
+	bool sneaking() const { return _sneak; }
 	float lean() const { return _lean; }
 	// The pose as drawn (the animator's, with the hips where the body state wants them).
 	const Pose& pose() const { return _drawn; }
@@ -64,28 +73,68 @@ public:
 	// The clip of a name, if the model has it ("S_RUNL").
 	const Clip* clip(const char* name) const { return _model.clip(name); }
 
+	// ---- fighting ----
+	// What is in the hands (a WeaponMode). It changes half way through
+	// taking a weapon in hand or putting it away.
+	u8 weapon() const { return _weapon; }
+	// Taking a weapon in hand or putting it away right now.
+	bool drawing() const { return _drawTo != 0xFF; }
+	// Takes `mode` in hand (WEAPON_NONE: puts it away). False if that cannot
+	// be done now (in the air, in the water, down) or the model has no way of
+	// it (then the hands change at once).
+	bool draw(u8 mode);
+	// An attack: 0 ahead, 1 from the left, 2 from the right. Pressed again
+	// within the window of a blow, the combo goes on with its next one.
+	// False if there is no weapon in hand or the body cannot now.
+	bool attack(int kind);
+	// Fending blows off while held (a parry, again and again).
+	void setParry(bool held) { _parryHeld = held; }
+	// True for the frame a blow of the character lands (the frame its
+	// animation says); the application looks who is hit.
+	bool blowLanded() const { return _blowLanded; }
+	// A blow is on its way (before it lands): enemies may fend it off.
+	bool prehit() const;
+	// In the frames where a blow is fended off.
+	bool parrying() const;
+	// Hopping back: a blow from in front misses.
+	bool dodging() const;
+	// Hit: reels from in front backwards, from behind forwards.
+	void hit(bool fromBehind);
+	// Down: knocked out or dead (stays down until getUp()).
+	void fall(bool dead, bool fromBehind);
+	bool down() const { return _down; }
+	void getUp();
+	// The blow in play, for the HUD and the tests: which of the combo, and how many landed.
+	u8 combo() const { return _blow.combo; }
+
 private:
 	enum State { ST_RUN, ST_RUNL, ST_WALK, ST_WALKL, ST_WALKBL, ST_WALKWL, ST_JUMP, ST_FALLDN, ST_FALL, ST_SWIM, ST_SWIMF, ST_SWIMB, ST_COUNT };
 	static constexpr int STAND = ST_COUNT; // the pseudo-state of the transitions' names
+	// The rows of the tables: what is in the hands (WeaponMode), and sneaking.
+	enum { ROW_SNEAK = WEAPON_MODES, ROWS };
 	struct Via {
 		const Clip* clip; // a transition animation, or
 		float fade;       // (>= 0) a fade of this length
 	};
 
+	int row() const;
 	int stateOf(const Clip* clip) const;
 	bool isTurn(const Clip* clip) const;
 	const Clip* stateClip(int state) const;
+	const Clip* rowClip(int row, int state) const;
 	void go(int state, bool force = false, float forceFade = 0.15f);
 	void act(const Clip* clip, float fade);
 	void updatePose(float dt);
+	const Clip* weaponClip(const char* pattern, u8 mode) const;
+	void fightTick(float prevTime, const Clip* prevClip);
 
 	Model _model;
 	Animator _anim;
-	const Clip* _state[ST_COUNT] = {};
-	Via _via[ST_COUNT + 1][ST_COUNT + 1] = {};
-	const Clip* _jumpBack = nullptr;
-	const Clip* _strafe[2][2] = {}; // [walk][right]
-	const Clip* _turn[3][2] = {};   // [run, walk, swim][right]
+	const Clip* _state[ROWS][ST_COUNT] = {};
+	Via _via[ROWS][ST_COUNT + 1][ST_COUNT + 1] = {};
+	const Clip* _jumpBack[ROWS] = {};
+	const Clip* _strafe[ROWS][2][2] = {}; // [row][walk][right]
+	const Clip* _turn[ROWS][3][2] = {};   // [row][run, walk, swim][right]
 	Body _body = GROUNDED;
 	Role _roleNow = IDLE;
 	int _base = ST_RUN; // the standing state under a turn on the spot
@@ -94,11 +143,24 @@ private:
 	float _restY = 100.0f, _hipMix = 0;
 	float _light[3] = {1, 1, 1};
 	bool _placed = false, _walkMode = false, _slow = false, _jumpHeld = false, _jumping = false, _leftGround = false;
+	bool _sneak = false;
 	bool _forceNext = false;
 	const Clip* _takeoff = nullptr;
 	Vec3 _liftSum {0, 0, 0};
 	float _liftTime = 0, _liftY = 0;
 	Pose _drawn;
+	// Fighting.
+	u8 _weapon = WEAPON_NONE;
+	u8 _drawTo = 0xFF;      // being taken in hand (0xFF: nothing)
+	float _drawAt = 0;      // seconds into the draw where the hands change
+	const Clip* _drawClip = nullptr;
+	BlowTracker _blow;
+	bool _comboBroken = false; // pressed outside the window: no more blows of this attack
+	bool _blowLanded = false;
+	bool _parryHeld = false;
+	const Clip* _reel = nullptr; // being hit
+	bool _down = false;
+	const Clip* _parryClip[ROWS] = {};
 };
 
 } // namespace g3

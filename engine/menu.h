@@ -1,0 +1,59 @@
+// The pause menu, drawn on the top screen over the stopped game: continue,
+// the settings (graphics, controls, faults), saving the position, leaving.
+// It changes Settings in place and tells the caller what else to do.
+#pragma once
+#include "settings.h"
+#include "ui.h"
+
+namespace g3 {
+
+// Button presses for the menu (key repeat is the platform's business).
+struct MenuInput {
+	bool up = false, down = false, left = false, right = false;
+	bool confirm = false; // A
+	bool back = false;    // B (and START closes it from anywhere)
+	bool close = false;   // START
+};
+
+enum MenuAction : u8 {
+	MENU_NONE,
+	MENU_CLOSED,       // back to the game
+	MENU_CHANGED,      // a setting changed: apply it (and save settings.bin)
+	MENU_SAVE,         // save the position (state.bin)
+	MENU_LOAD,         // go back to the saved position
+	MENU_EXIT,         // leave the program
+	MENU_NEXT_WORLD,   // the faults page's
+	MENU_HOUR,
+	MENU_FLY,
+	MENU_HEAL,
+	MENU_GIVE_WEAPON,
+};
+
+class Menu {
+public:
+	enum Page : u8 { PAGE_MAIN, PAGE_GRAPHICS, PAGE_CONTROLS, PAGE_DEBUG, PAGES };
+
+	void open();
+	void close() { _open = false; }
+	bool isOpen() const { return _open; }
+	Page page() const { return _page; }
+	int selected() const { return _sel[_page]; }
+
+	MenuAction update(const MenuInput& in, Settings& s);
+	// `status`: a line under the title (the world, the time), may be null.
+	// `message`: what the last action did ("Позиция сохранена"), may be null.
+	void draw(Ui& ui, const Settings& s, const char* status, const char* message) const;
+
+	// For tests: the label and the shown value of an item of the page.
+	int itemCount(Page page) const;
+	const char* label(Page page, int item) const;
+	const char* note(Page page, int item) const; // "" if none
+	void value(Page page, int item, const Settings& s, char* out, u32 size) const;
+
+private:
+	Page _page = PAGE_MAIN;
+	int _sel[PAGES] = {};
+	bool _open = false;
+};
+
+} // namespace g3

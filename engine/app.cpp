@@ -49,6 +49,15 @@ bool App::init(const char* pakPath, const char* worldName) {
 	// The game's scripts, if the archive has them, and through them the
 	// people of this world.
 	if (_npcs.load(_pak)) _npcs.enterWorld(_pak, _world, this->worldName(), _player.eye(), _env.timeOfDay);
+	HeroLink link;
+	link.hit = heroHitThunk;
+	link.user = this;
+	_npcs.setHeroLink(link);
+	// The overlay (menus, the HUD): without it the game still runs.
+	_ui.init();
+	_target = -1;
+	_locked = false;
+	_fight = FightStats();
 	return true;
 }
 
@@ -63,7 +72,10 @@ void App::teleport(Vec3 eye) {
 	_player.flying = flying;
 	_cam.pos = eye;
 	_hero.reset(_player.feet, _cam.yaw);
+	_orbitYaw = _cam.yaw;
 	_camPlaced = false;
+	_target = -1;
+	_locked = false;
 }
 
 bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
@@ -168,6 +180,9 @@ bool App::loadState(const char* path) {
 		_switches = switches; // continuing is not travelling
 	}
 	_player.flying = s.flying != 0;
+	_hero.getUp();
+	if (GameNpc* h = _npcs.loaded() && heroIndex() >= 0 ? &_npcs.game().npcMut(u32(heroIndex())) : nullptr) h->down = DOWN_NONE;
+	_deadTime = _downTime = 0;
 	_cam.yaw = s.yaw;
 	_cam.pitch = clamp(s.pitch, -1.5f, 1.5f);
 	teleport(eye); // (the character takes its heading from the camera's)
@@ -191,6 +206,7 @@ void App::setDrawDistance(float cm) {
 }
 
 void App::shutdown() {
+	_ui.release();
 	_npcs.release();
 	_hero.release();
 	_sky.release();
@@ -252,18 +268,20 @@ void App::update(const Input& in, float dt) {
 	const bool wasFlying = _player.flying;
 	const bool steered = _hero.loaded() && !wasFlying && !in.toggleFly;
 	const float turn = 1.8f * dt; // rad/s at full deflection
+	if (_toastTime > 0.0f) _toastTime -= dt;
 	if (steered) {
 		// The character is steered; the view follows it (placeCamera).
 		// Looking up and down tilts the view, not the character.
-		if (thirdPerson())
-			_camElevation = clamp(_camElevation - in.lookY * 60.0f * dt, -45.0f, 60.0f);
-		else
-			_eyePitch = clamp(_eyePitch + in.lookY * turn, -1.4f, 1.4f);
-		const Drive drive = _hero.control(in, _player, dt);
-		_player.update(_world, in, _hero.yaw(), 0.0f, dt, &drive);
+		updateTarget(in, dt);
+		fightInput(in, dt);
+		const Input heroIn = steerInput(in, dt);
+		const Drive drive = _hero.control(heroIn, _player, dt);
+		_player.update(_world, heroIn, _hero.yaw(), 0.0f, dt, &drive);
 		const SkyColors sky = skyColors();
 		const float indoorLight[3] = {1, 1, 1};
 		_hero.follow(_player, _world, _world.indoor() ? indoorLight : sky.light, dt);
+		if (_hero.blowLanded()) heroBlow();
+		syncHeroNpc();
 	} else {
 		// A free first-person camera: no character, or flying.
 		_cam.yaw += in.lookX * turn;
@@ -348,7 +366,10 @@ void App::placeCamera(float dt) {
 	// Where the camera belongs: at the script's range, up by its elevation,
 	// behind the character (turned by the script's azimuth).
 	float elevation = clamp(def.bestElevation + _camElevation, -30.0f, 85.0f) * rad;
-	const float azimuth = heroYaw + def.bestAzimuth * rad;
+	// Behind the character (classic), or wherever the second stick has
+	// turned the camera about it (console).
+	const bool orbit = _scheme == CONTROLS_CONSOLE;
+	const float azimuth = (orbit ? _orbitYaw : heroYaw) + def.bestAzimuth * rad;
 	auto backwards = [&](float elev) {
 		const float ce = cosf(elev);
 		return Vec3 {-sinf(azimuth) * ce, sinf(elev), -cosf(azimuth) * ce};
@@ -399,10 +420,12 @@ void App::placeCamera(float dt) {
 	const float aspect = float(gfx::SCREEN_W) / float(gfx::SCREEN_H);
 	const float wide = atanf(tanf(_cam.fovY * 0.5f) * aspect * 0.75f) - _cam.fovY * 0.5f;
 	_cam.pitch = clamp(atan2f(look.y, flat) + def.rotOffsetX * rad - max(wide, 0.0f), -1.5f, 1.5f);
-	// How far the view hangs behind the character's turn.
+	// How far the view hangs behind the character's turn (console: how far
+	// the character still has to turn to where it is steered).
 	float lag = heroYaw + def.bestAzimuth * rad - lookYaw;
 	while (lag > 3.14159265f) lag -= 6.2831853f;
 	while (lag < -3.14159265f) lag += 6.2831853f;
+	if (orbit) lag = _steerLag;
 	_hero.setTurnLag(flat < 4.0f ? 0.0f : lag);
 	// With the camera inside the character there is nothing to see of it but its inside.
 	_heroVisible = length(look) > 45.0f;
@@ -447,13 +470,461 @@ void App::render() {
 	}
 	gfx::setPass(gfx::PASS_WORLD);
 	const Mat4 viewProj = mul(proj, fd.view);
+	_viewProj = viewProj;
 	_world.draw(viewProj, _cam.pos, u32(u64(_clock * 1000.0)));
 	const float indoorLight[3] = {1, 1, 1};
 	_npcs.draw(viewProj, indoor ? indoorLight : sky.light);
 	if (_heroVisible) _hero.draw();
 	gfx::setPass(gfx::PASS_BLEND);
 	_world.drawBlended();
+	drawOverlay();
 	gfx::frameEnd();
+}
+
+// ---- controls ----
+
+namespace {
+
+float wrapYaw(float a) {
+	while (a > 3.14159265f) a -= 6.2831853f;
+	while (a < -3.14159265f) a += 6.2831853f;
+	return a;
+}
+
+} // namespace
+
+// What the character is asked to do this frame, from the sticks. Classic: as
+// they are (the controller and the character read them so). Console: the
+// stick says which way to go as the camera sees it - the character turns
+// that way by itself and runs; the second stick turns the camera about it.
+// Locked on to an enemy with a weapon in hand, the character keeps facing it
+// and the stick steps towards it, away from it (a hop back) and round it.
+Input App::steerInput(const Input& in, float dt) {
+	Input h = in;
+	const float speed = (0.7f + 0.35f * float(_settings.cameraSpeed)) * dt; // rad: 2.45 a second at the middle setting
+	const float tilt = _settings.invertY ? -in.lookY : in.lookY;
+	_lookIdle = (fabsf(in.lookX) > 0.1f || fabsf(in.lookY) > 0.1f) ? 0.0f : _lookIdle + dt;
+	_steerLag = 0;
+	if (_scheme == CONTROLS_CLASSIC) {
+		if (thirdPerson()) _camElevation = clamp(_camElevation - tilt * 60.0f * dt, -45.0f, 60.0f);
+		else _eyePitch = clamp(_eyePitch + tilt * 1.8f * dt, -1.4f, 1.4f);
+		return h;
+	}
+	if (!thirdPerson()) {
+		// Through the eyes: the second stick turns the character, the first
+		// one walks and steps aside.
+		_eyePitch = clamp(_eyePitch + tilt * 1.8f * dt, -1.4f, 1.4f);
+		h.lookX = in.lookX * (0.5f + 0.1f * float(_settings.cameraSpeed));
+		h.moveX = 0;
+		h.strafe = in.moveX > 0.5f ? 1.0f : in.moveX < -0.5f ? -1.0f : 0.0f;
+		return h;
+	}
+	_camElevation = clamp(_camElevation - tilt * 60.0f * dt * (0.5f + 0.1f * float(_settings.cameraSpeed)), -45.0f, 60.0f);
+	h.moveX = h.lookX = 0;
+	h.strafe = 0;
+	const float x = in.moveX, z = in.moveZ;
+	const float m = min(sqrtf(x * x + z * z), 1.0f);
+	const float heroYaw = _hero.yaw();
+	const GameNpc* t = _target >= 0 && _npcs.loaded() ? &_npcs.game().npc(u32(_target)) : nullptr;
+	const bool combat = _locked && t && _hero.weapon() != WEAPON_NONE;
+	if (_locked && t) {
+		// The camera comes round behind the character, the enemy ahead.
+		const float toward = atan2f(t->pos[0] - _player.feet.x, t->pos[2] - _player.feet.z);
+		_orbitYaw = wrapYaw(_orbitYaw + clamp(wrapYaw(toward - _orbitYaw), -4.0f * dt, 4.0f * dt));
+	} else {
+		_orbitYaw = wrapYaw(_orbitYaw + in.lookX * speed);
+	}
+	if (combat) {
+		const float toward = atan2f(t->pos[0] - _player.feet.x, t->pos[2] - _player.feet.z);
+		h.steer = true;
+		h.steerYaw = toward;
+		if (m > 0.2f) {
+			const float rel = wrapYaw(_orbitYaw + atan2f(x, z) - heroYaw);
+			const float fwd = m * cosf(rel), side = m * sinf(rel);
+			h.moveZ = fabsf(fwd) >= 0.3f ? fwd : 0.0f;
+			h.strafe = fabsf(side) > 0.5f && fabsf(side) > fabsf(fwd) ? (side > 0 ? 1.0f : -1.0f) : 0.0f;
+			if (h.strafe != 0.0f) h.moveZ = 0;
+		} else {
+			h.moveZ = 0;
+		}
+		_steerLag = 0;
+		return h;
+	}
+	if (m > 0.2f) {
+		const float dir = wrapYaw(_orbitYaw + atan2f(x, z));
+		const float err = wrapYaw(dir - heroYaw);
+		h.steer = true;
+		h.steerYaw = dir;
+		// Facing far away from it: round first, then off (no circles).
+		h.moveZ = fabsf(err) < 1.2f ? m : 0.0f;
+		_steerLag = clamp(err, -0.3f, 0.3f);
+		// The camera swings round behind a runner when the second stick is left alone.
+		if (_settings.autoCamera && _lookIdle > 0.8f && h.moveZ > 0.0f) {
+			const float rate = 0.9f * clamp(_hero.speed() / 450.0f, 0.0f, 1.2f) * dt;
+			_orbitYaw = wrapYaw(_orbitYaw + clamp(wrapYaw(heroYaw - _orbitYaw), -rate, rate));
+		}
+	} else {
+		h.moveZ = 0;
+	}
+	return h;
+}
+
+int App::heroIndex() const {
+	if (!_npcs.loaded()) return -1;
+	const GameNpc* h = _npcs.game().hero();
+	return h ? int(h - &_npcs.game().npc(0)) : -1;
+}
+
+const GameNpc* App::heroNpc() const {
+	const int i = heroIndex();
+	return i >= 0 ? &_npcs.game().npc(u32(i)) : nullptr;
+}
+
+i32 App::heroHitPoints() const {
+	const GameNpc* h = heroNpc();
+	return h ? _npcs.game().hitPoints(*h) : 0;
+}
+
+i32 App::heroHitPointsMax() const {
+	const GameNpc* h = heroNpc();
+	return h ? _npcs.game().attributeOf(*h, _npcs.game().constant("ATR_HITPOINTS_MAX", 1)) : 0;
+}
+
+// The scripts see what the player's character does: what it holds, which way it faces.
+void App::syncHeroNpc() {
+	const int i = heroIndex();
+	if (i < 0) return;
+	GameNpc& h = _npcs.game().npcMut(u32(i));
+	h.weapon = _hero.weapon();
+	_npcs.setHeroYaw(_hero.yaw());
+	HeroLink link;
+	link.hit = heroHitThunk;
+	link.user = this;
+	link.prehit = _hero.prehit();
+	link.running = _hero.role() == Hero::RUN;
+	_npcs.setHeroLink(link);
+	// Finished off by somebody while it lay there.
+	if (h.down == DOWN_DEAD && !(_hero.down() && _deadTime > 0.0f)) {
+		_hero.fall(true, false);
+		_deadTime = 0.001f;
+	}
+}
+
+// Who is fought with: the one locked on to, else the nearest in front.
+void App::updateTarget(const Input& in, float dt) {
+	if (!_npcs.loaded() || _hero.down()) {
+		_target = -1;
+		_locked = false;
+		return;
+	}
+	// The weapon put away: the lock goes with it.
+	if (_heldBefore != WEAPON_NONE && _hero.weapon() == WEAPON_NONE) _locked = false;
+	_heldBefore = _hero.weapon();
+	const float feet[3] = {_player.feet.x, _player.feet.y, _player.feet.z};
+	const float aim = _scheme == CONTROLS_CONSOLE && thirdPerson() && !_locked ? _orbitYaw : _hero.yaw();
+	if (_target >= 0) {
+		const GameNpc& t = _npcs.game().npc(u32(_target));
+		const float dx = t.pos[0] - feet[0], dz = t.pos[2] - feet[2];
+		if (t.down != DOWN_NONE || !t.placed || !_npcs.actorOf(u32(_target)) || dx * dx + dz * dz > 2500.0f * 2500.0f) {
+			_target = -1;
+			_locked = false;
+		}
+	}
+	if (in.focus) {
+		if (_locked) {
+			_locked = false;
+		} else {
+			// The enemies first, then anybody.
+			int t = _npcs.pickTarget(feet, aim, 1500.0f, 1.0f, -1, 0, true);
+			if (t < 0) t = _npcs.pickTarget(feet, aim, 1500.0f, 1.0f);
+			if (t >= 0) {
+				_target = t;
+				_locked = true;
+			} else if (_scheme == CONTROLS_CONSOLE) {
+				_orbitYaw = _hero.yaw(); // nobody there: the camera behind the character
+			}
+		}
+	}
+	if (_locked && in.switchTarget != 0.0f && _target >= 0) {
+		// The next one to that side of the one locked on to.
+		const GameNpc& t = _npcs.game().npc(u32(_target));
+		const float from = atan2f(t.pos[0] - feet[0], t.pos[2] - feet[2]);
+		const int next = _npcs.pickTarget(feet, from, 1500.0f, 1.6f, _target, in.switchTarget > 0 ? 1 : -1);
+		if (next >= 0) _target = next;
+	}
+	// Not locked: what is in front is the target ("focus"), checked now and then.
+	if (!_locked) {
+		_targetScan -= dt;
+		if (_targetScan <= 0.0f) {
+			_targetScan = 0.25f;
+			const bool armed = _hero.weapon() != WEAPON_NONE;
+			int t = armed ? _npcs.pickTarget(feet, _hero.yaw(), 800.0f, 0.9f, -1, 0, true) : -1;
+			if (t < 0) t = _npcs.pickTarget(feet, _hero.yaw(), armed ? 600.0f : 500.0f, armed ? 0.9f : 0.6f);
+			_target = t;
+			if (armed && _settings.autoTarget && t >= 0 && _scheme == CONTROLS_CONSOLE &&
+			    _npcs.game().attitude(u32(t), u32(heroIndex())) == _npcs.game().constant("ATT_HOSTILE", 0))
+				_locked = true;
+		}
+	}
+	// A weapon pointed at somebody: he perceives the threat.
+	_threatWait -= dt;
+	if (_target >= 0 && _hero.weapon() != WEAPON_NONE && _hero.weapon() != WEAPON_FIST && _threatWait <= 0.0f && heroIndex() >= 0) {
+		const GameNpc& t = _npcs.game().npc(u32(_target));
+		const float dx = t.pos[0] - feet[0], dz = t.pos[2] - feet[2];
+		if (dx * dx + dz * dz < 500.0f * 500.0f) {
+			_threatWait = 2.0f;
+			_npcs.perceiveSingle(u32(_target), "PERC_ASSESSTHREAT", heroIndex());
+		}
+	}
+}
+
+// Weapons, blows, parrying; getting up again.
+void App::fightInput(const Input& in, float dt) {
+	if (_hero.down()) {
+		if (_deadTime > 0.0f) {
+			_deadTime += dt;
+			if (in.confirm && _deadTime > 1.5f) respawn(_statePath);
+		} else if ((_downTime -= dt) <= 0.0f) {
+			// Come to: up again, with the hit points the blow left.
+			_hero.getUp();
+			if (heroIndex() >= 0) _npcs.game().npcMut(u32(heroIndex())).down = DOWN_NONE;
+		}
+		return;
+	}
+	if (!_npcs.loaded() && !_hero.loaded()) return;
+	const auto meleeMode = [&]() -> u8 {
+		const GameNpc* h = heroNpc();
+		if (!h || h->melee == SCRIPT_NONE) return WEAPON_FIST;
+		const GameItemInfo* w = _npcs.game().itemInfo(h->melee);
+		const i32 twoHanded = _npcs.game().constant("ITEM_2HD_SWD", 1 << 16) | _npcs.game().constant("ITEM_2HD_AXE", 1 << 17);
+		return w && (w->flags & twoHanded) ? u8(WEAPON_2H) : u8(WEAPON_1H);
+	};
+	const auto take = [&](u8 mode) {
+		const u8 before = _hero.weapon();
+		if (!_hero.draw(mode)) return;
+		const int hi = heroIndex();
+		const bool drawing = _hero.drawing() ? true : mode != WEAPON_NONE;
+		const bool puttingAway = mode == WEAPON_NONE || (before != WEAPON_NONE && _hero.drawing() && before != mode);
+		if (drawing && !puttingAway && mode != WEAPON_NONE) _lastWeapon = mode;
+		if (hi >= 0) _npcs.sendPerception(puttingAway ? "PERC_ASSESSREMOVEWEAPON" : "PERC_DRAWWEAPON", u32(hi), hi, -1);
+	};
+	if (in.drawWeapon) {
+		if (_hero.weapon() != WEAPON_NONE) take(WEAPON_NONE);
+		else take(_lastWeapon == WEAPON_FIST || _lastWeapon == WEAPON_NONE ? meleeMode() : _lastWeapon);
+	}
+	if (in.meleeSlot) {
+		const u8 want = meleeMode();
+		take(_hero.weapon() == want ? u8(WEAPON_NONE) : want);
+	}
+	if (in.fistSlot) take(_hero.weapon() == WEAPON_FIST ? u8(WEAPON_NONE) : u8(WEAPON_FIST));
+	if (in.attack && _hero.weapon() != WEAPON_NONE) {
+		// To the side: the stick pushed left or right as the character faces.
+		float side = in.moveX;
+		if (_scheme == CONTROLS_CONSOLE && thirdPerson() && !_locked) {
+			const float x = in.moveX, z = in.moveZ;
+			const float m = sqrtf(x * x + z * z);
+			side = m > 0.5f ? m * sinf(wrapYaw(_orbitYaw + atan2f(x, z) - _hero.yaw())) : 0.0f;
+		}
+		_hero.attack(side < -0.6f ? 1 : side > 0.6f ? 2 : 0);
+	}
+	_hero.setParry(in.parry && _hero.weapon() != WEAPON_NONE);
+}
+
+// A blow of the player's character lands: on the target if it is within
+// reach in front, else on whoever is.
+void App::heroBlow() {
+	const int hi = heroIndex();
+	if (hi < 0) return;
+	Game& g = _npcs.game();
+	const float feet[3] = {_player.feet.x, _player.feet.y, _player.feet.z};
+	const float yaw = _hero.yaw();
+	const auto reaches = [&](int t) {
+		if (t < 0) return false;
+		const GameNpc& n = g.npc(u32(t));
+		const float dx = n.pos[0] - feet[0], dz = n.pos[2] - feet[2];
+		const float d = sqrtf(dx * dx + dz * dz);
+		return n.down == DOWN_NONE && fabsf(n.pos[1] - feet[1]) < 150.0f && d <= g.meleeRange(u32(hi), u32(t)) + 40.0f &&
+		       (d < 1.0f || fabsf(wrapYaw(atan2f(dx, dz) - yaw)) < 1.2f);
+	};
+	int victim = reaches(_target) ? _target : -1;
+	if (victim < 0) {
+		const int t = _npcs.pickTarget(feet, yaw, 400.0f, 1.2f);
+		if (reaches(t)) victim = t;
+	}
+	if (victim < 0) return;
+	const GameNpc& v = g.npc(u32(victim));
+	const float fromVictim = atan2f(feet[0] - v.pos[0], feet[2] - v.pos[2]);
+	const bool behind = fabsf(wrapYaw(fromVictim - v.yaw)) > 1.5708f;
+	const i32 dmg = _npcs.strike(u32(hi), u32(victim), behind);
+	if (dmg >= 0) {
+		++_fight.blowsLanded;
+		_fight.lastDamage = dmg;
+	} else {
+		++_fight.parried;
+	}
+	if (!_locked) _target = victim;
+}
+
+void App::heroHitThunk(void* user, u32 attacker) { static_cast<App*>(user)->heroHit(attacker); }
+
+// An inhabitant's blow reaches the player's character: fended off, or it
+// hurts, and maybe it goes down (knocked out by one not hostile to it, dead
+// otherwise - the rules are the same as for everybody, see Npcs::strike).
+void App::heroHit(u32 attacker) {
+	const int hi = heroIndex();
+	if (hi < 0 || _hero.down()) return;
+	Game& g = _npcs.game();
+	GameNpc& h = g.npcMut(u32(hi));
+	const GameNpc& a = g.npc(attacker);
+	const float toAttacker = atan2f(a.pos[0] - _player.feet.x, a.pos[2] - _player.feet.z);
+	const float off = fabsf(wrapYaw(toAttacker - _hero.yaw()));
+	const bool front = off < 1.05f, fromBehind = off > 1.5708f;
+	const bool beast = a.weapon == WEAPON_FIST && g.guildOf(a) >= g.constant("GIL_SEPERATOR_HUM", 16);
+	if ((_hero.parrying() && front && !beast) || (_hero.dodging() && front)) {
+		(_hero.parrying() ? _fight.parried : _fight.dodged) += 1;
+		_npcs.sendPerception("PERC_ASSESSFIGHTSOUND", u32(hi), int(attacker), hi);
+		return;
+	}
+	const i32 dmg = _settings.immortal ? 0 : g.meleeDamage(attacker, u32(hi));
+	i32 hp = max(g.hitPoints(h) - dmg, i32(0));
+	g.setAttribute(h, 0, hp);
+	h.lastHit = int(attacker);
+	++_fight.blowsTaken;
+	_hero.hit(fromBehind);
+	_npcs.sendPerception("PERC_ASSESSFIGHTSOUND", u32(hi), int(attacker), hi);
+	if (hp <= 1 && g.attitude(u32(hi), attacker) != g.constant("ATT_HOSTILE", 0)) {
+		g.setAttribute(h, 0, max(hp, i32(1)));
+		_hero.fall(false, fromBehind);
+		_downTime = float(g.constant("HAI_TIME_UNCONSCIOUS", 20));
+		_npcs.goDown(u32(hi), int(attacker), false, fromBehind);
+		_target = -1;
+		_locked = false;
+	} else if (hp <= 0) {
+		_hero.fall(true, fromBehind);
+		_deadTime = 0.001f;
+		_npcs.goDown(u32(hi), int(attacker), true, fromBehind);
+		_target = -1;
+		_locked = false;
+	}
+}
+
+// After death: back to the saved position (or the world's start), whole again.
+void App::respawn(const char* statePath) {
+	_hero.getUp();
+	_deadTime = _downTime = 0;
+	const int hi = heroIndex();
+	if (hi >= 0) {
+		GameNpc& h = _npcs.game().npcMut(u32(hi));
+		h.down = DOWN_NONE;
+		_npcs.game().setAttribute(h, 0, max(heroHitPointsMax(), i32(1)));
+	}
+	if (!(statePath && loadState(statePath))) {
+		const WorldHeader& wh = _world.header();
+		_cam.yaw = wh.spawnYaw;
+		teleport({wh.spawnPos[0], wh.spawnPos[1], wh.spawnPos[2]});
+	}
+	toast("Вы снова на ногах");
+}
+
+// ---- settings and the menu ----
+
+void App::applySettings() {
+	_settings.sanitize();
+	setDrawDistance(_settings.drawDistanceCm());
+	StreamConfig& cfg = _world.config();
+	cfg.detailDistance[DETAIL_MEDIUM] = _settings.mediumObjectsCm();
+	cfg.detailDistance[DETAIL_SMALL] = _settings.smallObjectsCm();
+	NpcConfig& nc = _npcs.config();
+	nc.perceive = _settings.perception != 0;
+	nc.alive = _settings.life != 0;
+	nc.fights = _settings.fights != 0;
+	_scheme = ControlScheme(_settings.scheme);
+	const bool third = !_settings.firstPerson;
+	if (third != _thirdPerson) {
+		_thirdPerson = third;
+		_camPlaced = false;
+		_eyePitch = 0;
+	}
+}
+
+void App::toast(const char* text, float seconds) {
+	snprintf(_toast, sizeof(_toast), "%s", text ? text : "");
+	_toastTime = seconds;
+}
+
+bool App::menuAction(MenuAction action, const char* statePath) {
+	_menuMessage[0] = 0;
+	if (statePath) _statePath = statePath;
+	switch (action) {
+	case MENU_SAVE:
+		snprintf(_menuMessage, sizeof(_menuMessage), "%s", statePath && saveState(statePath) ? "Позиция сохранена" : "Не удалось сохранить");
+		return true;
+	case MENU_LOAD:
+		if (statePath && loadState(statePath)) {
+			_menu.close();
+			toast("Позиция загружена");
+		} else {
+			snprintf(_menuMessage, sizeof(_menuMessage), "Сохранённой позиции нет");
+		}
+		return true;
+	case MENU_EXIT: return false;
+	case MENU_NEXT_WORLD: {
+		u32 first = 0, next = 0;
+		bool seenCurrent = false;
+		for (u32 i = 0; i < _pak.count(); ++i) {
+			const PakEntry& e = _pak.entry(i);
+			if (e.type != ASSET_WORLD) continue;
+			if (!first) first = e.hash;
+			if (seenCurrent && !next) next = e.hash;
+			if (e.hash == _world.entryHash()) seenCurrent = true;
+		}
+		enterWorld(next ? next : first, nullptr, 0);
+		_menu.close();
+		return true;
+	}
+	case MENU_HOUR:
+		_env.timeOfDay += 1.0f;
+		if (_env.timeOfDay >= 24.0f) _env.timeOfDay -= 24.0f;
+		snprintf(_menuMessage, sizeof(_menuMessage), "Время %02d:%02d", int(_env.timeOfDay), int(_env.timeOfDay * 60.0f) % 60);
+		return true;
+	case MENU_FLY:
+		_player.flying = !_player.flying;
+		if (!_player.flying) {
+			_hero.reset(_player.feet, _cam.yaw);
+			_camPlaced = false;
+		}
+		_menu.close();
+		toast(_player.flying ? "Полёт: стик — вперёд, L/R — вниз/вверх" : "Полёт выключен");
+		return true;
+	case MENU_HEAL: {
+		const int hi = heroIndex();
+		if (hi >= 0) _npcs.game().setAttribute(_npcs.game().npcMut(u32(hi)), 0, max(heroHitPointsMax(), i32(1)));
+		snprintf(_menuMessage, sizeof(_menuMessage), "Здоровье восстановлено");
+		return true;
+	}
+	case MENU_GIVE_WEAPON: {
+		const int hi = heroIndex();
+		const u32 best = hi >= 0 ? _npcs.game().bestMeleeOfAll() : SCRIPT_NONE;
+		if (best == SCRIPT_NONE) {
+			snprintf(_menuMessage, sizeof(_menuMessage), "Оружия в скриптах нет");
+			return true;
+		}
+		_npcs.game().equip(u32(hi), best);
+		const GameItemInfo* it = _npcs.game().itemInfo(best);
+		snprintf(_menuMessage, sizeof(_menuMessage), "%.40s", it && it->name ? _npcs.game().text(it->name) : "Оружие выдано");
+		return true;
+	}
+	default: return true;
+	}
+}
+
+// Where a point of the world is on the screen, in pixels; false if behind the eye.
+bool App::projectToScreen(Vec3 p, int& x, int& y) const {
+	const Vec4 c = transform(_viewProj, {p.x, p.y, p.z, 1.0f});
+	if (c.w <= 1.0f) return false;
+	x = int((c.x / c.w * 0.5f + 0.5f) * float(gfx::SCREEN_W));
+	y = int((0.5f - c.y / c.w * 0.5f) * float(gfx::SCREEN_H));
+	return x > -50 && x < gfx::SCREEN_W + 50 && y > -50 && y < gfx::SCREEN_H + 50;
 }
 
 } // namespace g3

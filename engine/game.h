@@ -62,6 +62,25 @@ struct GameNpc {
 	// its guild thinks; a passing mood over that.
 	i8 attitude = -1, tempAttitude = -1;
 	int target = -1; // Npc_SetTarget: a character, -1 for none
+	// Fighting (fight.h): the weapons it has equipped (item instances,
+	// SCRIPT_NONE for none), what it holds in its hands (a WeaponMode), and
+	// whether it is down.
+	u32 melee = 0xFFFFFFFFu, ranged = 0xFFFFFFFFu;
+	u32 armorItem = 0xFFFFFFFFu; // the armour it wears (its protection counts)
+	u8 weapon = 0;
+	u8 down = 0;      // DOWN_ (fight.h)
+	int lastHit = -1; // who hit it last, -1 for nobody
+};
+
+// What the engine reads off an item (the scripts' C_ITEM), made once per kind.
+struct GameItemInfo {
+	u32 symbol;
+	i32 mainflag, flags;
+	i32 damageType, damageTotal, range;
+	i32 damage[8];
+	i32 protection[8];
+	GameText visual; // its mesh, lower case without extension ("itmw_1h_sword_01")
+	GameText name;   // as the player reads it ("Rusty sword")
 };
 
 // A stack of items a character carries (CreateInvItems).
@@ -149,7 +168,42 @@ public:
 	float perceptionRange(i32 perc) const { return perc >= 0 && perc < PERC_TYPES ? _percRange[perc] : -1.0f; }
 	enum { PERC_TYPES = 64 };
 	// The hit points (attribute 0) of a character: dead at 0.
-	i32 hitPoints(const GameNpc& n) const { return _mAttribute != SCRIPT_NONE && n.object ? _vm.getInt(_mAttribute, 0, n.object) : 1; }
+	i32 hitPoints(const GameNpc& n) const { return attributeOf(n, 0); }
+	// The scripts' attributes (ATR_HITPOINTS, ATR_STRENGTH ...); 1 for hit
+	// points and 0 for the rest if the scripts lack the member.
+	i32 attributeOf(const GameNpc& n, i32 index) const;
+	void setAttribute(GameNpc& n, i32 index, i32 value);
+	// Members of a character by name ("FIGHT_TACTIC", "PROTECTION" index 2), 0 if none.
+	i32 npcInt(const GameNpc& n, u32 member, u32 index = 0) const;
+	// A constant of the scripts by name, or `otherwise`.
+	i32 constant(const char* name, i32 otherwise) const;
+
+	// ---- fighting (the rules in fight.cpp) ----
+	// An item's numbers, or null if `symbol` is no item.
+	const GameItemInfo* itemInfo(u32 symbol);
+	// The best melee weapon a character carries (highest damage), SCRIPT_NONE for none.
+	u32 bestMelee(u32 npc);
+	// Every melee weapon the scripts define, the best one first (for the faults menu's "give").
+	u32 bestMeleeOfAll();
+	// Damage of a blow from `attacker` to `victim` as Gothic 1 reckons it:
+	// per damage type of the weapon in hand (or of the bare hands), strength
+	// plus damage minus protection; doubled (DAM_CRITICAL_MULTIPLIER) when
+	// the attacker's talent wins the dice. Never below 0.
+	i32 meleeDamage(u32 attacker, u32 victim);
+	// How far a blow of `attacker` reaches `victim`, cm (the guilds' fight
+	// ranges and the weapon's).
+	float meleeRange(u32 attacker, u32 victim);
+	// The "G" range: within it a fighter closes in rather than runs.
+	float approachRange(u32 attacker, u32 victim);
+	// The guilds' table of numbers (C_GILVALUES), an entry of it; `otherwise` if none.
+	i32 guildValue(const char* member, i32 guild, i32 otherwise);
+	// Equips a weapon item (EquipItem, the faults menu): melee or ranged by its kind.
+	void equip(u32 npc, u32 itemSymbol);
+	u32 heroIndex() const { return _hero; }
+	// A random number below `bound` from the scripts' own dice.
+	u32 dice(u32 bound);
+	// The function of a state by name ("ZS_DEAD"), SCRIPT_NONE if none.
+	u32 function(const char* name) const;
 
 	// A number that stands for a look's meshes and textures: the same in the
 	// baker and on the console, which is how baked models are found.
@@ -229,8 +283,26 @@ private:
 	static void xSetTarget(ScriptVm& vm, void* user);
 	static void xGetTarget(ScriptVm& vm, void* user);
 	static void xSetPercRange(ScriptVm& vm, void* user);
+	// Fighting, as far as it needs no living actor (npc_fight.cpp has the rest).
+	static void xHasEquippedMelee(ScriptVm& vm, void* user);
+	static void xHasEquippedRanged(ScriptVm& vm, void* user);
+	static void xHasEquippedWeapon(ScriptVm& vm, void* user);
+	static void xIsInFightMode(ScriptVm& vm, void* user);
+	static void xHasReadiedWeapon(ScriptVm& vm, void* user);
+	static void xHasReadiedMelee(ScriptVm& vm, void* user);
+	static void xHasReadiedRanged(ScriptVm& vm, void* user);
+	static void xChangeAttribute(ScriptVm& vm, void* user);
+	static void xSetToFistMode(ScriptVm& vm, void* user);
+	static void xSetToFightMode(ScriptVm& vm, void* user);
+	static void xReturnMinusOne(ScriptVm& vm, void* user);
+	static void xGetTrueGuild(ScriptVm& vm, void* user);
 	void addItems(ScriptInstance* npc, i32 symbol, i32 count);
+	void wear(GameNpc& n, u32 armorSymbol);
 
+	GameItemInfo* _itemInfos = nullptr;
+	u32 _itemInfoCount = 0, _itemInfoCap = 0;
+	ScriptInstance* _gilValues = nullptr;
+	bool _gilTried = false;
 	ScriptVm _vm;
 	GameNpc* _npcs = nullptr;
 	u32 _npcCount = 0, _npcCap = 0;
@@ -258,6 +330,10 @@ private:
 	u32 _mRoutine = SCRIPT_NONE, _mName = SCRIPT_NONE, _mVisualChange = SCRIPT_NONE, _mVisualSkin = SCRIPT_NONE,
 	    _mWear = SCRIPT_NONE, _mMainFlag = SCRIPT_NONE, _mWp = SCRIPT_NONE, _mStartState = SCRIPT_NONE,
 	    _mSensesRange = SCRIPT_NONE, _mGuild = SCRIPT_NONE, _mAttribute = SCRIPT_NONE;
+	// Fighting.
+	u32 _mProtection = SCRIPT_NONE, _mDamage = SCRIPT_NONE, _mDamageType = SCRIPT_NONE;
+	u32 _iFlags = SCRIPT_NONE, _iDamageType = SCRIPT_NONE, _iDamageTotal = SCRIPT_NONE, _iDamage = SCRIPT_NONE, _iRange = SCRIPT_NONE,
+	    _iVisual = SCRIPT_NONE, _iProtection = SCRIPT_NONE, _iName = SCRIPT_NONE;
 };
 
 } // namespace g3

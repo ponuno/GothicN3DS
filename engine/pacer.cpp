@@ -21,6 +21,11 @@ void FramePacer::update(float frameLoad, bool turning) {
 	// act, one light frame is not reason enough to undo it.
 	_load = now > _load ? now : _load + (now - _load) * 0.25f;
 	if (_probeWait == 0) _probeWait = cfg.probeEvery;
+	if (cfg.halfOnly && _interval == 1) {
+		_interval = 2;
+		_over = _under = 0;
+		_probing = false;
+	}
 
 	if (_interval == 1) {
 		++_atFullRate;
@@ -88,6 +93,7 @@ void FramePacer::update(float frameLoad, bool turning) {
 		_detail += cfg.recover;
 	_detail = clamp(_detail, cfg.minDetail, 1.0f);
 
+	if (cfg.halfOnly) return; // (no way back to full rate, and nothing to find out)
 	// A scene this light needs no second thought.
 	if (_load < cfg.leaveHalf)
 		++_under;

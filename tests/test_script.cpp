@@ -453,7 +453,7 @@ static void testSyntheticScript() {
 	ScriptBakeResult baked;
 	const std::vector<u8> image = bakeScript(src, baked);
 	std::printf("       %s", baked.report.c_str());
-	CHECK(baked.hashClashes == 0 && baked.classes == 3 && baked.instances >= 12 && baked.externals >= 25);
+	CHECK(baked.hashClashes == 0 && baked.classes == 5 && baked.instances >= 12 && baked.externals >= 25);
 
 	// The file format: written and read back, it is the same script.
 	const std::vector<u8> dat = writeScriptDat(src);
@@ -490,7 +490,7 @@ static void testSyntheticScript() {
 		const ScriptCheckResult r = checkScript(dat, src, image, opt);
 		std::printf("       %s", r.report.c_str());
 		CHECK(r.ran && r.differ == 0 && r.objected == 0 && r.stateSame);
-		CHECK(r.runs == 1 + 4 + 3 + 2 && r.same == r.runs && r.calls > 60);
+		CHECK(r.runs == 1 + 4 + 4 + 2 && r.same == r.runs && r.calls > 60);
 	}
 #endif
 }

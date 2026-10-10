@@ -6,6 +6,7 @@
 // Npc::nextAiAction, the AI_ and Npc_ externals of its GameScript).
 #include "npcs.h"
 
+#include "fight.h"
 #include "sys.h"
 
 #include <limits.h>
@@ -133,12 +134,17 @@ const NpcActor* Npcs::nearest() const {
 // begin a run).
 const Clip* Npcs::modeClip(NpcActor& a, const char* pattern, bool orOtherMode) {
 	const char* const words[2] = {a.walkMode == NpcActor::WALK ? "WALK" : "RUN", a.walkMode == NpcActor::WALK ? "RUN" : "WALK"};
-	for (int k = 0; k < (orOtherMode ? 2 : 1); ++k) {
-		char mode[16], name[64];
-		snprintf(mode, sizeof(mode), "%s%s", a.fist ? "FIST" : "", words[k]);
-		snprintf(name, sizeof(name), pattern, mode, mode);
-		if (const Clip* c = clip(a, name)) return c;
-	}
+	// With a weapon in hand its word goes in front ("S_1HRUNL"); a model
+	// without such an animation goes as it would without.
+	const u8 weapon = a.npc < _game.npcCount() ? _game.npc(a.npc).weapon : u8(WEAPON_NONE);
+	const char* const prefixes[2] = {weapon != WEAPON_NONE && !a.fist ? weaponWord(weapon) : a.fist ? "FIST" : "", a.fist ? "FIST" : ""};
+	for (int p = 0; p < (prefixes[0] != prefixes[1] ? 2 : 1); ++p)
+		for (int k = 0; k < (orOtherMode ? 2 : 1); ++k) {
+			char mode[16], name[64];
+			snprintf(mode, sizeof(mode), "%s%s", prefixes[p], words[k]);
+			snprintf(name, sizeof(name), pattern, mode, mode);
+			if (const Clip* c = clip(a, name)) return c;
+		}
 	return nullptr;
 }
 
@@ -155,6 +161,24 @@ void Npcs::wake(NpcActor& a) {
 	a.headYaw = a.headPitch = 0;
 	a.idle = modeClip(a, "S_%s", true);
 	a.anim.play(a.idle, 0.0f);
+	a.blow.reset();
+	a.drawTo = 0xFF;
+	a.stepCount = a.stepAt = 0;
+	a.flee = a.faiWait = 0;
+	a.stumble = -1.0f;
+	if (a.npc < _game.npcCount() && _game.npc(a.npc).down == DOWN_DEAD) {
+		// Where it fell, as it fell.
+		const Clip* lying = clip(a, "S_DEADB");
+		snprintf(a.stance, sizeof(a.stance), "DEADB");
+		if (!lying) {
+			lying = clip(a, "S_DEAD");
+			snprintf(a.stance, sizeof(a.stance), "DEAD");
+		}
+		if (lying) {
+			a.idle = lying;
+			a.anim.play(lying, 0.0f);
+		}
+	}
 	// Everybody in a rhythm of his own.
 	a.anim.advance(float(a.npc % 97) * 0.37f);
 	(void)a.anim.takeMotion();
@@ -265,6 +289,13 @@ void Npcs::stopWalking(NpcActor& a) {
 }
 
 i32 Npcs::bodyStateOf(const NpcActor& a) const {
+	const u8 down = _game.npc(a.npc).down;
+	if (down == DOWN_DEAD) return _bsDead;
+	if (down == DOWN_UNCONSCIOUS) return _bsUnconscious;
+	if (a.blow.clip && a.anim.current() == a.blow.clip) return _bsHit;
+	if (a.stumble > 0.0f) return _bsStumble;
+	if (const Clip* c = a.anim.current())
+		if (c->fight() && c->fight()->parry[0] != CLIP_NO_FRAME) return _bsParade;
 	if (a.bodyState >= 0) return a.bodyState;
 	if (a.mob >= 0 && a.mobStage >= NpcActor::MOB_ENTERING) {
 		// By the kind of thing, as the scripts' lists sort them.
@@ -533,6 +564,8 @@ i32 Npcs::invoke(NpcActor& a, u32 fn, int victim) {
 }
 
 void Npcs::clearState(NpcActor& a, bool finalize) {
+	// Out of being knocked out: up again (the state's end has it stand up).
+	if (a.state && a.state == _fnUnconscious && _game.npc(a.npc).down == DOWN_UNCONSCIOUS) _game.npcMut(a.npc).down = DOWN_NONE;
 	if (a.state && a.started) {
 		if (finalize && a.endFn != SCRIPT_NONE) invoke(a, a.endFn);
 		a.prevState = a.state;
@@ -545,13 +578,14 @@ void Npcs::clearState(NpcActor& a, bool finalize) {
 void Npcs::startState(NpcActor& a, u32 fn, bool finalizeOld, const char* wp, bool byRoutine) {
 	ScriptVm& vm = _game.vm();
 	if (!vm.isPlainFunction(fn) || vm.symbol(fn).count != 0) return;
-	if (!byRoutine && refusesState(fn)) {
-		// There is no fighting yet: whoever the scripts send into a fight
+	if (!byRoutine && !_cfg.fights && refusesState(fn)) {
+		// Fighting is switched off: whoever the scripts send into a fight
 		// goes on with what he was doing.
 		++_stats.fightsRefused;
 		return;
 	}
 	GameNpc& n = _game.npcMut(a.npc);
+	if (n.down == DOWN_DEAD && fn != _fnDead) return; // (the dead do nothing more)
 	if (a.state == fn) {
 		// Asked for again: it begins anew.
 		if (finalizeOld) a.started = false;
@@ -580,6 +614,15 @@ void Npcs::startState(NpcActor& a, u32 fn, bool finalizeOld, const char* wp, boo
 
 void Npcs::tickState(NpcActor& a) {
 	const GameNpc& n = _game.npc(a.npc);
+	if (n.down == DOWN_DEAD) {
+		// Dead: its state of being dead begins once, and lasts.
+		if (a.state && !a.started) {
+			a.started = true;
+			a.stateTime = 0;
+			invoke(a, a.state);
+		}
+		return;
+	}
 	if (!a.state) {
 		const u32 fn = _game.behaviour(n);
 		if (!fn) return;
@@ -594,7 +637,9 @@ void Npcs::tickState(NpcActor& a) {
 		return;
 	}
 	if (a.loopWait > 0.0f) return;
-	a.loopWait = max(a.percTime, 0.25f);
+	// (In a fight the loop decides the next move as soon as one is done, as
+	// the original's does every frame; otherwise it need not be asked as often.)
+	a.loopWait = n.weapon != WEAPON_NONE ? 0.0f : max(a.percTime, 0.25f);
 	// (A state without a loop of its own simply lasts.)
 	i32 loop = a.loopFn != SCRIPT_NONE ? invoke(a, a.loopFn) : 0;
 	// Its hours are over?
@@ -738,6 +783,7 @@ bool Npcs::walkTo(NpcActor& a, const float target[3], float radius, float dt, bo
 // Starts the action that has just come off the queue. True if that is all
 // there is to it.
 bool Npcs::begin(NpcActor& a, const World& world) {
+	if (a.action.kind >= NPC_ACT_ATTACK) return beginFight(a, world);
 	GameNpc& n = _game.npcMut(a.npc);
 	NpcAction& act = a.action;
 	switch (act.kind) {
@@ -905,6 +951,7 @@ bool Npcs::begin(NpcActor& a, const World& world) {
 
 // Goes on with the action in hand. True once it is done.
 bool Npcs::carryOn(NpcActor& a, const World& world, float dt) {
+	if (a.action.kind >= NPC_ACT_ATTACK) return carryOnFight(a, world, dt);
 	GameNpc& n = _game.npcMut(a.npc);
 	NpcAction& act = a.action;
 	switch (act.kind) {
@@ -978,6 +1025,8 @@ bool Npcs::carryOn(NpcActor& a, const World& world, float dt) {
 // A frame of an actor's life.
 void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 	GameNpc& n = _game.npcMut(a.npc);
+	a.animPrev = a.anim.time();
+	a.animClip = a.anim.current();
 	a.anim.advance(dt);
 	const Vec3 moved = a.anim.takeMotion();
 	bool walked = false;
@@ -1039,9 +1088,10 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 			if (a.action.kind == NPC_ACT_NONE && !a.queueCount) break;
 		}
 		a.percWait -= dt;
-		if (_cfg.perceive && a.percWait <= 0.0f) perceive(a, world);
+		if (_cfg.perceive && a.percWait <= 0.0f && n.down == DOWN_NONE) perceive(a, world);
 		turnHead(a, dt);
 	}
+	tickFight(a, dt);
 	// A gesture that has run out leaves it standing (or sitting) as before.
 	if (a.anim.finished() && a.phase != NpcActor::MOVING && a.action.kind != NPC_ACT_PLAY_ANI && a.action.kind != NPC_ACT_USE_MOB)
 		fallBack(a, 0.2f);
@@ -1327,6 +1377,14 @@ void Npcs::xIsInState(ScriptVm& vm, void* user) {
 	const u32 fn = u32(vm.popInt());
 	ScriptInstance* inst = vm.popInstance();
 	const int who = self.npcFor(inst);
+	// Down is down, actor or not (the player's character too).
+	if (who >= 0 && fn != 0) {
+		const u8 down = self._game.npc(u32(who)).down;
+		if ((down == DOWN_UNCONSCIOUS && fn == self._fnUnconscious) || (down == DOWN_DEAD && fn == self._fnDead)) {
+			vm.pushInt(1);
+			return;
+		}
+	}
 	if (const NpcActor* a = self.actorFor(inst))
 		vm.pushInt(a->state != 0 && a->state == fn);
 	else // far away it is doing what its routine says
@@ -1502,6 +1560,7 @@ void Npcs::bindAi() {
 	static_assert(sizeof(table) / sizeof(table[0]) == 37, "one function per name");
 	for (u32 i = 0; i < count && i < sizeof(table) / sizeof(table[0]); ++i) vm.bind(names[i], table[i], this);
 	bindPerception();
+	bindFight();
 }
 
 } // namespace g3

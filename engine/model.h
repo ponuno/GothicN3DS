@@ -42,6 +42,10 @@ public:
 	Vec3 motion(float time) const;
 	// The highest the clip lifts the character above where it started, cm.
 	float rise() const { return _rise; }
+	// The frames that matter in a fight (g3ds/model.h), or null.
+	const ClipFight* fight() const { return _fight; }
+	// Seconds into the clip of a frame of it.
+	float frameTime(u32 frame) const { return float(frame) / _h.fps; }
 
 private:
 	Vec3 motionAt(u32 frame) const;
@@ -51,6 +55,7 @@ private:
 	const u8* _tracks = nullptr;
 	const ClipSample* _samples = nullptr;
 	const i16* _motion = nullptr;
+	const ClipFight* _fight = nullptr;
 	float _rise = 0;
 	u32 _bytes = 0;
 };
@@ -179,6 +184,10 @@ public:
 	void play(const Clip* clip, float blend = -1.0f);
 	// Starts the current clip over (a step that is taken again).
 	void restart(float blend);
+	// Jumps to `time` in the current clip (a combo going on with its next
+	// blow from where the last one ends). What the root travels meanwhile
+	// counts as moved.
+	void seek(float time);
 	// Playback speed of the current clip; 1 is as authored.
 	void setRate(float rate) { _rate = rate; }
 	void update(float dt) {
@@ -210,5 +219,14 @@ private:
 	Pose _pose, _from;
 	Pose _base; // what the nodes without a track in the clip keep (see play())
 };
+
+// When blow `index` of an attack clip lands, seconds: its event frame
+// (DEF_OPT_FRAME), or - a clip without fight events, from an archive baked
+// before them - a single blow at 45% of it. Negative: there is no such blow.
+inline float clipBlowTime(const Clip& c, u32 index) {
+	const ClipFight* f = c.fight();
+	if (!f) return index == 0 ? c.duration() * 0.45f : -1.0f;
+	return index < f->hits && f->hit[index] != CLIP_NO_FRAME && c.header().fps > 0.0f ? float(f->hit[index]) / c.header().fps : -1.0f;
+}
 
 } // namespace g3

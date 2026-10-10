@@ -3,10 +3,13 @@
 #pragma once
 #include "g3ds/pak.h"
 #include "hero.h"
+#include "menu.h"
 #include "npcs.h"
 #include "player.h"
 #include "recorder.h"
+#include "settings.h"
 #include "sky.h"
+#include "ui.h"
 #include "world.h"
 
 namespace g3 {
@@ -109,9 +112,60 @@ public:
 	// The last five seconds of the character controller, frame by frame.
 	const MoveRecorder& moves() const { return _moves; }
 
+	// What the player has set (menu.h). Change them, then applySettings().
+	Settings& settings() { return _settings; }
+	const Settings& settings() const { return _settings; }
+	// Draw distance, objects, the inhabitants' switches, the view: what of
+	// the settings concerns the application. (Frame pacing and the bottom
+	// screen are the platform's.)
+	void applySettings();
+	// The pause menu: while it is open the game stands still (update() is
+	// not called) and render() draws it over the picture.
+	Menu& menu() { return _menu; }
+	Ui& ui() { return _ui; }
+	// A line of text in the middle of the picture for a few seconds.
+	void toast(const char* text, float seconds = 2.5f);
+	const char* toastText() const { return _toastTime > 0.0f ? _toast : ""; }
+	// Where the position is saved (the menu and getting up after death load from there).
+	void setStatePath(const char* path) { _statePath = path; }
+	// Runs what the menu asked for (save, load, faults); returns false for
+	// MENU_EXIT, which is the platform's to carry out.
+	bool menuAction(MenuAction action, const char* statePath);
+
+	// ---- controls and fighting ----
+	// How the sticks steer (Settings::scheme): classic until applySettings().
+	ControlScheme scheme() const { return _scheme; }
+	void setScheme(ControlScheme s) { _scheme = s; }
+	// The character the player has locked on to (or fights with), -1 for none.
+	int target() const { return _target; }
+	bool targetLocked() const { return _locked; }
+	// The player's character in the scripts (its hit points and the like).
+	const GameNpc* heroNpc() const;
+	i32 heroHitPoints() const;
+	i32 heroHitPointsMax() const;
+	// The player's character was killed: the overlay says so, A loads the position.
+	bool heroDead() const { return _hero.down() && _deadTime > 0.0f; }
+	// What fighting has come to so far, for the reports.
+	struct FightStats {
+		u32 blowsLanded = 0, blowsTaken = 0, parried = 0, dodged = 0;
+		i32 lastDamage = -1;
+	};
+	const FightStats& fightStats() const { return _fight; }
+
 private:
 	void checkPortals();
 	void placeCamera(float dt);
+	// The parts of a frame of the game with a character.
+	Input steerInput(const Input& in, float dt);
+	void fightInput(const Input& in, float dt);
+	void updateTarget(const Input& in, float dt);
+	void heroBlow();
+	static void heroHitThunk(void* user, u32 attacker);
+	void heroHit(u32 attacker);
+	void syncHeroNpc();
+	void respawn(const char* statePath);
+	int heroIndex() const;
+	bool projectToScreen(Vec3 p, int& x, int& y) const;
 
 	Pak _pak;
 	World _world;
@@ -135,6 +189,30 @@ private:
 	float _eyePitch = 0;       // first person with a character: looking up and down
 	UpdateTimes _times;
 	MoveRecorder _moves;
+	Settings _settings;
+	Menu _menu;
+	Ui _ui;
+	char _toast[96] = "";
+	float _toastTime = 0;
+	char _menuMessage[48] = "";
+	void drawOverlay();
+	// Controls: the scheme; the console scheme's camera, which the second
+	// stick turns about the character (`_orbitYaw`), and for how long it has
+	// been left alone.
+	ControlScheme _scheme = CONTROLS_CLASSIC;
+	float _orbitYaw = 0;
+	float _lookIdle = 10.0f;
+	float _steerLag = 0; // how far the character still has to turn (it leans into it)
+	// Fighting.
+	int _target = -1;
+	bool _locked = false;
+	float _targetScan = 0, _threatWait = 0;
+	u8 _lastWeapon = WEAPON_FIST;
+	u8 _heldBefore = 0; // what was in the hands the frame before (WeaponMode)
+	float _downTime = 0, _deadTime = 0;
+	const char* _statePath = nullptr; // where respawning after death loads from
+	FightStats _fight;
+	Mat4 _viewProj;
 };
 
 } // namespace g3

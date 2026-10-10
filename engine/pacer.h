@@ -43,6 +43,10 @@ struct PacerConfig {
 	float probeFit = 0.93f;   // load at minimum detail that answers yes
 	u32 probeEvery = 240;     // frames between two such checks (8 s); doubles after each "no"
 	u32 probeEveryMax = 1920;
+	// A steady 30 fps whatever the load (the menu's "30 fps"): half rate
+	// from the first frame, never back to full rate. The detail is still kept
+	// within the time there is.
+	bool halfOnly = false;
 };
 
 class FramePacer {

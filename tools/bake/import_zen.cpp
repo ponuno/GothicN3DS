@@ -3,6 +3,7 @@
 // straight from a Gothic installation through ZenKit. Nothing from the game
 // is redistributed; the user bakes their own copy.
 #include "g3ds/model.h"
+#include "fight_clips.h"
 #include "importers.h"
 
 #include "g3ds/world.h"
@@ -1392,7 +1393,8 @@ const char* const kHeroClips[] = {
 // ZenGin goes from state A to state B through "T_A_2_B" if the model script
 // has it (and from standing through "T_STAND_2_B", to standing through
 // "T_A_2_STAND"). Every such transition between these states is brought along.
-const char* const kHeroStates[] = {"STAND", "RUN", "RUNL", "WALK", "WALKL", "WALKBL", "WALKWL", "JUMP", "FALLDN", "FALL", "SWIM", "SWIMF", "SWIMB"};
+const char* const kHeroStates[] = {"STAND", "RUN", "RUNL", "WALK", "WALKL", "WALKBL", "WALKWL", "JUMP", "FALLDN", "FALL", "SWIM", "SWIMF", "SWIMB",
+                                   "SNEAK", "SNEAKL", "SNEAKBL"};
 
 bool isHeroTransition(const std::string& name) {
 	if (name.compare(0, 2, "T_") != 0) return false;
@@ -1401,6 +1403,11 @@ bool isHeroTransition(const std::string& name) {
 	const std::string from = name.substr(2, mid - 2), to = name.substr(mid + 3);
 	bool a = false, b = false;
 	for (const char* st : kHeroStates) {
+		a = a || from == st;
+		b = b || to == st;
+	}
+	// (And between the states of a weapon in hand: "T_1HRUN_2_1HRUNL".)
+	for (const std::string& st : fightStates()) {
 		a = a || from == st;
 		b = b || to == st;
 	}
@@ -1621,12 +1628,21 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		for (const zenkit::MdsAnimation& a : script.animations) family(a.name);
 		for (const zenkit::MdsAnimationAlias& a : script.aliases) family(a.name);
 	}
+	// Asked for in case the model has them; not missed if it has not.
+	std::set<std::string> optional;
 	if (standardSet) {
 		wanted.assign(std::begin(kHeroClips), std::end(kHeroClips));
+		for (const std::string& name : fightClipNames(true))
+			if (std::find(wanted.begin(), wanted.end(), name) == wanted.end()) {
+				wanted.push_back(name);
+				optional.insert(name);
+			}
 		for (const zenkit::MdsAnimation& a : script.animations)
-			if (isHeroTransition(upper(a.name))) wanted.push_back(upper(a.name));
+			if (isHeroTransition(upper(a.name)) && std::find(wanted.begin(), wanted.end(), upper(a.name)) == wanted.end())
+				wanted.push_back(upper(a.name));
 		for (const zenkit::MdsAnimationAlias& a : script.aliases)
-			if (isHeroTransition(upper(a.name))) wanted.push_back(upper(a.name));
+			if (isHeroTransition(upper(a.name)) && std::find(wanted.begin(), wanted.end(), upper(a.name)) == wanted.end())
+				wanted.push_back(upper(a.name));
 		for (const zenkit::MdsAnimationBlend& b : script.blends) {
 			if (!isHeroTransition(upper(b.name))) continue;
 			SrcAniBlend blend;
@@ -1643,6 +1659,9 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		int layer = 1;
 		bool moves = false, fly = false, reversed = false;
 		zenkit::ModelAnimation ani;
+		// The event tags of a fight (ClipFight), in frames of the clip.
+		std::vector<int> hits, hitEnds, windows, parry;
+		int fightMode = -1;
 	};
 	std::vector<Loaded> loadedClips;
 	std::vector<std::string> notFound;
@@ -1679,11 +1698,14 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 				}
 		// Asked for whatever the scripts might name: what this model does not
 		// have is none of its business.
-		if (!described && opt.onlyDeclared) continue;
-		// What an animation leads into is wanted along with it ("T_STAND_2_SIT", then "S_SIT").
-		if (described && opt.onlyDeclared && !lc.next.empty() && lc.next != name &&
-		    std::find(wanted.begin(), wanted.end(), lc.next) == wanted.end())
+		if (!described && (opt.onlyDeclared || optional.count(name))) continue;
+		// What an animation leads into is wanted along with it ("T_STAND_2_SIT", then "S_SIT";
+		// drawing a sword: "T_RUN_2_1H", then "T_1H_2_1HRUN", then "S_1HRUN").
+		if (described && (opt.onlyDeclared || optional.count(name)) && !lc.next.empty() && lc.next != name &&
+		    std::find(wanted.begin(), wanted.end(), lc.next) == wanted.end()) {
 			wanted.push_back(lc.next);
+			if (optional.count(name)) optional.insert(lc.next);
+		}
 		// An alias may name another alias (the monsters' scripts do); the
 		// samples are in the file of the animation at the end of the chain.
 		for (int depth = 0; described && depth < 4; ++depth) {
@@ -1699,6 +1721,47 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 				}
 			if (!followed) break;
 		}
+		// The frames of a fight are the animation's own (an alias has those
+		// of the one it names); they count from its first frame.
+		for (const zenkit::MdsAnimation& a : script.animations) {
+			if (upper(a.name) != file || lc.reversed) continue;
+			const auto ownFrame = [&](int frame) { return std::max(frame - int(a.first_frame), 0); };
+			for (const zenkit::MdsEventTag& ev : a.events) {
+				switch (ev.type) {
+				case zenkit::MdsEventType::OPTIMAL_FRAME:
+					// (Several tags: the first one counts, as in the original.)
+					if (lc.hits.empty() && !ev.frames.empty())
+						for (int f : ev.frames) lc.hits.push_back(ownFrame(f));
+					else if (lc.hits.empty())
+						lc.hits.push_back(ownFrame(ev.frame));
+					break;
+				case zenkit::MdsEventType::HIT_END:
+					for (int f : ev.frames) lc.hitEnds.push_back(ownFrame(f));
+					break;
+				case zenkit::MdsEventType::COMBO_WINDOW:
+					for (int f : ev.frames) lc.windows.push_back(ownFrame(f));
+					break;
+				case zenkit::MdsEventType::PARRY_FRAME:
+					for (int f : ev.frames) lc.parry.push_back(ownFrame(f));
+					break;
+				case zenkit::MdsEventType::SET_FIGHT_MODE:
+					if (lc.fightMode < 0) lc.fightMode = ownFrame(ev.frame);
+					break;
+				default: break;
+				}
+			}
+			// The lists rise frame after frame; a stray value at the end (ZenKit
+			// reads one more when the text ends in a space) goes.
+			for (std::vector<int>* list : {&lc.hits, &lc.hitEnds, &lc.windows, &lc.parry})
+				for (size_t i = 1; i < list->size(); ++i)
+					if ((*list)[i] < (*list)[i - 1]) {
+						list->resize(i);
+						break;
+					}
+			if (lc.windows.size() % 2) lc.windows.pop_back();
+			if (lc.parry.size() > 2) lc.parry.resize(2);
+			break;
+		}
 		bool have = false;
 		try {
 			have = loadFile(vfs, scriptBase + "-" + file + ".MAN", lc.ani);
@@ -1708,7 +1771,7 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		if (!have || lc.ani.frame_count == 0 || lc.ani.node_count == 0 ||
 		    lc.ani.samples.size() != size_t(lc.ani.frame_count) * lc.ani.node_count ||
 		    lc.ani.node_indices.size() != lc.ani.node_count) {
-			if (!witnesses.count(name)) notFound.push_back(name);
+			if (!witnesses.count(name) && !optional.count(name)) notFound.push_back(name);
 			continue;
 		}
 		bool nodesOk = true;
@@ -1765,6 +1828,11 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		clip.blendOut = lc.blendOut;
 		clip.moves = lc.moves;
 		clip.fly = lc.fly;
+		clip.hits = lc.hits;
+		clip.hitEnds = lc.hitEnds;
+		clip.windows = lc.windows;
+		clip.parry = lc.parry;
+		clip.fightModeFrame = lc.fightMode;
 		for (uint32_t idx : lc.ani.node_indices) clip.nodes.push_back(int(idx));
 		const uint32_t frames = lc.ani.frame_count, tracks = lc.ani.node_count;
 		clip.samples.resize(size_t(frames) * tracks);

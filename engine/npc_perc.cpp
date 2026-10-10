@@ -122,6 +122,34 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 				break;
 			}
 	}
+	// Somebody about with a weapon in hand (PERC_ASSESSFIGHTER); a body on
+	// the ground (PERC_ASSESSBODY). The nearest that is seen.
+	for (int kind = 0; kind < 2 && a.state; ++kind) {
+		const i32 perc = kind == 0 ? _percFighter : _percBody;
+		const u32 fn = perc >= 0 && perc < Game::PERC_TYPES ? a.perc[perc] : 0;
+		if (!fn) continue;
+		const float range = _game.sensesRange(n);
+		int best = -1;
+		float bestD = range * range;
+		const auto consider = [&](u32 index) {
+			if (index == a.npc) return;
+			const GameNpc& o = _game.npc(index);
+			if (!o.placed || o.world != n.world) return;
+			if (kind == 0 && (o.weapon == WEAPON_NONE || o.down != DOWN_NONE)) return;
+			if (kind == 1 && o.down != DOWN_DEAD) return;
+			const float dx = o.pos[0] - n.pos[0], dy = o.pos[1] - n.pos[1], dz = o.pos[2] - n.pos[2];
+			const float d = dx * dx + dy * dy + dz * dz;
+			if (d < bestD && sees(a, index, false)) {
+				bestD = d;
+				best = int(index);
+			}
+		};
+		for (const NpcActor& o : _actors)
+			if (o.used && o.ready) consider(o.npc);
+		if (hero) consider(heroIndex);
+		if (best >= 0) react(a, fn, best, -1);
+		if (!a.state) break; // (the reaction may have ended the state)
+	}
 	_world = before;
 }
 
@@ -177,33 +205,19 @@ void Npcs::xPerceiveAll(ScriptVm& vm, void* user) {
 }
 
 // Npc_SendPassivePerc(sender, perception, victim, other): everybody about
-// who has that perception, within its reach, reacts - OTHER being the
-// sender, VICTIM the victim (as OpenGothic passes them).
+// the sender who has that perception, within its reach, reacts - with OTHER
+// the fourth argument and VICTIM the third, as OpenGothic passes them (the
+// scripts' usual "(self, PERC_ASSESSWARN, self, other)" has the others look
+// at the offender, not at the one who warns). Without an OTHER nothing is sent.
 void Npcs::xSendPassivePerc(ScriptVm& vm, void* user) {
 	Npcs& self = *static_cast<Npcs*>(user);
-	ScriptInstance* third = vm.popInstance();
+	ScriptInstance* otherInst = vm.popInstance();
 	ScriptInstance* victimInst = vm.popInstance();
 	const i32 perc = vm.popInt();
 	const int sender = self.npcFor(vm.popInstance());
-	(void)third;
-	if (sender < 0 || perc < 0 || perc >= Game::PERC_TYPES || !self._cfg.perceive) return;
-	const int victim = self.npcFor(victimInst);
-	const GameNpc& s = self._game.npc(u32(sender));
-	float range = self._game.perceptionRange(perc);
-	// The reactions may send perceptions of their own: one round, no echo.
-	static int depth = 0;
-	if (depth > 0) return;
-	++depth;
-	for (NpcActor& a : self._actors) {
-		if (!a.used || !a.ready || a.npc == u32(sender) || !a.perc[perc] || !a.state || !a.started) continue;
-		const GameNpc& n = self._game.npc(a.npc);
-		if (n.world != s.world) continue;
-		const float r = range >= 0.0f ? range : self._game.sensesRange(n);
-		const float dx = n.pos[0] - s.pos[0], dy = n.pos[1] - s.pos[1], dz = n.pos[2] - s.pos[2];
-		if (dx * dx + dy * dy + dz * dz > r * r) continue;
-		self.react(a, a.perc[perc], sender, victim);
-	}
-	--depth;
+	const int other = self.npcFor(otherInst);
+	if (sender < 0 || other < 0) return;
+	self.sendPerception(perc, u32(sender), other, self.npcFor(victimInst));
 }
 
 void Npcs::xLookAtNpc(ScriptVm& vm, void* user) {

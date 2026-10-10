@@ -346,7 +346,8 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 		h.trackCount = u16(tracks);
 		h.frameCount = u16(frames);
 		h.fps = clip.fps;
-		h.flags = u16((loop ? CLIPF_LOOP : 0) | (!motion.empty() ? CLIPF_MOVES : 0) | (clip.fly ? CLIPF_FLY : 0));
+		const bool fight = clip.fighting();
+		h.flags = u16((loop ? CLIPF_LOOP : 0) | (!motion.empty() ? CLIPF_MOVES : 0) | (clip.fly ? CLIPF_FLY : 0) | (fight ? CLIPF_FIGHT : 0));
 		h.layer = u16(std::clamp(clip.layer, 0, 65535));
 		h.blendIn = std::clamp(clip.blendIn, 0.0f, 5.0f);
 		h.blendOut = std::clamp(clip.blendOut, 0.0f, 5.0f);
@@ -371,14 +372,37 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 		for (const auto& m : motion)
 			for (float c : m) append(blob, i16(std::lround(c / h.motionScale)));
 		while (blob.size() % 4) blob.push_back(0);
-		if (blob.size() != clipBlobSize(h.trackCount, h.frameCount, !motion.empty())) throw std::logic_error("clip layout");
+		if (fight) {
+			ClipFight cf;
+			std::memset(&cf, 0xFF, sizeof(cf));
+			cf.pad = 0;
+			cf.reserved = 0;
+			cf.reserved2 = 0;
+			const auto frame = [&](int f) { return u16(std::clamp(f, 0, int(frames) - 1)); };
+			cf.hits = u8(std::min<size_t>(clip.hits.size(), CLIP_FIGHT_BLOWS));
+			for (u32 i = 0; i < cf.hits; ++i) cf.hit[i] = frame(clip.hits[i]);
+			cf.hitEnds = u8(std::min<size_t>(clip.hitEnds.size(), CLIP_FIGHT_BLOWS));
+			for (u32 i = 0; i < cf.hitEnds; ++i) cf.hitEnd[i] = frame(clip.hitEnds[i]);
+			cf.windows = u8(std::min<size_t>(clip.windows.size() / 2, CLIP_FIGHT_BLOWS));
+			for (u32 i = 0; i < cf.windows * 2u; ++i) cf.window[i] = frame(clip.windows[i]);
+			if (clip.parry.size() >= 2) {
+				cf.parry[0] = frame(clip.parry[0]);
+				cf.parry[1] = frame(clip.parry[1]);
+			}
+			if (clip.fightModeFrame >= 0) cf.fightMode = frame(clip.fightModeFrame);
+			append(blob, cf);
+		}
+		if (blob.size() != clipBlobSize(h.trackCount, h.frameCount, !motion.empty(), fight)) throw std::logic_error("clip layout");
 		const std::string entry = "anim/" + lowerName(model.name) + "/" + lowerName(clip.name);
 		pak.add(entry, ASSET_CLIP, blob);
 		clipBytes += blob.size();
 		clipRefs.push_back({hashName(clip.name.c_str()), hashName(entry.c_str())});
-		clipNotes.push_back(format("%s %.2fs%s%s%s", clip.name.c_str(), double(duration), loop ? " loop" : "",
+		std::string fightNote;
+		if (!clip.hits.empty()) fightNote += format(" %zu blow%s", clip.hits.size(), clip.hits.size() == 1 ? "" : "s");
+		if (clip.parry.size() >= 2) fightNote += " parry";
+		clipNotes.push_back(format("%s %.2fs%s%s%s%s", clip.name.c_str(), double(duration), loop ? " loop" : "",
 		                           h.moveSpeed > 0 ? format(" %.0fcm/s", double(h.moveSpeed)).c_str() : "",
-		                           rise > 20.0f ? format(" up %.0fcm", double(rise)).c_str() : ""));
+		                           rise > 20.0f ? format(" up %.0fcm", double(rise)).c_str() : "", fightNote.c_str()));
 	}
 
 	// ---- blends ----

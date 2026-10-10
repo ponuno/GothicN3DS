@@ -11,6 +11,7 @@
 //   ClipHeader | u8 trackNode[trackCount] (padded to 4) |
 //   ClipSample[frameCount * trackCount]  (frame after frame) |
 //   i16 motion[frameCount * 3]           (only with CLIPF_MOVES; padded to 4)
+//   ClipFight                            (only with CLIPF_FIGHT)
 //
 // Root motion, as in ZenGin: an animation's root node travels (a run moves
 // forward, a jump rises), and the game moves the character by what the root
@@ -106,6 +107,7 @@ enum ClipFlags : u16 {
 	CLIPF_LOOP = 1 << 0,  // the clip follows itself
 	CLIPF_MOVES = 1 << 1, // the root travels: a motion table follows the samples
 	CLIPF_FLY = 1 << 2,   // the script marks it as airborne ("F")
+	CLIPF_FIGHT = 1 << 3, // a ClipFight block follows: the frames that matter in a fight
 };
 
 struct ClipHeader {
@@ -134,6 +136,31 @@ struct ClipSample {
 };
 static_assert(sizeof(ClipSample) == 14, "ClipSample layout");
 
+// What the model script's event tags say about a clip in a fight, in frames of
+// the clip (0 = its first). Unused entries are 0xFFFF.
+//  * hit: where a blow lands (DEF_OPT_FRAME) - one per blow of a combo;
+//  * hitEnd: where each blow ends (DEF_HIT_END): an attack that is not
+//    carried on stops there;
+//  * window: pairs of frames (DEF_WINDOW), one pair per blow: pressing
+//    attack again between them goes on with the next blow, which begins
+//    where this one ends;
+//  * parry: from and to (DEF_PAR_FRAME): blows that land meanwhile are fended off;
+//  * fightMode: where the weapon goes from the belt into the hand or back
+//    (SET_FIGHT_MODE), in the animations of drawing and putting away.
+constexpr u32 CLIP_FIGHT_BLOWS = 6;
+constexpr u16 CLIP_NO_FRAME = 0xFFFF;
+struct ClipFight {
+	u8 hits, hitEnds, windows, pad;
+	u16 hit[CLIP_FIGHT_BLOWS];
+	u16 hitEnd[CLIP_FIGHT_BLOWS];
+	u16 window[CLIP_FIGHT_BLOWS * 2];
+	u16 parry[2];
+	u16 fightMode;
+	u16 reserved;
+	u32 reserved2;
+};
+static_assert(sizeof(ClipFight) == 64, "ClipFight layout");
+
 inline u32 clipTrackTableSize(u32 trackCount) { return (trackCount + 3u) & ~3u; }
 
 // Where the samples end (the motion table starts there, 4-byte aligned).
@@ -141,8 +168,8 @@ inline u32 clipSamplesEnd(u32 trackCount, u32 frameCount) {
 	return (u32(sizeof(ClipHeader)) + clipTrackTableSize(trackCount) + trackCount * frameCount * u32(sizeof(ClipSample)) + 3u) & ~3u;
 }
 
-inline u32 clipBlobSize(u32 trackCount, u32 frameCount, bool motion) {
-	return clipSamplesEnd(trackCount, frameCount) + (motion ? (frameCount * 6u + 3u) & ~3u : 0u);
+inline u32 clipBlobSize(u32 trackCount, u32 frameCount, bool motion, bool fight = false) {
+	return clipSamplesEnd(trackCount, frameCount) + (motion ? (frameCount * 6u + 3u) & ~3u : 0u) + (fight ? u32(sizeof(ClipFight)) : 0u);
 }
 
 inline u32 modelBlobSize(const ModelHeader& h) {

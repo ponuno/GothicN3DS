@@ -2168,6 +2168,12 @@ static void testCollision() {
 		addQuad(scene, r[0], r[1], r[2], r[3], 0); // 30 degree ramp
 		const float st[4][3] = {{-1200, 0, 1200}, {-800, 0, 1200}, {-800, 200 * tan70, 1400}, {-1200, 200 * tan70, 1400}};
 		addQuad(scene, st[0], st[1], st[2], st[3], 0); // 70 degree slope
+		// A crease between two 65 degree slopes, its bottom on the floor.
+		const float tan65 = 2.14451f;
+		const float v1[4][3] = {{1300, 0, -1500}, {1900, 0, -1500}, {1900, 200 * tan65, -1300}, {1300, 200 * tan65, -1300}};
+		const float v2[4][3] = {{1900, 0, -1500}, {1300, 0, -1500}, {1300, 200 * tan65, -1700}, {1900, 200 * tan65, -1700}};
+		addQuad(scene, v1[0], v1[1], v1[2], v1[3], 0);
+		addQuad(scene, v2[0], v2[1], v2[2], v2[3], 0);
 	}
 	scene.spawnPos[1] = 220.0f;
 	scene.hasSpawn = true;
@@ -2197,6 +2203,11 @@ static void testCollision() {
 	CHECK(!w.pushSphere(sphere, 30)); // clear of it
 	sphere = {-585, 150, 0};
 	CHECK(!w.pushSphere(sphere, 30)); // the ghost wall does not collide
+	// Lines of sight: not through the wall, through the ghost wall, over the step.
+	CHECK(!w.lineFree({300, 150, 0}, {900, 150, 0}) && !w.lineFree({900, 150, 20}, {300, 100, -20}));
+	CHECK(w.lineFree({300, 150, 0}, {580, 150, 0}) && w.lineFree({-300, 150, 0}, {-900, 150, 0}));
+	CHECK(w.lineFree({0, 100, 400}, {0, 100, 1200}) && !w.lineFree({0, 15, 400}, {0, 15, 1200}));
+	CHECK(w.lineFree({300, 150, 0}, {300, 150, 0})); // (no length at all)
 
 	// The character controller. One step is 480 cm/s at 30 fps = 16 cm.
 	const float dt = 1.0f / 30.0f;
@@ -2247,6 +2258,51 @@ static void testCollision() {
 	place(-1000, 900, 0); // the 70 degree slope cannot be climbed
 	top = walk(80);
 	CHECK(top < 60.0f && pl.feet.z < 1230);
+
+	// Jumping at the slope, the stick held forward: the body slides off it
+	// and stands at its foot - it is not pinned to the slope, sliding for ever.
+	place(-1000, 900, 0);
+	walk(10);
+	{
+		int sliding = 0;
+		for (int i = 0; i < 90; ++i) {
+			Input in;
+			in.moveZ = 1.0f;
+			in.jump = i == 0;
+			app.update(in, dt);
+			sliding = pl.grounded ? 0 : sliding + 1;
+		}
+		std::printf("       jumped at the steep slope: feet at z %.0f, %.0f up, %s (%d frames off the ground)\n", double(pl.feet.z),
+		            double(pl.feet.y), pl.grounded ? "standing" : "sliding", sliding);
+		CHECK(pl.grounded && pl.feet.y < 50.0f && pl.feet.z < 1260.0f);
+	}
+	// Dropped into the crease between two slopes too steep to stand on: it
+	// comes to rest there instead of sliding from one to the other.
+	app.teleport({1600, 600 + 170.0f, -1460});
+	app.update(Input {}, dt);
+	pl.feet = {1600, 600, -1460};
+	pl.grounded = false;
+	pl.velocityY = 0;
+	{
+		int frames = 0;
+		while (!pl.grounded && frames < 300) {
+			app.update(Input {}, dt);
+			++frames;
+		}
+		const Vec3 rest = pl.feet;
+		bool stays = pl.grounded;
+		for (int i = 0; i < 60; ++i) {
+			app.update(Input {}, dt);
+			stays = stays && pl.grounded;
+		}
+		std::printf("       dropped into the crease: at rest after %d frames, %.0f up at z %.0f; %s\n", frames, double(pl.feet.y),
+		            double(pl.feet.z), stays ? "stays" : "does not stay");
+		CHECK(pl.grounded && stays && frames < 90 && length(pl.feet - rest) < 2.0f && std::fabs(pl.feet.z + 1500.0f) < 80.0f);
+		// ... and walks out of it again along the crease.
+		app.camera().yaw = 90.0f * 0.0174533f;
+		walk(30);
+		CHECK(pl.feet.x > 1750.0f);
+	}
 
 	place(0, 0, 0); // jump: about v^2 / 2g = 82 cm, then land
 	top = -1e9f;
@@ -2779,6 +2835,12 @@ static void testHero() {
 	addBlock(scene, 1000, 1040, -3000, 3000, 600);
 	addBlock(scene, -600, 600, 1500, 2000, 30);
 	addBlock(scene, -3400, -3000, -400, 400, 180);
+	{
+		// A slope of 65 degrees, too steep to stand on, rising towards -Z.
+		const float tan65 = 2.14451f;
+		const float sl[4][3] = {{-1800, 0, -2600}, {-2800, 0, -2600}, {-2800, 300 * tan65, -2900}, {-1800, 300 * tan65, -2900}};
+		addQuad(scene, sl[0], sl[1], sl[2], sl[3], 0);
+	}
 	scene.spawnPos[0] = 0;
 	scene.spawnPos[1] = 175;
 	scene.spawnPos[2] = 0;
@@ -3087,6 +3149,29 @@ static void testHero() {
 	app.teleport({-2000, 220, -2000});
 	app.update(Input {}, dt);
 	CHECK(hero.speed() < 1.0f && std::fabs(hero.feet().x + 2000.0f) < 1e-3f && current() == sRun);
+	// A running jump at a slope too steep to stand on: it slides back down
+	// and stands at its foot - it does not hang on the slope, pressed into
+	// it by the jump's pace, sliding for ever.
+	place(-2300, -1700, 180);
+	{
+		int frame = 0, highest = 0;
+		float peak = 0;
+		for (; frame < 150; ++frame) {
+			step(1.0f, 0.0f, 0.0f, frame == 40);
+			if (pl.feet.y > peak) {
+				peak = pl.feet.y;
+				highest = frame;
+			}
+		}
+		int still = 0;
+		for (int i = 0; i < 45; ++i) {
+			step(0.0f);
+			still += pl.grounded;
+		}
+		std::printf("       a running jump at the steep slope: up to %.0f cm (frame %d), then at z %.0f, %.0f up, %s, body %d\n", double(peak),
+		            highest, double(pl.feet.z), double(pl.feet.y), pl.grounded ? "standing" : "sliding", int(hero.body()));
+		CHECK(peak > 40.0f && pl.feet.z > -2700.0f && pl.feet.y < 50.0f && pl.grounded && still >= 30 && hero.body() == Hero::GROUNDED);
+	}
 
 	// ---- light: like the ground it stands on, tinted by the time of day ----
 	place(-1500, 0, 0);
@@ -3865,6 +3950,14 @@ static void testMobs() {
 	CHECK(mobs.find(away, "BED", 1) == 2 && mobs.find(far, "BED", 1) == -1);
 	CHECK(mobs.find(here, "BEDHIGH", 1) == 4 && mobs.find(here, "BE", 1) == -1 && mobs.find(here, "", 1) == -1 && mobs.find(here, nullptr, 1) == -1);
 	CHECK(mobs.find(here, "BED", 1, 0) == 1); // not that one: the next nearest
+	{
+		// All of them, nearest first (the one 50 m away is out of reach).
+		int all[4] = {-1, -1, -1, -1};
+		CHECK(mobs.candidates(here, "BED", 1, -1, all, 4) == 2 && all[0] == 0 && all[1] == 1);
+		CHECK(mobs.candidates(here, "BED", 1, -1, all, 1) == 1 && all[0] == 0);
+		CHECK(mobs.candidates(upstairs, "BED", 1, -1, all, 1) == 1 && all[0] == 1); // (a full list keeps the nearest)
+		CHECK(mobs.candidates(here, "BED", 1, 0, all, 4) == 1 && all[0] == 1 && mobs.candidates(here, "BED", 1, -1, all, 0) == 0);
+	}
 	// A thing without a place to stand at is there, but not to be used.
 	CHECK(mobs.isScheme(3, "BENCH") && mobs.mob(3).slotCount == 0 && mobs.find(here, "BENCH", 1) == -1);
 	// One user each, one thing each.
@@ -3950,7 +4043,7 @@ static void testLife() {
 var int probe_dist_wp; var int probe_dist_none; var int probe_state; var int probe_detect; var int probe_other; var int probe_dist_npc;
 var int probe_see; var int probe_time; var int probe_body; var int probe_fp; var int probe_hero; var int probe_loops; var int probe_ended;
 var string probe_wp; var string probe_own; var int probe_see_first;
-var int probe_mob; var int probe_mob_state; var int probe_smith_body; var int probe_sitter_body; var string probe_mob_own;
+var int probe_mob; var int probe_mob_state; var int probe_smith_body; var int probe_sitter_body; var string probe_mob_own; var int probe_sleeper_body;
 extern func int Wld_DetectNpc(var C_NPC n, var int npcInstance, var func state, var int guild);
 extern func int Npc_CanSeeNpc(var C_NPC a, var C_NPC b);
 func void ZS_Probe() { AI_GotoWP(self, self.wp); AI_AlignToWP(self); probe_own = self.wp; };
@@ -3979,6 +4072,8 @@ func int ZS_Probe_Loop() {
 	probe_time = Npc_GetStateTime(self);
 	probe_body = Npc_GetBodyState(self);
 	probe_fp = Wld_IsFPAvailable(self, "SMALLTALK") + 10 * Wld_IsFPAvailable(self, "NOSUCH") + 100 * Npc_IsOnFP(self, "SMALLTALK");
+	probe_sleeper_body = -1;
+	if (Wld_DetectNpc(self, GRD_201_Jackal, ZS_SleepBed, -1)) { probe_sleeper_body = Npc_GetBodyState(other); };
 	AI_Wait(self, 1);
 	return LOOP_CONTINUE;
 };
@@ -4001,11 +4096,11 @@ func void Rtn_start_502() {
 		const auto said = [&](const char* text) { return r.report.find(text) != std::string::npos; };
 		if (getenv("G3_TRACE")) std::puts(r.report.c_str());
 		// Of the animations the scripts name each skeleton got the ones it has.
-		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 6 families more; baked per "
+		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 8 families more; baked per "
 		           "skeleton: humans 30, scavenger 8, molerat 8"));
 		// The things of the camp, and which of them the scripts know.
-		CHECK(said("things to use: 5 of 4 kinds, with 6 places to stand at (1 have none: nobody can use those): BEDHIGH x2"));
-		CHECK(said("things to use: the worlds have 4 kinds; the scripts name 3 of them: BEDHIGH x2, BENCH x1, BSANVIL x1; not named: CHESTBIG"));
+		CHECK(said("things to use: 6 of 5 kinds, with 7 places to stand at (1 have none: nobody can use those): BEDHIGH x2"));
+		CHECK(said("things to use: the worlds have 5 kinds; the scripts name 4 of them: BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: CHESTBIG"));
 		CHECK(said("way net: 13 points, 15 connections") && said("10 free points") && said(" 8 states, "));
 		// What the states need of the engine is on record.
 		CHECK(said("life: the scripts have 8 states; the people of these worlds are put into 7: ZS_MM_ALLSCHEDULER x6, ZS_GUARD x3"));
@@ -4050,7 +4145,7 @@ func void Rtn_start_502() {
 		const WayNet& net = npcs.wayNet();
 		CHECK(net.loaded() && net.nodeCount() == 13 && net.freeCount() == 10);
 		const Mobs& mobs = npcs.mobs();
-		CHECK(mobs.loaded() && mobs.count() == 5);
+		CHECK(mobs.loaded() && mobs.count() == 6);
 		// What a character is at: the thing's kind if it is in it, "" if not.
 		const auto inThing = [&](u32 npc) -> std::string {
 			const NpcActor* a = npcs.actorOf(npc);
@@ -4177,10 +4272,11 @@ func void Rtn_start_502() {
 		}
 		CHECK(global("PROBE_BODY") == kBsStand && global("PROBE_FP") == 1 && global("PROBE_TIME") >= 10);
 		// Of the things within ten metres the bench is free and the anvil is
-		// the smith's; the beds are too far away; a free thing is in its
-		// first state, one that is not there in none. And the smith's body is
-		// busy with a thing (one that is neither sat on nor lain in).
-		CHECK(global("PROBE_MOB") == (poor ? 11 : 1) && global("PROBE_MOB_STATE") == 0 - 10 && text("PROBE_MOB_OWN").empty());
+		// the smith's; so is the second hut's bed (the first is too far away);
+		// a free thing is in its first state, one that is not there in none.
+		// And the smith's body is busy with a thing (one that is neither sat
+		// on nor lain in).
+		CHECK(global("PROBE_MOB") == (poor ? 111 : 101) && global("PROBE_MOB_STATE") == 0 + 0 && text("PROBE_MOB_OWN").empty());
 		CHECK(global("PROBE_SMITH_BODY") == (poor ? kBsStand : (16 | (1 << 15))));
 		{
 			const Vec3 eye = app.player().eye();
@@ -4241,9 +4337,16 @@ func void Rtn_start_502() {
 					            double(game.npc(smith).pos[2]), double(game.npc(smith).yaw), double(bench.slots[0].pos[0]),
 					            double(bench.slots[0].pos[2]), double(bench.slots[0].yaw), double(bench.slots[1].pos[0]), double(bench.slots[1].pos[2]));
 				CHECK(onSlot && mobs.userOf(u32(b->mob)) == int(smith) && net.heldBy(smith) == -1);
+				// On the ground, though the places are a metre up.
+				{
+					const GameNpc& n = game.npc(smith);
+					float y;
+					Vec3 normal;
+					CHECK(app.world().rayDown({n.pos[0], n.pos[1] + 150.0f, n.pos[2]}, 400.0f, y, normal) && std::fabs(y - n.pos[1]) < 3.0f);
+				}
 				// What the scripts are told: the bench is taken, the anvil
 				// free again, and the one on the bench is sitting.
-				CHECK(global("PROBE_MOB") == 10 && global("PROBE_MOB_STATE") == -1 - 10 && global("PROBE_SITTER_BODY") == kBsSit);
+				CHECK(global("PROBE_MOB") == 110 && global("PROBE_MOB_STATE") == -1 + 0 && global("PROBE_SITTER_BODY") == kBsSit);
 				// The scripts are told what his body is doing: sitting.
 				CHECK(npcs.stats().mobsUsed == 2 && npcs.stats().mobsInUse == 1);
 			}
@@ -4264,8 +4367,14 @@ func void Rtn_start_502() {
 			// the hut's way point is nearest to.
 			const NpcActor* a = npcs.actorOf(jackal);
 			const u32 zsSleepBed = game.vm().find("ZS_SLEEPBED");
-			CHECK(a && a->state == zsSleepBed && a->prevState == zsSleep && a->atFree == -1 && net.heldBy(jackal) == -1);
-			CHECK(away(jackal, wayPoint("CAMP_HUT_1").pos) < 70.0f);
+			if (poor) {
+				// (No memory for the bed's animations: as in the original, the
+				// sleeper who is not in bed three seconds on goes to sit.)
+				CHECK(a && a->state == zsSit && a->prevState == zsSleepBed && a->mob == -1);
+			} else {
+				CHECK(a && a->state == zsSleepBed && a->prevState == zsSleep && a->atFree == -1 && net.heldBy(jackal) == -1);
+				CHECK(away(jackal, wayPoint("CAMP_HUT_1").pos) < 70.0f);
+			}
 			if (!poor && a) {
 				const SrcMob& bed = mobOf("BEDHIGH", 0);
 				CHECK(inThing(jackal) == "BEDHIGH" && a->mobState == 1 && a->mobKind == MOB_SLOT_FRONT && std::string(a->stance) == "BEDHIGH_S1");
@@ -4275,9 +4384,9 @@ func void Rtn_start_502() {
 				CHECK(inThing(smith) == "BEDHIGH" && npcs.actorOf(smith)->mob != a->mob && npcs.stats().mobsInUse == 2);
 				u32 free = 0;
 				for (u32 m = 0; m < mobs.count(); ++m) free += mobs.userOf(m) < 0;
-				CHECK(free == 3 && npcs.stats().mobsUsed == 4);
+				CHECK(free == 4 && npcs.stats().mobsUsed == 4);
 			}
-			CHECK(night.farthestOff < 190.0f && night.travelled > 1000.0f); // (the seat is 1.7 m off the path)
+			CHECK((poor || night.farthestOff < 190.0f) && night.travelled > 1000.0f); // (the seat is 1.7 m off the path)
 			u32 asleep = 0;
 			for (u32 i = 0; i < npcs.actorCount(); ++i) {
 				const NpcActor& c = npcs.actor(i);
@@ -4286,6 +4395,42 @@ func void Rtn_start_502() {
 			CHECK(asleep == 4);
 			// The one who asked has been through the end of his state, once.
 			CHECK(global("PROBE_ENDED") == 1 && npcs.actorOf(probe) && npcs.actorOf(probe)->state == game.vm().find("ZS_STAND"));
+		}
+
+		// ---- deep in the night: the sleepers stay in their beds ----
+		// (They used to get up at once: in a bed the body was "lying", which
+		// the original's sleep state takes for "not in bed" - and the second
+		// kind of bed it asks for got the sleeper out of the first.)
+		if (!poor) {
+			app.environment().timeOfDay = 3.0f;
+			u32 outOfBed = 0, notBusy = 0;
+			const u32 used = npcs.stats().mobsUsed;
+			for (int second = 0; second < 40; ++second) {
+				run(1.0f, jackal, nullptr);
+				for (const u32 sleeper : {jackal, smith}) {
+					const NpcActor* a = npcs.actorOf(sleeper);
+					outOfBed += !a || inThing(sleeper) != "BEDHIGH" || std::string(a->stance) != "BEDHIGH_S1" ||
+					            a->anim.current() != a->rig->model.clip("S_BEDHIGH_S1");
+				}
+				notBusy += second >= 3 && global("PROBE_SLEEPER_BODY") != 15; // (the one who asks has a state to begin first)
+			}
+			if (variant == 0) std::printf("       deep in the night: %u out of bed, %u not busy, %u more uses\n", outOfBed, notBusy, npcs.stats().mobsUsed - used);
+			CHECK(outOfBed == 0 && notBusy == 0 && npcs.stats().mobsUsed == used && npcs.actorOf(jackal)->state == game.vm().find("ZS_SLEEPBED"));
+			// What the report says of him.
+			const NpcActor* a = npcs.actorOf(jackal);
+			CHECK(a && std::string(npcs.stateName(a->state)) == "ZS_SLEEPBED" && std::string(npcs.animationName(*a)) == "S_BEDHIGH_S1" &&
+			      npcs.bodyState(*a) == 15 && a->mobStage == NpcActor::MOB_IN && npcs.stateName(0)[0] == 0);
+			CHECK(npcs.nearest() != nullptr);
+			// The low bed is near, and free - but behind the hut's wall: not his.
+			const GameNpc& j = game.npc(jackal);
+			const int low = npcs.mobs().find(j.pos, "BEDLOW", jackal);
+			CHECK(low >= 0 && npcs.visibleMob(app.world(), jackal, "BEDLOW") == -1);
+			if (low >= 0) {
+				float at[3], yaw;
+				npcs.mobs().place(u32(low), j.pos, at, yaw);
+				CHECK(!app.world().lineFree({j.pos[0], j.pos[1] + 130.0f, j.pos[2]}, {at[0], at[1] + 80.0f, at[2]}));
+				CHECK(app.world().lineFree({j.pos[0], j.pos[1] + 130.0f, j.pos[2]}, {j.pos[0] - 300.0f, j.pos[1] + 130.0f, j.pos[2]}));
+			}
 		}
 
 		// ---- and morning again: back to the posts ----

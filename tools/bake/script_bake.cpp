@@ -235,7 +235,10 @@ std::vector<u8> bakeScript(const SrcScript& script, ScriptBakeResult& result) {
 		for (u32 i = 0; i < n; ++i) {
 			if (!plain(i) || script.symbols[i].name.empty() || symbols[i].nameHash == 0) continue;
 			const u32 loop = companion(script.symbols[i].name + "_LOOP"), end = companion(script.symbols[i].name + "_END");
-			if (loop != SCRIPT_NONE || end != SCRIPT_NONE) states.push_back({i, loop, end});
+			if (loop != SCRIPT_NONE || end != SCRIPT_NONE) {
+				states.push_back({i, loop, end});
+				result.stateNames.push_back(script.symbols[i].name);
+			}
 		}
 	}
 

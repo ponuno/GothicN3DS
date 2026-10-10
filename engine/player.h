@@ -84,6 +84,19 @@ private:
 	bool _blocked = false; // the last horizontal move ran into something
 	bool _letGo = false;   // jumped off a ladder: do not grab it again before landing
 	Vec3 _carry {0, 0, 0}; // driven: the horizontal velocity the body keeps in the air
+	// Sliding down a slope too steep to stand on: the lowest the feet have
+	// got so far, and for how long they have got no lower. A slide that
+	// goes nowhere (a crease between two slopes, a stone in the way) ends
+	// with the body standing where it is ...
+	float _slideLow = 0, _slideStill = 0;
+	bool _sliding = false;
+	// ... and it may stand there, and walk on at that height, on a floor too
+	// steep for anywhere else.
+	bool _resting = false;
+	float _restY = 0;
+	bool standsOn(const Vec3& normal, float y) const {
+		return normal.y >= config.minFloorNormal || (_resting && y <= _restY + 10.0f);
+	}
 };
 
 } // namespace g3

@@ -2,11 +2,13 @@
 
 #include "game.h"
 #include "g3ds/game.h"
+#include "g3ds/math.h"
 #include "model_bake.h"
 #include "script_check.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -74,6 +76,83 @@ bool sameSkeleton(const SrcModel& a, const SrcModel& b) {
 	return true;
 }
 
+
+// For the report: what a skeleton has for using each kind of thing the
+// scripts name - the steps into it, the states, the steps out - and how
+// each moves the body: where the root ends up (cm: + is to the right, up,
+// ahead), whether the game flags the clip as moving the character ("M")
+// and whether it is baked to carry it; how far the root turns; for a
+// state, where the root is held. And which of the usual steps are missing.
+void describeMobClips(const std::string& rigName, const SrcModel& model, const std::vector<std::string>& schemes,
+                      std::vector<std::string>& out) {
+	std::string all;
+	size_t kinds = 0;
+	for (const std::string& scheme : schemes) {
+		std::string have, missing;
+		std::set<std::string> names;
+		for (const SrcClip& clip : model.clips) {
+			const std::string name = clip.name;
+			const bool ours = (name.compare(0, 2, "T_") == 0 || name.compare(0, 2, "S_") == 0 || name.compare(0, 2, "R_") == 0) &&
+			                  name.compare(2, scheme.size() + 1, scheme + "_") == 0;
+			if (!ours) continue;
+			names.insert(name);
+			const size_t tracks = clip.nodes.size();
+			if (!tracks || clip.samples.size() < tracks) continue;
+			const size_t frames = clip.samples.size() / tracks;
+			size_t root = tracks;
+			for (size_t t = 0; t < tracks; ++t)
+				if (clip.nodes[t] >= 0 && size_t(clip.nodes[t]) < model.nodes.size() && model.nodes[size_t(clip.nodes[t])].parent < 0) root = t;
+			const bool loop = clip.next == clip.name;
+			std::string what = format("%s %.2fs", name.c_str(), double(float(frames) / std::max(clip.fps, 1.0f)));
+			if (!loop && !clip.next.empty()) what += " ->" + clip.next;
+			if (loop) what += " loop";
+			if (root < tracks) {
+				const SrcClipSample& a = clip.samples[root];
+				const SrcClipSample& b = clip.samples[(frames - 1) * tracks + root];
+				const Vec3 fa = quatRotate(quatNormalize({a.rot[0], a.rot[1], a.rot[2], a.rot[3]}), {0, 0, 1});
+				const Vec3 fb = quatRotate(quatNormalize({b.rot[0], b.rot[1], b.rot[2], b.rot[3]}), {0, 0, 1});
+				// (Only where the root's forward is not pointing up or down: lying, it is.)
+				float turn = 0;
+				if (std::hypot(fa.x, fa.z) > 0.4f && std::hypot(fb.x, fb.z) > 0.4f) {
+					turn = (std::atan2(fb.x, fb.z) - std::atan2(fa.x, fa.z)) * 57.29578f;
+					while (turn > 180.0f) turn -= 360.0f;
+					while (turn < -180.0f) turn += 360.0f;
+				}
+				float reach = 0;
+				for (size_t f = 1; f < frames; ++f) {
+					const SrcClipSample& c = clip.samples[f * tracks + root];
+					reach = std::max(reach, std::hypot(c.pos[0] - a.pos[0], c.pos[2] - a.pos[2]));
+				}
+				if (loop)
+					what += format(" root held at %.0f %.0f %.0f", double(a.pos[0]), double(a.pos[1]), double(a.pos[2]));
+				else
+					what += format(" root %+.0f %+.0f %+.0f", double(b.pos[0] - a.pos[0]), double(b.pos[1] - a.pos[1]), double(b.pos[2] - a.pos[2]));
+				if (std::fabs(turn) >= 5.0f) what += format(" turns %+.0f", double(turn));
+				what += clip.moves ? " M" : "";
+				what += !loop && (clip.moves || reach > 2.0f) ? " (carries)" : "";
+			}
+			have += (have.empty() ? "" : ", ") + what;
+		}
+		if (names.empty()) continue;
+		const auto has = [&](const std::string& n) {
+			return names.count(n) || names.count(n.substr(0, 2) + scheme + "_FRONT" + n.substr(2 + scheme.size())) ||
+			       names.count(n.substr(0, 2) + scheme + "_BACK" + n.substr(2 + scheme.size()));
+		};
+		for (const char* step : {"T_%s_STAND_2_S0", "S_%s_S0", "T_%s_S0_2_STAND"}) {
+			const std::string n = format(step, scheme.c_str());
+			if (!has(n)) missing += (missing.empty() ? "" : ", ") + n;
+		}
+		if (has("T_" + scheme + "_S0_2_S1") || has("S_" + scheme + "_S1"))
+			for (const char* step : {"T_%s_S0_2_S1", "S_%s_S1", "T_%s_S1_2_S0"}) {
+				const std::string n = format(step, scheme.c_str());
+				if (!has(n)) missing += (missing.empty() ? "" : ", ") + n;
+			}
+		all += format("\n  %s: ", scheme.c_str()) + have + (missing.empty() ? "" : "; missing: " + missing);
+		++kinds;
+	}
+	if (kinds) out.push_back(format("things to use: what %s has for %zu kinds of them:", rigName.c_str(), kinds) + all);
+}
+
 } // namespace
 
 std::string worldScriptName(const BakeWorld& world) {
@@ -102,9 +181,15 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 
 	// ---- the image ----
 	std::vector<u8> image;
+	std::vector<u8> stateNames; // "script/states": the states' names, one after the other with a 0 after each
 	try {
 		ScriptBakeResult sr;
 		image = bakeScript(script, sr);
+		for (const std::string& name : sr.stateNames) {
+			const std::string up = upper(name);
+			stateNames.insert(stateNames.end(), up.begin(), up.end());
+			stateNames.push_back(0);
+		}
 		lines(sr.report);
 	} catch (const std::exception& ex) {
 		line(std::string("WARNING: scripts not baked: ") + ex.what() + "; the worlds stay empty");
@@ -143,6 +228,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		return;
 	}
 	pak.add("script/gothic", ASSET_SCRIPT, image);
+	if (!stateNames.empty()) pak.add("script/states", ASSET_META, stateNames);
 
 	struct Faults {
 		const SrcScript* script;
@@ -402,6 +488,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		}
 		aniNames.insert(back.begin(), back.end());
 	}
+	std::vector<std::string> usedSchemes; // the kinds of things the scripts name that the worlds have
 	// The things people use, and what using them looks like: the scripts
 	// name the kind ("BENCH"), the animations are named after it
 	// ("T_BENCH_STAND_2_S0", "S_BENCH_S1").
@@ -419,6 +506,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		size_t usedCount = 0;
 		for (const auto& [scheme, count] : there) {
 			if (texts.count(scheme)) {
+				usedSchemes.push_back(scheme);
 				aniNames.insert("T_" + scheme + "_*");
 				aniNames.insert("S_" + scheme + "_*");
 				used += format("%s%s x%u", used.empty() ? "" : ", ", scheme.c_str(), count);
@@ -432,6 +520,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			     (used.empty() ? "none" : used) + (unused.empty() ? "" : "; not named: " + unused));
 	}
 	std::string rigNotes;
+	std::vector<std::string> mobClipNotes;
 	BakeOptions quiet = opt;
 	quiet.quiet = true;
 	ModelBakeShared shared;
@@ -500,6 +589,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 						why = "no animation to stand in";
 					} else {
 						const ModelBakeResult mr = bakeModel(rig.model, quiet, pak, &shared);
+						describeMobClips(l.script, rig.model, usedSchemes, mobClipNotes);
 						clipCount += mr.clips;
 						rigNotes += format("%s%s %zu", rigNotes.empty() ? "" : ", ", l.script.c_str(), mr.clips);
 						rig.hash = hashName(("model/" + rig.model.name).c_str());
@@ -570,6 +660,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		            families ? format(", and using the things they name takes %zu families more", families).c_str() : "") +
 		     rigNotes);
 	}
+	for (const std::string& note : mobClipNotes) line(note);
 	if (!problems.empty()) {
 		line(format("WARNING: %zu kinds of trouble with the inhabitants' models:", problems.size()));
 		size_t shown = 0;

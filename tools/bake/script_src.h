@@ -41,6 +41,7 @@ struct ScriptBakeResult {
 	std::string report;
 	u32 symbols = 0, functions = 0, externals = 0, instances = 0, classes = 0;
 	u32 hashClashes = 0;
+	std::vector<std::string> stateNames; // the functions that begin a state ("ZS_SLEEP"), for reports
 };
 
 // Builds the G3SC image (g3ds/script.h). Throws std::runtime_error on a

@@ -29,6 +29,16 @@ bool Npcs::load(Pak& pak) {
 		}
 		free(blob);
 	}
+	// The states' names, for reports (an archive baked before they were kept has none).
+	if (const PakEntry* e = pak.find("script/states")) {
+		char* names = e->size > 0 && e->size < (1u << 20) ? static_cast<char*>(pak.readAlloc(*e)) : nullptr;
+		if (names && names[e->size - 1] == 0) {
+			_stateNames = names;
+			_stateNamesSize = e->size;
+		} else {
+			free(names);
+		}
+	}
 	bindAi();
 	_stats.total = _game.npcCount();
 	return true;
@@ -48,8 +58,11 @@ void Npcs::release() {
 	_game.release();
 	free(_looks);
 	free(_points);
+	free(_stateNames);
 	_looks = nullptr;
 	_points = nullptr;
+	_stateNames = nullptr;
+	_stateNamesSize = 0;
 	_lookCount = _pointCount = 0;
 	_script[0] = 0;
 	_stats = NpcStats {};
@@ -155,6 +168,7 @@ void Npcs::enterWorld(Pak& pak, const World& world, const char* asset, Vec3 eye,
 	_mobs.load(pak, asset); // ... and without things to use: they do without
 
 	_pak = &pak;
+	_world = &world;
 	_game.enterWorld(_script, hours, findPoint, this);
 	_hours = hours;
 	_stats.total = _game.npcCount();
@@ -163,6 +177,7 @@ void Npcs::enterWorld(Pak& pak, const World& world, const char* asset, Vec3 eye,
 	++_frame;
 	select(pak, world, eye, 0xFFFFu);
 	_pak = nullptr;
+	_world = nullptr;
 }
 
 // A model by its archive entry, read now if `loadsLeft` allows. Null if it
@@ -327,6 +342,7 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt) {
 	if (!loaded()) return;
 	_pak = &pak;
+	_world = &world;
 	_clock += dt;
 	++_frame;
 	_stats.scriptMs = 0;
@@ -360,6 +376,7 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	_stats.walking = walking;
 	_stats.clipBytes = _clipBytes;
 	_pak = nullptr;
+	_world = nullptr;
 }
 
 void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {

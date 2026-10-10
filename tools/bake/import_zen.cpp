@@ -924,6 +924,7 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 		for (int c = 0; c < 3; ++c) fallback[c] = u8(lightSum[c] / lightCount);
 
 	// The things people use: what kind each is, and where one stands to use it.
+	std::map<std::string, std::pair<std::string, int>> slotNotes;
 	for (const ObjectStats::Mob& mob : stats.mobs) {
 		const zenkit::VirtualObject& vob = *mob.vob;
 		const zenkit::Vec3* col = vob.rotation.columns;
@@ -958,10 +959,35 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 				// stone mill: 149 cm above the object's origin).
 				u8 light[4];
 				float h = 0;
-				if (ground.sample(slot.pos[0], slot.pos[1] + 60.0f, slot.pos[2], light, &h) && h > slot.pos[1] - 350.0f) slot.pos[1] = h;
+				const float nodeY = slot.pos[1];
+				const bool found = ground.sample(slot.pos[0], slot.pos[1] + 60.0f, slot.pos[2], light, &h) && h > slot.pos[1] - 350.0f;
+				if (found) slot.pos[1] = h;
+				// For the report, once per kind: where the places are on the
+				// thing (its model space: + is right, up, ahead), which way one
+				// faces there compared with the way to the thing's middle (0:
+				// facing it, 180: the back to it), and how far down the ground is.
+				if (!slotNotes.count(out.scheme) || slotNotes[out.scheme].second < 3) {
+					auto& note = slotNotes[out.scheme];
+					if (note.first.empty()) note.first = out.visual + ":";
+					float rel = (std::atan2(d[0], d[2]) - std::atan2(-p[0], -p[2])) * 57.29578f;
+					while (rel > 180.0f) rel -= 360.0f;
+					while (rel < -180.0f) rel += 360.0f;
+					char text[192];
+					std::snprintf(text, sizeof(text), " %s at %.0f %.0f %.0f facing %+.0f, %s", name.c_str(), double(p[0]), double(p[1]),
+					              double(p[2]), double(rel),
+					              found ? (std::to_string(int(std::lround(nodeY - h))) + " cm above the ground").c_str()
+					                    : "no ground of the world below");
+					note.first += (note.second ? ";" : "") + std::string(text);
+					++note.second;
+				}
 				out.slots.push_back(slot);
 			}
 		scene.mobs.push_back(std::move(out));
+	}
+	if (!slotNotes.empty()) {
+		std::string all;
+		for (const auto& [scheme, note] : slotNotes) all += "\n  " + scheme + " " + note.first;
+		scene.notes.push_back("places to stand at, the first thing of each kind:" + all);
 	}
 
 	std::map<std::string, u32> materialIndex; // everything that affects drawing -> scene material

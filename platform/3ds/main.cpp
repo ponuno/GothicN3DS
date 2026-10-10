@@ -37,6 +37,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 
 using g3::App;
 using g3::clamp;
@@ -63,7 +64,7 @@ static float stick(int v) {
 
 // The bottom-screen report: laid out once every 30 frames, written a line
 // per frame (printing all of it at once takes several milliseconds).
-static const int kReportLines = 24;
+static const int kReportLines = 27; // (row 28 is for the steps of leaving)
 static char gReport[kReportLines][48];
 static int gReportCount = 0;
 
@@ -332,6 +333,27 @@ int main(int, char**) {
 				reportLine("script %3.1fMB all %4lu err %lu/%lu nul %lu", double(npcs.game().vm().imageBytes()) / 1048576.0,
 				     static_cast<unsigned long>(ns.total), static_cast<unsigned long>(vs.errors),
 				     static_cast<unsigned long>(vs.aborted), static_cast<unsigned long>(vs.nullAccess));
+				// The nearest of them: its state and seconds in it; the thing it
+				// uses (stage: C coming, T turning, E getting in, I in it, L
+				// leaving), the state of the thing it is in, what the scripts are
+				// told its body does, how far it faces off the place's way; the
+				// animation it is in.
+				if (const g3::NpcActor* a = npcs.nearest()) {
+					const g3::GameNpc& n = npcs.game().npc(a->npc);
+					const char* zs = npcs.stateName(a->state);
+					reportLine("%-13.13s %-18.18s%4.0fs", npcs.game().nameOf(n), zs[0] ? zs + (strncmp(zs, "ZS_", 3) == 0 ? 3 : 0) : "-",
+					     double(a->stateTime));
+					static const char kStages[] = "-CTEIL";
+					float off = 0;
+					if (a->mob >= 0) {
+						off = (n.yaw - a->mobYaw) * 57.29578f;
+						while (off > 180.0f) off -= 360.0f;
+						while (off < -180.0f) off += 360.0f;
+					}
+					reportLine("mob %-9.9s %c s%-2d bs %-6ld off %4.0f", a->mob >= 0 ? npcs.mobs().scheme(u32(a->mob)) : "-",
+					     kStages[a->mobStage < 6 ? a->mobStage : 0], int(a->mobState), static_cast<long>(npcs.bodyState(*a)), double(off));
+					reportLine("ani %-24.24s %-8.8s", npcs.animationName(*a), npcs.doing(*a));
+				}
 			} else {
 				reportLine("scripts: none in data.pak");
 			}

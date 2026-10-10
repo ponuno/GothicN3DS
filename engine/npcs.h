@@ -178,6 +178,12 @@ struct NpcActor {
 	float mobPos[3] = {0, 0, 0}; // that place ...
 	float mobYaw = 0;            // ... and where one faces there
 	int mobFailed = -1;    // a thing it could not get into (no animation for it): not tried again in this state
+	// The names of the last animations looked up, for reports: the model
+	// keeps only their hashes.
+	enum { NAMES = 4 };
+	const Clip* named[NAMES] = {};
+	char names[NAMES][28] = {};
+	u8 nextName = 0;
 };
 
 class Npcs {
@@ -220,6 +226,25 @@ public:
 	const NpcActor& actor(u32 i) const { return _actors[i]; }
 	// What an actor is doing, in a word (for reports).
 	const char* doing(const NpcActor& a) const;
+	// The name of the function that begins a state ("ZS_SLEEPBED"), "" for
+	// none or if the archive does not have the names.
+	const char* stateName(u32 fn) const;
+	// The name of the animation an actor is in, "" if not known.
+	const char* animationName(const NpcActor& a) const;
+	// What the scripts are told its body is doing (Npc_GetBodyState).
+	i32 bodyState(const NpcActor& a) const { return bodyStateOf(a); }
+	// The actor nearest to the player that has its models, or null.
+	const NpcActor* nearest() const;
+	// The thing of that kind a character would use now: the nearest free
+	// one it can see from where it stands (the scripts' Wld_IsMobAvailable,
+	// AI_UseMob), or -1.
+	int visibleMob(const World& world, u32 npc, const char* kind) {
+		const World* before = _world;
+		_world = &world;
+		const int mob = findMob(npc, kind, -1);
+		_world = before;
+		return mob;
+	}
 
 private:
 	enum { PIECES = 48, ACTORS = 16 }; // three models each
@@ -262,7 +287,8 @@ private:
 	i32 bodyStateOf(const NpcActor& a) const;
 	const Clip* mobClip(NpcActor& a, int from, int to, char* nameOut);
 	void releaseMob(NpcActor& a);
-	bool useMob(NpcActor& a, float dt);
+	bool useMob(NpcActor& a, const World& world, float dt);
+	int findMob(u32 npc, const char* kind, int except) const;
 	static float distance(const float a[3], const float b[3]);
 
 	// The engine functions of life the scripts call.
@@ -316,10 +342,13 @@ private:
 	// scripts' own lists ("BENCH,CHAIR,THRONE" is sitting) and numbers.
 	char _mobSit[96] = "", _mobLie[96] = "", _mobClimb[96] = "", _mobBusy[160] = "";
 	i32 _bsSit = 0, _bsLie = 0, _bsClimb = 0, _bsMob = 0, _bsMobInterrupt = 0;
+	char* _stateNames = nullptr; // "script/states"
+	u32 _stateNamesSize = 0;
 	TexturePool _pool;
 	Piece _pieces[PIECES];
 	NpcActor _actors[ACTORS];
 	Pak* _pak = nullptr; // while update() or enterWorld() runs
+	const World* _world = nullptr; // ... and the world
 	u32 _clipBytes = 0;
 	u32 _victim = SCRIPT_NONE; // the scripts' global of that name
 	u32 _frame = 0;

@@ -83,7 +83,41 @@ const Clip* Npcs::clip(NpcActor& a, const char* name) {
 	const Clip* c = m.fetch(*_pak, hash, _clipBytes, _cfg.clipBudget);
 	if (_clipBytes != before) ++_stats.clips;
 	if (!c) ++_stats.clipsRefused;
+	if (c) {
+		bool known = false;
+		for (const Clip* k : a.named) known = known || k == c;
+		if (!known) {
+			a.named[a.nextName] = c;
+			upperCopy(a.names[a.nextName], sizeof(a.names[0]), name);
+			a.nextName = u8((a.nextName + 1) % NpcActor::NAMES);
+		}
+	}
 	return c;
+}
+
+const char* Npcs::animationName(const NpcActor& a) const {
+	const Clip* c = a.anim.current();
+	for (int k = 0; c && k < NpcActor::NAMES; ++k)
+		if (a.named[k] == c) return a.names[k];
+	return "";
+}
+
+const char* Npcs::stateName(u32 fn) const {
+	if (!fn || !_stateNames || fn >= _game.vm().symbolCount()) return "";
+	const u32 hash = _game.vm().symbol(fn).nameHash;
+	for (u32 at = 0; at < _stateNamesSize;) {
+		const char* name = _stateNames + at;
+		if (hashName(name) == hash) return name;
+		at += u32(strlen(name)) + 1;
+	}
+	return "";
+}
+
+const NpcActor* Npcs::nearest() const {
+	const NpcActor* best = nullptr;
+	for (const NpcActor& a : _actors)
+		if (a.used && a.ready && (!best || a.dist2 < best->dist2)) best = &a;
+	return best;
 }
 
 // A clip of the way the character moves: `pattern` with the mode's word put
@@ -108,6 +142,7 @@ void Npcs::wake(NpcActor& a) {
 	const Model& m = a.rig->model;
 	a.fist = !m.hasClip(hashName("S_RUN")) && !m.hasClip(hashName("S_WALK")) &&
 	         (m.hasClip(hashName("S_FISTRUN")) || m.hasClip(hashName("S_FISTWALK")));
+	for (const Clip*& k : a.named) k = nullptr; // (of the model it had before, if any)
 	a.idle = modeClip(a, "S_%s", true);
 	a.anim.play(a.idle, 0.0f);
 	// Everybody in a rhythm of his own.
@@ -235,11 +270,16 @@ i32 Npcs::bodyStateOf(const NpcActor& a) const {
 			}
 			return false;
 		};
-		return listed(_mobSit) ? _bsSit : listed(_mobLie) ? _bsLie : listed(_mobClimb) ? _bsClimb : listed(_mobBusy) ? _bsMob : _bsMobInterrupt;
+		// (In a bed it is "busy with a thing", not "lying": that is what the
+		// original's scripts wait for - ZS_SleepBed_Loop gets up and goes to
+		// sit somewhere unless its body is BS_MOBINTERACT, the orcs' ZS_Orc_TA
+		// waits for that very state "while he lies in bed". BS_LIE is for
+		// those the scripts lay down themselves, with AI_PlayAniBS.)
+		return listed(_mobSit) ? _bsSit : listed(_mobLie) ? _bsMob : listed(_mobClimb) ? _bsClimb : listed(_mobBusy) ? _bsMob : _bsMobInterrupt;
 	}
 	if (a.phase == NpcActor::MOVING) return a.walkMode == NpcActor::WALK ? kBsWalk : kBsRun;
 	if (strcmp(a.stance, "SIT") == 0) return kBsSit;
-	if (startsWith(a.stance, "SLEEP")) return kBsLie;
+	if (startsWith(a.stance, "SLEEP")) return _bsLie;
 	return kBsStand;
 }
 
@@ -277,6 +317,24 @@ const Clip* Npcs::mobClip(NpcActor& a, int from, int to, char* nameOut) {
 	return nullptr;
 }
 
+// The nearest free thing of a kind that the character can see - the
+// original uses a thing only if "the character sees it and it is free":
+// a bench behind the wall of the hut is not his. Seeing is from the eyes to
+// the middle of whoever would stand at the thing's place (a little lower than
+// the eyes, so that a low beam overhead hides nothing).
+int Npcs::findMob(u32 npc, const char* kind, int except) const {
+	const GameNpc& n = _game.npc(npc);
+	int found[8];
+	const u32 count = _mobs.candidates(n.pos, kind, npc, except, found, 8);
+	if (!_world) return count ? found[0] : -1;
+	for (u32 k = 0; k < count; ++k) {
+		float at[3], yaw;
+		_mobs.place(u32(found[k]), n.pos, at, yaw);
+		if (_world->lineFree({n.pos[0], n.pos[1] + 130.0f, n.pos[2]}, {at[0], at[1] + 80.0f, at[2]})) return found[k];
+	}
+	return -1;
+}
+
 // The actor has nothing to do with its thing any more.
 void Npcs::releaseMob(NpcActor& a) {
 	if (a.mob < 0 && a.mobStage == NpcActor::MOB_NONE) return;
@@ -297,7 +355,7 @@ void Npcs::releaseMob(NpcActor& a) {
 }
 
 // A step of using a thing (NPC_ACT_USE_MOB). True once the action is done.
-bool Npcs::useMob(NpcActor& a, float dt) {
+bool Npcs::useMob(NpcActor& a, const World& world, float dt) {
 	GameNpc& n = _game.npcMut(a.npc);
 	if (a.mob < 0 || u32(a.mob) >= _mobs.count()) {
 		releaseMob(a);
@@ -323,6 +381,16 @@ bool Npcs::useMob(NpcActor& a, float dt) {
 			return false;
 		}
 		if (!faces) return false;
+		{
+			// On the floor it has walked over to the place, wherever the
+			// place's own height is: that was found on the world's ground
+			// only (or not at all, and is then the node's, a metre up), and
+			// a chair upstairs stands on a floor that is an object.
+			float y;
+			Vec3 normal;
+			if (world.rayDown({a.mobPos[0], n.pos[1] + 60.0f, a.mobPos[2]}, 160.0f, y, normal)) a.mobPos[1] = y;
+			else a.mobPos[1] = n.pos[1];
+		}
 		memcpy(n.pos, a.mobPos, sizeof(a.mobPos));
 		n.yaw = a.mobYaw;
 		a.carried = false;
@@ -751,14 +819,15 @@ bool Npcs::begin(NpcActor& a, const World& world) {
 			a.phase = NpcActor::PLAYING;
 			return false;
 		}
-		const int mob = a.mob >= 0 && _mobs.isScheme(u32(a.mob), act.text) ? a.mob : _mobs.find(n.pos, act.text, a.npc, a.mobFailed);
-		if (mob < 0) return true; // none around: the state goes on without
-		if (a.mob >= 0 && a.mob != mob) {
-			// At another thing: out of that first, then this again.
-			pushFront(a, act);
-			act.i = -1;
-			return begin(a, world);
+		if (a.mob >= 0 && !_mobs.isScheme(u32(a.mob), act.text)) {
+			// At a thing of another kind already, or on the way to one: this
+			// is passed over. The original's scripts count on it -
+			// ZS_SleepBed asks for "BEDHIGH" and then "BEDLOW" in the same
+			// breath ("further UseMobs are ignored while one is going on").
+			return true;
 		}
+		const int mob = a.mob >= 0 ? a.mob : findMob(a.npc, act.text, a.mobFailed);
+		if (mob < 0) return true; // none around: the state goes on without
 		if (a.mob >= 0 && a.mobStage >= NpcActor::MOB_ENTERING) {
 			a.wait = 0; // at it already: on to the state asked for
 			a.phase = NpcActor::PLAYING;
@@ -810,7 +879,7 @@ bool Npcs::begin(NpcActor& a, const World& world) {
 }
 
 // Goes on with the action in hand. True once it is done.
-bool Npcs::carryOn(NpcActor& a, const World&, float dt) {
+bool Npcs::carryOn(NpcActor& a, const World& world, float dt) {
 	GameNpc& n = _game.npcMut(a.npc);
 	NpcAction& act = a.action;
 	switch (act.kind) {
@@ -867,7 +936,7 @@ bool Npcs::carryOn(NpcActor& a, const World&, float dt) {
 		return true;
 	}
 	case NPC_ACT_USE_MOB:
-		return useMob(a, dt);
+		return useMob(a, world, dt);
 	case NPC_ACT_PLAY_ANI:
 	case NPC_ACT_STAND_UP:
 	case NPC_ACT_WAIT:
@@ -1343,7 +1412,7 @@ void Npcs::xIsMobAvailable(ScriptVm& vm, void* user) {
 		vm.pushInt(1); // the one it is at
 		return;
 	}
-	vm.pushInt(self._mobs.find(self._game.npc(u32(who)).pos, kind, u32(who), a ? a->mobFailed : -1) >= 0);
+	vm.pushInt(self.findMob(u32(who), kind, a ? a->mobFailed : -1) >= 0);
 }
 
 void Npcs::xGetMobState(ScriptVm& vm, void* user) {
@@ -1356,7 +1425,7 @@ void Npcs::xGetMobState(ScriptVm& vm, void* user) {
 	if (a && a->mob >= 0 && self._mobs.isScheme(u32(a->mob), kind))
 		vm.pushInt(max<i32>(a->mobState, 0));
 	else // (a thing nobody is at rests in its first state)
-		vm.pushInt(who >= 0 && self._mobs.find(self._game.npc(u32(who)).pos, kind, u32(who)) >= 0 ? 0 : -1);
+		vm.pushInt(who >= 0 && self.findMob(u32(who), kind, -1) >= 0 ? 0 : -1);
 }
 
 void Npcs::xGetDetectedMob(ScriptVm& vm, void* user) {

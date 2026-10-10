@@ -108,6 +108,10 @@ public:
 	// True if nothing solid reaches into the box (a quick "all clear": false
 	// only says that something may be there).
 	bool boxFree(const float mn[3], const float mx[3]) const;
+	// True if nothing that collides comes within `radius` of the straight
+	// line from `a` to `b` (a sphere stepped along it): who stands at `a`
+	// sees `b`. Only loaded chunks count.
+	bool lineFree(Vec3 a, Vec3 b, float radius = 8.0f) const;
 	// Highest water surface under `from`, no lower than from.y - maxDrop.
 	bool waterBelow(Vec3 from, float maxDrop, float& surfaceY) const;
 

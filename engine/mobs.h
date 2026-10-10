@@ -32,6 +32,8 @@ public:
 	// number but 0xFFFF), or -1.
 	// `except` (an index, or -1) is passed over.
 	int find(const float pos[3], const char* scheme, u32 owner, int except = -1) const;
+	// The same, all of them, the nearest first: up to `max` into `out`. Returns how many.
+	u32 candidates(const float pos[3], const char* scheme, u32 owner, int except, int* out, u32 max) const;
 	// Where somebody coming from `from` stands to use the mob: its slot
 	// nearest to him. Returns the slot's number; -1, and the mob's own place,
 	// for a mob without any (find() never returns such a one).

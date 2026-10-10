@@ -587,6 +587,22 @@ bool World::boxFree(const float mn[3], const float mx[3]) const {
 	return true;
 }
 
+bool World::lineFree(Vec3 a, Vec3 b, float radius) const {
+	const float mn[3] = {min(a.x, b.x) - radius, min(a.y, b.y) - radius, min(a.z, b.z) - radius};
+	const float mx[3] = {max(a.x, b.x) + radius, max(a.y, b.y) + radius, max(a.z, b.z) + radius};
+	if (boxFree(mn, mx)) return true;
+	// Steps of 1.5 radii: a wall between two of them is at most 0.75 radii
+	// from the nearer one, so it touches that sphere.
+	const Vec3 d = b - a;
+	const float len = length(d);
+	const int steps = clamp(int(len / (radius * 1.5f)) + 1, 1, 400);
+	for (int i = 0; i <= steps; ++i) {
+		Vec3 c = a + d * (float(i) / float(steps));
+		if (pushSphere(c, radius)) return false;
+	}
+	return true;
+}
+
 const WorldPortal* World::portalAt(Vec3 p) const {
 	for (u32 i = 0; i < _hdr.portalCount; ++i) {
 		const WorldPortal& q = _portals[i];

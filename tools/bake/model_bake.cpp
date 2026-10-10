@@ -283,16 +283,38 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 		if (!clipNames.insert(hashName(clip.name.c_str())).second) continue; // the first of a name wins
 
 		std::vector<SrcClipSample> samples = clip.samples;
+		const bool loop = lowerName(clip.next) == lowerName(clip.name);
 		// Root motion (see g3ds/model.h): what the root does since the first
 		// frame is where the clip carries the character; the root itself is
 		// drawn over the character's position.
+		//
+		// The game flags the clips that move the character ("M"); the others
+		// it draws with the root where the animation puts it, off the
+		// character's own position. Of those the steps into and out of a
+		// bench or a chair matter: "T_BENCH_STAND_2_S0" takes the body half a
+		// metre back onto the seat, and "S_BENCH_S1" sits there. Since every
+		// root is drawn over the character's position here, such a step has
+		// to carry the character instead (as OpenGothic does with any clip
+		// whose root travels) - else everybody sits down in front of the
+		// bench, in the air.
+		bool carries = clip.moves;
+		if (!carries && !loop)
+			for (size_t t = 0; t < tracks && !carries; ++t) {
+				const int node = clip.nodes[t];
+				if (node < 0 || size_t(node) >= n || model.nodes[size_t(node)].parent >= 0) continue;
+				for (size_t f = 1; f < frames && !carries; ++f) {
+					const float dx = clip.samples[f * tracks + t].pos[0] - clip.samples[t].pos[0];
+					const float dz = clip.samples[f * tracks + t].pos[2] - clip.samples[t].pos[2];
+					carries = dx * dx + dz * dz > 2.0f * 2.0f;
+				}
+			}
 		std::vector<std::array<float, 3>> motion;
 		float motionReach = 0, rise = 0;
 		for (size_t t = 0; t < tracks; ++t) {
 			const int node = clip.nodes[t];
 			if (node < 0 || size_t(node) >= n) throw std::runtime_error("model '" + model.name + "': clip node out of range");
 			if (model.nodes[size_t(node)].parent >= 0) continue;
-			if (clip.moves && motion.empty()) {
+			if (carries && motion.empty()) {
 				motion.resize(frames);
 				for (size_t f = 0; f < frames; ++f) {
 					for (int a = 0; a < 3; ++a) motion[f][size_t(a)] = clip.samples[f * tracks + t].pos[a] - clip.samples[t].pos[a];
@@ -310,7 +332,6 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 		if (motionReach < 0.4f) motion.clear();
 		float travelled = 0;
 		if (!motion.empty()) travelled = std::sqrt(motion.back()[0] * motion.back()[0] + motion.back()[2] * motion.back()[2]);
-		const bool loop = lowerName(clip.next) == lowerName(clip.name);
 		// A loop's last frame leads back into its first, so it lasts `frames`
 		// steps; anything else lasts `frames - 1`.
 		const float duration = float(loop ? frames : std::max<size_t>(frames - 1, 1)) / clip.fps;

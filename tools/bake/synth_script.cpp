@@ -41,6 +41,10 @@ const int NPC_RUN  = 0;
 const int NPC_WALK = 1;
 const int LOOP_CONTINUE = 0;
 const int LOOP_END      = 1;
+const int BS_FLAG_INTERRUPTABLE = 32768;
+const int BS_FLAG_FREEHANDS     = 65536;
+const int BS_MAX = 31;
+const int BS_STAND = 98304;       // 0, interruptable, with free hands
 const int BS_SIT = 65547;         // 11, with free hands
 const int BS_LIE = 12;
 const int BS_MOBINTERACT = 15;
@@ -300,25 +304,50 @@ func void ZS_Smith_End() {
 	AI_UseMob(self, "BSANVIL", -1);
 };
 
-// To bed, if the hut has one that is free; else it is sitting down by the hut.
+// The original's body-state check, formula and all.
+func int C_BodyStateContains(var C_NPC slf, var int bodystate) {
+	if ((Npc_GetBodyState(slf) & (BS_MAX | BS_FLAG_INTERRUPTABLE | BS_FLAG_FREEHANDS)) == (bodystate & (BS_MAX | BS_FLAG_INTERRUPTABLE | BS_FLAG_FREEHANDS))) {
+		return TRUE;
+	};
+	return FALSE;
+};
+
+// To bed - written as the original's ZS_Sleep.d is, tricks and all: two
+// AI_UseMob in a row for the two kinds of bed (the second is to be passed
+// over once the first has begun), a loop that gets up and goes to sit
+// somewhere if the body is not "busy with a thing" three seconds in, and
+// three ways out of bed at the end.
 func void ZS_Sleep() {
-	AI_StandUp(self);
 	AI_SetWalkmode(self, NPC_WALK);
-	AI_GotoWP(self, self.wp);
-	AI_AlignToWP(self);
+	if (!C_BodyStateContains(self, BS_MOBINTERACT)) {
+		if (Hlp_StrCmp(Npc_GetNearestWP(self), self.wp) == 0) {
+			AI_GotoWP(self, self.wp);
+		};
+	};
 	AI_StartState(self, ZS_SleepBed, 1, "");
 };
 func void ZS_SleepBed() {
-	if (Wld_IsMobAvailable(self, "BEDHIGH")) { AI_UseMob(self, "BEDHIGH", 1); }
-	else                                     { AI_PlayAniBS(self, "T_STAND_2_SIT", BS_SIT); };
+	if (Wld_IsMobAvailable(self, "BED")) {
+		AI_UseMob(self, "BED", 1);
+	} else if (Wld_IsMobAvailable(self, "BEDHIGH") || Wld_IsMobAvailable(self, "BEDLOW")) {
+		AI_UseMob(self, "BEDHIGH", 1); // (the original: further UseMobs are ignored while one is going on)
+		AI_UseMob(self, "BEDLOW", 1);
+	} else {
+		AI_StartState(self, ZS_Stand, 1, "");
+	};
 };
 func int ZS_SleepBed_Loop() {
+	// (The original's workaround for an AI_UseMob that failed after all.)
+	if (!C_BodyStateContains(self, BS_MOBINTERACT) && (Npc_GetStateTime(self) > 3)) {
+		AI_StartState(self, ZS_SitAround, 1, "");
+	};
 	AI_Wait(self, 1);
 	return LOOP_CONTINUE;
 };
 func void ZS_SleepBed_End() {
 	AI_UseMob(self, "BEDHIGH", -1);
-	AI_StandUp(self);
+	AI_UseMob(self, "BEDLOW", -1);
+	AI_UseMob(self, "BED", -1);
 };
 
 // Creatures have no routine: they start in a state that picks, by the hour,

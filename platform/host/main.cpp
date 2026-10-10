@@ -322,9 +322,13 @@ int main(int argc, char** argv) {
 				const NpcActor& a = app.npcs().actor(i);
 				if (!a.used) continue;
 				const GameNpc& n = app.npcs().game().npc(a.npc);
-				printf("  %-22.22s %-8s at %7.0f %6.0f %7.0f, %4.0f m away, %3.0f s in its state\n", app.npcs().game().nameOf(n),
-				       app.npcs().doing(a), double(n.pos[0]), double(n.pos[1]), double(n.pos[2]), double(sqrtf(a.dist2)) / 100.0,
-				       double(a.stateTime));
+				const Npcs& npcs = app.npcs();
+				printf("  %-22.22s %-8s at %7.0f %6.0f %7.0f, %4.0f m away, %3.0f s in %s; thing %s stage %u state %d; body %ld; "
+				       "animation %s\n",
+				       npcs.game().nameOf(n), npcs.doing(a), double(n.pos[0]), double(n.pos[1]), double(n.pos[2]),
+				       double(sqrtf(a.dist2)) / 100.0, double(a.stateTime), npcs.stateName(a.state)[0] ? npcs.stateName(a.state) : "its state",
+				       a.mob >= 0 ? npcs.mobs().scheme(u32(a.mob)) : "-", unsigned(a.mobStage), int(a.mobState),
+				       static_cast<long>(npcs.bodyState(a)), npcs.animationName(a)[0] ? npcs.animationName(a) : "?");
 			}
 	} else {
 		printf("scripts           none in the archive: the worlds are empty\n");

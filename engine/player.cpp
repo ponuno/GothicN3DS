@@ -13,6 +13,7 @@ void Player::spawn(Vec3 eye) {
 	waterDepth = 0;
 	_placed = false;
 	_carry = {0, 0, 0};
+	_sliding = _resting = false;
 }
 
 void Player::collideWalls(const World& world) {
@@ -214,10 +215,15 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 				feet.y += dy;
 				grounded = false;
 				collideWalls(world);
-			} else if (world.rayDown({feet.x, feet.y + cfg.stepHeight, feet.z}, cfg.stepHeight - dy + 1.0f, y, n) &&
-			           n.y >= cfg.minFloorNormal) {
-				feet.y = y;
-				grounded = true;
+			} else if (world.rayDown({feet.x, feet.y + cfg.stepHeight, feet.z}, cfg.stepHeight - dy + 1.0f, y, n)) {
+				if (standsOn(n, y)) {
+					feet.y = y;
+					grounded = true;
+				} else {
+					// A slope too steep to land on: not into it, at least.
+					feet.y = max(feet.y + dy, y);
+					grounded = false;
+				}
 			} else {
 				feet.y += dy;
 				grounded = false;
@@ -232,14 +238,16 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 	if (grounded) {
 		// Stay glued to the floor: up a step, or down a slope or small ledge.
 		const float snap = cfg.stepHeight * 0.8f;
-		if (world.rayDown({feet.x, feet.y + cfg.stepHeight, feet.z}, cfg.stepHeight + snap, y, n) &&
-		    n.y >= cfg.minFloorNormal) {
+		if (world.rayDown({feet.x, feet.y + cfg.stepHeight, feet.z}, cfg.stepHeight + snap, y, n) && standsOn(n, y)) {
 			feet.y = y;
+			if (n.y >= cfg.minFloorNormal) _resting = false;
 		} else {
 			grounded = false;
 			velocityY = 0;
+			_resting = false;
 		}
 	}
+	if (grounded) _sliding = false;
 	if (!grounded) {
 		velocityY = max(velocityY - (drive ? cfg.driveGravity : cfg.gravity) * dt, -4000.0f);
 		const float dy = velocityY * dt;
@@ -251,12 +259,29 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 			if (n.y >= cfg.minFloorNormal) {
 				grounded = true;
 				velocityY = 0;
+				_sliding = _resting = false;
 			} else {
-				// Too steep to stand on: slide downhill.
+				// Too steep to stand on: slide downhill. Whatever pace the
+				// body had - a jump's, at the slope - is lost on it: else it
+				// keeps pressing the body up the slope it slides down, and it
+				// hangs there, sliding for ever.
+				_carry = {0, 0, 0};
 				feet.x += n.x * 400.0f * dt;
 				feet.z += n.z * 400.0f * dt;
 				velocityY = max(velocityY, -600.0f);
 				collideWalls(world);
+				if (!_sliding || feet.y < _slideLow - 2.0f) {
+					_sliding = true;
+					_slideLow = feet.y;
+					_slideStill = 0;
+				} else if ((_slideStill += dt) > 0.25f) {
+					// It gets no lower: it stands.
+					grounded = true;
+					velocityY = 0;
+					_sliding = false;
+					_resting = true;
+					_restY = feet.y;
+				}
 			}
 		} else if (world.rayDown({feet.x, feet.y + cfg.stepHeight, feet.z}, 50000.0f, y, n)) {
 			feet.y += dy;

@@ -615,24 +615,35 @@ void addInhabitantClips(SrcModel& model) {
 		const float turn = 0.7f * std::sin(phase * kTau);
 		p.rot[HEAD] = {0, std::sin(turn * 0.5f), 0, std::cos(turn * 0.5f)};
 	}));
-	// Using the things of the camp. A bench: back onto it and down (the
-	// step back is the animation's own travel), and up again.
+	// Using the things of the camp. A bench: back onto it and down, and up
+	// again - made as the game's are, without the flag that says the clip
+	// moves the character: the step back is in the root, which stays half
+	// a metre back for as long as one sits (in model space, as the game's
+	// animations keep it).
 	const auto lie = [](float down, Pose& p) {
 		p.pos[ROOT][1] -= 30.0f * down;
 		p.rot[ROOT] = aboutX(-1.45f * down);
 	};
-	model.clips.push_back(makeClip("T_BENCH_STAND_2_S0", "S_BENCH_S0", 10, true, [](float phase, float, Pose& p) {
-		p.pos[ROOT][2] = -40.0f * phase;
+	const float seat = -40.0f;
+	model.clips.push_back(makeClip("T_BENCH_STAND_2_S0", "S_BENCH_S0", 10, false, [seat](float phase, float, Pose& p) {
+		p.pos[ROOT][2] = seat * phase;
 	}));
-	model.clips.push_back(makeClip("S_BENCH_S0", "S_BENCH_S0", 20, false, [](float, float, Pose&) {}));
-	model.clips.push_back(makeClip("T_BENCH_S0_2_S1", "S_BENCH_S1", 12, false, [sit](float phase, float, Pose& p) { sit(0.8f * phase, p); }));
-	model.clips.push_back(makeClip("S_BENCH_S1", "S_BENCH_S1", 50, false, [sit](float phase, float, Pose& p) {
+	model.clips.push_back(makeClip("S_BENCH_S0", "S_BENCH_S0", 20, false, [seat](float, float, Pose& p) { p.pos[ROOT][2] = seat; }));
+	model.clips.push_back(makeClip("T_BENCH_S0_2_S1", "S_BENCH_S1", 12, false, [sit, seat](float phase, float, Pose& p) {
+		sit(0.8f * phase, p);
+		p.pos[ROOT][2] = seat;
+	}));
+	model.clips.push_back(makeClip("S_BENCH_S1", "S_BENCH_S1", 50, false, [sit, seat](float phase, float, Pose& p) {
 		sit(0.8f, p);
+		p.pos[ROOT][2] = seat;
 		p.rot[HEAD] = aboutX(0.05f * std::sin(phase * kTau));
 	}));
-	model.clips.push_back(makeClip("T_BENCH_S1_2_S0", "S_BENCH_S0", 12, false, [sit](float phase, float, Pose& p) { sit(0.8f * (1.0f - phase), p); }));
-	model.clips.push_back(makeClip("T_BENCH_S0_2_STAND", "S_RUN", 10, true, [](float phase, float, Pose& p) {
-		p.pos[ROOT][2] = 40.0f * phase;
+	model.clips.push_back(makeClip("T_BENCH_S1_2_S0", "S_BENCH_S0", 12, false, [sit, seat](float phase, float, Pose& p) {
+		sit(0.8f * (1.0f - phase), p);
+		p.pos[ROOT][2] = seat;
+	}));
+	model.clips.push_back(makeClip("T_BENCH_S0_2_STAND", "S_RUN", 10, false, [seat](float phase, float, Pose& p) {
+		p.pos[ROOT][2] = seat * (1.0f - phase);
 	}));
 	// A bed, got into from its front: those steps have the side in their
 	// names, lying in it has not.

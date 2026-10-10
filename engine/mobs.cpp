@@ -74,14 +74,21 @@ bool Mobs::isScheme(u32 mob, const char* scheme) const {
 }
 
 int Mobs::find(const float pos[3], const char* scheme, u32 owner, int except) const {
-	if (!scheme || !*scheme) return -1;
+	int best = -1;
+	return candidates(pos, scheme, owner, except, &best, 1) ? best : -1;
+}
+
+u32 Mobs::candidates(const float pos[3], const char* scheme, u32 owner, int except, int* out, u32 max) const {
+	if (!scheme || !*scheme || !max) return 0;
 	char name[64];
 	size_t n = 0;
 	for (; scheme[n] && n + 1 < sizeof(name); ++n) name[n] = upperChar(scheme[n]);
 	name[n] = 0;
 	const u32 hash = hashName(name);
-	int best = -1;
-	float bestD2 = SEARCH_RANGE * SEARCH_RANGE;
+	// Kept in order, nearest first; the farthest drops out of a full list.
+	float d2s[16];
+	u32 count = 0;
+	if (max > 16) max = 16;
 	for (u32 i = 0; i < _h.mobCount; ++i) {
 		const WorldMob& m = _mobs[i];
 		// (A thing without a place to stand at cannot be used, as in the original.)
@@ -89,11 +96,16 @@ int Mobs::find(const float pos[3], const char* scheme, u32 owner, int except) co
 		if (_user[i] && _user[i] != u16(owner + 1)) continue;
 		const float dx = m.pos[0] - pos[0], dy = m.pos[1] - pos[1], dz = m.pos[2] - pos[2];
 		const float d2 = dx * dx + dy * dy + dz * dz;
-		if (d2 >= bestD2 || !isScheme(i, name)) continue;
-		bestD2 = d2;
-		best = int(i);
+		if (d2 >= SEARCH_RANGE * SEARCH_RANGE || (count == max && d2 >= d2s[count - 1]) || !isScheme(i, name)) continue;
+		u32 at = count < max ? count++ : max - 1;
+		for (; at > 0 && d2s[at - 1] > d2; --at) {
+			d2s[at] = d2s[at - 1];
+			out[at] = out[at - 1];
+		}
+		d2s[at] = d2;
+		out[at] = int(i);
 	}
-	return best;
+	return count;
 }
 
 int Mobs::place(u32 mob, const float from[3], float pos[3], float& yaw) const {

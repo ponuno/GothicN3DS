@@ -1,0 +1,136 @@
+; World and character vertex shader with the dissolve (PICA200, assembled with picasso).
+; The same as world.v.pica plus texture coordinate 1 for gfx::setFade; loaded
+; only when the dissolve is switched on at start (D-Pad Right), until it has
+; been seen to work on the console.
+;
+; Input is the 16-byte vertex exactly as it sits in data.pak:
+;   v0  short4  quantised position (w is padding)
+;   v1  short2  fixed-point texture coordinate
+;   v2  ubyte4  world:     rgb = baked light, a = daylight weight (255 outdoors, 0 indoors)
+;               character: r, g = palette offsets of the two bones (slot * 3),
+;                          b = weight of the second bone, a = shade
+;
+; Position: chunk.w is the position step and chunk.xyz the origin (of the
+; chunk, or of the character) relative to a lattice point next to the eye.
+; For world geometry both the product and the sum are exact in the 24-bit
+; floats of this GPU (they are whole lattice steps, fewer than 2^17 of them),
+; so a vertex shared by two chunks leaves this step as the same number from
+; both and the seam between them cannot open.
+; modelView is the same for every draw call: the view rotation plus the small
+; offset from that lattice point to the eye.
+;
+; Characters (skinned = true): the position is first run through two bone
+; matrices and blended. bones holds three rows per bone; the vertex brings
+; the row offsets itself, so one mova addresses both.
+;
+; Light:  world: rgb * lerp(1, dayLight, weight); dayDelta holds dayLight - 1.
+;         character: skinLight * shade.
+; Fog:    linear, per vertex: factor = clamp(fogA - viewZ * fogB, 0, 1), 1 = clear.
+;         The factor travels in the colour alpha and is applied by the second
+;         TexEnv stage (see gfx_c3d.cpp). The sky pass sets fogA = 1, fogB = 0.
+;
+; Dissolve (fading = true): texture coordinate 1 is the position on the
+; screen, in texels of the 8x8 noise texture (about a texel a pixel), for the
+; alpha test that dissolves objects in (see gfx::setFade). Divided per vertex,
+; so across a large triangle the pattern bends a little; the objects that
+; fade are small.
+
+.fvec projection[4], modelView[4]
+.fvec chunk         ; xyz = origin relative to the eye's lattice point, w = position step
+.fvec params        ; x = uv scale, y = 1/255, z = fogA, w = fogB
+.fvec dayDelta      ; xyz = dayLight - 1
+.fvec texOffset     ; xy = texture scroll offset (zw must be 0)
+.fvec skinLight     ; xyz = light on the character
+.fvec bones[78]     ; 26 bones, three rows of a 3x4 matrix each
+.bool skinned
+.bool fading
+
+.constf consts(0.0, 1.0, 0.0, 0.0)
+.constf noiseScale(15.0, 25.0, 0.0, 0.0) ; texels of the noise texture per unit of x and y on the screen (240 x 400 pixels, 8 a texel)
+.alias zero consts.xxxx
+.alias one  consts.yyyy
+
+.out outpos position
+.out outtc0 texcoord0
+.out outclr color
+.out outtc1 texcoord1
+
+.alias inpos v0
+.alias intc  v1
+.alias inclr v2
+
+.proc main
+	; r0 = (position in chunk or model space, 1)
+	mul r0.xyz, chunk.www, inpos
+	mov r0.w,   one
+
+	ifu skinned
+		; r6, r7 = the position as each of the two bones sees it
+		mova a0.xy, inclr.xy
+		dp4 r6.x, bones[a0.x],   r0
+		dp4 r6.y, bones[a0.x+1], r0
+		dp4 r6.z, bones[a0.x+2], r0
+		dp4 r7.x, bones[a0.y],   r0
+		dp4 r7.y, bones[a0.y+1], r0
+		dp4 r7.z, bones[a0.y+2], r0
+		; r0 = r6 + (r7 - r6) * weight
+		add r7.xyz, r7.xyz, -r6.xyz
+		mul r8.x,   params.y, inclr.z
+		mul r7.xyz, r7.xyz, r8.xxx
+		add r0.xyz, r6.xyz, r7.xyz
+	.end
+
+	; relative to the eye's lattice point
+	add r0.xyz, chunk.xyz, r0.xyz
+
+	; r1 = view-space position
+	dp4 r1.x, modelView[0], r0
+	dp4 r1.y, modelView[1], r0
+	dp4 r1.z, modelView[2], r0
+	dp4 r1.w, modelView[3], r0
+
+	dp4 r6.x, projection[0], r1
+	dp4 r6.y, projection[1], r1
+	dp4 r6.z, projection[2], r1
+	dp4 r6.w, projection[3], r1
+	mov outpos, r6
+
+	ifu fading
+		rcp r7.x, r6.w
+		mul r7.xy, r6.xy, r7.xx
+		mul r7.xy, noiseScale.xy, r7.xy
+		mov r7.zw, zero
+		mov outtc1, r7
+	.else
+		; (never left undefined: texture unit 1 is enabled while dissolving is on at all)
+		mov outtc1, zero
+	.end
+
+	mul r2, params.xxxx, intc
+	add r2, texOffset, r2
+	mov outtc0, r2
+
+	; fog factor
+	mul r3.x, params.w, r1.z
+	add r3.x, params.z, -r3.x
+	max r3.x, zero, r3.x
+	min r3.x, one,  r3.x
+
+	ifu skinned
+		; light * shade
+		mul r4.x,   params.y, inclr.w
+		mul r4.xyz, skinLight.xyz, r4.xxx
+	.else
+		; r4 = (light, weight), both 0..1
+		mul r4, params.yyyy, inclr
+		; r5 = 1 + weight * (dayLight - 1)
+		mul r5.xyz, dayDelta, r4.www
+		add r5.xyz, one, r5.xyz
+		mul r4.xyz, r4.xyz, r5.xyz
+	.end
+
+	mov r4.w, r3.x
+	mov outclr, r4
+
+	end
+.end

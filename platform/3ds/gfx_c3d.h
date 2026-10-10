@@ -16,6 +16,12 @@ void c3dSetClassicFrames(bool classic);
 // draws nothing. A fallback should the character branch misbehave on hardware.
 void c3dSetPlainShader(bool plain);
 bool c3dPlainShader();
+// `fade` = true: the shader with the dissolve (world_fade.v.pica) and the
+// noise texture on unit 1, so that gfx::setFade works. Off by default: the
+// first build with it showed a black screen on the console, and this keeps
+// the known-good shader and GPU state until the dissolve has been seen to
+// work there. Call before init(); ignored with the plain shader.
+void c3dSetFadeShader(bool fade);
 
 } // namespace gfx
 } // namespace g3

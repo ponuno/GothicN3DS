@@ -596,6 +596,7 @@ void C3D_TexBind(int unitId, C3D_Tex* tex) {
 		abort();
 	}
 	if (unitId == 0) gBoundTex = tex;
+	if (unitId == 1) ++gCount.texUnit1Binds;
 }
 
 bool C3D_Init(size_t cmdBufSize) {

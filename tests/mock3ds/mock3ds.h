@@ -29,6 +29,7 @@ struct Counters {
 	// How far ahead of the display the CPU got: draws recorded while the GPU
 	// was busy with the previous frame.
 	unsigned drawsWhileBusy;
+	unsigned texUnit1Binds;       // C3D_TexBind on unit 1 (only the dissolve uses it)
 };
 
 Counters& counters();

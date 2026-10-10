@@ -17,6 +17,7 @@
 #include "gfx.h"
 #include "gfx_c3d.h"
 
+#include "world_fade_shbin.h"
 #include "world_plain_shbin.h"
 #include "world_shbin.h"
 
@@ -57,6 +58,7 @@ int gLocProjection = -1, gLocModelView = -1, gLocChunk = -1, gLocParams = -1, gL
 int gLocSkinLight = -1, gLocBones = -1, gLocSkinned = -1, gLocFading = -1;
 bool gSkinned = false; // last value of the shader's `skinned` switch
 bool gPlainShader = false; // the world-only shader of earlier versions: no characters
+bool gFadeShader = false;  // the shader with the dissolve, and the noise on unit 1
 Pass gPass = PASS_WORLD;
 
 // 1 MB of command buffer: about 5000 draw calls with a texture change each.
@@ -266,8 +268,9 @@ bool init() {
 	if (!gTarget) return false;
 	C3D_RenderTargetSetOutput(gTarget, GFX_TOP, GFX_LEFT, DISPLAY_TRANSFER_FLAGS);
 
-	gDvlb = gPlainShader ? DVLB_ParseFile(reinterpret_cast<u32*>(world_plain_shbin), world_plain_shbin_size)
-	                     : DVLB_ParseFile(reinterpret_cast<u32*>(world_shbin), world_shbin_size);
+	gDvlb = gPlainShader  ? DVLB_ParseFile(reinterpret_cast<u32*>(world_plain_shbin), world_plain_shbin_size)
+	        : gFadeShader ? DVLB_ParseFile(reinterpret_cast<u32*>(world_fade_shbin), world_fade_shbin_size)
+	                      : DVLB_ParseFile(reinterpret_cast<u32*>(world_shbin), world_shbin_size);
 	if (!gDvlb) return false;
 	shaderProgramInit(&gProgram);
 	shaderProgramSetVsh(&gProgram, &gDvlb->DVLE[0]);
@@ -285,9 +288,12 @@ bool init() {
 		gLocSkinLight = shaderInstanceGetUniformLocation(gProgram.vertexShader, "skinLight");
 		gLocBones = shaderInstanceGetUniformLocation(gProgram.vertexShader, "bones");
 		gLocSkinned = shaderInstanceGetUniformLocation(gProgram.vertexShader, "skinned");
-		gLocFading = shaderInstanceGetUniformLocation(gProgram.vertexShader, "fading");
-		if (gLocSkinLight < 0 || gLocBones < 0 || gLocSkinned < 0 || gLocFading < 0) return false;
-		makeNoise(); // (without it nothing is dissolved: see fadeSupported)
+		if (gLocSkinLight < 0 || gLocBones < 0 || gLocSkinned < 0) return false;
+		if (gFadeShader) {
+			gLocFading = shaderInstanceGetUniformLocation(gProgram.vertexShader, "fading");
+			if (gLocFading < 0) return false;
+			makeNoise(); // (without it nothing is dissolved: see fadeSupported)
+		}
 	}
 	if (gLocProjection < 0 || gLocModelView < 0 || gLocChunk < 0 || gLocParams < 0 || gLocDayDelta < 0 || gLocTexOffset < 0)
 		return false;
@@ -326,6 +332,7 @@ void shutdown() {
 		C3D_Fini();
 		if (gNoiseReady) C3D_TexDelete(&gNoise);
 		gNoiseReady = false;
+		gLocFading = -1;
 		if (gProgramReady) shaderProgramFree(&gProgram);
 		if (gDvlb) DVLB_Free(gDvlb);
 	}
@@ -498,8 +505,10 @@ void frameBegin(const FrameDesc& f) {
 	C3D_AlphaTest(false, GPU_GREATER, 127);
 	gAlphaTest = gAlphaTestOn = false;
 	// Not dissolving.
-	if (!gPlainShader) C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocFading, false);
-	setFadeStages(false, 255);
+	if (gNoiseReady) {
+		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocFading, false);
+		setFadeStages(false, 255);
+	}
 	// The noise stays bound to unit 1: citro3d cannot unbind units 1 and 2
 	// (C3D_TexBind reads the type of the texture it is given, null or not -
 	// that crashed the console). No texture stage reads it unless dissolving.
@@ -582,7 +591,7 @@ void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, 
 	setTexOffset(uvOffsetU, uvOffsetV);
 }
 
-bool fadeSupported() { return gNoiseReady && !gPlainShader; }
+bool fadeSupported() { return gNoiseReady; }
 
 void setFade(float visible) {
 	if (!gInFrame) return;
@@ -689,6 +698,10 @@ void c3dSetPlainShader(bool plain) {
 }
 
 bool c3dPlainShader() { return gPlainShader; }
+
+void c3dSetFadeShader(bool fade) {
+	if (!gReady) gFadeShader = fade;
+}
 
 MemStats memStats() { return gMem; }
 FrameStats frameStats() { return gFrameStats; }

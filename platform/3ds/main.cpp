@@ -36,8 +36,10 @@
 //            too heavy; nobody comes and goes with the load either
 //   D-Pad Left  nobody perceives anything (the inhabitants do not notice the
 //            player or each other), as before perception
-//   D-Pad Right objects appear and vanish at once at their distance, as
-//            before (no dissolving in and out; see StreamConfig::fadeMs)
+//   D-Pad Right objects dissolve in and out at their distance instead of
+//            appearing at once (StreamConfig::fadeMs; a shader of its own,
+//            world_fade.v.pica). Off by default until seen to work on the
+//            console: the first build with it always on gave a black screen
 #include "app.h"
 #include "gfx_c3d.h"
 #include "pacer.h"
@@ -128,9 +130,10 @@ int main(int, char**) {
 	const bool wholeChunks = (startKeys & KEY_ZL) != 0; // no culling inside chunks
 	const bool steady = (startKeys & KEY_DDOWN) != 0;   // objects drawn farther, never taken away by the pacer
 	const bool blind = (startKeys & KEY_DLEFT) != 0;    // no perception
-	const bool popIn = (startKeys & KEY_DRIGHT) != 0;   // no dissolving: objects pop in and out
+	const bool dissolve = (startKeys & KEY_DRIGHT) != 0; // objects dissolve in and out (a shader of its own)
 	gfx::c3dSetClassicFrames(classic);
 	gfx::c3dSetPlainShader(plainShader);
+	gfx::c3dSetFadeShader(dissolve);
 
 	App& app = gApp;
 	// Chunks are read, unpacked and given their collision grids on a worker
@@ -139,7 +142,7 @@ int main(int, char**) {
 	stream.background = background;
 	stream.maxLoadsPerFrame = background ? 1 : 2;
 	stream.clusterCulling = !wholeChunks;
-	if (popIn) stream.fadeMs = 0.0f;
+	if (!dissolve) stream.fadeMs = 0.0f;
 	if (steady) {
 		stream.detailDistance[g3::DETAIL_MEDIUM] = 10000.0f;
 		stream.detailDistance[g3::DETAIL_SMALL] = 6000.0f;
@@ -328,10 +331,13 @@ int main(int, char**) {
 			reportLine("loader %-6s job %5.1f ms  fly %lu",
 			     !app.world().backgroundStreaming() ? "off" : app.world().workerThread() ? "thread" : "inline",
 			     double(app.world().takeWorstLoadMs()), static_cast<unsigned long>(ws.chunksInFlight));
-			// (fd: objects dissolving in or out, on average; "pop": that is off.)
-			reportLine("detail %3.0f%%  %2d fps  late %2lu/30 fd%s%lu", double(app.world().config().detailScale * 100.0f),
-			     interval == 2 ? 30 : 60, static_cast<unsigned long>(lateFrames), popIn ? " pop " : " ",
-			     static_cast<unsigned long>(fadingSum / 30));
+			// (fd: objects dissolving in or out, on average; "off": the dissolve is off.)
+			if (dissolve && gfx::fadeSupported())
+				reportLine("detail %3.0f%%  %2d fps  late %2lu/30 fd %lu", double(app.world().config().detailScale * 100.0f),
+				     interval == 2 ? 30 : 60, static_cast<unsigned long>(lateFrames), static_cast<unsigned long>(fadingSum / 30));
+			else
+				reportLine("detail %3.0f%%  %2d fps  late %2lu/30 fd off", double(app.world().config().detailScale * 100.0f),
+				     interval == 2 ? 30 : 60, static_cast<unsigned long>(lateFrames));
 			reportLine("frames %s  pacer %s%s", fs.overlapped ? "overlapped" : "classic", pacing ? "on" : "off", steady ? " STEADY" : "");
 			// Triangles drawn, of those in the chunks in view (the rest is what
 			// the clusters save); draw calls; chunks.

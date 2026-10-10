@@ -170,6 +170,7 @@ struct ShaderCheck {
 	unsigned failed = 0, unexpected = 0, movedBySwitch = 0;
 	// The same world vertices with the dissolve switched on (b1, see gfx::setFade):
 	// nothing else may change, and texture coordinate 1 is the place on the screen.
+	bool checkFade = false; // (only the dissolve's shader has it)
 	unsigned fadedVertices = 0;
 	double fadeChanged = 0, worstNoise = 0;
 	double worstWorldPx = 0, worstSkinPx = 0, worstDepth = 0, worstColor = 0, worstTex = 0;
@@ -259,7 +260,7 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 			continue;
 		}
 
-		if (!skinned && !sky) {
+		if (sc.checkFade && !skinned && !sky) {
 			mock3ds::DrawCall faded = call;
 			faded.bools = u16(call.bools | 2u);
 			mock3ds::ShadedVertex f;
@@ -389,8 +390,9 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 static void testShader(const std::string& pak) {
 	mock3ds::reset();
 	gfx::c3dSetClassicFrames(false);
-	CHECK(gfx::init());
-	// The binary is the one picasso assembled from world.v.pica, and the
+	gfx::c3dSetFadeShader(true); // the shader with the dissolve: world.v.pica and then some
+	CHECK(gfx::init() && gfx::fadeSupported());
+	// The binary is the one picasso assembled from world_fade.v.pica, and the
 	// backend found every uniform in it.
 	std::printf("  shader: %u instructions, %u of 96 float registers%s%s\n", mock3ds::shaderInstructions(),
 	            mock3ds::shaderFloatRegisters(), *mock3ds::shaderProblem() ? "; PROBLEM: " : "", mock3ds::shaderProblem());
@@ -410,6 +412,7 @@ static void testShader(const std::string& pak) {
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "nonsense") < 0);
 
 	ShaderCheck sc;
+	sc.checkFade = true;
 	// 1. The game as it runs: the world around a walking, turning character,
 	// in the evening (the time of day tints the light).
 	{
@@ -514,6 +517,54 @@ static void testShader(const std::string& pak) {
 		chain.release();
 		p.close();
 	}
+	gfx::shutdown();
+	gfx::c3dSetFadeShader(false);
+	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
+}
+
+// The default: the shader of the version before the dissolve (world.v.pica),
+// nothing on texture unit 1 - the GPU state that is known to work on the
+// console. (The first build with the dissolve always on gave a black screen.)
+static void testDefaultShader(const std::string& pak) {
+	mock3ds::reset();
+	gfx::c3dSetClassicFrames(false);
+	CHECK(gfx::init() && !gfx::fadeSupported());
+	std::printf("  default shader: %u instructions, %u of 96 float registers%s%s\n", mock3ds::shaderInstructions(),
+	            mock3ds::shaderFloatRegisters(), *mock3ds::shaderProblem() ? "; PROBLEM: " : "", mock3ds::shaderProblem());
+	CHECK(!*mock3ds::shaderProblem() && mock3ds::shaderFloatRegisters() == 4 + 4 + 5 + MODEL_PALETTE * 3 + 1);
+	shaderProgram_s probe;
+	shaderProgramInit(&probe);
+	shaderProgramSetVsh(&probe, nullptr);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "skinned") == 0x68);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fading") < 0);
+	{
+		ShaderCheck sc;
+		App app;
+		CHECK(app.init(pak.c_str(), nullptr));
+		app.world().config().fadeMs = 0.0f; // (as the console sets it without D-Pad Right)
+		app.setDrawDistance(6000.0f);
+		app.world().preload(app.camera().pos);
+		for (int f = 0; f < 20; ++f) {
+			Input in;
+			in.moveZ = 1.0f;
+			in.lookX = 0.4f;
+			app.update(in, 1.0f / 30.0f);
+			if (f == 19) {
+				const Camera& cam = app.camera();
+				sc.beginFrame(viewLH(cam.pos, cam.yaw, cam.pitch), cam.pos, cam.fovY, cam.zNear, cam.zFar);
+				sc.expect(app.hero().model(), app.hero().pose(), app.hero().feet(), app.hero().yaw(), app.hero().light(), app.hero().lean());
+				sc.others = app.npcs().stats().drawCalls;
+				mock3ds::setDrawHook(shaderHook, &sc);
+			}
+			app.render();
+			mock3ds::setDrawHook(nullptr, nullptr);
+			CHECK(app.world().stats().batchesFading == 0);
+		}
+		CHECK(sc.worldDraws > 10 && sc.worldVertices > 1000 && sc.failed == 0 && sc.unexpected == 0);
+		CHECK(sc.worstWorldPx < 0.02 && sc.worstGpuWorldPx < 0.25 && sc.worstColor < 1e-4 && sc.worstTex < 1e-3);
+		app.shutdown();
+	}
+	CHECK(mock3ds::counters().texUnit1Binds == 0);
 	gfx::shutdown();
 	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
 }
@@ -736,6 +787,8 @@ int main(int argc, char** argv) {
 	testMockNotices();
 	std::printf("[ RUN ] the vertex shader, run on the PC\n");
 	testShader(pak);
+	std::printf("[ RUN ] the default shader, without the dissolve\n");
+	testDefaultShader(pak);
 	std::printf("[ RUN ] the fallback shader without characters\n");
 	testPlainShader(pak);
 	std::printf("[ RUN ] frame orders\n");

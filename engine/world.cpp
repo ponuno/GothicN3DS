@@ -244,27 +244,43 @@ LoadStatus World::finishChunk(LoadResult& r) {
 	const u16* indices = reinterpret_cast<const u16*>(verts + h.vertexCount);
 
 	Loaded l {};
+	u32 clusterCount = 1;
+	for (u32 b = 0; b < h.batchCount; ++b) clusterCount = max<u32>(clusterCount, u32(batches[b].cluster) + 1);
 	l.batches = static_cast<Batch*>(malloc(size_t(h.batchCount) * sizeof(Batch) + 1));
-	l.mesh = l.batches ? gfx::meshCreate(verts, h.vertexCount, indices, h.indexCount) : nullptr;
+	l.clusters = static_cast<Cluster*>(malloc(size_t(clusterCount) * sizeof(Cluster)));
+	l.mesh = l.batches && l.clusters ? gfx::meshCreate(verts, h.vertexCount, indices, h.indexCount) : nullptr;
 	if (!l.mesh) {
 		free(l.batches);
+		free(l.clusters);
 		r.discard();
 		return LOAD_NO_MEMORY;
 	}
+	for (u32 c = 0; c < clusterCount; ++c)
+		for (int a = 0; a < 3; ++a) {
+			l.clusters[c].bbMin[a] = 1e30f;
+			l.clusters[c].bbMax[a] = -1e30f; // (a number nobody uses stays inside out: never in view)
+		}
 	for (u32 b = 0; b < h.batchCount; ++b) {
 		const ChunkBatch& src = batches[b];
 		Batch& dst = l.batches[b];
 		dst.material = src.material;
 		dst.detail = src.detail < DETAIL_COUNT ? src.detail : u8(DETAIL_COUNT - 1);
+		dst.cluster = src.cluster;
 		dst.firstIndex = src.firstIndex;
 		dst.indexCount = src.indexCount;
+		Cluster& cluster = l.clusters[src.cluster];
 		for (int a = 0; a < 3; ++a) {
 			dst.bbMin[a] = h.origin[a] + float(src.bbMin[a]) * h.posScale;
 			dst.bbMax[a] = h.origin[a] + float(src.bbMax[a]) * h.posScale;
+			if (!src.indexCount) continue;
+			cluster.bbMin[a] = min(cluster.bbMin[a], dst.bbMin[a]);
+			cluster.bbMax[a] = max(cluster.bbMax[a], dst.bbMax[a]);
 		}
 		l.hasBlended = l.hasBlended || (_materials[src.material].flags & MATF_TRANSLUCENT) != 0;
 	}
 	l.batchCount = h.batchCount;
+	l.clusterCount = u16(clusterCount);
+	l.triangles = h.indexCount / 3;
 	memcpy(l.origin, h.origin, sizeof(l.origin));
 	l.posScale = h.posScale;
 	l.uvScale = h.uvScale;
@@ -301,6 +317,7 @@ void World::unloadChunk(u32 index) {
 	for (u32 b = 0; b < l.batchCount; ++b) releaseMaterial(l.batches[b].material);
 	gfx::meshDestroy(l.mesh);
 	free(l.batches);
+	free(l.clusters);
 	_stats.collisionBytes -= l.collider.bytes() + l.water.bytes();
 	l.collider.release();
 	l.water.release();
@@ -558,6 +575,18 @@ bool World::pushSphere(Vec3& center, float radius) const {
 	return moved;
 }
 
+bool World::boxFree(const float mn[3], const float mx[3]) const {
+	for (u32 k = 0; k < _stats.chunksLoaded; ++k) {
+		const u32 i = _resident[k];
+		const ChunkInfo& ci = _chunks[i];
+		if (mx[0] < ci.bbMin[0] || mn[0] > ci.bbMax[0] || mx[1] < ci.bbMin[1] || mn[1] > ci.bbMax[1] || mx[2] < ci.bbMin[2] ||
+		    mn[2] > ci.bbMax[2])
+			continue;
+		if (!_loaded[i].collider.boxFree(mn, mx)) return false;
+	}
+	return true;
+}
+
 const WorldPortal* World::portalAt(Vec3 p) const {
 	for (u32 i = 0; i < _hdr.portalCount; ++i) {
 		const WorldPortal& q = _portals[i];
@@ -578,24 +607,46 @@ const WorldLadder* World::ladderAt(Vec3 p) const {
 	return nullptr;
 }
 
+// How far the farthest point of a box is from `c`.
+static float aabbFarDistance(const float mn[3], const float mx[3], Vec3 c) {
+	const float dx = max(c.x - mn[0], mx[0] - c.x), dy = max(c.y - mn[1], mx[1] - c.y), dz = max(c.z - mn[2], mx[2] - c.z);
+	return sqrtf(dx * dx + dy * dy + dz * dz);
+}
+
+// Looks at the boxes of a chunk once; drawBatches() then knows of most
+// batches what to do without looking at them.
+void World::classify(const Loaded& l, bool count) {
+	for (u32 c = 0; c < l.clusterCount; ++c) {
+		const Cluster& k = l.clusters[c];
+		if (k.bbMin[0] > k.bbMax[0]) {
+			_clusterState[c] = CLUSTER_OUT; // nothing in it
+			continue;
+		}
+		const int where = _cfg.clusterCulling ? aabbFrustumClass(_frustum, k.bbMin, k.bbMax) : 1;
+		_clusterState[c] = where == 0 ? u8(CLUSTER_OUT) : where == 1 ? u8(CLUSTER_IN) : u8(CLUSTER_PARTLY);
+		_stats.clustersTested += count;
+		_stats.clustersCulled += count && where == 0;
+		if (where == 0) continue;
+		_clusterNear[c] = aabbDistance(k.bbMin, k.bbMax, _camera);
+		_clusterFar[c] = aabbFarDistance(k.bbMin, k.bbMax, _camera);
+	}
+}
+
 void World::drawBatches(const Loaded& l, bool blended) {
 	const u32 ms = _timeMs;
 	bool transformSet = false;
-	for (u32 b = 0; b < l.batchCount; ++b) {
-		const Batch& batch = l.batches[b];
-		const WorldMaterial& m = _materials[batch.material];
-		if (((m.flags & MATF_TRANSLUCENT) != 0) != blended || batch.indexCount == 0) continue;
-		if ((batch.detail != DETAIL_ALWAYS &&
-		     aabbDistance(batch.bbMin, batch.bbMax, _camera) > _cfg.detailDistance[batch.detail] * _cfg.detailScale) ||
-		    !aabbInFrustum(_frustum, batch.bbMin, batch.bbMax)) {
-			++_stats.batchesCulled;
-			continue;
-		}
+	// A culled stretch this short between two runs of a material is drawn
+	// along with them: a draw call costs more than its few triangles.
+	const u32 bridge = 24 * 3;
+	u32 runFirst = 0, runCount = 0, gap = 0, runMaterial = 0;
+	auto flush = [&]() {
+		gap = 0;
+		if (!runCount) return;
 		if (!transformSet) {
 			gfx::setChunkTransform(l.origin, l.posScale, l.uvScale);
 			transformSet = true;
 		}
-
+		const WorldMaterial& m = _materials[runMaterial];
 		const u32 frame = (m.frameCount > 1 && m.frameMs) ? (ms / m.frameMs) % m.frameCount : 0;
 		float offset[2] = {0, 0};
 		for (int a = 0; a < 2; ++a) {
@@ -608,11 +659,48 @@ void World::drawBatches(const Loaded& l, bool blended) {
 			offset[a] = m.scroll[a] < 0 ? 1.0f - f : f;
 		}
 		gfx::setMaterial(_tex[u32(m.texture) + frame].tex, m.flags, float(m.opacity) * (1.0f / 255.0f), offset[0], offset[1]);
-		gfx::draw(l.mesh, batch.firstIndex, batch.indexCount);
+		gfx::draw(l.mesh, runFirst, runCount);
 		++_stats.drawCalls;
 		_stats.blendedDrawCalls += blended;
-		_stats.trianglesDrawn += batch.indexCount / 3;
+		_stats.trianglesDrawn += runCount / 3;
+		runCount = 0;
+	};
+	for (u32 b = 0; b < l.batchCount; ++b) {
+		const Batch& batch = l.batches[b];
+		const WorldMaterial& m = _materials[batch.material];
+		if (((m.flags & MATF_TRANSLUCENT) != 0) != blended || batch.indexCount == 0) continue;
+		const u32 c = batch.cluster < l.clusterCount ? batch.cluster : 0u;
+		bool visible = _clusterState[c] != CLUSTER_OUT;
+		if (visible && batch.detail != DETAIL_ALWAYS) {
+			// Too far for its size? Mostly the box's distance says so already.
+			const float limit = _cfg.detailDistance[batch.detail] * _cfg.detailScale;
+			if (_clusterNear[c] > limit)
+				visible = false;
+			else if (_clusterFar[c] > limit)
+				visible = aabbDistance(batch.bbMin, batch.bbMax, _camera) <= limit;
+		}
+		if (visible && _clusterState[c] == CLUSTER_PARTLY) visible = aabbInFrustum(_frustum, batch.bbMin, batch.bbMax);
+		const bool follows = runCount && batch.material == runMaterial && batch.firstIndex == runFirst + runCount + gap;
+		if (!visible) {
+			++_stats.batchesCulled;
+			if (follows && gap + batch.indexCount <= bridge)
+				gap += batch.indexCount;
+			else
+				flush();
+			continue;
+		}
+		if (follows) {
+			runCount += gap + batch.indexCount;
+			gap = 0;
+			++_stats.batchesMerged;
+			continue;
+		}
+		flush();
+		runFirst = batch.firstIndex;
+		runCount = batch.indexCount;
+		runMaterial = batch.material;
 	}
+	flush();
 }
 
 void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
@@ -620,11 +708,31 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_stats.drawCalls = 0;
 	_stats.blendedDrawCalls = 0;
 	_stats.batchesCulled = 0;
+	_stats.batchesMerged = 0;
 	_stats.trianglesDrawn = 0;
+	_stats.trianglesInChunks = 0;
+	_stats.clustersTested = 0;
+	_stats.clustersCulled = 0;
 	_visible = 0;
 	if (!_pak) return;
 
 	_frustum = frustumFromViewProj(viewProj);
+	// The far plane is where the fog ends (the draw distance): what lies
+	// wholly behind it has the fog's colour all over and need not be drawn.
+	// (The projection's own far plane is further out, to leave room for the
+	// boxes that straddle this one.)
+	{
+		float* nearPlane = _frustum.p[4];
+		const float len = sqrtf(nearPlane[0] * nearPlane[0] + nearPlane[1] * nearPlane[1] + nearPlane[2] * nearPlane[2]);
+		if (len > 0.0f && _cfg.clusterCulling) {
+			const float ahead[3] = {nearPlane[0] / len, nearPlane[1] / len, nearPlane[2] / len};
+			float* farPlane = _frustum.p[5];
+			farPlane[0] = -ahead[0];
+			farPlane[1] = -ahead[1];
+			farPlane[2] = -ahead[2];
+			farPlane[3] = ahead[0] * camera.x + ahead[1] * camera.y + ahead[2] * camera.z + _cfg.drawDistance;
+		}
+	}
 	_camera = camera;
 	_timeMs = timeMs;
 	u32 n = 0;
@@ -645,8 +753,11 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_visible = n;
 
 	for (u32 k = 0; k < n; ++k) {
-		drawBatches(_loaded[_order[k]], false);
+		const Loaded& l = _loaded[_order[k]];
+		classify(l, true);
+		drawBatches(l, false);
 		++_stats.chunksDrawn;
+		_stats.trianglesInChunks += l.triangles;
 	}
 }
 
@@ -654,7 +765,9 @@ void World::drawBlended() {
 	// Back to front, so nearer water blends over farther water.
 	for (u32 k = _visible; k-- > 0;) {
 		const Loaded& l = _loaded[_order[k]];
-		if (l.mesh && l.hasBlended) drawBatches(l, true);
+		if (!l.mesh || !l.hasBlended) continue;
+		classify(l, false);
+		drawBatches(l, true);
 	}
 }
 

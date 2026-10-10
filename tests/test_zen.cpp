@@ -43,6 +43,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -308,7 +309,10 @@ void writeMrm(const zenkit::MultiResolutionMesh& mesh, zenkit::Write* out) {
 
 const float kRootShift[3] = {15.0f, 20.0f, 30.0f}; // file translation (10, 20, 30) + root translation (5, 0, 0)
 
-zenkit::ModelHierarchy buildHierarchy() {
+// With `slots`, two more nodes of the kind a usable thing has: the places
+// one stands at to use it. In model space: "ZS_POS0_FRONT" at (0, 30, -120),
+// facing +Z; "zs_pos1" at (130, 30, 0), a quarter turn on, facing +X.
+zenkit::ModelHierarchy buildHierarchy(bool slots = false) {
 	zenkit::ModelHierarchy h;
 	auto node = [&](const char* name, int parent, bool turn, float x, float y, float z) {
 		zenkit::ModelHierarchyNode n;
@@ -324,6 +328,11 @@ zenkit::ModelHierarchy buildHierarchy() {
 	node("BIP01 ARM", 1, false, 100, 0, 0);
 	node("BIP01 DOOR", 2, true, 0, 50, 0);
 	node("BIP01 GATE", -1, false, 10, 20, 30);
+	if (slots) {
+		node("ZS_POS0_FRONT", 2, false, 0, 30, -120);
+		node("zs_pos1", 2, true, 130, 30, 0); // (names are matched without regard to case)
+		node("ZS_SOMETHING", 2, false, 0, 0, 0); // not a place to stand at
+	}
 	h.root_translation = zenkit::Vec3 {5, 0, 0};
 	h.checksum = 0;
 	return h;
@@ -886,7 +895,8 @@ var int greeted;
 extern func void AI_GotoWP(var C_NPC n, var string wp);
 extern func void AI_PlayAni(var C_NPC n, var string ani);
 extern func void AI_Wait(var C_NPC n, var float seconds);
-func void ZS_Stand() { AI_GotoWP(self, self.wp); AI_PlayAni(self, "t_JumpB"); };
+extern func int AI_UseMob(var C_NPC n, var string scheme, var int targetState);
+func void ZS_Stand() { AI_GotoWP(self, self.wp); AI_PlayAni(self, "t_JumpB"); AI_UseMob(self, "BedHigh", 1); };
 func int ZS_Stand_Loop() { AI_Wait(self, 1); return 0; };
 instance FIX_ARMOR (C_ITEM) { name = "Coat"; mainflag = 16; visual_change = "Fix_Hero_Body_IO.asc"; };
 instance PC_HERO (C_NPC) {
@@ -987,6 +997,16 @@ void checkScripts(std::shared_ptr<const ZenGame> game, const fs::path& dir, bool
 		std::vector<std::string> cutNotes;
 		CHECK(!importZenScript(game, cut, cutBytes, cutNotes));
 		CHECK(cutNotes.size() == 1 && cutNotes[0].find("could not be read") != std::string::npos);
+		// ... wherever the cut is.
+		u32 refused = 0, cuts = 0;
+		for (size_t keep = 40; keep + 8 < dat.size(); keep += dat.size() / 61 + 1, ++cuts) {
+			writeFile(compiledDir / "Gothic.dat", std::vector<std::byte>(reinterpret_cast<const std::byte*>(dat.data()),
+			                                                             reinterpret_cast<const std::byte*>(dat.data()) + keep));
+			cutNotes.clear();
+			refused += !importZenScript(game, cut, cutBytes, cutNotes) && cutNotes.size() == 1 && cut.symbols.empty();
+		}
+		std::printf("  a script file cut short at %u places: refused %u times\n", cuts, refused);
+		CHECK(cuts > 50 && refused == cuts);
 		writeFile(compiledDir / "Gothic.dat", std::vector<std::byte>(reinterpret_cast<const std::byte*>(dat.data()),
 		                                                             reinterpret_cast<const std::byte*>(dat.data()) + dat.size()));
 	}
@@ -1086,7 +1106,11 @@ void checkScripts(std::shared_ptr<const ZenGame> game, const fs::path& dir, bool
 	CHECK(said("SND_PLAY x1") && said("0 complaints, 0 calls given up"));
 	CHECK(said("5 characters with 4 different looks; models for 3 of them (3 characters): 2 skeletons with 10 animations"));
 	// The scripts name one animation, and the skeleton that has it got it.
-	CHECK(said("animations: the scripts name or imply 1; baked per skeleton: fix_hero 5, fix_hero3 5"));
+	CHECK(said("animations: the scripts name or imply 1, and using the things they name takes 2 families more; baked per skeleton: "
+	           "fix_hero 5, fix_hero3 5"));
+	// The things to use reach the archive, and the report says which the scripts know.
+	CHECK(said("things to use: 6 of 2 kinds, with 2 places to stand at (5 have none: nobody can use those): FIX x5, BEDHIGH x1"));
+	CHECK(said("things to use: the worlds have 2 kinds; the scripts name 1 of them: BEDHIGH x1; not named: FIX"));
 	CHECK(said(" 1 states, "));
 	CHECK(said("NOSUCH.MSB/.MDS not found") && said("e.g. FIX_GHOST"));
 	CHECK(haveHead ? said("3 bodies, 1 heads") : said("head missing (drawn without)"));
@@ -1816,7 +1840,7 @@ int main(int argc, char** argv) {
 		spot->position = zenkit::Vec3 {2000.0f, 50.0f, 2500.0f};
 		world2.world_vobs.push_back(spot);
 		world2.world_vobs.push_back(makePortal("fixture.zen", "START", 500, 500));
-		for (const char* lamp : {"Fix_Lamp.mds", "FIX_LAMP2.MDS", "FIX_LAMP3.MDS", "FIX_LAMP3.MDS"}) {
+		for (const char* lamp : {"Fix_Lamp.mds", "FIX_LAMP2.MDS", "FIX_LAMP3.MDS", "FIX_LAMP3.MDS", "Fix_High2.asc"}) {
 			auto fire = std::make_shared<zenkit::VFire>();
 			fire->type = zenkit::VirtualObjectType::oCMobFire;
 			auto vis = std::make_shared<zenkit::VisualModel>();
@@ -1828,6 +1852,22 @@ int main(int argc, char** argv) {
 			fire->slot = "Bip01 Fire";
 			fire->vob_tree = "FIRETREE_LAMP.ZEN";
 			world2.world_vobs.push_back(fire);
+		}
+		// Something to use: a bed, turned a quarter, with two places to stand at.
+		{
+			auto bed = std::make_shared<zenkit::VBed>();
+			bed->type = zenkit::VirtualObjectType::oCMobBed;
+			auto vis = std::make_shared<zenkit::VisualModel>();
+			vis->type = zenkit::VisualType::MODEL;
+			vis->name = "BedHigh_Fix.asc";
+			bed->visual = vis;
+			bed->show_visual = true;
+			bed->cd_dynamic = true;
+			bed->position = zenkit::Vec3 {2500.0f, 100.0f, 1000.0f};
+			bed->rotation.columns[0] = zenkit::Vec3 {0, 0, -1};
+			bed->rotation.columns[2] = zenkit::Vec3 {1, 0, 0};
+			bed->state_count = 1;
+			world2.world_vobs.push_back(bed);
 		}
 		auto waypoint = std::make_shared<zenkit::WayPoint>();
 		waypoint->name = "WP_TEST";
@@ -1880,11 +1920,33 @@ int main(int argc, char** argv) {
 		addToVfs(anims, "FIX_GATE.MDH", mdh);
 		addToVfs(anims, "FIX_GATE.MDM", mdm);
 		addToVfs(anims, "FIX_MILL.MDL", mdl);
+		{
+			std::vector<std::byte> bedMdl;
+			auto bedWrite = zenkit::Write::to(&bedMdl);
+			buildHierarchy(true).save(bedWrite.get());
+			bedMdl.insert(bedMdl.end(), mdm.begin(), mdm.end());
+			addToVfs(anims, "BEDHIGH_FIX.MDL", bedMdl);
+		}
 		// Three fire places whose model scripts borrow the gate's skeleton but
 		// not its mesh. The first has files of its own name, the second
 		// registers a mesh, the third has nothing: only that one may fall back
 		// on the mesh it was told not to use.
 		addToVfs(anims, "FIX_LAMP.MDL", mdl);
+		// And a lamp as the game has them: a visual named as an .ASC, which
+		// the game compiled into FIX_HIGH2.MDL - while a model script of the
+		// same name, which calls another model's mesh its own, left an .MDM
+		// and an .MDH of that name beside it (the gate's). The lamp is the .MDL.
+		{
+			zenkit::MultiResolutionMesh lampBox = buildBox(true);
+			lampBox.sub_meshes[0].mat.texture = "FIX_FENCE.TGA";
+			lampBox.materials[0].texture = "FIX_FENCE.TGA";
+			const std::vector<std::byte> lampMdm = buildMdm(lampBox);
+			std::vector<std::byte> lampMdl = mdh;
+			lampMdl.insert(lampMdl.end(), lampMdm.begin(), lampMdm.end());
+			addToVfs(anims, "FIX_HIGH2.MDL", lampMdl);
+			addToVfs(anims, "FIX_HIGH2.MDH", mdh);
+			addToVfs(anims, "FIX_HIGH2.MDM", mdm);
+		}
 		{
 			zenkit::VfsNode& scripts = vfs.mkdir("_WORK/DATA/ANIMS");
 			const auto text = [](const std::string& t) {
@@ -1896,6 +1958,7 @@ int main(int argc, char** argv) {
 			         text("Model (\"FIX_LAMP2\")\n{\n\tmeshAndTree (\"Fix_Mill.asc\" DONT_USE_MESH)\n\tregisterMesh (\"Fix_Gate.asc\")\n"
 			              "\taniEnum\n\t{\n\t}\n}\n"));
 			addToVfs(scripts, "FIX_LAMP3.MDS", text("Model (\"FIX_LAMP3\")\n{\n\tmeshAndTree (\"Fix_Gate.asc\" DONT_USE_MESH)\n\taniEnum\n\t{\n\t}\n}\n"));
+			addToVfs(scripts, "FIX_HIGH2.MDS", text("Model (\"FIX_HIGH2\")\n{\n\tmeshAndTree (\"Fix_Gate.asc\")\n\taniEnum\n\t{\n\t}\n}\n"));
 		}
 
 		// The character: script, skeleton, body, three clips' worth of files
@@ -1971,10 +2034,43 @@ int main(int argc, char** argv) {
 			CHECK(!second.hasSpawn && hasNote(second, "no zCVobStartpoint"));
 			CHECK(second.indoor && second.fogColor[0] == 30 && second.fogColor[1] == 20 && second.fogColor[2] == 10);
 			CHECK(second.ladders.empty());
+			// The things to use: the four fire places (of a kind named after
+			// their models' first word, without places to stand at) and the bed.
+			CHECK(second.mobs.size() == 6 && scene.mobs.size() == 1 && scene.mobs[0].scheme == "FIX" && scene.mobs[0].slots.empty());
+			{
+				const SrcMob* bed = nullptr;
+				u32 fires = 0;
+				for (const SrcMob& m : second.mobs) {
+					if (m.scheme == "BEDHIGH") bed = &m;
+					fires += m.scheme == "FIX" && m.slots.empty();
+				}
+				CHECK(bed && fires == 5);
+				if (bed) {
+					CHECK(bed->visual == "BEDHIGH_FIX.ASC" && bed->states == 1 && bed->slots.size() == 2);
+					CHECK(std::fabs(bed->pos[0] - 2500.0f) < 0.01f && std::fabs(bed->pos[1] - 100.0f) < 0.01f && std::fabs(bed->yaw - 1.5708f) < 0.001f);
+					if (bed->slots.size() == 2) {
+						// The bed's quarter turn takes model (x, y, z) to (z, y, -x).
+						const SrcMobSlot& front = bed->slots[0];
+						const SrcMobSlot& side = bed->slots[1];
+						CHECK(front.name == "ZS_POS0_FRONT" && side.name == "ZS_POS1");
+						CHECK(std::fabs(front.pos[0] - 2380.0f) < 0.01f && std::fabs(front.pos[2] - 1000.0f) < 0.01f && std::fabs(front.yaw - 1.5708f) < 0.001f);
+						CHECK(std::fabs(side.pos[0] - 2500.0f) < 0.01f && std::fabs(side.pos[2] - 870.0f) < 0.01f && std::fabs(std::fabs(side.yaw) - 3.14159f) < 0.001f);
+						// On the floor of the world, not at the height of the nodes (130).
+						CHECK(front.pos[1] < 125.0f && front.pos[1] > -60.0f && side.pos[1] < 125.0f && side.pos[1] > -60.0f);
+						std::printf("  bed: places to stand at %.0f %.1f %.0f and %.0f %.1f %.0f\n", double(front.pos[0]), double(front.pos[1]),
+						            double(front.pos[2]), double(side.pos[0]), double(side.pos[1]), double(side.pos[2]));
+					}
+				}
+			}
 			// The fire places: each from the right files, and all of it on record.
 			for (const std::string& n : second.notes)
 				if (n.find("fire") != std::string::npos || n.find("FIX_LAMP") != std::string::npos) std::printf("  %s\n", n.c_str());
-			CHECK(hasNote(second, "fire places: 4 objects of 3 kinds"));
+			CHECK(hasNote(second, "fire places: 5 objects of 4 kinds"));
+			// The visual named as an .ASC is its .MDL - the lamp, with the lamp's
+			// texture -, not the .MDM a script of that name left behind.
+			CHECK(hasNote(second, "FIX_HIGH2.ASC x1, fire FIRETREE_LAMP.ZEN at BIP01 FIRE <- FIX_HIGH2.MDL [script: tree FIX_GATE]"));
+			for (const std::string& n : second.notes)
+				if (n.find("FIX_HIGH2.ASC") != std::string::npos) CHECK(n.find("FIX_GRASS.TGA") == std::string::npos && n.find("12 tris FIX_FENCE.TGA") != std::string::npos);
 			CHECK(hasNote(second, "FIX_LAMP.MDS x1, fire FIRETREE_LAMP.ZEN at BIP01 FIRE <- FIX_LAMP.MDL [script: tree FIX_GATE without its mesh]"));
 			CHECK(hasNote(second, "FIX_LAMP2.MDS x1, fire FIRETREE_LAMP.ZEN at BIP01 FIRE <- FIX_GATE.MDM + FIX_MILL.MDL"));
 			CHECK(hasNote(second, "FIX_LAMP3.MDS x2, fire FIRETREE_LAMP.ZEN at BIP01 FIRE <- FIX_GATE.MDM + FIX_GATE.MDH"));
@@ -2066,9 +2162,28 @@ int main(int argc, char** argv) {
 		world.world_vobs.push_back(makeObject("MORPH0.MMS", 2250, 100, 1250, true));
 		world.world_vobs.push_back(makeObject("SECRETDOOR.MDS", 3250, 100, 1250, true));
 		world.world_vobs.push_back(makeObject("SMOKE_WATERPIPE.MDS", 4250, 100, 1250, true));
+		// The game's stone mill, as a thing to use: its genuine skeleton (the
+		// sample "hierarchy0.mdh") with this fixture's mesh hung on it.
+		const bool haveMill = fs::exists(samples / "hierarchy0.mdh");
+		if (haveMill) {
+			auto mill = std::make_shared<zenkit::VInteractiveObject>();
+			mill->type = zenkit::VirtualObjectType::oCMobInter;
+			auto vis = std::make_shared<zenkit::VisualModel>();
+			vis->type = zenkit::VisualType::MODEL;
+			vis->name = "STONEMILL_OM.ASC";
+			mill->visual = vis;
+			mill->show_visual = true;
+			mill->position = zenkit::Vec3 {5250.0f, 100.0f, 1250.0f};
+			mill->state_count = 1;
+			world.world_vobs.push_back(mill);
+		}
 		zenkit::Vfs vfs;
 		addToVfs(vfs.mkdir("_WORK/DATA/WORLDS"), "SAMPLES.ZEN", saveWorld(world));
 		zenkit::VfsNode& data = vfs.mkdir("_WORK/DATA/ANIMS/_COMPILED");
+		if (haveMill) {
+			addToVfs(data, "STONEMILL_OM.MDH", readFile(samples / "hierarchy0.mdh"));
+			addToVfs(data, "STONEMILL_OM.MDM", buildMdm(buildBox(true)));
+		}
 		for (const char* f : sampleFiles) {
 			std::string name = f;
 			for (char& c : name) c = char(std::toupper(static_cast<unsigned char>(c)));
@@ -2086,10 +2201,29 @@ int main(int argc, char** argv) {
 			opt.zenName = "SAMPLES.ZEN";
 			importZenWorld(sampleGame, opt, scene);
 			for (const std::string& n : scene.notes) std::printf("  %s\n", n.c_str());
-			CHECK(hasNote(scene, "objects: 4 placed from 4 meshes"));
-			CHECK(hasNote(scene, "1 meshes, 2 models in rest pose, 1 morph meshes, 0 decals"));
+			CHECK(hasNote(scene, haveMill ? "objects: 5 placed from 5 meshes" : "objects: 4 placed from 4 meshes"));
+			CHECK(hasNote(scene, haveMill ? "1 meshes, 3 models in rest pose, 1 morph meshes, 0 decals" : "1 meshes, 2 models in rest pose, 1 morph meshes, 0 decals"));
+			if (haveMill) {
+				// Where one stands to turn the mill: the skeleton's "ZS_POS0".
+				// The mill's hub ("BIP01 NABE") is 394 cm in front of the
+				// object's origin; the place is at the end of the beam, four
+				// metres from the hub, and one faces along the circle there.
+				CHECK(scene.mobs.size() == 1 && scene.mobs[0].scheme == "STONEMILL" && scene.mobs[0].states == 1 && scene.mobs[0].slots.size() == 1);
+				if (scene.mobs.size() == 1 && scene.mobs[0].slots.size() == 1) {
+					const SrcMobSlot& slot = scene.mobs[0].slots[0];
+					const float dx = slot.pos[0] - 5250.0f, dz = slot.pos[2] - 1250.0f;
+					std::printf("  the mill's place: %.1f %.1f %.1f from the object, facing %.3f; %.1f cm from the hub\n", double(dx),
+					            double(slot.pos[1] - 100.0f), double(dz), double(slot.yaw), double(std::hypot(dx, dz - 394.04f)));
+					CHECK(slot.name == "ZS_POS0" && std::fabs(dx - 391.84f) < 0.05f && std::fabs(dz - 314.22f) < 0.05f);
+					CHECK(std::fabs(std::hypot(dx, dz - 394.04f) - 400.0f) < 0.5f);
+					CHECK(std::fabs(slot.yaw) < 0.01f);
+					// The node hangs 149 cm above the object's origin - where
+					// the middle of whoever stands there is; the place is on the floor below.
+					CHECK(slot.pos[1] < 200.0f && slot.pos[1] > -10.0f);
+				}
+			}
 			// The pipe is skinned; without its skeleton the stored pose is used as is.
-			CHECK(hasNote(scene, "models: 1 skinned parts; rest pose within 0.0 cm"));
+			CHECK(hasNote(scene, haveMill ? "models: 2 skinned parts; rest pose within" : "models: 1 skinned parts; rest pose within 0.0 cm"));
 			CHECK(!hasNote(scene, "WARNING"));
 			size_t objects = 0;
 			for (const SrcTriangle& t : scene.triangles) objects += t.material >= MAT_COUNT;
@@ -2097,6 +2231,89 @@ int main(int argc, char** argv) {
 		} catch (const std::exception& ex) {
 			std::printf("FAIL import threw: %s\n", ex.what());
 			++gFailures;
+		}
+		// A saved game of Gothic 1 is among the samples: its world file has no
+		// mesh, but every object and the whole way net of the game's main
+		// world. What the importer makes of the things people use in it:
+		if (fs::exists(samples / "G1" / "Save" / "WORLD.SAV")) {
+			try {
+				// (Written out again as a world file with this fixture's ground under
+				// it: the importer reads worlds, not saved games.)
+				zenkit::World savedWorld;
+				{
+					auto rd = zenkit::Read::from(samples / "G1" / "Save" / "WORLD.SAV");
+					savedWorld.load(rd.get(), zenkit::GameVersion::GOTHIC_1);
+				}
+				zenkit::World plain;
+				fillWorld(plain, mesh);
+				plain.way_net = savedWorld.way_net;
+				// Of its objects, what this is about: the things to use and the
+				// spots, each copied into a fresh object of a world file's kind.
+				std::function<void(const std::vector<std::shared_ptr<zenkit::VirtualObject>>&)> copy =
+				    [&](const std::vector<std::shared_ptr<zenkit::VirtualObject>>& vobs) {
+					    for (const auto& v : vobs) {
+						    if (!v) continue;
+						    copy(v->children);
+						    std::shared_ptr<zenkit::VirtualObject> out;
+						    if (const auto* usable = dynamic_cast<const zenkit::VInteractiveObject*>(v.get())) {
+							    std::shared_ptr<zenkit::VInteractiveObject> mob;
+							    if (dynamic_cast<const zenkit::VLadder*>(v.get()))
+								    mob = std::make_shared<zenkit::VLadder>();
+							    else
+								    mob = std::make_shared<zenkit::VInteractiveObject>();
+							    mob->state_count = usable->state_count;
+							    out = mob;
+						    } else if (v->type == zenkit::VirtualObjectType::zCVobSpot) {
+							    out = std::make_shared<zenkit::VSpot>();
+						    } else {
+							    continue;
+						    }
+						    out->type = v->type == zenkit::VirtualObjectType::zCVobSpot || v->type == zenkit::VirtualObjectType::oCMobLadder
+						                    ? v->type
+						                    : zenkit::VirtualObjectType::oCMobInter;
+						    out->vob_name = v->vob_name;
+						    out->position = v->position;
+						    out->rotation = v->rotation;
+						    out->show_visual = v->show_visual;
+						    if (v->visual && !v->visual->name.empty()) {
+							    auto vis = std::make_shared<zenkit::VisualModel>();
+							    vis->type = zenkit::VisualType::MODEL;
+							    vis->name = v->visual->name;
+							    out->visual = vis;
+						    }
+						    plain.world_vobs.push_back(out);
+					    }
+				    };
+				copy(savedWorld.world_vobs);
+				zenkit::Vfs saveVfs;
+				addToVfs(saveVfs.mkdir("_WORK/DATA/WORLDS"), "SAVED.ZEN", saveWorld(plain));
+				fs::create_directories(dir / "saved" / "Data");
+				{
+					auto out = zenkit::Write::to(dir / "saved" / "Data" / "saved.vdf");
+					saveVfs.save(out.get(), zenkit::GameVersion::GOTHIC_1);
+				}
+				std::vector<std::string> notes;
+				auto savedGame = openZenGame((dir / "saved").string(), notes);
+				SrcScene saved;
+				ZenImportOptions opt;
+				opt.zenName = "SAVED.ZEN";
+				importZenWorld(savedGame, opt, saved);
+				std::map<std::string, u32> kinds;
+				for (const SrcMob& m : saved.mobs) ++kinds[m.scheme];
+				std::string list;
+				for (const auto& [kind, count] : kinds) list += " " + kind + " x" + std::to_string(count);
+				std::printf("  the saved world: %zu way points, %zu connections, %zu free points; %zu things to use of %zu kinds:%s\n",
+				            saved.wayPoints.size(), saved.wayEdges.size(), saved.freePoints.size(), saved.mobs.size(), kinds.size(), list.c_str());
+				// (The numbers of the game's WORLD.ZEN, as a bake of the real
+				// thing reports them: 2784 points, 3486 connections.)
+				CHECK(saved.wayPoints.size() == 2784 && saved.wayEdges.size() >= 3486 && saved.freePoints.size() > 1500);
+				CHECK(saved.mobs.size() > 1100 && kinds["BED"] == 98 && kinds["BEDHIGH"] == 32 && kinds["BEDLOW"] == 115 && kinds["BENCH"] == 71 &&
+				      kinds["CHAIR"] == 203 && kinds["FIREPLACE"] == 157 && kinds.count("LADDER") == 0);
+				for (const SrcMob& m : saved.mobs) CHECK(m.states >= 0 && m.states <= 16 && !m.scheme.empty() && m.slots.empty());
+			} catch (const std::exception& ex) {
+				std::printf("FAIL import of the saved world threw: %s\n", ex.what());
+				++gFailures;
+			}
 		}
 	} else {
 		std::printf("[ SKIP ] sample files (no ZenKit sample directory given)\n");

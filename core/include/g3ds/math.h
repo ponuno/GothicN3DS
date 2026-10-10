@@ -224,6 +224,20 @@ inline Frustum frustumFromViewProj(const Mat4& vp) {
 	return f;
 }
 
+// 0: the box is wholly outside; 1: wholly inside; 2: it straddles a plane.
+inline int aabbFrustumClass(const Frustum& f, const float mn[3], const float mx[3]) {
+	int result = 1;
+	for (int i = 0; i < 6; ++i) {
+		const float* pl = f.p[i];
+		const float fx = pl[0] >= 0 ? mx[0] : mn[0], fy = pl[1] >= 0 ? mx[1] : mn[1], fz = pl[2] >= 0 ? mx[2] : mn[2];
+		if (pl[0] * fx + pl[1] * fy + pl[2] * fz + pl[3] < 0) return 0;
+		// The corner nearest to the outside.
+		const float nx = pl[0] >= 0 ? mn[0] : mx[0], ny = pl[1] >= 0 ? mn[1] : mx[1], nz = pl[2] >= 0 ? mn[2] : mx[2];
+		if (pl[0] * nx + pl[1] * ny + pl[2] * nz + pl[3] < 0) result = 2;
+	}
+	return result;
+}
+
 inline bool aabbInFrustum(const Frustum& f, const float mn[3], const float mx[3]) {
 	for (int i = 0; i < 6; ++i) {
 		const float* pl = f.p[i];

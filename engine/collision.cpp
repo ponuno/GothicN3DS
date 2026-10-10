@@ -5,6 +5,14 @@
 
 namespace g3 {
 
+namespace {
+// (Only the thread that runs the game asks; the loader's thread builds.)
+CollisionStats gStats;
+} // namespace
+
+const CollisionStats& collisionStats() { return gStats; }
+void collisionStatsReset() { gStats = CollisionStats {}; }
+
 // Ericson, "Real-Time Collision Detection", 5.1.5.
 Vec3 closestPointOnTriangle(Vec3 p, Vec3 a, Vec3 b, Vec3 c) {
 	const Vec3 ab = b - a, ac = c - a, ap = p - a;
@@ -57,6 +65,7 @@ bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const
 	for (u32 b = 0; b < h.batchCount; ++b)
 		if ((materials[batches[b].material].flags & flagMask) == flagValue) tris += batches[b].indexCount / 3;
 	if (tris == 0) return true;
+	if (tris > MAX_TRIANGLES) return false; // (a chunk has 65535 vertices at most: far out of reach)
 
 	// Only the vertices these triangles use are kept: a chunk full of trees
 	// with one puddle must not pay for every leaf in its water collider.
@@ -110,16 +119,20 @@ bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const
 
 	// Grid: cells of about 2.5 m, at most 48 x 48, over the used part of the
 	// chunk (local coordinates are signed: the origin is in the middle).
-	i32 minX = 32767, minZ = 32767, maxX = -32768, maxZ = -32768;
+	i32 minX = 32767, minZ = 32767, maxX = -32768, maxZ = -32768, minY = 32767, maxY = -32768;
 	for (u32 i = 0; i < triangleCount * 3; ++i) {
 		const i16* p = positions + triangles[i] * 3;
 		minX = min<i32>(minX, p[0]);
 		maxX = max<i32>(maxX, p[0]);
+		minY = min<i32>(minY, p[1]);
+		maxY = max<i32>(maxY, p[1]);
 		minZ = min<i32>(minZ, p[2]);
 		maxZ = max<i32>(maxZ, p[2]);
 	}
 	gridX0 = minX;
 	gridZ0 = minZ;
+	levelY0 = minY;
+	levelScale = float(LEVELS) / float(maxY - minY + 1);
 	const i32 spanX = maxX - minX, spanZ = maxZ - minZ;
 	cellSize = max(250.0f / scale, 1.0f);
 	gridW = clamp<u32>(u32(float(spanX) / cellSize) + 1, 1, 48);
@@ -165,10 +178,27 @@ bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const
 	for (u32 t = 0; t < triangleCount; ++t) {
 		u32 x0, x1, z0, z1;
 		range(t, x0, x1, z0, z1);
+		i32 mny = 32767, mxy = -32768;
+		for (int k = 0; k < 3; ++k) {
+			const i32 y = positions[triangles[t * 3 + u32(k)] * 3 + 1];
+			mny = min(mny, y);
+			mxy = max(mxy, y);
+		}
+		u32 lo = 0, hi = LEVELS - 1;
+		levels(float(mny), float(mxy), lo, hi); // (never outside: the levels span all the triangles)
+		const u32 item = t | (lo << ITEM_TRI_BITS) | (hi << (ITEM_TRI_BITS + LEVEL_BITS));
 		for (u32 z = z0; z <= z1; ++z)
-			for (u32 x = x0; x <= x1; ++x) cellItems[fill[z * gridW + x]++] = t;
+			for (u32 x = x0; x <= x1; ++x) cellItems[fill[z * gridW + x]++] = item;
 	}
 	free(fill);
+	return true;
+}
+
+bool ChunkCollider::levels(float y0, float y1, u32& lo, u32& hi) const {
+	const float f0 = (y0 - float(levelY0)) * levelScale, f1 = (y1 - float(levelY0)) * levelScale;
+	if (f1 < 0.0f || f0 >= float(LEVELS)) return false;
+	lo = f0 > 0.0f ? u32(f0) : 0u;
+	hi = f1 < float(LEVELS - 1) ? u32(f1) : u32(LEVELS - 1);
 	return true;
 }
 
@@ -188,11 +218,21 @@ bool ChunkCollider::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal,
 	const u32 cx = u32(gx / cellSize), cz = u32(gz / cellSize);
 	if (cx >= gridW || cz >= gridH) return false;
 
+	u32 qLo, qHi;
+	if (!levels(ly - drop, ly, qLo, qHi)) return false;
+	++gStats.queries;
+
 	bool found = false;
 	float best = ly - drop;
 	const u32 cell = cz * gridW + cx;
+	const u32 triMask = MAX_TRIANGLES - 1, levelMask = LEVELS - 1;
+	gStats.items += cellStart[cell + 1] - cellStart[cell];
 	for (u32 i = cellStart[cell]; i < cellStart[cell + 1]; ++i) {
-		const u16* t = triangles + cellItems[i] * 3;
+		const u32 item = cellItems[i];
+		if (((item >> ITEM_TRI_BITS) & levelMask) > qHi || (item >> (ITEM_TRI_BITS + LEVEL_BITS)) < qLo) continue;
+		const u32 tri = item & triMask;
+		++gStats.tests;
+		const u16* t = triangles + tri * 3;
 		const Vec3 a = localVertex(positions, t[0]), b = localVertex(positions, t[1]), c = localVertex(positions, t[2]);
 		const float det = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
 		if (det > -1e-6f && det < 1e-6f) continue; // vertical: no floor to stand on
@@ -208,7 +248,7 @@ bool ChunkCollider::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal,
 		Vec3 n = normalize(cross(b - a, c - a));
 		if (n.y < 0) n = n * -1.0f;
 		normal = n;
-		if (lightOut && light) memcpy(lightOut, light + size_t(cellItems[i]) * 4, 4);
+		if (lightOut && light) memcpy(lightOut, light + size_t(tri) * 4, 4);
 	}
 	if (found) hitY = origin[1] + best * scale;
 	return found;
@@ -227,14 +267,29 @@ bool ChunkCollider::pushSphere(Vec3& center, float radius) const {
 	const u32 x0 = u32(max(fx0, 0.0f)), x1 = min(u32(max(fx1, 0.0f)), gridW - 1);
 	const u32 z0 = u32(max(fz0, 0.0f)), z1 = min(u32(max(fz1, 0.0f)), gridH - 1);
 
-	bool moved = false;
-	for (u32 z = z0; z <= z1; ++z) {
-		for (u32 x = x0; x <= x1; ++x) {
+	u32 qLo, qHi;
+	if (!levels(c.y - r, c.y + r, qLo, qHi)) return false;
+	++gStats.queries;
+
+	bool moved = false, gone = false;
+	const u32 triMask = MAX_TRIANGLES - 1, levelMask = LEVELS - 1;
+	for (u32 z = z0; z <= z1 && !gone; ++z) {
+		for (u32 x = x0; x <= x1 && !gone; ++x) {
 			const u32 cell = z * gridW + x;
+			gStats.items += cellStart[cell + 1] - cellStart[cell];
 			for (u32 i = cellStart[cell]; i < cellStart[cell + 1]; ++i) {
-				const u16* t = triangles + cellItems[i] * 3;
+				const u32 item = cellItems[i];
+				// Storeys above or below the sphere.
+				if (((item >> ITEM_TRI_BITS) & levelMask) > qHi || (item >> (ITEM_TRI_BITS + LEVEL_BITS)) < qLo) continue;
+				++gStats.tests;
+				const u16* t = triangles + (item & triMask) * 3;
 				const Vec3 a = localVertex(positions, t[0]), b = localVertex(positions, t[1]),
 				           d = localVertex(positions, t[2]);
+				// Not even its box reaches the sphere: most of what a cell holds.
+				if (min(a.x, min(b.x, d.x)) > c.x + r || max(a.x, max(b.x, d.x)) < c.x - r ||
+				    min(a.z, min(b.z, d.z)) > c.z + r || max(a.z, max(b.z, d.z)) < c.z - r ||
+				    min(a.y, min(b.y, d.y)) > c.y + r || max(a.y, max(b.y, d.y)) < c.y - r)
+					continue;
 				const Vec3 q = closestPointOnTriangle(c, a, b, d);
 				const Vec3 away = c - q;
 				const float dist2 = dot(away, away);
@@ -248,11 +303,55 @@ bool ChunkCollider::pushSphere(Vec3& center, float radius) const {
 					c = c + n * r;
 				}
 				moved = true;
+				// The sphere is somewhere else now: so is what is level with it.
+				if (!levels(c.y - r, c.y + r, qLo, qHi)) {
+					gone = true; // pushed above or below everything there is
+					break;
+				}
 			}
 		}
 	}
 	if (moved) center = {origin[0] + c.x * scale, origin[1] + c.y * scale, origin[2] + c.z * scale};
 	return moved;
+}
+
+bool ChunkCollider::boxFree(const float mn[3], const float mx[3]) const {
+	if (!triangleCount) return true;
+	const float inv = 1.0f / scale;
+	float lo[3], hi[3];
+	for (int a = 0; a < 3; ++a) {
+		lo[a] = (mn[a] - origin[a]) * inv;
+		hi[a] = (mx[a] - origin[a]) * inv;
+	}
+	const float fx0 = (lo[0] - float(gridX0)) / cellSize, fx1 = (hi[0] - float(gridX0)) / cellSize;
+	const float fz0 = (lo[2] - float(gridZ0)) / cellSize, fz1 = (hi[2] - float(gridZ0)) / cellSize;
+	if (fx1 < 0 || fz1 < 0 || fx0 >= float(gridW) || fz0 >= float(gridH)) return true;
+	const u32 x0 = u32(max(fx0, 0.0f)), x1 = min(u32(max(fx1, 0.0f)), gridW - 1);
+	const u32 z0 = u32(max(fz0, 0.0f)), z1 = min(u32(max(fz1, 0.0f)), gridH - 1);
+	u32 qLo, qHi;
+	if (!levels(lo[1], hi[1], qLo, qHi)) return true;
+	++gStats.queries;
+	const u32 triMask = MAX_TRIANGLES - 1, levelMask = LEVELS - 1;
+	for (u32 z = z0; z <= z1; ++z) {
+		for (u32 x = x0; x <= x1; ++x) {
+			const u32 cell = z * gridW + x;
+			gStats.items += cellStart[cell + 1] - cellStart[cell];
+			for (u32 i = cellStart[cell]; i < cellStart[cell + 1]; ++i) {
+				const u32 item = cellItems[i];
+				if (((item >> ITEM_TRI_BITS) & levelMask) > qHi || (item >> (ITEM_TRI_BITS + LEVEL_BITS)) < qLo) continue;
+				++gStats.tests;
+				const u16* t = triangles + (item & triMask) * 3;
+				const Vec3 a = localVertex(positions, t[0]), b = localVertex(positions, t[1]),
+				           d = localVertex(positions, t[2]);
+				if (min(a.x, min(b.x, d.x)) > hi[0] || max(a.x, max(b.x, d.x)) < lo[0] ||
+				    min(a.z, min(b.z, d.z)) > hi[2] || max(a.z, max(b.z, d.z)) < lo[2] ||
+				    min(a.y, min(b.y, d.y)) > hi[1] || max(a.y, max(b.y, d.y)) < lo[1])
+					continue;
+				return false;
+			}
+		}
+	}
+	return true;
 }
 
 } // namespace g3

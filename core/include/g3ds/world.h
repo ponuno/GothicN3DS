@@ -134,10 +134,15 @@ struct ChunkHeader {
 };
 static_assert(sizeof(ChunkHeader) == 32, "ChunkHeader layout");
 
+// One draw call's worth: a run of indices with one material. A chunk is cut
+// into "clusters" - boxes of some ten metres - and a batch holds what one
+// material has in one of them: of a big chunk only the clusters in view are
+// drawn. Batches of a material follow each other, so that neighbours in the
+// index buffer which are both in view go out as one draw call.
 struct ChunkBatch {
 	u16 material; // index into the world material table
 	u8 detail;    // DetailClass
-	u8 reserved;
+	u8 cluster;   // which cluster of the chunk it lies in (0 in archives baked without clusters)
 	u32 firstIndex;
 	u32 indexCount;
 	i16 bbMin[3]; // bounds of the batch in the chunk's quantised space

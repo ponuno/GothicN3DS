@@ -30,6 +30,10 @@ struct StreamConfig {
 	// calling thread (no threads needed, but no smoother either).
 	bool background = false;
 	bool worker = true;
+	// Of a chunk in view only the clusters in view and this side of the fog's
+	// end are drawn. Off: the whole chunk, as before there were clusters (for
+	// comparing).
+	bool clusterCulling = true;
 };
 
 struct WorldStats {
@@ -43,7 +47,11 @@ struct WorldStats {
 	u32 drawCalls;       // both passes
 	u32 blendedDrawCalls;
 	u32 batchesCulled;   // batches of visible chunks skipped: out of view or too far for their size
+	u32 batchesMerged;   // batches that went out in the draw call of the one before them
 	u32 trianglesDrawn;
+	u32 trianglesInChunks; // all the triangles of the chunks drawn: what drawing whole chunks would cost
+	u32 clustersTested;  // boxes of visible chunks looked at ...
+	u32 clustersCulled;  // ... and of them wholly out of view or past the fog
 	u32 loadsThisFrame;
 	u32 budgetRejects;   // loads skipped because the budget was full (cumulative)
 	u32 loadFailures;    // corrupt or missing data (cumulative)
@@ -97,6 +105,9 @@ public:
 	// lit with.
 	bool rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, u8* light = nullptr) const;
 	bool pushSphere(Vec3& center, float radius) const;
+	// True if nothing solid reaches into the box (a quick "all clear": false
+	// only says that something may be there).
+	bool boxFree(const float mn[3], const float mx[3]) const;
 	// Highest water surface under `from`, no lower than from.y - maxDrop.
 	bool waterBelow(Vec3 from, float maxDrop, float& surfaceY) const;
 
@@ -110,15 +121,24 @@ private:
 	struct Batch {
 		u16 material;
 		u8 detail;
+		u8 cluster;
 		u32 firstIndex, indexCount;
 		float bbMin[3], bbMax[3]; // world space
+	};
+	// A box of a chunk (see ChunkBatch) with what is known of everything in
+	// it: one look at the box settles most of its batches.
+	struct Cluster {
+		float bbMin[3], bbMax[3];
 	};
 	struct Loaded {
 		gfx::Mesh* mesh;
 		Batch* batches;
+		Cluster* clusters;
+		u16 clusterCount;
 		float origin[3];
 		float posScale, uvScale;
 		u32 bytes;
+		u32 triangles;
 		u32 slot; // position in _resident
 		u32 retryAt; // frame before which loading is not attempted again (out of memory)
 		u16 batchCount;
@@ -158,6 +178,7 @@ private:
 	void releaseTexture(u32 texture);
 	float distanceTo(u32 index, Vec3 camera) const;
 	void drawBatches(const Loaded& l, bool blended);
+	void classify(const Loaded& l, bool count);
 
 	Pak* _pak = nullptr;
 	u32 _entryHash = 0;
@@ -182,6 +203,11 @@ private:
 	// Per-frame view state shared by draw() and drawBlended().
 	Frustum _frustum {};
 	Vec3 _camera {0, 0, 0};
+	// Per cluster of the chunk being drawn: CLUSTER_OUT, CLUSTER_IN (all of
+	// it is in view) or CLUSTER_PARTLY (its batches are looked at one by one).
+	enum : u8 { CLUSTER_OUT, CLUSTER_IN, CLUSTER_PARTLY };
+	u8 _clusterState[256] = {};
+	float _clusterNear[256] = {}, _clusterFar[256] = {}; // distance of its box from the camera: nearest and farthest point
 	u32 _timeMs = 0;
 	StreamConfig _cfg;
 	WorldStats _stats {};

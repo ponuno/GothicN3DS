@@ -49,6 +49,8 @@ struct LookSource {
 	// The skeleton of a model script with its animations, and no mesh: those
 	// a character stands and goes about in, and of the names in `wanted`
 	// (animations the scripts mention, upper case) the ones this model has.
+	// A name ending in a star stands for every animation beginning like it
+	// ("T_BENCH_*": all there is to using a bench).
 	// `humanoid`: it has a head of its own.
 	std::function<bool(const std::string& script, bool humanoid, const std::set<std::string>& wanted, SrcModel& model)> rig;
 	// A body or an armour, in the texture variant `tex` and skin colour `skin`.

@@ -21,6 +21,7 @@
 // routine wants him.
 #pragma once
 #include "game.h"
+#include "mobs.h"
 #include "model.h"
 #include "waynet.h"
 #include "world.h"
@@ -65,6 +66,10 @@ struct NpcStats {
 	u32 paths = 0;        // ways found through the net
 	u32 noPath = 0;       // ways not found (walked straight instead)
 	u32 snapped = 0;      // characters put at their goal because they could not get there
+	u32 mobsUsed = 0;     // times somebody has got into a bed, onto a bench ...
+	u32 mobsInUse = 0;    // things in use right now
+	u32 mobsFailed = 0;   // times somebody stood at a thing and had no animation for using it
+	float scriptMs = 0;   // milliseconds the last update() spent inside the scripts' functions
 };
 
 // What an actor has been told to do.
@@ -83,6 +88,7 @@ enum NpcActionKind : u8 {
 	NPC_ACT_START_STATE, // fn; i: run the old state's end first; text: way point
 	NPC_ACT_CONTINUE_ROUTINE,
 	NPC_ACT_TELEPORT,   // pos (xyz, yaw)
+	NPC_ACT_USE_MOB,    // text: the kind of thing ("BENCH"); i: the state to take it to, -1: leave it
 };
 
 struct NpcAction {
@@ -162,6 +168,16 @@ struct NpcActor {
 	bool attached = false; // it stands at a point that says which way to face ...
 	float attachYaw = 0;   // ... this way
 	const Clip* idle = nullptr; // what it falls back into
+	// The thing it uses - a bed, a bench (mobs.h): going there, getting into
+	// it state by state ("stand -> S0 -> S1"), staying, getting out again.
+	enum MobStage : u8 { MOB_NONE, MOB_COMING, MOB_TURNING, MOB_ENTERING, MOB_IN, MOB_LEAVING };
+	int mob = -1;          // Mobs' index, -1 for none
+	u8 mobStage = MOB_NONE;
+	i8 mobState = -1;      // -1: standing by it; else the state it is in (S0, S1 ...)
+	u8 mobKind = 0;        // MobSlotKind of the place it stands at
+	float mobPos[3] = {0, 0, 0}; // that place ...
+	float mobYaw = 0;            // ... and where one faces there
+	int mobFailed = -1;    // a thing it could not get into (no animation for it): not tried again in this state
 };
 
 class Npcs {
@@ -195,6 +211,7 @@ public:
 	Game& game() { return _game; }
 	const Game& game() const { return _game; }
 	const WayNet& wayNet() const { return _net; }
+	const Mobs& mobs() const { return _mobs; }
 	// The world's name in the scripts ("WORLD"), "" before a world is entered.
 	const char* worldScript() const { return _script; }
 	// The actor a character is right now, or null.
@@ -243,6 +260,9 @@ private:
 	NpcActor* actorFor(ScriptInstance* inst);
 	int npcFor(ScriptInstance* inst) const { return _game.indexOf(inst); }
 	i32 bodyStateOf(const NpcActor& a) const;
+	const Clip* mobClip(NpcActor& a, int from, int to, char* nameOut);
+	void releaseMob(NpcActor& a);
+	bool useMob(NpcActor& a, float dt);
 	static float distance(const float a[3], const float b[3]);
 
 	// The engine functions of life the scripts call.
@@ -277,6 +297,10 @@ private:
 	static void xSetPercTime(ScriptVm& vm, void* user);
 	static void xDetectNpc(ScriptVm& vm, void* user);
 	static void xCanSeeNpc(ScriptVm& vm, void* user);
+	static void xUseMob(ScriptVm& vm, void* user);
+	static void xIsMobAvailable(ScriptVm& vm, void* user);
+	static void xGetMobState(ScriptVm& vm, void* user);
+	static void xGetDetectedMob(ScriptVm& vm, void* user);
 
 	Game _game;
 	NpcConfig _cfg;
@@ -287,6 +311,11 @@ private:
 	u32 _pointCount = 0;
 	char _script[32] = "";
 	WayNet _net;
+	Mobs _mobs;
+	// What the body is doing while it uses a thing, by the thing's kind: the
+	// scripts' own lists ("BENCH,CHAIR,THRONE" is sitting) and numbers.
+	char _mobSit[96] = "", _mobLie[96] = "", _mobClimb[96] = "", _mobBusy[160] = "";
+	i32 _bsSit = 0, _bsLie = 0, _bsClimb = 0, _bsMob = 0, _bsMobInterrupt = 0;
 	TexturePool _pool;
 	Piece _pieces[PIECES];
 	NpcActor _actors[ACTORS];

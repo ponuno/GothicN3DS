@@ -340,11 +340,54 @@ struct CellBuilder {
 		                     float(double(g.origin[2]) * opt.positionStep)}; // the chunk origin
 		stats.maxPosError = std::max(stats.maxPosError, posScale * 0.5f);
 
-		// Batches are contiguous per (draw order, detail class, material).
+		// Clusters: boxes the triangles are sorted into by their centroid, in
+		// an order that keeps neighbours in space near each other (Z-order),
+		// so that what is in view is long runs of a material's indices.
+		std::unordered_map<u32, u8> clusterOf; // per triangle
+		if (opt.clusterSize > 0.0f && !tris.empty()) {
+			float size = opt.clusterSize;
+			for (;; size *= 2.0f) {
+				std::map<std::array<i64, 3>, u64> cells; // cell -> its Z-order code
+				i64 low[3] = {INT64_MAX, INT64_MAX, INT64_MAX};
+				auto cellOf = [&](u32 t) {
+					const WorkTri& tri = work[t];
+					std::array<i64, 3> c;
+					for (int a = 0; a < 3; ++a)
+						c[size_t(a)] = i64(std::floor((double(tri.v[0].pos[a]) + tri.v[1].pos[a] + tri.v[2].pos[a]) / 3.0 / double(size)));
+					return c;
+				};
+				for (u32 t : tris) {
+					const std::array<i64, 3> c = cellOf(t);
+					for (int a = 0; a < 3; ++a) low[a] = std::min(low[a], c[size_t(a)]);
+					cells.emplace(c, 0);
+				}
+				if (cells.size() > 255) continue; // (one byte names a cluster)
+				std::vector<std::pair<u64, std::array<i64, 3>>> ordered;
+				for (auto& kv : cells) {
+					u64 code = 0;
+					for (int bit = 0; bit < 20; ++bit)
+						for (int a = 0; a < 3; ++a) code |= u64((u64(kv.first[size_t(a)] - low[a]) >> bit) & 1u) << (bit * 3 + a);
+					ordered.emplace_back(code, kv.first);
+				}
+				std::sort(ordered.begin(), ordered.end());
+				for (size_t i = 0; i < ordered.size(); ++i) cells[ordered[i].second] = i;
+				for (u32 t : tris) clusterOf[t] = u8(cells[cellOf(t)]);
+				stats.clusters += cells.size();
+				stats.maxChunkClusters = std::max(stats.maxChunkClusters, u32(cells.size()));
+				if (size != opt.clusterSize) ++stats.coarsenedChunks;
+				break;
+			}
+		}
+		auto clusterId = [&](u32 t) {
+			auto it = clusterOf.find(t);
+			return it == clusterOf.end() ? u8(0) : it->second;
+		};
+
+		// Batches are contiguous per (draw order, detail class, material, cluster).
 		auto sortKey = [&](u32 t) {
 			const WorkTri& tri = work[t];
 			const u32 m = u32(remap[tri.material]);
-			return (u32(order[m]) << 24) | (u32(detailOf(tri)) << 16) | m;
+			return (u64(order[m]) << 40) | (u64(detailOf(tri)) << 32) | (u64(m) << 8) | clusterId(t);
 		};
 		std::stable_sort(tris.begin(), tris.end(), [&](u32 a, u32 b) { return sortKey(a) < sortKey(b); });
 
@@ -538,10 +581,11 @@ struct CellBuilder {
 			}
 
 			if (cur.batches.empty() || cur.batches.back().material != u16(material) ||
-			    cur.batches.back().detail != detailOf(tri)) {
+			    cur.batches.back().detail != detailOf(tri) || cur.batches.back().cluster != clusterId(t)) {
 				ChunkBatch b {};
 				b.material = u16(material);
 				b.detail = detailOf(tri);
+				b.cluster = clusterId(t);
 				b.firstIndex = u32(cur.indices.size());
 				cur.batches.push_back(b);
 			}

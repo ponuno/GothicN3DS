@@ -402,6 +402,35 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		}
 		aniNames.insert(back.begin(), back.end());
 	}
+	// The things people use, and what using them looks like: the scripts
+	// name the kind ("BENCH"), the animations are named after it
+	// ("T_BENCH_STAND_2_S0", "S_BENCH_S1").
+	{
+		std::set<std::string> texts;
+		for (const SrcSymbol& sym : script.symbols) {
+			if (sym.type != SCRIPT_STRING || sym.member) continue;
+			for (const std::string& text : sym.strings)
+				if (!text.empty() && text.size() < 48) texts.insert(upper(text));
+		}
+		std::map<std::string, u32> there;
+		for (const BakeWorld& bw : worlds)
+			for (const SrcMob& mob : bw.scene.mobs) ++there[mob.scheme];
+		std::string used, unused;
+		size_t usedCount = 0;
+		for (const auto& [scheme, count] : there) {
+			if (texts.count(scheme)) {
+				aniNames.insert("T_" + scheme + "_*");
+				aniNames.insert("S_" + scheme + "_*");
+				used += format("%s%s x%u", used.empty() ? "" : ", ", scheme.c_str(), count);
+				++usedCount;
+			} else {
+				unused += (unused.empty() ? "" : ", ") + scheme;
+			}
+		}
+		if (!there.empty())
+			line(format("things to use: the worlds have %zu kinds; the scripts name %zu of them: ", there.size(), usedCount) +
+			     (used.empty() ? "none" : used) + (unused.empty() ? "" : "; not named: " + unused));
+	}
 	std::string rigNotes;
 	BakeOptions quiet = opt;
 	quiet.quiet = true;
@@ -534,7 +563,13 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	            result.characters, looks.size(), entries.size(), drawn, rigCount, clipCount, bodies, heads, triangles, textures,
 	            double(pak.rawBytes(ASSET_MODEL) - modelsBefore) / 1048576.0, double(pak.rawBytes(ASSET_CLIP) - clipsBefore) / 1048576.0,
 	            double(pak.rawBytes(ASSET_TEXTURE) - texBefore) / 1048576.0));
-	line(format("animations: the scripts name or imply %zu; baked per skeleton: ", aniNames.size()) + rigNotes);
+	{
+		size_t named = 0, families = 0;
+		for (const std::string& name : aniNames) (name.back() == '*' ? families : named) += 1;
+		line(format("animations: the scripts name or imply %zu%s; baked per skeleton: ", named,
+		            families ? format(", and using the things they name takes %zu families more", families).c_str() : "") +
+		     rigNotes);
+	}
 	if (!problems.empty()) {
 		line(format("WARNING: %zu kinds of trouble with the inhabitants' models:", problems.size()));
 		size_t shown = 0;

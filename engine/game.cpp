@@ -131,7 +131,12 @@ bool Game::bindAll() {
 	             {"FLOATTOINT", xFloatToInt},
 	             {"NPC_ISPLAYER", xIsPlayer},
 	             {"WLD_SETTIME", xSetTime},
-	             {"WLD_ISTIME", xIsTime}};
+	             {"WLD_ISTIME", xIsTime},
+	             // Lines for the developers' log: there is nobody to read them.
+	             {"PRINTDEBUG", xNothing},
+	             {"PRINTDEBUGINST", xNothing},
+	             {"PRINTDEBUGINSTCH", xNothing},
+	             {"PRINTDEBUGCH", xNothing}};
 	for (const auto& e : table) _vm.bind(e.name, e.fn, this);
 
 	// The player's character exists before any world's start-up runs.
@@ -200,7 +205,8 @@ const char* const* Game::lifeFunctions(u32& count) {
 	    "AI_SETWALKMODE",    "AI_STARTSTATE",      "AI_CONTINUEROUTINE", "AI_TELEPORT",      "NPC_CLEARAIQUEUE", "NPC_GETDISTTOWP",
 	    "NPC_GETDISTTONPC",  "NPC_GETDISTTOPLAYER", "NPC_GETNEARESTWP", "NPC_GETNEXTWP",     "NPC_ISONFP",       "WLD_ISFPAVAILABLE",
 	    "WLD_ISNEXTFPAVAILABLE", "NPC_ISINSTATE",  "NPC_WASINSTATE",    "NPC_GETSTATETIME",  "NPC_SETSTATETIME", "NPC_GETBODYSTATE",
-	    "NPC_SETPERCTIME",   "WLD_DETECTNPC",      "NPC_CANSEENPC"};
+	    "NPC_SETPERCTIME",   "WLD_DETECTNPC",      "NPC_CANSEENPC",     "AI_USEMOB",         "WLD_ISMOBAVAILABLE", "WLD_GETMOBSTATE",
+	    "NPC_GETDETECTEDMOB"};
 	count = u32(sizeof(names) / sizeof(names[0]));
 	return names;
 }
@@ -590,6 +596,9 @@ void Game::xSetTime(ScriptVm& vm, void*) {
 	(void)vm.popInt();
 	(void)vm.popInt();
 }
+
+// (What it was given goes with its frame.)
+void Game::xNothing(ScriptVm&, void*) {}
 
 void Game::xIsTime(ScriptVm& vm, void* user) {
 	Game& g = *static_cast<Game*>(user);

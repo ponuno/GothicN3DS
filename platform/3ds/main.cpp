@@ -25,6 +25,8 @@
 //   SELECT   the inhabitants are not drawn (the scripts run all the same)
 //   D-Pad Up the inhabitants only stand where their routine has them: no
 //            states, no walking - as in the version before they lived
+//   ZL       whole chunks are drawn, as before they were cut into clusters
+//            (what the clusters save shows in "tris" and "gpu")
 #include "app.h"
 #include "gfx_c3d.h"
 #include "pacer.h"
@@ -61,7 +63,7 @@ static float stick(int v) {
 
 // The bottom-screen report: laid out once every 30 frames, written a line
 // per frame (printing all of it at once takes several milliseconds).
-static const int kReportLines = 22;
+static const int kReportLines = 24;
 static char gReport[kReportLines][48];
 static int gReportCount = 0;
 
@@ -109,6 +111,7 @@ int main(int, char**) {
 	const bool plainShader = (startKeys & KEY_R) != 0;
 	const bool nobody = (startKeys & KEY_SELECT) != 0; // the scripts run, their people are not drawn
 	const bool standing = (startKeys & KEY_DUP) != 0;  // they stand: no states, no walking
+	const bool wholeChunks = (startKeys & KEY_ZL) != 0; // no culling inside chunks
 	gfx::c3dSetClassicFrames(classic);
 	gfx::c3dSetPlainShader(plainShader);
 
@@ -118,6 +121,7 @@ int main(int, char**) {
 	g3::StreamConfig& stream = app.world().config();
 	stream.background = background;
 	stream.maxLoadsPerFrame = background ? 1 : 2;
+	stream.clusterCulling = !wholeChunks;
 	bool ok = gfx::init();
 	if (!ok) printf("gfx init failed\n");
 	if (ok && !app.init(kPakPath, nullptr)) {
@@ -154,6 +158,8 @@ int main(int, char**) {
 	int interval = 1;
 	int reportLines = 0;
 	u32 lastStateCalls = 0;
+	g3::UpdateTimes partSum;               // where update() spent its time, summed over a report
+	u32 collQueries = 0, collTests = 0;    // and what its collision queries looked at
 
 	while (aptMainLoop()) {
 		hidScanInput();
@@ -206,6 +212,16 @@ int main(int, char**) {
 		const float updateMs = float(osTickCounterRead(&updateClock));
 		updateAccum += updateMs;
 		updateWorst = max(updateWorst, updateMs);
+		{
+			const g3::UpdateTimes& ut = app.times();
+			partSum.stream += ut.stream;
+			partSum.npcs += ut.npcs;
+			partSum.script += ut.script;
+			partSum.player += ut.player;
+			partSum.camera += ut.camera;
+			collQueries += g3::collisionStats().queries;
+			collTests += g3::collisionStats().tests;
+		}
 
 		app.render();
 
@@ -247,16 +263,26 @@ int main(int, char**) {
 			reportLine("cpu %3.0f%%  gpu %3.0f%%  load %3.0f%%", double(fs.cpuMs * 6.0f), double(fs.gpuMs * 6.0f),
 			     double(load * 100.0f));
 			reportLine("update %4.2f ms avg %5.1f worst", double(updateAccum / 30.0f), double(updateWorst));
+			// update() by its parts: chunks, inhabitants (of which scripts),
+			// the player's character, the camera - and the collision queries
+			// of a frame with the triangles they looked at.
+			reportLine("upd w%3.1f n%3.1f s%3.1f p%3.1f c%3.1f", double(partSum.stream / 30.0f), double(partSum.npcs / 30.0f),
+			     double(partSum.script / 30.0f), double(partSum.player / 30.0f), double(partSum.camera / 30.0f));
+			reportLine("collide %3lu queries %5lu tris", static_cast<unsigned long>(collQueries / 30),
+			     static_cast<unsigned long>(collTests / 30));
 			reportLine("loader %-6s job %5.1f ms  fly %lu",
 			     !app.world().backgroundStreaming() ? "off" : app.world().workerThread() ? "thread" : "inline",
 			     double(app.world().takeWorstLoadMs()), static_cast<unsigned long>(ws.chunksInFlight));
 			reportLine("detail %3.0f%%  %2d fps  late %2lu/30", double(app.world().config().detailScale * 100.0f),
 			     interval == 2 ? 30 : 60, static_cast<unsigned long>(lateFrames));
 			reportLine("frames %s  pacer %s", fs.overlapped ? "overlapped" : "classic", pacing ? "on" : "off");
-			reportLine("tris %6lu  draws %4lu  chunks %3lu", static_cast<unsigned long>(ws.trianglesDrawn),
-			     static_cast<unsigned long>(ws.drawCalls), static_cast<unsigned long>(ws.chunksDrawn));
-			reportLine("blended %3lu  culled %4lu", static_cast<unsigned long>(ws.blendedDrawCalls),
-			     static_cast<unsigned long>(ws.batchesCulled));
+			// Triangles drawn, of those in the chunks in view (the rest is what
+			// the clusters save); draw calls; chunks.
+			reportLine("tris %6lu/%6lu dr %4lu ch %2lu%s", static_cast<unsigned long>(ws.trianglesDrawn),
+			     static_cast<unsigned long>(ws.trianglesInChunks), static_cast<unsigned long>(ws.drawCalls),
+			     static_cast<unsigned long>(ws.chunksDrawn), wholeChunks ? " ZL" : "");
+			reportLine("blend %3lu cull %4lu merged %4lu", static_cast<unsigned long>(ws.blendedDrawCalls),
+			     static_cast<unsigned long>(ws.batchesCulled), static_cast<unsigned long>(ws.batchesMerged));
 			reportLine("cmdbuf %3.0f%%  dropped draws %lu", double(fs.commandBufferUse * 100.0f),
 			     static_cast<unsigned long>(fs.drawsDropped));
 			reportLine("resident %3lu/%lu  pending %3lu", static_cast<unsigned long>(ws.chunksLoaded),
@@ -296,10 +322,12 @@ int main(int, char**) {
 				     static_cast<unsigned long>(ns.noModel));
 				// Their life: how many live and walk, animations in memory, state
 				// functions called a second, ways not found + characters put at their goal.
-				reportLine("life %2lu wlk %2lu ani %3luK st %3lu/s x%lu%s", static_cast<unsigned long>(ns.actors),
-				     static_cast<unsigned long>(ns.walking), static_cast<unsigned long>(ns.clipBytes / 1024),
-				     static_cast<unsigned long>((ns.stateCalls - lastStateCalls) * 2),
-				     static_cast<unsigned long>(ns.noPath + ns.snapped + ns.clipsRefused), standing ? " OFF" : "");
+				// ("use": beds, benches and the like in use; in "x" also the
+				// times somebody had no animation for one.)
+				reportLine("life %2lu wlk %lu use %lu ani %3luK st %2lu/s x%lu%s", static_cast<unsigned long>(ns.actors),
+				     static_cast<unsigned long>(ns.walking), static_cast<unsigned long>(ns.mobsInUse),
+				     static_cast<unsigned long>(ns.clipBytes / 1024), static_cast<unsigned long>((ns.stateCalls - lastStateCalls) * 2),
+				     static_cast<unsigned long>(ns.noPath + ns.snapped + ns.clipsRefused + ns.mobsFailed), standing ? " OFF" : "");
 				lastStateCalls = ns.stateCalls;
 				reportLine("script %3.1fMB all %4lu err %lu/%lu nul %lu", double(npcs.game().vm().imageBytes()) / 1048576.0,
 				     static_cast<unsigned long>(ns.total), static_cast<unsigned long>(vs.errors),
@@ -312,6 +340,8 @@ int main(int, char**) {
 			msWorst = 0.0f;
 			updateAccum = 0.0f;
 			updateWorst = 0.0f;
+			partSum = g3::UpdateTimes();
+			collQueries = collTests = 0;
 			lateFrames = 0;
 		}
 		// One line of the report per frame, padded to overwrite the old one.

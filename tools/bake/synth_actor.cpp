@@ -615,6 +615,53 @@ void addInhabitantClips(SrcModel& model) {
 		const float turn = 0.7f * std::sin(phase * kTau);
 		p.rot[HEAD] = {0, std::sin(turn * 0.5f), 0, std::cos(turn * 0.5f)};
 	}));
+	// Using the things of the camp. A bench: back onto it and down (the
+	// step back is the animation's own travel), and up again.
+	const auto lie = [](float down, Pose& p) {
+		p.pos[ROOT][1] -= 30.0f * down;
+		p.rot[ROOT] = aboutX(-1.45f * down);
+	};
+	model.clips.push_back(makeClip("T_BENCH_STAND_2_S0", "S_BENCH_S0", 10, true, [](float phase, float, Pose& p) {
+		p.pos[ROOT][2] = -40.0f * phase;
+	}));
+	model.clips.push_back(makeClip("S_BENCH_S0", "S_BENCH_S0", 20, false, [](float, float, Pose&) {}));
+	model.clips.push_back(makeClip("T_BENCH_S0_2_S1", "S_BENCH_S1", 12, false, [sit](float phase, float, Pose& p) { sit(0.8f * phase, p); }));
+	model.clips.push_back(makeClip("S_BENCH_S1", "S_BENCH_S1", 50, false, [sit](float phase, float, Pose& p) {
+		sit(0.8f, p);
+		p.rot[HEAD] = aboutX(0.05f * std::sin(phase * kTau));
+	}));
+	model.clips.push_back(makeClip("T_BENCH_S1_2_S0", "S_BENCH_S0", 12, false, [sit](float phase, float, Pose& p) { sit(0.8f * (1.0f - phase), p); }));
+	model.clips.push_back(makeClip("T_BENCH_S0_2_STAND", "S_RUN", 10, true, [](float phase, float, Pose& p) {
+		p.pos[ROOT][2] = 40.0f * phase;
+	}));
+	// A bed, got into from its front: those steps have the side in their
+	// names, lying in it has not.
+	model.clips.push_back(makeClip("T_BEDHIGH_FRONT_STAND_2_S0", "S_BEDHIGH_S0", 10, false, [sit](float phase, float, Pose& p) { sit(0.5f * phase, p); }));
+	model.clips.push_back(makeClip("S_BEDHIGH_S0", "S_BEDHIGH_S0", 20, false, [sit](float, float, Pose& p) { sit(0.5f, p); }));
+	model.clips.push_back(makeClip("T_BEDHIGH_FRONT_S0_2_S1", "S_BEDHIGH_S1", 14, false, [sit, lie](float phase, float, Pose& p) {
+		sit(0.5f * (1.0f - phase), p);
+		lie(phase, p);
+	}));
+	model.clips.push_back(makeClip("S_BEDHIGH_S1", "S_BEDHIGH_S1", 60, false, [lie](float phase, float, Pose& p) {
+		lie(1.0f, p);
+		p.rot[CHEST] = aboutX(0.03f * std::sin(phase * kTau));
+	}));
+	model.clips.push_back(makeClip("T_BEDHIGH_S1_2_S0", "S_BEDHIGH_S0", 14, false, [sit, lie](float phase, float, Pose& p) {
+		sit(0.5f * phase, p);
+		lie(1.0f - phase, p);
+	}));
+	model.clips.push_back(makeClip("T_BEDHIGH_FRONT_S0_2_STAND", "S_RUN", 10, false, [sit](float phase, float, Pose& p) { sit(0.5f * (1.0f - phase), p); }));
+	// An anvil: a thing with one state, worked at standing.
+	model.clips.push_back(makeClip("T_BSANVIL_STAND_2_S0", "S_BSANVIL_S0", 8, false, [](float phase, float, Pose& p) {
+		p.rot[R_ARM] = aboutX(-1.2f * phase);
+	}));
+	model.clips.push_back(makeClip("S_BSANVIL_S0", "S_BSANVIL_S0", 16, false, [](float phase, float, Pose& p) {
+		p.rot[R_ARM] = aboutX(-1.2f);
+		p.rot[R_FOREARM] = aboutX(-0.9f - 0.8f * std::sin(phase * kTau));
+	}));
+	model.clips.push_back(makeClip("T_BSANVIL_S0_2_STAND", "S_RUN", 8, false, [](float phase, float, Pose& p) {
+		p.rot[R_ARM] = aboutX(-1.2f * (1.0f - phase));
+	}));
 	// Going at a walk begins and ends with a step of its own.
 	model.clips.push_back(makeClip("T_WALKL_2_WALK", "S_WALK", 6, true, [](float phase, float seconds, Pose& p) {
 		stride(0.0f, 0.0f, 0.4f * (1.0f - phase), 0.0f, p);
@@ -631,7 +678,13 @@ bool buildSyntheticRig(const std::string& script, bool, const std::set<std::stri
 	// Of all it can do: standing and going, and what the scripts name.
 	std::set<std::string> keep = {"S_RUN", "S_RUNL", "S_WALK", "S_WALKL", "T_RUN_2_RUNL", "T_RUNL_2_RUN", "T_WALK_2_WALKL",
 	                              "T_WALKL_2_WALK", "S_FISTRUN", "S_FISTRUNL", "S_FISTWALK", "S_FISTWALKL"};
-	keep.insert(wanted.begin(), wanted.end());
+	std::vector<std::string> families; // names ending in a star: all that begin like them
+	for (const std::string& name : wanted) {
+		if (!name.empty() && name.back() == '*')
+			families.push_back(name.substr(0, name.size() - 1));
+		else
+			keep.insert(name);
+	}
 	if (script == "humans") {
 		buildSyntheticActor(model);
 		addInhabitantClips(model);
@@ -641,6 +694,9 @@ bool buildSyntheticRig(const std::string& script, bool, const std::set<std::stri
 		model.notes.push_back("the synthetic scene has no '" + script + "'");
 		return false;
 	}
+	for (const SrcClip& clip : model.clips)
+		for (const std::string& prefix : families)
+			if (clip.name.compare(0, prefix.size(), prefix) == 0) keep.insert(clip.name);
 	// (What a kept animation leads into is kept with it.)
 	for (int pass = 0; pass < 3; ++pass)
 		for (const SrcClip& clip : model.clips)

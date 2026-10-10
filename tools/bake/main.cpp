@@ -82,6 +82,7 @@ void usage() {
 	          "  --name NAME        asset name of the first world (default: from the file name)\n"
 	          "  --no-follow        world: bake only the worlds named with --zen\n"
 	          "  --chunk CM         chunk edge length (default: 4000)\n"
+	          "  --cluster CM       edge of the boxes a chunk is cut into for culling (default: 1000; 0: off)\n"
 	          "  --step CM          finest vertex position step (default: 0.125)\n"
 	          "  --seal CM          close seams: weld vertices and cut edges at vertices resting on\n"
 	          "                     them, within this distance (default: 0.5)\n"
@@ -138,6 +139,7 @@ int main(int argc, char** argv) {
 			if (a == "-o") out = value();
 			else if (a == "--name") firstName = value();
 			else if (a == "--chunk") opt.chunker.chunkSize = std::stof(value());
+			else if (a == "--cluster") opt.chunker.clusterSize = std::stof(value());
 			else if (a == "--step") opt.chunker.positionStep = std::stof(value());
 			else if (a == "--seal") opt.chunker.sealTolerance = std::stof(value());
 			else if (a == "--no-seal") opt.chunker.seal = false;
@@ -170,6 +172,8 @@ int main(int argc, char** argv) {
 		if (mt < int(TEX_MIN_SIZE) || mt > int(TEX_MAX_SIZE) || (mt & (mt - 1)))
 			throw std::runtime_error("--max-tex must be a power of two between 8 and 1024");
 		if (opt.chunker.chunkSize < 500.0f) throw std::runtime_error("--chunk must be at least 500");
+		if (opt.chunker.clusterSize != 0.0f && !(opt.chunker.clusterSize >= 200.0f && opt.chunker.clusterSize <= 100000.0f))
+			throw std::runtime_error("--cluster must be 0 (off) or at least 200");
 		if (!(opt.chunker.positionStep >= 0.01f && opt.chunker.positionStep <= 8.0f))
 			throw std::runtime_error("--step must be between 0.01 and 8 (cm)");
 		if (!(opt.chunker.sealTolerance >= 0.0f && opt.chunker.sealTolerance <= 5.0f))

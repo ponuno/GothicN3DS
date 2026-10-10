@@ -44,6 +44,15 @@ synth)
 	[ "$(num npcSnapped)" = "0" ] || fail "$(num npcSnapped) inhabitants could not walk to where they were going"
 	[ "$(num npcClips)" -gt 8 ] || fail "only $(num npcClips) animations were read"
 	[ "$(num scriptErrors)" = "0" ] || fail "the scripts complained in the evening"
+	# By day the smith stands at his anvil; at night there is somebody in a bed.
+	"$host" --pak "$out/data.pak" --still --cam -300,330,900,200,-10 --time 9 --frames 400 --shots 0 --who --stats "$out/stats.json" \
+		> "$out/day.txt"
+	grep -q "Digger  *BSANVIL " "$out/day.txt" || fail "the smith is not at his anvil"
+	[ "$(num mobsUsed)" -gt 0 ] || fail "nothing was used by day"
+	"$host" --pak "$out/data.pak" --still --cam 600,330,650,62,-14 --time 23.6 --frames 700 --shots 0 --who --stats "$out/stats.json" \
+		> "$out/night.txt"
+	grep -q " BEDHIGH " "$out/night.txt" || fail "nobody went to bed"
+	[ "$(num mobsInUse)" -gt 0 ] || fail "no bed is in use at night"
 	# On request they only stand, as they used to.
 	"$host" --pak "$out/data.pak" --still --time 19.9 --to-time 20.4 --frames 200 --shots 0 --standing --stats "$out/stats.json" \
 		| grep -q "^life              off" || fail "--standing did not switch the inhabitants' life off"
@@ -117,13 +126,17 @@ if [ "$mode" = synth ]; then
 	grep -q "places: 13 named" "$out/info.txt" || fail "the world's places were not baked"
 	grep -q "way net: 13 points, 15 connections" "$out/info.txt" || fail "the way net was not baked"
 	grep -q "life: the scripts have 7 states; the people of these worlds are put into 6: " "$out/info.txt" || fail "the states were not looked through"
-	grep -q "life: the states call 20 engine functions, 19 of which the engine carries out" "$out/info.txt" || fail "the states' needs were not reported"
+	grep -q "life: the states call 22 engine functions, 21 of which the engine carries out" "$out/info.txt" || fail "the states' needs were not reported"
+	grep -q "things to use: 5 of 4 kinds, with 6 places to stand at" "$out/info.txt" || fail "the things to use were not baked"
+	grep -q "the scripts name 3 of them: BEDHIGH x2, BENCH x1, BSANVIL x1; not named: CHESTBIG" "$out/info.txt" || fail "the things the scripts use were not reported"
+	grep -q "clusters: the chunks are cut into .* boxes of 10 m" "$out/info.txt" || fail "the chunks were not cut into clusters"
 fi
 
 if [ "$mode" = zen ]; then
 	# The fixture's scripts: read from GOTHIC.DAT, checked against the reference
 	# interpreter, run for both worlds; the people they name baked from the game's model files.
-	grep -q "scripts: GOTHIC.DAT: 129 symbols" "$out/info.txt" || fail "the game's scripts were not read"
+	grep -q "scripts: GOTHIC.DAT: 134 symbols" "$out/info.txt" || fail "the game's scripts were not read"
+	grep -q "things to use: 6 of 2 kinds, with 2 places to stand at" "$out/info.txt" || fail "the fixture's bed was not baked"
 	grep -q "checked against the reference interpreter: 6 runs (start-up, dialogues, items), 6 the same .* 0 different" "$out/info.txt" \
 		|| fail "the scripts were not checked against the reference interpreter"
 	grep -q "variables at the end the same" "$out/info.txt" || fail "the interpreters disagree about the variables"

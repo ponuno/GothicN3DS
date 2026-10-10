@@ -514,6 +514,44 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 	             {"FP_ROAM_FOREST_04", -1000.0f, campRadius * 1.9f - 400.0f, 3.0f}};
 	for (const auto& spot : spots) scene.freePoints.push_back(SrcWayPoint {spot.name, {spot.x, height(spot.x, spot.z), spot.z}, spot.yaw});
 
+	// Things to use: a bench by the fire, a bed at each hut, an anvil at the
+	// smith's - and a chest, which no script ever names.
+	{
+		const auto thing = [&](const char* kind, float x, float z, float yaw, int states, float w, float h) {
+			b.detail = DETAIL_MEDIUM;
+			box(x, z, w, h, yaw + 0.785f, 4, WOOD);
+			b.detail = DETAIL_ALWAYS;
+			SrcMob mob;
+			mob.scheme = kind;
+			mob.visual = std::string(kind) + "_SYNTH.ASC";
+			mob.pos[0] = x;
+			mob.pos[1] = height(x, z);
+			mob.pos[2] = z;
+			mob.yaw = yaw;
+			mob.states = states;
+			scene.mobs.push_back(mob);
+			return scene.mobs.size() - 1;
+		};
+		const auto slot = [&](size_t mob, const char* name, float dx, float dz, float yaw) {
+			const float x = scene.mobs[mob].pos[0] + dx, z = scene.mobs[mob].pos[2] + dz;
+			scene.mobs[mob].slots.push_back(SrcMobSlot {name, {x, height(x, z), z}, yaw});
+		};
+		// The bench, facing the fire: two places side by side in front of it, backs to it.
+		const size_t bench = thing("BENCH", 350.0f, 110.0f, 3.14159f, 1, 90.0f, 42.0f);
+		slot(bench, "ZS_POS0", -45.0f, -110.0f, 3.14159f);
+		slot(bench, "ZS_POS1", 45.0f, -110.0f, 3.14159f);
+		// Beds: got into from the front.
+		const size_t bed1 = thing("BEDHIGH", 900.0f + 190.0f, 900.0f, 1.5708f, 1, 110.0f, 45.0f);
+		slot(bed1, "ZS_POS0_FRONT", -125.0f, 0.0f, 1.5708f);
+		slot(bed1, "ZS_POS1_BACK", 125.0f, 0.0f, -1.5708f);
+		const size_t bed2 = thing("BEDHIGH", -900.0f - 190.0f, 800.0f, -1.5708f, 1, 110.0f, 45.0f);
+		slot(bed2, "ZS_POS0_FRONT", 125.0f, 0.0f, -1.5708f);
+		// The anvil: one stands a pace from it, on whichever side one comes from.
+		const size_t anvil = thing("BSANVIL", -500.0f - 160.0f, 500.0f, 0.0f, 0, 32.0f, 75.0f);
+		slot(anvil, "ZS_POS0_DIST", 0.0f, 75.0f, 3.14159f);
+		thing("CHESTBIG", -500.0f, 500.0f - 260.0f, 0.0f, 1, 55.0f, 60.0f);
+	}
+
 	// Start just outside the gate, looking back at the camp.
 	scene.spawnPos[0] = 0;
 	scene.spawnPos[2] = campRadius * 1.9f;

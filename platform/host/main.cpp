@@ -34,6 +34,7 @@ static void usage() {
 	     "  --to-time H         let the clock run from --time to this hour over the frames (routines move on)\n"
 	     "  --standing          the inhabitants only stand where their routine has them (no states, no walking)\n"
 	     "  --who               list at the end what each inhabitant near the camera is doing\n"
+	     "  --whole-chunks      draw all of every chunk in view, not only its clusters in view (for comparing)\n"
 	     "  --stats FILE        write a JSON summary");
 }
 
@@ -48,7 +49,7 @@ int main(int argc, char** argv) {
 	int frames = 300, shots = 4;
 	bool still = false, cull = true, walk = false, firstPerson = false;
 	float timeOfDay = 13.0f, toTime = -1.0f;
-	bool standing = false, who = false;
+	bool standing = false, who = false, wholeChunks = false;
 	float budgetMb = 24.0f, drawDistance = 12000.0f;
 
 	for (int i = 1; i < argc; ++i) {
@@ -68,6 +69,7 @@ int main(int argc, char** argv) {
 		else if (arg("--to-time")) toTime = float(atof(argv[++i]));
 		else if (strcmp(argv[i], "--standing") == 0) standing = true;
 		else if (strcmp(argv[i], "--who") == 0) who = true;
+		else if (strcmp(argv[i], "--whole-chunks") == 0) wholeChunks = true;
 		else if (strcmp(argv[i], "--still") == 0) still = true;
 		else if (strcmp(argv[i], "--walk") == 0) walk = true;
 		else if (strcmp(argv[i], "--first-person") == 0) firstPerson = true;
@@ -96,6 +98,7 @@ int main(int argc, char** argv) {
 	}
 	StreamConfig& cfg = app.world().config();
 	cfg.memoryBudget = u32(budgetMb * 1024.0f * 1024.0f);
+	cfg.clusterCulling = !wholeChunks;
 	app.setDrawDistance(drawDistance);
 	if (detailSpec && sscanf(detailSpec, "%f,%f", &cfg.detailDistance[g3::DETAIL_MEDIUM], &cfg.detailDistance[g3::DETAIL_SMALL]) != 2) {
 		usage();
@@ -138,6 +141,7 @@ int main(int argc, char** argv) {
 	u64 sumCulled = 0, sumDraws = 0;
 	int swimFrames = 0, wadeFrames = 0, underwaterFrames = 0;
 	u64 sumTris = 0, sumWritten = 0, sumTested = 0, sumBackface = 0, sumFacing = 0;
+	u64 sumInChunks = 0, sumMerged = 0, sumClusters = 0, sumClustersCulled = 0;
 	int saved = 0, groundedFrames = 0;
 	double updateSum = 0, updateWorst = 0;
 	u32 maxInFlight = 0, maxTexturesWaiting = 0;
@@ -146,6 +150,8 @@ int main(int argc, char** argv) {
 	u32 npcShownMax = 0, npcNearMax = 0, npcTrianglesMax = 0, npcWaitingMax = 0, npcNoModelMax = 0;
 	int npcFrames = 0;
 	u32 npcActorsMax = 0, npcWalkingMax = 0;
+	g3::UpdateTimes timeSum;
+	u64 collQueries = 0, collItems = 0, collTests = 0;
 
 	for (int f = 0; f < frames; ++f) {
 		Input in;
@@ -174,6 +180,18 @@ int main(int argc, char** argv) {
 		const double updateMs = g3::sys::timeMs() - u0;
 		updateSum += updateMs;
 		updateWorst = max(updateWorst, updateMs);
+		{
+			const g3::UpdateTimes& ut = app.times();
+			timeSum.stream += ut.stream;
+			timeSum.npcs += ut.npcs;
+			timeSum.script += ut.script;
+			timeSum.player += ut.player;
+			timeSum.camera += ut.camera;
+			const g3::CollisionStats& cs = g3::collisionStats();
+			collQueries += cs.queries;
+			collItems += cs.items;
+			collTests += cs.tests;
+		}
 		if (!still && !walk) app.camera().pitch = viewPitch;
 		groundedFrames += app.player().grounded;
 		swimFrames += app.player().swimming;
@@ -207,6 +225,10 @@ int main(int argc, char** argv) {
 		maxInFlight = max(maxInFlight, ws.chunksInFlight);
 		maxTexturesWaiting = max(maxTexturesWaiting, ws.texturesWaiting);
 		sumTris += ws.trianglesDrawn;
+		sumInChunks += ws.trianglesInChunks;
+		sumMerged += ws.batchesMerged;
+		sumClusters += ws.clustersTested;
+		sumClustersCulled += ws.clustersCulled;
 		sumWritten += ss.pixelsWritten;
 		sumTested += ss.pixelsTested;
 		sumBackface += ss.trianglesBackface;
@@ -233,15 +255,24 @@ int main(int argc, char** argv) {
 	const double backfaceShare = sumFacing ? double(sumBackface) / double(sumFacing) : 0.0;
 
 	printf("\n--- %d frames ---\n", frames);
-	printf("triangles/frame   avg %llu, max %u\n", static_cast<unsigned long long>(sumTris / u64(frames)), maxTris);
-	printf("draw calls/frame  avg %llu, max %u (blended max %u); %llu batches/frame culled by view or distance\n",
+	printf("triangles/frame   avg %llu, max %u; the chunks they are in have %llu (%.0f%% drawn)\n",
+	       static_cast<unsigned long long>(sumTris / u64(frames)), maxTris, static_cast<unsigned long long>(sumInChunks / u64(frames)),
+	       sumInChunks ? 100.0 * double(sumTris) / double(sumInChunks) : 0.0);
+	printf("draw calls/frame  avg %llu, max %u (blended max %u); %llu batches/frame culled by view or distance, %llu drawn "
+	       "along with the one before; %llu clusters/frame looked at, %llu of them out of view\n",
 	       static_cast<unsigned long long>(sumDraws / u64(frames)), maxDraws, maxBlended,
-	       static_cast<unsigned long long>(sumCulled / u64(frames)));
+	       static_cast<unsigned long long>(sumCulled / u64(frames)), static_cast<unsigned long long>(sumMerged / u64(frames)),
+	       static_cast<unsigned long long>(sumClusters / u64(frames)), static_cast<unsigned long long>(sumClustersCulled / u64(frames)));
 	printf("chunks resident   max %u of %u (pending max %u, loads/frame max %u)\n", maxLoaded, ws.chunksTotal,
 	       maxPending, maxLoadsFrame);
 	printf("streaming         %s%s: update %.3f ms avg, %.3f ms worst on this PC; in flight max %u, textures waiting max %u\n",
 	       streamMode, streamThread && !app.world().workerThread() ? " (no thread: inline)" : "",
 	       updateSum / frames, updateWorst, maxInFlight, maxTexturesWaiting);
+	printf("update            per frame on this PC: chunks %.3f ms, inhabitants %.3f ms (%.3f in scripts), character %.3f ms, "
+	       "camera %.3f ms; collision: %.1f queries looking at %.0f entries and %.0f triangles\n",
+	       double(timeSum.stream) / frames, double(timeSum.npcs) / frames, double(timeSum.script) / frames,
+	       double(timeSum.player) / frames, double(timeSum.camera) / frames, double(collQueries) / frames,
+	       double(collItems) / frames, double(collTests) / frames);
 	printf("world memory      now %.2f MB, peak %.2f MB, budget %.0f MB\n", ws.residentBytes / 1048576.0,
 	       ws.peakResidentBytes / 1048576.0, double(budgetMb));
 	printf("  meshes %.2f MB (%u), textures %.2f MB (%u)\n", ms.meshBytes / 1048576.0, ms.meshCount,
@@ -282,10 +313,10 @@ int main(int argc, char** argv) {
 		       ns.models, ns.textures, double(ns.textureBytes) / 1048576.0, npcWaitingMax, npcNoModelMax);
 		printf("life              %s: %u living at most, %u walking at once; %u state functions called, %u actions carried out "
 		       "(%u dropped); ways: %u found, %u not, %u characters put at their goal; animations: %u read, %.2f MB in memory, "
-		       "%u missing, %u refused; way net: %u points, %u free points\n",
+		       "%u missing, %u refused; way net: %u points, %u free points; things to use: %u, got into %u times, %u in use at the end\n",
 		       standing ? "off (--standing)" : "on", npcActorsMax, npcWalkingMax, ns.stateCalls, ns.actions, ns.queueFull, ns.paths,
 		       ns.noPath, ns.snapped, ns.clips, double(ns.clipBytes) / 1048576.0, ns.clipsMissing, ns.clipsRefused,
-		       app.npcs().wayNet().nodeCount(), app.npcs().wayNet().freeCount());
+		       app.npcs().wayNet().nodeCount(), app.npcs().wayNet().freeCount(), app.npcs().mobs().count(), ns.mobsUsed, ns.mobsInUse);
 		if (who)
 			for (u32 i = 0; i < app.npcs().actorCount(); ++i) {
 				const NpcActor& a = app.npcs().actor(i);
@@ -317,7 +348,9 @@ int main(int argc, char** argv) {
 		        "\"pixelsWritten\":%llu,\"heroFrames\":%d,\"heroRunFrames\":%d,\"heroAirFrames\":%d,"
 		        "\"heroSwimFrames\":%d,\"heroPixels\":%llu,\"npcsTotal\":%u,\"npcsHere\":%u,\"npcsShownMax\":%u,"
 		        "\"npcFrames\":%d,\"npcLoads\":%u,\"npcTrianglesMax\":%u,\"scriptErrors\":%u,\"npcActorsMax\":%u,"
-		        "\"npcWalkingMax\":%u,\"npcStateCalls\":%u,\"npcPaths\":%u,\"npcSnapped\":%u,\"npcClips\":%u}\n",
+		        "\"npcWalkingMax\":%u,\"npcStateCalls\":%u,\"npcPaths\":%u,\"npcSnapped\":%u,\"npcClips\":%u,"
+		        "\"collisionQueries\":%.1f,\"collisionItems\":%.1f,\"collisionTests\":%.1f,\"trianglesInChunksAvg\":%llu,"
+		        "\"drawCallsAvg\":%llu,\"clustersAvg\":%llu,\"mobsUsed\":%u,\"mobsInUse\":%u}\n",
 		        frames, static_cast<unsigned long long>(sumTris / u64(frames)), maxTris, maxDraws, ws.chunksTotal,
 		        maxLoaded, ws.peakResidentBytes, ws.budgetRejects, ws.loadFailures, double(sumWritten) / screen,
 		        backfaceShare, groundedFrames, swimFrames, maxBlended,
@@ -329,7 +362,9 @@ int main(int argc, char** argv) {
 		        app.npcs().stats().here, npcShownMax, npcFrames, app.npcs().stats().loads, npcTrianglesMax,
 		        app.npcs().loaded() ? app.npcs().game().vm().stats().errors + app.npcs().game().vm().stats().aborted : 0u,
 		        npcActorsMax, npcWalkingMax, app.npcs().stats().stateCalls, app.npcs().stats().paths, app.npcs().stats().snapped,
-		        app.npcs().stats().clips);
+		        app.npcs().stats().clips, double(collQueries) / frames, double(collItems) / frames, double(collTests) / frames,
+		        static_cast<unsigned long long>(sumInChunks / u64(frames)), static_cast<unsigned long long>(sumDraws / u64(frames)),
+		        static_cast<unsigned long long>(sumClusters / u64(frames)), app.npcs().stats().mobsUsed, app.npcs().stats().mobsInUse);
 		fclose(fp);
 	}
 

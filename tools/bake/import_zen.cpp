@@ -367,6 +367,9 @@ struct FlatMesh {
 	float skinDeviation = 0;
 	// For the report: the files it was read from, and (models) what it is made of.
 	std::string source, parts;
+	// Models only: the nodes that say where somebody using the thing stands
+	// ("ZS_POS0", "ZS_POS1_FRONT"), in the model's rest pose.
+	std::vector<std::pair<std::string, M34>> slots;
 
 	void finish() {
 		float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
@@ -483,6 +486,11 @@ void appendModel(FlatMesh& out, const zenkit::ModelHierarchy* hierarchy, const z
 		}
 		out.parts += (out.parts.empty() ? "" : "; ") + what + " " + std::to_string(triangles) + " tris " + textures;
 	};
+	if (hierarchy)
+		for (size_t i = 0; i < hierarchy->nodes.size(); ++i) {
+			const std::string name = upper(hierarchy->nodes[i].name);
+			if (name.compare(0, 6, "ZS_POS") == 0) out.slots.emplace_back(name, pose[i]);
+		}
 	// Rigid parts hang on the node of the same name.
 	for (const auto& kv : mesh.attachments) {
 		M34 xf;
@@ -578,9 +586,17 @@ FlatPtr loadVisual(const zenkit::Vfs& vfs, const std::string& name, std::string&
 			};
 			std::vector<Candidate> candidates;
 			std::string scriptNote;
-			// (A visual named as an .ASC is its own files first; its script, if
-			// it has one, only where those are missing.)
-			if (ext != "MDS") {
+			// A visual named as an .ASC is that file as the game compiled it -
+			// one .MDL, mesh and skeleton together - and only then anything
+			// else of its name. The order matters: a model script of the same
+			// name compiles to an .MDM and an .MDH of that name too, and what
+			// a script calls its mesh need not be this visual at all (the
+			// game's FIREPLACE_HIGH2.MDS names the mesh of the bowl that
+			// stands on the ground). The script itself comes last.
+			if (ext == "ASC" || ext == "MDL") {
+				candidates.push_back({"", "", base});
+				candidates.push_back({base, base, ""});
+			} else if (ext != "MDS") {
 				candidates.push_back({base, base, ""});
 				candidates.push_back({"", "", base});
 			}
@@ -742,6 +758,13 @@ struct ObjectStats {
 	};
 	std::map<std::string, Fire> fires;
 	std::map<std::string, u32> lights;
+	// The things people use, with the mesh each is drawn with (null: none).
+	struct Mob {
+		const zenkit::VirtualObject* vob;
+		int states;
+		FlatPtr mesh;
+	};
+	std::vector<Mob> mobs;
 };
 
 bool namedLikeLight(const std::string& upperName) {
@@ -822,7 +845,12 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 				f.tree = upper(fire->vob_tree);
 			}
 		}
-		if (!vob->show_visual || !vob->visual || vob->visual->name.empty()) continue;
+		// Something to use: a bed, a bench, an anvil. (Ladders are climbed, which is the player's business.)
+		const auto* usable = vob->type == zenkit::VirtualObjectType::oCMobLadder ? nullptr
+		                                                                          : dynamic_cast<const zenkit::VInteractiveObject*>(vob.get());
+		const bool hasName = vob->visual && !vob->visual->name.empty();
+		if (usable && hasName && !vob->show_visual) stats.mobs.push_back({vob.get(), usable->state_count, nullptr});
+		if (!vob->show_visual || !hasName) continue;
 		const std::string name = upper(vob->visual->name);
 		const std::string ext = extensionOf(name);
 		if (namedLikeLight(name)) ++stats.lights[name];
@@ -864,6 +892,7 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 		} else if (!it->second && stats.missing.count(name) == 0 && stats.unreadable.count(name) == 0) {
 			++stats.unsupported;
 		}
+		if (usable) stats.mobs.push_back({vob.get(), usable->state_count, it->second});
 		if (!it->second) continue;
 		out.push_back({vob.get(), it->second});
 	}
@@ -893,6 +922,47 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 	u8 fallback[4] = {128, 128, 128, 255};
 	if (lightCount)
 		for (int c = 0; c < 3; ++c) fallback[c] = u8(lightSum[c] / lightCount);
+
+	// The things people use: what kind each is, and where one stands to use it.
+	for (const ObjectStats::Mob& mob : stats.mobs) {
+		const zenkit::VirtualObject& vob = *mob.vob;
+		const zenkit::Vec3* col = vob.rotation.columns;
+		SrcMob out;
+		out.visual = upper(vob.visual->name);
+		// The kind is the first word of the model's name: "BEDHIGH_PSI.ASC" is a "BEDHIGH".
+		const size_t cut = out.visual.find('_') != std::string::npos ? out.visual.find('_') : out.visual.rfind('.');
+		out.scheme = out.visual.substr(0, cut);
+		if (out.scheme.empty() || out.scheme.size() > 47) continue;
+		out.pos[0] = vob.position.x;
+		out.pos[1] = vob.position.y;
+		out.pos[2] = vob.position.z;
+		out.yaw = std::atan2(col[2].x, col[2].z);
+		out.states = std::clamp(mob.states, 0, 16);
+		if (mob.mesh)
+			for (const auto& [name, node] : mob.mesh->slots) {
+				SrcMobSlot slot;
+				slot.name = name;
+				const float origin[3] = {0, 0, 0}, ahead[3] = {0, 0, 1};
+				float p[3], d[3];
+				node.point(origin, p);
+				node.direction(ahead, d);
+				slot.pos[0] = col[0].x * p[0] + col[1].x * p[1] + col[2].x * p[2] + vob.position.x;
+				slot.pos[1] = col[0].y * p[0] + col[1].y * p[1] + col[2].y * p[2] + vob.position.y;
+				slot.pos[2] = col[0].z * p[0] + col[1].z * p[1] + col[2].z * p[2] + vob.position.z;
+				const float wx = col[0].x * d[0] + col[1].x * d[1] + col[2].x * d[2];
+				const float wz = col[0].z * d[0] + col[1].z * d[1] + col[2].z * d[2];
+				slot.yaw = std::atan2(wx, wz);
+				// One stands on the floor there (the world's, not on the thing
+				// itself). The node is where the middle of the body is: about a
+				// metre up, and on things with a deep footing two (the game's
+				// stone mill: 149 cm above the object's origin).
+				u8 light[4];
+				float h = 0;
+				if (ground.sample(slot.pos[0], slot.pos[1] + 60.0f, slot.pos[2], light, &h) && h > slot.pos[1] - 350.0f) slot.pos[1] = h;
+				out.slots.push_back(slot);
+			}
+		scene.mobs.push_back(std::move(out));
+	}
 
 	std::map<std::string, u32> materialIndex; // everything that affects drawing -> scene material
 	u32 unlit = 0;
@@ -1513,6 +1583,18 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 				wanted.push_back(w);
 				witnesses.insert(w);
 			}
+	if (!opt.clipPrefixes.empty()) {
+		const auto family = [&](const std::string& rawName) {
+			const std::string name = upper(rawName);
+			for (const std::string& prefix : opt.clipPrefixes)
+				if (name.compare(0, prefix.size(), prefix) == 0 && std::find(wanted.begin(), wanted.end(), name) == wanted.end()) {
+					wanted.push_back(name);
+					return;
+				}
+		};
+		for (const zenkit::MdsAnimation& a : script.animations) family(a.name);
+		for (const zenkit::MdsAnimationAlias& a : script.aliases) family(a.name);
+	}
 	if (standardSet) {
 		wanted.assign(std::begin(kHeroClips), std::end(kHeroClips));
 		for (const zenkit::MdsAnimation& a : script.animations)
@@ -1810,9 +1892,14 @@ LookSource zenLookSource(std::shared_ptr<const ZenGame> game) {
 			const std::string m = mode;
 			for (const std::string& name : {"S_" + m, "S_" + m + "L", "T_" + m + "_2_" + m + "L", "T_" + m + "L_2_" + m}) o.clips.push_back(name);
 		}
-		// ... and whatever the scripts name that this model has.
-		for (const std::string& name : wanted)
-			if (std::find(o.clips.begin(), o.clips.end(), name) == o.clips.end()) o.clips.push_back(name);
+		// ... and whatever the scripts name that this model has (a name
+		// ending in a star stands for all that begin like it).
+		for (const std::string& name : wanted) {
+			if (!name.empty() && name.back() == '*')
+				o.clipPrefixes.push_back(name.substr(0, name.size() - 1));
+			else if (std::find(o.clips.begin(), o.clips.end(), name) == o.clips.end())
+				o.clips.push_back(name);
+		}
 		if (!importZenActor(game, o, model)) return false;
 		bool stands = false;
 		for (const SrcClip& c : model.clips) stands = stands || c.name == "S_RUN" || c.name == "S_WALK" || c.name == "S_FISTRUN" || c.name == "S_FISTWALK";
@@ -1974,6 +2061,9 @@ bool importZenScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std
 		zenkit::DaedalusScript zs;
 		zs.load(rd.get());
 		const u32 codeSize = zs.size();
+		// (A file cut short reads as zeros from where it ends: symbols of no
+		// kind, and no code at all.)
+		if (codeSize == 0) throw std::runtime_error("it has no code: the file is cut short or damaged");
 		// The code is what the file ends with, after its size.
 		u32 stated = 0;
 		if (size >= u64(codeSize) + 4) std::memcpy(&stated, dat.data() + size - codeSize - 4, 4);
@@ -2023,6 +2113,11 @@ bool importZenScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std
 			case SCRIPT_PROTOTYPE:
 			case SCRIPT_INSTANCE:
 				o.address = z.address();
+				// A file cut short reads as zeros from where it ends - no code
+				// at all, then - and must not pass for a script: what has code
+				// begins inside the code.
+				if (!o.external && o.isConst && o.address >= codeSize)
+					throw std::runtime_error("the code of '" + o.name + "' is not in the file: it is cut short or damaged");
 				break;
 			default:
 				break;

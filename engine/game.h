@@ -186,6 +186,7 @@ private:
 	static void xIsPlayer(ScriptVm& vm, void* user);
 	static void xSetTime(ScriptVm& vm, void* user);
 	static void xIsTime(ScriptVm& vm, void* user);
+	static void xNothing(ScriptVm& vm, void* user);
 
 	ScriptVm _vm;
 	GameNpc* _npcs = nullptr;

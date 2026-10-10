@@ -65,6 +65,9 @@ struct ZenActorOptions {
 	// `clips` is a wish list: what the model script does not declare is
 	// passed over without a word, and what a clip leads into comes along.
 	bool onlyDeclared = false;
+	// Every animation the model script declares whose name begins with one
+	// of these is wanted too ("T_BENCH_": all there is to using a bench).
+	std::vector<std::string> clipPrefixes;
 	// `body` and `head` may be empty: a head alone, a body alone, or - with
 	// neither - just the skeleton and its animations.
 };

@@ -44,6 +44,7 @@ void Npcs::release() {
 	}
 	_pool.release();
 	_net.release();
+	_mobs.release();
 	_game.release();
 	free(_looks);
 	free(_points);
@@ -99,6 +100,7 @@ const NpcActor* Npcs::actorOf(u32 npcIndex) const {
 void Npcs::retire(NpcActor& a) {
 	if (!a.used) return;
 	_net.drop(a.npc);
+	_mobs.drop(a.npc);
 	if (_game.loaded() && a.npc < _game.npcCount()) _game.settle(a.npc, findPoint, this);
 	a = NpcActor();
 }
@@ -106,6 +108,7 @@ void Npcs::retire(NpcActor& a) {
 void Npcs::leaveWorld() {
 	for (NpcActor& a : _actors) retire(a);
 	_net.dropAll();
+	_mobs.dropAll();
 	for (Piece& p : _pieces) {
 		p.model.release();
 		p.hash = 0;
@@ -149,6 +152,7 @@ void Npcs::enterWorld(Pak& pak, const World& world, const char* asset, Vec3 eye,
 		snprintf(_script, sizeof(_script), "%s", slash ? slash + 1 : asset);
 	}
 	_net.load(pak, asset); // a world without paths: its people stand
+	_mobs.load(pak, asset); // ... and without things to use: they do without
 
 	_pak = &pak;
 	_game.enterWorld(_script, hours, findPoint, this);
@@ -325,6 +329,7 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	_pak = &pak;
 	_clock += dt;
 	++_frame;
+	_stats.scriptMs = 0;
 	// No further than the world is drawn, and under load no further than the
 	// small things of the world: they go first, then come back.
 	const StreamConfig& sc = world.config();
@@ -348,6 +353,9 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 		++actors;
 		walking += a.phase == NpcActor::MOVING;
 	}
+	u32 inUse = 0;
+	for (const NpcActor& a : _actors) inUse += a.used && a.mob >= 0 && a.mobStage >= NpcActor::MOB_ENTERING;
+	_stats.mobsInUse = inUse;
 	_stats.actors = actors;
 	_stats.walking = walking;
 	_stats.clipBytes = _clipBytes;

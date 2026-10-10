@@ -36,6 +36,15 @@ struct Environment {
 	float dayLength = 0.0f;   // real seconds per game day; 0 freezes the clock
 };
 
+// Where the last update() spent its time, milliseconds.
+struct UpdateTimes {
+	float stream = 0; // chunks coming and going
+	float npcs = 0;   // the inhabitants: who is near, their states and actions ...
+	float script = 0; // ... of which inside the scripts' functions
+	float player = 0; // the character: steering, walls, ground
+	float camera = 0; // finding the camera a place
+};
+
 class App {
 public:
 	// `worldName` may be null: the archive says which world the game starts in.
@@ -95,6 +104,7 @@ public:
 	void setClock(double seconds) { _clock = seconds; }
 	// True while the camera is below a water surface.
 	bool underwater() const { return _underwater; }
+	const UpdateTimes& times() const { return _times; }
 
 private:
 	void checkPortals();
@@ -120,6 +130,7 @@ private:
 	bool _camPlaced = false;   // false: the next frame puts the camera where it belongs at once
 	float _camElevation = 0;   // degrees the player has tilted the view away from the script's elevation
 	float _eyePitch = 0;       // first person with a character: looking up and down
+	UpdateTimes _times;
 };
 
 } // namespace g3

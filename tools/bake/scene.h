@@ -70,6 +70,22 @@ struct SrcWayPoint {
 	float yaw;
 };
 
+// A thing the world's people use: a bed, a bench (see g3ds/game.h).
+struct SrcMobSlot {
+	std::string name; // the model's node: "ZS_POS0", "ZS_POS1_FRONT", "ZS_POS0_DIST"
+	float pos[3];
+	float yaw;
+};
+
+struct SrcMob {
+	std::string scheme; // upper case: "BEDHIGH"
+	std::string visual; // for the report
+	float pos[3];
+	float yaw;
+	int states = 1;
+	std::vector<SrcMobSlot> slots;
+};
+
 struct SrcImage {
 	int width = 0, height = 0;
 	std::vector<u8> rgba; // top-down
@@ -95,6 +111,7 @@ struct SrcScene {
 	std::vector<SrcWayPoint> wayPoints;
 	std::vector<std::pair<u32, u32>> wayEdges;
 	std::vector<SrcWayPoint> freePoints;
+	std::vector<SrcMob> mobs;
 	std::vector<std::string> notes; // importer remarks for the bake report
 };
 

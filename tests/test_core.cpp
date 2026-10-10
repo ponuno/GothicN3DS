@@ -409,7 +409,9 @@ static void testChunker() {
 		quadAt(3000, 2, DETAIL_MEDIUM); // world material 1: cut-out
 		quadAt(4000, 1, DETAIL_ALWAYS);
 		ChunkerStats sm;
-		const std::vector<BakedChunk> mc = buildChunks(mix, {2, 0, 1}, {0, 1, 2}, one, sm);
+		ChunkerOptions whole = one;
+		whole.clusterSize = 0; // a batch per material, wherever its triangles are
+		const std::vector<BakedChunk> mc = buildChunks(mix, {2, 0, 1}, {0, 1, 2}, whole, sm);
 		CHECK(mc.size() == 1 && mc[0].batches.size() == 4);
 		if (mc.size() == 1 && mc[0].batches.size() == 4) {
 			const BakedChunk& c = mc[0];
@@ -427,6 +429,54 @@ static void testChunker() {
 		}
 		CHECK(sm.batches == 4 && sm.detailTriangles[DETAIL_ALWAYS] == 4 && sm.detailTriangles[DETAIL_MEDIUM] == 2 &&
 		      sm.detailTriangles[DETAIL_SMALL] == 4);
+		CHECK(sm.clusters == 0);
+		for (const ChunkBatch& b : mc[0].batches) CHECK(b.cluster == 0);
+
+		// Clusters: the chunk is cut into boxes, and a material gets a batch
+		// in each box it has triangles in - one after the other in the index
+		// buffer, so that the runtime can draw neighbours with one call.
+		ChunkerStats sc;
+		ChunkerOptions boxes = one;
+		boxes.clusterSize = 1000.0f;
+		const std::vector<BakedChunk> cc = buildChunks(mix, {2, 0, 1}, {0, 1, 2}, boxes, sc);
+		CHECK(cc.size() == 1 && cc[0].batches.size() == 5 && sc.clusters == 5 && sc.maxChunkClusters == 5 && sc.coarsenedChunks == 0);
+		if (cc.size() == 1 && cc[0].batches.size() == 5) {
+			const BakedChunk& c = cc[0];
+			// The opaque material's two quads are 30 m apart: two batches, in the order of their boxes.
+			CHECK(c.batches[0].material == 0 && c.batches[1].material == 0 && c.batches[0].detail == DETAIL_ALWAYS &&
+			      c.batches[1].detail == DETAIL_ALWAYS);
+			CHECK(c.batches[0].cluster < c.batches[1].cluster && c.batches[0].indexCount == 6 && c.batches[1].indexCount == 6);
+			CHECK(c.batches[1].firstIndex == c.batches[0].firstIndex + c.batches[0].indexCount);
+			const float x0 = c.header.origin[0] + float(c.batches[0].bbMin[0]) * c.header.posScale;
+			const float x1 = c.header.origin[0] + float(c.batches[1].bbMin[0]) * c.header.posScale;
+			CHECK(std::fabs(x0 - 1000.0f) < 0.3f && std::fabs(x1 - 4000.0f) < 0.3f);
+			// Every quad is in a box of its own; the boxes are numbered along the row.
+			u32 seen = 0;
+			for (const ChunkBatch& b : c.batches) seen |= 1u << b.cluster;
+			CHECK(seen == 31);
+			// The same triangles and vertices as without boxes.
+			CHECK(c.indices.size() == mc[0].indices.size() && c.vertices.size() == mc[0].vertices.size());
+		}
+		// A byte names a box: a chunk that would have more gets bigger ones.
+		SrcScene wide;
+		wide.materials.resize(1);
+		for (int z = 0; z < 20; ++z)
+			for (int x = 0; x < 20; ++x)
+				for (SrcTriangle tr : {plain.triangles[0], plain.triangles[1]}) {
+					for (SrcVertex& v : tr.v) {
+						v.pos[0] += float(x) * 300.0f;
+						v.pos[2] += float(z) * 300.0f;
+					}
+					tr.material = 0;
+					wide.triangles.push_back(tr);
+				}
+		ChunkerStats sw;
+		ChunkerOptions tiny = one;
+		tiny.chunkSize = 20000.0f;
+		tiny.clusterSize = 250.0f;
+		const std::vector<BakedChunk> wc = buildChunks(wide, {0}, {0}, tiny, sw);
+		CHECK(wc.size() == 1 && sw.coarsenedChunks == 1 && sw.clusters > 16 && sw.clusters <= 255);
+		CHECK(wc.size() == 1 && wc[0].batches.size() == sw.clusters && wc[0].indices.size() == 20 * 20 * 6);
 	}
 
 	// One lattice for the whole world: a vertex on the border of two chunks
@@ -1072,6 +1122,83 @@ static void testWorlds() {
 	CHECK(w.stats().trianglesDrawn < trisNear && w.stats().batchesCulled > culledNear);
 	w.config() = StreamConfig {};
 	app.setDrawDistance(12000.0f);
+
+	// ---- clusters: of a chunk in view only what is in view is drawn ----
+	// What is left out is out of the picture or wholly in the fog, so with
+	// the fog's end far beyond everything the picture is the same, pixel for
+	// pixel, as with whole chunks drawn - from wherever one looks.
+	{
+		app.setDrawDistance(60000.0f);
+		app.environment().fogStart = 59000.0f;
+		u64 trisOn = 0, trisOff = 0, drawsOn = 0, drawsOff = 0, inChunks = 0, merged = 0, clustersOut = 0;
+		int views = 0, differing = 0;
+		for (int k = 0; k < 24; ++k) {
+			const float angle = float(k) * 1.7f;
+			app.teleport({std::sin(angle) * float(200 + k * 150), 260.0f + float(k % 5) * 350.0f, std::cos(angle) * float(200 + k * 150)});
+			app.camera().yaw = angle * 2.3f;
+			app.camera().pitch = (k % 4 == 0) ? -1.1f : (k % 4 == 1) ? 0.3f : -0.25f;
+			app.update(Input {}, dt);
+			w.preload(app.camera().pos);
+			w.config().clusterCulling = false;
+			app.render();
+			const std::vector<u8> whole(gfx::softFramebuffer(), gfx::softFramebuffer() + gfx::SCREEN_W * gfx::SCREEN_H * 4);
+			trisOff += w.stats().trianglesDrawn;
+			drawsOff += w.stats().drawCalls;
+			CHECK(w.stats().clustersCulled == 0);
+			w.config().clusterCulling = true;
+			app.render();
+			trisOn += w.stats().trianglesDrawn;
+			drawsOn += w.stats().drawCalls;
+			inChunks += w.stats().trianglesInChunks;
+			merged += w.stats().batchesMerged;
+			clustersOut += w.stats().clustersCulled;
+			CHECK(w.stats().trianglesDrawn <= w.stats().trianglesInChunks);
+			differing += std::memcmp(whole.data(), gfx::softFramebuffer(), whole.size()) != 0;
+			++views;
+		}
+		std::printf("  clusters: %d views, %llu triangles drawn of %llu with whole chunks (%llu in the chunks), %llu draw calls "
+		            "against %llu, %llu batches merged, %llu clusters out of view\n",
+		            views, static_cast<unsigned long long>(trisOn), static_cast<unsigned long long>(trisOff),
+		            static_cast<unsigned long long>(inChunks), static_cast<unsigned long long>(drawsOn),
+		            static_cast<unsigned long long>(drawsOff), static_cast<unsigned long long>(merged),
+		            static_cast<unsigned long long>(clustersOut));
+		CHECK(differing == 0);
+		CHECK(trisOn * 10 < trisOff * 8); // a fifth saved at the very least
+		CHECK(clustersOut > 0 && merged > 0);
+		// Neighbours in view go out in one call: not many more calls than with whole chunks.
+		CHECK(drawsOn < drawsOff * 13 / 10);
+
+		// The fog's end is the far plane: with a short draw distance less is
+		// drawn still, and nothing that is not in the fog all over goes
+		// missing - where the two pictures differ, the one with whole chunks
+		// shows the fog's colour (a silhouette in front of the sky).
+		app.setDrawDistance(5000.0f);
+		app.teleport({0, 400.0f, 0});
+		app.camera().yaw = 0.4f;
+		app.camera().pitch = -0.1f;
+		app.update(Input {}, dt);
+		w.preload(app.camera().pos);
+		w.config().clusterCulling = false;
+		app.render();
+		const std::vector<u8> whole(gfx::softFramebuffer(), gfx::softFramebuffer() + gfx::SCREEN_W * gfx::SCREEN_H * 4);
+		const u32 trisWhole = w.stats().trianglesDrawn;
+		w.config().clusterCulling = true;
+		app.render();
+		CHECK(w.stats().trianglesDrawn < trisWhole);
+		const SkyColors sky = app.skyColors();
+		int changed = 0, notFog = 0;
+		for (int i = 0; i < gfx::SCREEN_W * gfx::SCREEN_H; ++i) {
+			if (std::memcmp(&whole[size_t(i) * 4], gfx::softFramebuffer() + i * 4, 3) == 0) continue;
+			++changed;
+			for (int c = 0; c < 3; ++c) notFog += std::abs(int(whole[size_t(i) * 4 + size_t(c)]) - int(sky.horizon[c])) > 2;
+		}
+		std::printf("  clusters: at 50 m %u triangles instead of %u; %d pixels of fog-coloured silhouette gone\n",
+		            w.stats().trianglesDrawn, trisWhole, changed);
+		CHECK(notFog == 0);
+		w.config() = StreamConfig {};
+		app.setDrawDistance(12000.0f);
+		app.environment().fogStart = 12000.0f * 0.2f;
+	}
 
 	// ---- blended pass: the glow and the cobweb in the gate ----
 	app.teleport({gate[0], gate[1] + 175.0f, gate[2]});
@@ -1850,7 +1977,163 @@ static void testPacer() {
 	CHECK(p.detailScale() >= p.cfg.minDetail && p.detailScale() <= 1.0f && p.load() <= 4.0f);
 }
 
+// A tower: many floors over one footprint, so that every column of the
+// collision grid holds a lot that a query is nowhere near. The queries must
+// answer exactly as they would looking at every entry of their cells - and
+// look at far fewer.
+static void testCollisionLevels() {
+	const int n = 24, floors = 12;
+	std::vector<WorldVertex> verts;
+	std::vector<u16> idx;
+	u32 seed = 4711;
+	auto rnd = [&]() {
+		seed = seed * 1664525u + 1013904223u;
+		return float(seed >> 8) / float(1 << 24);
+	};
+	for (int f = 0; f < floors; ++f)
+		for (int z = 0; z <= n; ++z)
+			for (int x = 0; x <= n; ++x) {
+				WorldVertex v {};
+				v.x = i16((x - n / 2) * 800);
+				// Floors that are not quite level, and one that is a slope through the others.
+				v.y = i16((f - floors / 2) * 2000 + int(rnd() * 300.0f) + (f == 3 ? x * 900 : 0));
+				v.z = i16((z - n / 2) * 800);
+				v.w = 1;
+				v.r = u8(f * 20);
+				v.g = v.b = v.a = 255;
+				verts.push_back(v);
+			}
+	for (int f = 0; f < floors; ++f)
+		for (int z = 0; z < n; ++z)
+			for (int x = 0; x < n; ++x) {
+				const u16 a = u16(f * (n + 1) * (n + 1) + z * (n + 1) + x), b = u16(a + 1), c = u16(a + n + 1), d = u16(c + 1);
+				for (u16 i : {a, c, b, b, c, d}) idx.push_back(i);
+			}
+	ChunkHeader h {};
+	h.magic = CHUNK_MAGIC;
+	h.batchCount = 1;
+	h.vertexCount = u16(verts.size());
+	h.indexCount = u32(idx.size());
+	h.posScale = 0.125f;
+	h.origin[0] = 300.0f;
+	h.origin[1] = -40.0f;
+	h.origin[2] = 77.0f;
+	ChunkBatch batch {};
+	batch.indexCount = h.indexCount;
+	WorldMaterial material {};
+	material.frameCount = 1;
+	ChunkCollider col;
+	CHECK(col.build(h, &batch, verts.data(), idx.data(), &material, MATF_NO_COLLISION, 0));
+	CHECK(col.triangleCount == u32(idx.size() / 3) && col.gridW > 4 && col.gridH > 4);
+
+	const u32 triMask = ChunkCollider::MAX_TRIANGLES - 1;
+	auto vertex = [&](u32 tri, int k) {
+		const i16* p = col.positions + col.triangles[tri * 3 + u32(k)] * 3;
+		return Vec3 {float(p[0]), float(p[1]), float(p[2])};
+	};
+	// The queries as they were before the levels: every entry of the cells.
+	auto pushReference = [&](Vec3& center, float radius) {
+		const float inv = 1.0f / col.scale;
+		Vec3 c = {(center.x - col.origin[0]) * inv, (center.y - col.origin[1]) * inv, (center.z - col.origin[2]) * inv};
+		const float r = radius * inv;
+		const float gx = c.x - float(col.gridX0), gz = c.z - float(col.gridZ0);
+		const float fx0 = (gx - r) / col.cellSize, fx1 = (gx + r) / col.cellSize;
+		const float fz0 = (gz - r) / col.cellSize, fz1 = (gz + r) / col.cellSize;
+		if (fx1 < 0 || fz1 < 0 || fx0 >= float(col.gridW) || fz0 >= float(col.gridH)) return false;
+		const u32 x0 = u32(std::max(fx0, 0.0f)), x1 = std::min(u32(std::max(fx1, 0.0f)), col.gridW - 1);
+		const u32 z0 = u32(std::max(fz0, 0.0f)), z1 = std::min(u32(std::max(fz1, 0.0f)), col.gridH - 1);
+		bool moved = false;
+		for (u32 z = z0; z <= z1; ++z)
+			for (u32 x = x0; x <= x1; ++x)
+				for (u32 i = col.cellStart[z * col.gridW + x]; i < col.cellStart[z * col.gridW + x + 1]; ++i) {
+					const u32 t = col.cellItems[i] & triMask;
+					const Vec3 a = vertex(t, 0), b = vertex(t, 1), d = vertex(t, 2);
+					const Vec3 away = c - closestPointOnTriangle(c, a, b, d);
+					const float dist2 = dot(away, away);
+					if (dist2 >= r * r) continue;
+					if (dist2 > 1e-8f) {
+						const float dist = std::sqrt(dist2);
+						c = c + away * ((r - dist) / dist);
+					} else {
+						c = c + normalize(cross(b - a, d - a)) * r;
+					}
+					moved = true;
+				}
+		if (moved) center = {col.origin[0] + c.x * col.scale, col.origin[1] + c.y * col.scale, col.origin[2] + c.z * col.scale};
+		return moved;
+	};
+	auto boxReference = [&](const float mn[3], const float mx[3]) {
+		for (u32 t = 0; t < col.triangleCount; ++t) {
+			bool apart = false;
+			for (int a = 0; a < 3; ++a) {
+				float lo = 1e30f, hi = -1e30f;
+				for (int k = 0; k < 3; ++k) {
+					const Vec3 v = vertex(t, k);
+					const float w = col.origin[a] + (a == 0 ? v.x : a == 1 ? v.y : v.z) * col.scale;
+					lo = std::min(lo, w);
+					hi = std::max(hi, w);
+				}
+				apart = apart || lo > mx[a] || hi < mn[a];
+			}
+			if (!apart) return false;
+		}
+		return true;
+	};
+
+	collisionStatsReset();
+	u32 pushed = 0, differ = 0, rays = 0, rayDiffer = 0, boxes = 0, boxDiffer = 0;
+	for (int i = 0; i < 30000; ++i) {
+		const Vec3 at = {col.origin[0] + (rnd() - 0.5f) * 2800.0f, col.origin[1] + (rnd() - 0.5f) * 3400.0f,
+		                 col.origin[2] + (rnd() - 0.5f) * 2800.0f};
+		const float radius = 4.0f + rnd() * (i % 7 == 0 ? 300.0f : 60.0f);
+		Vec3 a = at, b = at;
+		const bool ma = col.pushSphere(a, radius), mb = pushReference(b, radius);
+		pushed += ma;
+		differ += ma != mb || a.x != b.x || a.y != b.y || a.z != b.z;
+
+		// Straight down: the highest floor below, as found by looking at them all.
+		const float drop = rnd() * 700.0f;
+		float y = 0;
+		Vec3 nrm;
+		u8 light[4] = {};
+		const bool hit = col.rayDown(at, drop, y, nrm, light);
+		float best = -1e30f;
+		for (u32 t = 0; t < col.triangleCount; ++t) {
+			const Vec3 p0 = vertex(t, 0), p1 = vertex(t, 1), p2 = vertex(t, 2);
+			const float lx = (at.x - col.origin[0]) / col.scale, lz = (at.z - col.origin[2]) / col.scale;
+			const float det = (p1.z - p2.z) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.z - p2.z);
+			if (std::fabs(det) < 1e-6f) continue;
+			const float w0 = ((p1.z - p2.z) * (lx - p2.x) + (p2.x - p1.x) * (lz - p2.z)) / det;
+			const float w1 = ((p2.z - p0.z) * (lx - p2.x) + (p0.x - p2.x) * (lz - p2.z)) / det;
+			const float w2 = 1.0f - w0 - w1;
+			if (w0 < -1e-4f || w1 < -1e-4f || w2 < -1e-4f) continue;
+			const float wy = col.origin[1] + (p0.y * w0 + p1.y * w1 + p2.y * w2) * col.scale;
+			if (wy <= at.y + 0.01f && wy >= at.y - drop - 0.01f) best = std::max(best, wy);
+		}
+		rays += hit;
+		// (A floor within a hundredth of the ends of the ray may go either way.)
+		if (hit ? std::fabs(y - best) > 0.05f : best > at.y - drop + 0.05f && best < at.y - 0.05f) ++rayDiffer;
+
+		const float half[3] = {5.0f + rnd() * 200.0f, 5.0f + rnd() * 120.0f, 5.0f + rnd() * 200.0f};
+		const float mn[3] = {at.x - half[0], at.y - half[1], at.z - half[2]}, mx[3] = {at.x + half[0], at.y + half[1], at.z + half[2]};
+		const bool free = col.boxFree(mn, mx);
+		boxes += free;
+		boxDiffer += free != boxReference(mn, mx);
+	}
+	CHECK(pushed > 3000 && pushed < 27000 && differ == 0);
+	CHECK(rays > 3000 && rayDiffer == 0);
+	CHECK(boxes > 1000 && boxes < 29000 && boxDiffer == 0);
+	// Of what the cells hold, a query looks at the vertices of a fraction.
+	const CollisionStats& cs = collisionStats();
+	CHECK(cs.queries > 30000 && cs.items > cs.queries * 20);
+	CHECK(cs.tests * 4 < cs.items);
+	std::printf("  collision levels: %u queries, %.0f entries and %.1f triangles each\n", cs.queries,
+	            double(cs.items) / cs.queries, double(cs.tests) / cs.queries);
+	col.release();
+}
+
 static void testCollision() {
+	testCollisionLevels();
 	// Closest point: face interior, edge and corner regions.
 	const Vec3 a {0, 0, 0}, b {10, 0, 0}, c {0, 0, 10};
 	Vec3 q = closestPointOnTriangle({2, 5, 2}, a, b, c);
@@ -3517,6 +3800,145 @@ static BakeResult bakeLifeWorlds(const std::string& source, const std::string& p
 }
 
 // The inhabitants' life: states run by the scripts, walking the way net.
+// The things people use: the table of a world (mobs.h).
+static void testMobs() {
+	std::mt19937 rng(23);
+	SrcScene scene;
+	scene.materials.resize(1);
+	scene.materials[0].name = "floor";
+	const float p[4][3] = {{-9000, 0, -9000}, {9000, 0, -9000}, {9000, 0, 9000}, {-9000, 0, 9000}};
+	addQuad(scene, p[0], p[1], p[2], p[3], 0);
+	const auto add = [&](const char* kind, float x, float y, float z, int states) -> SrcMob& {
+		SrcMob m;
+		m.scheme = kind;
+		m.visual = std::string(kind) + "_X.ASC";
+		m.pos[0] = x;
+		m.pos[1] = y;
+		m.pos[2] = z;
+		m.yaw = 0.5f;
+		m.states = states;
+		scene.mobs.push_back(m);
+		return scene.mobs.back();
+	};
+	// A bed with a front and a back, a second one upstairs, a far one; a bench
+	// without a place to stand at; a cauldron one stands a pace from.
+	SrcMob& bed = add("BED", 100, 0, 0, 1);
+	bed.slots.push_back(SrcMobSlot {"ZS_POS0_FRONT", {100, 0, -120}, 0.0f});
+	bed.slots.push_back(SrcMobSlot {"ZS_POS1_BACK", {100, 0, 120}, 3.14159f});
+	add("BED", 150, 400, 0, 1).slots.push_back(SrcMobSlot {"ZS_POS0", {150, 400, -100}, 0.0f});
+	add("BED", 5000, 0, 0, 1).slots.push_back(SrcMobSlot {"ZS_POS0", {5000, 0, -100}, 0.0f});
+	add("BENCH", -300, 0, 0, 1);
+	add("BEDHIGH", -500, 0, 0, 99).slots.push_back(SrcMobSlot {"ZS_POS0", {-500, 0, -100}, 0.0f});
+	add("CAULDRON", 0, 0, 600, 3).slots.push_back(SrcMobSlot {"ZS_POS0_DIST", {0, 0, 690}, 0.0f});
+	std::vector<BakeWorld> worlds(1);
+	worlds[0].name = "m";
+	worlds[0].level = "M.ZEN";
+	worlds[0].scene = scene;
+	BakeOptions bo;
+	bo.tex.maxSize = 16;
+	bo.tex.quality = 0;
+	bo.quiet = true;
+	PakWriter writer;
+	const BakeResult br = bakeWorlds(worlds, bo, writer);
+	CHECK(br.report.find("things to use: 6 of 4 kinds, with 6 places to stand at (1 have none: nobody can use those): BED x3") !=
+	      std::string::npos);
+	const std::string path = gDir + "/mobs.pak";
+	writer.write(path);
+	Pak pak;
+	CHECK(pak.open(path.c_str()));
+	Mobs mobs;
+	CHECK(!mobs.load(pak, "world/nowhere") && !mobs.loaded() && mobs.count() == 0);
+	const float nowhere[3] = {0, 0, 0};
+	CHECK(mobs.find(nowhere, "BED", 1) == -1 && mobs.heldBy(1) == -1 && !mobs.hold(0, 1)); // (an empty table answers too)
+	mobs.drop(1);
+	mobs.dropAll();
+	CHECK(mobs.load(pak, "world/m") && mobs.count() == 6);
+	CHECK(std::string(mobs.scheme(0)) == "BED" && mobs.mob(0).slotCount == 2 && mobs.mob(0).states == 1 && mobs.mob(4).states == 16);
+	CHECK(mobs.slot(0, 0).kind == MOB_SLOT_FRONT && mobs.slot(0, 1).kind == MOB_SLOT_BACK && mobs.slot(1, 0).kind == MOB_SLOT_PLAIN &&
+	      mobs.slot(5, 0).kind == MOB_SLOT_DIST);
+	CHECK(mobs.isScheme(0, "bed") && !mobs.isScheme(0, "BEDHIGH") && !mobs.isScheme(4, "BED") && !mobs.isScheme(99, "BED") && !mobs.isScheme(0, ""));
+
+	// Found: the nearest of its kind within ten metres, in any letter case; a
+	// kind is a whole word ("BED" is no "BEDHIGH").
+	const float here[3] = {0, 0, 0}, upstairs[3] = {100, 380, 0}, away[3] = {4200, 0, 0}, far[3] = {2500, 0, 0};
+	CHECK(mobs.find(here, "BED", 1) == 0 && mobs.find(here, "Bed", 1) == 0 && mobs.find(upstairs, "BED", 1) == 1);
+	CHECK(mobs.find(away, "BED", 1) == 2 && mobs.find(far, "BED", 1) == -1);
+	CHECK(mobs.find(here, "BEDHIGH", 1) == 4 && mobs.find(here, "BE", 1) == -1 && mobs.find(here, "", 1) == -1 && mobs.find(here, nullptr, 1) == -1);
+	CHECK(mobs.find(here, "BED", 1, 0) == 1); // not that one: the next nearest
+	// A thing without a place to stand at is there, but not to be used.
+	CHECK(mobs.isScheme(3, "BENCH") && mobs.mob(3).slotCount == 0 && mobs.find(here, "BENCH", 1) == -1);
+	// One user each, one thing each.
+	CHECK(mobs.hold(0, 7) && mobs.heldBy(7) == 0 && mobs.userOf(0) == 7 && mobs.userOf(1) == -1);
+	CHECK(mobs.find(here, "BED", 7) == 0 && mobs.find(here, "BED", 8) == 1); // taken for everybody else
+	CHECK(!mobs.hold(0, 8) && mobs.heldBy(8) == -1 && mobs.userOf(0) == 7);
+	CHECK(mobs.hold(3, 7) && mobs.heldBy(7) == 3 && mobs.userOf(0) == -1); // moving on lets go of the first
+	CHECK(!mobs.hold(99, 7) && !mobs.hold(1, 0xFFFF) && mobs.heldBy(7) == 3);
+	mobs.drop(7);
+	CHECK(mobs.heldBy(7) == -1 && mobs.userOf(3) == -1);
+	CHECK(mobs.hold(1, 3) && mobs.hold(2, 4));
+	mobs.dropAll();
+	CHECK(mobs.userOf(1) == -1 && mobs.userOf(2) == -1);
+
+	// Where one stands: the nearer of a bed's two sides; where the thing is
+	// if it has no places; and a pace from the cauldron on the side one
+	// comes from, facing it.
+	float at[3], yaw = 9;
+	const float south[3] = {120, 0, -900}, north[3] = {80, 0, 700};
+	CHECK(mobs.place(0, south, at, yaw) == 0 && at[2] == -120.0f && yaw == 0.0f);
+	CHECK(mobs.place(0, north, at, yaw) == 1 && at[2] == 120.0f && std::fabs(yaw - 3.14159f) < 1e-5f);
+	CHECK(mobs.place(3, south, at, yaw) == -1 && at[0] == -300.0f && at[2] == 0.0f && yaw == 0.5f);
+	for (int k = 0; k < 40; ++k) {
+		const float angle = float(k) * 0.37f, range = 150.0f + float(k) * 40.0f;
+		const float from[3] = {std::sin(angle) * range, 0, 600.0f + std::cos(angle) * range};
+		CHECK(mobs.place(5, from, at, yaw) == 0);
+		CHECK(std::fabs(std::hypot(at[0], at[2] - 600.0f) - 90.0f) < 0.01f);                         // a pace from it
+		CHECK(std::hypot(at[0] - std::sin(angle) * 90.0f, at[2] - 600.0f - std::cos(angle) * 90.0f) < 0.05f); // on one's own side
+		CHECK(std::fabs(std::sin(yaw) * 90.0f + at[0]) < 0.05f && std::fabs(std::cos(yaw) * 90.0f + at[2] - 600.0f) < 0.05f); // facing it
+	}
+	const float onIt[3] = {0, 0, 600};
+	CHECK(mobs.place(5, onIt, at, yaw) == 0 && std::isfinite(at[0]) && std::isfinite(at[2]) && std::isfinite(yaw));
+
+	// Damaged data: refused, or at least harmless.
+	const PakEntry* e = pak.find("world/m/mobs");
+	CHECK(e != nullptr);
+	std::vector<u8> good(e ? e->size : 0);
+	if (e) CHECK(pak.read(*e, good.data()));
+	int loaded = 0, refused = 0;
+	for (int round = 0; round < 400 && !good.empty(); ++round) {
+		std::vector<u8> bad = good;
+		const int hits = 1 + int(rng() % 4);
+		for (int k = 0; k < hits; ++k) {
+			const size_t where = round < 100 ? 8 + rng() % 12 : 8 + rng() % (bad.size() - 8);
+			bad[where] = rng() % 2 ? u8(rng()) : u8(bad[where] ^ (1u << (rng() % 8)));
+		}
+		if (round % 50 == 49) bad.resize(bad.size() - 1 - rng() % 40);
+		PakWriter w;
+		w.add("world/m/mobs", ASSET_META, bad);
+		const std::string badPath = gDir + "/mobs_bad.pak";
+		w.write(badPath);
+		Pak bp;
+		CHECK(bp.open(badPath.c_str()));
+		Mobs b;
+		if (!b.load(bp, "world/m")) {
+			++refused;
+			continue;
+		}
+		++loaded;
+		for (u32 k = 0; k < 30; ++k) {
+			const float from[3] = {float(rng() % 12000) - 6000.0f, float(rng() % 600), float(rng() % 2000) - 1000.0f};
+			const int found = b.find(from, k % 2 ? "BED" : "CAULDRON", k);
+			if (found < 0) continue;
+			float pos[3], facing;
+			const int slot = b.place(u32(found), from, pos, facing);
+			CHECK(slot < int(b.mob(u32(found)).slotCount) && std::isfinite(pos[0]) && std::isfinite(pos[1]) && std::isfinite(pos[2]));
+			CHECK(std::strlen(b.scheme(u32(found))) < 4096);
+			b.hold(u32(found), k);
+		}
+	}
+	std::printf("       %d damaged tables used, %d refused\n", loaded, refused);
+	CHECK(loaded > 50 && refused > 50);
+}
+
 static void testLife() {
 	// The built-in script, and with it somebody who asks the engine questions
 	// and writes the answers down.
@@ -3528,6 +3950,7 @@ static void testLife() {
 var int probe_dist_wp; var int probe_dist_none; var int probe_state; var int probe_detect; var int probe_other; var int probe_dist_npc;
 var int probe_see; var int probe_time; var int probe_body; var int probe_fp; var int probe_hero; var int probe_loops; var int probe_ended;
 var string probe_wp; var string probe_own; var int probe_see_first;
+var int probe_mob; var int probe_mob_state; var int probe_smith_body; var int probe_sitter_body; var string probe_mob_own;
 extern func int Wld_DetectNpc(var C_NPC n, var int npcInstance, var func state, var int guild);
 extern func int Npc_CanSeeNpc(var C_NPC a, var C_NPC b);
 func void ZS_Probe() { AI_GotoWP(self, self.wp); AI_AlignToWP(self); probe_own = self.wp; };
@@ -3545,6 +3968,13 @@ func int ZS_Probe_Loop() {
 		if (probe_loops == 3) { AI_TurnToNpc(self, other); };
 		probe_see = Npc_CanSeeNpc(self, other) + 10 * Npc_CanSeeNpc(other, self);
 	};
+	// The things around: which kinds are free to use, and what state they are in.
+	probe_mob = Wld_IsMobAvailable(self, "BENCH") + 10 * Wld_IsMobAvailable(self, "bsanvil") + 100 * Wld_IsMobAvailable(self, "BEDHIGH")
+	          + 1000 * Wld_IsMobAvailable(self, "NOSUCH") + 10000 * Wld_IsMobAvailable(self, "");
+	probe_mob_state = Wld_GetMobState(self, "Bench") + 10 * Wld_GetMobState(self, "BEDHIGH");
+	probe_mob_own = Npc_GetDetectedMob(self);
+	if (probe_detect) { probe_smith_body = Npc_GetBodyState(other); };
+	if (Wld_DetectNpc(self, VLK_500_Digger, ZS_SitAround, -1)) { probe_sitter_body = Npc_GetBodyState(other); };
 	probe_hero = Npc_GetDistToNpc(self, hero);
 	probe_time = Npc_GetStateTime(self);
 	probe_body = Npc_GetBodyState(self);
@@ -3569,8 +3999,13 @@ func void Rtn_start_502() {
 	{
 		const BakeResult r = bakeLifeWorlds(source, path, worlds);
 		const auto said = [&](const char* text) { return r.report.find(text) != std::string::npos; };
+		if (getenv("G3_TRACE")) std::puts(r.report.c_str());
 		// Of the animations the scripts name each skeleton got the ones it has.
-		CHECK(said("animations: the scripts name or imply 9; baked per skeleton: humans 15, scavenger 8, molerat 8"));
+		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 6 families more; baked per "
+		           "skeleton: humans 30, scavenger 8, molerat 8"));
+		// The things of the camp, and which of them the scripts know.
+		CHECK(said("things to use: 5 of 4 kinds, with 6 places to stand at (1 have none: nobody can use those): BEDHIGH x2"));
+		CHECK(said("things to use: the worlds have 4 kinds; the scripts name 3 of them: BEDHIGH x2, BENCH x1, BSANVIL x1; not named: CHESTBIG"));
 		CHECK(said("way net: 13 points, 15 connections") && said("10 free points") && said(" 8 states, "));
 		// What the states need of the engine is on record.
 		CHECK(said("life: the scripts have 8 states; the people of these worlds are put into 7: ZS_MM_ALLSCHEDULER x6, ZS_GUARD x3"));
@@ -3595,6 +4030,11 @@ func void Rtn_start_502() {
 		return best;
 	};
 	const i32 kBsStand = (1 << 15) | (1 << 16), kBsSit = 11 | (1 << 16);
+	const auto mobOf = [&](const char* kind, int nth) -> const SrcMob& {
+		for (const SrcMob& m : scene.mobs)
+			if (m.scheme == kind && nth-- == 0) return m;
+		throw std::logic_error(std::string("no ") + kind);
+	};
 
 	gfx::init();
 	for (int variant = 0; variant < 4; ++variant) {
@@ -3609,6 +4049,13 @@ func void Rtn_start_502() {
 		const Game& game = npcs.game();
 		const WayNet& net = npcs.wayNet();
 		CHECK(net.loaded() && net.nodeCount() == 13 && net.freeCount() == 10);
+		const Mobs& mobs = npcs.mobs();
+		CHECK(mobs.loaded() && mobs.count() == 5);
+		// What a character is at: the thing's kind if it is in it, "" if not.
+		const auto inThing = [&](u32 npc) -> std::string {
+			const NpcActor* a = npcs.actorOf(npc);
+			return a && a->mob >= 0 && a->mobStage == NpcActor::MOB_IN ? mobs.scheme(u32(a->mob)) : "";
+		};
 		npcs.config().range = 20000.0f;
 		npcs.config().maxShown = 16;
 		if (poor) npcs.config().clipBudget = 9000;
@@ -3679,7 +4126,26 @@ func void Rtn_start_502() {
 			CHECK(std::string(net.nodeName(u32(a->atNode))) == post.name && game.npc(guard).active);
 			if (!poor) CHECK(a->anim.current() && (a->anim.current() == a->rig->model.clip("S_LGUARD") || a->phase == NpcActor::PLAYING));
 		}
-		CHECK(away(smith, wayPoint("CAMP_SMITH").pos) < 60.0f && away(walker, wayPoint("ROAD_1").pos) < 60.0f);
+		CHECK(away(walker, wayPoint("ROAD_1").pos) < 60.0f);
+		{
+			// The smith is at his anvil: a pace from it, on the side he came
+			// from, facing it - and in the one state such a thing has.
+			const NpcActor* a = npcs.actorOf(smith);
+			const SrcMob& anvil = mobOf("BSANVIL", 0);
+			if (poor) {
+				// (No memory for the animation: he stands where he was sent, and leaves the anvil be.)
+				CHECK(a && a->mob == -1 && a->mobFailed >= 0 && mobs.isScheme(u32(a->mobFailed), "BSANVIL") && npcs.stats().mobsFailed == 1);
+				CHECK(away(smith, anvil.pos) < 85.0f && mobs.heldBy(smith) == -1);
+			} else {
+				CHECK(inThing(smith) == "BSANVIL" && a->mobState == 0 && a->mobKind == MOB_SLOT_DIST && mobs.heldBy(smith) == a->mob);
+				CHECK(std::fabs(away(smith, anvil.pos) - 75.0f) < 1.0f && game.npc(smith).pos[0] > anvil.pos[0]);
+				const GameNpc& n = game.npc(smith);
+				CHECK(std::fabs(n.yaw - std::atan2(anvil.pos[0] - n.pos[0], anvil.pos[2] - n.pos[2])) < 0.02f);
+				CHECK(std::string(a->stance) == "BSANVIL_S0" && a->anim.current() &&
+				      (a->anim.current() == a->rig->model.clip("S_BSANVIL_S0") || a->phase == NpcActor::PLAYING));
+				CHECK(npcs.stats().mobsUsed == 1 && npcs.stats().mobsInUse == 1 && npcs.stats().mobsFailed == 0);
+			}
+		}
 		// The creatures are in the state their scheduler chose, each at a spot of its own.
 		{
 			std::set<int> spots;
@@ -3700,7 +4166,7 @@ func void Rtn_start_502() {
 		CHECK(global("PROBE_LOOPS") >= 10 && global("PROBE_ENDED") == 0 && text("PROBE_OWN") == "CAMP_SQUARE");
 		CHECK(std::abs(global("PROBE_DIST_WP") - 610) < 60 && global("PROBE_DIST_NONE") == INT_MAX && text("PROBE_WP") == "CAMP_SQUARE");
 		CHECK(global("PROBE_STATE") == 1 && global("PROBE_DETECT") == 1 && global("PROBE_OTHER") == 500);
-		CHECK(std::abs(global("PROBE_DIST_NPC") - 538) < 60);
+		CHECK(std::abs(global("PROBE_DIST_NPC") - 618) < 60);
 		// The square's way point faces +X and the smithy, to its west, faces
 		// west: at first neither sees the other. Then the one turns round.
 		CHECK(global("PROBE_SEE_FIRST") == 0 && global("PROBE_SEE") == 1);
@@ -3710,6 +4176,12 @@ func void Rtn_start_502() {
 			CHECK(std::fabs(p.yaw - std::atan2(o.pos[0] - p.pos[0], o.pos[2] - p.pos[2])) < 0.02f);
 		}
 		CHECK(global("PROBE_BODY") == kBsStand && global("PROBE_FP") == 1 && global("PROBE_TIME") >= 10);
+		// Of the things within ten metres the bench is free and the anvil is
+		// the smith's; the beds are too far away; a free thing is in its
+		// first state, one that is not there in none. And the smith's body is
+		// busy with a thing (one that is neither sat on nor lain in).
+		CHECK(global("PROBE_MOB") == (poor ? 11 : 1) && global("PROBE_MOB_STATE") == 0 - 10 && text("PROBE_MOB_OWN").empty());
+		CHECK(global("PROBE_SMITH_BODY") == (poor ? kBsStand : (16 | (1 << 15))));
 		{
 			const Vec3 eye = app.player().eye();
 			const GameNpc& p = game.npc(probe);
@@ -3732,9 +4204,10 @@ func void Rtn_start_502() {
 		{
 			// The guard has walked from the gate to the fire: through the gate
 			// and along the paths, at a walk, on the ground - and sat down.
+			// (The digger from the smithy was there first and has the bench.)
 			const NpcActor* a = npcs.actorOf(jackal);
 			CHECK(a && a->atFree >= 0 && net.nameContains(u32(a->atFree), "SIT") && (poor || std::string(a->stance) == "SIT"));
-			if (variant == 0)
+			if (variant == 0 || getenv("G3_TRACE"))
 				std::printf("       the guard's way to the fire: %.0f cm, at most %.0f cm/s, %.0f cm off the paths, %.1f cm off the ground\n",
 				            double(w.travelled), double(w.fastest), double(w.farthestOff), double(w.worstGround));
 			CHECK(w.throughGate && w.travelled > 3200.0f && w.travelled < 4200.0f && w.farthestOff < 100.0f && w.worstGround < 3.0f);
@@ -3744,10 +4217,36 @@ func void Rtn_start_502() {
 				CHECK(away(jackal, seat.pos) < 80.0f && std::fabs(game.npc(jackal).yaw - seat.yaw) < 0.01f);
 				if (!poor) CHECK(a->bodyState == kBsSit);
 			}
-			// The digger from the smithy sits at another seat; the one from the
-			// road stands at the fire's way point; the first guard has not moved.
+			// The digger from the smithy has left his anvil and sits on the
+			// bench - a step back from where he stood in front of it, his back
+			// to it; the one from the road stands at the fire's way point; the
+			// first guard has not moved.
 			const NpcActor* b = npcs.actorOf(smith);
-			CHECK(b && b->atFree >= 0 && a && b->atFree != a->atFree && net.heldBy(smith) == b->atFree && net.heldBy(jackal) == a->atFree);
+			CHECK(a && net.heldBy(jackal) == a->atFree && b);
+			if (poor) {
+				// (Without the animations: on the ground, like the guard.)
+				CHECK(b && b->mob == -1 && b->atFree >= 0 && a && b->atFree != a->atFree);
+			} else if (b) {
+				const SrcMob& bench = mobOf("BENCH", 0);
+				CHECK(inThing(smith) == "BENCH" && b->mobState == 1 && std::string(b->stance) == "BENCH_S1" && b->atFree == -1);
+				CHECK(b->anim.current() == b->rig->model.clip("S_BENCH_S1"));
+				bool onSlot = false;
+				for (const SrcMobSlot& slot : bench.slots) {
+					const float backX = slot.pos[0] - std::sin(slot.yaw) * 40.0f, backZ = slot.pos[2] - std::cos(slot.yaw) * 40.0f;
+					onSlot = onSlot || (std::hypot(game.npc(smith).pos[0] - backX, game.npc(smith).pos[2] - backZ) < 5.0f &&
+					                    std::fabs(game.npc(smith).yaw - slot.yaw) < 0.01f);
+				}
+				if (!onSlot)
+					std::printf("       on the bench at %.1f %.1f facing %.3f; slots at %.1f %.1f (%.3f) and %.1f %.1f\n", double(game.npc(smith).pos[0]),
+					            double(game.npc(smith).pos[2]), double(game.npc(smith).yaw), double(bench.slots[0].pos[0]),
+					            double(bench.slots[0].pos[2]), double(bench.slots[0].yaw), double(bench.slots[1].pos[0]), double(bench.slots[1].pos[2]));
+				CHECK(onSlot && mobs.userOf(u32(b->mob)) == int(smith) && net.heldBy(smith) == -1);
+				// What the scripts are told: the bench is taken, the anvil
+				// free again, and the one on the bench is sitting.
+				CHECK(global("PROBE_MOB") == 10 && global("PROBE_MOB_STATE") == -1 - 10 && global("PROBE_SITTER_BODY") == kBsSit);
+				// The scripts are told what his body is doing: sitting.
+				CHECK(npcs.stats().mobsUsed == 2 && npcs.stats().mobsInUse == 1);
+			}
 			const NpcActor* c = npcs.actorOf(walker);
 			CHECK(c && c->atNode >= 0 && std::string(net.nodeName(u32(c->atNode))) == "CAMP_FIRE" && away(walker, fire.pos) < 60.0f);
 			const NpcActor* t = npcs.actorOf(thorus);
@@ -3760,9 +4259,24 @@ func void Rtn_start_502() {
 		run(45.0f, jackal, &night);
 		trace("night");
 		{
+			// To bed: the state that walks to the hut hands over to the one
+			// that gets into the bed there - from its front, which is where
+			// the hut's way point is nearest to.
 			const NpcActor* a = npcs.actorOf(jackal);
-			CHECK(a && a->state == zsSleep && a->prevState == zsSit && a->atFree == -1 && net.heldBy(jackal) == -1);
-			CHECK(away(jackal, wayPoint("CAMP_HUT_1").pos) < 60.0f && (poor || std::string(a->stance) == "SIT"));
+			const u32 zsSleepBed = game.vm().find("ZS_SLEEPBED");
+			CHECK(a && a->state == zsSleepBed && a->prevState == zsSleep && a->atFree == -1 && net.heldBy(jackal) == -1);
+			CHECK(away(jackal, wayPoint("CAMP_HUT_1").pos) < 70.0f);
+			if (!poor && a) {
+				const SrcMob& bed = mobOf("BEDHIGH", 0);
+				CHECK(inThing(jackal) == "BEDHIGH" && a->mobState == 1 && a->mobKind == MOB_SLOT_FRONT && std::string(a->stance) == "BEDHIGH_S1");
+				CHECK(away(jackal, bed.slots[0].pos) < 1.0f && std::fabs(game.npc(jackal).yaw - bed.slots[0].yaw) < 0.01f);
+				CHECK(a->anim.current() == a->rig->model.clip("S_BEDHIGH_S1"));
+				// The other bed has the digger in it; the bench and the anvil are free again.
+				CHECK(inThing(smith) == "BEDHIGH" && npcs.actorOf(smith)->mob != a->mob && npcs.stats().mobsInUse == 2);
+				u32 free = 0;
+				for (u32 m = 0; m < mobs.count(); ++m) free += mobs.userOf(m) < 0;
+				CHECK(free == 3 && npcs.stats().mobsUsed == 4);
+			}
 			CHECK(night.farthestOff < 190.0f && night.travelled > 1000.0f); // (the seat is 1.7 m off the path)
 			u32 asleep = 0;
 			for (u32 i = 0; i < npcs.actorCount(); ++i) {
@@ -3781,6 +4295,15 @@ func void Rtn_start_502() {
 		{
 			const NpcActor* a = npcs.actorOf(jackal);
 			CHECK(a && a->state == zsGuard && away(jackal, wayPoint("CAMP_GATE_GUARD_R").pos) < 60.0f && (poor || std::string(a->stance) == "LGUARD"));
+			// Out of bed and off: nothing of the bed sticks to him, and he
+			// walked from where he had stood before getting in.
+			CHECK(a && a->mob == -1 && a->mobStage == NpcActor::MOB_NONE && mobs.heldBy(jackal) == -1 && a->grounded);
+			if (!poor) {
+				CHECK(inThing(smith) == "BSANVIL" && npcs.stats().mobsInUse == 1 && npcs.stats().mobsUsed == 5);
+				u32 used = 0;
+				for (u32 m = 0; m < mobs.count(); ++m) used += mobs.userOf(m) >= 0;
+				CHECK(used == 1);
+			}
 			u32 awake = 0;
 			for (u32 i = 0; i < npcs.actorCount(); ++i) {
 				const NpcActor& c = npcs.actor(i);
@@ -3796,6 +4319,7 @@ func void Rtn_start_502() {
 			            ns.clipsRefused, ns.clips, ns.clipBytes / 1024, game.vm().stats().errors, game.vm().stats().aborted,
 			            game.vm().stats().nullAccess);
 		CHECK(ns.paths >= 6 && ns.noPath == 0 && ns.snapped == 0 && ns.queueFull == 0 && ns.clipsMissing == 0);
+		CHECK(poor ? ns.mobsFailed >= 3 && ns.mobsUsed == ns.mobsFailed : ns.mobsFailed == 0);
 		CHECK(game.vm().stats().errors == 0 && game.vm().stats().aborted == 0 && game.vm().stats().nullAccess == 0);
 		// (What everybody stands in was read before the budget was cut.)
 		CHECK(poor ? (ns.clipsRefused > 0 && ns.clips <= 4) : (ns.clipsRefused == 0 && ns.clips >= 15 && ns.clipBytes > 40000));
@@ -3811,14 +4335,21 @@ func void Rtn_start_502() {
 			CHECK(npcs.stats().actors == 0 && npcs.stats().near == 0 && npcs.actorOf(jackal) == nullptr);
 			u32 atFire = 0;
 			for (const u32 npc : {jackal, smith, walker}) {
-				CHECK(!game.npc(npc).active && net.heldBy(npc) == -1);
+				CHECK(!game.npc(npc).active && net.heldBy(npc) == -1 && mobs.heldBy(npc) == -1);
 				atFire += away(npc, fire.pos) < 200.0f && std::string(game.text(game.npc(npc).at)) == "CAMP_FIRE";
 			}
 			CHECK(atFire == 3);
 			// Coming back, they begin where the routine has them.
 			npcs.config().range = 20000.0f;
 			run(20.0f, jackal, nullptr);
-			CHECK(npcs.stats().actors == 9 && npcs.actorOf(jackal) && std::string(npcs.actorOf(jackal)->stance) == "SIT");
+			// (All three begin at the fire now: whoever asks first has the bench.)
+			CHECK(npcs.stats().actors == 9 && npcs.actorOf(jackal));
+			u32 onBench = 0, onGround = 0;
+			for (const u32 npc : {jackal, smith}) {
+				onBench += inThing(npc) == "BENCH";
+				onGround += npcs.actorOf(npc) && std::string(npcs.actorOf(npc)->stance) == "SIT";
+			}
+			CHECK(onBench == 1 && onGround == 1);
 			// Into the cave and back while they live: nothing left behind.
 			CHECK(app.enterWorld(hashName("world/cave"), nullptr, 0));
 			run(8.0f, jackal, nullptr);
@@ -3840,7 +4371,7 @@ func void Rtn_start_502() {
 	{
 		Pak src;
 		CHECK(src.open(path.c_str()));
-		for (const char* victim : {"world/world/waynet", "script/gothic", "anim/npc.rig0/s_walkl"}) {
+		for (const char* victim : {"world/world/waynet", "world/world/mobs", "script/gothic", "anim/npc.rig0/s_walkl", "anim/npc.rig0/t_bench_s0_2_s1"}) {
 			for (int round = 0; round < 6; ++round) {
 				PakWriter w;
 				bool hit = false;
@@ -4039,6 +4570,7 @@ int main(int argc, char** argv) {
 	             {"hero", testHero},
 	             {"inhabitants", testInhabitants},
 	             {"way net", testWayNet},
+	             {"mobs", testMobs},
 	             {"life", testLife},
 	             {"sky", testSky}};
 	for (auto& t : tests) {

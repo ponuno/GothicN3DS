@@ -42,6 +42,12 @@ const int NPC_WALK = 1;
 const int LOOP_CONTINUE = 0;
 const int LOOP_END      = 1;
 const int BS_SIT = 65547;         // 11, with free hands
+const int BS_LIE = 12;
+const int BS_MOBINTERACT = 15;
+const int BS_MOBINTERACT_INTERRUPT = 32784; // 16, interruptable
+// Which kinds of things one sits on and lies in (the engine reads these).
+const string MOB_SIT = "BENCH,CHAIR,GROUND,THRONE";
+const string MOB_LIE = "BED,BEDHIGH,BEDLOW";
 const int PERC_ASSESSPLAYER = 1;
 
 const int AIV_WASDEFEATED = 3;
@@ -191,6 +197,10 @@ extern func void   Npc_SetPercTime(var C_NPC n, var float seconds);
 extern func void   Npc_PercEnable(var C_NPC n, var int perception, var func reaction);
 extern func int    Npc_IsInState(var C_NPC n, var func state);
 extern func string Npc_GetNearestWP(var C_NPC n);
+extern func int    AI_UseMob(var C_NPC n, var string scheme, var int targetState);
+extern func int    Wld_IsMobAvailable(var C_NPC n, var string scheme);
+extern func int    Wld_GetMobState(var C_NPC n, var string scheme);
+extern func string Npc_GetDetectedMob(var C_NPC n);
 
 // ---------------------------------------------------------------- helpers
 var int Kapitel;
@@ -256,8 +266,11 @@ func void ZS_SitAround() {
 	if (Npc_GetDistToWP(self, self.wp) > 300) { AI_GotoWP(self, self.wp); };
 };
 func int ZS_SitAround_Loop() {
-	if (!Npc_IsOnFP(self, "SIT")) {
-		if (Wld_IsFPAvailable(self, "SIT")) {
+	// On a bench if there is a free one about, else on the ground by the fire.
+	if (Npc_GetBodyState(self) != BS_SIT) {
+		if (Wld_IsMobAvailable(self, "BENCH")) {
+			AI_UseMob(self, "BENCH", 1);
+		} else if (Wld_IsFPAvailable(self, "SIT")) {
 			AI_GotoFP(self, "SIT");
 			AI_AlignToFP(self);
 			AI_PlayAniBS(self, "T_STAND_2_SIT", BS_SIT);
@@ -267,6 +280,7 @@ func int ZS_SitAround_Loop() {
 	return LOOP_CONTINUE;
 };
 func void ZS_SitAround_End() {
+	AI_UseMob(self, "BENCH", -1);
 	AI_StandUp(self);
 };
 
@@ -275,27 +289,35 @@ func void ZS_Smith() {
 	AI_SetWalkmode(self, NPC_RUN);
 	AI_GotoWP(self, self.wp);
 	AI_AlignToWP(self);
+	AI_UseMob(self, "BSANVIL", 1);
 };
 func int ZS_Smith_Loop() {
-	AI_PlayAni(self, "T_SEARCH");
+	if (Hlp_Random(100) < 20) { AI_PlayAni(self, "T_SEARCH"); };
 	AI_Wait(self, 2);
 	return LOOP_CONTINUE;
 };
-func void ZS_Smith_End() {};
+func void ZS_Smith_End() {
+	AI_UseMob(self, "BSANVIL", -1);
+};
 
-// (No beds here: sleeping is sitting down by the hut.)
+// To bed, if the hut has one that is free; else it is sitting down by the hut.
 func void ZS_Sleep() {
 	AI_StandUp(self);
 	AI_SetWalkmode(self, NPC_WALK);
 	AI_GotoWP(self, self.wp);
 	AI_AlignToWP(self);
-	AI_PlayAniBS(self, "T_STAND_2_SIT", BS_SIT);
+	AI_StartState(self, ZS_SleepBed, 1, "");
 };
-func int ZS_Sleep_Loop() {
+func void ZS_SleepBed() {
+	if (Wld_IsMobAvailable(self, "BEDHIGH")) { AI_UseMob(self, "BEDHIGH", 1); }
+	else                                     { AI_PlayAniBS(self, "T_STAND_2_SIT", BS_SIT); };
+};
+func int ZS_SleepBed_Loop() {
 	AI_Wait(self, 1);
 	return LOOP_CONTINUE;
 };
-func void ZS_Sleep_End() {
+func void ZS_SleepBed_End() {
+	AI_UseMob(self, "BEDHIGH", -1);
 	AI_StandUp(self);
 };
 

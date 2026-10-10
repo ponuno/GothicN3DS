@@ -1,5 +1,5 @@
 // Cuts a triangle soup into grid chunks with quantised, de-duplicated
-// vertices and one index range (batch) per material.
+// vertices and one index range (batch) per material and cluster.
 #pragma once
 #include "g3ds/world.h"
 #include "scene.h"
@@ -37,6 +37,10 @@ struct ChunkerOptions {
 	// sides of the seam use the same lattice points.
 	bool seal = true;
 	float sealTolerance = 0.5f; // cm
+	// A chunk's triangles are sorted into boxes of this edge (by centroid), and
+	// every material gets a batch per box: the runtime draws the boxes that are
+	// in view instead of the whole chunk. 0: one batch per material, as before.
+	float clusterSize = 1000.0f; // cm
 };
 
 struct ChunkerStats {
@@ -57,6 +61,9 @@ struct ChunkerStats {
 	u32 maxChunkVertices = 0;
 	u32 maxChunkBatches = 0;
 	u64 batches = 0;
+	u64 clusters = 0;      // boxes the chunks were cut into (a chunk has 255 at most)
+	u32 maxChunkClusters = 0;
+	u32 coarsenedChunks = 0; // chunks whose boxes had to be bigger than asked to stay within 255
 	u64 detailTriangles[DETAIL_COUNT] = {0, 0, 0};
 	float maxPosError = 0; // cm, worst-case quantisation step / 2
 };

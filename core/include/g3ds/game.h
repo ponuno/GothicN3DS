@@ -69,6 +69,54 @@ struct FreePoint {
 };
 static_assert(sizeof(FreePoint) == 20, "FreePoint layout");
 
+// "world/<name>/mobs": the things of the world its people use - beds,
+// benches, ore to pick at ("mobs", as the game calls them).
+//   MobsHeader | WorldMob[mobCount] | MobSlot[slotCount] | char names[nameBytes] (padded to 4)
+// A mob is of a "scheme" (the first word of its model's name: "BEDHIGH",
+// "BENCH"), which is what the scripts ask for (AI_UseMob) and what the
+// animations of using it are named after ("T_BENCH_STAND_2_S0"). Its slots
+// are the places one stands at to use it, and which way one faces there; a
+// mob without any is in the table, but nobody can use it.
+constexpr u32 MOBS_MAGIC = fourcc('G', '3', 'M', 'B');
+constexpr u32 MOBS_VERSION = 1;
+
+struct MobsHeader {
+	u32 magic;
+	u32 version;
+	u32 mobCount;  // at most 65534
+	u32 slotCount;
+	u32 nameBytes;
+	u32 reserved[3];
+};
+static_assert(sizeof(MobsHeader) == 32, "MobsHeader layout");
+
+struct WorldMob {
+	float pos[3];
+	float yaw;
+	u32 schemeHash; // hashName of the scheme (upper case)
+	u32 scheme;     // offset into names
+	u32 firstSlot;
+	u8 slotCount;
+	u8 states;      // how many states using it goes through after the first (S0): 1 for a bed (S0, S1)
+	u16 reserved;
+};
+static_assert(sizeof(WorldMob) == 32, "WorldMob layout");
+
+enum MobSlotKind : u8 {
+	MOB_SLOT_PLAIN = 0,
+	MOB_SLOT_FRONT = 1, // the animations used from here have "_FRONT" in their names ...
+	MOB_SLOT_BACK = 2,  // ... or "_BACK"
+	MOB_SLOT_DIST = 3,  // only a distance: one stands that far from the mob on one's own side of it, facing it
+};
+
+struct MobSlot {
+	float pos[3];
+	float yaw;
+	u8 kind; // MobSlotKind
+	u8 reserved[3];
+};
+static_assert(sizeof(MobSlot) == 20, "MobSlot layout");
+
 // "meta/looks": which baked models show a character of a given look. The key
 // is Game::lookKey of the look (model script, body or armour, head and their
 // texture variants), computed alike by the baker and by the game.

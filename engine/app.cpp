@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include "sys.h"
+
 #include <string.h>
 
 namespace g3 {
@@ -212,6 +214,7 @@ void App::checkPortals() {
 }
 
 void App::update(const Input& in, float dt) {
+	collisionStatsReset(); // (what collisionStats() says is one frame's worth)
 	_clock += dt;
 	_env.timeOfDay += in.timeStep;
 	if (_env.dayLength > 0) _env.timeOfDay += dt * 24.0f / _env.dayLength;
@@ -240,8 +243,11 @@ void App::update(const Input& in, float dt) {
 
 	// Stream first, so the chunks the player is about to stand on are there.
 	// Around the player, not the camera: the camera may be behind a wall.
+	const double t0 = sys::timeMs();
 	_world.update(_player.eye());
+	const double t1 = sys::timeMs();
 	_npcs.update(_pak, _world, _player.eye(), _env.timeOfDay, dt);
+	const double t2 = sys::timeMs();
 
 	const bool wasFlying = _player.flying;
 	const bool steered = _hero.loaded() && !wasFlying && !in.toggleFly;
@@ -277,12 +283,23 @@ void App::update(const Input& in, float dt) {
 		}
 	}
 	checkPortals();
+	const double t3 = sys::timeMs();
 	placeCamera(dt);
+	_times.stream = float(t1 - t0);
+	_times.npcs = float(t2 - t1);
+	_times.script = _npcs.stats().scriptMs;
+	_times.player = float(t3 - t2);
+	_times.camera = float(sys::timeMs() - t3);
 }
 
 // How far a small sphere gets from `from` along the unit vector `dir`, up to
 // `range`: the room a camera has there.
 static float cameraRoom(const World& world, Vec3 from, Vec3 dir, float range, float radius) {
+	// Nothing anywhere near the way (the open country): no need to feel along it.
+	const Vec3 to = from + dir * range;
+	const float mn[3] = {min(from.x, to.x) - radius, min(from.y, to.y) - radius, min(from.z, to.z) - radius};
+	const float mx[3] = {max(from.x, to.x) + radius, max(from.y, to.y) + radius, max(from.z, to.z) + radius};
+	if (world.boxFree(mn, mx)) return range;
 	const int steps = max(int(range / 22.0f) + 1, 2);
 	for (int s = 1; s <= steps; ++s) {
 		const float d = range * float(s) / float(steps);

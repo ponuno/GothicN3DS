@@ -6,6 +6,8 @@
 // Npc::nextAiAction, the AI_ and Npc_ externals of its GameScript).
 #include "npcs.h"
 
+#include "sys.h"
+
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -57,6 +59,7 @@ NpcActor* Npcs::actorFor(ScriptInstance* inst) {
 
 const char* Npcs::doing(const NpcActor& a) const {
 	if (!a.ready) return "loading";
+	if (a.mob >= 0 && a.mobStage == NpcActor::MOB_IN) return _mobs.scheme(u32(a.mob));
 	switch (a.phase) {
 	case NpcActor::MOVING: return a.walkMode == NpcActor::WALK ? "walks" : "runs";
 	case NpcActor::TURNING: return "turns";
@@ -115,6 +118,7 @@ void Npcs::wake(NpcActor& a) {
 	a.action = NpcAction();
 	a.carried = false;
 	a.settle = 0;
+	releaseMob(a);
 }
 
 // Back into what it stands (or sits) in.
@@ -217,10 +221,179 @@ void Npcs::stopWalking(NpcActor& a) {
 
 i32 Npcs::bodyStateOf(const NpcActor& a) const {
 	if (a.bodyState >= 0) return a.bodyState;
+	if (a.mob >= 0 && a.mobStage >= NpcActor::MOB_ENTERING) {
+		// By the kind of thing, as the scripts' lists sort them.
+		const char* kind = _mobs.scheme(u32(a.mob));
+		const auto listed = [kind](const char* list) {
+			const size_t n = strlen(kind);
+			for (const char* at = list; *at;) {
+				const char* end = strchr(at, ',');
+				const size_t len = end ? size_t(end - at) : strlen(at);
+				if (len == n && strncmp(at, kind, n) == 0) return true;
+				if (!end) break;
+				at = end + 1;
+			}
+			return false;
+		};
+		return listed(_mobSit) ? _bsSit : listed(_mobLie) ? _bsLie : listed(_mobClimb) ? _bsClimb : listed(_mobBusy) ? _bsMob : _bsMobInterrupt;
+	}
 	if (a.phase == NpcActor::MOVING) return a.walkMode == NpcActor::WALK ? kBsWalk : kBsRun;
 	if (strcmp(a.stance, "SIT") == 0) return kBsSit;
 	if (startsWith(a.stance, "SLEEP")) return kBsLie;
 	return kBsStand;
+}
+
+// ---- things to use ----
+
+// The animation of using the thing the actor is at that leads from one state
+// to another (-1: standing by it), or - `from` == `to` - is staying in one:
+// "T_BENCH_STAND_2_S0", "T_BENCH_S0_2_S1", "S_BENCH_S1". From a place in
+// front of or behind the thing the names have that in them
+// ("T_BEDHIGH_FRONT_STAND_2_S0"), if the model has such.
+const Clip* Npcs::mobClip(NpcActor& a, int from, int to, char* nameOut) {
+	if (a.mob < 0) return nullptr;
+	const char* kind = _mobs.scheme(u32(a.mob));
+	const char* const tags[2] = {a.mobKind == MOB_SLOT_FRONT ? "_FRONT" : a.mobKind == MOB_SLOT_BACK ? "_BACK" : "", ""};
+	char state[2][12];
+	const int which[2] = {from, to};
+	for (int k = 0; k < 2; ++k) {
+		if (which[k] < 0)
+			snprintf(state[k], sizeof(state[k]), "STAND");
+		else
+			snprintf(state[k], sizeof(state[k]), "S%u", unsigned(which[k]) % 100u);
+	}
+	for (int k = 0; k < 2; ++k) {
+		if (k == 1 && !tags[0][0]) break;
+		char name[96];
+		if (from == to)
+			snprintf(name, sizeof(name), "S_%.40s%s_%s", kind, tags[k], state[0]);
+		else
+			snprintf(name, sizeof(name), "T_%.40s%s_%s_2_%s", kind, tags[k], state[0], state[1]);
+		if (const Clip* c = clip(a, name)) {
+			if (nameOut) upperCopy(nameOut, 40, name);
+			return c;
+		}
+	}
+	return nullptr;
+}
+
+// The actor has nothing to do with its thing any more.
+void Npcs::releaseMob(NpcActor& a) {
+	if (a.mob < 0 && a.mobStage == NpcActor::MOB_NONE) return;
+	const bool wasIn = a.mobStage >= NpcActor::MOB_ENTERING;
+	_mobs.drop(a.npc);
+	a.mob = -1;
+	a.mobStage = NpcActor::MOB_NONE;
+	a.mobState = -1;
+	if (wasIn) {
+		// Back on its own feet, where it stood before it got in.
+		GameNpc& n = _game.npcMut(a.npc);
+		memcpy(n.pos, a.mobPos, sizeof(a.mobPos));
+		a.stance[0] = 0;
+		a.carried = false;
+		a.grounded = false;
+		a.bodyState = -1;
+	}
+}
+
+// A step of using a thing (NPC_ACT_USE_MOB). True once the action is done.
+bool Npcs::useMob(NpcActor& a, float dt) {
+	GameNpc& n = _game.npcMut(a.npc);
+	if (a.mob < 0 || u32(a.mob) >= _mobs.count()) {
+		releaseMob(a);
+		return true;
+	}
+	const int goal = a.action.i < 0 ? -1 : min<int>(a.action.i, _mobs.mob(u32(a.mob)).states);
+	switch (a.mobStage) {
+	case NpcActor::MOB_COMING:
+		if (!walkTo(a, a.mobPos, 20.0f, dt, true)) return false;
+		stopWalking(a);
+		a.mobStage = NpcActor::MOB_TURNING;
+		return false;
+	case NpcActor::MOB_TURNING: {
+		// The last steps first; then round to face the way the thing is used,
+		// shuffling onto the very spot the animations begin at.
+		const bool faces = turn(a, a.mobYaw, 3.6f, dt);
+		if (a.settle > 0.0f) return false;
+		const float dx = a.mobPos[0] - n.pos[0], dz = a.mobPos[2] - n.pos[2];
+		const float off = sqrtf(dx * dx + dz * dz), step = 90.0f * dt;
+		if (off > step) {
+			n.pos[0] += dx / off * step;
+			n.pos[2] += dz / off * step;
+			return false;
+		}
+		if (!faces) return false;
+		memcpy(n.pos, a.mobPos, sizeof(a.mobPos));
+		n.yaw = a.mobYaw;
+		a.carried = false;
+		a.mobStage = NpcActor::MOB_ENTERING;
+		a.mobState = -1;
+		a.wait = 0;
+		a.phase = NpcActor::PLAYING;
+		++_stats.mobsUsed;
+		return false;
+	}
+	case NpcActor::MOB_ENTERING:
+	case NpcActor::MOB_IN:
+		a.wait -= dt;
+		if (a.wait > 0.0f) return false;
+		// (Asked to go back a state or more: the same steps the other way.)
+		for (int steps = 0; steps < 8 && a.mobState != goal; ++steps) {
+			const int next = a.mobState < goal ? a.mobState + 1 : a.mobState - 1;
+			if (next < 0) break; // (leaving is not this action's business)
+			const Clip* c = mobClip(a, a.mobState, next, nullptr);
+			if (!c && a.mobState < 0) {
+				// This body has no way of using such a thing (or there is no
+				// memory for the animation): it leaves it be.
+				++_stats.mobsFailed;
+				a.mobFailed = a.mob;
+				releaseMob(a);
+				fallBack(a, 0.2f);
+				a.phase = NpcActor::IDLE;
+				return true;
+			}
+			a.mobState = i8(next);
+			if (!c) continue; // no step of its own between the two: it simply is there
+			a.anim.play(c, -1.0f);
+			a.carried = c->moves();
+			a.wait = c->duration();
+			a.mobStage = NpcActor::MOB_ENTERING;
+			return false;
+		}
+		// There: it stays in that state.
+		a.mobStage = NpcActor::MOB_IN;
+		a.carried = false;
+		{
+			char name[40] = "";
+			if (const Clip* c = mobClip(a, a.mobState, a.mobState, name)) {
+				upperCopy(a.stance, sizeof(a.stance), name + 2); // ("S_BENCH_S1" is being in "BENCH_S1")
+				a.idle = c;
+				if (a.anim.current() != c) a.anim.play(c, 0.2f);
+			}
+		}
+		a.phase = NpcActor::IDLE;
+		return true;
+	case NpcActor::MOB_LEAVING:
+		a.wait -= dt;
+		if (a.wait > 0.0f) return false;
+		for (int steps = 0; steps < 8 && a.mobState >= 0; ++steps) {
+			const int next = a.mobState - 1;
+			const Clip* c = mobClip(a, a.mobState, next, nullptr);
+			a.mobState = i8(next);
+			if (!c) continue;
+			a.anim.play(c, -1.0f);
+			a.carried = c->moves();
+			a.wait = c->duration();
+			return false;
+		}
+		releaseMob(a);
+		fallBack(a, 0.2f);
+		a.phase = NpcActor::IDLE;
+		return true;
+	default:
+		releaseMob(a);
+		return true;
+	}
 }
 
 // ---- the queue ----
@@ -228,6 +401,10 @@ i32 Npcs::bodyStateOf(const NpcActor& a) const {
 void Npcs::clearQueue(NpcActor& a) {
 	a.queueHead = a.queueCount = 0;
 	if (a.phase == NpcActor::MOVING) stopWalking(a);
+	if (a.mob >= 0 && a.mobStage < NpcActor::MOB_ENTERING) releaseMob(a); // (only on its way there)
+	// In the middle of getting in or out: it stays where the step in hand
+	// leads; what comes next takes it from there.
+	if (a.mob >= 0 && a.mobStage != NpcActor::MOB_IN) a.mobStage = NpcActor::MOB_IN;
 	a.action = NpcAction();
 	a.phase = NpcActor::IDLE;
 	a.wait = 0;
@@ -267,7 +444,9 @@ i32 Npcs::invoke(NpcActor& a, u32 fn) {
 	vm.setInstance(self, _game.npc(a.npc).object);
 	vm.setInstance(other, a.other >= 0 && u32(a.other) < _game.npcCount() ? _game.npc(u32(a.other)).object : nullptr);
 	vm.setInstance(_victim, nullptr);
+	const double before = sys::timeMs();
 	const i32 result = vm.callInt(fn);
+	_stats.scriptMs += float(sys::timeMs() - before);
 	vm.setInstance(self, selfBefore);
 	vm.setInstance(other, otherBefore);
 	vm.setInstance(_victim, victimBefore);
@@ -299,6 +478,7 @@ void Npcs::startState(NpcActor& a, u32 fn, bool finalizeOld, const char* wp, boo
 	clearState(a, finalizeOld);
 	if (wp && *wp) _game.setWayPoint(n, wp);
 	a.state = fn;
+	a.mobFailed = -1;
 	const ScriptState* st = vm.stateOf(fn);
 	a.loopFn = st ? st->loop : SCRIPT_NONE;
 	a.endFn = st ? st->end : SCRIPT_NONE;
@@ -473,7 +653,7 @@ bool Npcs::walkTo(NpcActor& a, const float target[3], float radius, float dt, bo
 
 // Starts the action that has just come off the queue. True if that is all
 // there is to it.
-bool Npcs::begin(NpcActor& a, const World&) {
+bool Npcs::begin(NpcActor& a, const World& world) {
 	GameNpc& n = _game.npcMut(a.npc);
 	NpcAction& act = a.action;
 	switch (act.kind) {
@@ -548,9 +728,55 @@ bool Npcs::begin(NpcActor& a, const World&) {
 		a.phase = NpcActor::WAITING;
 		return false;
 	case NPC_ACT_STAND_UP:
+		if (a.mob >= 0) {
+			// Up from a bench is out of the bench.
+			act.kind = NPC_ACT_USE_MOB;
+			act.i = -1;
+			return begin(a, world);
+		}
 		if (!standUp(a)) return true;
 		a.phase = NpcActor::PLAYING;
 		return false;
+	case NPC_ACT_USE_MOB: {
+		if (act.i < 0) {
+			if (a.mob < 0) return true;
+			if (a.mobStage < NpcActor::MOB_ENTERING) {
+				// (It never got there.)
+				if (a.phase == NpcActor::MOVING) stopWalking(a);
+				releaseMob(a);
+				return true;
+			}
+			a.mobStage = NpcActor::MOB_LEAVING;
+			a.wait = 0;
+			a.phase = NpcActor::PLAYING;
+			return false;
+		}
+		const int mob = a.mob >= 0 && _mobs.isScheme(u32(a.mob), act.text) ? a.mob : _mobs.find(n.pos, act.text, a.npc, a.mobFailed);
+		if (mob < 0) return true; // none around: the state goes on without
+		if (a.mob >= 0 && a.mob != mob) {
+			// At another thing: out of that first, then this again.
+			pushFront(a, act);
+			act.i = -1;
+			return begin(a, world);
+		}
+		if (a.mob >= 0 && a.mobStage >= NpcActor::MOB_ENTERING) {
+			a.wait = 0; // at it already: on to the state asked for
+			a.phase = NpcActor::PLAYING;
+			return false;
+		}
+		if (!_mobs.hold(u32(mob), a.npc)) return true;
+		a.mob = mob;
+		a.mobState = -1;
+		const int slot = _mobs.place(u32(mob), n.pos, a.mobPos, a.mobYaw);
+		a.mobKind = slot >= 0 ? _mobs.slot(u32(mob), u32(slot)).kind : u8(MOB_SLOT_PLAIN);
+		_net.drop(a.npc);
+		a.atFree = a.atNode = -1;
+		a.attached = false;
+		a.bestDist = 1e30f;
+		a.stuck = 0;
+		a.mobStage = NpcActor::MOB_COMING;
+		return false;
+	}
 	case NPC_ACT_WALK_MODE: {
 		const u8 mode = (act.i & 0x7F) == 0 ? u8(NpcActor::RUN) : u8(NpcActor::WALK);
 		if (mode != a.walkMode) {
@@ -640,6 +866,8 @@ bool Npcs::carryOn(NpcActor& a, const World&, float dt) {
 		a.phase = NpcActor::IDLE;
 		return true;
 	}
+	case NPC_ACT_USE_MOB:
+		return useMob(a, dt);
 	case NPC_ACT_PLAY_ANI:
 	case NPC_ACT_STAND_UP:
 	case NPC_ACT_WAIT:
@@ -691,7 +919,11 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 				// Nobody walks off sitting.
 				const bool leaves = next.kind == NPC_ACT_GOTO_NODE || next.kind == NPC_ACT_GOTO_POS ||
 				                    next.kind == NPC_ACT_GOTO_NEXT_FP || next.kind == NPC_ACT_GOTO_NPC;
-				if (leaves && a.stance[0]) {
+				if (leaves && a.mob >= 0) {
+					next = NpcAction(); // ... or with a bench still under him
+					next.kind = NPC_ACT_USE_MOB;
+					next.i = -1;
+				} else if (leaves && a.stance[0]) {
 					next = NpcAction();
 					next.kind = NPC_ACT_STAND_UP;
 				} else {
@@ -713,8 +945,17 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 		}
 	}
 	// A gesture that has run out leaves it standing (or sitting) as before.
-	if (a.anim.finished() && a.phase != NpcActor::MOVING && a.action.kind != NPC_ACT_PLAY_ANI) fallBack(a, 0.2f);
-	if (walked || a.phase == NpcActor::MOVING || !a.grounded) ground(a, world, 120.0f);
+	if (a.anim.finished() && a.phase != NpcActor::MOVING && a.action.kind != NPC_ACT_PLAY_ANI && a.action.kind != NPC_ACT_USE_MOB)
+		fallBack(a, 0.2f);
+	// ... and on a bench so does one that has led on into standing: a look
+	// around from a bench ends on the bench.
+	else if (a.mob >= 0 && a.mobStage == NpcActor::MOB_IN && (a.action.kind == NPC_ACT_NONE || a.action.kind == NPC_ACT_WAIT) &&
+	         (a.phase == NpcActor::IDLE || a.phase == NpcActor::WAITING) && a.idle && a.anim.current() && a.anim.current() != a.idle &&
+	         a.anim.current()->loops())
+		fallBack(a, 0.25f);
+	// (In a bed the ground is no concern: the animation knows where the body is.)
+	const bool inMob = a.mob >= 0 && a.mobStage >= NpcActor::MOB_ENTERING;
+	if ((walked || a.phase == NpcActor::MOVING || !a.grounded) && !inMob) ground(a, world, 120.0f);
 }
 
 // ---- what the scripts call ----
@@ -1076,8 +1317,78 @@ void Npcs::xCanSeeNpc(ScriptVm& vm, void* user) {
 	vm.pushInt(sees);
 }
 
+void Npcs::xUseMob(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	NpcAction act;
+	act.kind = NPC_ACT_USE_MOB;
+	act.i = vm.popInt();
+	if (act.i < 0) act.i = -1;
+	upperCopy(act.text, sizeof(act.text), vm.popString());
+	self.push(self.actorFor(vm.popInstance()), act);
+	if (vm.symbol(vm.callee()).flags & SCRIPTF_RETURN) vm.pushInt(0);
+}
+
+void Npcs::xIsMobAvailable(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	char kind[48];
+	copyText(kind, sizeof(kind), vm.popString());
+	ScriptInstance* inst = vm.popInstance();
+	const int who = self.npcFor(inst);
+	if (who < 0 || !self._cfg.alive) {
+		vm.pushInt(0);
+		return;
+	}
+	const NpcActor* a = self.actorFor(inst);
+	if (a && a->mob >= 0 && self._mobs.isScheme(u32(a->mob), kind)) {
+		vm.pushInt(1); // the one it is at
+		return;
+	}
+	vm.pushInt(self._mobs.find(self._game.npc(u32(who)).pos, kind, u32(who), a ? a->mobFailed : -1) >= 0);
+}
+
+void Npcs::xGetMobState(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	char kind[48];
+	copyText(kind, sizeof(kind), vm.popString());
+	ScriptInstance* inst = vm.popInstance();
+	const int who = self.npcFor(inst);
+	const NpcActor* a = self.actorFor(inst);
+	if (a && a->mob >= 0 && self._mobs.isScheme(u32(a->mob), kind))
+		vm.pushInt(max<i32>(a->mobState, 0));
+	else // (a thing nobody is at rests in its first state)
+		vm.pushInt(who >= 0 && self._mobs.find(self._game.npc(u32(who)).pos, kind, u32(who)) >= 0 ? 0 : -1);
+}
+
+void Npcs::xGetDetectedMob(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const NpcActor* a = self.actorFor(vm.popInstance());
+	vm.pushString(a && a->mob >= 0 ? self._mobs.scheme(u32(a->mob)) : "");
+}
+
 void Npcs::bindAi() {
 	ScriptVm& vm = _game.vm();
+	// How the scripts count what a body is doing while it uses a thing, and
+	// which kinds of things mean what (their own lists; the game's, should
+	// they have none).
+	const auto number = [&](const char* name, i32 otherwise) {
+		const u32 sym = vm.find(name);
+		return sym != SCRIPT_NONE && vm.symbol(sym).type == SCRIPT_INT && !(vm.symbol(sym).flags & SCRIPTF_MEMBER) ? vm.getInt(sym) : otherwise;
+	};
+	const auto list = [&](const char* name, const char* otherwise, char* to, size_t size) {
+		const u32 sym = vm.find(name);
+		const bool have = sym != SCRIPT_NONE && vm.symbol(sym).type == SCRIPT_STRING && !(vm.symbol(sym).flags & SCRIPTF_MEMBER);
+		upperCopy(to, size, have ? vm.getString(sym) : otherwise);
+	};
+	_bsSit = number("BS_SIT", kBsSit);
+	_bsLie = number("BS_LIE", kBsLie);
+	_bsClimb = number("BS_CLIMB", 9 | kBsInterruptable);
+	_bsMob = number("BS_MOBINTERACT", 15);
+	_bsMobInterrupt = number("BS_MOBINTERACT_INTERRUPT", 16 | kBsInterruptable);
+	list("MOB_SIT", "BENCH,CHAIR,GROUND,THRONE", _mobSit, sizeof(_mobSit));
+	list("MOB_LIE", "BED,BEDHIGH,BEDLOW", _mobLie, sizeof(_mobLie));
+	list("MOB_CLIMB", "CLIMB,LADDER,RANKE", _mobClimb, sizeof(_mobClimb));
+	list("MOB_NOTINTERRUPTABLE", "DOOR,LEVER,TOUCHPLATE,TURNSWITCH,VWHEEL,CHESTBIG,CHESTSMALL,HERB,IDOL,PAN,SMOKE,INNOS", _mobBusy,
+	     sizeof(_mobBusy));
 	_victim = vm.find("VICTIM");
 	if (_victim != SCRIPT_NONE && vm.symbol(_victim).type != SCRIPT_INSTANCE) _victim = SCRIPT_NONE;
 	// (In the order of Game::lifeFunctions, which is the list of their names.)
@@ -1086,10 +1397,11 @@ void Npcs::bindAi() {
 	    xPlayAni,     xPlayAniBs,    xWait,            xStandUp,      xStandUp,      xSetWalkMode,     xStartState,
 	    xContinueRoutine, xTeleport, xClearQueue,      xDistToWp,     xDistToNpc,    xDistToPlayer,    xNearestWp,
 	    xNextWp,      xIsOnFp,       xIsFpAvailable,   xIsNextFpAvailable, xIsInState, xWasInState,    xGetStateTime,
-	    xSetStateTime, xGetBodyState, xSetPercTime,    xDetectNpc,    xCanSeeNpc};
+	    xSetStateTime, xGetBodyState, xSetPercTime,    xDetectNpc,    xCanSeeNpc,    xUseMob,          xIsMobAvailable,
+	    xGetMobState, xGetDetectedMob};
 	u32 count = 0;
 	const char* const* names = Game::lifeFunctions(count);
-	static_assert(sizeof(table) / sizeof(table[0]) == 33, "one function per name");
+	static_assert(sizeof(table) / sizeof(table[0]) == 37, "one function per name");
 	for (u32 i = 0; i < count && i < sizeof(table) / sizeof(table[0]); ++i) vm.bind(names[i], table[i], this);
 }
 

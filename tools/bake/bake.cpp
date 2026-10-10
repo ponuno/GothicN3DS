@@ -611,6 +611,71 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			                 connections, length / 100000.0, isolated, free.size());
 		}
 
+		// ---- the things people use ----
+		std::string mobNote;
+		if (!scene.mobs.empty()) {
+			std::string names;
+			std::map<std::string, u32> nameAt;
+			std::vector<WorldMob> mobs;
+			std::vector<MobSlot> slots;
+			std::map<std::string, u32> byScheme;
+			size_t withoutSlots = 0;
+			for (const SrcMob& src : scene.mobs) {
+				if (mobs.size() >= 65534) break;
+				WorldMob m {};
+				std::copy_n(src.pos, 3, m.pos);
+				m.yaw = src.yaw;
+				m.schemeHash = hashName(src.scheme.c_str());
+				auto at = nameAt.find(src.scheme);
+				if (at == nameAt.end()) {
+					at = nameAt.emplace(src.scheme, u32(names.size())).first;
+					names += src.scheme;
+					names.push_back('\0');
+				}
+				m.scheme = at->second;
+				m.firstSlot = u32(slots.size());
+				m.states = u8(std::clamp(src.states, 0, 16));
+				for (const SrcMobSlot& ss : src.slots) {
+					if (m.slotCount == 255) break;
+					MobSlot slot {};
+					std::copy_n(ss.pos, 3, slot.pos);
+					slot.yaw = ss.yaw;
+					const auto ends = [&](const char* tail) {
+						const size_t n = std::strlen(tail);
+						return ss.name.size() >= n && ss.name.compare(ss.name.size() - n, n, tail) == 0;
+					};
+					slot.kind = ends("_FRONT") ? u8(MOB_SLOT_FRONT) : ends("_BACK") ? u8(MOB_SLOT_BACK) : ends("_DIST") ? u8(MOB_SLOT_DIST) : u8(MOB_SLOT_PLAIN);
+					slots.push_back(slot);
+					++m.slotCount;
+				}
+				withoutSlots += m.slotCount == 0;
+				++byScheme[src.scheme];
+				mobs.push_back(m);
+			}
+			while (names.size() % 4) names.push_back('\0');
+			MobsHeader mh {};
+			mh.magic = MOBS_MAGIC;
+			mh.version = MOBS_VERSION;
+			mh.mobCount = u32(mobs.size());
+			mh.slotCount = u32(slots.size());
+			mh.nameBytes = u32(names.size());
+			std::vector<u8> blob(sizeof(mh));
+			std::memcpy(blob.data(), &mh, sizeof(mh));
+			append(blob, mobs);
+			append(blob, slots);
+			blob.insert(blob.end(), names.begin(), names.end());
+			pak.add("world/" + bw.name + "/mobs", ASSET_META, blob);
+			std::vector<std::pair<u32, std::string>> order;
+			for (const auto& [scheme, count] : byScheme) order.push_back({count, scheme});
+			std::sort(order.rbegin(), order.rend());
+			std::string list;
+			for (size_t i = 0; i < order.size() && i < 24; ++i) list += format("%s%s x%u", i ? ", " : "", order[i].second.c_str(), order[i].first);
+			mobNote = format("things to use: %zu of %zu kinds, with %zu places to stand at (%zu have none: nobody can use "
+			                 "those): ",
+			                 mobs.size(), byScheme.size(), slots.size(), withoutSlots) +
+			          list + (order.size() > 24 ? ", ..." : "");
+		}
+
 		// ---- report ----
 		line(format("world '%s': %.0f x %.0f x %.0f m, grid %d x %d cells of %.0f m", bw.name.c_str(),
 		            (wh.bbMax[0] - wh.bbMin[0]) / 100.0, (wh.bbMax[1] - wh.bbMin[1]) / 100.0,
@@ -654,6 +719,12 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		            static_cast<unsigned long long>(cs.detailTriangles[DETAIL_MEDIUM]),
 		            static_cast<unsigned long long>(cs.detailTriangles[DETAIL_SMALL]),
 		            static_cast<unsigned long long>(cs.batches), double(cs.batches) / double(chunks.size())));
+		if (cs.clusters)
+			line(format("clusters: the chunks are cut into %llu boxes of %.0f m (%u at most in one%s): %.0f triangles and %.1f "
+			            "batches in a box on average",
+			            static_cast<unsigned long long>(cs.clusters), double(opt.chunker.clusterSize) / 100.0, cs.maxChunkClusters,
+			            cs.coarsenedChunks ? format("; %u chunks needed bigger boxes", cs.coarsenedChunks).c_str() : "",
+			            double(cs.outputTriangles) / double(cs.clusters), double(cs.batches) / double(cs.clusters)));
 		line(format("materials: %zu world materials from %zu source materials, %zu textures; %u blended (%u water), "
 		            "%u animated, %u scrolling",
 		            worldMaterials.size(), size_t(std::count(used[w].begin(), used[w].end(), 1)), textureTable.size(),
@@ -668,6 +739,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			line(format("indoor world: no sky, background colour %u %u %u", scene.fogColor[0], scene.fogColor[1], scene.fogColor[2]));
 		if (!pointNotes[w].empty()) line(pointNotes[w]);
 		if (!wayNote.empty()) line(wayNote);
+		if (!mobNote.empty()) line(mobNote);
 		if (!ladders.empty()) line(format("ladders: %zu", ladders.size()));
 		if (!scene.portals.empty()) {
 			std::string list;

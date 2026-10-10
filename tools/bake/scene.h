@@ -20,7 +20,7 @@ struct SrcVertex {
 struct SrcTriangle {
 	SrcVertex v[3]; // counter-clockwise when seen from the front
 	u32 material;
-	u8 detail = 0; // DetailClass: how far away the triangle is still drawn
+	u8 detail = 0; // DetailClass (bits 0-1): how far away the triangle is still drawn; bits 2-3: its thinning layer (small objects only)
 };
 
 enum class SrcBlend : u8 {

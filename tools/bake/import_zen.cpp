@@ -1073,6 +1073,10 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 		                  : inst.mesh->radius < kMediumRadius ? u8(DETAIL_MEDIUM)
 		                                                      : u8(DETAIL_ALWAYS);
 		++detailCount[detail];
+		// Small things are told apart in four thinning layers (by where they stand, so that every
+		// baking gives the same picture): the menu may leave the last ones out (World::StreamConfig::smallLayers).
+		const u32 spot = u32(int(vob.position.x)) * 73856093u ^ u32(int(vob.position.y)) * 19349663u ^ u32(int(vob.position.z)) * 83492791u;
+		const u8 layered = detail == DETAIL_SMALL ? u8(detail | (((spot >> 9) & 3u) << 2)) : detail;
 
 		for (const FlatSub& sub : inst.mesh->subs) {
 			SrcMaterial sm = sub.material;
@@ -1089,7 +1093,7 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 			for (size_t t = 0; t + 2 < sub.verts.size(); t += 3) {
 				SrcTriangle tri;
 				tri.material = it->second;
-				tri.detail = detail;
+				tri.detail = layered;
 				for (int k = 0; k < 3; ++k) {
 					const FlatVertex& src = sub.verts[t + size_t(k)];
 					const float* p = src.pos;

@@ -1010,7 +1010,7 @@ void Npcs::xGetStateTime(ScriptVm& vm, void* user) {
 void Npcs::xSetStateTime(ScriptVm& vm, void* user) {
 	Npcs& self = *static_cast<Npcs*>(user);
 	const i32 seconds = vm.popInt();
-	if (NpcActor* a = self.actorFor(vm.popInstance())) a->stateTime = float(clamp(seconds, 0, 1 << 24));
+	if (NpcActor* a = self.actorFor(vm.popInstance())) a->stateTime = float(clamp<i32>(seconds, 0, 1 << 24));
 }
 
 void Npcs::xGetBodyState(ScriptVm& vm, void* user) {

@@ -94,7 +94,10 @@ enum ItemEntryFlags : u8 {
 	ITEMF_BUSY = 1 << 5,     // being used right now
 };
 
-constexpr int QUICK_SLOTS = 4; // R + D-Pad up, right, down, left
+// The quick slots: ten, as the number keys of the PC original, on the bottom
+// screen to tap. Anything with an action may go there - a potion is drunk,
+// a weapon taken in hand, armour put on.
+constexpr int QUICK_SLOTS = 10;
 constexpr u32 INVENTORY_MAX = 120;
 
 // A line of the info box, as Gothic lays it out: what, and its number.
@@ -111,7 +114,8 @@ struct ItemEntry {
 	i32 count;
 	i32 value;
 	u8 kind, icon, flags;
-	u8 quick;      // bit k: in quick slot k
+	u16 quick;     // bit k: in quick slot k
+	i16 picture;   // the baked picture (ItemPictures), -1 for none: the drawn icon then
 	u32 tint;      // the picture's colour, 0xRRGGBBAA
 	char name[48]; // UTF-8
 	// The info box: the scripts' own lines (C_ITEM.TEXT / COUNT) where the
@@ -138,6 +142,7 @@ struct InventoryView {
 	u8 quickIcon[QUICK_SLOTS] = {};
 	u32 quickTint[QUICK_SLOTS] = {};
 	char quickName[QUICK_SLOTS][48] = {};
+	i16 quickPicture[QUICK_SLOTS] = {};
 	u32 equip[EQUIP_SLOTS] = {};   // item symbols; SCRIPT_NONE for nothing
 	u8 equipIcon[EQUIP_SLOTS] = {};
 	u32 equipTint[EQUIP_SLOTS] = {};
@@ -145,6 +150,28 @@ struct InventoryView {
 	float messageTime = 0;  // seconds it still shows
 	u32 count = 0;
 	ItemEntry items[INVENTORY_MAX];
+	// The character's page.
+	struct Sheet {
+		char name[48] = "";
+		char guild[48] = "";
+		i32 level = 0, exp = 0, expNext = 0, learn = 0;
+		i32 strength = 0, dexterity = 0;
+		i32 protection[4] = {}; // against weapons, arrows, fire, magic
+		char melee[48] = "", ranged[48] = "", armor[48] = "";
+	} sheet;
+	// The diary (Log_CreateTopic, Log_AddEntry): its topics, newest first,
+	// each with its entries.
+	enum { DIARY_TOPICS = 24, DIARY_ENTRIES = 48 };
+	struct Topic {
+		char name[64];
+		u8 status;    // LOG_RUNNING 1, LOG_SUCCESS 2, LOG_FAILED 3, LOG_OBSOLETE 4 (0: none given)
+		u8 section;   // LOG_MISSION 0, LOG_NOTE 1
+		u16 first, count; // into entries
+	};
+	Topic topics[DIARY_TOPICS];
+	u32 topicCount = 0;
+	char entries[DIARY_ENTRIES][200];
+	u32 entryCount = 0;
 	u32 version = 0;        // changes whenever anything shown changes
 };
 

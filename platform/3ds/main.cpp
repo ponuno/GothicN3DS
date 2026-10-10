@@ -24,12 +24,12 @@
 //                 on to a hostile one in front by itself: the menu's "Автозахват цели")
 //   D-Pad Down    sneak on / off
 //   L             quick magic (not yet)
-//   R (held)      the quick slots show on the top screen; R + D-Pad up / right /
-//                 down / left uses slot 1-4 (what the inventory put there)
 //   START         pause menu: continue, graphics, controls, faults, save, leave
-//   SELECT        the buttons work the inventory on the bottom screen (D-Pad
-//                 choose, L / R page, A use, X + direction: into a quick slot,
-//                 B or SELECT back); the stick still moves the character
+//   SELECT        opens the inventory on the bottom screen (D-Pad choose, L / R
+//                 page, A use, X: into a quick slot, B or SELECT close); the
+//                 character stands while it is open
+//   touch         the bottom screen: the ten quick slots (tap: use), the
+//                 inventory, the diary, the character
 //   R + START     save the position       R + SELECT  load it
 //   L+R+SELECT    write the last 5 seconds of the character's movement to
 //                 sdmc:/3ds/gothic3ds/slope.txt (added at its end): press it where the
@@ -348,14 +348,7 @@ int main(int, char**) {
 			const bool rHeld = (held & KEY_R) != 0 && !(taken & KEY_R);
 			record = (down & KEY_SELECT) && (held & KEY_L) && rHeld;
 			const bool quickSave = (down & KEY_START) && rHeld, quickLoad = (down & KEY_SELECT) && rHeld && !record;
-			// R held: the quick slots, R + D-Pad uses one (the D-Pad's own keys rest meanwhile).
-			app.setQuickHint(rHeld && app.steersHero() && inventoryScreen);
-			if (rHeld && app.steersHero()) {
-				static const u32 kSlotKeys[g3::QUICK_SLOTS] = {KEY_DUP, KEY_DRIGHT, KEY_DDOWN, KEY_DLEFT};
-				for (int q = 0; q < g3::QUICK_SLOTS; ++q)
-					if (gameDown & kSlotKeys[q]) app.quickUse(q);
-			}
-			const u32 dpad = rHeld ? 0u : ~0u; // (with R the D-Pad is the quick slots')
+			const u32 dpad = ~0u;
 			if (app.steersHero()) {
 				in.jump = (gameHeld & KEY_B) != 0;
 				in.attack = in.confirm = (gameDown & KEY_A) != 0;

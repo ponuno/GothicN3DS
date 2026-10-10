@@ -310,13 +310,17 @@ int main(int argc, char** argv) {
 		printf("inventory: %u kinds of things given; health %d of %d\n", kinds, int(g.attributeOf(h, 0)), int(g.attributeOf(h, 1)));
 	}
 	// The scripted touches of --inventory: frame, what, where.
-	enum { T_POTION, T_PAGE_ARMOR, T_FIRST, T_PAGE_FOOD, T_PAGE_ALL };
+	// What is touched: the inventory button, a potion (chosen, then drunk), the
+	// armour page and its first thing (chosen, put on), the food page and its
+	// first thing held into slot 2, the back arrow, slot 2 on the play page.
+	enum { T_OPEN, T_POTION, T_PAGE_ARMOR, T_FIRST, T_PAGE_FOOD, T_SLOT2, T_BACK, T_DIARY, T_CHARACTER };
 	struct Touch {
 		int from, to, what;
 	};
-	static const Touch kTouches[] = {{8, 9, T_POTION},       {14, 15, T_POTION},    {70, 71, T_PAGE_ARMOR}, {76, 77, T_FIRST},
-	                                 {82, 83, T_FIRST},      {90, 91, T_PAGE_FOOD}, {96, 117, T_FIRST},     {124, 125, -2},
-	                                 {130, 131, T_PAGE_ALL}, {136, 137, T_POTION}};
+	static const Touch kTouches[] = {{4, 5, T_OPEN},        {10, 11, T_POTION}, {16, 17, T_POTION}, {70, 71, T_PAGE_ARMOR},
+	                                 {76, 77, T_FIRST},     {82, 83, T_FIRST},  {90, 91, T_PAGE_FOOD}, {96, 117, T_FIRST},
+	                                 {124, 125, T_SLOT2},   {130, 131, T_BACK}, {136, 137, T_SLOT2}, {160, 161, T_DIARY},
+	                                 {170, 171, T_BACK},    {175, 176, T_CHARACTER}};
 	const auto touchAt = [&](int f, PanelInput& pin) {
 		InventoryPanel& panel = app.panel();
 		const InventoryView& v = app.inventory();
@@ -324,11 +328,18 @@ int main(int argc, char** argv) {
 			if (f < t.from || f > t.to) continue;
 			pin.touching = true;
 			int x = 0, y = 0;
-			if (t.what == T_PAGE_ARMOR || t.what == T_PAGE_FOOD || t.what == T_PAGE_ALL) {
-				InventoryPanel::pageCentre(t.what == T_PAGE_ARMOR ? TAB_ARMOR : t.what == T_PAGE_FOOD ? TAB_FOOD : TAB_ALL, x, y);
-			} else if (t.what == -2) {
-				InventoryPanel::crossCentre(1, x, y); // the right arm of the cross
-			} else {
+			switch (t.what) {
+			case T_OPEN: InventoryPanel::buttonCentre(0, x, y); break;
+			case T_DIARY: InventoryPanel::buttonCentre(1, x, y); break;
+			case T_CHARACTER: InventoryPanel::buttonCentre(2, x, y); break;
+			case T_PAGE_ARMOR: InventoryPanel::pageCentre(TAB_ARMOR, x, y); break;
+			case T_PAGE_FOOD: InventoryPanel::pageCentre(TAB_FOOD, x, y); break;
+			case T_SLOT2: InventoryPanel::slotCentre(1, x, y); break;
+			case T_BACK:
+				x = 10;
+				y = 8;
+				break;
+			default: {
 				u32 n = 0;
 				if (t.what == T_POTION)
 					for (u32 k = 0; k < panel.shownCount(); ++k)
@@ -337,6 +348,7 @@ int main(int argc, char** argv) {
 							break;
 						}
 				panel.tileCentre(n, x, y);
+			}
 			}
 			pin.x = x;
 			pin.y = y;
@@ -445,7 +457,6 @@ int main(int argc, char** argv) {
 		if (inventory) {
 			PanelInput pin;
 			touchAt(f, pin);
-			if (f == 160) app.quickUse(1); // (R + right: what the hold put there)
 			app.panelInput(pin, dt);
 		}
 		const double u0 = g3::sys::timeMs();

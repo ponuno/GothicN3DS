@@ -3,6 +3,8 @@
 // slots, and keeping it in state.bin. The rules are in inventory.h.
 #include "app.h"
 
+#include "g3ds/item_view.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -454,9 +456,8 @@ void App::setQuickSlot(int slot, u32 symbol) {
 		Game& g = _npcs.game();
 		const GameItemInfo* it = g.itemInfo(symbol);
 		char name[48], buf[80];
-		static const char* const kDir[QUICK_SLOTS] = {"\xE2\x86\x91", "\xE2\x86\x92", "\xE2\x86\x93", "\xE2\x86\x90"};
 		scriptText(it ? g.text(it->description ? it->description : it->name) : "", name, sizeof(name));
-		snprintf(buf, sizeof(buf), "R+%s: %s", kDir[slot], name);
+		snprintf(buf, sizeof(buf), "Слот %d: %s", (slot + 1) % 10, name);
 		itemMessage(buf, false);
 	}
 }
@@ -684,8 +685,8 @@ const InventoryView& App::inventory() {
 	stamp = mix(stamp, _job.stage);
 	stamp = mix(stamp, _job.symbol);
 	stamp = mix(stamp, _queued);
-	const float share = _job.stage == JOB_USING ? _hero.useProgress() : 0.0f;
-	stamp = mix(stamp, u32(share * 16.0f));
+	stamp = mix(stamp, g.logVersion());
+	stamp = mix(stamp, u32(i32(_inv.messageTime > 0.0f)));
 	if (stamp == _invStamp && v.present) return v;
 	_invStamp = stamp;
 
@@ -696,7 +697,7 @@ const InventoryView& App::inventory() {
 	v.manaMax = g.attributeOf(h, 3);
 	v.combat = combat;
 	v.busy = _job.stage != JOB_NONE;
-	v.busyShare = _job.stage == JOB_USING ? share : _job.stage == JOB_REDRAW ? 1.0f : 0.0f;
+	v.busyShare = 0.0f; // (no bar: as in the original, the animation says how far it is)
 	v.busyText[0] = 0;
 	v.ore = 0;
 	char name[48];
@@ -740,7 +741,7 @@ const InventoryView& App::inventory() {
 		if (!worn && !meetsNeeds(*it, why, sizeof(why))) e.flags |= ITEMF_BLOCKED;
 		if (v.busy && _job.symbol == st.symbol) e.flags |= ITEMF_BUSY;
 		for (int q = 0; q < QUICK_SLOTS; ++q)
-			if (_quick[q] == st.symbol) e.quick |= u8(1 << q);
+			if (_quick[q] == st.symbol) e.quick |= u16(1u << q);
 		// The action.
 		const char* action = "";
 		switch (e.kind) {
@@ -757,7 +758,9 @@ const InventoryView& App::inventory() {
 		}
 		snprintf(e.action, sizeof(e.action), "%s", action);
 		if (action[0]) e.flags |= ITEMF_ACTION;
-		if (((e.kind == IK_POTION || e.kind == IK_FOOD) && it->onUse != NONE) || e.kind == IK_MELEE) e.flags |= ITEMF_QUICK;
+		// Anything with an action may go into a quick slot (a potion, a weapon, armour).
+		if (e.flags & ITEMF_ACTION) e.flags |= ITEMF_QUICK;
+		e.picture = thumbOf(it->visual);
 		// The info box: the scripts' own lines first, as the original shows them.
 		for (int k = 0; k < 6; ++k) {
 			if (!it->text[k]) continue;
@@ -824,14 +827,111 @@ const InventoryView& App::inventory() {
 		v.quick[q] = _quick[q];
 		v.quickCount[q] = _quick[q] != NONE ? g.itemCount(u32(hi), _quick[q]) : 0;
 		picture(_quick[q], v.quickIcon[q], v.quickTint[q], v.quickName[q], sizeof(v.quickName[q]));
+		const GameItemInfo* qi = _quick[q] != NONE ? g.itemInfo(_quick[q]) : nullptr;
+		v.quickPicture[q] = qi ? thumbOf(qi->visual) : i16(-1);
 	}
 	const u32 worn[EQUIP_SLOTS] = {h.armorItem, _amulet, _rings[0], _rings[1], h.melee, h.ranged};
 	for (int k = 0; k < EQUIP_SLOTS; ++k) {
 		v.equip[k] = worn[k];
 		picture(worn[k], v.equipIcon[k], v.equipTint[k], nullptr, 0);
 	}
+	// The character's page.
+	{
+		InventoryView::Sheet& sh = v.sheet;
+		scriptText(g.nameOf(h), sh.name, sizeof(sh.name));
+		const auto member = [&](const char* m) {
+			const u32 sym = g.vm().findMember("C_NPC", m);
+			return sym != NONE && g.vm().symbol(sym).type == SCRIPT_INT ? g.npcInt(h, sym) : 0;
+		};
+		sh.level = member("LEVEL");
+		sh.exp = member("EXP");
+		sh.expNext = member("EXP_NEXT");
+		sh.learn = member("LP");
+		sh.strength = g.attributeOf(h, g.constant("ATR_STRENGTH", 4));
+		sh.dexterity = g.attributeOf(h, g.constant("ATR_DEXTERITY", 5));
+		const u32 prot = g.vm().findMember("C_NPC", "PROTECTION");
+		const i32 kinds[4] = {g.constant("PROT_EDGE", 2), g.constant("PROT_POINT", 6), g.constant("PROT_FIRE", 3), g.constant("PROT_MAGIC", 5)};
+		for (int k = 0; k < 4; ++k)
+			sh.protection[k] = prot != NONE && u32(kinds[k]) < g.vm().symbol(prot).count ? g.npcInt(h, prot, u32(kinds[k])) : 0;
+		// The guild by the scripts' own names (TXT_GUILDS), if they have them.
+		const i32 guild = g.guildOf(h);
+		const u32 names = g.vm().find("TXT_GUILDS");
+		sh.guild[0] = 0;
+		if (names != NONE && g.vm().symbol(names).type == SCRIPT_STRING && guild >= 0 && u32(guild) < g.vm().symbol(names).count)
+			scriptText(g.vm().getString(names, u32(guild)), sh.guild, sizeof(sh.guild));
+		const auto nameOfItem = [&](u32 sym, char* out, u32 size) {
+			const GameItemInfo* it = sym != NONE ? g.itemInfo(sym) : nullptr;
+			out[0] = 0;
+			if (it) scriptText(g.text(it->description ? it->description : it->name), out, size);
+		};
+		nameOfItem(h.melee, sh.melee, sizeof(sh.melee));
+		nameOfItem(h.ranged, sh.ranged, sizeof(sh.ranged));
+		nameOfItem(h.armorItem, sh.armor, sizeof(sh.armor));
+	}
+	// The diary: the topics most recently written to first, each with its entries.
+	if (g.logVersion() != _logStamp) {
+		_logStamp = g.logVersion();
+		u32 order[InventoryView::DIARY_TOPICS];
+		u32 n = 0;
+		for (u32 t = 0; t < g.logTopicCount(); ++t) {
+			u32 k = n < InventoryView::DIARY_TOPICS ? n++ : InventoryView::DIARY_TOPICS - 1;
+			if (n == InventoryView::DIARY_TOPICS && k == n - 1 && g.logTopic(order[k]).order > g.logTopic(t).order) continue;
+			order[k] = t;
+			while (k > 0 && g.logTopic(order[k - 1]).order < g.logTopic(order[k]).order) {
+				const u32 tmp = order[k - 1];
+				order[k - 1] = order[k];
+				order[k] = tmp;
+				--k;
+			}
+		}
+		v.topicCount = 0;
+		v.entryCount = 0;
+		for (u32 i = 0; i < n; ++i) {
+			const GameLogTopic& lt = g.logTopic(order[i]);
+			InventoryView::Topic& t = v.topics[v.topicCount++];
+			scriptText(lt.name, t.name, sizeof(t.name));
+			t.status = lt.status;
+			t.section = lt.section;
+			t.first = u16(v.entryCount);
+			t.count = 0;
+			// (Newest entries first, as many as there is room for.)
+			for (u32 e = g.logEntryCount(); e-- > 0 && v.entryCount < InventoryView::DIARY_ENTRIES;)
+				if (g.logEntry(e).topic == order[i]) {
+					scriptText(g.logEntry(e).text, v.entries[v.entryCount++], sizeof(v.entries[0]));
+					++t.count;
+				}
+		}
+	}
 	++v.version;
 	return v;
+}
+
+// The picture of a look, read from the archive the first time it is wanted.
+i16 App::thumbOf(u16 visual) {
+	if (!visual) return -1;
+	const int have = _pictures.find(visual);
+	if (have >= 0) return i16(have);
+	for (u32 i = 0; i < _noPictureCount; ++i)
+		if (_noPicture[i] == visual) return -1;
+	const auto missing = [&]() {
+		if (_noPictureCount < sizeof(_noPicture) / sizeof(_noPicture[0])) _noPicture[_noPictureCount++] = visual;
+		return i16(-1);
+	};
+	char name[96];
+	snprintf(name, sizeof(name), "icon/%s", _npcs.game().text(visual));
+	const PakEntry* e = _pak.find(name);
+	if (!e || e->size < sizeof(IconHeader)) return missing();
+	u8* blob = static_cast<u8*>(malloc(e->size));
+	if (!blob) return missing();
+	IconHeader h {};
+	int at = -1;
+	if (_pak.read(*e, blob)) {
+		memcpy(&h, blob, sizeof(h));
+		if (h.magic == ITEMICON_MAGIC && h.version == ITEMICON_VERSION && e->size == sizeof(h) + size_t(h.width) * h.height * 4)
+			at = _pictures.add(visual, h.width, h.height, blob + sizeof(h));
+	}
+	free(blob);
+	return at >= 0 ? i16(at) : missing();
 }
 
 // ---- the faults menu's set of things ----
@@ -885,7 +985,8 @@ u32 App::giveItemKit() {
 		_quick[0] = firstOf[IK_POTION][0];
 		_quick[1] = firstOf[IK_POTION][1];
 		_quick[2] = firstOf[IK_FOOD][0];
-		_quick[3] = best != NONE ? best : firstOf[IK_MELEE][0];
+		_quick[3] = firstOf[IK_FOOD][1];
+		_quick[4] = best != NONE ? best : firstOf[IK_MELEE][0];
 	}
 	_invStamp = 0;
 	return kinds;
@@ -895,7 +996,8 @@ u32 App::giveItemKit() {
 
 namespace {
 
-constexpr u32 INVENTORY_MAGIC = fourcc('G', '3', 'I', 'V');
+// 'G3I2': ten quick slots. ('G3IV', the first, had four: it is still read.)
+constexpr u32 INVENTORY_MAGIC = fourcc('G', '3', 'I', '2'), INVENTORY_MAGIC_1 = fourcc('G', '3', 'I', 'V');
 
 struct SavedInventory {
 	u32 magic;
@@ -903,6 +1005,13 @@ struct SavedInventory {
 	i32 attribute[8];
 	u32 equip[EQUIP_SLOTS]; // name hashes of the items, 0 for none
 	u32 quick[QUICK_SLOTS];
+};
+struct SavedInventory1 {
+	u32 magic;
+	u32 stacks;
+	i32 attribute[8];
+	u32 equip[EQUIP_SLOTS];
+	u32 quick[4];
 };
 struct SavedStack {
 	u32 hash;
@@ -945,13 +1054,30 @@ bool App::loadInventory(FILE* f) {
 	const int hi = heroIndex();
 	if (hi < 0 || !f) return false;
 	SavedInventory si {};
-	if (fread(&si, sizeof(si), 1, f) != 1 || si.magic != INVENTORY_MAGIC || si.stacks > 4096) return false;
 	u32 check = 0x9E3779B9u;
 	const auto sum = [&](const void* p, size_t n) {
 		const u8* b = static_cast<const u8*>(p);
 		for (size_t k = 0; k < n; ++k) check = (check ^ b[k]) * 16777619u;
 	};
-	sum(&si, sizeof(si));
+	u32 magic = 0;
+	if (fread(&magic, sizeof(magic), 1, f) != 1) return false;
+	if (magic == INVENTORY_MAGIC) {
+		si.magic = magic;
+		if (fread(reinterpret_cast<u8*>(&si) + 4, sizeof(si) - 4, 1, f) != 1) return false;
+		sum(&si, sizeof(si));
+	} else if (magic == INVENTORY_MAGIC_1) {
+		SavedInventory1 old {};
+		old.magic = magic;
+		if (fread(reinterpret_cast<u8*>(&old) + 4, sizeof(old) - 4, 1, f) != 1) return false;
+		sum(&old, sizeof(old));
+		si.stacks = old.stacks;
+		memcpy(si.attribute, old.attribute, sizeof(si.attribute));
+		memcpy(si.equip, old.equip, sizeof(si.equip));
+		for (int q = 0; q < 4; ++q) si.quick[q] = old.quick[q];
+	} else {
+		return false;
+	}
+	if (si.stacks > 4096) return false;
 	const u32 n = si.stacks;
 	SavedStack* stacks = static_cast<SavedStack*>(malloc(sizeof(SavedStack) * (n ? n : 1u)));
 	if (!stacks) return false;
@@ -1005,16 +1131,97 @@ bool App::loadInventory(FILE* f) {
 	return true;
 }
 
-// ---- the top screen: the info box, the quick slots, the hints ----
+// ---- the top screen: the info box with the thing turning in it, the hints ----
 
 bool App::itemOverlay() const {
-	return _inv.present && (_panel.inspecting() > 0.0f || _panel.cursor() || _panel.assigning() || (_job.stage != JOB_NONE && !_job.pickup));
+	// (While a thing is being used nothing comes up: the animation says it all.)
+	return _inv.present && (_panel.inspecting() > 0.0f || _panel.assigning());
+}
+
+namespace {
+
+// The info box on the top screen, and the part of it the thing turns in.
+constexpr int INFO_X0 = 112, INFO_X1 = 392, INFO_Y0 = 148, INFO_Y1 = 222, MODEL_W = 92;
+
+} // namespace
+
+// The chosen thing's model, turning slowly in the right of the info box: it
+// is put into the world half a metre before the camera, where that part of
+// the box is on the screen (and the box leaves that part clear).
+void App::drawShowcase() {
+	if (!itemOverlay() || !_npcs.loaded()) return;
+	Game& g = _npcs.game();
+	const u32 symbol = _panel.selected();
+	const GameItemInfo* it = symbol != NONE ? g.itemInfo(symbol) : nullptr;
+	if (!it || !it->visual) return;
+	if (symbol != _showSymbol || it->visual != _showVisual) {
+		_showSymbol = symbol;
+		if (it->visual != _showVisual) {
+			_showModel.release();
+			_showVisual = it->visual;
+			char name[96];
+			snprintf(name, sizeof(name), "model/item.%s", g.text(it->visual));
+			_showTried = _showModel.loadEntry(_pak, hashName(name)) && _showModel.hasMesh();
+		}
+	}
+	if (!_showTried || !_showModel.loaded()) return;
+	const ModelHeader& mh = _showModel.header();
+	// (Its diagonal: however it turns, it stays in the box.)
+	const float size = sqrtf((mh.bbMax[0] - mh.bbMin[0]) * (mh.bbMax[0] - mh.bbMin[0]) + (mh.bbMax[1] - mh.bbMin[1]) * (mh.bbMax[1] - mh.bbMin[1]) +
+	                         (mh.bbMax[2] - mh.bbMin[2]) * (mh.bbMax[2] - mh.bbMin[2]));
+	if (size <= 0.0f) return;
+	// Where the model's part of the box is, as a direction from the eye.
+	const float sx = float(INFO_X1 - MODEL_W / 2), sy = float(INFO_Y0 + INFO_Y1) * 0.5f;
+	const float ndcX = sx / float(gfx::SCREEN_W) * 2.0f - 1.0f, ndcY = 1.0f - sy / float(gfx::SCREEN_H) * 2.0f;
+	const float dist = 50.0f, halfH = dist * tanf(_cam.fovY * 0.5f), halfW = halfH * float(gfx::SCREEN_W) / float(gfx::SCREEN_H);
+	const Vec3 f = forwardFromYawPitch(_cam.yaw, _cam.pitch);
+	const Vec3 r = normalize(cross({0, 1, 0}, f)), u = cross(f, r);
+	const Vec3 anchor = _cam.pos + f * dist + r * (ndcX * halfW) + u * (ndcY * halfH);
+	// As big as the box is high, less a margin.
+	const float boxH = float(INFO_Y1 - INFO_Y0 - 10) / float(gfx::SCREEN_H) * 2.0f * halfH;
+	const float s = boxH / size;
+	// Shown as the picture shows it, turning about its length (a long thing)
+	// or its up.
+	const Mat34 show = itemShowcase(mh.bbMin, mh.bbMax);
+	const float sizes[3] = {mh.bbMax[0] - mh.bbMin[0], mh.bbMax[1] - mh.bbMin[1], mh.bbMax[2] - mh.bbMin[2]};
+	float longest = 0, second = 0;
+	for (float d : sizes) {
+		if (d > longest) {
+			second = longest;
+			longest = d;
+		} else if (d > second) {
+			second = d;
+		}
+	}
+	const bool lying = longest >= 1.8f * second;
+	const float angle = float(_clock) * 0.9f;
+	const Vec3 axis = lying ? Vec3 {0.70710678f, 0.70710678f, 0.0f} : Vec3 {0.0f, 1.0f, 0.0f};
+	const float sa = sinf(angle * 0.5f);
+	const Mat34 spin = mat34From({axis.x * sa, axis.y * sa, axis.z * sa, cosf(angle * 0.5f)}, {0, 0, 0});
+	// View space to the world: the columns are the camera's right, up and forward.
+	Mat34 toWorld;
+	const Vec3 cols[3] = {r, u, f};
+	for (int k = 0; k < 3; ++k) {
+		toWorld.m[0][k] = cols[k].x;
+		toWorld.m[1][k] = cols[k].y;
+		toWorld.m[2][k] = cols[k].z;
+		toWorld.m[k][3] = 0.0f;
+	}
+	Mat34 skin = mul(toWorld, mul(spin, show));
+	const float c[3] = {(mh.bbMin[0] + mh.bbMax[0]) * 0.5f, (mh.bbMin[1] + mh.bbMax[1]) * 0.5f, (mh.bbMin[2] + mh.bbMax[2]) * 0.5f};
+	for (int row = 0; row < 3; ++row) {
+		for (int k = 0; k < 3; ++k) skin.m[row][k] *= s;
+		skin.m[row][3] = -(skin.m[row][0] * c[0] + skin.m[row][1] * c[1] + skin.m[row][2] * c[2]);
+	}
+	const float light[3] = {1.1f, 1.08f, 1.0f};
+	_showModel.drawSkinned(&skin, anchor, light);
 }
 
 void App::drawItemHud() {
 	const int W = gfx::SCREEN_W, H = gfx::SCREEN_H;
 	const InventoryView& v = inventory();
 	if (!v.present) return;
+	(void)W;
 	if (_lootTarget >= 0 && u32(_lootTarget) < _loot.count()) {
 		// The thing in reach: its name over it, as the original shows what is
 		// in focus, and what A does.
@@ -1035,58 +1242,31 @@ void App::drawItemHud() {
 			_ui.text(x - w / 2 + 21, y, line, ui::WHITE);
 		}
 	}
-	const bool info = itemOverlay();
-	const bool cross = info || _quickHint;
+	if (!itemOverlay()) return;
 	const int line = Ui::lineHeight();
-	if (cross) {
-		// The quick slots round the D-Pad, bottom left, as on the console.
-		const int c = 34, cx = 34, cy = H - 70; // the middle cell's corner
-		static const int kDx[QUICK_SLOTS] = {0, 1, 0, -1}, kDy[QUICK_SLOTS] = {-1, 0, 1, 0};
-		static const char* const kDir[QUICK_SLOTS] = {"\xE2\x86\x91", "\xE2\x86\x92", "\xE2\x86\x93", "\xE2\x86\x90"};
-		_ui.rect(cx + 7, cy + 7, cx + c - 7, cy + c - 7, 0x3C4148D0u);
-		_ui.text(cx + c / 2, cy + c / 2 - line / 2, "R", _quickHint ? ui::GOLD : ui::GREY, ui::TEXT, ui::CENTER);
-		for (int q = 0; q < QUICK_SLOTS; ++q) {
-			const int x = cx + kDx[q] * c, y = cy + kDy[q] * c;
-			_ui.rect(x + 1, y + 1, x + c, y + c, 0x0C1018A8u);
-			_ui.frame(x, y, x + c + 1, y + c + 1, 0x8C9096B0u);
-			if (v.quick[q] == SCRIPT_NONE) {
-				_ui.text(x + c / 2, y + c / 2 - line / 2, kDir[q], 0x8C909680u, ui::TEXT, ui::CENTER, false);
-				continue;
-			}
-			_ui.icon(x + 1, y + 1, v.quickIcon[q], v.quickTint[q], 2, v.quickCount[q] > 0 ? 255 : 110);
-			char n[16];
-			snprintf(n, sizeof(n), "%ld", static_cast<long>(v.quickCount[q]));
-			_ui.text(x + c - 2, y + c - line, n, v.quickCount[q] > 0 ? ui::WHITE : ui::RED, ui::TEXT, ui::RIGHT);
-		}
-	}
-	if (!info) return;
-	// The info box of the chosen thing (or of what is being used).
-	const u32 shown = _job.stage != JOB_NONE ? _job.symbol : _panel.selected();
+	// The info box of the chosen thing: its name, the "what ... number" lines
+	// on the left, the thing itself turning on the right (drawShowcase: the
+	// box leaves that part clear).
+	const u32 shown = _panel.selected();
 	const ItemEntry* e = nullptr;
 	for (u32 i = 0; i < v.count; ++i)
 		if (v.items[i].symbol == shown) e = &v.items[i];
-	const int x0 = 112, x1 = W - 8, y0 = H - 92, y1 = H - 18;
-	if (e || v.busy) {
-		_ui.rect(x0, y0, x1, y1, 0x0A0C10B4u);
+	const int x0 = INFO_X0, x1 = INFO_X1, y0 = INFO_Y0, y1 = INFO_Y1, xm = INFO_X1 - MODEL_W;
+	if (e) {
+		_ui.rect(x0, y0, xm, y1, 0x0A0C10B4u);
+		_ui.rect(xm, y0, x1, y1, 0x0A0C1040u);
 		_ui.frame(x0, y0, x1, y1, 0x40444AC0u);
 		int y = y0 + 3;
-		if (e) _ui.icon(x1 - 72, y0 + 6, e->icon, e->tint, 4, 70);
-		if (v.busy) {
-			_ui.text((x0 + x1) / 2, y, v.busyText, ui::GOLD, ui::TEXT, ui::CENTER);
-			_ui.bar(x0 + 20, y + line + 2, x1 - 20, y + line + 5, v.busyShare, ui::GOLD);
-			y += line + 9;
-		} else if (e) {
-			_ui.text((x0 + x1) / 2, y, e->name, 0xEAE6DAFFu, ui::TEXT, ui::CENTER);
-			y += line + 6;
+		_ui.text((x0 + xm) / 2, y, e->name, 0xEAE6DAFFu, ui::TEXT, ui::CENTER);
+		y += line + 6;
+		for (int r = 0; r < e->rowCount && y + line <= y1 - 2; ++r) {
+			const ItemRow& row = e->rows[r];
+			const u32 c = row.warn ? ui::RED : 0xD8D6D0FFu;
+			_ui.text(x0 + 10, y, row.label, c);
+			if (row.value[0]) _ui.text(xm - 8, y, row.value, c, ui::TEXT, ui::RIGHT);
+			y += line;
 		}
-		if (e)
-			for (int r = 0; r < e->rowCount && y + line <= y1 - 2; ++r) {
-				const ItemRow& row = e->rows[r];
-				const u32 c = row.warn ? ui::RED : 0xD8D6D0FFu;
-				_ui.text(x0 + 10, y, row.label, c);
-				if (row.value[0]) _ui.text(x1 - 10, y, row.value, c, ui::TEXT, ui::RIGHT);
-				y += line;
-			}
+		if (!_showTried && e->icon < ICON_COUNT) _ui.icon(xm + (MODEL_W - 64) / 2, y0 + 5, e->icon, e->tint, 4, 200); // (no model: its sign)
 	}
 	// The hints along the bottom: the buttons and what they do now.
 	int x = x0 + 4;
@@ -1101,17 +1281,12 @@ void App::drawItemHud() {
 	const bool can = e && (e->flags & ITEMF_ACTION) && !((e->flags & ITEMF_BLOCKED) && !(e->flags & ITEMF_EQUIPPED));
 	const char* action = !e ? "—" : e->action[0] ? e->action : "—";
 	if (_panel.assigning()) {
-		hint("\xE2\x86\x91\xE2\x86\x92\xE2\x86\x93\xE2\x86\x90", "слот", true);
+		hint("A", "В слот", true);
 		hint("B", "Отмена", true);
-	} else if (_panel.cursor()) {
+	} else {
 		hint("A", action, can);
 		if (e && (e->flags & ITEMF_QUICK)) hint("X", "В слот", true);
 		hint("B", "Закрыть", true);
-	} else if (e && !v.busy) {
-		_ui.text(x, y, can ? "Коснитесь ещё раз:" : "", ui::GREY);
-		if (can) x += _ui.measure("Коснитесь ещё раз:") + 6;
-		hint("\xE2\x96\xB6", action, can);
-		if (e->flags & ITEMF_QUICK) hint("\xE2\x80\xA2", "держать — в слот", true);
 	}
 }
 

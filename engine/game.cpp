@@ -70,6 +70,14 @@ void Game::release() {
 	free(_items);
 	free(_drops);
 	_drops = nullptr;
+	for (u32 i = 0; i < _logTopicCount; ++i) free(_logTopics[i].name);
+	for (u32 i = 0; i < _logEntryCount; ++i) free(_logEntries[i].text);
+	free(_logTopics);
+	free(_logEntries);
+	_logTopics = nullptr;
+	_logEntries = nullptr;
+	_logTopicCount = _logTopicCap = _logEntryCount = _logEntryCap = 0;
+	++_logVersion;
 	_dropCount = _dropCap = 0;
 	free(_itemInfos);
 	_itemInfos = nullptr;
@@ -208,6 +216,9 @@ bool Game::bindAll() {
 	             {"WLD_GETGUILDATTITUDE", xGetGuildAttitude},
 	             {"WLD_EXCHANGEGUILDATTITUDES", xExchangeGuildAttitudes},
 	             {"CREATEINVITEM", xCreateInvItem},
+	             {"LOG_CREATETOPIC", xLogCreateTopic},
+	             {"LOG_SETTOPICSTATUS", xLogSetTopicStatus},
+	             {"LOG_ADDENTRY", xLogAddEntry},
 	             {"CREATEINVITEMS", xCreateInvItems},
 	             {"NPC_REMOVEINVITEM", xRemoveInvItem},
 	             {"NPC_REMOVEINVITEMS", xRemoveInvItems},
@@ -292,6 +303,57 @@ void Game::addItems(ScriptInstance* inst, i32 symbol, i32 count) {
 	if (count < 0 || !grow(_items, _itemCap, _itemCount + 1, 256)) return;
 	_items[_itemCount++] = GameItem {npc, u32(symbol), count};
 	++_itemsVersion;
+}
+
+// ---- the diary ----
+
+namespace {
+char* copyOf(const char* s) {
+	const size_t n = strlen(s ? s : "") + 1;
+	char* c = static_cast<char*>(malloc(n));
+	if (c) memcpy(c, s ? s : "", n);
+	return c;
+}
+} // namespace
+
+int Game::logTopicOf(const char* name, bool make) {
+	if (!name || !*name) return -1;
+	for (u32 i = 0; i < _logTopicCount; ++i)
+		if (strcmp(_logTopics[i].name, name) == 0) return int(i);
+	if (!make || !grow(_logTopics, _logTopicCap, _logTopicCount + 1, 32)) return -1;
+	char* copy = copyOf(name);
+	if (!copy) return -1;
+	_logTopics[_logTopicCount] = GameLogTopic {copy, 0, 0, _logVersion};
+	return int(_logTopicCount++);
+}
+
+void Game::xLogCreateTopic(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 section = vm.popInt();
+	const int t = g.logTopicOf(vm.popString(), true);
+	if (t < 0) return;
+	g._logTopics[t].section = u8(section);
+	g._logTopics[t].order = ++g._logVersion;
+}
+
+void Game::xLogSetTopicStatus(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 status = vm.popInt();
+	const int t = g.logTopicOf(vm.popString(), true);
+	if (t < 0) return;
+	g._logTopics[t].status = u8(status);
+	g._logTopics[t].order = ++g._logVersion;
+}
+
+void Game::xLogAddEntry(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const char* text = vm.popString();
+	const int t = g.logTopicOf(vm.popString(), true);
+	if (t < 0 || !grow(g._logEntries, g._logEntryCap, g._logEntryCount + 1, 64)) return;
+	char* copy = copyOf(text);
+	if (!copy) return;
+	g._logEntries[g._logEntryCount++] = GameLogEntry {u32(t), copy};
+	g._logTopics[t].order = ++g._logVersion;
 }
 
 void Game::giveItems(u32 npc, u32 symbol, i32 count) {

@@ -5,6 +5,8 @@
 #include "game.h"
 #include "g3ds/game.h"
 #include "g3ds/math.h"
+#include "g3ds/item_view.h"
+#include "item_icon.h"
 #include "model_bake.h"
 #include "script_check.h"
 
@@ -763,10 +765,17 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			if (!table.empty()) std::memcpy(itemsBlob.data() + sizeof(ih), table.data(), table.size() * sizeof(WorldItem));
 			pak.add("world/" + worlds[w].name + "/items", ASSET_META, itemsBlob);
 		}
-		// Their models: one per visual, "model/item.<visual>".
-		size_t baked = 0, itemTriangles = 0;
+		const size_t lying = visuals.size();
+		// Every thing of the scripts may end up in the inventory: all their
+		// looks get a model ("model/item.<visual>": the top screen turns it in
+		// the info box, the world shows it lying about) and a picture
+		// ("icon/<visual>": the bottom screen's grid).
+		for (u32 sym = 0; sym < game.vm().symbolCount(); ++sym)
+			if (game.isItem(sym))
+				if (const GameItemInfo* info = game.itemInfo(sym)) visuals.emplace(game.text(info->visual), 0u);
+		size_t baked = 0, itemTriangles = 0, icons = 0;
 		std::map<std::string, std::string> missing;
-		const u64 itemBytesBefore = pak.rawBytes(ASSET_MODEL);
+		const u64 itemBytesBefore = pak.rawBytes(ASSET_MODEL), iconBytesBefore = pak.rawBytes(ASSET_META);
 		for (const auto& [visual, count] : visuals) {
 			if (visual.empty()) continue;
 			SrcModel m;
@@ -777,6 +786,11 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				}
 				m.clips.clear();
 				m.name = "item." + visual;
+				const std::vector<u8> icon = renderItemIcon(m, ITEMICON_SIZE);
+				if (!icon.empty()) {
+					pak.add("icon/" + visual, ASSET_META, icon);
+					++icons;
+				}
 				const ModelBakeResult mr = bakeModel(m, quiet, pak, &shared);
 				itemTriangles += mr.triangles;
 				missingTextures.insert(mr.missingTextures.begin(), mr.missingTextures.end());
@@ -786,9 +800,11 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			}
 		}
 		line(format("things lying about: %zu (%zu from the world files, %zu from the start-up scripts) of %zu kinds of look; "
-		            "%zu models baked, %zu triangles, %.2f MB",
-		            fromFiles + fromScripts, fromFiles, fromScripts, visuals.size(), baked, itemTriangles,
-		            double(pak.rawBytes(ASSET_MODEL) - itemBytesBefore) / 1048576.0));
+		            "looks of all things of the scripts: %zu, %zu models baked (%zu triangles, %.2f MB), %zu pictures for the "
+		            "inventory (%.2f MB)",
+		            fromFiles + fromScripts, fromFiles, fromScripts, lying, visuals.size(), baked, itemTriangles,
+		            double(pak.rawBytes(ASSET_MODEL) - itemBytesBefore) / 1048576.0, icons,
+		            double(pak.rawBytes(ASSET_META) - iconBytesBefore) / 1048576.0));
 		const auto listOf = [](const std::map<std::string, u32>& m) {
 			std::string list;
 			size_t shown = 0;

@@ -5455,37 +5455,43 @@ static void testInventory() {
 		CHECK(g.itemCount(hero, potion) == potions && g.npc(hero).armorItem == armor && app.ring(0) == ring);
 		CHECK(prot(1) == edgeWorn && prot(3) == fireWorn && app.quickSlot(2) == apple);
 	}
-	// 6. The panel: a hold on a thing brings up the cross, a tap on its right
-	// arm puts it into slot 1; the slot is used from R + right. A tap on the
-	// last page asks for the report. The picture shows the chosen cell blue.
+	// 6. The panel. On the play page: the bars, ten quick slots, three
+	// buttons. The inventory button opens the grid (the character stands);
+	// a hold on a thing brings up the ten slots, a tap puts it into one; the
+	// slot is used from the play page with a tap. A tap chooses, a second
+	// uses. The last kind page asks for the report. The diary and the
+	// character's page come up from their buttons.
 	{
 		InventoryPanel& panel = app.panel();
-		PanelInput none;
+		PanelInput none, touch;
+		touch.touching = true;
+		const auto tap = [&](int x, int y) {
+			touch.x = x;
+			touch.y = y;
+			app.panelInput(touch, dt);
+			return app.panelInput(none, dt);
+		};
+		app.panelInput(none, dt);
+		CHECK(panel.page() == InventoryPanel::PAGE_PLAY && !panel.open());
+		int x, y;
+		InventoryPanel::buttonCentre(0, x, y);
+		tap(x, y);
+		CHECK(panel.page() == InventoryPanel::PAGE_INVENTORY && panel.open());
 		app.panelInput(none, dt);
 		u32 n = panel.shownCount();
 		for (u32 k = 0; k < panel.shownCount(); ++k)
 			if (app.inventory().items[panel.shown(k)].symbol == potion) n = k;
 		CHECK(n < panel.shownCount());
-		int x, y;
 		panel.tileCentre(n, x, y);
-		PanelInput touch;
-		touch.touching = true;
 		touch.x = x;
 		touch.y = y;
 		for (int i = 0; i < 20; ++i) app.panelInput(touch, dt);
 		CHECK(panel.assigning() && panel.selected() == potion);
 		app.panelInput(none, dt);
-		InventoryPanel::crossCentre(1, touch.x, touch.y);
-		app.panelInput(touch, dt);
-		app.panelInput(none, dt);
+		InventoryPanel::slotCentre(1, x, y);
+		tap(x, y);
 		CHECK(!panel.assigning() && app.quickSlot(1) == potion);
-		g.setAttribute(g.npcMut(hero), 0, 10);
-		CHECK(app.quickUse(1));
-		for (int i = 0; i < 30 * 5 && app.itemBusy(); ++i) app.update(Input {}, dt);
-		CHECK(g.hitPoints(g.npc(hero)) == 40);
-		// A tap chooses, a second tap uses. While the inventory is open the
-		// character stands: the stick does not move it.
-		CHECK(panel.open());
+		// While the inventory is open the character stands: the stick does not move it.
 		{
 			const Vec3 at = app.player().feet;
 			Input push;
@@ -5495,24 +5501,23 @@ static void testInventory() {
 			CHECK(length(app.player().feet - at) < 1.0f && app.hero().role() != Hero::ATTACK);
 		}
 		panel.select(apple);
-		panel.tileCentre(n, touch.x, touch.y);
-		for (int i = 0; i < 2; ++i) app.panelInput(touch, dt);
-		app.panelInput(none, dt);
+		panel.tileCentre(n, x, y);
+		tap(x, y);
 		CHECK(panel.selected() == potion && panel.inspecting() > 0.0f && !app.itemBusy());
-		for (int i = 0; i < 2; ++i) app.panelInput(touch, dt);
-		app.panelInput(none, dt);
+		tap(x, y);
 		CHECK(app.itemBusy());
 		run(4.0f);
-		InventoryPanel::pageCentre(InventoryPanel::PAGES - 1, touch.x, touch.y);
-		app.panelInput(touch, dt);
-		CHECK(app.panelInput(none, dt).type == PANEL_REPORT);
+		// The chosen cell is blue (beside its picture).
 		CHECK(panel.draw(app.inventory(), true) && panel.canvas().ready());
-		// A tap on the bars closes it: the character goes again.
-		touch.x = 60;
-		touch.y = 8;
-		app.panelInput(touch, dt);
-		app.panelInput(none, dt);
-		CHECK(!panel.open());
+		{
+			const u16 px = panel.canvas().pixel(x - 28, y - 14);
+			const int r = (px >> 11) << 3, b = (px & 31) << 3;
+			CHECK(b > r + 20);
+		}
+		InventoryPanel::pageCentre(InventoryPanel::TAB_PAGES - 1, x, y);
+		CHECK(tap(x, y).type == PANEL_REPORT);
+		// The back arrow closes it: the character goes again, and slot 2 is a tap away.
+		CHECK(tap(10, 8).type == PANEL_CURSOR_OFF && !panel.open());
 		{
 			const Vec3 at = app.player().feet;
 			Input push;
@@ -5520,10 +5525,26 @@ static void testInventory() {
 			for (int i = 0; i < 30; ++i) app.update(push, dt);
 			CHECK(length(app.player().feet - at) > 50.0f);
 		}
-		panel.tileCentre(n, x, y);
-		const u16 px = panel.canvas().pixel(x - 30, y - 14); // (inside the chosen cell, clear of its picture)
-		const int r = (px >> 11) << 3, b = (px & 31) << 3;
-		CHECK(b > r + 20);
+		run(1.0f);
+		g.setAttribute(g.npcMut(hero), 0, 10);
+		InventoryPanel::slotCentre(1, x, y);
+		CHECK(tap(x, y).type == PANEL_USE_SLOT && app.itemBusy());
+		for (int i = 0; i < 30 * 5 && app.itemBusy(); ++i) app.update(Input {}, dt);
+		CHECK(g.hitPoints(g.npc(hero)) == 40);
+		// The diary (the scene's start-up writes a topic) and the character.
+		InventoryPanel::buttonCentre(1, x, y);
+		tap(x, y);
+		const InventoryView& v = app.inventory();
+		CHECK(panel.page() == InventoryPanel::PAGE_DIARY && v.topicCount == 1 && v.topics[0].count == 1 &&
+		      std::strcmp(v.topics[0].name, "The camp") == 0 && v.topics[0].status == 1);
+		CHECK(panel.draw(v, true));
+		tap(10, 8);
+		InventoryPanel::buttonCentre(2, x, y);
+		tap(x, y);
+		CHECK(panel.page() == InventoryPanel::PAGE_CHARACTER && v.sheet.strength == 10 && std::strcmp(v.sheet.name, "I") == 0);
+		CHECK(panel.draw(v, true));
+		tap(10, 8);
+		CHECK(!panel.open());
 	}
 	// 7. Things lying about: four from the world file and the smith's sword
 	// from the start-up script. Walked up to, A picks one up (the character

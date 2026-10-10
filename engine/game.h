@@ -107,6 +107,18 @@ struct GameDrop {
 	GameText point;
 };
 
+// The diary (Log_CreateTopic, Log_SetTopicStatus, Log_AddEntry).
+struct GameLogTopic {
+	char* name;    // as the scripts give it
+	u8 section;    // LOG_MISSION, LOG_NOTE
+	u8 status;     // LOG_RUNNING ...; 0 until set
+	u32 order;     // when last written to (newest first)
+};
+struct GameLogEntry {
+	u32 topic;     // into the topics
+	char* text;
+};
+
 struct GameStats {
 	u32 npcs = 0;        // characters the scripts have put into the worlds
 	u32 withRoutine = 0;
@@ -190,6 +202,12 @@ public:
 	// What the start-up scripts put into the worlds (Wld_InsertItem), in order.
 	u32 dropCount() const { return _dropCount; }
 	const GameDrop& drop(u32 i) const { return _drops[i]; }
+	// The diary.
+	u32 logTopicCount() const { return _logTopicCount; }
+	const GameLogTopic& logTopic(u32 i) const { return _logTopics[i]; }
+	u32 logEntryCount() const { return _logEntryCount; }
+	const GameLogEntry& logEntry(u32 i) const { return _logEntries[i]; }
+	u32 logVersion() const { return _logVersion; }
 	// Counts every change of what anybody carries (the inventory redraws on it).
 	u32 itemsVersion() const { return _itemsVersion; }
 	// True if `symbol` is an item instance of the scripts.
@@ -355,6 +373,14 @@ private:
 	u32 _guildCount = 0;
 	GameItem* _items = nullptr;
 	u32 _itemCount = 0, _itemCap = 0, _itemsVersion = 0;
+	GameLogTopic* _logTopics = nullptr;
+	u32 _logTopicCount = 0, _logTopicCap = 0;
+	GameLogEntry* _logEntries = nullptr;
+	u32 _logEntryCount = 0, _logEntryCap = 0, _logVersion = 0;
+	int logTopicOf(const char* name, bool make);
+	static void xLogCreateTopic(ScriptVm& vm, void* user);
+	static void xLogSetTopicStatus(ScriptVm& vm, void* user);
+	static void xLogAddEntry(ScriptVm& vm, void* user);
 	GameDrop* _drops = nullptr;
 	u32 _dropCount = 0, _dropCap = 0;
 	float _percRange[PERC_TYPES];

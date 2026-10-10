@@ -957,43 +957,46 @@ bool buildSyntheticBody(const std::string& script, const std::string& mesh, int 
 	return true;
 }
 
-// A thing lying about: a box of the thing's proportions, in a colour of its
-// own (a long flat one for weapons, a tall one for bottles, a small one for the rest).
+// A thing lying about: boxes in the thing's shape (a blade with a guard and
+// a grip, a flask with a neck, a block for the rest), in a colour of its own.
 bool buildSyntheticItem(const std::string& visual, SrcModel& model) {
-	float hx = 6, hy = 6, hz = 6;
+	struct Piece {
+		float c[3], h[3];
+	};
+	std::vector<Piece> pieces;
 	if (visual.find("itmw") == 0) {
-		hx = 3;
-		hy = 2;
-		hz = visual.find("2h") != std::string::npos ? 60 : 40;
+		const float len = visual.find("2h") != std::string::npos ? 60.0f : 40.0f;
+		pieces = {{{0, 1, 8}, {3, 1, len}}, {{0, 1.5f, 8 - len}, {9, 2, 2}}, {{0, 1.5f, 8 - len - 10}, {1.5f, 1.5f, 8}}};
 	} else if (visual.find("potion") != std::string::npos || visual.find("beer") != std::string::npos) {
-		hx = hz = 4;
-		hy = 10;
+		pieces = {{{0, 6, 0}, {5, 6, 5}}, {{0, 15, 0}, {2, 3, 2}}};
 	} else if (visual.find("itrw") == 0) {
-		hx = 2;
-		hy = 2;
-		hz = 50;
+		pieces = {{{0, 2, 0}, {1.5f, 1.5f, 50}}, {{0, 2, 0}, {0.4f, 0.4f, 45}}};
+	} else {
+		pieces = {{{0, 6, 0}, {6, 6, 6}}};
 	}
 	model.nodes.assign(1, SrcNode {});
 	model.nodes[0].name = "ITEM";
 	SrcModelPart part;
 	part.material.name = visual;
 	part.material.texture = "ITEM_" + upperName(visual);
-	// Six faces, counter-clockwise seen from outside; standing on y = 0.
-	const float c[8][3] = {{-hx, 0, -hz}, {hx, 0, -hz}, {hx, 2 * hy, -hz}, {-hx, 2 * hy, -hz},
-	                       {-hx, 0, hz},  {hx, 0, hz},  {hx, 2 * hy, hz},  {-hx, 2 * hy, hz}};
 	const int faces[6][4] = {{0, 3, 2, 1}, {4, 5, 6, 7}, {0, 4, 7, 3}, {1, 2, 6, 5}, {3, 7, 6, 2}, {0, 1, 5, 4}};
 	const float normals[6][3] = {{0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, -1, 0}};
 	const float uv[4][2] = {{0, 1}, {0, 0}, {1, 0}, {1, 1}};
-	for (int f = 0; f < 6; ++f)
-		for (int k : {0, 1, 2, 0, 2, 3}) {
-			SrcSkinVertex v;
-			std::memcpy(v.pos, c[faces[f][k]], sizeof(v.pos));
-			std::memcpy(v.normal, normals[f], sizeof(v.normal));
-			v.uv[0] = uv[k][0];
-			v.uv[1] = uv[k][1];
-			v.bone[0] = v.bone[1] = 0;
-			part.verts.push_back(v);
-		}
+	for (const Piece& p : pieces) {
+		const float x0 = p.c[0] - p.h[0], x1 = p.c[0] + p.h[0], y0 = p.c[1] - p.h[1], y1 = p.c[1] + p.h[1], z0 = p.c[2] - p.h[2],
+		            z1 = p.c[2] + p.h[2];
+		const float c[8][3] = {{x0, y0, z0}, {x1, y0, z0}, {x1, y1, z0}, {x0, y1, z0}, {x0, y0, z1}, {x1, y0, z1}, {x1, y1, z1}, {x0, y1, z1}};
+		for (int f = 0; f < 6; ++f)
+			for (int k : {0, 1, 2, 0, 2, 3}) {
+				SrcSkinVertex v;
+				std::memcpy(v.pos, c[faces[f][k]], sizeof(v.pos));
+				std::memcpy(v.normal, normals[f], sizeof(v.normal));
+				v.uv[0] = uv[k][0];
+				v.uv[1] = uv[k][1];
+				v.bone[0] = v.bone[1] = 0;
+				part.verts.push_back(v);
+			}
+	}
 	model.parts.assign(1, std::move(part));
 	model.loadTexture = [](const std::string& name, SrcImage& out) {
 		if (name.compare(0, 5, "ITEM_") != 0) return false;

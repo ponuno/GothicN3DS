@@ -142,6 +142,7 @@ private:
 	int row() const;
 	int stateOf(const Clip* clip) const;
 	bool isTurn(const Clip* clip) const;
+	bool isStrafe(const Clip* clip) const;
 	const Clip* stateClip(int state) const;
 	const Clip* rowClip(int row, int state) const;
 	void go(int state, bool force = false, float forceFade = 0.15f);

@@ -19,11 +19,13 @@ constexpr u32 CELL_LINE = 0x7C8086B0u;     // its thin grey edge
 constexpr u32 SEL_TOP = 0x426E9EFFu, SEL_BOTTOM = 0x1A3354FFu, SEL_EDGE = 0xE8ECF0FFu;
 constexpr u32 TAB_TOP = 0x22385AFFu, TAB_BOTTOM = 0x14223AFFu, TAB_LIGHT = 0x5A7CA6FFu, TAB_DARK = 0x080E18FFu;
 constexpr u32 TAB_ON = 0x37587EFFu;
-constexpr u32 PILL = 0xC4C8CCFFu, PILL_TEXT = 0x1C2024FFu, PILL_OFF = 0x5C6064FFu;
+constexpr u32 PILL = 0xC4C8CCFFu, PILL_TEXT = 0x1C2024FFu;
 constexpr u32 TEXT = 0xD8D6D0FFu, TEXT_DIM = 0x9C9A92FFu, TITLE = 0xEAE6DAFFu, WARN = 0xE2604EFFu, GOLD = 0xE8C77AFFu;
 constexpr u32 HP = 0xB0261EFFu, HP_LIGHT = 0xD8584AFFu, MANA = 0x2A4CBCFFu, MANA_LIGHT = 0x5A7CE8FFu;
 
-const char* const kArrows[QUICK_SLOTS] = {"\xE2\x86\x91", "\xE2\x86\x92", "\xE2\x86\x93", "\xE2\x86\x90"};
+// The quick slots' keys, as on the PC's keyboard.
+const char* const kKeys[QUICK_SLOTS] = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"};
+const char* const kPageTitles[] = {"", "Инвентарь", "Дневник", "Персонаж"};
 
 // The signs of the tabs, in the order of ItemTab.
 const u8 kTabIcons[ITEM_TABS] = {ICON_ALL, ICON_WEAPONS, ICON_ARMOR, ICON_MAGIC, ICON_POTION, ICON_APPLE, ICON_OTHER};
@@ -213,13 +215,108 @@ void Canvas::icon(int x, int y, u8 which, u32 tint, int scale, int mode) {
 		}
 }
 
+// ---- pictures ----
+
+void Canvas::picture(int x, int y, int w, int h, const u16* rgb, const u8* alpha, int pw, int ph, bool dim) {
+	if (!rgb || !alpha || pw <= 0 || ph <= 0) return;
+	// Scaled to fit, its shape kept, in the middle.
+	const int s256 = min(w * 256 / pw, h * 256 / ph);
+	const int dw = pw * s256 / 256, dh = ph * s256 / 256;
+	const int ox = x + (w - dw) / 2, oy = y + (h - dh) / 2;
+	for (int dy = 0; dy < dh; ++dy) {
+		const int sy = dy * ph / dh;
+		for (int dx = 0; dx < dw; ++dx) {
+			const int sx = dx * pw / dw;
+			const int a = alpha[sy * pw + sx];
+			if (!a) continue;
+			const u16 c = rgb[sy * pw + sx];
+			u32 r = u32((c >> 11) << 3), g = u32(((c >> 5) & 63) << 2), b = u32((c & 31) << 3);
+			if (dim) r = g = b = (r * 3 + g * 5 + b * 2) / 20;
+			blend(ox + dx, oy + dy, (r << 24) | (g << 16) | (b << 8) | 0xFF, a);
+		}
+	}
+}
+
+int Canvas::paragraph(int x, int y, int width, const char* s, u32 rgba, int maxLines) {
+	if (!s) return 0;
+	const int line = Ui::lineHeight(ui::TEXT);
+	int lines = 0;
+	char buf[256];
+	while (*s && (maxLines <= 0 || lines < maxLines)) {
+		while (*s == ' ') ++s;
+		// As many words as fit.
+		size_t n = 0, lastBreak = 0;
+		const char* p = s;
+		while (*p && *p != '\n') {
+			const char* q = p;
+			utf8Next(q);
+			const size_t len = size_t(q - s);
+			if (len >= sizeof(buf)) break;
+			memcpy(buf, s, len);
+			buf[len] = 0;
+			if (measure(buf) > width) break;
+			n = len;
+			if (*q == ' ' || *q == 0 || *q == '\n') lastBreak = len;
+			p = q;
+		}
+		if (*p && *p != '\n' && lastBreak) n = lastBreak; // (a word that does not fit goes to the next line)
+		if (n == 0) n = size_t(p - s) ? size_t(p - s) : 1;
+		memcpy(buf, s, n);
+		buf[n] = 0;
+		text(x, y + lines * line, buf, rgba, ui::TEXT, ui::LEFT, 0, true);
+		++lines;
+		s += n;
+		if (*s == '\n') ++s;
+	}
+	return lines * line;
+}
+
+int ItemPictures::find(u16 visual) const {
+	for (u32 i = 0; i < _count; ++i)
+		if (_pics[i].visual == visual) return int(i);
+	return -1;
+}
+
+int ItemPictures::add(u16 visual, int w, int h, const u8* rgba) {
+	if (_count >= CAPACITY || w <= 0 || h <= 0 || w > 256 || h > 256 || !rgba) return -1;
+	ItemPicture& p = _pics[_count];
+	p.rgb = static_cast<u16*>(malloc(sizeof(u16) * size_t(w * h)));
+	p.alpha = static_cast<u8*>(malloc(size_t(w * h)));
+	if (!p.rgb || !p.alpha) {
+		free(p.rgb);
+		free(p.alpha);
+		p = ItemPicture();
+		return -1;
+	}
+	for (int i = 0; i < w * h; ++i) {
+		const u8* c = rgba + size_t(i) * 4;
+		p.rgb[i] = u16(((c[0] >> 3) << 11) | ((c[1] >> 2) << 5) | (c[2] >> 3));
+		p.alpha[i] = c[3];
+	}
+	p.visual = visual;
+	p.w = u16(w);
+	p.h = u16(h);
+	return int(_count++);
+}
+
+void ItemPictures::release() {
+	for (u32 i = 0; i < _count; ++i) {
+		free(_pics[i].rgb);
+		free(_pics[i].alpha);
+		_pics[i] = ItemPicture();
+	}
+	_count = 0;
+}
+
 // ---- the panel ----
 
-void InventoryPanel::setCursor(bool on) {
-	if (_cursor == on) return;
-	_cursor = on;
+void InventoryPanel::openPage(PanelPage p) {
+	if (p >= PANEL_PAGES || p == _page) return;
+	_page = p;
 	_assigning = false;
-	_inspect = on ? kInspectTime : 0.0f;
+	_inspect = p == PAGE_INVENTORY ? kInspectTime : 0.0f;
+	_topic = -1;
+	_listScroll = 0;
 	_dirty = true;
 }
 
@@ -264,10 +361,14 @@ void InventoryPanel::tileCentre(u32 n, int& x, int& y) const {
 	y = GRID_Y + int(n / COLS) * CELL_H - _scroll + CELL_H / 2;
 }
 
-void InventoryPanel::crossCentre(int slot, int& x, int& y) {
-	static const int kDx[QUICK_SLOTS] = {0, 1, 0, -1}, kDy[QUICK_SLOTS] = {-1, 0, 1, 0};
-	x = GRID_X + 2 * CELL_W + kDx[slot] * CROSS_CELL;
-	y = GRID_Y + GRID_H / 2 + kDy[slot] * CROSS_CELL;
+void InventoryPanel::slotCentre(int slot, int& x, int& y) {
+	x = SLOT_X + (slot % 5) * SLOT_W + SLOT_W / 2;
+	y = SLOT_Y + (slot / 5) * (SLOT_H + 2) + SLOT_H / 2;
+}
+
+void InventoryPanel::buttonCentre(int k, int& x, int& y) {
+	x = 6 + k * (BUTTON_W + 7) + BUTTON_W / 2;
+	y = BUTTON_Y + BUTTON_H / 2;
 }
 
 void InventoryPanel::pageCentre(int page, int& x, int& y) {
@@ -277,22 +378,48 @@ void InventoryPanel::pageCentre(int page, int& x, int& y) {
 
 InventoryPanel::Hit InventoryPanel::hitTest(int x, int y) const {
 	Hit h;
-	if (_assigning) {
-		h.region = R_CROSS;
-		for (int s = 0; s < QUICK_SLOTS; ++s) {
+	const auto inSlot = [&](int& slot) {
+		for (int k = 0; k < QUICK_SLOTS; ++k) {
 			int cx, cy;
-			crossCentre(s, cx, cy);
-			if (abs(x - cx) <= CROSS_CELL / 2 && abs(y - cy) <= CROSS_CELL / 2) h.index = s;
+			slotCentre(k, cx, cy);
+			if (abs(x - cx) <= SLOT_W / 2 && abs(y - cy) <= SLOT_H / 2) {
+				slot = k;
+				return true;
+			}
 		}
+		return false;
+	};
+	if (_page == PAGE_PLAY) {
+		if (inSlot(h.index)) h.region = R_SLOT;
+		else if (y >= BUTTON_Y && y < BUTTON_Y + BUTTON_H)
+			for (int k = 0; k < 3; ++k) {
+				int cx, cy;
+				buttonCentre(k, cx, cy);
+				if (abs(x - cx) <= BUTTON_W / 2) {
+					h.region = R_BUTTON;
+					h.index = k;
+				}
+			}
 		return h;
 	}
 	if (y < BARS_H) {
-		h.region = R_BARS;
-	} else if (y >= TABS_Y - 2) {
+		h.region = x < BACK_W ? R_BACK : R_BARS;
+		return h;
+	}
+	if (_assigning) {
+		h.region = R_PICKER;
+		inSlot(h.index);
+		return h;
+	}
+	if (_page != PAGE_INVENTORY) {
+		h.region = R_LIST;
+		return h;
+	}
+	if (y >= TABS_Y - 2) {
 		if (x < PILL_W + 2) h.region = R_PREV_TAB;
-		else if (x >= PILL_W + 2 + PAGES * TAB_W) h.region = R_NEXT_TAB;
+		else if (x >= PILL_W + 2 + TAB_PAGES * TAB_W) h.region = R_NEXT_TAB;
 		else {
-			h.region = R_PAGE;
+			h.region = R_KIND;
 			h.index = (x - PILL_W - 2) / TAB_W;
 		}
 	} else if (y >= GRID_Y && y < GRID_Y + GRID_H) {
@@ -311,7 +438,7 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 	PanelCommand cmd;
 	refilter(v);
 	if (_flash > 0.0f && (_flash -= dt) <= 0.0f) _dirty = true;
-	if (_inspect > 0.0f && !_cursor && !_assigning) _inspect -= dt;
+	if (_inspect > 0.0f && !_assigning && _page != PAGE_INVENTORY) _inspect = 0.0f;
 	const ItemEntry* sel = entryOf(v, _selected);
 	if (_assigning && !(sel && (sel->flags & ITEMF_QUICK))) {
 		_assigning = false; // (used up meanwhile)
@@ -336,51 +463,72 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 		_assigning = false;
 		_dirty = true;
 		_inspect = kInspectTime;
-		if (!sel || !(sel->flags & ITEMF_QUICK)) return;
+		if (!sel || !(sel->flags & ITEMF_QUICK) || slot < 0) return;
 		// The same thing again in its own slot: the slot is emptied.
 		cmd.type = v.quick[slot] == sel->symbol ? u8(PANEL_CLEAR_SLOT) : u8(PANEL_ASSIGN);
 		cmd.slot = u8(slot);
 		cmd.symbol = sel->symbol;
+		_flash = 0.3f;
+		_flashSlot = slot;
+	};
+	const auto close = [&]() {
+		openPage(PAGE_PLAY);
+		cmd.type = PANEL_CURSOR_OFF;
+	};
+	const auto nextPage = [&](int step) {
+		// L / R on the diary and the character: the pages round.
+		const int p = (int(_page) - 1 + step + 3) % 3 + 1;
+		openPage(PanelPage(p));
 	};
 
-	// ---- the buttons (after SELECT) ----
-	if (_cursor) {
-		if (!sel && _shownCount) choose(v.items[_shown[0]].symbol);
-		int at = -1;
-		for (u32 i = 0; i < _shownCount; ++i)
-			if (v.items[_shown[i]].symbol == _selected) at = int(i);
-		const bool dirs[QUICK_SLOTS] = {in.up, in.right, in.down, in.left};
-		if (_assigning) {
-			for (int s = 0; s < QUICK_SLOTS; ++s)
-				if (dirs[s]) {
-					assign(s);
-					break;
+	// ---- the buttons (a page open) ----
+	if (open()) {
+		if (_page == PAGE_INVENTORY) {
+			if (!sel && _shownCount) choose(v.items[_shown[0]].symbol);
+			int at = -1;
+			for (u32 i = 0; i < _shownCount; ++i)
+				if (v.items[_shown[i]].symbol == _selected) at = int(i);
+			if (_assigning) {
+				// The ten slots: the D-Pad walks them, A picks.
+				const int before = _pickerSlot;
+				if (in.left && _pickerSlot % 5 > 0) --_pickerSlot;
+				if (in.right && _pickerSlot % 5 < 4) ++_pickerSlot;
+				if (in.up && _pickerSlot >= 5) _pickerSlot -= 5;
+				if (in.down && _pickerSlot < 5) _pickerSlot += 5;
+				if (before != _pickerSlot) _dirty = true;
+				if (in.confirm) assign(_pickerSlot);
+			} else if (_shownCount && (in.up || in.down || in.left || in.right)) {
+				int n = at < 0 ? 0 : at;
+				if (in.left && n % COLS > 0) --n;
+				if (in.right && n % COLS < COLS - 1 && u32(n + 1) < _shownCount) ++n;
+				if (in.up && n >= COLS) n -= COLS;
+				if (in.down) {
+					if (u32(n + COLS) < _shownCount) n += COLS;
+					else if (u32((n / COLS + 1) * COLS) < _shownCount) n = int(_shownCount) - 1; // (to the last, shorter row)
 				}
-		} else if (_shownCount && (in.up || in.down || in.left || in.right)) {
-			int n = at < 0 ? 0 : at;
-			if (in.left && n % COLS > 0) --n;
-			if (in.right && n % COLS < COLS - 1 && u32(n + 1) < _shownCount) ++n;
-			if (in.up && n >= COLS) n -= COLS;
-			if (in.down) {
-				if (u32(n + COLS) < _shownCount) n += COLS;
-				else if (u32((n / COLS + 1) * COLS) < _shownCount) n = int(_shownCount) - 1; // (to the last, shorter row)
+				choose(v.items[_shown[n]].symbol);
+				keepInSight(u32(n));
 			}
-			choose(v.items[_shown[n]].symbol);
-			keepInSight(u32(n));
-		}
-		if (in.prevTab) setTab(ItemTab((_tab + ITEM_TABS - 1) % ITEM_TABS));
-		if (in.nextTab) setTab(ItemTab((_tab + 1) % ITEM_TABS));
-		if (in.confirm && !_assigning) use(sel);
-		if (in.assign && sel && (sel->flags & ITEMF_QUICK)) {
-			_assigning = !_assigning;
-			_dirty = true;
+			if (in.prevTab && !_assigning) setTab(ItemTab((_tab + ITEM_TABS - 1) % ITEM_TABS));
+			if (in.nextTab && !_assigning) setTab(ItemTab((_tab + 1) % ITEM_TABS));
+			if (in.confirm && !_assigning) use(sel);
+			if (in.assign && sel && (sel->flags & ITEMF_QUICK)) {
+				_assigning = !_assigning;
+				_dirty = true;
+			}
+		} else {
+			if (in.prevTab) nextPage(-1);
+			if (in.nextTab) nextPage(1);
+			if (_page == PAGE_DIARY && v.topicCount) {
+				// The D-Pad walks the topics.
+				if (in.down) _topic = min(_topic + 1, int(v.topicCount) - 1);
+				if (in.up) _topic = max(_topic - 1, 0);
+				if (in.up || in.down) _dirty = true;
+			}
 		}
 		if (in.back) {
 			if (_assigning) _assigning = false;
-			else {
-				setCursor(false);
-				cmd.type = PANEL_CURSOR_OFF;
-			}
+			else close();
 			_dirty = true;
 		}
 		if (in.up || in.down || in.left || in.right || in.prevTab || in.nextTab) _inspect = kInspectTime;
@@ -390,16 +538,12 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 	if (in.touching && !_touching) {
 		_touching = true;
 		_start = hitTest(in.x, in.y);
-		// Closed, the grid and the pages only show; a touch on them opens the
-		// inventory (the character stands meanwhile), and this touch does no more than choose.
-		_opening = !_cursor && (_start.region == R_TILE || _start.region == R_GRID || _start.region == R_PREV_TAB ||
-		                        _start.region == R_NEXT_TAB || (_start.region == R_PAGE && _start.index < ITEM_TABS));
-		if (_opening) setCursor(true);
 		_startX = _x = in.x;
 		_startY = _y = in.y;
-		_startScroll = _scroll;
+		_startScroll = _page == PAGE_INVENTORY ? _scroll : _listScroll;
 		_held = 0;
 		_moved = _longDone = false;
+		if (_start.region == R_SLOT || _start.region == R_BUTTON || _start.region == R_PICKER) _dirty = true; // (pressed)
 	} else if (in.touching) {
 		_held += dt;
 		_x = in.x;
@@ -413,8 +557,15 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 				_dirty = true;
 			}
 		}
+		if (_moved && _start.region == R_LIST) {
+			const int to = max(_startScroll - dy, 0);
+			if (to != _listScroll) {
+				_listScroll = to;
+				_dirty = true;
+			}
+		}
 		if (!_moved && !_longDone && _held > 0.5f && _start.region == R_TILE) {
-			// Held on a thing: chosen, and the cross of the quick slots comes up.
+			// Held on a thing: chosen, and the ten slots come up.
 			_longDone = true;
 			choose(v.items[_shown[_start.index]].symbol);
 			if (sel && (sel->flags & ITEMF_QUICK)) _assigning = true;
@@ -422,37 +573,40 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 	} else if (_touching) {
 		_touching = false;
 		const Hit end = hitTest(_x, _y);
-		if (_start.region == R_CROSS) {
-			if (end.region == R_CROSS && end.index >= 0 && end.index == _start.index) assign(end.index);
-			else if (end.index < 0 && _start.index < 0) {
-				_assigning = false; // (a tap beside the cross: never mind)
-				_dirty = true;
-			}
+		if (_start.region == R_PICKER) {
+			if (end.region == R_PICKER && end.index >= 0 && end.index == _start.index) assign(end.index);
+			else if (end.index < 0 && _start.index < 0) _assigning = false; // (a tap beside the slots: never mind)
 		} else if (_moved) {
-			// A scroll ends on a whole row.
-			_scroll = clamp((_scroll + CELL_H / 2) / CELL_H * CELL_H, 0, maxScroll());
-			_dirty = true;
+			if (_page == PAGE_INVENTORY) _scroll = clamp((_scroll + CELL_H / 2) / CELL_H * CELL_H, 0, maxScroll()); // (on a whole row)
 		} else if (!_longDone && end.region == _start.region && end.index == _start.index) {
 			switch (end.region) {
-			case R_PAGE:
+			case R_SLOT:
+				cmd.type = PANEL_USE_SLOT;
+				cmd.slot = u8(end.index);
+				_flash = 0.25f;
+				_flashSlot = end.index;
+				break;
+			case R_BUTTON: openPage(PanelPage(PAGE_INVENTORY + end.index)); break;
+			case R_BACK:
+			case R_BARS: close(); break;
+			case R_KIND:
 				if (end.index == ITEM_TABS) cmd.type = PANEL_REPORT;
 				else setTab(ItemTab(end.index));
-				break;
-			case R_BARS:
-				// A tap on the bars closes the open inventory.
-				if (_cursor) {
-					setCursor(false);
-					cmd.type = PANEL_CURSOR_OFF;
-				}
 				break;
 			case R_PREV_TAB: setTab(ItemTab((_tab + ITEM_TABS - 1) % ITEM_TABS)); break;
 			case R_NEXT_TAB: setTab(ItemTab((_tab + 1) % ITEM_TABS)); break;
 			case R_TILE: {
 				const ItemEntry& e = v.items[_shown[end.index]];
-				if (e.symbol == _selected && _inspect > 0.0f && !_opening) use(&e);
+				if (e.symbol == _selected && _inspect > 0.0f) use(&e);
 				else choose(e.symbol);
 				break;
 			}
+			case R_LIST:
+				if (_page == PAGE_DIARY)
+					// A tap on a topic opens it (on the open one: closes it).
+					for (u32 t = 0; t < v.topicCount && t < InventoryView::DIARY_TOPICS; ++t)
+						if (_y >= _topicY[t] && _y < _topicY[t] + 16) _topic = _topic == int(t) ? -1 : int(t);
+				break;
 			default: break;
 			}
 		}
@@ -468,6 +622,17 @@ void InventoryPanel::cell(int x, int y, int w, int h, bool chosen, bool lit) {
 	else _canvas.fill(x + 1, y + 1, x + w, y + h, lit ? 0x3A5E8870u : CELL_FILL);
 }
 
+void InventoryPanel::drawThing(int x, int y, int w, int h, i16 pic, u8 icon, u32 tint, bool dim) {
+	const ItemPicture* p = _pictures ? _pictures->get(pic) : nullptr;
+	if (p) {
+		_canvas.picture(x, y, w, h, p->rgb, p->alpha, p->w, p->h, dim);
+		return;
+	}
+	// No picture baked (an older data.pak): the drawn sign.
+	const int scale = min(w, h) >= 32 ? 2 : 1;
+	_canvas.icon(x + (w - 16 * scale) / 2, y + (h - 16 * scale) / 2, icon, tint, scale, dim ? Canvas::ICON_DIM : Canvas::ICON_NORMAL);
+}
+
 bool InventoryPanel::draw(const InventoryView& v, bool force) {
 	refilter(v);
 	if (!_canvas.ready() || (!force && !_dirty && v.version == _drawnVersion)) return false;
@@ -475,19 +640,23 @@ bool InventoryPanel::draw(const InventoryView& v, bool force) {
 	_drawnVersion = v.version;
 	_canvas.unclip();
 	_canvas.gradient(0, 0, Canvas::W, Canvas::H, BG_TOP, BG_BOTTOM);
-	drawBars(v);
-	drawGrid(v);
-	drawTabs(v);
-	if (_cursor) {
-		// Open: a light edge round the grid (the character stands meanwhile).
-		_canvas.frame(GRID_X - 1, GRID_Y - 1, GRID_X + COLS * CELL_W + 2, GRID_Y + GRID_H + 2, 0xE8ECF0C0u);
+	drawBars(v, open());
+	switch (_page) {
+	case PAGE_INVENTORY:
+		drawGrid(v);
+		drawTabs(v);
+		break;
+	case PAGE_DIARY: drawDiary(v); break;
+	case PAGE_CHARACTER: drawCharacter(v); break;
+	default: drawPlay(v); break;
 	}
-	if (_assigning) drawCross(v);
+	if (_assigning) drawPicker(v);
 	return true;
 }
 
-void InventoryPanel::drawBars(const InventoryView& v) {
-	// Health on the left, mana on the right: framed bars, as on the console's screen.
+void InventoryPanel::drawBars(const InventoryView& v, bool header) {
+	// Health on the left, mana on the right: framed bars, as on the console's
+	// screen. An open page has its back arrow and name before them.
 	const auto bar = [&](int x0, int x1, i32 value, i32 most, u32 fill, u32 light) {
 		const int y0 = 5, y1 = 15;
 		_canvas.fill(x0 - 3, y0 - 3, x1 + 3, y1 + 3, 0x2A2C30FFu);
@@ -501,8 +670,56 @@ void InventoryPanel::drawBars(const InventoryView& v) {
 			_canvas.fill(x0, y0 + 1, x0 + w, y0 + 2, lerp(light, 0xFFFFFFFFu, 90));
 		}
 	};
-	bar(9, 152, v.hp, v.hpMax, HP, HP_LIGHT);
-	bar(168, 311, v.mana, v.manaMax, MANA, MANA_LIGHT);
+	if (!header) {
+		bar(9, 152, v.hp, v.hpMax, HP, HP_LIGHT);
+		bar(168, 311, v.mana, v.manaMax, MANA, MANA_LIGHT);
+		return;
+	}
+	_canvas.fill(2, 2, BACK_W - 4, BARS_H - 1, 0x2A2E34FFu);
+	_canvas.frame(2, 2, BACK_W - 4, BARS_H - 1, CELL_LINE);
+	_canvas.text((BACK_W - 2) / 2, 3, "\xE2\x97\x80", TITLE, ui::TEXT, ui::CENTER);
+	_canvas.text(BACK_W + 2, 3, kPageTitles[_page], TITLE, ui::TEXT, ui::LEFT, 0, true);
+	bar(140, 222, v.hp, v.hpMax, HP, HP_LIGHT);
+	bar(238, 311, v.mana, v.manaMax, MANA, MANA_LIGHT);
+}
+
+void InventoryPanel::slotTile(int slot, const InventoryView& v, bool picker) {
+	int cx, cy;
+	slotCentre(slot, cx, cy);
+	const int x = cx - SLOT_W / 2 + 1, y = cy - SLOT_H / 2, w = SLOT_W - 3, h = SLOT_H;
+	const bool pressed = _touching && !_moved && (_start.region == R_SLOT || _start.region == R_PICKER) && _start.index == slot;
+	const bool lit = (_flash > 0.0f && _flashSlot == slot) || pressed || (picker && _pickerSlot == slot);
+	// A key of a keyboard, in the colours of the console's cells.
+	if (lit) _canvas.gradient(x, y, x + w, y + h, SEL_TOP, SEL_BOTTOM);
+	else _canvas.gradient(x, y, x + w, y + h, 0x262A30F0u, 0x14171AF0u);
+	_canvas.frame(x, y, x + w, y + h, lit ? SEL_EDGE : CELL_LINE);
+	_canvas.fill(x + 1, y + 1, x + w - 1, y + 2, 0xFFFFFF18u);
+	_canvas.text(x + 4, y + 1, kKeys[slot], lit ? TITLE : TEXT_DIM, ui::TEXT, ui::LEFT, 0, true);
+	if (v.quick[slot] == SCRIPT_NONE) return;
+	const bool none = v.quickCount[slot] <= 0;
+	drawThing(x + 8, y + 8, w - 16, h - 14, v.quickPicture[slot], v.quickIcon[slot], v.quickTint[slot], none);
+	char n[16];
+	snprintf(n, sizeof(n), "%ld", static_cast<long>(v.quickCount[slot]));
+	if (v.quickCount[slot] != 1) _canvas.text(x + w - 4, y + h - 15, n, none ? WARN : TEXT, ui::TEXT, ui::RIGHT, 0, true);
+}
+
+void InventoryPanel::drawPlay(const InventoryView& v) {
+	for (int k = 0; k < QUICK_SLOTS; ++k) slotTile(k, v, false);
+	static const u8 kIcons[3] = {ICON_BAG, ICON_BOOK, ICON_ARMOR};
+	static const char* const kNames[3] = {"Инвентарь", "Дневник", "Персонаж"};
+	for (int k = 0; k < 3; ++k) {
+		int cx, cy;
+		buttonCentre(k, cx, cy);
+		const int x0 = cx - BUTTON_W / 2, y0 = BUTTON_Y, x1 = x0 + BUTTON_W, y1 = y0 + BUTTON_H;
+		const bool pressed = _touching && !_moved && _start.region == R_BUTTON && _start.index == k;
+		_canvas.gradient(x0, y0, x1, y1, pressed ? SEL_TOP : TAB_TOP, pressed ? SEL_BOTTOM : TAB_BOTTOM);
+		_canvas.frame(x0, y0, x1, y1, pressed ? SEL_EDGE : TAB_LIGHT);
+		_canvas.fill(x0 + 1, y1 - 2, x1 - 1, y1 - 1, TAB_DARK);
+		_canvas.icon(cx - 16, y0 + 12, kIcons[k], 0xE8ECF0FFu, 2, Canvas::ICON_MONO);
+		_canvas.text(cx, y0 + 52, kNames[k], TITLE, ui::TEXT, ui::CENTER, 0, true);
+	}
+	if (v.messageTime > 0.0f && v.message[0])
+		_canvas.text(Canvas::W / 2, BUTTON_Y - 17, v.message, GOLD, ui::TEXT, ui::CENTER, Canvas::W - 8, true);
 }
 
 void InventoryPanel::drawTabs(const InventoryView&) {
@@ -510,7 +727,7 @@ void InventoryPanel::drawTabs(const InventoryView&) {
 	_canvas.gradient(x0, y0, x1, y1, TAB_TOP, TAB_BOTTOM);
 	_canvas.fill(x0, y0, x1, y0 + 1, TAB_LIGHT);
 	_canvas.fill(x0, y1 - 1, x1, y1, TAB_DARK);
-	for (int t = 0; t < PAGES; ++t) {
+	for (int t = 0; t < TAB_PAGES; ++t) {
 		int cx, cy;
 		pageCentre(t, cx, cy);
 		const bool on = t == _tab;
@@ -530,15 +747,14 @@ void InventoryPanel::drawTabs(const InventoryView&) {
 	// L and R at the ends, as the shoulder buttons change the page.
 	for (int k = 0; k < 2; ++k) {
 		const int cx = k ? x1 - PILL_W / 2 : x0 + PILL_W / 2, cy = (y0 + y1) / 2;
-		const u32 c = _cursor ? PILL : PILL_OFF;
-		_canvas.fill(cx - 8, cy - 6, cx + 8, cy + 6, c);
-		_canvas.fill(cx - 9, cy - 5, cx + 9, cy + 5, c);
+		_canvas.fill(cx - 8, cy - 6, cx + 8, cy + 6, PILL);
+		_canvas.fill(cx - 9, cy - 5, cx + 9, cy + 5, PILL);
 		_canvas.text(cx, cy - 7, k ? "R" : "L", PILL_TEXT, ui::TEXT, ui::CENTER);
 	}
 }
 
 void InventoryPanel::drawGrid(const InventoryView& v) {
-	const int x0 = GRID_X, y0 = GRID_Y, x1 = GRID_X + COLS * CELL_W, y1 = GRID_Y + GRID_H;
+	const int x0 = GRID_X, y0 = GRID_Y, x1 = GRID_X + COLS * CELL_W - 1, y1 = GRID_Y + GRID_H;
 	_canvas.clip(x0, y0, x1 + 1, y1 + 1);
 	const int rows = max(int((_shownCount + COLS - 1) / COLS), ROWS_SHOWN);
 	const int firstRow = _scroll / CELL_H;
@@ -551,19 +767,15 @@ void InventoryPanel::drawGrid(const InventoryView& v) {
 			cell(x, y, CELL_W, CELL_H, chosen, e && _flash > 0.0f && e->symbol == _flashSymbol);
 			if (!e) continue;
 			const bool dim = (e->flags & ITEMF_BLOCKED) && !(e->flags & ITEMF_EQUIPPED);
-			_canvas.icon(x + (CELL_W - 32) / 2, y + (CELL_H - 32) / 2, e->icon, e->tint, 2, dim ? Canvas::ICON_DIM : Canvas::ICON_NORMAL);
-			if (e->flags & ITEMF_BUSY) {
-				const int h = int(float(CELL_H - 2) * v.busyShare);
-				_canvas.fill(x + 1, y + CELL_H - h, x + CELL_W, y + CELL_H, 0xE8C77A50u);
-			}
+			drawThing(x + 4, y + 2, CELL_W - 8, CELL_H - 4, e->picture, e->icon, e->tint, dim);
 			if (e->flags & ITEMF_EQUIPPED) {
 				// Worn: a gold corner; in the hands: a gold line along the bottom too.
 				for (int k = 0; k < 7; ++k) _canvas.fill(x + 1, y + 1 + k, x + 8 - k, y + 2 + k, GOLD);
 				if (e->flags & ITEMF_IN_HAND) _canvas.fill(x + 3, y + CELL_H - 3, x + CELL_W - 2, y + CELL_H - 1, GOLD);
 			}
 			for (int q = 0; q < QUICK_SLOTS; ++q)
-				if (e->quick & (1 << q)) {
-					_canvas.text(x + CELL_W - 4, y + 1, kArrows[q], 0xD8DCE0C0u, ui::TEXT, ui::RIGHT, 0, true);
+				if (e->quick & (1u << q)) {
+					_canvas.text(x + CELL_W - 4, y + 1, kKeys[q], 0xD8DCE0C0u, ui::TEXT, ui::RIGHT, 0, true);
 					break;
 				}
 			if (e->count > 1 || dim) {
@@ -573,7 +785,7 @@ void InventoryPanel::drawGrid(const InventoryView& v) {
 			}
 		}
 	// The thin grey lines over it all, as on the console.
-	for (int c = 0; c <= COLS; ++c) _canvas.fill(x0 + c * CELL_W, y0, x0 + c * CELL_W + 1, y1 + 1, CELL_LINE);
+	for (int c = 0; c <= COLS; ++c) _canvas.fill(min(x0 + c * CELL_W, x1), y0, min(x0 + c * CELL_W, x1) + 1, y1 + 1, CELL_LINE);
 	for (int r = firstRow; r <= rows && r * CELL_H - _scroll <= GRID_H; ++r) {
 		const int y = y0 + r * CELL_H - _scroll;
 		_canvas.fill(x0, y, x1 + 1, y + 1, CELL_LINE);
@@ -583,7 +795,7 @@ void InventoryPanel::drawGrid(const InventoryView& v) {
 		// (The chosen cell's white edge stays on top of the lines.)
 		if (v.items[_shown[n]].symbol != _selected) continue;
 		const int x = x0 + int(n % COLS) * CELL_W, y = y0 + int(n / COLS) * CELL_H - _scroll;
-		_canvas.frame(x, y, x + CELL_W + 1, y + CELL_H + 1, SEL_EDGE);
+		_canvas.frame(x, y, min(x + CELL_W + 1, x1 + 1), y + CELL_H + 1, SEL_EDGE);
 	}
 	if (maxScroll() > 0) {
 		const int h = max(GRID_H * GRID_H / (GRID_H + maxScroll()), 12);
@@ -594,28 +806,102 @@ void InventoryPanel::drawGrid(const InventoryView& v) {
 		_canvas.text((x0 + x1) / 2, y0 + GRID_H / 2 - 7, v.present ? kTabNames[_tab] : "Инвентаря нет", TEXT_DIM, ui::TEXT, ui::CENTER, 0,
 		             true);
 	_canvas.unclip();
+	if (v.messageTime > 0.0f && v.message[0]) {
+		// The last news over the bottom of the grid.
+		const int w = Canvas::measure(v.message) + 12;
+		_canvas.fill(Canvas::W / 2 - w / 2, y1 - 17, Canvas::W / 2 + w / 2, y1 - 1, 0x000000C0u);
+		_canvas.text(Canvas::W / 2, y1 - 16, v.message, GOLD, ui::TEXT, ui::CENTER, Canvas::W - 8);
+	}
 }
 
-void InventoryPanel::drawCross(const InventoryView& v) {
-	// Over the grid, darkened: the four slots round the chosen thing.
-	_canvas.fill(GRID_X, GRID_Y, GRID_X + COLS * CELL_W + 1, GRID_Y + GRID_H + 1, 0x000000B0u);
+void InventoryPanel::drawPicker(const InventoryView& v) {
+	// Over the page, darkened: the ten slots to choose from, the thing to put there.
+	_canvas.fill(0, BARS_H, Canvas::W, Canvas::H, 0x000000C0u);
+	for (int k = 0; k < QUICK_SLOTS; ++k) slotTile(k, v, true);
 	const ItemEntry* sel = entryOf(v, _selected);
-	int cx, cy;
-	crossCentre(0, cx, cy);
-	cy += CROSS_CELL; // the middle
-	const int half = CROSS_CELL / 2 - 2;
-	_canvas.disc(cx, cy, 20, 0x3C4148FFu);
-	if (sel) _canvas.icon(cx - 16, cy - 16, sel->icon, sel->tint, 2);
-	for (int s = 0; s < QUICK_SLOTS; ++s) {
-		int x, y;
-		crossCentre(s, x, y);
-		const bool pressed = _touching && _start.region == R_CROSS && _start.index == s;
-		_canvas.gradient(x - half, y - half, x + half, y + half, pressed ? SEL_TOP : 0x23282EFFu, pressed ? SEL_BOTTOM : 0x15181CFFu);
-		_canvas.frame(x - half, y - half, x + half + 1, y + half + 1, sel && v.quick[s] == sel->symbol ? GOLD : SEL_EDGE);
-		if (v.quick[s] != SCRIPT_NONE) _canvas.icon(x - 16, y - 16, v.quickIcon[s], v.quickTint[s], 2, Canvas::ICON_DIM);
-		_canvas.text(x, y - 8, kArrows[s], TITLE, ui::TITLE, ui::CENTER, 0, true);
+	if (sel) {
+		drawThing(Canvas::W / 2 - 50, SLOT_Y + 2 * SLOT_H + 12, 40, 40, sel->picture, sel->icon, sel->tint, false);
+		_canvas.text(Canvas::W / 2 - 4, SLOT_Y + 2 * SLOT_H + 16, sel->name, TITLE, ui::TEXT, ui::LEFT, 150, true);
 	}
-	_canvas.text(GRID_X + COLS * CELL_W / 2, GRID_Y + 3, "В какой слот? (R + направление)", TEXT, ui::TEXT, ui::CENTER, 0, true);
+	_canvas.text(Canvas::W / 2, SLOT_Y + 2 * SLOT_H + 60, "В какой слот? Та же вещь в своём слоте — убрать", TEXT, ui::TEXT, ui::CENTER,
+	             Canvas::W - 8, true);
+}
+
+void InventoryPanel::drawDiary(const InventoryView& v) {
+	const int x0 = 6, x1 = Canvas::W - 6;
+	_canvas.clip(0, BARS_H + 2, Canvas::W, Canvas::H);
+	int y = BARS_H + 4 - _listScroll;
+	if (!v.topicCount) {
+		_canvas.paragraph(x0, y + 8, x1 - x0, "Записей пока нет. Их делают скрипты игры (Log_AddEntry) в разговорах и заданиях — "
+		                                       "разговоров в порте ещё нет.",
+		                  TEXT_DIM);
+	}
+	static const char* const kStatus[] = {"", "идёт", "выполнено", "провалено", "устарело"};
+	for (u32 t = 0; t < v.topicCount; ++t) {
+		const InventoryView::Topic& topic = v.topics[t];
+		const bool openTopic = _topic == int(t);
+		_topicY[t] = y;
+		_canvas.fill(x0 - 2, y, x1 + 2, y + 15, openTopic ? TAB_ON : 0xFFFFFF10u);
+		_canvas.text(x0 + 2, y + 1, topic.name, openTopic ? TITLE : TEXT, ui::TEXT, ui::LEFT, x1 - x0 - 80, true);
+		_canvas.text(x1 - 2, y + 1, topic.status < 5 ? kStatus[topic.status] : "", topic.status == 2 ? GOLD : TEXT_DIM, ui::TEXT, ui::RIGHT);
+		y += 16;
+		if (!openTopic) continue;
+		for (u32 k = 0; k < topic.count; ++k) {
+			y += 2;
+			y += _canvas.paragraph(x0 + 8, y, x1 - x0 - 10, v.entries[topic.first + k], TEXT_DIM);
+		}
+		y += 4;
+	}
+	_canvas.unclip();
+}
+
+void InventoryPanel::drawCharacter(const InventoryView& v) {
+	const InventoryView::Sheet& s = v.sheet;
+	int y = BARS_H + 6;
+	_canvas.text(Canvas::W / 2, y, s.name[0] ? s.name : "—", TITLE, ui::TITLE, ui::CENTER, 0, true);
+	y += 20;
+	if (s.guild[0]) _canvas.text(Canvas::W / 2, y, s.guild, TEXT_DIM, ui::TEXT, ui::CENTER, 0, true);
+	y += 18;
+	const auto row = [&](int x, int w, int& yy, const char* label, const char* value, u32 colour) {
+		_canvas.text(x, yy, label, TEXT_DIM, ui::TEXT, ui::LEFT, w - 40, true);
+		_canvas.text(x + w, yy, value, colour, ui::TEXT, ui::RIGHT, 0, true);
+		_canvas.fill(x, yy + 13, x + w, yy + 14, 0xFFFFFF14u);
+		yy += 15;
+	};
+	char buf[48];
+	int yl = y, yr = y;
+	const int lx = 8, lw = 146, rx = 166, rw = 146;
+	snprintf(buf, sizeof(buf), "%ld", static_cast<long>(s.level));
+	row(lx, lw, yl, "Уровень", buf, TITLE);
+	snprintf(buf, sizeof(buf), "%ld / %ld", static_cast<long>(s.exp), static_cast<long>(s.expNext));
+	row(lx, lw, yl, "Опыт", buf, TEXT);
+	snprintf(buf, sizeof(buf), "%ld", static_cast<long>(s.learn));
+	row(lx, lw, yl, "Очки обучения", buf, s.learn > 0 ? GOLD : TEXT);
+	snprintf(buf, sizeof(buf), "%ld", static_cast<long>(s.strength));
+	row(lx, lw, yl, "Сила", buf, TEXT);
+	snprintf(buf, sizeof(buf), "%ld", static_cast<long>(s.dexterity));
+	row(lx, lw, yl, "Ловкость", buf, TEXT);
+	snprintf(buf, sizeof(buf), "%ld / %ld", static_cast<long>(v.hp), static_cast<long>(v.hpMax));
+	row(lx, lw, yl, "Здоровье", buf, TEXT);
+	snprintf(buf, sizeof(buf), "%ld / %ld", static_cast<long>(v.mana), static_cast<long>(v.manaMax));
+	row(lx, lw, yl, "Мана", buf, TEXT);
+	_canvas.text(rx, yr, "Защита", TITLE, ui::TEXT, ui::LEFT, 0, true);
+	yr += 15;
+	static const char* const kProt[4] = {"от оружия", "от стрел", "от огня", "от магии"};
+	for (int k = 0; k < 4; ++k) {
+		snprintf(buf, sizeof(buf), "%ld", static_cast<long>(s.protection[k]));
+		row(rx, rw, yr, kProt[k], buf, TEXT);
+	}
+	yr += 4;
+	_canvas.text(rx, yr, "Снаряжение", TITLE, ui::TEXT, ui::LEFT, 0, true);
+	yr += 15;
+	const char* worn[3] = {s.melee, s.ranged, s.armor};
+	static const char* const kWorn[3] = {"Оружие:", "Дальнее:", "Броня:"};
+	for (int k = 0; k < 3; ++k) {
+		_canvas.text(rx, yr, kWorn[k], TEXT_DIM, ui::TEXT, ui::LEFT, 0, true);
+		_canvas.text(rx + 56, yr, worn[k][0] ? worn[k] : "—", TEXT, ui::TEXT, ui::LEFT, rw - 56, true);
+		yr += 15;
+	}
 }
 
 } // namespace g3

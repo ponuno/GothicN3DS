@@ -230,6 +230,15 @@ int Hero::stateOf(const Clip* clip) const {
 	return -1;
 }
 
+bool Hero::isStrafe(const Clip* clip) const {
+	if (!clip) return false;
+	for (const auto& rowStrafes : _strafe)
+		for (const auto& pair : rowStrafes)
+			for (const Clip* c : pair)
+				if (c == clip) return true;
+	return false;
+}
+
 bool Hero::isTurn(const Clip* clip) const {
 	if (!clip) return false;
 	for (const auto& rowTurns : _turn)
@@ -729,7 +738,10 @@ Drive Hero::control(const Input& in, const Player& player, float dt) {
 					_airTime = 0;
 				}
 				_roleNow = JUMP;
-			} else if (strafe != 0 && _strafe[r][walk][strafe > 0] && (standing || busy)) {
+			} else if (strafe != 0 && _strafe[r][walk][strafe > 0] && (standing || busy || isStrafe(cur))) {
+				// (The game's steps aside with a weapon in hand are loops: one
+				// in play is no reason to stand first - that made the
+				// character flicker between the two every frame.)
 				act(_strafe[r][walk][strafe > 0], fadeOf(_strafe[r][walk][strafe > 0]));
 				if (!busy) _roleNow = STRAFE;
 			} else if (fwd > 0) {

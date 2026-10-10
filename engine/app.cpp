@@ -60,6 +60,7 @@ bool App::init(const char* pakPath, const char* worldName) {
 	_ui.init();
 	// The bottom screen's inventory (a picture of its own, drawn by the processor).
 	_panel.init();
+	_panel.setPictures(&_pictures);
 	_target = -1;
 	_locked = false;
 	_fight = FightStats();
@@ -232,6 +233,8 @@ void App::shutdown() {
 	_ui.release();
 	_panel.release();
 	_loot.release();
+	_pictures.release();
+	_showModel.release();
 	_npcs.release();
 	_hero.release();
 	_sky.release();
@@ -516,6 +519,7 @@ void App::render() {
 	const float indoorLight[3] = {1, 1, 1};
 	_npcs.draw(viewProj, indoor ? indoorLight : sky.light);
 	_loot.draw(_cam.pos, indoor ? indoorLight : sky.light);
+	drawShowcase();
 	if (_heroVisible) _hero.draw();
 	gfx::setPass(gfx::PASS_BLEND);
 	_world.drawBlended();

@@ -189,7 +189,6 @@ public:
 	Loot& loot() { return _loot; }
 	int lootTarget() const { return _lootTarget; }
 	// The platform says R is held: the quick slots are shown on the top screen.
-	void setQuickHint(bool on) { _quickHint = on; }
 	struct ItemStats {
 		u32 used = 0;        // potions and food that did their work
 		u32 refused = 0;     // requests turned down (in a fight, too weak ...)
@@ -290,11 +289,22 @@ private:
 	u32 _queued = 0xFFFFFFFFu; // the next request, waiting for this one
 	u32 _rings[2] = {0xFFFFFFFFu, 0xFFFFFFFFu};
 	u32 _amulet = 0xFFFFFFFFu;
-	u32 _quick[QUICK_SLOTS] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
+	u32 _quick[QUICK_SLOTS] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+	                           0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
 	float _calm = 100.0f;      // seconds since the character was last in a fight
 	u32 _lastBlows = 0;
-	bool _quickHint = false;
-	float _hostileScan = 0;
+	// The pictures of the things (baked "icon/<visual>") and the ones the archive lacks.
+	ItemPictures _pictures;
+	u16 _noPicture[256] = {};
+	u32 _noPictureCount = 0;
+	i16 thumbOf(u16 visual);
+	// The thing turning in the top screen's info box: its model.
+	Model _showModel;
+	u16 _showVisual = 0;
+	bool _showTried = false;
+	u32 _showSymbol = 0xFFFFFFFFu;
+	void drawShowcase();
+	u32 _logStamp = 0;	float _hostileScan = 0;
 	u32 _invStamp = 0;         // what the view was made from (a hash)
 	u32 _equipVersion = 0;     // counts changes of what is worn
 	ItemStats _itemStats;

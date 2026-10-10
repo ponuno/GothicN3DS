@@ -1,35 +1,32 @@
-// The bottom screen: the inventory, drawn by the processor into a picture of
-// its own (Canvas) that the platform copies to the screen - the touch screen
-// of the 3DS, a PNG on the PC. The 3D picture and its overlay are the top
-// screen's; this one costs the graphics chip nothing and is drawn again only
-// when something on it changes.
+// The bottom screen, drawn by the processor into a picture of its own
+// (Canvas) that the platform copies to the screen - the touch screen of the
+// 3DS, a PNG on the PC. It costs the graphics chip nothing and is drawn again
+// only when something on it changes.
 //
-// The look is that of Gothic Classic's console inventory: cells with thin
-// grey lines over a dark ground, the chosen one blue with a white edge, a
-// blue strip of pages with L and R at its ends, framed bars of health and
-// mana. What the chosen thing is (the info box of "what ... number" lines),
-// the quick slots round the D-Pad and the button hints are drawn on the top
-// screen, where the eyes are in a fight - and only while they are wanted
-// (App::drawItemHud).
+// The look follows Gothic Classic's console interface: framed bars of health
+// and mana, cells with thin grey lines over a dark ground, the chosen one
+// blue with a white edge, a blue strip of pages with L and R at its ends; the
+// things are shown by pictures of their own models (baked: "icon/<visual>").
 //
-// Layout, 320 x 240 pixels:
-//   top       health (red) and mana (blue)
-//   grid      the things, 4 in a row, 5 rows in sight: a picture and how many;
-//             a gold corner on what is worn, a gold line under the weapon in hand
-//   bottom    the pages between L and R (everything, weapons, armour, magic,
-//             potions, food, the rest) and the numbers of the report
+// Pages:
+//   play       (always, while nothing is open) health and mana; the ten
+//              quick slots, 1 to 0 as the number keys of the PC original -
+//              tap one to use what is in it; three buttons: the inventory,
+//              the diary, the character
+//   inventory  the things, 5 in a row, 4 rows in sight; the pages of kinds
+//              (everything, weapons, armour, magic, potions, food, the rest)
+//              and the report's numbers
+//   diary      the topics the scripts wrote (Log_CreateTopic, Log_AddEntry)
+//   character  level, experience, attributes, protection, what is worn
+// While a page is open the character stands still - as in the original the
+// inventory may be used in a fight, at that price. SELECT or the buttons open
+// them; SELECT, B or the back arrow at the top close them.
 //
-// As in the original, the inventory may be used in a fight, but it costs:
-// while it is open the character stands still - no steps, no blows - and the
-// world goes on. Closed, the screen only shows. SELECT or a touch on the grid
-// or the pages opens it; SELECT, B or a tap on the bars closes it. (The quick
-// slots, R + D-Pad, work without opening it, as the console's do.)
-//
-// Touch: a tap chooses a thing (its info box shows on the top screen), a tap
-// on the chosen one uses it; drag the grid up and down to scroll it; hold a
-// thing to put it into a quick slot (a cross of four arrows comes up: tap
-// one). Buttons: the D-Pad chooses, L / R change the page, A uses, X and then
-// a direction put the chosen thing into a slot, B closes.
+// Inventory, touch: a tap chooses a thing (its info box and turning model show
+// on the top screen), a tap on the chosen one uses it; drag the grid to
+// scroll; hold a thing (or X) and the ten slots come up: tap one to put it
+// there. Buttons: the D-Pad chooses, L / R change the page, A uses, X puts
+// into a slot (then the D-Pad and A pick it), B closes.
 #pragma once
 #include "inventory.h"
 
@@ -65,6 +62,11 @@ public:
 		ICON_MONO,  // all of it in `tint` (its alpha too), no outline: the tabs' white signs
 	};
 	void icon(int x, int y, u8 icon, u32 tint, int scale, int mode = ICON_NORMAL);
+	// A picture of RGB565 and coverage, drawn `w` x `h` (scaled to it, its
+	// shape kept and centred); `dim` greys it.
+	void picture(int x, int y, int w, int h, const u16* rgb, const u8* alpha, int pw, int ph, bool dim = false);
+	// Text broken into lines of at most `width` pixels; returns the height taken.
+	int paragraph(int x, int y, int width, const char* utf8, u32 rgba, int maxLines = 0);
 	// From `top` at y0 to `bottom` at y1.
 	void gradient(int x0, int y0, int x1, int y1, u32 top, u32 bottom);
 	void disc(int cx, int cy, int r, u32 rgba);
@@ -82,36 +84,72 @@ private:
 	int _cx0 = 0, _cy0 = 0, _cx1 = W, _cy1 = H;
 };
 
+// The pictures of the things (baked "icon/<visual>"), kept as the bottom
+// screen draws them: RGB565 and a coverage of 0..255.
+struct ItemPicture {
+	u16 visual = 0; // the GameText of the visual it shows
+	u16 w = 0, h = 0;
+	u16* rgb = nullptr;
+	u8* alpha = nullptr;
+};
+
+class ItemPictures {
+public:
+	enum { CAPACITY = 192 };
+	ItemPictures() = default;
+	~ItemPictures() { release(); }
+	ItemPictures(const ItemPictures&) = delete;
+	ItemPictures& operator=(const ItemPictures&) = delete;
+	// The picture of `visual`, -1 if it is not here (yet).
+	int find(u16 visual) const;
+	// Keeps a picture from RGBA8 rows; -1 if full or out of memory.
+	int add(u16 visual, int w, int h, const u8* rgba);
+	const ItemPicture* get(int i) const { return i >= 0 && u32(i) < _count ? &_pics[i] : nullptr; }
+	u32 count() const { return _count; }
+	void release();
+
+private:
+	ItemPicture _pics[CAPACITY];
+	u32 _count = 0;
+};
+
 class InventoryPanel {
 public:
+	enum PanelPage : u8 { PAGE_PLAY, PAGE_INVENTORY, PAGE_DIARY, PAGE_CHARACTER, PANEL_PAGES };
 	// Where things are (for the platform and the tests).
 	static constexpr int BARS_H = 20;
-	static constexpr int GRID_X = 2, GRID_Y = 22, CELL_W = 79, CELL_H = 38, COLS = 4, ROWS_SHOWN = 5;
-	static constexpr int GRID_H = CELL_H * ROWS_SHOWN; // 190: down to 212
+	// The play page: two rows of five quick slots, three buttons under them.
+	static constexpr int SLOT_X = 4, SLOT_Y = 26, SLOT_W = 63, SLOT_H = 60;
+	static constexpr int BUTTON_Y = 154, BUTTON_H = 80, BUTTON_W = 98;
+	// The inventory: 5 x 4 cells in sight, the strip of kinds under them.
+	static constexpr int GRID_X = 0, GRID_Y = 22, CELL_W = 64, CELL_H = 48, COLS = 5, ROWS_SHOWN = 4;
+	static constexpr int GRID_H = CELL_H * ROWS_SHOWN; // 192: down to 214
 	static constexpr int TABS_Y = 215, TABS_H = 23, PILL_W = 22, TAB_W = 34;
-	static constexpr int PAGES = ITEM_TABS + 1; // the last: the report
-	// The cross of quick slots that comes up to put a thing into one.
-	static constexpr int CROSS_CELL = 52;
+	static constexpr int TAB_PAGES = ITEM_TABS + 1; // the last: the report
+	// An open page's header: the back arrow.
+	static constexpr int BACK_W = 44;
 
 	bool init() { return _canvas.init(); }
 	void release() { _canvas.release(); }
+	void setPictures(const ItemPictures* pictures) {
+		_pictures = pictures;
+		_dirty = true;
+	}
 
-	// Reads the touch screen (and the buttons, while they are the panel's)
-	// and says what to do.
+	// Reads the touch screen (and the buttons, while a page is open) and says what to do.
 	PanelCommand update(const PanelInput& in, const InventoryView& view, float dt);
-	// Draws the panel again if anything shown has changed (or `force`);
-	// true if it did.
+	// Draws the panel again if anything shown has changed (or `force`); true if it did.
 	bool draw(const InventoryView& view, bool force = false);
 	const Canvas& canvas() const { return _canvas; }
 	void invalidate() { _dirty = true; }
 
-	// The inventory is open: the buttons are the panel's, the character
-	// stands (SELECT, or a touch on the grid or the pages, opens it; SELECT,
-	// B or a tap on the bars closes it). Closed it only shows.
-	bool cursor() const { return _cursor; }
-	bool open() const { return _cursor; }
-	void setCursor(bool on);
-	// Choosing a slot for the chosen thing (the cross is up).
+	PanelPage page() const { return PanelPage(_page); }
+	void openPage(PanelPage p);
+	// A page is open: the buttons are the panel's, the character stands.
+	bool open() const { return _page != PAGE_PLAY; }
+	bool cursor() const { return open(); }
+	void setCursor(bool on) { openPage(on ? PAGE_INVENTORY : PAGE_PLAY); }
+	// Choosing a slot for the chosen thing (the ten slots are up).
 	bool assigning() const { return _assigning; }
 
 	ItemTab tab() const { return ItemTab(_tab); }
@@ -123,39 +161,51 @@ public:
 		_dirty = true;
 	}
 	// Seconds the chosen thing's info box still shows on the top screen.
-	float inspecting() const { return _inspect; }
+	float inspecting() const { return _page == PAGE_INVENTORY ? _inspect : 0.0f; }
 	// What is in the grid, in order: indices into the view's items.
 	u32 shownCount() const { return _shownCount; }
 	u32 shown(u32 i) const { return _shown[i]; }
 	int scroll() const { return _scroll; }
 	// The middle of the n-th cell of the grid as it is scrolled now (y may be off the grid).
 	void tileCentre(u32 n, int& x, int& y) const;
-	// The middle of the arrow of quick slot `slot` in the cross.
-	static void crossCentre(int slot, int& x, int& y);
-	// The middle of page `page` (PAGES - 1: the report) in the strip.
+	// The middle of quick slot `slot` (on the play page, and in the picker).
+	static void slotCentre(int slot, int& x, int& y);
+	// The middle of the play page's button `k` (0 inventory, 1 diary, 2 character).
+	static void buttonCentre(int k, int& x, int& y);
+	// The middle of kind page `page` (TAB_PAGES - 1: the report) in the strip.
 	static void pageCentre(int page, int& x, int& y);
 
 private:
 	static constexpr float kInspectTime = 4.0f;
-	enum Region : u8 { R_NONE, R_PAGE, R_PREV_TAB, R_NEXT_TAB, R_TILE, R_GRID, R_BARS, R_CROSS };
+	enum Region : u8 { R_NONE, R_SLOT, R_BUTTON, R_BACK, R_KIND, R_PREV_TAB, R_NEXT_TAB, R_TILE, R_GRID, R_PICKER, R_LIST, R_BARS };
 	struct Hit {
 		u8 region = R_NONE;
-		int index = -1; // the page, the slot, the tile (into _shown)
+		int index = -1;
 	};
 	Hit hitTest(int x, int y) const;
 	void refilter(const InventoryView& v);
 	const ItemEntry* entryOf(const InventoryView& v, u32 symbol) const;
 	void keepInSight(u32 index);
 	int maxScroll() const;
-	void drawBars(const InventoryView& v);
+	void drawBars(const InventoryView& v, bool header);
+	void drawPlay(const InventoryView& v);
 	void drawTabs(const InventoryView& v);
 	void drawGrid(const InventoryView& v);
-	void drawCross(const InventoryView& v);
+	void drawPicker(const InventoryView& v);
+	void drawDiary(const InventoryView& v);
+	void drawCharacter(const InventoryView& v);
+	void drawThing(int x, int y, int w, int h, i16 picture, u8 icon, u32 tint, bool dim);
+	void slotTile(int slot, const InventoryView& v, bool picker);
 	void cell(int x, int y, int w, int h, bool chosen, bool lit);
 
 	Canvas _canvas;
+	const ItemPictures* _pictures = nullptr;
+	u8 _page = PAGE_PLAY;
 	u8 _tab = TAB_ALL;
 	int _scroll = 0;
+	int _listScroll = 0; // the diary's
+	int _topic = -1;     // the diary's topic opened
+	int _topicY[InventoryView::DIARY_TOPICS] = {}; // where each topic was drawn (for taps)
 	u32 _selected = 0xFFFFFFFFu;
 	u32 _shown[INVENTORY_MAX] = {};
 	u32 _shownCount = 0;
@@ -163,8 +213,8 @@ private:
 	u8 _filteredTab = 0xFF;
 	u32 _drawnVersion = 0xFFFFFFFFu;
 	bool _dirty = true;
-	bool _cursor = false;
-	bool _assigning = false; // the cross is up: the next direction (or tap) picks the slot
+	bool _assigning = false; // the ten slots are up: the next tap (or the D-Pad and A) picks one
+	int _pickerSlot = 0;
 	float _inspect = 0;
 	// The touch in progress.
 	bool _touching = false;
@@ -172,8 +222,8 @@ private:
 	int _startX = 0, _startY = 0, _startScroll = 0, _x = 0, _y = 0;
 	float _held = 0;
 	bool _moved = false, _longDone = false;
-	bool _opening = false; // this touch opened the inventory
-	float _flash = 0; // a cell just used: lit for a moment
+	float _flash = 0; // a slot or cell just used: lit for a moment
+	int _flashSlot = -1;
 	u32 _flashSymbol = 0xFFFFFFFFu;
 };
 

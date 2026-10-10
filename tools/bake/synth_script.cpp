@@ -652,6 +652,15 @@ instance ItMw_Club (C_ITEM) {
 // The inventory's things: of every kind, with what using and wearing them
 // does, and the info box's lines the way the original writes them.
 extern func void   Npc_ChangeAttribute(var C_NPC n, var int atr, var int value);
+// The diary.
+extern func void   Log_CreateTopic(var string name, var int section);
+extern func void   Log_SetTopicStatus(var string name, var int status);
+extern func void   Log_AddEntry(var string topic, var string entry);
+const int LOG_MISSION = 0;
+const int LOG_NOTE = 1;
+const int LOG_RUNNING = 1;
+const int LOG_SUCCESS = 2;
+const string TOPIC_Camp = "The camp";
 
 const string NAME_Value = "Value";
 const string NAME_Bonus_HP = "Heals";
@@ -1060,6 +1069,10 @@ func void STARTUP_WORLD() {
 	STARTUP_SUB_CAMP();
 	STARTUP_SUB_WILDERNESS();
 	Wld_SetTime(8, 0);
+	// The diary's first topic, as the game's prologue writes one.
+	Log_CreateTopic(TOPIC_Camp, LOG_MISSION);
+	Log_SetTopicStatus(TOPIC_Camp, LOG_RUNNING);
+	Log_AddEntry(TOPIC_Camp, "The guard at the gate said I should look round the camp first.");
 };
 func void INIT_WORLD() {
 	var C_NPC thorus;

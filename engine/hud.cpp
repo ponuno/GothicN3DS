@@ -13,12 +13,13 @@ void App::drawOverlay() {
 	const int W = gfx::SCREEN_W, H = gfx::SCREEN_H;
 	const Game* game = _npcs.loaded() ? &_npcs.game() : nullptr;
 	const bool character = _hero.loaded() && !_player.flying;
-	// (While the inventory's info box and quick slots are up, they have the bottom of the picture.)
-	const bool items = itemOverlay() || _quickHint;
+	// (While the inventory's info box is up, it has the bottom of the picture.)
+	const bool items = itemOverlay();
 	if (_settings.hud && !menuOpen && character) {
-		// The character's health, bottom left.
+		// The character's health, bottom left - only while the bottom screen
+		// shows the report: otherwise its bars are there, as on the console.
 		const i32 hp = heroHitPoints(), hpMax = heroHitPointsMax();
-		if (game && hpMax > 0 && !items) {
+		if (game && hpMax > 0 && !items && _settings.report) {
 			char buf[32];
 			snprintf(buf, sizeof(buf), "%d / %d", int(hp), int(hpMax));
 			_ui.bar(10, H - 14, 110, H - 8, float(hp) / float(hpMax), ui::RED);

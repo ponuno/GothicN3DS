@@ -5,6 +5,7 @@
 #include "hero.h"
 #include "npcs.h"
 #include "player.h"
+#include "recorder.h"
 #include "sky.h"
 #include "world.h"
 
@@ -105,6 +106,8 @@ public:
 	// True while the camera is below a water surface.
 	bool underwater() const { return _underwater; }
 	const UpdateTimes& times() const { return _times; }
+	// The last five seconds of the character controller, frame by frame.
+	const MoveRecorder& moves() const { return _moves; }
 
 private:
 	void checkPortals();
@@ -131,6 +134,7 @@ private:
 	float _camElevation = 0;   // degrees the player has tilted the view away from the script's elevation
 	float _eyePitch = 0;       // first person with a character: looking up and down
 	UpdateTimes _times;
+	MoveRecorder _moves;
 };
 
 } // namespace g3

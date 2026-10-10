@@ -478,8 +478,8 @@ bool shadeVertex(const DrawCall& call, unsigned index, ShadedVertex& out, bool g
 	// Outputs by meaning: the set bits of an entry's mask are the components
 	// of its semantic, in order.
 	for (const ShaderOutput& o : gSh.outputs) {
-		float* target = o.type == 0 ? out.position : o.type == 2 ? out.color : o.type == 3 ? out.texcoord : nullptr;
-		const int limit = o.type == 3 ? 2 : 4;
+		float* target = o.type == 0 ? out.position : o.type == 2 ? out.color : o.type == 3 ? out.texcoord : o.type == 5 ? out.texcoord1 : nullptr;
+		const int limit = o.type == 3 || o.type == 5 ? 2 : 4;
 		if (!target || o.reg < 0 || o.reg > 15) continue;
 		int k = 0;
 		for (int j = 0; j < 4 && k < limit; ++j)
@@ -571,7 +571,7 @@ void Mtx_PerspTilt(C3D_Mtx* mtx, float fovx, float invaspect, float nearZ, float
 
 bool C3D_TexInitWithParams(C3D_Tex* tex, void*, C3D_TexInitParams p) {
 	u32 size = 0;
-	for (u32 l = 0; l <= p.maxLevel; ++l) size += (u32(p.width) >> l) * (u32(p.height) >> l) * (p.format == GPU_ETC1A4 ? 8 : 4) / 8;
+	for (u32 l = 0; l <= p.maxLevel; ++l) size += (u32(p.width) >> l) * (u32(p.height) >> l) * (p.format == GPU_ETC1 ? 4 : 8) / 8; // (ETC1A4 and A8: a byte a texel)
 	tex->data = linearAlloc(size);
 	tex->size = size;
 	return tex->data != nullptr;

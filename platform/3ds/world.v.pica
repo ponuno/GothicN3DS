@@ -25,6 +25,12 @@
 ; Fog:    linear, per vertex: factor = clamp(fogA - viewZ * fogB, 0, 1), 1 = clear.
 ;         The factor travels in the colour alpha and is applied by the second
 ;         TexEnv stage (see gfx_c3d.cpp). The sky pass sets fogA = 1, fogB = 0.
+;
+; Dissolve (fading = true): texture coordinate 1 is the position on the
+; screen, in texels of the 8x8 noise texture (about a texel a pixel), for the
+; alpha test that dissolves objects in (see gfx::setFade). Divided per vertex,
+; so across a large triangle the pattern bends a little; the objects that
+; fade are small.
 
 .fvec projection[4], modelView[4]
 .fvec chunk         ; xyz = origin relative to the eye's lattice point, w = position step
@@ -34,14 +40,17 @@
 .fvec skinLight     ; xyz = light on the character
 .fvec bones[78]     ; 26 bones, three rows of a 3x4 matrix each
 .bool skinned
+.bool fading
 
 .constf consts(0.0, 1.0, 0.0, 0.0)
+.constf noiseScale(15.0, 25.0, 0.0, 0.0) ; texels of the noise texture per unit of x and y on the screen (240 x 400 pixels, 8 a texel)
 .alias zero consts.xxxx
 .alias one  consts.yyyy
 
 .out outpos position
 .out outtc0 texcoord0
 .out outclr color
+.out outtc1 texcoord1
 
 .alias inpos v0
 .alias intc  v1
@@ -77,10 +86,19 @@
 	dp4 r1.z, modelView[2], r0
 	dp4 r1.w, modelView[3], r0
 
-	dp4 outpos.x, projection[0], r1
-	dp4 outpos.y, projection[1], r1
-	dp4 outpos.z, projection[2], r1
-	dp4 outpos.w, projection[3], r1
+	dp4 r6.x, projection[0], r1
+	dp4 r6.y, projection[1], r1
+	dp4 r6.z, projection[2], r1
+	dp4 r6.w, projection[3], r1
+	mov outpos, r6
+
+	ifu fading
+		rcp r7.x, r6.w
+		mul r7.xy, r6.xy, r7.xx
+		mul r7.xy, noiseScale.xy, r7.xy
+		mov r7.zw, zero
+		mov outtc1, r7
+	.end
 
 	mul r2, params.xxxx, intc
 	add r2, texOffset, r2

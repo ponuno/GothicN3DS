@@ -42,6 +42,13 @@ Pass gPass = PASS_WORLD;
 Texture* gTexture = nullptr;
 u32 gMaterialFlags = 0;
 float gOpacity = 1.0f;
+float gFade = 1.0f; // setFade: share of the pixels drawn
+// The noise the 3DS backend dissolves with: an ordered 8x8 pattern, 0..1.
+float bayer(int x, int y) {
+	const int a = (x ^ y) & 7, b = y & 7;
+	const int rank = ((a & 1) << 5) | ((b & 1) << 4) | ((a & 2) << 2) | ((b & 2) << 1) | ((a & 4) >> 1) | ((b & 4) >> 2);
+	return (float(rank) * 4.0f + 2.0f) * (1.0f / 255.0f);
+}
 float gUvOffset[2] = {0, 0};
 bool gCull = true;
 u32 gMemoryLimit = 0;
@@ -123,6 +130,7 @@ void rasterize(const ScreenVert& a, const ScreenVert& bIn, const ScreenVert& cIn
 	const bool blend = gPass == PASS_BLEND;
 	const bool additive = blend && (gMaterialFlags & MATF_ADD) != 0;
 	const bool alphaTest = !blend && (gMaterialFlags & MATF_ALPHA_TEST) != 0;
+	const bool fading = gFade < 1.0f && gPass == PASS_WORLD;
 	const bool depthTest = gPass != PASS_SKY, depthWrite = gPass == PASS_WORLD;
 	const bool count = gPass == PASS_WORLD; // statistics describe the opaque world
 	if (count) ++gStats.trianglesRasterised;
@@ -157,7 +165,13 @@ void rasterize(const ScreenVert& a, const ScreenVert& bIn, const ScreenVert& cIn
 				bl *= t[2] * (1.0f / 255.0f);
 				al *= t[3] * (1.0f / 255.0f);
 			}
-			if (alphaTest && al <= 0.5f) continue;
+			if (fading) {
+				// As the PICA's texture stages do it: alpha - noise (not below 0) + share - 0.5, tested > 0.5.
+				const float faded = max(al - bayer(x, y), 0.0f) + gFade - 0.5f;
+				if (faded <= 0.5f) continue;
+			} else if (alphaTest && al <= 0.5f) {
+				continue;
+			}
 
 			const float fog = clamp((a.fog * w0 + b.fog * w1 + c.fog * w2) * w, 0.0f, 1.0f);
 			// Added light fades to nothing in the fog; everything else fades to the fog colour.
@@ -363,12 +377,18 @@ void frameBegin(const FrameDesc& f) {
 	gTexture = nullptr;
 	gMaterialFlags = 0;
 	gOpacity = 1.0f;
+	gFade = 1.0f;
 	gUvOffset[0] = gUvOffset[1] = 0.0f;
 }
+
+bool fadeSupported() { return true; }
+
+void setFade(float visible) { gFade = clamp(visible, 0.0f, 1.0f); }
 
 void setPass(Pass pass) {
 	if (pass == gPass) return;
 	gPass = pass;
+	gFade = 1.0f; // (dissolving is for the opaque world only)
 	if (pass == PASS_SKY) {
 		gFogA = 1.0f;
 		gFogB = 0.0f;

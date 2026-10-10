@@ -1877,6 +1877,34 @@ static void testPacer() {
 		for (int f = 0; f < 120; ++f) q.update(0.5f);
 		if (getenv("G3_TRACE")) std::printf("pacer: %f %f %f %f %d\n", double(cut), double(unsettled), double(early), double(q.detailScale()), q.interval());
 		CHECK(q.interval() == 1 && cut < 0.9f && std::fabs(unsettled - cut) < 1e-6f && std::fabs(early - cut) < 1e-6f && q.detailScale() > cut + 0.05f);
+		// ... a tenth at a time, two seconds apart, up to everything.
+		FramePacer r;
+		for (int f = 0; f < 60; ++f) r.update(0.95f); // (heavy, but not so heavy that it goes to 30 fps)
+		CHECK(r.detailScale() <= r.cfg.minDetail + 0.001f && r.interval() == 1);
+		int steps = 0, lastStep = -1000, closest = 1000;
+		float before = r.detailScale(), biggest = 0;
+		for (int f = 0; f < 1800; ++f) {
+			r.update(0.5f);
+			if (r.detailScale() != before) {
+				++steps;
+				biggest = std::max(biggest, r.detailScale() - before);
+				closest = std::min(closest, f - lastStep);
+				lastStep = f;
+				before = r.detailScale();
+			}
+		}
+		std::printf("  pacer gives back: %d steps, at most %.2f, at least %d frames apart, to %.2f\n", steps, double(biggest), closest, double(r.detailScale()));
+		CHECK(r.detailScale() == 1.0f && steps == 7 && biggest < 0.101f && closest >= 120);
+		// While the view turns fast nothing comes back, and the calm starts over after it.
+		FramePacer t;
+		for (int f = 0; f < 40; ++f) t.update(0.98f);
+		const float held = t.detailScale();
+		for (int f = 0; f < 300; ++f) t.update(0.5f, true);
+		CHECK(t.detailScale() == held);
+		for (int f = 0; f < 89; ++f) t.update(0.5f);
+		CHECK(t.detailScale() == held);
+		t.update(0.5f);
+		CHECK(t.detailScale() > held + 0.05f);
 	}
 
 	// A view that needs 105% at full detail. The pacer finds a detail level
@@ -1990,6 +2018,129 @@ static void testPacer() {
 	p.update(-5.0f);
 	p.update(1.0e9f);
 	CHECK(p.detailScale() >= p.cfg.minDetail && p.detailScale() <= 1.0f && p.load() <= 4.0f);
+}
+
+// Small objects coming into their distance dissolve in, and out again when
+// they leave it; what is drawn goes a little farther out than it comes in;
+// and what comes into view by turning is there at once.
+static void testDetailFade() {
+	SrcScene scene;
+	scene.materials.resize(2);
+	scene.materials[0].name = "floor";
+	scene.materials[0].hasColor = true;
+	scene.materials[0].color[0] = 40;
+	scene.materials[0].color[1] = 90;
+	scene.materials[1].name = "crate";
+	scene.materials[1].hasColor = true;
+	scene.materials[1].color[0] = 250;
+	scene.materials[1].color[2] = 250;
+	const float f[4][3] = {{-2000, 0, -2000}, {2000, 0, -2000}, {2000, 0, 2000}, {-2000, 0, 2000}};
+	addQuad(scene, f[3], f[2], f[1], f[0], 0); // (facing up)
+	const size_t first = scene.triangles.size();
+	// A crate of 2 m, 10 m ahead of x = 0, z = 0.
+	const float c[8][3] = {{-100, 0, 1000}, {100, 0, 1000}, {100, 0, 1200}, {-100, 0, 1200},
+	                       {-100, 200, 1000}, {100, 200, 1000}, {100, 200, 1200}, {-100, 200, 1200}};
+	addQuad(scene, c[0], c[1], c[5], c[4], 1); // the side facing -Z
+	addQuad(scene, c[1], c[0], c[4], c[5], 1); // (both ways round: whichever is the front)
+	for (size_t t = first; t < scene.triangles.size(); ++t) scene.triangles[t].detail = DETAIL_SMALL;
+	scene.spawnPos[1] = 150.0f;
+	scene.hasSpawn = true;
+	const std::string path = gDir + "/fade.pak";
+	bakeScenePak(scene, path, "f", 8000.0f);
+
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), "f"));
+	World& w = app.world();
+	StreamConfig& cfg = w.config();
+	cfg.detailDistance[DETAIL_SMALL] = 1500.0f; // the crate is in at 15 m, out at 16.5 m
+	cfg.detailScale = 1.0f;
+	app.player().flying = true;
+	app.camera().pitch = -0.1f;
+	const float dt = 1.0f / 30.0f;
+	auto at = [&](float z, float yaw) {
+		app.camera().yaw = yaw;
+		app.teleport({0, 150, z});
+	};
+	// One frame: the crate's share of the picture (its pixels), and whether it dissolves.
+	auto frame = [&](u32& fading) {
+		app.update(Input {}, dt);
+		app.render();
+		fading = w.stats().batchesFading;
+		const u8* px = gfx::softFramebuffer();
+		int crate = 0; // (magenta)
+		for (int i = 0; i < gfx::SCREEN_W * gfx::SCREEN_H; ++i) crate += px[i * 4] > 120 && px[i * 4 + 2] > 120 && px[i * 4 + 1] < 80;
+		return crate;
+	};
+	u32 fading = 0;
+	at(1000.0f - 1700.0f, 0);
+	w.preload(app.camera().pos);
+	for (int i = 0; i < 5; ++i) {
+		const int g = frame(fading);
+		CHECK(g == 0 && fading == 0); // 17 m: not drawn
+	}
+
+	// 14 m: in, dissolving over 0.4 s - more of it every frame.
+	at(1000.0f - 1400.0f, 0);
+	int last = 0, frames = 0;
+	bool growing = true;
+	for (int i = 0; i < 30; ++i) {
+		const int g = frame(fading);
+		if (fading) {
+			++frames;
+			growing = growing && g >= last;
+		}
+		last = g;
+	}
+	const int full = last;
+	std::printf("  dissolving in: %d frames at 30 fps, %d pixels of the crate in the end\n", frames, full);
+	CHECK(full > 500 && frames >= 10 && frames <= 13 && growing && fading == 0);
+	{
+		// Halfway: about half of its pixels.
+		at(1000.0f - 1700.0f, 0);
+		for (int i = 0; i < 20; ++i) frame(fading);
+		at(1000.0f - 1400.0f, 0);
+		int half = 0;
+		for (int i = 0; i < 6; ++i) half = frame(fading);
+		std::printf("  six frames in: %d of %d pixels\n", half, full);
+		CHECK(fading >= 1 && half > full / 4 && half < full * 3 / 4);
+		for (int i = 0; i < 20; ++i) frame(fading);
+	}
+
+	// 16 m: past its distance, but drawn - it stays (10% farther out).
+	at(1000.0f - 1600.0f, 0);
+	int stays = 0;
+	for (int i = 0; i < 20; ++i) stays += frame(fading) > 0 && fading == 0;
+	CHECK(stays == 20);
+	// 17 m: it goes, dissolving out.
+	at(1000.0f - 1700.0f, 0);
+	frames = 0;
+	for (int i = 0; i < 30; ++i) {
+		last = frame(fading);
+		frames += fading != 0;
+	}
+	CHECK(last == 0 && frames >= 10 && frames <= 13);
+	// Back at 16 m it does not come back: from outside, 15 m is its distance.
+	at(1000.0f - 1600.0f, 0);
+	for (int i = 0; i < 10; ++i) CHECK(frame(fading) == 0 && fading == 0);
+
+	// Walking up to it looking the other way, then turning round: it is just there.
+	at(1000.0f - 1700.0f, 3.14159f);
+	for (int i = 0; i < 5; ++i) frame(fading);
+	at(1000.0f - 1400.0f, 3.14159f);
+	for (int i = 0; i < 5; ++i) CHECK(frame(fading) == 0 && fading == 0);
+	app.camera().yaw = 0;
+	CHECK(frame(fading) > full * 9 / 10 && fading == 0);
+
+	// Without dissolving (fadeMs 0): in at once, out at once.
+	cfg.fadeMs = 0.0f;
+	at(1000.0f - 1700.0f, 0);
+	CHECK(frame(fading) == 0);
+	at(1000.0f - 1400.0f, 0);
+	CHECK(frame(fading) > full * 9 / 10 && fading == 0);
+
+	app.shutdown();
+	gfx::shutdown();
 }
 
 // A tower: many floors over one footprint, so that every column of the
@@ -2147,6 +2298,7 @@ static void testCollisionLevels() {
 	col.release();
 }
 
+static float gDeepest = 0;
 static void testCollision() {
 	testCollisionLevels();
 	// Closest point: face interior, edge and corner regions.
@@ -2196,6 +2348,19 @@ static void testCollision() {
 		const float g2[4][3] = {{-1300, a1, -1500}, {-1900, a0, -1500}, {-1900, a0 + up, -1700}, {-1300, a1 + up, -1700}};
 		addQuad(scene, g1[0], g1[1], g1[2], g1[3], 0);
 		addQuad(scene, g2[0], g2[1], g2[2], g2[3], 0);
+		// Hillsides as the game's terrain has them: one sheet - level ground,
+		// a face too steep to stand on, level ground on top - with nothing
+		// under it. At 60 degrees (x 2100..2950) and at 70 (x 3050..3900).
+		const float faces[2][3] = {{2100, 2950, 1.73205f}, {3050, 3900, 2.74748f}};
+		for (const auto& f : faces) {
+			const float h = 400 * f[2];
+			const float lo[4][3] = {{f[0], 0, -1200}, {f[1], 0, -1200}, {f[1], 0, 0}, {f[0], 0, 0}};
+			const float face[4][3] = {{f[0], 0, 0}, {f[1], 0, 0}, {f[1], h, 400}, {f[0], h, 400}};
+			const float hi[4][3] = {{f[0], h, 400}, {f[1], h, 400}, {f[1], h, 900}, {f[0], h, 900}};
+			addQuad(scene, lo[0], lo[1], lo[2], lo[3], 0);
+			addQuad(scene, face[0], face[1], face[2], face[3], 0);
+			addQuad(scene, hi[0], hi[1], hi[2], hi[3], 0);
+		}
 	}
 	scene.spawnPos[1] = 220.0f;
 	scene.hasSpawn = true;
@@ -2342,6 +2507,100 @@ static void testCollision() {
 		std::printf("       dropped into the gully: %s after %d frames at %.0f %.0f %.0f\n", pl.grounded ? "standing" : "still sliding", frames,
 		            double(pl.feet.x), double(pl.feet.y), double(pl.feet.z));
 		CHECK(pl.grounded && frames < 120);
+	}
+
+	// Running and jumping at a hillside with nothing under it, from every
+	// distance: the body never ends up hanging in the air (the feet used to
+	// get into the rock below the spheres, and then there was nothing under
+	// them at all).
+	for (const float hx : {2525.0f, 3475.0f}) {
+		int hung = 0, tries = 0;
+		for (int startZ = -420; startZ <= -60; startZ += 15) {
+			for (const float sideYaw : {0.0f, 20.0f, -30.0f}) {
+				app.teleport({hx, 220.0f, float(startZ)});
+				app.camera().yaw = sideYaw * 0.0174533f;
+				for (int i = 0; i < 10; ++i) app.update(Input {}, dt);
+				int air = 0;
+				for (int i = 0; i < 150; ++i) {
+					Input in;
+					in.moveZ = i < 40 ? 1.0f : 0.0f;
+					in.jump = i == 2;
+					app.update(in, dt);
+					air = pl.grounded ? 0 : air + 1;
+					const float tanA = hx < 3000 ? 1.73205f : 2.74748f;
+					const float surf = std::min(std::max(pl.feet.z, 0.0f), 400.0f) * tanA;
+					gDeepest = std::max(gDeepest, surf - pl.feet.y);
+				}
+				++tries;
+				if (air > 45) {
+					++hung;
+					if (hung <= 3)
+						std::printf("       hillside x %.0f from z %d yaw %.0f: off the ground %d frames at %.0f %.0f %.0f\n", double(hx), startZ,
+						            double(sideYaw), air, double(pl.feet.x), double(pl.feet.y), double(pl.feet.z));
+				}
+			}
+		}
+		std::printf("       jumps at the hillside at x %.0f: %d of %d hang in the air; feet at most %.0f cm under it\n", double(hx), hung, tries, double(gDeepest));
+		gDeepest = 0;
+		CHECK(hung == 0);
+	}
+
+	// Feet in the rock with nothing under them (the hillside's top is 693 cm
+	// up, and the sheet has no underside): out on top at once ...
+	auto inRock = [&](float x, float feetY, float z) {
+		app.teleport({x, 900.0f, z});
+		for (int i = 0; i < 5; ++i) app.update(Input {}, dt);
+		pl.feet = {x, feetY, z};
+		pl.grounded = false;
+		pl.velocityY = 0;
+	};
+	{
+		const u32 pops = pl.popUps, unstuck = pl.unstuck;
+		inRock(2525, 560, 650);
+		app.update(Input {}, dt);
+		CHECK(pl.grounded && std::fabs(pl.feet.y - 693.0f) < 1.0f && pl.popUps == pops + 1 && pl.debug().step == 'p');
+		// The movement recorder has it, as its newest line, and writes it out.
+		const MoveRecorder& rec = app.moves();
+		CHECK(rec.count() == MoveRecorder::kCapacity);
+		const MoveSample& last = rec.sample(rec.count() - 1);
+		CHECK(last.step == 'p' && (last.flags & MOVE_GROUNDED) && std::fabs(last.feet.y - 693.0f) < 1.0f && last.body == '?');
+		char line[256];
+		MoveRecorder::format(line, sizeof(line), last);
+		CHECK(std::strstr(line, " g-r----- p ? ") != nullptr);
+		const std::string recPath = gDir + "/slope.txt";
+		FILE* rf = std::fopen(recPath.c_str(), "w");
+		CHECK(rec.write(rf, "test"));
+		std::fclose(rf);
+		std::string written;
+		if (FILE* back = std::fopen(recPath.c_str(), "rb")) {
+			char buf[4096];
+			for (size_t got; (got = std::fread(buf, 1, sizeof(buf), back)) > 0;) written.append(buf, got);
+			std::fclose(back);
+		}
+		CHECK(written.rfind("== test: 300 frames\ncolumns:", 0) == 0 && std::count(written.begin(), written.end(), '\n') == 307);
+		// ... and from deeper than a body's height, after 1.5 s of getting nowhere.
+		inRock(2525, 300, 650);
+		int frames = 0;
+		while (!pl.grounded && frames < 120) {
+			app.update(Input {}, dt);
+			++frames;
+		}
+		std::printf("       feet 4 m deep in the rock: on top after %d frames (%.0f up)\n", frames, double(pl.feet.y));
+		CHECK(pl.grounded && std::fabs(pl.feet.y - 693.0f) < 1.0f && pl.unstuck == unstuck + 1 && frames >= 44 && frames <= 92);
+		// Walks off it again.
+		app.camera().yaw = 0;
+		walk(8);
+		CHECK(pl.grounded && pl.feet.z > 760.0f);
+		// Nothing below and nothing above (between the floor and the hillside):
+		// that is the edge of the loaded world - it waits there, it is not
+		// stood on thin air.
+		const u32 before = pl.unstuck;
+		inRock(1950, 0, -500); // (placed on the floor first)
+		pl.feet = {2050, 100, -500};
+		for (int i = 0; i < 120; ++i) app.update(Input {}, dt);
+		std::printf("       nothing below or above: %s at %.0f %.0f %.0f, step %c\n", pl.grounded ? "standing" : "waiting", double(pl.feet.x),
+		            double(pl.feet.y), double(pl.feet.z), pl.debug().step);
+		CHECK(!pl.grounded && std::fabs(pl.feet.y - 100.0f) < 5.0f && pl.unstuck == before && pl.debug().step == 'h');
 	}
 
 	place(0, 0, 0); // jump: about v^2 / 2g = 82 cm, then land
@@ -4867,6 +5126,7 @@ int main(int argc, char** argv) {
 	             {"streaming", testStreaming},
 	             {"streaming worlds", testStreamingWorlds},
 	             {"pacer", testPacer},
+	             {"detail fade", testDetailFade},
 	             {"collision", testCollision},
 	             {"model", testModel},
 	             {"hero", testHero},

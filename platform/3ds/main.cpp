@@ -11,6 +11,9 @@
 //   D-Pad         left/right: draw distance, down: time of day, up: next world (debug)
 //   SELECT        fly mode (a free camera: Circle Pad move, C-Stick or A/B/X/Y look,
 //                 L/R down/up, ZL or ZR fast)
+//   L+R+SELECT    write the last 5 seconds of the character's movement to
+//                 sdmc:/3ds/gothic3ds/slope.txt (added at its end): press it where the
+//                 character is stuck. The "pos" line counts the files written ("sd").
 //   START         exit
 // An archive without a character is walked with the free camera, too (R jumps).
 // The position is saved on exit and restored on the next start; hold L while
@@ -33,6 +36,8 @@
 //            too heavy; nobody comes and goes with the load either
 //   D-Pad Left  nobody perceives anything (the inhabitants do not notice the
 //            player or each other), as before perception
+//   D-Pad Right objects appear and vanish at once at their distance, as
+//            before (no dissolving in and out; see StreamConfig::fadeMs)
 #include "app.h"
 #include "gfx_c3d.h"
 #include "pacer.h"
@@ -55,6 +60,8 @@ namespace gfx = g3::gfx;
 static const char* kPakPath = "sdmc:/3ds/gothic3ds/data.pak";
 // Where the player was when the program was left; the next start continues there.
 static const char* kStatePath = "sdmc:/3ds/gothic3ds/state.bin";
+// Where L+R+SELECT writes the movement recorder.
+static const char* kSlopePath = "sdmc:/3ds/gothic3ds/slope.txt";
 
 // The application: 13 KB, with the character's poses in it. Not a local of
 // main(): the stack is 32 KB.
@@ -121,6 +128,7 @@ int main(int, char**) {
 	const bool wholeChunks = (startKeys & KEY_ZL) != 0; // no culling inside chunks
 	const bool steady = (startKeys & KEY_DDOWN) != 0;   // objects drawn farther, never taken away by the pacer
 	const bool blind = (startKeys & KEY_DLEFT) != 0;    // no perception
+	const bool popIn = (startKeys & KEY_DRIGHT) != 0;   // no dissolving: objects pop in and out
 	gfx::c3dSetClassicFrames(classic);
 	gfx::c3dSetPlainShader(plainShader);
 
@@ -131,6 +139,7 @@ int main(int, char**) {
 	stream.background = background;
 	stream.maxLoadsPerFrame = background ? 1 : 2;
 	stream.clusterCulling = !wholeChunks;
+	if (popIn) stream.fadeMs = 0.0f;
 	if (steady) {
 		stream.detailDistance[g3::DETAIL_MEDIUM] = 10000.0f;
 		stream.detailDistance[g3::DETAIL_SMALL] = 6000.0f;
@@ -176,6 +185,10 @@ int main(int, char**) {
 	u32 lastStateCalls = 0;
 	g3::UpdateTimes partSum;               // where update() spent its time, summed over a report
 	u32 collQueries = 0, collTests = 0;    // and what its collision queries looked at
+	u32 slopeWrites = 0;                   // L+R+SELECT: records written (a failed write counts as none)
+	float lastYaw = app.camera().yaw;      // how fast the view turns: the pacer gives no objects back meanwhile
+	u32 fadingSum = 0;                     // batches drawn dissolving, summed over a report
+	bool slopeFailed = false;
 
 	while (aptMainLoop()) {
 		hidScanInput();
@@ -212,7 +225,9 @@ int main(int, char**) {
 			in.jump = (held & KEY_R) != 0;
 			in.fast = (held & (KEY_ZL | KEY_ZR)) != 0;
 		}
-		in.toggleFly = (down & KEY_SELECT) != 0;
+		// L+R+SELECT: the movement recorder to the SD card, not fly mode.
+		const bool record = (down & KEY_SELECT) && (held & KEY_L) && (held & KEY_R);
+		in.toggleFly = (down & KEY_SELECT) && !record;
 		in.nextWorld = (down & KEY_DUP) != 0;
 		if (down & KEY_DDOWN) in.timeStep = 1.0f;
 
@@ -239,6 +254,22 @@ int main(int, char**) {
 			collTests += g3::collisionStats().tests;
 		}
 
+		if (record) {
+			// After the update, so that the frame the keys were pressed in is in it.
+			const g3::Player& pl = app.player();
+			const g3::Vec3 eye = pl.eye();
+			char title[160];
+			snprintf(title, sizeof(title), "%s at %02d:%02d, pos %.0f %.0f %.0f, popped out of the rock %lu, unstuck %lu, record %lu",
+			         app.worldName(), int(app.environment().timeOfDay), int(app.environment().timeOfDay * 60.0f) % 60, double(eye.x),
+			         double(eye.y), double(eye.z), static_cast<unsigned long>(pl.popUps), static_cast<unsigned long>(pl.unstuck),
+			         static_cast<unsigned long>(slopeWrites + 1));
+			FILE* f = fopen(kSlopePath, "a");
+			const bool written = f && app.moves().write(f, title);
+			if (f) fclose(f);
+			if (written) ++slopeWrites;
+			slopeFailed = !written;
+		}
+
 		app.render();
 
 		// What the frame cost decides how much detail the next one gets, and
@@ -249,9 +280,17 @@ int main(int, char**) {
 		// 3DS: 28% + 97% gave 20.9 ms, which is 125% of 16.7 ms.)
 		const gfx::FrameStats fs = gfx::frameStats();
 		const float load = (fs.overlapped ? max(fs.cpuMs + updateMs, fs.gpuMs) : fs.cpuMs + fs.gpuMs) * 0.06f;
+		// The view turning faster than about 60 degrees a second: what comes
+		// into view comes and goes, so no objects are given back meanwhile.
+		float turn = app.camera().yaw - lastYaw;
+		while (turn > 3.14159265f) turn -= 6.2831853f;
+		while (turn < -3.14159265f) turn += 6.2831853f;
+		lastYaw = app.camera().yaw;
+		const bool turning = turn > 1.0f * dt || turn < -1.0f * dt;
+		fadingSum += app.world().stats().batchesFading;
 		// (A world switch or any other pause is not a frame to learn from.)
-		if (pacing && updateMs < 50.0f) {
-			pacer.update(load);
+		if (pacing && updateMs < 50.0f && !record) {
+			pacer.update(load, turning);
 			app.world().config().detailScale = pacer.detailScale();
 			if (pacer.interval() != interval) {
 				interval = pacer.interval();
@@ -289,8 +328,10 @@ int main(int, char**) {
 			reportLine("loader %-6s job %5.1f ms  fly %lu",
 			     !app.world().backgroundStreaming() ? "off" : app.world().workerThread() ? "thread" : "inline",
 			     double(app.world().takeWorstLoadMs()), static_cast<unsigned long>(ws.chunksInFlight));
-			reportLine("detail %3.0f%%  %2d fps  late %2lu/30", double(app.world().config().detailScale * 100.0f),
-			     interval == 2 ? 30 : 60, static_cast<unsigned long>(lateFrames));
+			// (fd: objects dissolving in or out, on average; "pop": that is off.)
+			reportLine("detail %3.0f%%  %2d fps  late %2lu/30 fd%s%lu", double(app.world().config().detailScale * 100.0f),
+			     interval == 2 ? 30 : 60, static_cast<unsigned long>(lateFrames), popIn ? " pop " : " ",
+			     static_cast<unsigned long>(fadingSum / 30));
 			reportLine("frames %s  pacer %s%s", fs.overlapped ? "overlapped" : "classic", pacing ? "on" : "off", steady ? " STEADY" : "");
 			// Triangles drawn, of those in the chunks in view (the rest is what
 			// the clusters save); draw calls; chunks.
@@ -313,7 +354,11 @@ int main(int, char**) {
 			reportLine("%-22.22s %-16.16s", state, app.worldName());
 			// The player's eyes, wherever the camera hangs behind them.
 			const g3::Vec3 eye = pl.eye();
-			reportLine("pos %7.0f %6.0f %7.0f", double(eye.x), double(eye.y), double(eye.z));
+			// Then: times the character was popped out of the rock and was
+			// unstuck (see Player::unstick), and the records written to slope.txt.
+			reportLine("pos %7.0f %6.0f %7.0f u%lu/%lu sd%lu%s", double(eye.x), double(eye.y), double(eye.z),
+			     static_cast<unsigned long>(pl.popUps), static_cast<unsigned long>(pl.unstuck), static_cast<unsigned long>(slopeWrites),
+			     slopeFailed ? "!" : "");
 			const g3::Hero& hero = app.hero();
 			if (plainShader) {
 				reportLine("hero off: plain shader (R at start)");
@@ -388,6 +433,7 @@ int main(int, char**) {
 			partSum = g3::UpdateTimes();
 			collQueries = collTests = 0;
 			lateFrames = 0;
+			fadingSum = 0;
 		}
 		// One line of the report per frame, padded to overwrite the old one.
 		const int row = int(frame % 30);

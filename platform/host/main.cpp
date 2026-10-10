@@ -36,68 +36,101 @@ static void usage() {
 	     "  --who               list at the end what each inhabitant near the camera is doing\n"
 	     "  --slope-probe X,Y,Z the character at that place (the console's \"pos\"): standing, then run and jump in\n"
 	     "                      eight directions, printing what the controller does frame by frame\n"
+	     "  --probe-fps N       the probe's frame rate (default: 30; the console runs at 60)\n"
+	     "  --probe-grid M      probe every point within M metres of X,Z, a metre apart (default: 0)\n"
 	     "  --whole-chunks      draw all of every chunk in view, not only its clusters in view (for comparing)\n"
 	     "  --stats FILE        write a JSON summary");
 }
 
 // --slope-probe X,Y,Z: the player's character at a place (the eye position
 // the console's "pos" line gives) - standing, then running and jumping in
-// eight directions - with what the controller does frame by frame. For
-// finding out where somebody gets stuck on a slope, from the data alone.
-static int slopeProbe(App& app, const char* spec) {
+// eight directions - with what the controller does frame by frame, in the
+// columns of the console's movement recorder (L+R+SELECT writes slope.txt).
+// For finding out where somebody gets stuck on a slope, from the data alone.
+// With a grid (--probe-grid M) every point within M metres, a metre apart,
+// is tried, and only the runs that went wrong are printed in full.
+static int slopeProbe(App& app, const char* spec, int fps, int gridMetres) {
 	float x, y, z;
-	if (sscanf(spec, "%f,%f,%f", &x, &y, &z) != 3) {
+	if (sscanf(spec, "%f,%f,%f", &x, &y, &z) != 3 || fps < 10 || fps > 240 || gridMetres < 0 || gridMetres > 20) {
 		usage();
 		return 2;
 	}
-	const float dt = 1.0f / 30.0f;
+	const float dt = 1.0f / float(fps);
+	const int perSecond = fps;
 	Player& pl = app.player();
 	pl.flying = false;
-	printf("slope probe at %.0f %.0f %.0f; hero %s\n", double(x), double(y), double(z), app.hero().loaded() ? "drives the body" : "none (direct control)");
-	printf("columns: frame, feet x y z, grounded, body (G ground T take-off A air S swim), sliding, resting, blocked, "
-	       "floor normal y below, vertical speed, slide speed x z, carry x z\n");
-	static const char kBody[] = "GTAS";
-	int stuckRuns = 0;
-	for (int run = -1; run < 8; ++run) {
-		// Run -1: just standing there. Runs 0..7: a run-up and a jump, every 45 degrees.
-		const float yaw = run < 0 ? 0.0f : float(run) * 0.785398f;
-		app.camera().yaw = yaw;
-		app.teleport({x, y, z});
-		for (int i = 0; i < 30; ++i) app.update(Input {}, dt);
-		const Vec3 start = pl.feet;
-		int air = 0, longestAir = 0;
-		if (run < 0)
-			printf("-- standing still\n");
-		else
-			printf("-- run and jump towards %d degrees\n", run * 45);
-		const int total = run < 0 ? 150 : 270;
-		for (int f = 0; f < total; ++f) {
-			Input in;
-			if (run >= 0) {
-				in.moveZ = f < 120 ? 1.0f : 0.0f;
-				in.jump = f == 25;
-			}
-			app.update(in, dt);
-			air = pl.grounded || pl.swimming || pl.climbing ? 0 : air + 1;
-			longestAir = air > longestAir ? air : longestAir;
-			if (f % 3 == 0 || f == total - 1) {
-				float fy = 0;
-				Vec3 n = {0, 0, 0};
-				const bool floor = app.world().rayDown({pl.feet.x, pl.feet.y + 45.0f, pl.feet.z}, 300.0f, fy, n);
-				const Player::Debug d = pl.debug();
-				printf("%3d %8.1f %7.1f %8.1f %c %c %c%c%c %5.2f %6.0f %5.0f %5.0f %5.0f %5.0f\n", f, double(pl.feet.x), double(pl.feet.y),
-				       double(pl.feet.z), pl.grounded ? 'g' : '-', app.hero().loaded() ? kBody[app.hero().body()] : '?',
-				       d.sliding ? 's' : '-', d.resting ? 'r' : '-', d.blocked ? 'b' : '-', floor ? double(n.y) : -1.0,
-				       double(pl.velocityY), double(d.slideVel.x), double(d.slideVel.z), double(d.carry.x), double(d.carry.z));
+	printf("slope probe at %.0f %.0f %.0f, %d fps%s; hero %s\n", double(x), double(y), double(z), fps,
+	       gridMetres ? "" : ", every frame printed at 10 a second", app.hero().loaded() ? "drives the body" : "none (direct control)");
+	if (gridMetres) printf("grid: every metre within %d m; only the runs that hung, popped or were unstuck are printed in full\n", gridMetres);
+	printf("%s\n", MoveRecorder::header());
+	int stuckRuns = 0, caughtRuns = 0, runs = 0;
+	const u32 home = app.world().entryHash();
+	char line[256];
+	for (int gz = -gridMetres; gz <= gridMetres; ++gz)
+		for (int gx = -gridMetres; gx <= gridMetres; ++gx) {
+			const Vec3 at = {x + float(gx) * 100.0f, y, z + float(gz) * 100.0f};
+			if (gridMetres) printf("-- at %.0f %.0f %.0f\n", double(at.x), double(at.y), double(at.z));
+			for (int run = -1; run < 8; ++run) {
+				// Run -1: just standing there. Runs 0..7: a run-up and a jump, every 45 degrees.
+				const float yaw = run < 0 ? 0.0f : float(run) * 0.785398f;
+				app.camera().yaw = yaw;
+				// (A run that went through a portal comes back.)
+				if (app.world().entryHash() != home) app.enterWorld(home, &at, yaw);
+				const u32 switches = app.worldSwitches();
+				app.teleport(at);
+				for (int i = 0; i < perSecond; ++i) app.update(Input {}, dt);
+				if (!pl.placed()) {
+					// Ground higher than the eyes there (a point of the grid up the
+					// slope): from above, then. (Placement looks 2 m up from the feet.)
+					app.teleport({at.x, at.y + 400.0f, at.z});
+					for (int i = 0; i < perSecond; ++i) app.update(Input {}, dt);
+				}
+				const Vec3 start = pl.feet;
+				const u32 pops = pl.popUps, unstuck = pl.unstuck;
+				int air = 0, longestAir = 0;
+				if (!gridMetres) {
+					if (run < 0)
+						printf("-- standing still\n");
+					else
+						printf("-- run and jump towards %d degrees\n", run * 45);
+				}
+				const int total = run < 0 ? 5 * perSecond : 9 * perSecond;
+				const int every = max(perSecond / 10, 1);
+				for (int f = 0; f < total; ++f) {
+					Input in;
+					if (run >= 0) {
+						in.moveZ = f < 4 * perSecond ? 1.0f : 0.0f;
+						in.jump = f >= perSecond * 5 / 6 && f < perSecond; // held for a sixth of a second
+					}
+					app.update(in, dt);
+					air = pl.grounded || pl.swimming || pl.climbing ? 0 : air + 1;
+					longestAir = air > longestAir ? air : longestAir;
+					if (!gridMetres && (f % every == 0 || f == total - 1)) {
+						MoveRecorder::format(line, sizeof(line), app.moves().sample(app.moves().count() - 1));
+						printf("%s\n", line);
+					}
+				}
+				const float moved = length(pl.feet - start);
+				const bool portal = app.worldSwitches() != switches;
+				const bool stuck = !portal && (!pl.grounded || longestAir > 3 * perSecond);
+				const u32 popped = pl.popUps - pops, freed = pl.unstuck - unstuck;
+				stuckRuns += stuck;
+				caughtRuns += (popped + freed) > 0;
+				++runs;
+				const bool full = gridMetres && (stuck || popped || freed);
+				if (!gridMetres || full) {
+					static const char* const kDirs[8] = {"0", "45", "90", "135", "180", "225", "270", "315"};
+					printf("== %s%s: %s at the end, longest time off the ground %.1f s, %.0f cm from the start, popped out of the rock %u, "
+					       "unstuck %u\n",
+					       run < 0 ? "standing" : "jump towards ", run < 0 ? "" : kDirs[run],
+					       portal ? "through a portal" : stuck ? "STUCK" : "fine", double(float(longestAir) * dt), double(moved), unsigned(popped), unsigned(freed));
+				}
+				if (full) app.moves().write(stdout, "the last frames of that run");
 			}
 		}
-		const float moved = length(pl.feet - start);
-		const bool stuck = !pl.grounded || longestAir > 90;
-		stuckRuns += stuck;
-		printf("== %s: %s at the end, longest time off the ground %.1f s, %.0f cm from the start\n", run < 0 ? "standing" : "jump",
-		       stuck ? "STUCK" : "fine", double(longestAir) * double(dt), double(moved));
-	}
-	printf("slope probe: %d of 9 runs stuck (off the ground for more than 3 s, or at the end)\n", stuckRuns);
+	printf("slope probe: %d of %d runs stuck (off the ground for more than 3 s, or at the end); %d needed the safety net "
+	       "(popped out of the rock or unstuck)\n",
+	       stuckRuns, runs, caughtRuns);
 	return 0;
 }
 
@@ -110,6 +143,7 @@ int main(int argc, char** argv) {
 	const char* camSpec = nullptr;
 	const char* streamMode = "sync";
 	const char* probeSpec = nullptr;
+	int probeFps = 30, probeGrid = 0;
 	int frames = 300, shots = 4;
 	bool still = false, cull = true, walk = false, firstPerson = false;
 	float timeOfDay = 13.0f, toTime = -1.0f;
@@ -132,6 +166,8 @@ int main(int argc, char** argv) {
 		else if (arg("--time")) timeOfDay = float(atof(argv[++i]));
 		else if (arg("--to-time")) toTime = float(atof(argv[++i]));
 		else if (arg("--slope-probe")) probeSpec = argv[++i];
+		else if (arg("--probe-fps")) probeFps = atoi(argv[++i]);
+		else if (arg("--probe-grid")) probeGrid = atoi(argv[++i]);
 		else if (strcmp(argv[i], "--standing") == 0) standing = true;
 		else if (strcmp(argv[i], "--who") == 0) who = true;
 		else if (strcmp(argv[i], "--whole-chunks") == 0) wholeChunks = true;
@@ -200,7 +236,7 @@ int main(int argc, char** argv) {
 
 	// What a loading screen would do.
 	app.world().preload(app.camera().pos);
-	if (probeSpec) return slopeProbe(app, probeSpec);
+	if (probeSpec) return slopeProbe(app, probeSpec, probeFps, probeGrid);
 
 	const float dt = 1.0f / 30.0f;
 	u32 maxTris = 0, maxDraws = 0, maxBlended = 0, maxLoaded = 0, maxPending = 0, maxLoadsFrame = 0;

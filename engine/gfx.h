@@ -82,6 +82,15 @@ void setChunkTransform(const float origin[3], float posScale, float uvScale);
 // texture coordinates (scrolling water).
 void setMaterial(Texture* t, u32 materialFlags, float opacity = 1.0f, float uvOffsetU = 0.0f, float uvOffsetV = 0.0f);
 void draw(Mesh* m, u32 firstIndex, u32 indexCount);
+// Dissolve: of the draws that follow only the share `visible` (0..1) of
+// their pixels is drawn, picked by a fixed 8x8 pattern on the screen (alpha
+// test against a noise texture; PICA has no blending that keeps the depth
+// buffer right). 1 = everything, as normal. PASS_WORLD only; frameBegin
+// resets it to 1. Objects coming into their draw distance are dissolved in
+// with it rather than appearing at once.
+void setFade(float visible);
+// False where the backend cannot dissolve (setFade then draws everything).
+bool fadeSupported();
 
 // Skinned geometry (characters). The mesh is made with meshCreate from
 // vertices in the layout model.h describes: every vertex follows two of the

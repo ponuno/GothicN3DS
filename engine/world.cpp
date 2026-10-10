@@ -266,6 +266,7 @@ LoadStatus World::finishChunk(LoadResult& r) {
 		dst.material = src.material;
 		dst.detail = src.detail < DETAIL_COUNT ? src.detail : u8(DETAIL_COUNT - 1);
 		dst.cluster = src.cluster;
+		dst.shown = 0;
 		dst.firstIndex = src.firstIndex;
 		dst.indexCount = src.indexCount;
 		Cluster& cluster = l.clusters[src.cluster];
@@ -642,15 +643,24 @@ void World::classify(const Loaded& l, bool count) {
 		_clusterState[c] = where == 0 ? u8(CLUSTER_OUT) : where == 1 ? u8(CLUSTER_IN) : u8(CLUSTER_PARTLY);
 		_stats.clustersTested += count;
 		_stats.clustersCulled += count && where == 0;
-		if (where == 0) continue;
+		// (Also out of view: whether its objects are within their distance is
+		// kept up to date there too, so that turning the view finds them as
+		// they should be, not dissolving in.)
 		_clusterNear[c] = aabbDistance(k.bbMin, k.bbMax, _camera);
+		if (where == 0) continue;
 		_clusterFar[c] = aabbFarDistance(k.bbMin, k.bbMax, _camera);
 	}
 }
 
-void World::drawBatches(const Loaded& l, bool blended) {
+void World::drawBatches(Loaded& l, bool blended) {
 	const u32 ms = _timeMs;
 	bool transformSet = false;
+	// A chunk that was not drawn the frame before (it has just come into view,
+	// or just been loaded) shows its objects as they are, without dissolving;
+	// so does the translucent pass.
+	const bool snap = blended || _fadeStep >= 255 || l.drawnFrame + 1 != _drawFrame;
+	if (!blended) l.drawnFrame = _drawFrame;
+	u8 runShown = 255;
 	// A culled stretch this short between two runs of a material is drawn
 	// along with them: a draw call costs more than its few triangles.
 	const u32 bridge = 24 * 3;
@@ -675,6 +685,7 @@ void World::drawBatches(const Loaded& l, bool blended) {
 			offset[a] = m.scroll[a] < 0 ? 1.0f - f : f;
 		}
 		gfx::setMaterial(_tex[u32(m.texture) + frame].tex, m.flags, float(m.opacity) * (1.0f / 255.0f), offset[0], offset[1]);
+		if (!blended) gfx::setFade(float(runShown) * (1.0f / 255.0f));
 		gfx::draw(l.mesh, runFirst, runCount);
 		++_stats.drawCalls;
 		_stats.blendedDrawCalls += blended;
@@ -682,18 +693,35 @@ void World::drawBatches(const Loaded& l, bool blended) {
 		runCount = 0;
 	};
 	for (u32 b = 0; b < l.batchCount; ++b) {
-		const Batch& batch = l.batches[b];
+		Batch& batch = l.batches[b];
 		const WorldMaterial& m = _materials[batch.material];
 		if (((m.flags & MATF_TRANSLUCENT) != 0) != blended || batch.indexCount == 0) continue;
 		const u32 c = batch.cluster < l.clusterCount ? batch.cluster : 0u;
 		bool visible = _clusterState[c] != CLUSTER_OUT;
-		if (visible && batch.detail != DETAIL_ALWAYS) {
+		u8 shown = 255;
+		if (batch.detail != DETAIL_ALWAYS && _clusterState[c] != CLUSTER_OUT) {
 			// Too far for its size? Mostly the box's distance says so already.
+			// What is drawn goes a little farther out than it comes in.
 			const float limit = _cfg.detailDistance[batch.detail] * _cfg.detailScale;
-			if (_clusterNear[c] > limit)
-				visible = false;
-			else if (_clusterFar[c] > limit)
-				visible = aabbDistance(batch.bbMin, batch.bbMax, _camera) <= limit;
+			const float reach = batch.shown ? limit * _cfg.detailHysteresis : limit;
+			bool inRange = true;
+			if (_clusterNear[c] > reach)
+				inRange = false;
+			else if (_clusterFar[c] > reach)
+				inRange = aabbDistance(batch.bbMin, batch.bbMax, _camera) <= reach;
+			const int target = inRange ? 255 : 0;
+			if (snap)
+				batch.shown = u8(target);
+			else if (batch.shown < target)
+				batch.shown = u8(min(int(batch.shown) + _fadeStep, 255));
+			else if (batch.shown > target)
+				batch.shown = u8(max(int(batch.shown) - _fadeStep, 0));
+			shown = batch.shown;
+			visible = shown > 0;
+		} else if (batch.detail != DETAIL_ALWAYS) {
+			// Out of view: in or out at once, by the nearest point of the box.
+			const float limit = _cfg.detailDistance[batch.detail] * _cfg.detailScale;
+			batch.shown = _clusterNear[c] <= (batch.shown ? limit * _cfg.detailHysteresis : limit) ? 255 : 0;
 		}
 		if (visible && _clusterState[c] == CLUSTER_PARTLY) visible = aabbInFrustum(_frustum, batch.bbMin, batch.bbMax);
 		const bool follows = runCount && batch.material == runMaterial && batch.firstIndex == runFirst + runCount + gap;
@@ -703,6 +731,18 @@ void World::drawBatches(const Loaded& l, bool blended) {
 				gap += batch.indexCount;
 			else
 				flush();
+			continue;
+		}
+		if (shown != 255) {
+			// Dissolving: a draw call of its own.
+			flush();
+			runFirst = batch.firstIndex;
+			runCount = batch.indexCount;
+			runMaterial = batch.material;
+			runShown = shown;
+			flush();
+			runShown = 255;
+			++_stats.batchesFading;
 			continue;
 		}
 		if (follows) {
@@ -717,6 +757,7 @@ void World::drawBatches(const Loaded& l, bool blended) {
 		runMaterial = batch.material;
 	}
 	flush();
+	if (!blended) gfx::setFade(1.0f);
 }
 
 void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
@@ -725,6 +766,7 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_stats.blendedDrawCalls = 0;
 	_stats.batchesCulled = 0;
 	_stats.batchesMerged = 0;
+	_stats.batchesFading = 0;
 	_stats.trianglesDrawn = 0;
 	_stats.trianglesInChunks = 0;
 	_stats.clustersTested = 0;
@@ -750,6 +792,16 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 		}
 	}
 	_camera = camera;
+	// How far the objects that dissolve get this frame. (A long pause - the
+	// first frame, a world switch - finishes them; so does a frame of the same
+	// moment again, a still picture.)
+	const u32 sinceMs = timeMs - _lastDrawMs;
+	if (_cfg.fadeMs <= 0.0f || !gfx::fadeSupported() || _drawFrame == 1 || sinceMs == 0 || sinceMs > 250)
+		_fadeStep = 255;
+	else
+		_fadeStep = clamp(int(float(sinceMs) * 255.0f / _cfg.fadeMs + 0.5f), 1, 255);
+	_lastDrawMs = timeMs;
+	++_drawFrame;
 	_timeMs = timeMs;
 	u32 n = 0;
 	for (u32 r = 0; r < _stats.chunksLoaded; ++r) {
@@ -769,7 +821,7 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_visible = n;
 
 	for (u32 k = 0; k < n; ++k) {
-		const Loaded& l = _loaded[_order[k]];
+		Loaded& l = _loaded[_order[k]];
 		classify(l, true);
 		drawBatches(l, false);
 		++_stats.chunksDrawn;
@@ -780,7 +832,7 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 void World::drawBlended() {
 	// Back to front, so nearer water blends over farther water.
 	for (u32 k = _visible; k-- > 0;) {
-		const Loaded& l = _loaded[_order[k]];
+		Loaded& l = _loaded[_order[k]];
 		if (!l.mesh || !l.hasBlended) continue;
 		classify(l, false);
 		drawBatches(l, true);

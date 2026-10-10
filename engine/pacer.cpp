@@ -7,12 +7,13 @@ void FramePacer::reset() {
 	_load = 0.0f;
 	_interval = 1;
 	_over = _under = _calm = 0;
+	_sinceStep = cfg.recoverEvery;
 	_probing = false;
 	_sinceProbe = _settled = _atFullRate = 0;
 	_probeWait = cfg.probeEvery;
 }
 
-void FramePacer::update(float frameLoad) {
+void FramePacer::update(float frameLoad, bool turning) {
 	float now = frameLoad;
 	if (!(now >= 0.0f)) now = 0.0f; // also catches NaN
 	now = min(now, 4.0f);
@@ -23,14 +24,20 @@ void FramePacer::update(float frameLoad) {
 
 	if (_interval == 1) {
 		++_atFullRate;
+		++_sinceStep;
 		if (_load > cfg.high) {
 			// The further over, the bigger the step; never so big that it is
 			// seen as one.
 			_detail -= clamp((_load - cfg.high) * 0.5f, 0.01f, 0.08f);
 			_calm = 0;
-		} else if (_load < cfg.low) {
-			// (Only once the load has settled: see PacerConfig::calmFrames.)
-			if (++_calm >= cfg.calmFrames) _detail += cfg.recover;
+		} else if (_load < cfg.low && !turning) {
+			// (Only once the load has settled: see PacerConfig::calmFrames.
+			// And a step at a time, not a little every frame: a new step of
+			// objects comes in together, then nothing for a while.)
+			if (++_calm >= cfg.calmFrames && _sinceStep >= cfg.recoverEvery && _detail < 1.0f) {
+				_detail += cfg.recoverStep;
+				_sinceStep = 0;
+			}
 		} else {
 			_calm = 0;
 		}

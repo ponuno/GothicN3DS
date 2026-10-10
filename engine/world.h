@@ -21,6 +21,14 @@ struct StreamConfig {
 	// Scales the distances of the smaller classes; the frame pacer lowers it
 	// when the GPU cannot keep up.
 	float detailScale = 1.0f;
+	// What is drawn goes this much farther out than it comes in (1.1: 10%
+	// farther), so that an object at its distance does not come and go with
+	// every step and every sway of the camera.
+	float detailHysteresis = 1.1f;
+	// Objects coming into their distance are dissolved in over this long,
+	// and dissolved out again when they leave it (see gfx::setFade); 0: they
+	// appear and vanish at once, as before. Off-screen they change at once.
+	float fadeMs = 400.0f;
 	u32 maxLoadsPerFrame = 2;      // chunks handed to the GPU per frame: bounds the upload hitch
 	u32 maxTextureLoadsPerFrame = 4; // same for textures, background streaming only
 	u32 memoryBudget = 24u << 20;  // bytes of mesh + texture memory for the world
@@ -48,6 +56,7 @@ struct WorldStats {
 	u32 blendedDrawCalls;
 	u32 batchesCulled;   // batches of visible chunks skipped: out of view or too far for their size
 	u32 batchesMerged;   // batches that went out in the draw call of the one before them
+	u32 batchesFading;   // batches drawn dissolving in or out (each a draw call of its own)
 	u32 trianglesDrawn;
 	u32 trianglesInChunks; // all the triangles of the chunks drawn: what drawing whole chunks would cost
 	u32 clustersTested;  // boxes of visible chunks looked at ...
@@ -126,6 +135,7 @@ private:
 		u16 material;
 		u8 detail;
 		u8 cluster;
+		u8 shown; // smaller classes: how much of it is drawn, 0..255 (dissolving in between; see StreamConfig::fadeMs)
 		u32 firstIndex, indexCount;
 		float bbMin[3], bbMax[3]; // world space
 	};
@@ -145,6 +155,7 @@ private:
 		u32 triangles;
 		u32 slot; // position in _resident
 		u32 retryAt; // frame before which loading is not attempted again (out of memory)
+		u32 drawnFrame; // the last draw() that drew it: one that did not draw it the frame before shows its objects at once
 		u16 batchCount;
 		bool failed;    // bad data: never retried
 		bool requested; // handed to the background loader
@@ -181,7 +192,7 @@ private:
 	void acquireTexture(u32 texture);
 	void releaseTexture(u32 texture);
 	float distanceTo(u32 index, Vec3 camera) const;
-	void drawBatches(const Loaded& l, bool blended);
+	void drawBatches(Loaded& l, bool blended);
 	void classify(const Loaded& l, bool count);
 
 	Pak* _pak = nullptr;
@@ -213,6 +224,9 @@ private:
 	u8 _clusterState[256] = {};
 	float _clusterNear[256] = {}, _clusterFar[256] = {}; // distance of its box from the camera: nearest and farthest point
 	u32 _timeMs = 0;
+	u32 _drawFrame = 1;     // draw() counter
+	u32 _lastDrawMs = 0;
+	int _fadeStep = 255;    // how much of a dissolve one frame does (255: all of it)
 	StreamConfig _cfg;
 	WorldStats _stats {};
 };

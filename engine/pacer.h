@@ -5,7 +5,9 @@
 //  * at 60 fps it shortens the distance at which small and medium objects
 //    (barrels, bushes, fences - most of the triangles, least of the picture)
 //    are drawn as soon as a frame takes more than ~90% of the time there is,
-//    and lengthens it again, slowly, once there is room;
+//    and lengthens it again once there has been room for a while: in steps
+//    of a tenth, two seconds apart, and not while the view is turning fast
+//    (the load comes and goes with the view, and the objects would with it);
 //  * if even the shortest distance is not enough it settles on a steady
 //    30 fps instead of flipping. There is twice the time then, so the objects
 //    come back;
@@ -23,10 +25,13 @@ struct PacerConfig {
 	float high = 0.90f;      // load above which detail is taken away
 	float low = 0.80f;       // load below which it is given back
 	float minDetail = 0.35f; // shortest object distance, as a share of the configured one
-	float recover = 0.002f;  // detail given back per frame (the full range takes about 5 s) ...
-	u32 calmFrames = 90;     // ... once the load has been below `low` this many frames running (1.5 s):
-	                         // walking and turning the camera the load comes and goes, and the
-	                         // objects with it - they are given back only when it has settled
+	float recoverStep = 0.10f; // detail given back at a time ...
+	u32 recoverEvery = 120;    // ... at most every this many frames (2 s) ...
+	u32 calmFrames = 90;       // ... once the load has been below `low` this many frames running (1.5 s)
+	                           // and the view has not been turning fast meanwhile: walking and turning
+	                           // the camera the load comes and goes, and the objects with it - they are
+	                           // given back only when it has settled
+	float recover = 0.002f;    // at half rate: detail given back per frame (the full range takes about 5 s)
 	float enterHalf = 1.0f;  // load that, at minimum detail, counts towards half rate
 	u32 enterFrames = 20;    // consecutive overloaded frames before going to half rate
 	// Half rate (30 fps). Loads are still shares of one 60 Hz refresh.
@@ -47,8 +52,9 @@ public:
 	void reset();
 	// The time the frame that just finished needed, as a share of one 60 Hz
 	// refresh (1.0 = 16.7 ms). What counts as "needed" is the platform's
-	// business (see platform/3ds/main.cpp).
-	void update(float frameLoad);
+	// business (see platform/3ds/main.cpp). `turning`: the view turns fast
+	// this frame - nothing is given back now, and the calm starts over.
+	void update(float frameLoad, bool turning = false);
 
 	// Factor for StreamConfig::detailScale.
 	float detailScale() const { return _detail; }
@@ -63,7 +69,7 @@ private:
 	float _detail = 1.0f;
 	float _load = 0.0f;
 	int _interval = 1;
-	u32 _over = 0, _under = 0, _calm = 0;
+	u32 _over = 0, _under = 0, _calm = 0, _sinceStep = 0;
 	bool _probing = false;
 	u32 _sinceProbe = 0, _probeWait = 0, _settled = 0, _atFullRate = 0;
 };

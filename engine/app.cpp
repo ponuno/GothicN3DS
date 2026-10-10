@@ -282,6 +282,7 @@ void App::update(const Input& in, float dt) {
 			}
 		}
 	}
+	_moves.record(_world, _player, in, _hero.loaded() ? "GTAS"[_hero.body()] : '?', dt);
 	checkPortals();
 	const double t3 = sys::timeMs();
 	placeCamera(dt);

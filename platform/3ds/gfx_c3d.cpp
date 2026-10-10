@@ -4,7 +4,9 @@
 //   vertex shader  world.v.pica (dequantise, transform, per-vertex linear fog)
 //   TexEnv 0       texture * baked vertex light, alpha = texture alpha * opacity
 //   TexEnv 1       lerp towards the fog colour by the fog factor (vertex alpha)
-//   alpha test     only for cut-out materials
+//   TexEnv 2, 3    only while dissolving (setFade): alpha - noise + share - 0.5,
+//                  the noise from texture unit 1 at the screen position
+//   alpha test     for cut-out materials, and while dissolving
 //   blending       off for the opaque passes, per material in PASS_BLEND
 // Vertex and index buffers live in the linear heap and are used in place.
 //
@@ -52,7 +54,7 @@ shaderProgram_s gProgram;
 bool gProgramReady = false;
 bool gReady = false; // C3D_Init succeeded
 int gLocProjection = -1, gLocModelView = -1, gLocChunk = -1, gLocParams = -1, gLocDayDelta = -1, gLocTexOffset = -1;
-int gLocSkinLight = -1, gLocBones = -1, gLocSkinned = -1;
+int gLocSkinLight = -1, gLocBones = -1, gLocSkinned = -1, gLocFading = -1;
 bool gSkinned = false; // last value of the shader's `skinned` switch
 bool gPlainShader = false; // the world-only shader of earlier versions: no characters
 Pass gPass = PASS_WORLD;
@@ -78,7 +80,12 @@ FrameDesc gFrame;
 Texture* gBoundTexture = nullptr;
 Mesh* gBoundMesh = nullptr;
 bool gTextured = true;
-bool gAlphaTest = false;
+bool gAlphaTest = false; // the material's own (cut-out)
+// Dissolving (setFade): the share of pixels drawn, 255 = all (off), and the
+// noise texture it is tested against.
+u8 gFade = 255;
+C3D_Tex gNoise;
+bool gNoiseReady = false;
 bool gInFrame = false;
 u8 gOpacity = 255;
 bool gFogToBlack = false;
@@ -134,6 +141,52 @@ void setFogStage(bool toBlack) {
 	const u8* c = gFrame.fogColor;
 	C3D_TexEnvColor(env, toBlack ? 0xFF000000u : (u32(c[0]) | (u32(c[1]) << 8) | (u32(c[2]) << 16) | 0xFF000000u));
 	gFogToBlack = toBlack;
+}
+
+// The alpha test is on for cut-out materials and while dissolving.
+bool gAlphaTestOn = false;
+void applyAlphaTest() {
+	const bool on = gAlphaTest || gFade != 255;
+	if (on == gAlphaTestOn) return;
+	C3D_AlphaTest(on, GPU_GREATER, 127);
+	gAlphaTestOn = on;
+}
+
+// An ordered 8x8 pattern: the share of its texels below a threshold is the
+// threshold, and they are spread evenly at every share.
+void makeNoise() {
+	if (!C3D_TexInit(&gNoise, 8, 8, GPU_A8)) return;
+	u8* texels = static_cast<u8*>(gNoise.data);
+	for (int y = 0; y < 8; ++y)
+		for (int x = 0; x < 8; ++x) {
+			// Bayer rank of (x, y): the bits of x ^ y and y interleaved, reversed.
+			const int a = x ^ y, b = y;
+			const int rank = ((a & 1) << 5) | ((b & 1) << 4) | ((a & 2) << 2) | ((b & 2) << 1) | ((a & 4) >> 1) | ((b & 4) >> 2);
+			// An 8x8 texture is one tile: texels in Morton order, rows from the bottom.
+			const int ty = 7 - y;
+			const int at = (x & 1) | ((ty & 1) << 1) | ((x & 2) << 1) | ((ty & 2) << 2) | ((x & 4) << 2) | ((ty & 4) << 3);
+			texels[at] = u8(rank * 4 + 2);
+		}
+	C3D_TexFlush(&gNoise);
+	C3D_TexSetFilter(&gNoise, GPU_NEAREST, GPU_NEAREST);
+	C3D_TexSetWrap(&gNoise, GPU_REPEAT, GPU_REPEAT);
+	gNoiseReady = true;
+}
+
+// Stages 2 and 3: pass the colour on; alpha = max(alpha - noise, 0) + share - 0.5.
+// The alpha test (> 0.5) then keeps an opaque pixel where noise < share, and
+// a cut-out texel (alpha 0) never.
+void setFadeStages(bool on, u8 share) {
+	C3D_TexEnv* s2 = C3D_GetTexEnv(2);
+	C3D_TexEnv* s3 = C3D_GetTexEnv(3);
+	C3D_TexEnvInit(s2);
+	C3D_TexEnvInit(s3);
+	if (!on) return;
+	C3D_TexEnvSrc(s2, C3D_Alpha, GPU_PREVIOUS, GPU_TEXTURE1, GPU_PRIMARY_COLOR);
+	C3D_TexEnvFunc(s2, C3D_Alpha, GPU_SUBTRACT);
+	C3D_TexEnvSrc(s3, C3D_Alpha, GPU_PREVIOUS, GPU_CONSTANT, GPU_PRIMARY_COLOR);
+	C3D_TexEnvFunc(s3, C3D_Alpha, GPU_ADD_SIGNED);
+	C3D_TexEnvColor(s3, u32(share) << 24);
 }
 
 void setBlend(BlendMode mode) {
@@ -232,7 +285,9 @@ bool init() {
 		gLocSkinLight = shaderInstanceGetUniformLocation(gProgram.vertexShader, "skinLight");
 		gLocBones = shaderInstanceGetUniformLocation(gProgram.vertexShader, "bones");
 		gLocSkinned = shaderInstanceGetUniformLocation(gProgram.vertexShader, "skinned");
-		if (gLocSkinLight < 0 || gLocBones < 0 || gLocSkinned < 0) return false;
+		gLocFading = shaderInstanceGetUniformLocation(gProgram.vertexShader, "fading");
+		if (gLocSkinLight < 0 || gLocBones < 0 || gLocSkinned < 0 || gLocFading < 0) return false;
+		makeNoise(); // (without it nothing is dissolved: see fadeSupported)
 	}
 	if (gLocProjection < 0 || gLocModelView < 0 || gLocChunk < 0 || gLocParams < 0 || gLocDayDelta < 0 || gLocTexOffset < 0)
 		return false;
@@ -247,6 +302,7 @@ bool init() {
 	C3D_CullFace(GPU_CULL_BACK_CCW);
 	C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
 	C3D_AlphaTest(false, GPU_GREATER, 127);
+	gAlphaTestOn = false;
 	return true;
 }
 
@@ -268,6 +324,8 @@ void shutdown() {
 		}
 		// As every citro3d program ends: the library first, then what it used.
 		C3D_Fini();
+		if (gNoiseReady) C3D_TexDelete(&gNoise);
+		gNoiseReady = false;
 		if (gProgramReady) shaderProgramFree(&gProgram);
 		if (gDvlb) DVLB_Free(gDvlb);
 	}
@@ -438,7 +496,12 @@ void frameBegin(const FrameDesc& f) {
 	gPass = PASS_SKY; // force setPass to apply the world state
 	setPass(PASS_WORLD);
 	C3D_AlphaTest(false, GPU_GREATER, 127);
-	gAlphaTest = false;
+	gAlphaTest = gAlphaTestOn = false;
+	// Not dissolving.
+	if (!gPlainShader) C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocFading, false);
+	setFadeStages(false, 255);
+	C3D_TexBind(1, nullptr);
+	gFade = 255;
 	gBlend = BLEND_UNSET;
 	setBlend(BLEND_OFF);
 	C3D_TexBind(0, nullptr); // nothing bound until the first textured material
@@ -449,6 +512,7 @@ void frameBegin(const FrameDesc& f) {
 
 void setPass(Pass pass) {
 	if (!gInFrame || pass == gPass) return;
+	setFade(1.0f); // (dissolving is for the opaque world only)
 	gPass = pass;
 	if (pass == PASS_SKY) {
 		C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
@@ -507,15 +571,31 @@ void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, 
 		gBoundTexture = t;
 	}
 	// Blended materials are never cut out: their alpha is the blend factor.
-	const bool alphaTest = !blended && (materialFlags & MATF_ALPHA_TEST) != 0;
-	if (alphaTest != gAlphaTest) {
-		C3D_AlphaTest(alphaTest, GPU_GREATER, 127);
-		gAlphaTest = alphaTest;
-	}
+	gAlphaTest = !blended && (materialFlags & MATF_ALPHA_TEST) != 0;
+	applyAlphaTest();
 	const bool additive = blended && (materialFlags & MATF_ADD) != 0;
 	if (blended) setBlend(additive ? BLEND_ADD : BLEND_ALPHA);
 	if (additive != gFogToBlack) setFogStage(additive);
 	setTexOffset(uvOffsetU, uvOffsetV);
+}
+
+bool fadeSupported() { return gNoiseReady && !gPlainShader; }
+
+void setFade(float visible) {
+	if (!gInFrame) return;
+	u8 share = u8(clamp(visible, 0.0f, 1.0f) * 255.0f + 0.5f);
+	if (!fadeSupported() || gPass != PASS_WORLD) share = 255;
+	if (share == gFade) return;
+	const bool was = gFade != 255, on = share != 255;
+	gFade = share;
+	if (on != was) {
+		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocFading, on);
+		C3D_TexBind(1, on ? &gNoise : nullptr);
+		setFadeStages(on, share);
+	} else {
+		C3D_TexEnvColor(C3D_GetTexEnv(3), u32(share) << 24);
+	}
+	applyAlphaTest();
 }
 
 void draw(Mesh* m, u32 firstIndex, u32 indexCount) {

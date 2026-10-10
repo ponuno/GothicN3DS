@@ -72,18 +72,39 @@ public:
 	Vec3 eye() const { return {feet.x, _eyeY, feet.z}; }
 	// False until the ground under the spawn point has been found.
 	bool placed() const { return _placed; }
-	// What the controller is in the middle of, for diagnostics (g3ds-host --slope-probe).
+	// What the controller is in the middle of, for diagnostics (g3ds-host
+	// --slope-probe, the console's movement recorder). `step` says which way
+	// through walk() the last frame took:
+	//   g on the floor   l lifted by the animation   L lift ends on a steep slope
+	//   u rising   f falling   n landed   s sliding   r slide came to rest
+	//   h hovering: nothing below at all (the edge of the loaded world)
+	//   p popped up: the feet were in the rock, with nothing below them
+	//   k unstuck: off the ground for long without getting anywhere
+	//   w swimming   c on a ladder   F flying   - not placed yet
 	struct Debug {
 		bool sliding, resting, blocked;
 		Vec3 slideVel, carry;
+		char step;
+		u8 pushes; // spheres pushed out of walls this frame
+		float airTime; // seconds off the ground without getting anywhere (see unstick)
 	};
-	Debug debug() const { return Debug {_sliding, _resting, _blocked, _slideVel, _carry}; }
+	Debug debug() const { return Debug {_sliding, _resting, _blocked, _slideVel, _carry, _step, _pushes, _airTime}; }
+	// Times the feet were found in the rock with nothing below them and put
+	// on top of it, and times the body was off the ground for 1.5 s without
+	// getting 30 cm anywhere and was stood on the nearest floor.
+	u32 popUps = 0, unstuck = 0;
+	static constexpr float kStuckTime = 1.5f, kStuckDistance = 30.0f;
 
 private:
 	void walk(const World& world, const Input& in, float yaw, float dt, const Drive* drive);
 	void collideWalls(const World& world);
 	bool swim(const World& world, float dt);
 	bool climb(const World& world, const Input& in, float dt);
+	// The nearest surface above the feet (from step height up to `reach` above
+	// them): where feet that got into the rock belong.
+	bool floorAbove(const World& world, float reach, float& y) const;
+	void standAt(float y);
+	void unstick(const World& world, float dt);
 
 	float _eyeY = 0;
 	bool _placed = false;
@@ -101,6 +122,11 @@ private:
 	// steep for anywhere else.
 	bool _resting = false;
 	float _restY = 0;
+	char _step = '-';
+	u8 _pushes = 0;
+	// Off the ground: for how long, and from where (see unstick()).
+	float _airTime = 0;
+	Vec3 _airFrom {0, 0, 0};
 	bool standsOn(const Vec3& normal, float y) const {
 		return normal.y >= config.minFloorNormal || (_resting && y <= _restY + 10.0f);
 	}

@@ -14,6 +14,9 @@ void Player::spawn(Vec3 eye) {
 	_placed = false;
 	_carry = {0, 0, 0};
 	_sliding = _resting = false;
+	_airTime = 0;
+	_airFrom = feet;
+	_step = '-';
 }
 
 void Player::collideWalls(const World& world) {
@@ -27,6 +30,7 @@ void Player::collideWalls(const World& world) {
 		for (float h : heights) {
 			Vec3 c = {feet.x, feet.y + h, feet.z};
 			if (world.pushSphere(c, r)) {
+				if (_pushes < 255) ++_pushes;
 				feet.x = c.x;
 				feet.z = c.z;
 				// A push down means the head hit something: stop rising.
@@ -77,6 +81,56 @@ bool Player::swim(const World& world, float dt) {
 // little above the ladder, so at the top the way forward is free again and
 // the player steps over the edge. Returns true if the player is on a ladder
 // this frame.
+bool Player::floorAbove(const World& world, float reach, float& y) const {
+	// Upwards in windows of half a metre: the first one with a surface in it
+	// holds the lowest surface above (more or less: the topmost of that window).
+	Vec3 n;
+	const float from = feet.y + config.stepHeight - 1.0f;
+	for (float h = 50.0f;; h += 50.0f) {
+		h = min(h, reach);
+		if (world.rayDown({feet.x, from + h, feet.z}, h, y, n)) return true;
+		if (h >= reach) return false;
+	}
+}
+
+void Player::standAt(float y) {
+	feet.y = y;
+	grounded = true;
+	velocityY = 0;
+	_carry = {0, 0, 0};
+	_sliding = false;
+	// On whatever slope that is, as on the floor a slide came to rest on.
+	_resting = true;
+	_restY = y;
+}
+
+// The safety net under all of the above: a body that has been off the ground
+// for 1.5 s and has not got 30 cm anywhere in that time is stuck, whatever
+// the cause (a crease the slide cannot leave, feet caught in the rock, a
+// take-off that never ends). It is stood on the nearest floor - below it, or
+// failing that above it - and can walk off from there.
+void Player::unstick(const World& world, float dt) {
+	if (grounded || swimming || climbing || flying || !_placed) {
+		_airTime = 0;
+		_airFrom = feet;
+		return;
+	}
+	_airTime += dt;
+	if (_airTime < kStuckTime) return;
+	const bool still = length(feet - _airFrom) < kStuckDistance;
+	_airTime = 0;
+	_airFrom = feet;
+	if (!still) return;
+	float y;
+	Vec3 n;
+	if (world.rayDown({feet.x, feet.y + config.stepHeight, feet.z}, config.stepHeight * 1.8f, y, n) || floorAbove(world, 400.0f, y)) {
+		standAt(y);
+		++unstuck;
+		_step = 'k';
+	}
+	// (Nothing anywhere near: the edge of the loaded world. Wait for it.)
+}
+
 bool Player::climb(const World& world, const Input& in, float dt) {
 	const PlayerConfig& cfg = config;
 	float y;
@@ -149,6 +203,7 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 	if (!_placed) {
 		float y;
 		Vec3 n;
+		_step = '-';
 		if (!world.rayDown({feet.x, feet.y + 200.0f, feet.z}, 3000.0f, y, n)) return;
 		feet.y = y;
 		grounded = true;
@@ -195,9 +250,13 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 
 	if (swim(world, dt)) {
 		climbing = false;
+		_step = 'w';
 		return;
 	}
-	if (climb(world, in, dt)) return;
+	if (climb(world, in, dt)) {
+		_step = 'c';
+		return;
+	}
 
 	float y;
 	Vec3 n;
@@ -211,6 +270,7 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 			// out of walls and ceilings; coming down, the floor ends it.
 			const float dy = drive->step.y;
 			velocityY = 0;
+			_step = 'l';
 			if (dy > 0.01f) {
 				feet.y += dy;
 				grounded = false;
@@ -223,6 +283,7 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 					// A slope too steep to land on: not into it, at least.
 					feet.y = max(feet.y + dy, y);
 					grounded = false;
+					_step = 'L';
 				}
 			} else {
 				feet.y += dy;
@@ -240,6 +301,7 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 		const float snap = cfg.stepHeight * 0.8f;
 		if (world.rayDown({feet.x, feet.y + cfg.stepHeight, feet.z}, cfg.stepHeight + snap, y, n) && standsOn(n, y)) {
 			feet.y = y;
+			_step = 'g';
 			if (n.y >= cfg.minFloorNormal) _resting = false;
 		} else {
 			grounded = false;
@@ -254,9 +316,11 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 		if (dy > 0) {
 			feet.y += dy; // rising: walls and ceilings are handled by the spheres
 			collideWalls(world);
+			_step = 'u';
 		} else if (world.rayDown({feet.x, feet.y + cfg.stepHeight, feet.z}, cfg.stepHeight - dy, y, n)) {
 			feet.y = y;
 			if (n.y >= cfg.minFloorNormal) {
+				_step = 'n';
 				grounded = true;
 				velocityY = 0;
 				_sliding = _resting = false;
@@ -266,6 +330,7 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 				// keeps pressing the body up the slope it slides down, and it
 				// hangs there, sliding for ever.
 				_carry = {0, 0, 0};
+				_step = 's';
 				// The slide has a pace of its own that gathers downhill: in a
 				// gully between two steep faces the pushes across it cancel
 				// out against the rock, and what is left takes the body down
@@ -296,6 +361,7 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 					_slideStill = 0;
 				} else if ((_slideStill += dt) > 0.25f) {
 					// It gets no lower: it stands.
+					_step = 'r';
 					grounded = true;
 					velocityY = 0;
 					_sliding = false;
@@ -305,10 +371,21 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 			}
 		} else if (world.rayDown({feet.x, feet.y + cfg.stepHeight, feet.z}, 50000.0f, y, n)) {
 			feet.y += dy;
+			_step = 'f';
+		} else if (floorAbove(world, cfg.eyeHeight, y)) {
+			// Nothing below, but rock above: the feet have got into the rock
+			// (the spheres keep the body out of walls only from step height
+			// up; a jump at a steep rock face can put the feet into it). The
+			// game's terrain is a single sheet with nothing under it, so this
+			// used to hover here for ever. Out on top of it.
+			standAt(y);
+			++popUps;
+			_step = 'p';
 		} else {
 			// Nothing below at all (edge of the loaded world): hover instead of
 			// falling forever.
 			velocityY = 0;
+			_step = 'h';
 		}
 	}
 }
@@ -322,7 +399,10 @@ void Player::update(const World& world, const Input& in, float yaw, float pitch,
 		climbing = false;
 	}
 
+	_pushes = 0;
 	if (flying) {
+		_step = 'F';
+		_airTime = 0;
 		const float speed = (in.fast ? config.flyFastSpeed : config.flySpeed) * dt;
 		const Vec3 f = forwardFromYawPitch(yaw, pitch);
 		const Vec3 r = normalize(cross({0, 1, 0}, f));
@@ -334,6 +414,7 @@ void Player::update(const World& world, const Input& in, float yaw, float pitch,
 	}
 
 	walk(world, in, yaw, dt, drive);
+	unstick(world, dt);
 	// Smooth the eye over steps and landings instead of snapping.
 	const float target = feet.y + config.eyeHeight;
 	const float blend = min(dt * 14.0f, 1.0f);

@@ -168,6 +168,10 @@ struct ShaderCheck {
 	// Results.
 	unsigned worldDraws = 0, skinnedDraws = 0, worldVertices = 0, skinnedVertices = 0, blendedVertices = 0, behind = 0;
 	unsigned failed = 0, unexpected = 0, movedBySwitch = 0;
+	// The same world vertices with the dissolve switched on (b1, see gfx::setFade):
+	// nothing else may change, and texture coordinate 1 is the place on the screen.
+	unsigned fadedVertices = 0;
+	double fadeChanged = 0, worstNoise = 0;
 	double worstWorldPx = 0, worstSkinPx = 0, worstDepth = 0, worstColor = 0, worstTex = 0;
 	double worstGpuWorldPx = 0, worstGpuSkinPx = 0;
 	u32 highestBoneRegister = 0;
@@ -253,6 +257,27 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 		if (!mock3ds::shadeVertex(call, index, got, false) || !mock3ds::shadeVertex(call, index, gpu, true)) {
 			++sc.failed;
 			continue;
+		}
+
+		if (!skinned && !sky) {
+			mock3ds::DrawCall faded = call;
+			faded.bools = u16(call.bools | 2u);
+			mock3ds::ShadedVertex f;
+			if (!mock3ds::shadeVertex(faded, index, f, false)) {
+				++sc.failed;
+			} else {
+				++sc.fadedVertices;
+				for (int k = 0; k < 4; ++k)
+					sc.fadeChanged = std::max({sc.fadeChanged, std::fabs(double(f.position[k]) - double(got.position[k])),
+					                           std::fabs(double(f.color[k]) - double(got.color[k]))});
+				const double w = double(got.position[3]);
+				if (w > 1.0) {
+					// Texels of the 8x8 noise: about one a pixel (240 x 400, the shader's x along the 240).
+					const double s = double(got.position[0]) / w * 15.0, t = double(got.position[1]) / w * 25.0;
+					sc.worstNoise = std::max({sc.worstNoise, std::fabs(double(f.texcoord1[0]) - s) / std::max(1.0, std::fabs(s)),
+					                          std::fabs(double(f.texcoord1[1]) - t) / std::max(1.0, std::fabs(t))});
+				}
+			}
 		}
 
 		// Where the engine's maths puts this vertex.
@@ -370,7 +395,8 @@ static void testShader(const std::string& pak) {
 	std::printf("  shader: %u instructions, %u of 96 float registers%s%s\n", mock3ds::shaderInstructions(),
 	            mock3ds::shaderFloatRegisters(), *mock3ds::shaderProblem() ? "; PROBLEM: " : "", mock3ds::shaderProblem());
 	CHECK(!*mock3ds::shaderProblem());
-	CHECK(mock3ds::shaderFloatRegisters() == 4 + 4 + 5 + MODEL_PALETTE * 3 + 1 && mock3ds::shaderFloatRegisters() <= 96);
+	// (projection, modelView, five vectors, the palette; two constants)
+	CHECK(mock3ds::shaderFloatRegisters() == 4 + 4 + 5 + MODEL_PALETTE * 3 + 2 && mock3ds::shaderFloatRegisters() <= 96);
 	shaderProgram_s probe;
 	shaderProgramInit(&probe);
 	shaderProgramSetVsh(&probe, nullptr);
@@ -380,6 +406,7 @@ static void testShader(const std::string& pak) {
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "texOffset") == 11);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "bones") == 13);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "skinned") == 0x68);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fading") == 0x69);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "nonsense") < 0);
 
 	ShaderCheck sc;
@@ -434,6 +461,9 @@ static void testShader(const std::string& pak) {
 		CHECK(sc.worstGpuWorldPx < 0.25 && sc.worstGpuSkinPx < 0.25);
 		CHECK(sc.worstDepth < 1e-3 && sc.worstColor < 1e-4 && sc.worstTex < 1e-3);
 		CHECK(sc.sharedPoints > 20 && sc.splitPoints == 0);
+		std::printf("  dissolve: %u world vertices shaded with it on: the same otherwise (within %.1e), the noise at the screen position "
+		            "(within %.1e)\n", sc.fadedVertices, sc.fadeChanged, sc.worstNoise);
+		CHECK(sc.fadedVertices > 5000 && sc.fadeChanged == 0.0 && sc.worstNoise < 1e-4);
 		app.shutdown();
 	}
 

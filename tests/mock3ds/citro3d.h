@@ -25,6 +25,9 @@ struct C3D_TexInitParams {
 	bool onVram;
 };
 bool C3D_TexInitWithParams(C3D_Tex* tex, void* cube, C3D_TexInitParams p);
+static inline bool C3D_TexInit(C3D_Tex* tex, u16 width, u16 height, GPU_TEXCOLOR format) {
+	return C3D_TexInitWithParams(tex, nullptr, C3D_TexInitParams {width, height, 0, format, GPU_TEX_2D, false});
+}
 void C3D_TexLoadImage(C3D_Tex* tex, const void* data, GPU_TEXFACE face, int level);
 void C3D_TexFlush(C3D_Tex* tex);
 void C3D_TexDelete(C3D_Tex* tex);

@@ -52,6 +52,9 @@ synth)
 	# The slope probe: the character stands, runs and jumps at a place, and says how it went.
 	"$host" --pak "$out/data.pak" --slope-probe 0,400,4940 > "$out/slope.txt" || fail "the slope probe did not run"
 	grep -q "^slope probe: 0 of 9 runs stuck" "$out/slope.txt" || fail "the slope probe found the character stuck on open ground"
+	# ... at the console's 60 fps, from every metre around (a run may go through the portal: it comes back).
+	"$host" --pak "$out/data.pak" --slope-probe 0,400,4940 --probe-fps 60 --probe-grid 1 > "$out/slope60.txt" || fail "the slope probe did not run at 60 fps"
+	grep -q "^slope probe: 0 of 81 runs stuck" "$out/slope60.txt" || fail "the slope probe at 60 fps found the character stuck on open ground"
 	"$host" --pak "$out/data.pak" --still --cam 600,330,650,62,-14 --time 23.6 --frames 700 --shots 0 --who --stats "$out/stats.json" \
 		> "$out/night.txt"
 	grep -q " BEDHIGH " "$out/night.txt" || fail "nobody went to bed"

@@ -1,4 +1,5 @@
 #include "populate.h"
+#include "fight_ai.h"
 #include "fight_clips.h"
 
 #include "game.h"
@@ -232,6 +233,18 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	}
 	pak.add("script/gothic", ASSET_SCRIPT, image);
 	if (!stateNames.empty()) pak.add("script/states", ASSET_META, stateNames);
+	if (scripts.fight) {
+		try {
+			std::string report;
+			pak.add("script/fight", ASSET_META, bakeFightAi(*scripts.fight, report));
+			line(report + " (" + scripts.fight->source + ")");
+		} catch (const std::exception& ex) {
+			line(std::string("WARNING: fight AI not baked (") + scripts.fight->source + ": " + ex.what() +
+			     "); the inhabitants fight without its tables");
+		}
+	} else {
+		line("fight AI: no tables of their own (FIGHT.DAT); the engine looks for them in the scripts");
+	}
 
 	struct Faults {
 		const SrcScript* script;

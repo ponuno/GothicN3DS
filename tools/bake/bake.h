@@ -65,6 +65,9 @@ struct BakeScripts {
 	// The compiled file the script was read from, if any: it is then checked
 	// against the reference interpreter (script_check.h).
 	const std::vector<u8>* dat = nullptr;
+	// The fight AI tables' script (FIGHT.DAT), baked into "script/fight".
+	// Without it the engine looks for the tables in `script`.
+	const SrcScript* fight = nullptr;
 	LookSource looks; // without it nobody is drawn
 };
 

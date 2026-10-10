@@ -26,6 +26,7 @@ bool importZenActor(std::shared_ptr<const ZenGame>, const ZenActorOptions&, SrcM
 bool importZenCamera(std::shared_ptr<const ZenGame>, CameraSet&, std::vector<std::string>&) { unavailable(); }
 LookSource zenLookSource(std::shared_ptr<const ZenGame>) { unavailable(); }
 bool importZenScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<u8>&, std::vector<std::string>&) { unavailable(); }
+bool importZenFightScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<std::string>&) { unavailable(); }
 
 ScriptCheckResult checkScript(const std::vector<u8>&, const SrcScript&, const std::vector<u8>&, const ScriptCheckOptions&) {
 	ScriptCheckResult r;

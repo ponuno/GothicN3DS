@@ -185,13 +185,15 @@ int main(int argc, char** argv) {
 		std::vector<SrcModel> models;
 		CameraSet camera = defaultCameraSet();
 		bool haveCamera = false;
-		SrcScript script;
+		SrcScript script, fightScript;
 		std::vector<u8> scriptDat;
 		BakeScripts scripts;
 		if (cmd == "synth") {
 			if (withScripts) {
 				buildSyntheticScript(script);
+				buildSyntheticFightScript(fightScript);
 				scripts.script = &script;
+				scripts.fight = &fightScript;
 				scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead};
 			}
 			if (hero) {
@@ -265,6 +267,8 @@ int main(int argc, char** argv) {
 				scripts.script = &script;
 				scripts.dat = &scriptDat;
 				scripts.looks = zenLookSource(game);
+				// Gothic 1 keeps how its people fight in a file of its own.
+				if (importZenFightScript(game, fightScript, worlds[0].scene.notes)) scripts.fight = &fightScript;
 			}
 		}
 		if (!firstName.empty()) worlds[0].name = firstName;

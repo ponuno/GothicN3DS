@@ -46,6 +46,7 @@ struct GameNpc {
 	u16 routineCount = 0;
 	u16 world = 0;         // the world it lives in (Game::worldIndex)
 	bool hero = false;
+	bool knowsPlayer = false; // Npc_SetKnowsPlayer
 	// Where it is now.
 	bool placed = false;   // false: the world has no such place
 	GameText want = 0;     // where its routine wants it
@@ -117,6 +118,36 @@ struct GameLogTopic {
 struct GameLogEntry {
 	u32 topic;     // into the topics
 	char* text;
+};
+
+// A thing a character can be talked to about (the scripts' C_INFO). The
+// engine makes one for every such instance at the start; whom it belongs to
+// is found by the character's instance symbol.
+struct GameInfo {
+	ScriptInstance* object = nullptr;
+	u32 symbol = 0;                 // the instance
+	u32 npc = SCRIPT_NONE;          // C_INFO.NPC: the instance of the character it belongs to
+	i32 nr = 0;
+	u32 condition = SCRIPT_NONE;    // functions; SCRIPT_NONE for none
+	u32 information = SCRIPT_NONE;
+	bool important = false;         // begins the talk by itself when it can
+	bool permanent = false;         // may be told again
+	bool trade = false;
+	bool told = false;
+};
+
+// A way to go on in the middle of a talk (Info_AddChoice): the text shown
+// and the function that says what follows.
+struct GameChoice {
+	u32 info;   // into the infos: the one it hangs on
+	u32 fn;
+	char* text;
+};
+
+// A line the scripts print on the screen (Print, PrintScreen).
+struct GameMessage {
+	char text[96];
+	float seconds;
 };
 
 struct GameStats {
@@ -202,6 +233,50 @@ public:
 	// What the start-up scripts put into the worlds (Wld_InsertItem), in order.
 	u32 dropCount() const { return _dropCount; }
 	const GameDrop& drop(u32 i) const { return _drops[i]; }
+	// ---- talks (game_dialog.cpp) ----
+	u32 infoCount() const { return _infoCount; }
+	const GameInfo& info(u32 i) const { return _infos[i]; }
+	// The info an instance symbol defines, or -1.
+	int infoIndex(u32 symbol) const;
+	// What the info is called in the menu (C_INFO.DESCRIPTION), UTF-8 is up to the caller (game code page).
+	const char* infoDescription(u32 i) const;
+	void setInfoTold(u32 i, bool told) {
+		if (i < _infoCount) _infos[i].told = told;
+	}
+	// True if the scripts give the character something to talk about (an info of its own).
+	bool hasInfos(u32 npc) const;
+	// The infos of a character that can be told now, in the order the menu has
+	// them (by NR, then by the functions' order). `important` selects the ones
+	// that begin a talk by themselves; the others are the menu. `hero` is who
+	// is talked to. Returns how many were put into `out` (at most `max`).
+	u32 infosFor(u32 npc, bool important, u32* out, u32 max);
+	// True if the info may be told to the hero by this character now: not
+	// told yet (or permanent) and its condition holds.
+	bool infoAvailable(u32 info, u32 npc);
+	// Runs the info's function (what the character says and does) as the
+	// original does: SELF the character, OTHER the player's.
+	void runInfo(u32 info, u32 npc);
+	// Calls a script function with SELF and OTHER (a character, -1 for none);
+	// its integer result (0 if it has none).
+	i32 callAs(u32 fn, u32 self, int other);
+	// The ways on a talk has at the moment (Info_AddChoice), in the order they were added.
+	u32 choiceCount() const { return _choiceCount; }
+	const GameChoice& choice(u32 i) const { return _choices[i]; }
+	u32 choicesOf(u32 info, u32* out, u32 max) const;
+	void clearChoices(u32 info);
+	void clearAllChoices();
+	// How many choices were ever added, and the info the last one hangs on
+	// (a talk notices a choice function that has put up new ways on).
+	u32 choiceAdds() const { return _choiceAdds; }
+	u32 lastChoiceInfo() const { return _lastChoiceInfo; }
+	// What the scripts print on the screen, oldest first; false when there is none.
+	bool takeMessage(GameMessage& out);
+	void pushMessage(const char* text, float seconds);
+	// Switches the character's daily routine to another (Npc_ExchangeRoutine):
+	// the function "RTN_<name>_<id>"; false if the scripts lack it.
+	bool exchangeRoutine(u32 npc, const char* name);
+	// Bumped whenever an info is told or a choice changes (menus redraw on it).
+	u32 talkVersion() const { return _talkVersion; }
 	// The diary.
 	u32 logTopicCount() const { return _logTopicCount; }
 	const GameLogTopic& logTopic(u32 i) const { return _logTopics[i]; }
@@ -377,6 +452,29 @@ private:
 	u32 _logTopicCount = 0, _logTopicCap = 0;
 	GameLogEntry* _logEntries = nullptr;
 	u32 _logEntryCount = 0, _logEntryCap = 0, _logVersion = 0;
+	// ---- talks ----
+	void bindDialogues();
+	static void xKnowsInfo(ScriptVm& vm, void* user);
+	static void xCheckInfo(ScriptVm& vm, void* user);
+	static void xAddChoice(ScriptVm& vm, void* user);
+	static void xClearChoices(ScriptVm& vm, void* user);
+	static void xExchangeRoutine(ScriptVm& vm, void* user);
+	static void xPrint(ScriptVm& vm, void* user);
+	static void xPrintScreen(ScriptVm& vm, void* user);
+	static void xKnowsPlayer(ScriptVm& vm, void* user);
+	static void xSetKnowsPlayer(ScriptVm& vm, void* user);
+	GameInfo* _infos = nullptr;
+	u32 _infoCount = 0;
+	GameChoice* _choices = nullptr;
+	u32 _choiceCount = 0, _choiceCap = 0, _choiceAdds = 0, _lastChoiceInfo = 0;
+	GameMessage _messages[6] = {};
+	u32 _messageFirst = 0, _messageCount = 0;
+	u32 _talkVersion = 0;
+	u32 _mInfoNpc = SCRIPT_NONE, _mInfoNr = SCRIPT_NONE, _mInfoCondition = SCRIPT_NONE, _mInfoInformation = SCRIPT_NONE,
+	    _mInfoDescription = SCRIPT_NONE, _mInfoImportant = SCRIPT_NONE, _mInfoPermanent = SCRIPT_NONE, _mInfoTrade = SCRIPT_NONE,
+	    _mId = SCRIPT_NONE;
+	PointFinder _find = nullptr;
+	void* _findUser = nullptr;
 	int logTopicOf(const char* name, bool make);
 	static void xLogCreateTopic(ScriptVm& vm, void* user);
 	static void xLogSetTopicStatus(ScriptVm& vm, void* user);

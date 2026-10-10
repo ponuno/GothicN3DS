@@ -70,6 +70,7 @@ void App::drawOverlay() {
 		}
 	}
 	if (_settings.hud && !menuOpen && character) drawItemHud();
+	if (!menuOpen) drawSubtitle();
 	if (!menuOpen && _toastTime > 0.0f && _toast[0]) {
 		// (Above the inventory's info box while that is up.)
 		const int w = _ui.measure(_toast) + 16, y = items ? 116 : 150;

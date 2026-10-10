@@ -25,7 +25,7 @@ constexpr u32 HP = 0xB0261EFFu, HP_LIGHT = 0xD8584AFFu, MANA = 0x2A4CBCFFu, MANA
 
 // The quick slots' keys, as on the PC's keyboard.
 const char* const kKeys[QUICK_SLOTS] = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"};
-const char* const kPageTitles[] = {"", "Инвентарь", "Дневник", "Персонаж", "Сундук", "Замок"};
+const char* const kPageTitles[] = {"", "Инвентарь", "Дневник", "Персонаж", "Сундук", "Замок", "Разговор"};
 
 // The signs of the tabs, in the order of ItemTab.
 const u8 kTabIcons[ITEM_TABS] = {ICON_ALL, ICON_WEAPONS, ICON_ARMOR, ICON_MAGIC, ICON_POTION, ICON_APPLE, ICON_OTHER};
@@ -323,6 +323,10 @@ void InventoryPanel::openPage(PanelPage p) {
 	}
 	_topic = -1;
 	_listScroll = 0;
+	if (p == PAGE_DIALOG) {
+		_talkCursor = 0;
+		_talkVersion = 0xFFFFFFFFu;
+	}
 	_dirty = true;
 }
 
@@ -435,6 +439,14 @@ InventoryPanel::Hit InventoryPanel::hitTest(int x, int y) const {
 			}
 		return h;
 	}
+	if (_page == PAGE_DIALOG) {
+		// (The talk is left by the talk's own ways, not by the back arrow.)
+		if (y >= TALK_Y) {
+			h.region = R_TALK;
+			h.index = (y - TALK_Y) / TALK_ROW;
+		}
+		return h;
+	}
 	if (y < BARS_H) {
 		h.region = x < BACK_W ? R_BACK : R_BARS;
 		return h;
@@ -540,7 +552,27 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 	};
 
 	// ---- the buttons (a page open) ----
-	if (open()) {
+	if (_page == PAGE_DIALOG) {
+		const TalkView& t = v.talk;
+		if (_talkVersion != t.version) {
+			_talkVersion = t.version;
+			_talkCursor = 0;
+			_dirty = true;
+		}
+		if (t.choosing && t.count) {
+			const int before = _talkCursor;
+			if (in.down) _talkCursor = min(_talkCursor + 1, int(t.count) - 1);
+			if (in.up) _talkCursor = max(_talkCursor - 1, 0);
+			if (before != _talkCursor) _dirty = true;
+			if (in.confirm) {
+				cmd.type = PANEL_TALK_CHOOSE;
+				cmd.slot = u8(_talkCursor);
+			}
+		} else if (in.confirm) {
+			cmd.type = PANEL_TALK_SKIP;
+		}
+		if (in.back) cmd.type = PANEL_TALK_LEAVE;
+	} else if (open()) {
 		const ItemEntry* list = items(v);
 		if (_page == PAGE_LOCK) {
 			// The pick: left or right.
@@ -620,8 +652,9 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 		_held = 0;
 		_moved = _longDone = false;
 		if (_start.region == R_SLOT || _start.region == R_BUTTON || _start.region == R_PICKER || _start.region == R_STRIP ||
-		    _start.region == R_LOCK)
+		    _start.region == R_LOCK || _start.region == R_TALK)
 			_dirty = true; // (pressed)
+		if (_start.region == R_TALK && v.talk.choosing && _start.index >= 0 && u32(_start.index) < v.talk.count) _talkCursor = _start.index;
 	} else if (in.touching) {
 		_held += dt;
 		_x = in.x;
@@ -668,6 +701,14 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 			case R_STRIP:
 				if (end.index < 2) setSide(end.index);
 				else if (_side == 0 && v.chest.count) cmd.type = PANEL_CHEST_ALL;
+				break;
+			case R_TALK:
+				if (v.talk.choosing && end.index >= 0 && u32(end.index) < v.talk.count) {
+					cmd.type = PANEL_TALK_CHOOSE;
+					cmd.slot = u8(end.index);
+				} else if (!v.talk.choosing) {
+					cmd.type = PANEL_TALK_SKIP;
+				}
 				break;
 			case R_LOCK:
 				cmd.type = PANEL_LOCK_PICK;
@@ -741,6 +782,7 @@ bool InventoryPanel::draw(const InventoryView& v, bool force) {
 		drawStrip(v);
 		break;
 	case PAGE_LOCK: drawLock(v); break;
+	case PAGE_DIALOG: drawDialog(v); break;
 	default: drawPlay(v); break;
 	}
 	if (_assigning) drawPicker(v);
@@ -768,10 +810,12 @@ void InventoryPanel::drawBars(const InventoryView& v, bool header) {
 		bar(168, 311, v.mana, v.manaMax, MANA, MANA_LIGHT);
 		return;
 	}
-	_canvas.fill(2, 2, BACK_W - 4, BARS_H - 1, 0x2A2E34FFu);
-	_canvas.frame(2, 2, BACK_W - 4, BARS_H - 1, CELL_LINE);
-	_canvas.text((BACK_W - 2) / 2, 3, "\xE2\x97\x80", TITLE, ui::TEXT, ui::CENTER);
-	_canvas.text(BACK_W + 2, 3, _page == PAGE_CHEST && v.chest.name[0] ? v.chest.name : kPageTitles[_page], TITLE, ui::TEXT, ui::LEFT, 84,
+	if (_page != PAGE_DIALOG) {
+		_canvas.fill(2, 2, BACK_W - 4, BARS_H - 1, 0x2A2E34FFu);
+		_canvas.frame(2, 2, BACK_W - 4, BARS_H - 1, CELL_LINE);
+		_canvas.text((BACK_W - 2) / 2, 3, "\xE2\x97\x80", TITLE, ui::TEXT, ui::CENTER);
+	}
+	_canvas.text(_page == PAGE_DIALOG ? 8 : BACK_W + 2, 3, _page == PAGE_CHEST && v.chest.name[0] ? v.chest.name : kPageTitles[_page], TITLE, ui::TEXT, ui::LEFT, 84,
 	             true);
 	bar(140, 222, v.hp, v.hpMax, HP, HP_LIGHT);
 	bar(238, 311, v.mana, v.manaMax, MANA, MANA_LIGHT);
@@ -964,6 +1008,38 @@ void InventoryPanel::drawLock(const InventoryView& v) {
 	_canvas.text(Canvas::W / 2, 214, "Крестовина или L / R — тоже; B — бросить", TEXT_DIM, ui::TEXT, ui::CENTER, Canvas::W - 8, true);
 }
 
+void InventoryPanel::drawDialog(const InventoryView& v) {
+	const TalkView& t = v.talk;
+	const int x0 = 6, x1 = Canvas::W - 6;
+	_canvas.text(Canvas::W / 2, BARS_H + 5, t.partner[0] ? t.partner : "…", GOLD, ui::TITLE, ui::CENTER, Canvas::W - 12, true);
+	if (t.choosing && t.count) {
+		for (u32 k = 0; k < t.count && k < u32(TALK_ITEMS); ++k) {
+			const int y = TALK_Y + int(k) * TALK_ROW;
+			const bool chosen = int(k) == _talkCursor;
+			if (chosen) {
+				_canvas.gradient(x0, y, x1, y + TALK_ROW - 2, SEL_TOP, SEL_BOTTOM);
+				_canvas.frame(x0, y, x1, y + TALK_ROW - 2, SEL_EDGE);
+			} else {
+				_canvas.fill(x0, y, x1, y + TALK_ROW - 2, CELL_FILL);
+				_canvas.frame(x0, y, x1, y + TALK_ROW - 2, CELL_LINE);
+			}
+			_canvas.text(x0 + 6, y + 1, t.items[k], chosen ? TITLE : TEXT, ui::TEXT, ui::LEFT, x1 - x0 - 12, true);
+		}
+		return;
+	}
+	if (t.saying) {
+		int y = TALK_Y;
+		if (!t.heroSays && t.speaker[0]) {
+			_canvas.text(x0, y, t.speaker, GOLD, ui::TEXT, ui::LEFT, x1 - x0, true);
+			y += 16;
+		}
+		_canvas.paragraph(x0, y, x1 - x0, t.line, t.heroSays ? TITLE : TEXT, 9);
+		_canvas.text(Canvas::W / 2, Canvas::H - 20, "A — дальше", TEXT_DIM, ui::TEXT, ui::CENTER, 0, true);
+		return;
+	}
+	_canvas.text(Canvas::W / 2, TALK_Y + 20, "…", TEXT_DIM, ui::TITLE, ui::CENTER, 0, true);
+}
+
 void InventoryPanel::drawPicker(const InventoryView& v) {
 	// Over the page, darkened: the ten slots to choose from, the thing to put there.
 	_canvas.fill(0, BARS_H, Canvas::W, Canvas::H, 0x000000C0u);
@@ -982,25 +1058,34 @@ void InventoryPanel::drawDiary(const InventoryView& v) {
 	_canvas.clip(0, BARS_H + 2, Canvas::W, Canvas::H);
 	int y = BARS_H + 4 - _listScroll;
 	if (!v.topicCount) {
-		_canvas.paragraph(x0, y + 8, x1 - x0, "Записей пока нет. Их делают скрипты игры (Log_AddEntry) в разговорах и заданиях — "
-		                                       "разговоров в порте ещё нет.",
-		                  TEXT_DIM);
+		_canvas.paragraph(x0, y + 8, x1 - x0, "Записей пока нет. Их делают скрипты игры (Log_AddEntry) в разговорах и заданиях.", TEXT_DIM);
 	}
 	static const char* const kStatus[] = {"", "идёт", "выполнено", "провалено", "устарело"};
-	for (u32 t = 0; t < v.topicCount; ++t) {
-		const InventoryView::Topic& topic = v.topics[t];
-		const bool openTopic = _topic == int(t);
-		_topicY[t] = y;
-		_canvas.fill(x0 - 2, y, x1 + 2, y + 15, openTopic ? TAB_ON : 0xFFFFFF10u);
-		_canvas.text(x0 + 2, y + 1, topic.name, openTopic ? TITLE : TEXT, ui::TEXT, ui::LEFT, x1 - x0 - 80, true);
-		_canvas.text(x1 - 2, y + 1, topic.status < 5 ? kStatus[topic.status] : "", topic.status == 2 ? GOLD : TEXT_DIM, ui::TEXT, ui::RIGHT);
-		y += 16;
-		if (!openTopic) continue;
-		for (u32 k = 0; k < topic.count; ++k) {
-			y += 2;
-			y += _canvas.paragraph(x0 + 8, y, x1 - x0 - 10, v.entries[topic.first + k], TEXT_DIM);
+	// The tasks first, then the notes.
+	for (int pass = 0; pass < 2; ++pass) {
+		bool headed = false;
+		for (u32 t = 0; t < v.topicCount; ++t) {
+			const InventoryView::Topic& topic = v.topics[t];
+			if ((topic.section == 1) != (pass == 1)) continue;
+			if (!headed) {
+				headed = true;
+				_canvas.text(x0, y + 1, pass ? "Заметки" : "Задания", TITLE, ui::TEXT, ui::LEFT, 0, true);
+				y += 16;
+			}
+			const bool openTopic = _topic == int(t);
+			_topicY[t] = y;
+			_canvas.fill(x0 - 2, y, x1 + 2, y + 15, openTopic ? TAB_ON : 0xFFFFFF10u);
+			_canvas.text(x0 + 2, y + 1, topic.name, openTopic ? TITLE : TEXT, ui::TEXT, ui::LEFT, x1 - x0 - 80, true);
+			_canvas.text(x1 - 2, y + 1, topic.status < 5 ? kStatus[topic.status] : "", topic.status == 2 ? GOLD : topic.status == 3 ? WARN : TEXT_DIM,
+			             ui::TEXT, ui::RIGHT);
+			y += 16;
+			if (!openTopic) continue;
+			for (u32 k = 0; k < topic.count; ++k) {
+				y += 2;
+				y += _canvas.paragraph(x0 + 8, y, x1 - x0 - 10, v.entries[topic.first + k], TEXT_DIM);
+			}
+			y += 4;
 		}
-		y += 4;
 	}
 	_canvas.unclip();
 }

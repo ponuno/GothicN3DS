@@ -5,6 +5,7 @@
 #include "g3ds/script.h"
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace g3 {
@@ -36,6 +37,21 @@ struct SrcScript {
 	// The symbol of that name (any letter case), or -1.
 	int find(const std::string& name) const;
 };
+
+// What people say (the game's OU.BIN): the name the scripts give a line, and
+// its text, as the game's files have them (in the code page of the copy).
+struct SrcDialogue {
+	std::string source; // where it came from, for the report
+	std::vector<std::pair<std::string, std::string>> lines;
+};
+
+// Cuts the lines into the assets of g3ds/dialog.h: "dialog/index" and
+// "dialog/<k>". `report` gets a line about them.
+struct DialogueAsset {
+	std::string name;
+	std::vector<u8> bytes;
+};
+std::vector<DialogueAsset> bakeDialogue(const SrcDialogue& dialogue, std::string& report);
 
 struct ScriptBakeResult {
 	std::string report;

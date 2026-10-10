@@ -936,6 +936,17 @@ bool Npcs::begin(NpcActor& a, const World& world) {
 		a.wait = 1.4f;
 		a.phase = NpcActor::WAITING;
 		return false;
+	case NPC_ACT_OUTPUT:
+		// Said when the talk's queue of words gets to it (tickSpeech).
+		if (u32(act.i) < _speechDone) return true;
+		a.phase = NpcActor::WAITING;
+		return false;
+	case NPC_ACT_PROCESS_INFOS:
+		openTalk(a);
+		return true;
+	case NPC_ACT_STOP_INFOS:
+		if (_talk.processing && _talk.npc == int(a.npc)) _talk.stop = true;
+		return true;
 	case NPC_ACT_TELEPORT:
 		_net.drop(a.npc);
 		memcpy(n.pos, act.pos, 3 * sizeof(float));
@@ -1009,6 +1020,11 @@ bool Npcs::carryOn(NpcActor& a, const World& world, float dt) {
 	}
 	case NPC_ACT_USE_MOB:
 		return useMob(a, world, dt);
+	case NPC_ACT_OUTPUT:
+		// (Words that were flushed - the talk was cut short - are not waited for.)
+		if (u32(act.i) >= _speechDone && speechPending(u32(act.i))) return false;
+		a.phase = NpcActor::IDLE;
+		return true;
 	case NPC_ACT_PLAY_ANI:
 	case NPC_ACT_STAND_UP:
 	case NPC_ACT_WAIT:

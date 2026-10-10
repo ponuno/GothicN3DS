@@ -9,6 +9,7 @@
 #include "g3ds/world.h"
 #include "ground.h"
 
+#include <zenkit/CutsceneLibrary.hh>
 #include <zenkit/DaedalusVm.hh>
 #include <zenkit/Mesh.hh>
 #include <zenkit/addon/daedalus.hh>
@@ -2355,6 +2356,49 @@ bool importZenScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std
 bool importZenFightScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes) {
 	std::vector<u8> dat;
 	return importZenCompiled(game, "FIGHT.DAT", "fight AI", "the inhabitants fight without its tables", script, dat, notes);
+}
+
+// The words people say: the game's output units, a cutscene library of its
+// own beside the compiled scripts (OU.BIN in Gothic 1; a translation may name
+// it otherwise or keep it in text form, which the same reader takes).
+bool importZenDialogue(std::shared_ptr<const ZenGame> game, SrcDialogue& dialogue, std::vector<std::string>& notes) {
+	dialogue = SrcDialogue();
+	for (const char* file : {"ou.bin", "ou.dat", "ou.csl", "ou.lsc"}) {
+		std::unique_ptr<zenkit::Read> rd;
+		const fs::path loose = findNoCase(game->dir, {"_work", "data", "scripts", "content", "cutscene", file});
+		if (!loose.empty() && fs::is_regular_file(loose)) {
+			rd = zenkit::Read::from(loose);
+			dialogue.source = loose.filename().string();
+		} else if (const zenkit::VfsNode* node = game->vfs.find(file)) {
+			rd = node->open_read();
+			dialogue.source = lower(file) + " (from an archive)";
+		} else {
+			continue;
+		}
+		for (zenkit::GameVersion version : {zenkit::GameVersion::GOTHIC_1, zenkit::GameVersion::GOTHIC_2}) {
+			try {
+				rd->seek(0, zenkit::Whence::BEG);
+				auto archive = zenkit::ReadArchive::from(rd.get());
+				if (!archive) throw std::runtime_error("not a ZenGin archive");
+				auto lib = archive->read_object<zenkit::CutsceneLibrary>(version);
+				if (!lib) throw std::runtime_error("no cutscene library in it");
+				dialogue.lines.reserve(lib->blocks.size());
+				for (const auto& block : lib->blocks) {
+					if (!block) continue;
+					const auto message = block->get_message();
+					if (message) dialogue.lines.emplace_back(block->name, message->text);
+				}
+				return !dialogue.lines.empty();
+			} catch (const std::exception& ex) {
+				dialogue.lines.clear();
+				if (version == zenkit::GameVersion::GOTHIC_2)
+					notes.push_back(std::string("dialogue: ") + file + " could not be read (" + ex.what() + "); the people stay silent");
+			}
+		}
+	}
+	if (dialogue.source.empty())
+		notes.push_back("dialogue: OU.BIN not found (_work/Data/Scripts/Content/Cutscene); the people are heard as text-less lines");
+	return false;
 }
 
 void importZenWorld(std::shared_ptr<const ZenGame> game, const ZenImportOptions& opt, SrcScene& scene) {

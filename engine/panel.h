@@ -22,6 +22,9 @@
 //              time; a tap chooses, a second tap moves the thing over to the
 //              other side; buttons: the chest, the pack, take everything
 //   lock       (a locked chest) the pick: left or right, as the combination goes
+//   dialogue   (a talk) the ways to go on, one under the other: the D-Pad and A,
+//              or a tap; B takes the last, which by the scripts' habit leaves.
+//              While a line is said it shows the line; A or a tap goes on
 // While a page is open the character stands still - as in the original the
 // inventory may be used in a fight, at that price. SELECT or the buttons open
 // them; SELECT, B or the back arrow at the top close them.
@@ -119,7 +122,7 @@ private:
 
 class InventoryPanel {
 public:
-	enum PanelPage : u8 { PAGE_PLAY, PAGE_INVENTORY, PAGE_DIARY, PAGE_CHARACTER, PAGE_CHEST, PAGE_LOCK, PANEL_PAGES };
+	enum PanelPage : u8 { PAGE_PLAY, PAGE_INVENTORY, PAGE_DIARY, PAGE_CHARACTER, PAGE_CHEST, PAGE_LOCK, PAGE_DIALOG, PANEL_PAGES };
 	// Where things are (for the platform and the tests).
 	static constexpr int BARS_H = 20;
 	// The play page: two rows of five quick slots, three buttons under them.
@@ -169,6 +172,9 @@ public:
 	// The chest page shows the chest's things (0) or the pack's (1).
 	int side() const { return _side; }
 	void setSide(int side);
+	// The dialogue page: row `k` of the menu (the middle of its left part's y).
+	static constexpr int TALK_Y = 40, TALK_ROW = 16;
+	int talkCursor() const { return _talkCursor; }
 	// The middle of the chest page's button `k` (0 the chest, 1 the pack, 2 take all) and of
 	// the lock page's (0 left, 1 right).
 	static void stripCentre(int k, int& x, int& y);
@@ -188,7 +194,7 @@ public:
 
 private:
 	static constexpr float kInspectTime = 4.0f;
-	enum Region : u8 { R_NONE, R_SLOT, R_BUTTON, R_BACK, R_KIND, R_PREV_TAB, R_NEXT_TAB, R_TILE, R_GRID, R_PICKER, R_LIST, R_BARS, R_STRIP, R_LOCK };
+	enum Region : u8 { R_NONE, R_SLOT, R_BUTTON, R_BACK, R_KIND, R_PREV_TAB, R_NEXT_TAB, R_TILE, R_GRID, R_PICKER, R_LIST, R_BARS, R_STRIP, R_LOCK, R_TALK };
 	struct Hit {
 		u8 region = R_NONE;
 		int index = -1;
@@ -211,6 +217,7 @@ private:
 	void drawCharacter(const InventoryView& v);
 	void drawStrip(const InventoryView& v);
 	void drawLock(const InventoryView& v);
+	void drawDialog(const InventoryView& v);
 	void drawThing(int x, int y, int w, int h, i16 picture, u8 icon, u32 tint, bool dim);
 	void slotTile(int slot, const InventoryView& v, bool picker);
 	void cell(int x, int y, int w, int h, bool chosen, bool lit);
@@ -223,6 +230,8 @@ private:
 	int _scroll = 0;
 	int _listScroll = 0; // the diary's
 	int _topic = -1;     // the diary's topic opened
+	int _talkCursor = 0; // the dialogue page's chosen way
+	u32 _talkVersion = 0xFFFFFFFFu;
 	int _topicY[InventoryView::DIARY_TOPICS] = {}; // where each topic was drawn (for taps)
 	u32 _selected = 0xFFFFFFFFu;
 	u32 _shown[INVENTORY_MAX] = {};

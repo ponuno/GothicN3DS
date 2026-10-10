@@ -326,6 +326,7 @@ void App::update(const Input& in, float dt) {
 		}
 		chestUpdate(fightIn, dt);
 		itemsUpdate(fightIn, dt); // (a job holds the hands: its frames take the fight keys)
+		talkUpdate(fightIn, dt);
 		fightInput(fightIn, dt);
 		Input heroIn = steerInput(in, dt);
 		if (_hero.usingItem() || _panel.open() || _chest.stage != CH_NONE) {

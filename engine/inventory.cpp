@@ -469,6 +469,9 @@ void App::panelCommand(const PanelCommand& c) {
 	case PANEL_ASSIGN: setQuickSlot(c.slot, c.symbol); break;
 	case PANEL_CLEAR_SLOT: setQuickSlot(c.slot, NONE); break;
 	case PANEL_CHEST_MOVE: case PANEL_CHEST_ALL: case PANEL_CHEST_CLOSE: case PANEL_LOCK_PICK: case PANEL_LOCK_CANCEL: chestCommand(c); break;
+	case PANEL_TALK_CHOOSE: _npcs.talkChoose(c.slot); break;
+	case PANEL_TALK_SKIP: _npcs.talkSkip(); break;
+	case PANEL_TALK_LEAVE: _npcs.talkBack(); break;
 	default: break; // (the report and the cursor are the platform's)
 	}
 }
@@ -770,6 +773,7 @@ const InventoryView& App::inventory() {
 	stamp = mix(stamp, _queued);
 	stamp = mix(stamp, g.logVersion());
 	stamp = mix(stamp, u32(i32(_inv.messageTime > 0.0f)));
+	stamp = mix(stamp, _npcs.talkView().version);
 	stamp = mix(stamp, _chests.version());
 	stamp = mix(stamp, u32(_chest.stage));
 	stamp = mix(stamp, u32(_chest.progress));
@@ -899,6 +903,15 @@ const InventoryView& App::inventory() {
 				--k;
 			}
 		}
+		// (The tasks before the notes, each newest first: the panel lists them so.)
+		{
+			u32 sorted[InventoryView::DIARY_TOPICS];
+			u32 m = 0;
+			for (int pass = 0; pass < 2; ++pass)
+				for (u32 i = 0; i < n; ++i)
+					if ((g.logTopic(order[i]).section == 1) == (pass == 1)) sorted[m++] = order[i];
+			memcpy(order, sorted, sizeof(u32) * n);
+		}
 		v.topicCount = 0;
 		v.entryCount = 0;
 		for (u32 i = 0; i < n; ++i) {
@@ -918,6 +931,7 @@ const InventoryView& App::inventory() {
 		}
 	}
 	chestView(h);
+	if (v.talk.version != _npcs.talkView().version) v.talk = _npcs.talkView();
 	++v.version;
 	return v;
 }
@@ -1268,6 +1282,13 @@ void App::drawItemHud() {
 			snprintf(line, sizeof(line), _chests.locked(u32(_chestTarget)) ? "%s (заперт)" : "%s", chestName(u32(_chestTarget)));
 			tag({m.pos[0], m.pos[1] + 75.0f, m.pos[2]}, line);
 		}
+	}
+	if (_lootTarget < 0 && _chestTarget < 0 && _talkTarget >= 0 && !_npcs.talkView().active) {
+		const GameNpc& t = _npcs.game().npc(u32(_talkTarget));
+		char name[48], line[96];
+		scriptText(_npcs.game().nameOf(t), name, sizeof(name));
+		snprintf(line, sizeof(line), "Поговорить: %s", name);
+		tag({t.pos[0], t.pos[1] + 215.0f, t.pos[2]}, line);
 	}
 	const bool lockPage = _panel.page() == InventoryPanel::PAGE_LOCK && _chest.stage == CH_LOCK;
 	if (!itemOverlay() && !lockPage) return;

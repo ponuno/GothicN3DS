@@ -186,6 +186,8 @@ int main(int argc, char** argv) {
 		CameraSet camera = defaultCameraSet();
 		bool haveCamera = false;
 		SrcScript script, fightScript;
+		SrcDialogue dialogue;
+		bool haveDialogue = false;
 		std::vector<u8> scriptDat;
 		BakeScripts scripts;
 		if (cmd == "synth") {
@@ -195,6 +197,8 @@ int main(int argc, char** argv) {
 				scripts.script = &script;
 				scripts.fight = &fightScript;
 				scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
+				buildSyntheticDialogue(dialogue);
+				haveDialogue = true;
 			}
 			if (hero) {
 				models.emplace_back();
@@ -269,12 +273,19 @@ int main(int argc, char** argv) {
 				scripts.looks = zenLookSource(game);
 				// Gothic 1 keeps how its people fight in a file of its own.
 				if (importZenFightScript(game, fightScript, worlds[0].scene.notes)) scripts.fight = &fightScript;
+				// ... and what they say.
+				haveDialogue = importZenDialogue(game, dialogue, worlds[0].scene.notes);
 			}
 		}
 		if (!firstName.empty()) worlds[0].name = firstName;
 
 		PakWriter pak;
 		bakeWorlds(worlds, models, scripts, opt, pak);
+		if (haveDialogue) {
+			std::string line;
+			for (DialogueAsset& asset : bakeDialogue(dialogue, line)) pak.add(asset.name, ASSET_BLOB, asset.bytes);
+			std::printf("%s\n", line.c_str());
+		}
 		if (haveCamera) {
 			const u8* bytes = reinterpret_cast<const u8*>(&camera);
 			pak.add("meta/camera", ASSET_META, std::vector<u8>(bytes, bytes + sizeof(camera)));

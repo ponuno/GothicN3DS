@@ -21,6 +21,7 @@
 //    the newest), a request for what is already being used is ignored.
 #pragma once
 #include "g3ds/base.h"
+#include "talk.h"
 
 namespace g3 {
 
@@ -173,7 +174,7 @@ struct InventoryView {
 	} sheet;
 	// The diary (Log_CreateTopic, Log_AddEntry): its topics, newest first,
 	// each with its entries.
-	enum { DIARY_TOPICS = 24, DIARY_ENTRIES = 48 };
+	enum { DIARY_TOPICS = 40, DIARY_ENTRIES = 96 };
 	struct Topic {
 		char name[64];
 		u8 status;    // LOG_RUNNING 1, LOG_SUCCESS 2, LOG_FAILED 3, LOG_OBSOLETE 4 (0: none given)
@@ -184,6 +185,7 @@ struct InventoryView {
 	u32 topicCount = 0;
 	char entries[DIARY_ENTRIES][200];
 	u32 entryCount = 0;
+	TalkView talk;          // the talk in progress (the dialogue page)
 	u32 version = 0;        // changes whenever anything shown changes
 };
 
@@ -212,6 +214,9 @@ enum PanelCommandType : u8 {
 	PANEL_CHEST_CLOSE,  // done with the chest
 	PANEL_LOCK_PICK,    // the pick turned left (slot 0) or right (slot 1)
 	PANEL_LOCK_CANCEL,  // give up on the lock
+	PANEL_TALK_CHOOSE,  // way `slot` of the talk's menu
+	PANEL_TALK_SKIP,    // on to the next line
+	PANEL_TALK_LEAVE,   // B: the way that leaves (the last one), or the line skipped
 };
 struct PanelCommand {
 	u8 type = PANEL_NONE;

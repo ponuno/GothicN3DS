@@ -449,6 +449,72 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		            "the number of states that call them: ",
 		            called.size(), called.size() - missing.size()) +
 		     (list.empty() ? "none" : list) + (byUse.size() > 40 ? ", ..." : ""));
+
+		// ---- what they say ----
+		// The talks: every info (C_INFO) the scripts define tells what is said
+		// and done by a function of its own (and the ways on it offers, which
+		// it names to Info_AddChoice). Which engine functions those call is
+		// the same question as for the states.
+		if (game.infoCount()) {
+			std::set<u32> runs, externals;
+			std::vector<u32> todo;
+			size_t forNpcs = 0, important = 0, permanent = 0;
+			std::set<u32> owners;
+			for (u32 i = 0; i < game.infoCount(); ++i) {
+				const GameInfo& in = game.info(i);
+				owners.insert(in.npc);
+				important += in.important;
+				permanent += in.permanent;
+				for (u32 fn : {in.condition, in.information})
+					if (fn < script.symbols.size() && script.symbols[fn].type == SCRIPT_FUNC && runs.insert(fn).second) todo.push_back(fn);
+			}
+			forNpcs = owners.size();
+			while (!todo.empty()) {
+				const u32 f = todo.back();
+				todo.pop_back();
+				if (script.symbols[f].external || script.symbols[f].address >= script.code.size()) continue;
+				std::set<u32> callees, calledExternals;
+				scan(f, callees, calledExternals);
+				externals.insert(calledExternals.begin(), calledExternals.end());
+				// A way on is named by passing its function on.
+				const SrcSymbol& sym = script.symbols[f];
+				auto next = byAddress.upper_bound(sym.address);
+				const u32 end = next == byAddress.end() ? u32(script.code.size()) : next->first;
+				for (u32 at = sym.address; at < end;) {
+					const u8 op = script.code[at];
+					const u32 size = op == OP_PUSHVV ? 6u
+					                 : (op == OP_BL || op == OP_BE || op == OP_PUSHI || op == OP_PUSHV || op == OP_PUSHVI || op == OP_B ||
+					                    op == OP_BZ || op == OP_GMOVI)
+					                       ? 5u
+					                       : 1u;
+					if (at + size > end) break;
+					if (op == OP_PUSHI) {
+						u32 operand = 0;
+						std::memcpy(&operand, &script.code[at + 1], 4);
+						if (operand >= 8 && operand < script.symbols.size() && script.symbols[operand].type == SCRIPT_FUNC &&
+						    script.symbols[operand].isConst && !script.symbols[operand].external && !script.symbols[operand].member)
+							callees.insert(operand);
+					}
+					at += size;
+				}
+				for (u32 callee : callees)
+					if (script.symbols[callee].type == SCRIPT_FUNC && runs.insert(callee).second) todo.push_back(callee);
+			}
+			size_t carried = 0;
+			std::vector<u32> pending;
+			for (u32 external : externals) {
+				const bool ok = done(external);
+				carried += ok;
+				if (!ok) pending.push_back(external);
+			}
+			std::string names;
+			for (size_t i = 0; i < pending.size() && i < 40; ++i)
+				names += format("%s%s", i ? ", " : "", script.symbols[pending[i]].name.c_str());
+			line(format("dialogue: %u infos of %zu characters (%zu important, %zu permanent); the %zu functions they run call %zu engine "
+			            "functions, %zu of which the engine carries out; the others do nothing yet: ",
+			            game.infoCount(), forNpcs, important, permanent, runs.size(), externals.size(), carried) +
+			     (names.empty() ? "none" : names) + (pending.size() > 40 ? ", ..." : ""));
+		}
 	} catch (const std::exception& ex) {
 		line(std::string("life: the states could not be looked through: ") + ex.what());
 	}

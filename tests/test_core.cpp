@@ -5689,6 +5689,110 @@ static void testSettings() {
 	}
 }
 
+
+// Talks: A at Thorus, the greeting he begins with, the menu of what the scripts
+// offer, a choice inside an info, a quest begun and finished, a routine changed.
+static void testDialogs() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/dialogs.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.settings().immortal = 1;
+	app.applySettings();
+	const u32 hero = u32(g.hero() - &g.npc(0));
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	const u32 thorusSym = g.vm().find("GRD_200_THORUS"), apple = g.vm().find("ITFOAPPLE"), potion = g.vm().find("ITFO_POTION_HEALTH_01");
+	CHECK(thorusSym != SCRIPT_NONE && apple != SCRIPT_NONE);
+	u32 thorus = SCRIPT_NONE;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).symbol == thorusSym) thorus = i;
+	CHECK(thorus != SCRIPT_NONE);
+	if (thorus == SCRIPT_NONE) return;
+	CHECK(g.hasInfos(thorus));
+	run(1.0f);
+
+	// Stands the character two paces from Thorus, facing him.
+	app.teleport({g.npc(thorus).pos[0], g.npc(thorus).pos[1] + 5.0f, g.npc(thorus).pos[2] + 150.0f});
+	app.camera().yaw = 3.14159265f;
+	run(1.5f);
+	CHECK(npcs.canTalk(thorus));
+	CHECK(app.talkTarget() == int(thorus));
+	Input a;
+	a.confirm = true;
+	app.update(a, dt);
+	const auto until = [&](auto&& pred, float limit) {
+		for (float t = 0; t < limit && !pred(); t += dt) {
+			if (npcs.talkView().saying) npcs.talkSkip();
+			app.update(Input {}, dt);
+		}
+		return pred();
+	};
+	// 1. The important greeting is told first; then the menu comes up.
+	CHECK(until([&] { return npcs.talkView().choosing; }, 40.0f));
+	CHECK(app.panel().page() == InventoryPanel::PAGE_DIALOG);
+	const int helloInfo = g.infoIndex(g.vm().find("DIA_THORUS_HELLO"));
+	CHECK(helloInfo >= 0 && g.info(u32(helloInfo)).told);
+	const auto itemWith = [&](const char* prefix) {
+		const TalkView& v = npcs.talkView();
+		for (u32 i = 0; i < v.count; ++i)
+			if (strncmp(v.items[i], prefix, strlen(prefix)) == 0) return int(i);
+		return -1;
+	};
+	CHECK(itemWith("Who are you") < 0); // (told, not permanent: off the menu)
+	const int job = itemWith("What do you do"), favour = itemWith("Is there anything");
+	CHECK(job >= 0 || favour >= 0);
+
+	// 2. The favour: a choice inside the info, the quest begins.
+	if (favour >= 0) {
+		npcs.talkChoose(u32(favour));
+		CHECK(until([&] { return npcs.talkView().choosing && itemWith("I will bring") >= 0; }, 40.0f));
+		npcs.talkChoose(u32(itemWith("I will bring")));
+		CHECK(until([&] { return npcs.talkView().choosing && itemWith("End") >= 0 && itemWith("I will bring") < 0; }, 40.0f));
+		CHECK(itemWith("Is there anything") < 0);
+		bool topic = false;
+		for (u32 i = 0; i < g.logTopicCount(); ++i)
+			if (g.logTopic(i).section == g.constant("LOG_MISSION", 0) && g.logTopic(i).status == g.constant("LOG_RUNNING", 1)) topic = true;
+		CHECK(topic);
+	}
+	// 3. Leaving: the last way of the menu.
+	const int leave = int(npcs.talkView().count) - 1;
+	CHECK(leave >= 0);
+	npcs.talkChoose(u32(leave));
+	CHECK(until([&] { return !npcs.talkView().active; }, 40.0f));
+	run(0.5f);
+	CHECK(app.panel().page() == InventoryPanel::PAGE_PLAY);
+
+	// 4. The apple is brought: the quest ends with a reward and a new routine.
+	g.giveItems(hero, apple, 1);
+	const i32 potions = g.itemCount(hero, potion), apples = g.itemCount(hero, apple);
+	CHECK(until([&] { return app.talkTarget() == int(thorus); }, 3.0f));
+	app.update(a, dt);
+	CHECK(until([&] { return npcs.talkView().choosing; }, 40.0f));
+	const int done = itemWith("Here is your apple");
+	CHECK(done >= 0);
+	if (done >= 0 && favour >= 0) {
+		npcs.talkChoose(u32(done));
+		CHECK(until([&] { return npcs.talkView().choosing || !npcs.talkView().active; }, 40.0f));
+		CHECK(g.itemCount(hero, apple) == apples - 1 && g.itemCount(hero, potion) == potions + 1);
+		CHECK(g.vm().getInt(g.vm().find("MIS_DELIVERY")) == g.constant("LOG_SUCCESS", 2));
+	}
+	npcs.talkAbort();
+	run(0.5f);
+	CHECK(!npcs.talkView().active);
+}
+
 // The chests of the test camp: an open one, a locked one with its key, a locked
 // one with a combination; a block of stone to climb onto.
 static void testChests() {
@@ -5986,6 +6090,7 @@ int main(int argc, char** argv) {
 	             {"fight", testFight},
 	             {"inventory", testInventory},
              {"chests", testChests},
+             {"dialogs", testDialogs},
 	             {"settings", testSettings},
 	             {"sky", testSky}};
 	for (auto& t : tests) {

@@ -31,6 +31,9 @@ void buildSyntheticScript(SrcScript& script);
 const char* syntheticFightScriptSource();
 void buildSyntheticFightScript(SrcScript& script);
 
+// What the people of the synthetic worlds say (the lines their dialogues name).
+void buildSyntheticDialogue(SrcDialogue& dialogue);
+
 struct ZenImportOptions {
 	std::string zenName = "WORLD.ZEN"; // world file inside the game's archives
 	std::string meshFile;   // importZenMesh: a standalone .MSH file ...
@@ -97,5 +100,9 @@ bool importZenScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std
 // The fight AI tables' script (FIGHT.DAT: Gothic 1 compiles Fight.src into a
 // file of its own). Returns false, with a line in `notes`, if it cannot be read.
 bool importZenFightScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
+
+// The words people say (OU.BIN). Returns false, with a line in `notes`, if the
+// game has none.
+bool importZenDialogue(std::shared_ptr<const ZenGame> game, SrcDialogue& dialogue, std::vector<std::string>& notes);
 
 } // namespace g3

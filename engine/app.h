@@ -189,6 +189,11 @@ public:
 	const Loot& loot() const { return _loot; }
 	Loot& loot() { return _loot; }
 	int lootTarget() const { return _lootTarget; }
+	// ---- talks (app_talk.cpp; the rules are npcs.h) ----
+	// The character a press of A would talk to (-1 for none), and whether a
+	// talk is on (the character stands and listens, the bottom screen has the menu).
+	int talkTarget() const { return _talkTarget; }
+	bool talking() const { return _npcs.talkView().active; }
 	// ---- the chests (containers.cpp) ----
 	// The containers of this world, the one the character could open now (A; -1
 	// for none), and what the character is doing at one.
@@ -338,6 +343,9 @@ private:
 		char news[64] = ""; // the lock page's line (a pick broke)
 	};
 	ChestJob _chest;
+	void talkUpdate(Input& in, float dt);
+	void drawSubtitle();
+	int _talkTarget = -1;
 	void chestUpdate(Input& in, float dt);
 	void chestCommand(const PanelCommand& c);
 	void chestStart(u32 index);

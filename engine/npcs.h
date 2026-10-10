@@ -20,10 +20,12 @@
 // morning. Whoever is too far away to be an actor simply is where his
 // routine wants him.
 #pragma once
+#include "dialog_text.h"
 #include "fight.h"
 #include "game.h"
 #include "mobs.h"
 #include "model.h"
+#include "talk.h"
 #include "waynet.h"
 #include "world.h"
 
@@ -95,6 +97,12 @@ struct NpcStats {
 	u32 moves = 0;        // moves of the fight AI begun
 	u32 movesUntabled = 0; // ... of which chosen without a table for the fighter's tactic
 	char fightAi = '-';   // where the tables are from: 'F' the game's FIGHT.DAT, 'S' the main script, '-' not read yet
+	// Talks.
+	u32 talks = 0;        // talks begun (AI_ProcessInfos)
+	u32 infosTold = 0;    // infos the player has chosen or been told
+	u32 lines = 0;        // lines said (AI_Output)
+	u32 linesMissing = 0; // ... of which the archive has no words for
+	u32 talksAborted = 0; // talks cut short (the character was hurt, walked off ...)
 };
 
 // What an actor has been told to do.
@@ -116,6 +124,9 @@ enum NpcActionKind : u8 {
 	NPC_ACT_USE_MOB,    // text: the kind of thing ("BENCH"); i: the state to take it to, -1: leave it
 	NPC_ACT_LOOK,       // i: character to look at, -1: straight ahead again
 	NPC_ACT_SAY,        // i: character spoken to or -1; text: what (an SVM name, "$WHATDOYOUWANT")
+	NPC_ACT_OUTPUT,     // i: the line's number among the lines said (AI_Output): done when it has been said
+	NPC_ACT_PROCESS_INFOS, // the talk begins (AI_ProcessInfos)
+	NPC_ACT_STOP_INFOS, // the talk ends once what is said has been said (AI_StopProcessInfos)
 	// Fighting (npc_fight.cpp).
 	NPC_ACT_ATTACK,     // a move of the fight AI against the target
 	NPC_ACT_DRAW,       // i: the WeaponMode to take in hand (WEAPON_NONE: the best there is)
@@ -321,6 +332,32 @@ public:
 	// one; `side` +1/-1: only those to the right/left of `from`'s direction.
 	int pickTarget(const float pos[3], float yaw, float range, float halfAngle, int except = -1, int side = 0, bool hostileOnly = false) const;
 
+	// ---- talks (npc_dialog.cpp) ----
+	// The player talks to a character (A): it hears it as a perception
+	// (PERC_ASSESSTALK, the scripts' B_AssessTalk) and its ZS_Talk begins.
+	// False if it cannot be talked to now.
+	bool talkTo(u32 npc);
+	// A character the player could talk to: in sight, on its feet, and with
+	// something to say or a mind to listen (the scripts give it infos, or a
+	// reaction to PERC_ASSESSTALK).
+	bool canTalk(u32 npc) const;
+	// A talk is on, or asked for and about to begin (also one a character
+	// began by itself: an important info).
+	bool talking() const { return _talk.processing || _talk.requested >= 0; }
+	int talkPartner() const { return _talk.processing ? _talk.npc : _talk.requested; }
+	// What the screens show.
+	const TalkView& talkView() const { return _talkView; }
+	// The player picks way `index` of the menu; false if there is no menu.
+	bool talkChoose(u32 index);
+	// A: the line being said is skipped. B: the last way of the menu is taken
+	// (by the scripts' convention the one that leaves), or the line is skipped.
+	void talkSkip();
+	bool talkBack();
+	// The words of the lines (for reports and tests).
+	DialogTexts& dialogTexts() { return _texts; }
+	// Ends the talk at once, without the scripts' say (the world changes, the player is hurt ...).
+	void talkAbort();
+
 	// The thing of that kind a character would use now: the nearest free
 	// one it can see from where it stands (the scripts' Wld_IsMobAvailable,
 	// AI_UseMob), or -1.
@@ -424,6 +461,60 @@ private:
 	i32 _bsHit = 0, _bsParade = 0, _bsStumble = 0, _bsDead = 0, _bsUnconscious = 0, _bsRun = 3;
 	i32 _percDamage = -1, _percOthersDamage = -1, _percFightSound = -1, _percDefeat = -1, _percMurder = -1, _percFighter = -1,
 	    _percBody = -1, _percDrawWeapon = -1, _percRemoveWeapon = -1, _percThreat = -1;
+
+	// ---- talks (npc_dialog.cpp) ----
+	void bindDialog();
+	void tickTalk(float dt);
+	void tickSpeech(float dt);
+	void afterTold();
+	void openTalk(NpcActor& a);
+	void finishTalk();
+	void buildMenu();
+	void runInfo(u32 info);
+	void refreshView();
+	bool speechPending(u32 id) const;
+	void flushSpeech();
+	NpcActor* actorByNpc(u32 npc);
+	static void xOutput(ScriptVm& vm, void* user);
+	static void xProcessInfos(ScriptVm& vm, void* user);
+	static void xStopProcessInfos(ScriptVm& vm, void* user);
+	static void xInfoManagerHasFinished(ScriptVm& vm, void* user);
+	enum { SPEECH = 24 };
+	struct SpeechStep {
+		u32 hash;
+		int speaker; // Game's index
+		u32 id;
+	};
+	SpeechStep _speech[SPEECH] = {};
+	u8 _speechHead = 0, _speechCount = 0;
+	u32 _speechNext = 1, _speechDone = 1; // numbers below _speechDone have been said
+	float _speechWait = 0;                // seconds the first step has waited for its speaker
+	struct Saying {
+		bool active = false;
+		u32 id = 0;
+		int speaker = -1;
+		float time = 0, total = 0;
+	} _say;
+	char _sayText[200] = "";
+	struct Talk {
+		bool processing = false;
+		int requested = -1;   // asked for by talkTo(), not yet begun
+		float wait = 0;
+		int npc = -1;
+		u32 state = 0;        // the state of the partner that the talk belongs to (ZS_Talk)
+		bool stop = false;    // AI_StopProcessInfos was reached
+		int importantLeft = 0; // important infos the talk may still begin with (it is at most a few)
+		bool choosing = false;
+		int menuInfo = -1;    // the info whose choices are up, -1 for the main menu
+		u32 count = 0;
+		u32 ref[TALK_ITEMS] = {};
+		bool isChoice[TALK_ITEMS] = {};
+	} _talk;
+	TalkView _talkView;
+	bool _menuDirty = false;
+	DialogTexts _texts;
+	i32 _percTalk = -1;
+	u32 _fnTalk = SCRIPT_NONE;
 
 	// ---- perception (npc_perc.cpp) ----
 	void bindPerception();

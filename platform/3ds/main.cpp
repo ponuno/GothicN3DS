@@ -276,7 +276,7 @@ int main(int, char**) {
 		hidTouchRead(&touch);
 
 		// ---- the bottom screen: the inventory or the report ----
-		const bool inventoryScreen = app.settings().report == 0;
+		const bool inventoryScreen = app.settings().report == 0 || app.talking();
 		g3::InventoryPanel& panel = app.panel();
 		// The buttons the inventory takes this frame (after SELECT); the game gets the rest.
 		u32 taken = 0;
@@ -630,7 +630,7 @@ int main(int, char**) {
 		}
 		// The bottom screen: the inventory's picture when it has changed, or
 		// one line of the report per frame, padded to overwrite the old one.
-		const bool wantReport = app.settings().report != 0;
+		const bool wantReport = app.settings().report != 0 && !app.talking();
 		if (wantReport != reportShown) {
 			reportShown = wantReport;
 			consoleClear();

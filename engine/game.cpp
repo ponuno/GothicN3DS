@@ -81,6 +81,15 @@ void Game::release() {
 	_dropCount = _dropCap = 0;
 	free(_itemInfos);
 	_itemInfos = nullptr;
+	free(_infos);
+	_infos = nullptr;
+	_infoCount = 0;
+	for (u32 i = 0; i < _choiceCount; ++i) free(_choices[i].text);
+	free(_choices);
+	_choices = nullptr;
+	_choiceCount = _choiceCap = 0;
+	_messageFirst = _messageCount = 0;
+	++_talkVersion;
 	_itemInfoCount = _itemInfoCap = 0;
 	_gilValues = nullptr; // (the machine's, gone with it)
 	_gilTried = false;
@@ -249,6 +258,7 @@ bool Game::bindAll() {
 	             {"PRINTDEBUGINSTCH", xNothing},
 	             {"PRINTDEBUGCH", xNothing}};
 	for (const auto& e : table) _vm.bind(e.name, e.fn, this);
+	bindDialogues();
 
 	// The player's character exists before any world's start-up runs.
 	const u32 hero = _vm.find("PC_HERO");
@@ -659,7 +669,9 @@ const char* const* Game::lifeFunctions(u32& count) {
 	    "AI_ATTACK",         "AI_READYMELEEWEAPON", "AI_READYRANGEDWEAPON", "AI_DRAWWEAPON",   "AI_REMOVEWEAPON",
 	    "AI_EQUIPBESTMELEEWEAPON", "AI_DODGE",     "AI_FLEE",           "AI_FINISHINGMOVE",  "AI_WHIRLAROUND",   "AI_TURNAWAY",
 	    "NPC_GETNEXTTARGET", "NPC_ISNEXTTARGETAVAILABLE", "AI_POINTATNPC", "AI_STOPPOINTAT", "AI_EQUIPBESTRANGEDWEAPON",
-	    "AI_STOPAIM"};
+	    "AI_STOPAIM",
+	    // Talks (npc_dialog.cpp).
+	    "AI_OUTPUT",         "AI_PROCESSINFOS",    "AI_STOPPROCESSINFOS", "INFOMANAGER_HASFINISHED"};
 	count = u32(sizeof(names) / sizeof(names[0]));
 	return names;
 }
@@ -758,6 +770,10 @@ void Game::enterWorld(const char* script, float hours, PointFinder find, void* u
 	}
 	_world = u16(index);
 	_hours = hours;
+	if (find) {
+		_find = find;
+		_findUser = user;
+	}
 	if (!_worlds[index].started) {
 		_worlds[index].started = true;
 		++_stats.worlds;
@@ -867,6 +883,10 @@ void Game::placeNow(GameNpc& n, PointFinder find, void* user) {
 
 u32 Game::setTime(float hours, PointFinder find, void* user) {
 	_hours = hours;
+	if (find) {
+		_find = find;
+		_findUser = user;
+	}
 	const u32 before = _stats.moves;
 	_stats.unplaced = 0;
 	for (u32 i = 0; i < _npcCount; ++i) {

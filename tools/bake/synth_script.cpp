@@ -69,6 +69,7 @@ const string MOB_LIE = "BED,BEDHIGH,BEDLOW";
 const int PERC_ASSESSPLAYER = 1;
 const int PERC_ASSESSENEMY  = 2;
 const int PERC_ASSESSWARN   = 20;
+const int PERC_ASSESSTALK   = 11;
 const int ATT_HOSTILE  = 0;
 const int ATT_ANGRY    = 1;
 const int ATT_NEUTRAL  = 2;
@@ -77,6 +78,8 @@ const int AIV_SEENPLAYER = 4;
 
 const int AIV_WASDEFEATED = 3;
 const int AIV_PARTYMEMBER = 12;
+const int AIV_INVINCIBLE = 13;
+const int AIV_IMPORTANT = 14;
 
 // Fighting (the original's Fight.d, AI_Constants.d, Species.d - the parts of
 // them the engine reads, and the states that use them).
@@ -294,6 +297,17 @@ extern func void   AI_EquipBestMeleeWeapon(var C_NPC n);
 extern func int    Npc_GetNextTarget(var C_NPC n);
 extern func int    Npc_IsInFightMode(var C_NPC n, var int mode);
 extern func int    Npc_HasEquippedMeleeWeapon(var C_NPC n);
+// Talking.
+extern func void   AI_ProcessInfos(var C_NPC n);
+extern func int    InfoManager_HasFinished();
+extern func void   Info_AddChoice(var int info, var string text, var func fn);
+extern func void   Info_ClearChoices(var int info);
+extern func int    Npc_CheckInfo(var C_NPC n, var int important);
+extern func void   Npc_ExchangeRoutine(var C_NPC n, var string routine);
+extern func void   Npc_ClearAIQueue(var C_NPC n);
+extern func void   Npc_SetKnowsPlayer(var C_NPC n, var C_NPC player);
+extern func void   Npc_RemoveInvItem(var C_NPC n, var int item);
+extern func void   PrintScreen(var string msg, var int x, var int y, var string font, var int seconds);
 
 // ---------------------------------------------------------------- helpers
 var int Kapitel;
@@ -323,6 +337,7 @@ func void ZS_Guard() {
 	Npc_PercEnable(self, PERC_ASSESSDAMAGE, B_ReactToDamage);
 	Npc_PercEnable(self, PERC_ASSESSPLAYER, B_AssessSC);
 	Npc_PercEnable(self, PERC_ASSESSWARN, B_AssessWarn);
+	Npc_PercEnable(self, PERC_ASSESSTALK, B_AssessTalk);
 	AI_StandUp(self);
 	AI_SetWalkmode(self, NPC_WALK);
 	AI_GotoWP(self, self.wp);
@@ -346,6 +361,7 @@ func void ZS_Guard_End() {
 // the player come near looks at him, asks what he wants, and tells the
 // guards about of him.
 func void B_AssessSC() {
+	if (B_CheckForImportantInfo(self, other)) { return; };
 	if (Npc_CanSeeNpcFreeLOS(self, other) && (Npc_GetDistToNpc(self, other) < 800)) {
 		if (!self.aivar[AIV_SEENPLAYER]) {
 			self.aivar[AIV_SEENPLAYER] = TRUE;
@@ -360,6 +376,63 @@ func void B_AssessWarn() {
 };
 func void InitPerceptions() {
 	Perc_SetRange(PERC_ASSESSWARN, 3000);
+};
+// Talking, in the manner of the original's: the player's A makes the
+// character hear PERC_ASSESSTALK (B_AssessTalk), which begins the state of
+// talking; a character with an important info to tell begins it by itself.
+func int B_CheckForImportantInfo(var C_NPC slf, var C_NPC oth) {
+	if (oth.aivar[AIV_INVINCIBLE] == FALSE) {
+		if (Npc_CheckInfo(slf, 1)) {
+			hero.aivar[AIV_IMPORTANT] = TRUE;
+			Npc_ClearAIQueue(slf);
+			AI_StartState(slf, ZS_Talk, 0, "");
+			return TRUE;
+		};
+	};
+	return FALSE;
+};
+func void B_AssessTalk() {
+	Npc_SetPercTime(self, 1);
+	self.aivar[AIV_INVINCIBLE] = FALSE;
+	hero.aivar[AIV_INVINCIBLE] = FALSE;
+	hero.aivar[AIV_IMPORTANT] = FALSE;
+	Npc_ClearAIQueue(self);
+	AI_StartState(self, ZS_Talk, 1, "");
+};
+var int talks_begun;
+func void ZS_Talk() {
+	// Somebody is talking to the player already.
+	if (other.aivar[AIV_INVINCIBLE] == TRUE) {
+		AI_ContinueRoutine(self);
+		return;
+	};
+	talks_begun += 1;
+	self.aivar[AIV_INVINCIBLE] = TRUE;
+	other.aivar[AIV_INVINCIBLE] = TRUE;
+	AI_StandUp(self);
+	AI_TurnToNpc(self, hero);
+	if (!hero.aivar[AIV_IMPORTANT]) { AI_OutputSVM(self, hero, "$GREETINGS"); };
+	Npc_SetKnowsPlayer(self, hero);
+	AI_ProcessInfos(self);
+};
+func int ZS_Talk_Loop() {
+	if (InfoManager_HasFinished()) {
+		self.aivar[AIV_INVINCIBLE] = FALSE;
+		other.aivar[AIV_INVINCIBLE] = FALSE;
+		return LOOP_END;
+	};
+	return LOOP_CONTINUE;
+};
+func void ZS_Talk_End() {};
+func void B_GiveXP(var int add_xp) {
+	hero.exp = hero.exp + add_xp;
+	PrintScreen(ConcatStrings("Experience gained: ", IntToString(add_xp)), -1, 55, "FONT_OLD_10_WHITE.TGA", 3);
+	if (hero.exp >= hero.exp_next) {
+		hero.level = hero.level + 1;
+		hero.exp_next = hero.exp_next + 500 * (hero.level + 1);
+		hero.lp = hero.lp + 10;
+		PrintScreen("Level up!", -1, 50, "FONT_OLD_10_WHITE.TGA", 3);
+	};
 };
 // Fighting, in the manner of the original's ZS_MM_Attack and ZS_Attack: the
 // target is set, and the loop has the engine choose a move (AI_Attack) until
@@ -439,6 +512,7 @@ func void ZS_Dead() {
 
 func void ZS_Stand() {
 	Npc_PercEnable(self, PERC_ASSESSDAMAGE, B_ReactToDamage);
+	Npc_PercEnable(self, PERC_ASSESSTALK, B_AssessTalk);
 	AI_StandUp(self);
 	AI_SetWalkmode(self, NPC_WALK);
 	AI_GotoWP(self, self.wp);
@@ -1015,6 +1089,12 @@ instance Molerat (C_NPC) {
 };
 
 // ---------------------------------------------------------------- dialogues
+const string DIALOG_ENDE = "End";
+const string DIALOG_BACK = "Back";
+const string TOPIC_Delivery = "A favour for Thorus";
+const int LOG_FAILED = 3;
+var int MIS_Delivery;
+
 instance DIA_Thorus_Hello (C_INFO) {
 	npc = GRD_200_Thorus;
 	nr = 1;
@@ -1031,7 +1111,142 @@ func void DIA_Thorus_Hello_Info() {
 	AI_Output(self, other, "DIA_Thorus_Hello_09_00");
 	AI_Output(other, self, ConcatStrings("DIA_Thorus_Hello_15_", IntToString(self.id + other.level)));
 	Guards_Greeted += 1;
+};
+
+instance DIA_Thorus_Job (C_INFO) {
+	npc = GRD_200_Thorus;
+	nr = 2;
+	condition = DIA_Thorus_Job_Condition;
+	information = DIA_Thorus_Job_Info;
+	description = "What do you do here?";
+};
+func int DIA_Thorus_Job_Condition() {
+	return Npc_KnowsInfo(other, DIA_Thorus_Hello);
+};
+func void DIA_Thorus_Job_Info() {
+	AI_Output(other, self, "DIA_Thorus_Job_15_00");
+	AI_Output(self, other, "DIA_Thorus_Job_09_01");
+	AI_Output(self, other, "DIA_Thorus_Job_09_02");
+};
+
+// A task with a choice: the answer is asked for, and the diary keeps it.
+instance DIA_Thorus_Delivery (C_INFO) {
+	npc = GRD_200_Thorus;
+	nr = 3;
+	condition = DIA_Thorus_Delivery_Condition;
+	information = DIA_Thorus_Delivery_Info;
+	description = "Is there anything I can do for you?";
+};
+func int DIA_Thorus_Delivery_Condition() {
+	return Npc_KnowsInfo(other, DIA_Thorus_Hello) && MIS_Delivery == 0;
+};
+func void DIA_Thorus_Delivery_Info() {
+	AI_Output(other, self, "DIA_Thorus_Delivery_15_00");
+	AI_Output(self, other, "DIA_Thorus_Delivery_09_01");
+	Info_ClearChoices(DIA_Thorus_Delivery);
+	Info_AddChoice(DIA_Thorus_Delivery, "I will bring you an apple.", DIA_Thorus_Delivery_Yes);
+	Info_AddChoice(DIA_Thorus_Delivery, "Not now.", DIA_Thorus_Delivery_No);
+};
+func void DIA_Thorus_Delivery_Yes() {
+	AI_Output(other, self, "DIA_Thorus_Delivery_Yes_15_00");
+	AI_Output(self, other, "DIA_Thorus_Delivery_Yes_09_01");
+	MIS_Delivery = LOG_RUNNING;
+	Log_CreateTopic(TOPIC_Delivery, LOG_MISSION);
+	Log_SetTopicStatus(TOPIC_Delivery, LOG_RUNNING);
+	Log_AddEntry(TOPIC_Delivery, "Thorus wants an apple. I am to bring it to him at the gate.");
+	Info_ClearChoices(DIA_Thorus_Delivery);
+};
+func void DIA_Thorus_Delivery_No() {
+	AI_Output(other, self, "DIA_Thorus_Delivery_No_15_00");
+	Info_ClearChoices(DIA_Thorus_Delivery);
+};
+
+instance DIA_Thorus_DeliveryDone (C_INFO) {
+	npc = GRD_200_Thorus;
+	nr = 4;
+	condition = DIA_Thorus_DeliveryDone_Condition;
+	information = DIA_Thorus_DeliveryDone_Info;
+	description = "Here is your apple.";
+};
+func int DIA_Thorus_DeliveryDone_Condition() {
+	return MIS_Delivery == LOG_RUNNING && Npc_HasItems(hero, ItFoApple) >= 1;
+};
+func void DIA_Thorus_DeliveryDone_Info() {
+	AI_Output(other, self, "DIA_Thorus_DeliveryDone_15_00");
+	Npc_RemoveInvItem(hero, ItFoApple);
+	AI_Output(self, other, "DIA_Thorus_DeliveryDone_09_01");
+	MIS_Delivery = LOG_SUCCESS;
+	Log_SetTopicStatus(TOPIC_Delivery, LOG_SUCCESS);
+	Log_AddEntry(TOPIC_Delivery, "Thorus has had his apple and thanked me for it.");
+	CreateInvItems(hero, ItFo_Potion_Health_01, 1);
+	B_GiveXP(150);
+	// The favour is done: he goes to sit at the fire, as his new routine says.
+	Npc_ExchangeRoutine(self, "rest");
+};
+func void Rtn_rest_200() {
+	TA_Stand(00, 00, 12, 00, "CAMP_FIRE");
+	TA_Stand(12, 00, 24, 00, "CAMP_FIRE");
+};
+
+instance DIA_Thorus_EXIT (C_INFO) {
+	npc = GRD_200_Thorus;
+	nr = 999;
+	condition = DIA_Thorus_EXIT_Condition;
+	information = DIA_Thorus_EXIT_Info;
+	permanent = TRUE;
+	description = DIALOG_ENDE;
+};
+func int DIA_Thorus_EXIT_Condition() {
+	return TRUE;
+};
+func void DIA_Thorus_EXIT_Info() {
 	AI_StopProcessInfos(self);
+};
+
+instance DIA_Jackal_Hello (C_INFO) {
+	npc = GRD_201_Jackal;
+	nr = 1;
+	condition = DIA_Jackal_Hello_Condition;
+	information = DIA_Jackal_Hello_Info;
+	permanent = TRUE;
+	description = "How are things?";
+};
+func int DIA_Jackal_Hello_Condition() {
+	return TRUE;
+};
+func void DIA_Jackal_Hello_Info() {
+	AI_Output(other, self, "DIA_Jackal_Hello_15_00");
+	AI_Output(self, other, "DIA_Jackal_Hello_07_01");
+};
+instance DIA_Jackal_EXIT (C_INFO) {
+	npc = GRD_201_Jackal;
+	nr = 999;
+	condition = DIA_Jackal_EXIT_Condition;
+	information = DIA_Jackal_EXIT_Info;
+	permanent = TRUE;
+	description = DIALOG_ENDE;
+};
+func int DIA_Jackal_EXIT_Condition() {
+	return TRUE;
+};
+func void DIA_Jackal_EXIT_Info() {
+	AI_StopProcessInfos(self);
+};
+
+instance DIA_Digger_Camp (C_INFO) {
+	npc = VLK_500_Digger;
+	nr = 1;
+	condition = DIA_Digger_Camp_Condition;
+	information = DIA_Digger_Camp_Info;
+	description = "Tell me about the camp.";
+};
+func int DIA_Digger_Camp_Condition() {
+	return TRUE;
+};
+func void DIA_Digger_Camp_Info() {
+	AI_Output(other, self, "DIA_Digger_Camp_15_00");
+	AI_Output(self, other, "DIA_Digger_Camp_02_01");
+	Log_AddEntry(TOPIC_Camp, "A digger told me the camp is safe as long as one keeps away from the guards' fire after dark.");
 };
 instance DIA_Digger_Work (C_INFO) {
 	npc = VLK_500_Digger;
@@ -1047,6 +1262,20 @@ func int DIA_Digger_Work_Condition() {
 func void DIA_Digger_Work_Info() {
 	AI_Output(other, self, "DIA_Digger_Work_15_00");
 	if (Hlp_StrCmp(self.name, NAME_Digger)) { self.aivar[AIV_PARTYMEMBER] = TRUE; };
+};
+instance DIA_Digger_EXIT (C_INFO) {
+	npc = VLK_500_Digger;
+	nr = 999;
+	condition = DIA_Digger_EXIT_Condition;
+	information = DIA_Digger_EXIT_Info;
+	permanent = TRUE;
+	description = DIALOG_ENDE;
+};
+func int DIA_Digger_EXIT_Condition() {
+	return TRUE;
+};
+func void DIA_Digger_EXIT_Info() {
+	AI_StopProcessInfos(self);
 };
 
 // ---------------------------------------------------------------- start-up
@@ -1151,6 +1380,31 @@ instance FA_MY_G_FOCUS_15 (C_FightAI) { move[0] = MOVE_RUN; };
 instance FA_MY_G_FK_NOFOCUS_15 (C_FightAI) { move[0] = MOVE_RUN; };
 
 )DAEDALUS";
+}
+
+// The words of the built-in scene's talks, by the names the script gives them.
+void buildSyntheticDialogue(SrcDialogue& dialogue) {
+	dialogue = SrcDialogue();
+	dialogue.source = "the built-in script";
+	dialogue.lines = {
+	    {"DIA_Thorus_Hello_09_00", "Halt. I am Thorus, I keep this gate. Nobody gets into the camp without my say."},
+	    {"DIA_Thorus_Hello_15_200", "I only wanted to know who stands in my way."},
+	    {"DIA_Thorus_Job_15_00", "What do you do here?"},
+	    {"DIA_Thorus_Job_09_01", "I watch the gate. The diggers dig, the guards guard, and I see to it that it stays so."},
+	    {"DIA_Thorus_Job_09_02", "Cause no trouble and you will have none."},
+	    {"DIA_Thorus_Delivery_15_00", "Is there anything I can do for you?"},
+	    {"DIA_Thorus_Delivery_09_01", "As it happens, there is. I have a hunger for an apple, and nobody here will fetch me one."},
+	    {"DIA_Thorus_Delivery_Yes_15_00", "I will bring you an apple."},
+	    {"DIA_Thorus_Delivery_Yes_09_01", "Good. Bring it here to the gate, and I will not forget it."},
+	    {"DIA_Thorus_Delivery_No_15_00", "Not now."},
+	    {"DIA_Thorus_DeliveryDone_15_00", "Here is your apple."},
+	    {"DIA_Thorus_DeliveryDone_09_01", "Ah, at last. Take this for your trouble. I think I will sit down by the fire a while."},
+	    {"DIA_Jackal_Hello_15_00", "How are things?"},
+	    {"DIA_Jackal_Hello_07_01", "Quiet. That is how I like them."},
+	    {"DIA_Digger_Camp_15_00", "Tell me about the camp."},
+	    {"DIA_Digger_Camp_02_01", "Keep away from the guards' fire after dark and you will live here well enough."},
+	    {"DIA_Digger_Work_15_00", "How is work?"},
+	};
 }
 
 void buildSyntheticFightScript(SrcScript& script) {

@@ -40,12 +40,22 @@ bool Npcs::load(Pak& pak) {
 		}
 	}
 	bindAi();
+	bindDialog();
 	loadFightAi(pak);
+	_texts.load(pak); // (an archive baked without words simply has none: the lines are silent)
 	_stats.total = _game.npcCount();
 	return true;
 }
 
 void Npcs::release() {
+	talkAbort();
+	_texts.release();
+	_speechHead = _speechCount = 0;
+	_speechNext = _speechDone = 1;
+	_say = Saying();
+	_sayText[0] = 0;
+	_talk = Talk();
+	_talkView = TalkView();
 	for (NpcActor& a : _actors) a = NpcActor();
 	for (Piece& p : _pieces) {
 		p.model.release();
@@ -120,6 +130,8 @@ void Npcs::retire(NpcActor& a) {
 }
 
 void Npcs::leaveWorld() {
+	talkAbort();
+	flushSpeech();
 	for (NpcActor& a : _actors) retire(a);
 	_net.dropAll();
 	_mobs.dropAll();
@@ -373,6 +385,7 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 		looking += a.lookAt >= 0;
 		fighting += _game.npc(a.npc).weapon != WEAPON_NONE;
 	}
+	tickTalk(dt);
 	_stats.looking = looking;
 	_stats.fighting = fighting;
 	u32 inUse = 0;

@@ -42,13 +42,13 @@ target_compile_options(g3sys PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
 
 # The script machine and the game's rules. The baker runs them too: it has to
 # know what the scripts put into the world to bake what that needs.
-add_library(g3script STATIC engine/script.cpp engine/game.cpp engine/fight.cpp)
+add_library(g3script STATIC engine/script.cpp engine/game.cpp engine/game_dialog.cpp engine/fight.cpp)
 target_include_directories(g3script PUBLIC engine)
 target_link_libraries(g3script PUBLIC g3core)
 target_compile_options(g3script PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
 
 add_library(g3engine STATIC engine/world.cpp engine/app.cpp engine/collision.cpp engine/player.cpp engine/sky.cpp
-            engine/loader.cpp engine/pacer.cpp engine/model.cpp engine/hero.cpp engine/npcs.cpp engine/waynet.cpp engine/mobs.cpp engine/npc_ai.cpp engine/npc_perc.cpp engine/recorder.cpp
+            engine/loader.cpp engine/pacer.cpp engine/model.cpp engine/hero.cpp engine/npcs.cpp engine/waynet.cpp engine/mobs.cpp engine/npc_ai.cpp engine/npc_perc.cpp engine/npc_dialog.cpp engine/dialog_text.cpp engine/app_talk.cpp engine/recorder.cpp
             engine/npc_fight.cpp engine/ui.cpp engine/menu.cpp engine/settings.cpp engine/hud.cpp engine/inventory.cpp engine/panel.cpp engine/loot.cpp engine/chests.cpp engine/containers.cpp)
 target_include_directories(g3engine PUBLIC engine)
 target_link_libraries(g3engine PUBLIC g3core g3sys g3script)
@@ -74,6 +74,7 @@ set(G3DS_BAKE_SOURCES
     tools/bake/populate.cpp
     tools/bake/item_icon.cpp
     tools/bake/fight_ai.cpp
+    tools/bake/dialogue_bake.cpp
     tools/bake/daedalus.cpp
     tools/bake/synth_script.cpp
     tools/bake/synth_actor.cpp

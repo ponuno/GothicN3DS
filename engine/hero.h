@@ -28,7 +28,7 @@ namespace g3 {
 class Hero {
 public:
 	// What the character is doing, in broad terms (for display and tests).
-	enum Role { IDLE, RUN, WALK, BACK, STRAFE, TURN, JUMP, FALL, SWIM, SWIM_IDLE, ATTACK, PARRY, HIT, DOWN, DRAW, ROLE_COUNT };
+	enum Role { IDLE, RUN, WALK, BACK, STRAFE, TURN, JUMP, FALL, SWIM, SWIM_IDLE, ATTACK, PARRY, HIT, DOWN, DRAW, USE, ROLE_COUNT };
 	// What the body is in.
 	enum Body { GROUNDED, TAKEOFF, AIRBORNE, SWIMMING };
 
@@ -107,6 +107,24 @@ public:
 	// The blow in play, for the HUD and the tests: which of the combo, and how many landed.
 	u8 combo() const { return _blow.combo; }
 
+	// ---- using an item (a potion, food) ----
+	// As the model script has it for the item's scheme ("POTIONFAST"): the
+	// item to the mouth ("T_<SCHEME>_STAND_2_S0"), a moment there
+	// ("S_<SCHEME>_S0"), and down again ("T_<SCHEME>_S0_2_STAND"). The
+	// character stands meanwhile and can neither turn, strike nor fend off.
+	// Without the animations (an older data.pak) it stands still for
+	// `seconds` instead, the item doing its work after `moment` of them.
+	// False if it cannot now: hands not empty, not standing on the ground,
+	// down, reeling, already using something.
+	bool useItem(const char* scheme, float seconds, float moment);
+	bool usingItem() const { return _use.phase != USE_NONE; }
+	// True for the frame the item does its work (it is drunk, eaten).
+	bool useMoment() const { return _use.moment; }
+	// How far through the use, 0..1 (for the interface).
+	float useProgress() const;
+	// True if the model has the animations of the scheme.
+	bool canAnimateUse(const char* scheme) const;
+
 private:
 	enum State { ST_RUN, ST_RUNL, ST_WALK, ST_WALKL, ST_WALKBL, ST_WALKWL, ST_JUMP, ST_FALLDN, ST_FALL, ST_SWIM, ST_SWIMF, ST_SWIMB, ST_COUNT };
 	static constexpr int STAND = ST_COUNT; // the pseudo-state of the transitions' names
@@ -127,6 +145,8 @@ private:
 	void updatePose(float dt);
 	const Clip* weaponClip(const char* pattern, u8 mode) const;
 	void fightTick(float prevTime, const Clip* prevClip);
+	void useTick(float dt);
+	void cancelUse();
 
 	Model _model;
 	Animator _anim;
@@ -161,6 +181,18 @@ private:
 	const Clip* _reel = nullptr; // being hit
 	bool _down = false;
 	const Clip* _parryClip[ROWS] = {};
+	// Using an item.
+	enum UsePhase : u8 { USE_NONE, USE_IN, USE_HOLD, USE_OUT, USE_TIMED };
+	struct Use {
+		const Clip* in = nullptr;
+		const Clip* hold = nullptr;
+		const Clip* out = nullptr;
+		u8 phase = USE_NONE;
+		bool done = false;   // the item has done its work
+		bool moment = false; // ... this frame
+		float time = 0, seconds = 0, at = 0; // how long so far; all of it, when it works (estimated for the animations)
+	};
+	Use _use;
 };
 
 } // namespace g3

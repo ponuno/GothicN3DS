@@ -13,10 +13,12 @@ void App::drawOverlay() {
 	const int W = gfx::SCREEN_W, H = gfx::SCREEN_H;
 	const Game* game = _npcs.loaded() ? &_npcs.game() : nullptr;
 	const bool character = _hero.loaded() && !_player.flying;
+	// (While the inventory's info box and quick slots are up, they have the bottom of the picture.)
+	const bool items = itemOverlay() || _quickHint;
 	if (_settings.hud && !menuOpen && character) {
 		// The character's health, bottom left.
 		const i32 hp = heroHitPoints(), hpMax = heroHitPointsMax();
-		if (game && hpMax > 0) {
+		if (game && hpMax > 0 && !items) {
 			char buf[32];
 			snprintf(buf, sizeof(buf), "%d / %d", int(hp), int(hpMax));
 			_ui.bar(10, H - 14, 110, H - 8, float(hp) / float(hpMax), ui::RED);
@@ -34,7 +36,8 @@ void App::drawOverlay() {
 			snprintf(weaponName, sizeof(weaponName), "%s", it && it->name ? game->text(it->name) : "Оружие");
 			held = weaponName;
 		}
-		if (held) _ui.text(W - 10, H - 6 - Ui::lineHeight(), held, ui::GOLD, ui::TEXT, ui::RIGHT);
+		if (items) {
+		} else if (held) _ui.text(W - 10, H - 6 - Ui::lineHeight(), held, ui::GOLD, ui::TEXT, ui::RIGHT);
 		else if (_hero.sneaking()) _ui.text(W - 10, H - 6 - Ui::lineHeight(), "Крадётся", ui::GREY, ui::TEXT, ui::RIGHT);
 		// The target: its name and health at the top, a mark over its head.
 		if (game && _target >= 0) {
@@ -65,10 +68,12 @@ void App::drawOverlay() {
 			}
 		}
 	}
+	if (_settings.hud && !menuOpen && character) drawItemHud();
 	if (!menuOpen && _toastTime > 0.0f && _toast[0]) {
-		const int w = _ui.measure(_toast) + 16;
-		_ui.rect(W / 2 - w / 2, 148, W / 2 + w / 2, 150 + Ui::lineHeight() + 2, 0x000000A0u);
-		_ui.text(W / 2, 150, _toast, ui::WHITE, ui::TEXT, ui::CENTER);
+		// (Above the inventory's info box while that is up.)
+		const int w = _ui.measure(_toast) + 16, y = items ? 116 : 150;
+		_ui.rect(W / 2 - w / 2, y - 2, W / 2 + w / 2, y + Ui::lineHeight() + 2, 0x000000A0u);
+		_ui.text(W / 2, y, _toast, ui::WHITE, ui::TEXT, ui::CENTER);
 	}
 	if (menuOpen) {
 		char status[64];

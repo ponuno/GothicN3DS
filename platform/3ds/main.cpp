@@ -1,8 +1,10 @@
 // Entry point for the 3DS build. Top screen: the world, the HUD and the
-// pause menu. Bottom screen: a text console with the numbers that matter for
-// the feasibility check (frame time split into CPU and GPU, triangles,
-// streaming, memory) - or, with the report switched off in the menu, the
-// buttons.
+// pause menu. Bottom screen: the inventory (engine/panel.h: a picture the
+// processor draws and this file copies into the screen's framebuffer when it
+// changes; the touch screen works it) - or, with "Нижний экран: Отчёт" in the
+// menu or its last page tapped, a text console with the numbers that matter
+// for the feasibility check (frame time split into CPU and GPU, triangles,
+// streaming, memory). A tap on the report brings the inventory back.
 //
 // Controls. By default the classic scheme of the PC original, the camera
 // always behind the character: Circle Pad up: run, down: hop back,
@@ -21,9 +23,13 @@
 //   D-Pad Up      lock on to the enemy in front / let go (drawing a weapon locks
 //                 on to a hostile one in front by itself: the menu's "Автозахват цели")
 //   D-Pad Down    sneak on / off
-//   L             quick magic (not yet)    R  quick access (not yet)
+//   L             quick magic (not yet)
+//   R (held)      the quick slots show on the top screen; R + D-Pad up / right /
+//                 down / left uses slot 1-4 (what the inventory put there)
 //   START         pause menu: continue, graphics, controls, faults, save, leave
-//   SELECT        inventory (not yet)
+//   SELECT        the buttons work the inventory on the bottom screen (D-Pad
+//                 choose, L / R page, A use, X + direction: into a quick slot,
+//                 B or SELECT back); the stick still moves the character
 //   R + START     save the position       R + SELECT  load it
 //   L+R+SELECT    write the last 5 seconds of the character's movement to
 //                 sdmc:/3ds/gothic3ds/slope.txt (added at its end): press it where the
@@ -112,6 +118,23 @@ static void reportLine(const char* fmt, ...) {
 
 // A line at the bottom of the bottom screen (below the report).
 static void exitStep(const char* text) { printf("\x1b[29;1H%-39.39s", text); }
+
+// The inventory's picture into the bottom screen. Its framebuffer is the
+// console's (RGB565, one buffer, shown as it is written): turned a quarter -
+// the 3DS keeps its screens in columns of 240 from the bottom - and flushed
+// from the cache so that the display reads what was written.
+static void showPanel(const g3::Canvas& canvas) {
+	u16 width = 0, height = 0;
+	u16* fb = reinterpret_cast<u16*>(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, &width, &height));
+	const u16* src = canvas.pixels();
+	if (!fb || !src || width != g3::Canvas::H || height != g3::Canvas::W) return;
+	for (int x = 0; x < g3::Canvas::W; ++x) {
+		u16* column = fb + x * g3::Canvas::H;
+		const u16* from = src + x;
+		for (int y = g3::Canvas::H - 1; y >= 0; --y, from += g3::Canvas::W) column[y] = *from;
+	}
+	GSPGPU_FlushDataCache(fb, u32(g3::Canvas::W) * g3::Canvas::H * sizeof(u16));
+}
 
 static void waitForStart() {
 	while (aptMainLoop()) {
@@ -223,9 +246,9 @@ int main(int, char**) {
 	u32 fadingSum = 0;                     // batches drawn dissolving, summed over a report
 	bool slopeFailed = false;
 	float leaveHeld = 0;                   // START+SELECT held this long: leave
-	bool shoulderAlone = false;            // R went down with nothing else: quick access on release
 	bool flicked = false;                  // the C-Stick was flicked aside (locked on: the next target)
 	bool reportShown = true;
+	bool panelShown = false;               // the inventory's picture is on the bottom screen
 
 	while (aptMainLoop()) {
 		hidScanInput();
@@ -249,6 +272,47 @@ int main(int, char**) {
 		circlePosition pad, cstick;
 		hidCircleRead(&pad);
 		hidCstickRead(&cstick);
+		touchPosition touch;
+		hidTouchRead(&touch);
+
+		// ---- the bottom screen: the inventory or the report ----
+		const bool inventoryScreen = app.settings().report == 0;
+		g3::InventoryPanel& panel = app.panel();
+		// The buttons the inventory takes this frame (after SELECT); the game gets the rest.
+		u32 taken = 0;
+		if (inventoryScreen && !menu.isOpen()) {
+			g3::PanelInput pin;
+			pin.touching = (held & KEY_TOUCH) != 0;
+			pin.x = touch.px;
+			pin.y = touch.py;
+			if (panel.cursor()) {
+				taken = KEY_DUP | KEY_DDOWN | KEY_DLEFT | KEY_DRIGHT | KEY_A | KEY_B | KEY_X | KEY_Y | KEY_L | KEY_R;
+				pin.up = (repeat & KEY_DUP) != 0;
+				pin.down = (repeat & KEY_DDOWN) != 0;
+				pin.left = (repeat & KEY_DLEFT) != 0;
+				pin.right = (repeat & KEY_DRIGHT) != 0;
+				pin.confirm = (down & KEY_A) != 0;
+				pin.back = (down & (KEY_B | KEY_SELECT)) != 0 && !(held & (KEY_R | KEY_START));
+				pin.assign = (down & KEY_X) != 0;
+				pin.prevTab = (down & KEY_L) != 0;
+				pin.nextTab = (down & KEY_R) != 0;
+			} else if ((down & KEY_SELECT) && !(held & (KEY_R | KEY_L | KEY_START)) && app.steersHero()) {
+				panel.setCursor(true);
+				taken = KEY_SELECT;
+			}
+			const g3::PanelCommand pc = app.panelInput(pin, dt);
+			if (pc.type == g3::PANEL_REPORT) {
+				app.settings().report = 1;
+				app.settings().save(kSettingsPath);
+			}
+			if (pc.type == g3::PANEL_CURSOR_OFF) taken |= KEY_SELECT | KEY_B;
+		} else if (!inventoryScreen && (down & KEY_TOUCH) && !menu.isOpen()) {
+			// A tap on the report: the inventory again.
+			app.settings().report = 0;
+			app.settings().save(kSettingsPath);
+		}
+		if (!inventoryScreen || menu.isOpen()) panel.setCursor(false);
+		const u32 gameDown = down & ~taken, gameHeld = held & ~taken;
 
 		// ---- the pause menu: the game stands still ----
 		bool record = false;
@@ -281,18 +345,26 @@ int main(int, char**) {
 			in.lookY = stick(cstick.dy);
 			const bool console = app.scheme() == g3::CONTROLS_CONSOLE;
 			// R and L+R combinations first: they are not their single buttons.
-			const bool rHeld = (held & KEY_R) != 0;
+			const bool rHeld = (held & KEY_R) != 0 && !(taken & KEY_R);
 			record = (down & KEY_SELECT) && (held & KEY_L) && rHeld;
 			const bool quickSave = (down & KEY_START) && rHeld, quickLoad = (down & KEY_SELECT) && rHeld && !record;
+			// R held: the quick slots, R + D-Pad uses one (the D-Pad's own keys rest meanwhile).
+			app.setQuickHint(rHeld && app.steersHero() && inventoryScreen);
+			if (rHeld && app.steersHero()) {
+				static const u32 kSlotKeys[g3::QUICK_SLOTS] = {KEY_DUP, KEY_DRIGHT, KEY_DDOWN, KEY_DLEFT};
+				for (int q = 0; q < g3::QUICK_SLOTS; ++q)
+					if (gameDown & kSlotKeys[q]) app.quickUse(q);
+			}
+			const u32 dpad = rHeld ? 0u : ~0u; // (with R the D-Pad is the quick slots')
 			if (app.steersHero()) {
-				in.jump = (held & KEY_B) != 0;
-				in.attack = in.confirm = (down & KEY_A) != 0;
-				in.parry = (held & KEY_Y) != 0;
-				in.drawWeapon = (down & KEY_X) != 0;
-				in.meleeSlot = (down & KEY_ZL) != 0;
-				in.fistSlot = (down & KEY_ZR) != 0;
-				in.focus = (down & KEY_DUP) != 0;
-				in.toggleSneak = (down & KEY_DDOWN) != 0;
+				in.jump = (gameHeld & KEY_B) != 0;
+				in.attack = in.confirm = (gameDown & KEY_A) != 0;
+				in.parry = (gameHeld & KEY_Y) != 0;
+				in.drawWeapon = (gameDown & KEY_X) != 0;
+				in.meleeSlot = (gameDown & KEY_ZL) != 0;
+				in.fistSlot = (gameDown & KEY_ZR) != 0;
+				in.focus = (gameDown & dpad & KEY_DUP) != 0;
+				in.toggleSneak = (gameDown & dpad & KEY_DDOWN) != 0;
 				// Locked on: the C-Stick flicked aside picks the next target
 				// (either scheme: the character faces the target by itself then).
 				if (app.targetLocked()) {
@@ -304,20 +376,12 @@ int main(int, char**) {
 					in.lookX = 0;
 				}
 				if (console) {
-					if ((down & KEY_L) && !rHeld) app.toast("Быстрой магии пока нет");
+					if ((gameDown & KEY_L) && !rHeld) app.toast("Быстрой магии пока нет");
 				} else {
-					in.strafe = (held & KEY_R ? 1.0f : 0.0f) - (held & KEY_L ? 1.0f : 0.0f);
+					in.strafe = (gameHeld & KEY_R ? 1.0f : 0.0f) - (gameHeld & KEY_L ? 1.0f : 0.0f);
 				}
-				// R alone, let go: quick access (not yet).
-				if (down & KEY_R) shoulderAlone = true;
-				if (held & ~(KEY_R | KEY_CPAD_UP | KEY_CPAD_DOWN | KEY_CPAD_LEFT | KEY_CPAD_RIGHT | KEY_CSTICK_UP | KEY_CSTICK_DOWN |
-				             KEY_CSTICK_LEFT | KEY_CSTICK_RIGHT))
-					shoulderAlone = false;
-				if ((hidKeysUp() & KEY_R) && shoulderAlone && console) {
-					app.toast("Быстрого доступа пока нет");
-					shoulderAlone = false;
-				}
-				if ((down & KEY_SELECT) && !rHeld && !(held & KEY_START)) app.toast("Инвентаря пока нет");
+				if ((gameDown & KEY_SELECT) && !rHeld && !(held & KEY_START) && !inventoryScreen)
+					app.toast("Инвентарь — на нижнем экране (меню: Графика)");
 			} else {
 				// Flying (the menu's "Отладка"): a free camera.
 				if (held & KEY_A) in.lookX = 1.0f;
@@ -334,6 +398,7 @@ int main(int, char**) {
 				app.toast(app.loadState(kStatePath) ? "Позиция загружена" : "Сохранённой позиции нет");
 			} else if ((down & KEY_START) && !(held & KEY_SELECT)) {
 				menu.open();
+				panel.setCursor(false);
 			}
 			TickCounter updateClock;
 			osTickCounterStart(&updateClock);
@@ -469,7 +534,7 @@ int main(int, char**) {
 			} else if (hero.loaded()) {
 				static const char* const kRoles[g3::Hero::ROLE_COUNT] = {"stand", "run",   "walk",  "back", "step",
 				                                                         "turn",  "jump",  "fall",  "swim", "float",
-				                                                         "attack", "parry", "hit", "down", "draw"};
+				                                                         "attack", "parry", "hit", "down", "draw", "use"};
 				reportLine("hero %-5s %3.0f cm/s %s%s cam %s", kRoles[hero.role()], double(hero.speed()),
 				     hero.walking() ? "walk " : "", app.thirdPerson() ? "3rd" : "1st", app.cameraSet().fromGame ? "game" : "own");
 			} else {
@@ -533,9 +598,12 @@ int main(int, char**) {
 				{
 					const g3::App::FightStats& fst = app.fightStats();
 					const int t = app.target();
-					reportLine("fight %s hp %ld/%ld %s%-8.8s", g3::weaponWord(app.hero().weapon())[0] ? g3::weaponWord(app.hero().weapon()) : "-",
+					// (u: potions and food used / spoilt by a blow / refused.)
+					const g3::App::ItemStats& is = app.itemStats();
+					reportLine("fight %s hp %ld/%ld %s%-7.7s u%lu/%lu/%lu", g3::weaponWord(app.hero().weapon())[0] ? g3::weaponWord(app.hero().weapon()) : "-",
 					     static_cast<long>(app.heroHitPoints()), static_cast<long>(app.heroHitPointsMax()), app.targetLocked() ? "@" : "",
-					     t >= 0 ? npcs.game().nameOf(npcs.game().npc(g3::u32(t))) : "");
+					     t >= 0 ? npcs.game().nameOf(npcs.game().npc(g3::u32(t))) : "", static_cast<unsigned long>(is.used),
+					     static_cast<unsigned long>(is.interrupted), static_cast<unsigned long>(is.refused));
 					// (d: the damage of the character's last blow; ai: moves of the fight
 					// AI, and where its tables are from - F FIGHT.DAT, S the scripts,
 					// - none read yet; "!" moves picked without a table.)
@@ -557,19 +625,17 @@ int main(int, char**) {
 			lateFrames = 0;
 			fadingSum = 0;
 		}
-		// One line of the report per frame, padded to overwrite the old one.
-		// (Switched off in the menu: the buttons instead.)
+		// The bottom screen: the inventory's picture when it has changed, or
+		// one line of the report per frame, padded to overwrite the old one.
 		const bool wantReport = app.settings().report != 0;
 		if (wantReport != reportShown) {
 			reportShown = wantReport;
 			consoleClear();
-			if (!wantReport) {
-				static const char* const kHelp[] = {"Gothic 3DS", "", "Stick      go        C-Stick  camera", "B          jump      A        attack",
-				                                    "Y          parry     X        weapon", "ZL         melee     ZR       fists",
-				                                    "D-Up       lock on   D-Down   sneak", "START      menu      R+START  save",
-				                                    "R+SELECT   load", "", "The numbers: menu > Graphics", "  > Report on the bottom screen"};
-				for (unsigned k = 0; k < sizeof(kHelp) / sizeof(kHelp[0]); ++k) printf("\x1b[%u;2H%s", k + 2, kHelp[k]);
-			}
+			panelShown = false;
+		}
+		if (!wantReport) {
+			if (app.panel().draw(app.inventory(), !panelShown)) showPanel(app.panel().canvas());
+			panelShown = true;
 		}
 		const int row = int(frame % 30);
 		if (reportShown && row < reportLines) printf("\x1b[%d;1H%-39.39s", row + 1, gReport[row]);

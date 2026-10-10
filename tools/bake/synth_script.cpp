@@ -33,6 +33,20 @@ const int NPCTYPE_GUARD = 2;
 const int NPC_FLAG_IMMORTAL = 1 << 1;
 
 const int ITEM_KAT_ARMOR = 1 << 4;
+// The inventory (Constants.d of the original).
+const int ITEM_KAT_NONE    = 1 << 0;
+const int ITEM_KAT_MUN     = 1 << 3;
+const int ITEM_KAT_FOOD    = 1 << 5;
+const int ITEM_KAT_DOCS    = 1 << 6;
+const int ITEM_KAT_POTIONS = 1 << 7;
+const int ITEM_KAT_RUNE    = 1 << 9;
+const int ITEM_KAT_MAGIC   = 1 << 31;
+const int ITEM_RING   = 1 << 11;
+const int ITEM_BOW    = 1 << 19;
+const int ITEM_MULTI  = 1 << 21;
+const int ITEM_AMULET = 1 << 22;
+const int PROT_EDGE = 2;
+const int PROT_FIRE = 3;
 const int DEFAULT = 0;
 const int TRUE = 1;
 const int FALSE = 0;
@@ -635,6 +649,168 @@ instance ItMw_Club (C_ITEM) {
 	description = name;
 };
 
+// The inventory's things: of every kind, with what using and wearing them
+// does, and the info box's lines the way the original writes them.
+extern func void   Npc_ChangeAttribute(var C_NPC n, var int atr, var int value);
+
+const string NAME_Value = "Value";
+const string NAME_Bonus_HP = "Heals";
+const string NAME_Bonus_Mana = "Mana";
+
+instance ItFo_Potion_Health_01 (C_ITEM) {
+	name = "Potion";
+	mainflag = ITEM_KAT_POTIONS;
+	flags = ITEM_MULTI;
+	value = 25;
+	visual = "ItFo_Potion_Health_01.3ds";
+	scemename = "POTIONFAST";
+	on_state[0] = UseHealthPotion;
+	description = "Essence of Healing";
+	text[1] = NAME_Bonus_HP;    count[1] = 50;
+	text[5] = NAME_Value;       count[5] = value;
+};
+func void UseHealthPotion() { Npc_ChangeAttribute(self, ATR_HITPOINTS, 50); };
+
+instance ItFo_Potion_Mana_01 (C_ITEM) {
+	name = "Potion";
+	mainflag = ITEM_KAT_POTIONS;
+	flags = ITEM_MULTI;
+	value = 25;
+	visual = "ItFo_Potion_Mana_01.3ds";
+	scemename = "POTIONFAST";
+	on_state[0] = UseManaPotion;
+	description = "Essence of Magic Energy";
+	text[1] = NAME_Bonus_Mana;  count[1] = 30;
+	text[5] = NAME_Value;       count[5] = value;
+};
+func void UseManaPotion() { Npc_ChangeAttribute(self, ATR_MANA, 30); };
+
+instance ItFoApple (C_ITEM) {
+	name = "Apple";
+	mainflag = ITEM_KAT_FOOD;
+	flags = ITEM_MULTI;
+	value = 4;
+	visual = "ItFo_Apple_01.3ds";
+	scemename = "FOOD";
+	on_state[0] = UseApple;
+	description = name;
+	text[1] = NAME_Bonus_HP;    count[1] = 8;
+	text[5] = NAME_Value;       count[5] = value;
+};
+func void UseApple() { Npc_ChangeAttribute(self, ATR_HITPOINTS, 8); };
+
+instance ItFoMutton (C_ITEM) {
+	name = "Fried meat";
+	mainflag = ITEM_KAT_FOOD;
+	flags = ITEM_MULTI;
+	value = 8;
+	visual = "ItFo_Mutton_01.3ds";
+	scemename = "MEAT";
+	on_state[0] = UseMutton;
+	description = name;
+};
+func void UseMutton() { Npc_ChangeAttribute(self, ATR_HITPOINTS, 15); };
+
+instance ItFoBeer (C_ITEM) {
+	name = "Beer";
+	mainflag = ITEM_KAT_FOOD;
+	flags = ITEM_MULTI;
+	value = 10;
+	visual = "ItFo_Beer_01.3ds";
+	scemename = "POTION";
+	on_state[0] = UseBeer;
+	description = name;
+};
+func void UseBeer() { Npc_ChangeAttribute(self, ATR_HITPOINTS, 3); };
+
+instance ItMw_2H_Sword_Heavy (C_ITEM) {
+	name = "Heavy two-hander";
+	mainflag = ITEM_KAT_NF;
+	flags = ITEM_2HD_SWD;
+	damagetype = DAM_EDGE;
+	damagetotal = 28; // (below the sword: the faults menu's "best weapon" stays the sword)
+	range = 140;
+	cond_atr[2] = ATR_STRENGTH;
+	cond_value[2] = 60;
+	value = 900;
+	visual = "ItMw_2H_Sword_Heavy_01.3DS";
+	description = name;
+};
+
+instance ItRw_Bow_Small (C_ITEM) {
+	name = "Short bow";
+	mainflag = ITEM_KAT_FF;
+	flags = ITEM_BOW;
+	damagetype = DAM_EDGE;
+	damagetotal = 20;
+	value = 80;
+	visual = "ItRw_Bow_Small_01.3DS";
+	description = name;
+};
+
+instance ItAmArrow (C_ITEM) {
+	name = "Arrow";
+	mainflag = ITEM_KAT_MUN;
+	flags = ITEM_MULTI;
+	value = 1;
+	visual = "ItAm_Arrow_01.3ds";
+	description = name;
+};
+
+instance ItMi_Ring_Fire (C_ITEM) {
+	name = "Ring";
+	mainflag = ITEM_KAT_MAGIC;
+	flags = ITEM_RING;
+	value = 200;
+	visual = "ItMi_Ring_01.3ds";
+	on_equip = Equip_Ring_Fire;
+	on_unequip = UnEquip_Ring_Fire;
+	description = "Ring of Flame Protection";
+	text[2] = "Protection against fire";  count[2] = 3;
+	text[5] = NAME_Value;                 count[5] = value;
+};
+func void Equip_Ring_Fire() { self.protection[PROT_FIRE] += 3; };
+func void UnEquip_Ring_Fire() { self.protection[PROT_FIRE] -= 3; };
+
+instance ItMi_Amulet_Edge (C_ITEM) {
+	name = "Amulet";
+	mainflag = ITEM_KAT_MAGIC;
+	flags = ITEM_AMULET;
+	value = 400;
+	visual = "ItMi_Amulet_01.3ds";
+	on_equip = Equip_Amulet_Edge;
+	on_unequip = UnEquip_Amulet_Edge;
+	description = "Amulet of Stone Skin";
+};
+func void Equip_Amulet_Edge() { self.protection[PROT_EDGE] += 5; };
+func void UnEquip_Amulet_Edge() { self.protection[PROT_EDGE] -= 5; };
+
+instance ItArScrollFirebolt (C_ITEM) {
+	name = "Scroll";
+	mainflag = ITEM_KAT_RUNE;
+	flags = ITEM_MULTI;
+	value = 50;
+	visual = "ItAr_Scroll_01.3ds";
+	description = "Fire Bolt";
+};
+
+instance ItWr_Letter (C_ITEM) {
+	name = "Letter";
+	mainflag = ITEM_KAT_DOCS;
+	value = 0;
+	visual = "ItWr_Letter_01.3ds";
+	description = "A letter to the mages";
+};
+
+instance ItMiNugget (C_ITEM) {
+	name = "Ore";
+	mainflag = ITEM_KAT_NONE;
+	flags = ITEM_MULTI;
+	value = 1;
+	visual = "ItMi_Nugget_01.3ds";
+	description = name;
+};
+
 // ---------------------------------------------------------------- fighting
 instance Gil_Values (C_GILVALUES) {
 	fight_range_base[GIL_HUMAN] = 60;
@@ -665,9 +841,14 @@ instance PC_Hero (Npc_Default) {
 	id = 0;
 	exp_next = 500;
 	B_SetAttributes(self, 10, 40);
+	attribute[ATR_MANA_MAX] = 20;
+	attribute[ATR_MANA]     = 10;
 	Mdl_SetVisual(self, "HUMANS.MDS");
 	//            body mesh          body tex  skin  head mesh        head tex  teeth  armour
 	Mdl_SetVisualBody(self, "hum_body_Naked0", 4, 1, "Hum_Head_Pony", 9, 0, -1);
+	// (The test scene's hero brings a few things along to try the inventory with.)
+	CreateInvItems(self, ItFo_Potion_Health_01, 3);
+	CreateInvItems(self, ItFoApple, 2);
 };
 
 instance GRD_200_Thorus (Npc_Default) {

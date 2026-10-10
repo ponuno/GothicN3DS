@@ -133,6 +133,31 @@ const GameItemInfo* Game::itemInfo(u32 symbol) {
 	}
 	if (_iVisual != SCRIPT_NONE && _vm.symbol(_iVisual).type == SCRIPT_STRING) info.visual = intern(_vm.getString(_iVisual, 0, item), true);
 	if (_iName != SCRIPT_NONE && _vm.symbol(_iName).type == SCRIPT_STRING) info.name = intern(_vm.getString(_iName, 0, item), false);
+	// What the inventory shows and does.
+	const auto text = [&](u32 member, u32 index) -> GameText {
+		if (member == SCRIPT_NONE || index >= _vm.symbol(member).count) return 0;
+		const char* str = _vm.getString(member, index, item);
+		return str && *str ? intern(str, false) : GameText(0);
+	};
+	const auto func = [&](u32 member, u32 index) -> u32 {
+		if (member == SCRIPT_NONE || index >= _vm.symbol(member).count) return SCRIPT_NONE;
+		const u32 fn = u32(_vm.getInt(member, index, item));
+		return fn != 0 && _vm.isPlainFunction(fn) ? fn : SCRIPT_NONE;
+	};
+	info.description = text(_iDescription, 0);
+	info.scheme = text(_iScheme, 0);
+	for (u32 k = 0; k < 6; ++k) {
+		info.text[k] = text(_iText, k);
+		info.count[k] = _iCount != SCRIPT_NONE && k < _vm.symbol(_iCount).count ? _vm.getInt(_iCount, k, item) : 0;
+	}
+	info.onUse = func(_iOnState, 0);
+	info.onEquip = func(_iOnEquip, 0);
+	info.onUnequip = func(_iOnUnequip, 0);
+	for (u32 k = 0; k < 3; ++k) {
+		info.condAtr[k] = _iCondAtr != SCRIPT_NONE && k < _vm.symbol(_iCondAtr).count ? _vm.getInt(_iCondAtr, k, item) : 0;
+		info.condValue[k] = _iCondValue != SCRIPT_NONE && k < _vm.symbol(_iCondValue).count ? _vm.getInt(_iCondValue, k, item) : 0;
+	}
+	info.value = get(_iValue, 0);
 	_vm.destroy(item);
 	_itemInfos[_itemInfoCount] = info;
 	return &_itemInfos[_itemInfoCount++];

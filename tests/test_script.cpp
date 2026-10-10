@@ -1,6 +1,8 @@
 // The script machine: this project's Daedalus compiler, the image baker and
 // the interpreter. Usage: test_script <scratch dir>
 #include "daedalus.h"
+#include "fight.h"
+#include "fight_ai.h"
 #include "game.h"
 #include "importers.h"
 #include "script_check.h"
@@ -453,7 +455,23 @@ static void testSyntheticScript() {
 	ScriptBakeResult baked;
 	const std::vector<u8> image = bakeScript(src, baked);
 	std::printf("       %s", baked.report.c_str());
-	CHECK(baked.hashClashes == 0 && baked.classes == 5 && baked.instances >= 12 && baked.externals >= 25);
+	// (Four classes: the fight AI's C_FightAI is in the script of its own, as in the game.)
+	CHECK(baked.hashClashes == 0 && baked.classes == 4 && baked.instances >= 12 && baked.externals >= 25);
+	// The fight AI tables, that script of their own, bake into "script/fight".
+	{
+		SrcScript fight;
+		buildSyntheticFightScript(fight);
+		std::string report;
+		const std::vector<u8> table = bakeFightAi(fight, report);
+		std::printf("       %s\n", report.c_str());
+		CHECK(table.size() > sizeof(FightAiHeader));
+		FightAiHeader h {};
+		std::memcpy(&h, table.data(), sizeof(h));
+		CHECK(h.magic == FIGHT_AI_MAGIC && h.situations == FS_COUNT && h.tactics >= 18 &&
+		      table.size() == sizeof(h) + size_t(h.tactics) * FS_COUNT * FIGHT_AI_MOVES);
+		// Tactic 15 (the scavenger): at a blow's reach and in focus, the first move is an attack.
+		CHECK(table[sizeof(h) + (size_t(15) * FS_COUNT + FS_MY_W_FOCUS) * FIGHT_AI_MOVES] == FM_ATTACK);
+	}
 
 	// The file format: written and read back, it is the same script.
 	const std::vector<u8> dat = writeScriptDat(src);

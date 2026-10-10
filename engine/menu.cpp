@@ -24,6 +24,7 @@ struct Item {
 const char* const kObjects[] = {"Плавность", "Баланс", "Устойчиво"};
 const char* const kFrames[] = {"60 (30 под нагрузкой)", "Ровно 30"};
 const char* const kSchemes[] = {"Консольная", "Классическая"};
+const char* const kBottom[] = {"Инвентарь", "Отчёт"};
 
 const Item kMain[] = {
     {"Продолжить", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_CLOSED, nullptr},
@@ -42,7 +43,7 @@ const Item kGraphics[] = {
     {"Растворение объектов", TOGGLE, &Settings::dissolve, nullptr, 0, 0, 0, nullptr, 0, "Вступит в силу после перезапуска"},
     {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 2, 0, 0, nullptr, 0, nullptr},
     {"Интерфейс в игре", TOGGLE, &Settings::hud, nullptr, 0, 0, 0, nullptr, 0, "Здоровье, цель, подсказки"},
-    {"Отчёт на нижнем экране", TOGGLE, &Settings::report, nullptr, 0, 0, 0, nullptr, 0, nullptr},
+    {"Нижний экран", CHOICE, &Settings::report, kBottom, 2, 0, 0, nullptr, 0, "Отчёт: цифры для проверки"},
 };
 
 const Item kControls[] = {
@@ -53,6 +54,7 @@ const Item kControls[] = {
     {"Камера за героем", TOGGLE, &Settings::autoCamera, nullptr, 0, 0, 0, nullptr, 0, "Камера заходит за спину на бегу"},
     {"Автозахват цели", TOGGLE, &Settings::autoTarget, nullptr, 0, 0, 0, nullptr, 0, "Взял оружие — цель захвачена"},
     {"Вид от первого лица", TOGGLE, &Settings::firstPerson, nullptr, 0, 0, 0, nullptr, 0, nullptr},
+    {"Оружие после зелья", TOGGLE, &Settings::weaponBack, nullptr, 0, 0, 0, nullptr, 0, "Выпил — снова берёт оружие в руки"},
 };
 
 const Item kDebug[] = {
@@ -62,6 +64,7 @@ const Item kDebug[] = {
     {"Бессмертие", TOGGLE, &Settings::immortal, nullptr, 0, 0, 0, nullptr, 0, nullptr},
     {"Вылечить", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_HEAL, nullptr},
     {"Дать лучшее оружие", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_GIVE_WEAPON, "Из оружия, что есть в скриптах"},
+    {"Дать набор предметов", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_GIVE_ITEMS, "Зелья, еда, оружие, броня, кольца"},
     {"Полёт вкл/выкл", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_FLY, "Свободная камера без столкновений"},
     {"Следующий мир", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_NEXT_WORLD, nullptr},
     {"Время +1 час", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_HOUR, nullptr},

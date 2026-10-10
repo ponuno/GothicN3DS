@@ -3,8 +3,10 @@
 #pragma once
 #include "g3ds/pak.h"
 #include "hero.h"
+#include "inventory.h"
 #include "menu.h"
 #include "npcs.h"
+#include "panel.h"
 #include "player.h"
 #include "recorder.h"
 #include "settings.h"
@@ -152,6 +154,44 @@ public:
 	};
 	const FightStats& fightStats() const { return _fight; }
 
+	// ---- the inventory (inventory.cpp; the rules are in inventory.h) ----
+	// What the bottom screen shows, brought up to date.
+	const InventoryView& inventory();
+	// The bottom screen's panel; the platform feeds it and shows its canvas.
+	InventoryPanel& panel() { return _panel; }
+	// Reads the panel's input and carries out what it asks for (returned: the
+	// report and the buttons are the platform's to deal with).
+	PanelCommand panelInput(const PanelInput& in, float dt);
+	void panelCommand(const PanelCommand& c);
+	// What an item is for: drink, eat, put on, take off, take in hand. False
+	// if refused (the view's message and a toast say why). The use itself
+	// takes its time: see itemBusy().
+	bool itemAction(u32 symbol);
+	// Quick slots 0..3 (R + D-Pad up, right, down, left).
+	bool quickUse(int slot);
+	void setQuickSlot(int slot, u32 symbol);
+	u32 quickSlot(int slot) const { return slot >= 0 && slot < QUICK_SLOTS ? _quick[slot] : SCRIPT_NONE; }
+	// Something is being used or waits for the character's hands.
+	bool itemBusy() const { return _job.stage != 0; }
+	// Armour and rings stay as they are: a weapon in hand, a blow less than 5 s
+	// ago, or an armed enemy close by.
+	bool heroInCombat() const;
+	// Rings and the amulet worn (SCRIPT_NONE for none).
+	u32 ring(int i) const { return i >= 0 && i < 2 ? _rings[i] : SCRIPT_NONE; }
+	u32 amulet() const { return _amulet; }
+	// The faults menu's: a set of things of every kind the scripts define, to
+	// try the inventory with. Returns how many kinds were given.
+	u32 giveItemKit();
+	// The platform says R is held: the quick slots are shown on the top screen.
+	void setQuickHint(bool on) { _quickHint = on; }
+	struct ItemStats {
+		u32 used = 0;        // potions and food that did their work
+		u32 refused = 0;     // requests turned down (in a fight, too weak ...)
+		u32 interrupted = 0; // spoilt by a blow
+		u32 changed = 0;     // weapons, armour and rings put on or taken off
+	};
+	const ItemStats& itemStats() const { return _itemStats; }
+
 private:
 	void checkPortals();
 	void placeCamera(float dt);
@@ -160,6 +200,8 @@ private:
 	void fightInput(const Input& in, float dt);
 	void updateTarget(const Input& in, float dt);
 	void heroBlow();
+	u8 meleeMode();
+	bool heroTake(u8 mode);
 	static void heroHitThunk(void* user, u32 attacker);
 	void heroHit(u32 attacker);
 	void syncHeroNpc();
@@ -213,6 +255,42 @@ private:
 	const char* _statePath = nullptr; // where respawning after death loads from
 	FightStats _fight;
 	Mat4 _viewProj;
+	// The inventory.
+	void itemsUpdate(Input& in, float dt);
+	void itemMessage(const char* text, bool refusal = true);
+	bool startUse(u32 symbol);
+	bool equipItem(u32 symbol, const GameItemInfo& it, u8 kind);
+	void unequipAll();
+	void equipRing(u32 symbol, bool on);
+	bool meetsNeeds(const GameItemInfo& it, char* why, u32 size) const;
+	void drawItemHud();
+	// The inventory's part of the top screen is up (the info box, the hints).
+	bool itemOverlay() const;
+	void saveInventory(FILE* f) const;
+	bool loadInventory(FILE* f);
+	enum JobStage : u8 { JOB_NONE, JOB_PUTAWAY, JOB_START, JOB_USING, JOB_SWAP_AWAY, JOB_SWAP_DRAW, JOB_REDRAW };
+	struct ItemJob {
+		u8 stage = JOB_NONE;
+		u8 redraw = 0;      // the weapon to take in hand again afterwards (WEAPON_NONE: none)
+		u32 symbol = 0xFFFFFFFFu;
+		float wait = 0;     // seconds in this stage
+		bool applied = false;
+		i32 before[6] = {}; // the attributes before the use (to say what it did)
+	};
+	ItemJob _job;
+	u32 _queued = 0xFFFFFFFFu; // the next request, waiting for this one
+	u32 _rings[2] = {0xFFFFFFFFu, 0xFFFFFFFFu};
+	u32 _amulet = 0xFFFFFFFFu;
+	u32 _quick[QUICK_SLOTS] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
+	float _calm = 100.0f;      // seconds since the character was last in a fight
+	u32 _lastBlows = 0;
+	bool _quickHint = false;
+	float _hostileScan = 0;
+	u32 _invStamp = 0;         // what the view was made from (a hash)
+	u32 _equipVersion = 0;     // counts changes of what is worn
+	ItemStats _itemStats;
+	InventoryView _inv;
+	InventoryPanel _panel;
 };
 
 } // namespace g3

@@ -10,7 +10,9 @@ namespace {
 constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 2: the classic scheme became the default; a file of version 1 (whose
 // scheme was the console one unless changed) begins with the classic one again.
-constexpr u32 SETTINGS_VERSION = 2;
+// 3: the bottom screen shows the inventory unless the numbers are asked for
+// (the "report" switch began again at "off"); the weapon back after a potion.
+constexpr u32 SETTINGS_VERSION = 3;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -35,7 +37,7 @@ void Settings::sanitize() {
 	if (frameRate >= FRAME_MODES) frameRate = FRAMES_60;
 	if (scheme >= CONTROL_SCHEMES) scheme = CONTROLS_CLASSIC;
 	cameraSpeed = u8(clamp<int>(cameraSpeed, 1, 10));
-	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal};
+	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack};
 	for (u8* f : flags) *f = *f ? 1 : 0;
 }
 
@@ -88,6 +90,7 @@ bool Settings::load(const char* path) {
 	Settings s;
 	memcpy(&s, bytes, min<u32>(h.size, sizeof(Settings)));
 	if (h.version < 2) s.scheme = CONTROLS_CLASSIC;
+	if (h.version < 3) s.report = 0;
 	s.sanitize();
 	*this = s;
 	return true;

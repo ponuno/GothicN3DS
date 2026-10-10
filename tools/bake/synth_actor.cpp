@@ -562,6 +562,16 @@ void buildSyntheticActor(SrcModel& model) {
 			p.rot[L_CALF] = p.rot[R_CALF] = aboutX(1.6f * crouch);
 		}));
 	addFightClips(model);
+	// Drinking a potion, as "POTIONFAST" (food has no animation here: the
+	// engine's stand-still stands in for it).
+	const auto drink = [](float a, Pose& p) {
+		p.rot[R_ARM] = aboutX(-1.9f * a);
+		p.rot[R_FOREARM] = aboutX(-1.5f * a);
+		p.rot[HEAD] = aboutX(-0.35f * a);
+	};
+	model.clips.push_back(makeClip("T_POTIONFAST_STAND_2_S0", "S_POTIONFAST_S0", 15, false, [drink](float phase, float, Pose& p) { drink(phase, p); }));
+	model.clips.push_back(makeClip("S_POTIONFAST_S0", "S_POTIONFAST_S0", 10, false, [drink](float, float, Pose& p) { drink(1.0f, p); }));
+	model.clips.push_back(makeClip("T_POTIONFAST_S0_2_STAND", "S_RUN", 12, false, [drink](float phase, float, Pose& p) { drink(1.0f - phase, p); }));
 	// Where the script has no animation for a change, it names a fade.
 	model.blends = {{"T_RUNL_2_WALKL", "S_WALKL", 0.2f, 0.2f}, {"T_WALKL_2_RUNL", "S_RUNL", 0.2f, 0.2f},
 	                {"T_SWIM_2_SWIMF", "S_SWIMF", 0.3f, 0.3f}, {"T_SWIMF_2_SWIM", "S_SWIM", 0.3f, 0.3f},

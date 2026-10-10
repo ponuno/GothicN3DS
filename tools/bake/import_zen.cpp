@@ -1637,6 +1637,11 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 				wanted.push_back(name);
 				optional.insert(name);
 			}
+		for (const std::string& name : itemUseClipNames())
+			if (std::find(wanted.begin(), wanted.end(), name) == wanted.end()) {
+				wanted.push_back(name);
+				optional.insert(name);
+			}
 		for (const zenkit::MdsAnimation& a : script.animations)
 			if (isHeroTransition(upper(a.name)) && std::find(wanted.begin(), wanted.end(), upper(a.name)) == wanted.end())
 				wanted.push_back(upper(a.name));

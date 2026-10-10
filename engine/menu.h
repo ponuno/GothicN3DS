@@ -27,6 +27,7 @@ enum MenuAction : u8 {
 	MENU_FLY,
 	MENU_HEAL,
 	MENU_GIVE_WEAPON,
+	MENU_GIVE_ITEMS,
 };
 
 class Menu {

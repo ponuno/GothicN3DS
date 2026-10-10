@@ -76,6 +76,7 @@ void Game::release() {
 	_guildAtt = nullptr;
 	_items = nullptr;
 	_guildCount = _itemCount = _itemCap = 0;
+	++_itemsVersion;
 	for (float& r : _percRange) r = -1.0f;
 	_npcs = nullptr;
 	_routines = nullptr;
@@ -125,6 +126,28 @@ bool Game::bindAll() {
 	_iVisual = _vm.findMember("C_ITEM", "VISUAL");
 	_iProtection = _vm.findMember("C_ITEM", "PROTECTION");
 	_iName = _vm.findMember("C_ITEM", "NAME");
+	_iDescription = _vm.findMember("C_ITEM", "DESCRIPTION");
+	_iScheme = _vm.findMember("C_ITEM", "SCEMENAME");
+	_iText = _vm.findMember("C_ITEM", "TEXT");
+	_iCount = _vm.findMember("C_ITEM", "COUNT");
+	_iOnState = _vm.findMember("C_ITEM", "ON_STATE");
+	_iOnEquip = _vm.findMember("C_ITEM", "ON_EQUIP");
+	_iOnUnequip = _vm.findMember("C_ITEM", "ON_UNEQUIP");
+	_iCondAtr = _vm.findMember("C_ITEM", "COND_ATR");
+	_iCondValue = _vm.findMember("C_ITEM", "COND_VALUE");
+	_iValue = _vm.findMember("C_ITEM", "VALUE");
+	_itemVar = _vm.find("ITEM");
+	if (_itemVar != SCRIPT_NONE && _vm.symbol(_itemVar).type != SCRIPT_INSTANCE) _itemVar = SCRIPT_NONE;
+	must(_iDescription, SCRIPT_STRING);
+	must(_iScheme, SCRIPT_STRING);
+	must(_iText, SCRIPT_STRING);
+	must(_iCount, SCRIPT_INT);
+	must(_iOnState, SCRIPT_FUNC);
+	must(_iOnEquip, SCRIPT_FUNC);
+	must(_iOnUnequip, SCRIPT_FUNC);
+	must(_iCondAtr, SCRIPT_INT);
+	must(_iCondValue, SCRIPT_INT);
+	must(_iValue, SCRIPT_INT);
 	must(_mProtection, SCRIPT_INT);
 	must(_mDamage, SCRIPT_INT);
 	must(_mDamageType, SCRIPT_INT);
@@ -260,10 +283,38 @@ void Game::addItems(ScriptInstance* inst, i32 symbol, i32 count) {
 		if (_items[i].npc == npc && _items[i].symbol == u32(symbol)) {
 			const long long total = (long long)_items[i].count + count;
 			_items[i].count = i32(total < 0 ? 0 : total > (1 << 30) ? (1 << 30) : total);
+			++_itemsVersion;
 			return;
 		}
 	if (count < 0 || !grow(_items, _itemCap, _itemCount + 1, 256)) return;
 	_items[_itemCount++] = GameItem {npc, u32(symbol), count};
+	++_itemsVersion;
+}
+
+void Game::giveItems(u32 npc, u32 symbol, i32 count) {
+	if (npc < _npcCount && _npcs[npc].object && isItem(symbol)) addItems(_npcs[npc].object, i32(symbol), count);
+}
+
+bool Game::isItem(u32 symbol) const {
+	if (symbol >= _vm.symbolCount() || _clsItem == SCRIPT_NONE) return false;
+	const ScriptSymbol& s = _vm.symbol(symbol);
+	return s.type == SCRIPT_INSTANCE && (s.flags & SCRIPTF_CONST) && _vm.classOf(symbol) == _clsItem;
+}
+
+bool Game::callItemFunction(u32 npc, u32 symbol, u32 fn) {
+	if (npc >= _npcCount || !_npcs[npc].object || !_vm.isPlainFunction(fn) || _vm.symbol(fn).count != 0 || !isItem(symbol)) return false;
+	ScriptInstance* item = _vm.create(symbol);
+	if (!item) return false;
+	const u32 self = _vm.selfSymbol();
+	ScriptInstance* const selfBefore = self != SCRIPT_NONE ? _vm.instanceOf(self) : nullptr;
+	ScriptInstance* const itemBefore = _itemVar != SCRIPT_NONE ? _vm.instanceOf(_itemVar) : nullptr;
+	if (self != SCRIPT_NONE) _vm.setInstance(self, _npcs[npc].object);
+	if (_itemVar != SCRIPT_NONE) _vm.setInstance(_itemVar, item);
+	(void)_vm.callInt(fn);
+	if (self != SCRIPT_NONE) _vm.setInstance(self, selfBefore);
+	if (_itemVar != SCRIPT_NONE) _vm.setInstance(_itemVar, itemBefore);
+	_vm.destroy(item);
+	return true;
 }
 
 void Game::xSetGuildAttitude(ScriptVm& vm, void* user) {
@@ -437,6 +488,9 @@ void Game::xChangeAttribute(ScriptVm& vm, void* user) {
 	if (index == 0) {
 		// Hit points stay within 0 and their maximum.
 		v = clamp(v, i32(0), max(g.attributeOf(*n, 1), i32(1)));
+	} else if (index == 2) {
+		// So does mana (ATR_MANA, ATR_MANA_MAX).
+		v = clamp(v, i32(0), max(g.attributeOf(*n, 3), i32(0)));
 	}
 	g.setAttribute(*n, index, v);
 }

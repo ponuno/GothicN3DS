@@ -81,6 +81,15 @@ struct GameItemInfo {
 	i32 protection[8];
 	GameText visual; // its mesh, lower case without extension ("itmw_1h_sword_01")
 	GameText name;   // as the player reads it ("Rusty sword")
+	// What the inventory shows and does with it.
+	GameText description; // the longer name of the info box ("Essence of Healing"), 0 for none
+	GameText scheme;      // how it is used (C_ITEM.SCEMENAME: "POTIONFAST", "FOOD"), 0 for none
+	GameText text[6];     // the info box's lines: text, and its number (0: none)
+	i32 count[6];
+	u32 onUse;            // C_ITEM.ON_STATE[0]: what using it does; SCRIPT_NONE for nothing
+	u32 onEquip, onUnequip; // rings and amulets: what wearing them does
+	i32 condAtr[3], condValue[3]; // what it takes: attribute >= value (value 0: nothing)
+	i32 value;            // ore
 };
 
 // A stack of items a character carries (CreateInvItems).
@@ -164,6 +173,19 @@ public:
 	i32 attitude(u32 a, u32 b) const;
 	// How many of an item (instance symbol) a character carries.
 	i32 itemCount(u32 npc, u32 itemSymbol) const;
+	// Gives (count > 0) or takes (count < 0) items; never below none.
+	void giveItems(u32 npc, u32 itemSymbol, i32 count);
+	// Every stack of items anybody carries (some with a count of 0: given
+	// away), in the order they were first given.
+	u32 itemStackCount() const { return _itemCount; }
+	const GameItem& itemStack(u32 i) const { return _items[i]; }
+	// Counts every change of what anybody carries (the inventory redraws on it).
+	u32 itemsVersion() const { return _itemsVersion; }
+	// True if `symbol` is an item instance of the scripts.
+	bool isItem(u32 symbol) const;
+	// Runs a function of an item (ON_STATE, ON_EQUIP ...) as the original
+	// does: SELF is the character, ITEM the item. False if `fn` is no function.
+	bool callItemFunction(u32 npc, u32 itemSymbol, u32 fn);
 	// How far a perception reaches (Perc_SetRange), cm; -1 if the scripts set none.
 	float perceptionRange(i32 perc) const { return perc >= 0 && perc < PERC_TYPES ? _percRange[perc] : -1.0f; }
 	enum { PERC_TYPES = 64 };
@@ -199,6 +221,11 @@ public:
 	i32 guildValue(const char* member, i32 guild, i32 otherwise);
 	// Equips a weapon item (EquipItem, the faults menu): melee or ranged by its kind.
 	void equip(u32 npc, u32 itemSymbol);
+	// Puts an armour on (its protection counts; the old one's no more);
+	// SCRIPT_NONE takes it off.
+	void setArmor(u32 npc, u32 armorSymbol) {
+		if (npc < _npcCount) wear(_npcs[npc], armorSymbol);
+	}
 	u32 heroIndex() const { return _hero; }
 	// A random number below `bound` from the scripts' own dice.
 	u32 dice(u32 bound);
@@ -316,7 +343,7 @@ private:
 	i32* _guildAtt = nullptr; // _guildCount x _guildCount
 	u32 _guildCount = 0;
 	GameItem* _items = nullptr;
-	u32 _itemCount = 0, _itemCap = 0;
+	u32 _itemCount = 0, _itemCap = 0, _itemsVersion = 0;
 	float _percRange[PERC_TYPES];
 	World* _worlds = nullptr;
 	u32 _worldCount = 0, _worldCap = 0;
@@ -334,6 +361,10 @@ private:
 	u32 _mProtection = SCRIPT_NONE, _mDamage = SCRIPT_NONE, _mDamageType = SCRIPT_NONE;
 	u32 _iFlags = SCRIPT_NONE, _iDamageType = SCRIPT_NONE, _iDamageTotal = SCRIPT_NONE, _iDamage = SCRIPT_NONE, _iRange = SCRIPT_NONE,
 	    _iVisual = SCRIPT_NONE, _iProtection = SCRIPT_NONE, _iName = SCRIPT_NONE;
+	// The inventory.
+	u32 _iDescription = SCRIPT_NONE, _iScheme = SCRIPT_NONE, _iText = SCRIPT_NONE, _iCount = SCRIPT_NONE, _iOnState = SCRIPT_NONE,
+	    _iOnEquip = SCRIPT_NONE, _iOnUnequip = SCRIPT_NONE, _iCondAtr = SCRIPT_NONE, _iCondValue = SCRIPT_NONE, _iValue = SCRIPT_NONE,
+	    _itemVar = SCRIPT_NONE;
 };
 
 } // namespace g3

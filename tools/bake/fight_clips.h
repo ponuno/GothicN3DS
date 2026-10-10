@@ -54,4 +54,21 @@ inline std::vector<std::string> fightClipNames(bool hero) {
 	return out;
 }
 
+// Using things (a potion, food): the player's character brings an item to
+// its mouth as the model script has it for the item's scheme (C_ITEM.SCEMENAME).
+// Asked for in case the model has them.
+inline std::vector<std::string> itemUseClipNames() {
+	std::vector<std::string> out;
+	for (const char* scheme : {"POTION", "POTIONFAST", "FOOD", "FOODHUGE", "MEAT", "RICE", "JOINT"})
+		for (const char* f : {"T_%_STAND_2_S0", "S_%_S0", "T_%_S0_2_STAND"}) {
+			std::string name;
+			for (const char* c = f; *c; ++c) {
+				if (*c == '%') name += scheme;
+				else name += *c;
+			}
+			out.push_back(name);
+		}
+	return out;
+}
+
 } // namespace g3

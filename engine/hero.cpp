@@ -158,6 +158,7 @@ void Hero::release() {
 	_reel = nullptr;
 	_down = false;
 	_sneak = false;
+	_use = Use();
 }
 
 void Hero::reset(Vec3 feet, float yaw) {
@@ -173,6 +174,7 @@ void Hero::reset(Vec3 feet, float yaw) {
 	_drawTo = 0xFF;
 	_blow.reset();
 	_reel = nullptr;
+	_use = Use();
 	if (loaded()) {
 		_body = GROUNDED;
 		_roleNow = _down ? DOWN : IDLE;
@@ -290,7 +292,7 @@ const Clip* Hero::weaponClip(const char* pattern, u8 mode) const {
 }
 
 bool Hero::draw(u8 mode) {
-	if (!loaded() || _down || mode >= WEAPON_MODES || _body != GROUNDED || drawing()) return false;
+	if (!loaded() || _down || mode >= WEAPON_MODES || _body != GROUNDED || drawing() || usingItem()) return false;
 	if (mode == _weapon) return true;
 	if (_weapon != WEAPON_NONE && mode != WEAPON_NONE) {
 		// Another weapon in hand: away with it, the new one is the next press.
@@ -323,7 +325,7 @@ bool Hero::draw(u8 mode) {
 }
 
 bool Hero::attack(int kind) {
-	if (!loaded() || _weapon == WEAPON_NONE || _down || _body != GROUNDED || drawing()) return false;
+	if (!loaded() || _weapon == WEAPON_NONE || _down || _body != GROUNDED || drawing() || usingItem()) return false;
 	const Clip* cur = _anim.current();
 	const bool running = cur && (cur == _state[_weapon][ST_RUNL] || cur == _state[WEAPON_NONE][ST_RUNL]);
 	const Clip* c = nullptr;
@@ -398,6 +400,7 @@ void Hero::hit(bool fromBehind) {
 		_drawTo = 0xFF;
 	}
 	_blow.reset();
+	cancelUse();
 	if (!c || _body != GROUNDED) return;
 	_anim.play(c, 0.05f);
 	_reel = c;
@@ -411,6 +414,7 @@ void Hero::fall(bool dead, bool fromBehind) {
 	if (!c) c = _model.clip(dead ? "T_DEAD" : "T_STAND_2_WOUNDED");
 	if (!c) c = _model.clip(dead ? "S_DEAD" : "S_WOUNDED");
 	_down = true;
+	cancelUse();
 	_weapon = WEAPON_NONE;
 	_drawTo = 0xFF;
 	_blow.reset();
@@ -478,6 +482,106 @@ void Hero::fightTick(float prevTime, const Clip* prevClip) {
 	if (_reel && (c != _reel || _anim.finished())) _reel = nullptr;
 }
 
+// ---- using an item ----
+
+namespace {
+
+// The animations of an item's scheme: "T_<S>_STAND_2_S0" and its fellows.
+const Clip* useClip(const Model& m, const char* pattern, const char* scheme) {
+	char name[64];
+	snprintf(name, sizeof(name), pattern, scheme);
+	return m.clip(name);
+}
+
+} // namespace
+
+bool Hero::canAnimateUse(const char* scheme) const {
+	return loaded() && scheme && *scheme && useClip(_model, "T_%s_STAND_2_S0", scheme) != nullptr;
+}
+
+bool Hero::useItem(const char* scheme, float seconds, float moment) {
+	if (!loaded() || _down || _reel || _body != GROUNDED || _weapon != WEAPON_NONE || drawing() || usingItem()) return false;
+	const Clip* cur = _anim.current();
+	if (_blow.clip && cur == _blow.clip) return false;
+	_use = Use();
+	_sneak = false;
+	if (scheme && *scheme) {
+		_use.in = useClip(_model, "T_%s_STAND_2_S0", scheme);
+		_use.hold = useClip(_model, "S_%s_S0", scheme);
+		_use.out = useClip(_model, "T_%s_S0_2_STAND", scheme);
+	}
+	if (_use.in) {
+		_use.phase = USE_IN;
+		_use.at = _use.in->duration();
+		_use.seconds = _use.at + (_use.hold ? 0.3f : 0.0f) + (_use.out ? _use.out->duration() : 0.0f);
+		_anim.play(_use.in, 0.12f);
+	} else {
+		// No animation for it: standing still for as long as it takes.
+		_use.phase = USE_TIMED;
+		_use.seconds = max(seconds, 0.1f);
+		_use.at = clamp(moment, 0.0f, _use.seconds);
+		go(_walkMode ? ST_WALK : ST_RUN, true, 0.15f);
+	}
+	_roleNow = USE;
+	return true;
+}
+
+float Hero::useProgress() const {
+	if (!usingItem() || _use.seconds <= 0.0f) return 0.0f;
+	return clamp(_use.time / _use.seconds, 0.0f, 1.0f);
+}
+
+void Hero::cancelUse() { _use = Use(); }
+
+// After the animation has moved on: the item does its work when it is at
+// the mouth (or after its time), and the character is free again when it
+// is put down.
+void Hero::useTick(float dt) {
+	_use.moment = false;
+	if (_use.phase == USE_NONE) return;
+	_use.time += dt;
+	const Clip* c = _anim.current();
+	switch (_use.phase) {
+	case USE_IN:
+		if (c != _use.in || _anim.finished()) {
+			_use.phase = USE_HOLD;
+			_use.time = max(_use.time, _use.at);
+			if (_use.hold) _anim.play(_use.hold, 0.1f);
+		}
+		break;
+	case USE_HOLD:
+		if (!_use.hold || _use.time >= _use.at + 0.3f) {
+			_use.phase = USE_OUT;
+			if (_use.out) _anim.play(_use.out, 0.1f);
+		}
+		break;
+	case USE_OUT:
+		if (!_use.out || c != _use.out || _anim.finished()) {
+			_use.phase = USE_NONE;
+			_forceNext = true;
+		}
+		break;
+	case USE_TIMED:
+		if (_use.time >= _use.seconds) {
+			_use.phase = USE_NONE;
+			_forceNext = true;
+		}
+		break;
+	default: break;
+	}
+	const bool reached = _use.phase == USE_TIMED ? _use.time >= _use.at : _use.phase != USE_IN;
+	if (!_use.done && reached) {
+		// (A use whose animations ran out before its moment still works once.)
+		_use.done = true;
+		_use.moment = true;
+	}
+	if (_use.phase == USE_NONE) {
+		const bool moment = _use.moment;
+		_use = Use();
+		_use.moment = moment;
+	}
+}
+
 Drive Hero::control(const Input& in, const Player& player, float dt) {
 	Drive drive;
 	if (!loaded() || dt <= 0.0f) return drive;
@@ -497,7 +601,7 @@ Drive Hero::control(const Input& in, const Player& player, float dt) {
 	const int strafe = in.strafe > 0.5f ? 1 : in.strafe < -0.5f ? -1 : 0;
 	const bool jumpPressed = in.jump && !_jumpHeld;
 	_jumpHeld = in.jump;
-	const bool locked = _down || _reel || (_blow.clip && _anim.current() == _blow.clip) || drawing();
+	const bool locked = _down || _reel || (_blow.clip && _anim.current() == _blow.clip) || drawing() || usingItem();
 	float turnRate = 0;
 	if (in.steer) {
 		// Towards a heading, as fast as a body turns (the console scheme).
@@ -508,7 +612,7 @@ Drive Hero::control(const Input& in, const Player& player, float dt) {
 		turnRate = step / dt;
 	} else {
 		turnRate = clamp(in.moveX, -1.0f, 1.0f) * kTurnSpeed + clamp(in.lookX, -1.0f, 1.0f) * kLookTurnSpeed;
-		if (locked && _down) turnRate = 0;
+		if (locked && (_down || usingItem())) turnRate = 0;
 		_yaw = wrapAngle(_yaw + turnRate * dt);
 	}
 	const bool turning = fabsf(turnRate) >= kTurnAnimSpeed;
@@ -519,10 +623,11 @@ Drive Hero::control(const Input& in, const Player& player, float dt) {
 	const Clip* cur = _anim.current();
 	const bool force = _forceNext;
 	_forceNext = false;
-	if (_down || _reel || drawing() || (_blow.clip && cur == _blow.clip)) {
-		// Down, reeling, taking a weapon in hand, swinging a blow: the
-		// animation has the body until it is through.
+	if (_down || _reel || drawing() || (_blow.clip && cur == _blow.clip) || usingItem()) {
+		// Down, reeling, taking a weapon in hand, swinging a blow, using an
+		// item: the animation has the body until it is through.
 		if (_down) _roleNow = DOWN;
+		else if (usingItem()) _roleNow = USE;
 		else if (_reel) _roleNow = HIT;
 		else if (drawing()) _roleNow = DRAW;
 		else _roleNow = ATTACK;
@@ -648,6 +753,7 @@ Drive Hero::control(const Input& in, const Player& player, float dt) {
 	const Clip* prevClip = _anim.current();
 	_anim.update(dt);
 	fightTick(prevTime, prevClip);
+	useTick(dt);
 	const Vec3 moved = turned(_anim.takeMotion(), _yaw);
 	switch (_body) {
 	case TAKEOFF:
@@ -728,6 +834,7 @@ void Hero::follow(const Player& player, const World& world, const float dayLight
 			_jumping = false;
 			_takeoff = nullptr;
 			_forceNext = true; // whatever it was doing, it swims now
+			cancelUse();
 			// (Nobody swims with a sword in hand.)
 			_weapon = WEAPON_NONE;
 			_drawTo = 0xFF;
@@ -752,6 +859,7 @@ void Hero::follow(const Player& player, const World& world, const float dayLight
 			_airTime = 0;
 			_jumping = false;
 			_blow.reset();
+			cancelUse();
 		} else if (_body == SWIMMING) {
 			_body = AIRBORNE;
 			_airTime = 0;

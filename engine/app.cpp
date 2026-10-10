@@ -55,6 +55,8 @@ bool App::init(const char* pakPath, const char* worldName) {
 	_npcs.setHeroLink(link);
 	// The overlay (menus, the HUD): without it the game still runs.
 	_ui.init();
+	// The bottom screen's inventory (a picture of its own, drawn by the processor).
+	_panel.init();
 	_target = -1;
 	_locked = false;
 	_fight = FightStats();
@@ -112,7 +114,9 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 namespace {
 
 constexpr u32 STATE_MAGIC = fourcc('G', '3', 'S', 'T');
-constexpr u32 STATE_VERSION = 1;
+// 2: the inventory follows (App::saveInventory); a file of version 1 still
+// loads, leaving the inventory as it is.
+constexpr u32 STATE_VERSION = 2;
 
 struct SavedState {
 	u32 magic;
@@ -158,6 +162,7 @@ bool App::saveState(const char* path) const {
 	FILE* f = fopen(path, "wb");
 	if (!f) return false;
 	const bool ok = fwrite(&s, sizeof(s), 1, f) == 1;
+	saveInventory(f);
 	return (fclose(f) == 0) && ok;
 }
 
@@ -166,17 +171,25 @@ bool App::loadState(const char* path) {
 	if (!f) return false;
 	SavedState s {};
 	const bool read = fread(&s, sizeof(s), 1, f) == 1;
-	fclose(f);
-	if (!read || s.magic != STATE_MAGIC || s.version != STATE_VERSION || s.check != stateCheck(s)) return false;
+	if (!read || s.magic != STATE_MAGIC || (s.version != 1 && s.version != STATE_VERSION) || s.check != stateCheck(s)) {
+		fclose(f);
+		return false;
+	}
 	bool sane = finite(s.yaw) && finite(s.pitch) && s.timeOfDay >= 0.0f && s.timeOfDay < 24.0f &&
 	            s.drawDistance >= 1000.0f && s.drawDistance <= 100000.0f;
 	for (float v : s.eye) sane = sane && finite(v);
-	if (!sane) return false;
+	if (!sane) {
+		fclose(f);
+		return false;
+	}
 
 	const Vec3 eye = {s.eye[0], s.eye[1], s.eye[2]};
 	if (s.world != _world.entryHash()) {
 		const u32 switches = _switches;
-		if (!enterWorld(s.world, &eye, s.yaw)) return false;
+		if (!enterWorld(s.world, &eye, s.yaw)) {
+			fclose(f);
+			return false;
+		}
 		_switches = switches; // continuing is not travelling
 	}
 	_player.flying = s.flying != 0;
@@ -191,6 +204,9 @@ bool App::loadState(const char* path) {
 	// Standing in a portal's box when the game was left must not send the
 	// player through it on arrival.
 	_portalLock = true;
+	// What was carried and worn (version 2).
+	if (s.version >= 2) loadInventory(f);
+	fclose(f);
 	return true;
 }
 
@@ -207,6 +223,7 @@ void App::setDrawDistance(float cm) {
 
 void App::shutdown() {
 	_ui.release();
+	_panel.release();
 	_npcs.release();
 	_hero.release();
 	_sky.release();
@@ -273,8 +290,23 @@ void App::update(const Input& in, float dt) {
 		// The character is steered; the view follows it (placeCamera).
 		// Looking up and down tilts the view, not the character.
 		updateTarget(in, dt);
-		fightInput(in, dt);
-		const Input heroIn = steerInput(in, dt);
+		Input fightIn = in;
+		const bool inventoryOpen = _panel.open();
+		if (inventoryOpen && (_hero.down() || _player.swimming)) _panel.setCursor(false);
+		if (_panel.open()) {
+			// The inventory is open: the hands are in it, not on a weapon.
+			fightIn.attack = fightIn.parry = fightIn.drawWeapon = fightIn.meleeSlot = fightIn.fistSlot = false;
+			fightIn.focus = false;
+		}
+		itemsUpdate(fightIn, dt); // (a job holds the hands: its frames take the fight keys)
+		fightInput(fightIn, dt);
+		Input heroIn = steerInput(in, dt);
+		if (_hero.usingItem() || _panel.open()) {
+			// Drinking or eating, or looking into the inventory: the character
+			// stands (it cannot jump off either). The camera still turns.
+			heroIn.jump = false;
+			heroIn.moveX = heroIn.moveZ = heroIn.strafe = 0;
+		}
 		const Drive drive = _hero.control(heroIn, _player, dt);
 		_player.update(_world, heroIn, _hero.yaw(), 0.0f, dt, &drive);
 		const SkyColors sky = skyColors();
@@ -703,22 +735,7 @@ void App::fightInput(const Input& in, float dt) {
 		return;
 	}
 	if (!_npcs.loaded() && !_hero.loaded()) return;
-	const auto meleeMode = [&]() -> u8 {
-		const GameNpc* h = heroNpc();
-		if (!h || h->melee == SCRIPT_NONE) return WEAPON_FIST;
-		const GameItemInfo* w = _npcs.game().itemInfo(h->melee);
-		const i32 twoHanded = _npcs.game().constant("ITEM_2HD_SWD", 1 << 16) | _npcs.game().constant("ITEM_2HD_AXE", 1 << 17);
-		return w && (w->flags & twoHanded) ? u8(WEAPON_2H) : u8(WEAPON_1H);
-	};
-	const auto take = [&](u8 mode) {
-		const u8 before = _hero.weapon();
-		if (!_hero.draw(mode)) return;
-		const int hi = heroIndex();
-		const bool drawing = _hero.drawing() ? true : mode != WEAPON_NONE;
-		const bool puttingAway = mode == WEAPON_NONE || (before != WEAPON_NONE && _hero.drawing() && before != mode);
-		if (drawing && !puttingAway && mode != WEAPON_NONE) _lastWeapon = mode;
-		if (hi >= 0) _npcs.sendPerception(puttingAway ? "PERC_ASSESSREMOVEWEAPON" : "PERC_DRAWWEAPON", u32(hi), hi, -1);
-	};
+	const auto take = [&](u8 mode) { heroTake(mode); };
 	if (in.drawWeapon) {
 		if (_hero.weapon() != WEAPON_NONE) take(WEAPON_NONE);
 		else take(_lastWeapon == WEAPON_FIST || _lastWeapon == WEAPON_NONE ? meleeMode() : _lastWeapon);
@@ -739,6 +756,28 @@ void App::fightInput(const Input& in, float dt) {
 		_hero.attack(side < -0.6f ? 1 : side > 0.6f ? 2 : 0);
 	}
 	_hero.setParry(in.parry && _hero.weapon() != WEAPON_NONE);
+}
+
+// What the melee weapon on the belt is held as: one hand, two, or fists without one.
+u8 App::meleeMode() {
+	const GameNpc* h = heroNpc();
+	if (!h || h->melee == SCRIPT_NONE) return WEAPON_FIST;
+	const GameItemInfo* w = _npcs.game().itemInfo(h->melee);
+	const i32 twoHanded = _npcs.game().constant("ITEM_2HD_SWD", 1 << 16) | _npcs.game().constant("ITEM_2HD_AXE", 1 << 17);
+	return w && (w->flags & twoHanded) ? u8(WEAPON_2H) : u8(WEAPON_1H);
+}
+
+// Takes `mode` in hand (WEAPON_NONE: puts it away), as the player's key does;
+// the others perceive it. False if the character cannot now.
+bool App::heroTake(u8 mode) {
+	const u8 before = _hero.weapon();
+	if (!_hero.draw(mode)) return false;
+	const int hi = heroIndex();
+	const bool drawing = _hero.drawing() ? true : mode != WEAPON_NONE;
+	const bool puttingAway = mode == WEAPON_NONE || (before != WEAPON_NONE && _hero.drawing() && before != mode);
+	if (drawing && !puttingAway && mode != WEAPON_NONE) _lastWeapon = mode;
+	if (hi >= 0) _npcs.sendPerception(puttingAway ? "PERC_ASSESSREMOVEWEAPON" : "PERC_DRAWWEAPON", u32(hi), hi, -1);
+	return true;
 }
 
 // A blow of the player's character lands: on the target if it is within
@@ -923,6 +962,12 @@ bool App::menuAction(MenuAction action, const char* statePath) {
 		_npcs.game().equip(u32(hi), best);
 		const GameItemInfo* it = _npcs.game().itemInfo(best);
 		snprintf(_menuMessage, sizeof(_menuMessage), "%.40s", it && it->name ? _npcs.game().text(it->name) : "Оружие выдано");
+		return true;
+	}
+	case MENU_GIVE_ITEMS: {
+		const u32 n = giveItemKit();
+		if (n) snprintf(_menuMessage, sizeof(_menuMessage), "Выдано: %lu видов", static_cast<unsigned long>(n));
+		else snprintf(_menuMessage, sizeof(_menuMessage), "Предметов в скриптах нет");
 		return true;
 	}
 	default: return true;

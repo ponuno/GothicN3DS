@@ -41,12 +41,14 @@ struct Settings {
 	u8 firstPerson = 0;
 	// Interface.
 	u8 hud = 1;
-	u8 report = 1;           // the numbers on the bottom screen
+	u8 report = 0;           // the bottom screen: 0 the inventory, 1 the numbers
 	// For finding faults.
 	u8 perception = 1;       // the inhabitants notice the player and each other
 	u8 life = 1;             // the inhabitants live their day (off: they stand)
 	u8 fights = 1;           // the inhabitants fight (off: states of attack are not begun)
 	u8 immortal = 0;         // the player's character takes no damage
+	// Version 3: the inventory.
+	u8 weaponBack = 1;       // after a potion the weapon is taken in hand again (with its animation)
 
 	// Clamps every value into its range (after reading a file of another version).
 	void sanitize();

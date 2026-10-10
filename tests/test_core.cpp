@@ -2676,7 +2676,7 @@ static void testModel() {
 		CHECK(r.triangles == 59 * 4 && r.parts >= 3 && r.largestPalette == MODEL_PALETTE && r.clips == 2 && r.textures == 1);
 		CHECK(r.report.find("skeleton: 60 nodes") != std::string::npos);
 		const ModelBakeResult a = bakeModel(actor, bo, writer);
-		CHECK(a.parts == 2 && a.clips == 53 && a.largestPalette <= MODEL_PALETTE);
+		CHECK(a.parts == 2 && a.clips == 56 && a.largestPalette <= MODEL_PALETTE);
 		CHECK(a.report.find("S_1HATTACK 1.88s 3 blows") != std::string::npos && a.report.find("T_FISTPARADE_O 0.52s parry") != std::string::npos);
 		CHECK(a.report.find("blends: 5: T_RUNL_2_WALKL 0.20s") != std::string::npos);
 		CHECK(a.report.find("T_STAND_2_JUMP 0.48s 239cm/s up 74cm") != std::string::npos);
@@ -2990,7 +2990,7 @@ static void testModel() {
 	{
 		// The test character: loops wrap, moving clips know their speed.
 		Model m;
-		CHECK(m.load(pak, "hero") && m.nodeCount() == 14 && m.clipCount() == 53 && m.blendCount() == 5);
+		CHECK(m.load(pak, "hero") && m.nodeCount() == 14 && m.clipCount() == 56 && m.blendCount() == 5);
 		// The frames of a fight come through: three blows of a combo, each
 		// with its window and its end; a parry's frames; where a draw changes hands.
 		{
@@ -5279,6 +5279,254 @@ static void testFight() {
 	gfx::shutdown();
 }
 
+// The inventory: using things takes the character's time, armour is not
+// changed in a fight, requirements hold, quick slots, state.bin, the panel.
+static void testInventory() {
+	// Text of the scripts in their code page.
+	{
+		char out[64];
+		scriptText("\xC7\xE5\xEB\xFC\xE5 \xEB\xE5\xF7\xE5\xED\xE8\xFF", out, sizeof(out));
+		CHECK(std::strcmp(out, "Зелье лечения") == 0);
+		scriptText("K\xE4se und Fl\xFCgel", out, sizeof(out));
+		CHECK(std::strcmp(out, "Kaese und Fluegel") == 0);
+		scriptText("Зелье", out, sizeof(out));
+		CHECK(std::strcmp(out, "Зелье") == 0);
+		scriptText("Зелье лечения", out, 8); // (cut short, never in the middle of a letter)
+		CHECK(std::strcmp(out, "Зел") == 0);
+	}
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/inventory.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	// Nobody fights here: the rules are the character's.
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.settings().immortal = 1;
+	app.applySettings();
+	const u32 hero = u32(g.hero() - &g.npc(0));
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	run(1.0f);
+	const auto find = [&](const char* name) {
+		const u32 s = g.vm().find(name);
+		CHECK(s != SCRIPT_NONE && g.isItem(s));
+		return s;
+	};
+	const u32 potion = find("ITFO_POTION_HEALTH_01"), apple = find("ITFOAPPLE"), ring = find("ITMI_RING_FIRE");
+	const u32 armor = find("GRD_ARMOR_M"), heavy = find("ITMW_2H_SWORD_HEAVY");
+	const auto entry = [&](u32 s) -> const ItemEntry* {
+		const InventoryView& v = app.inventory();
+		for (u32 i = 0; i < v.count; ++i)
+			if (v.items[i].symbol == s) return &v.items[i];
+		return nullptr;
+	};
+	// The scene's hero brings three potions and two apples along.
+	{
+		const InventoryView& v = app.inventory();
+		CHECK(v.present && v.count == 2 && v.hpMax == 40 && v.manaMax == 20);
+		const ItemEntry* e = entry(potion);
+		CHECK(e && e->count == 3 && e->kind == IK_POTION && e->icon == ICON_POTION && std::strcmp(e->action, "Выпить") == 0);
+		CHECK(e && std::strcmp(e->name, "Essence of Healing") == 0 && e->rowCount == 2 && std::strcmp(e->rows[0].label, "Heals") == 0 &&
+		      std::strcmp(e->rows[0].value, "50") == 0);
+		CHECK(entry(apple) && std::strcmp(entry(apple)->action, "Съесть") == 0 && (entry(apple)->flags & ITEMF_QUICK));
+	}
+	CHECK(app.giveItemKit() >= 12);
+
+	// 1. A potion with a sword in hand: away with it, drink (the animation of
+	// POTIONFAST), the health back, the sword in hand again. The character
+	// stands meanwhile, whatever the stick says.
+	{
+		CHECK(app.menuAction(MENU_GIVE_WEAPON, nullptr));
+		Input draw;
+		draw.meleeSlot = true;
+		app.update(draw, dt);
+		run(1.5f);
+		CHECK(app.hero().weapon() == WEAPON_1H);
+		g.setAttribute(g.npcMut(hero), 0, 10);
+		const i32 before = g.itemCount(hero, potion);
+		CHECK(app.itemAction(potion) && app.itemBusy());
+		CHECK(app.itemAction(potion)); // (twice: still one)
+		const Vec3 at = app.player().feet;
+		int frames = 0, using_ = 0;
+		float moved = 0;
+		for (; frames < 30 * 8 && app.itemBusy(); ++frames) {
+			Input in;
+			in.moveZ = 1.0f;  // pushing on: it does not walk off while drinking
+			in.attack = false;
+			app.update(in, dt);
+			if (app.hero().usingItem()) {
+				++using_;
+				moved = std::max(moved, length(app.player().feet - at));
+			}
+		}
+		std::printf("  a potion with a sword in hand: %d frames busy, %d of them drinking (moved %.1f cm, weapon %d, used %u); health %d\n", frames, using_, double(moved), int(app.hero().weapon()), app.itemStats().used,
+		            int(g.hitPoints(g.npc(hero))));
+		CHECK(!app.itemBusy() && g.hitPoints(g.npc(hero)) == 40 && g.itemCount(hero, potion) == before - 1);
+		CHECK(using_ >= 30 && moved < 5.0f); // (in 0.6 s + 0.3 s + out 0.48 s)
+		run(1.0f); // (the sword is being taken in hand again)
+		CHECK(app.hero().weapon() == WEAPON_1H && app.itemStats().used == 1);
+	}
+	// 2. Struck while drinking: spoilt, the potion kept. Then called off before
+	// the drinking begins (the weapon key): nothing used.
+	{
+		g.setAttribute(g.npcMut(hero), 0, 10);
+		const i32 before = g.itemCount(hero, potion);
+		CHECK(app.itemAction(potion));
+		int waited = 0;
+		for (; waited < 90 && !app.hero().usingItem(); ++waited) app.update(Input {}, dt);
+		std::printf("  struck while drinking: began after %d frames (job %d)\n", waited, int(app.itemBusy()));
+		CHECK(app.hero().usingItem());
+		int beast = -1;
+		for (u32 i = 0; i < g.npcCount() && beast < 0; ++i)
+			if (!g.npc(i).hero && g.npc(i).placed && g.npc(i).world == g.currentWorld()) beast = int(i);
+		CHECK(beast >= 0);
+		npcs.strike(u32(beast), hero, false);
+		run(3.0f);
+		CHECK(!app.itemBusy() && g.itemCount(hero, potion) == before && g.hitPoints(g.npc(hero)) == 10);
+		CHECK(app.itemStats().interrupted == 1);
+		CHECK(app.hero().weapon() != WEAPON_NONE && app.itemAction(potion));
+		Input key;
+		key.drawWeapon = true;
+		app.update(key, dt);
+		run(3.0f);
+		CHECK(!app.itemBusy() && g.itemCount(hero, potion) == before);
+	}
+	// 3. An apple without its animation: standing two seconds, 8 more health.
+	{
+		Input away;
+		away.drawWeapon = true;
+		if (app.hero().weapon() != WEAPON_NONE) app.update(away, dt);
+		run(1.5f);
+		CHECK(app.hero().weapon() == WEAPON_NONE);
+		g.setAttribute(g.npcMut(hero), 0, 20);
+		CHECK(app.itemAction(apple));
+		int frames = 0;
+		for (; frames < 30 * 5 && app.itemBusy(); ++frames) app.update(Input {}, dt);
+		CHECK(frames >= 55 && frames <= 75 && g.hitPoints(g.npc(hero)) == 28);
+	}
+	// 4. Armour: not in a fight (a weapon in hand), on when calm; it protects.
+	// A ring's own function adds its protection, and takes it away again.
+	{
+		const u32 protEdge = g.vm().findMember("C_NPC", "PROTECTION");
+		const auto prot = [&](u32 k) { return g.vm().getInt(protEdge, k, g.npc(hero).object); };
+		Input draw;
+		draw.fistSlot = true;
+		app.update(draw, dt);
+		run(1.0f);
+		const u32 refused = app.itemStats().refused;
+		CHECK(app.heroInCombat() && !app.itemAction(armor) && app.itemStats().refused == refused + 1);
+		CHECK(g.npc(hero).armorItem != armor);
+		Input away;
+		away.fistSlot = true;
+		app.update(away, dt);
+		run(6.0f);
+		CHECK(!app.heroInCombat());
+		const i32 edge = prot(1), fire = prot(3);
+		CHECK(app.itemAction(armor) && g.npc(hero).armorItem == armor && prot(1) == edge + 55);
+		CHECK(app.itemAction(ring) && app.ring(0) == ring && prot(3) == fire + 3);
+		CHECK(entry(ring) && (entry(ring)->flags & ITEMF_EQUIPPED) && std::strcmp(entry(ring)->action, "Снять") == 0);
+		CHECK(app.itemAction(ring) && app.ring(0) == SCRIPT_NONE && prot(3) == fire);
+		CHECK(app.itemAction(ring)); // (on again, for state.bin)
+		// What it takes: strength 60 for the two-hander.
+		if (g.itemCount(hero, heavy) <= 0) g.giveItems(hero, heavy, 1);
+		CHECK(entry(heavy) && (entry(heavy)->flags & ITEMF_BLOCKED) && !app.itemAction(heavy) && g.npc(hero).melee != heavy);
+
+		// 5. state.bin keeps what is carried and worn and the quick slots; the
+		// protection is the same after (not counted twice).
+		app.setQuickSlot(2, apple);
+		const std::string statePath = gDir + "/inventory-state.bin";
+		const i32 potions = g.itemCount(hero, potion), edgeWorn = prot(1), fireWorn = prot(3);
+		CHECK(app.saveState(statePath.c_str()));
+		g.giveItems(hero, potion, -potions);
+		CHECK(app.itemAction(armor) && g.npc(hero).armorItem == SCRIPT_NONE);
+		app.setQuickSlot(2, SCRIPT_NONE);
+		CHECK(app.loadState(statePath.c_str()));
+		CHECK(g.itemCount(hero, potion) == potions && g.npc(hero).armorItem == armor && app.ring(0) == ring);
+		CHECK(prot(1) == edgeWorn && prot(3) == fireWorn && app.quickSlot(2) == apple);
+	}
+	// 6. The panel: a hold on a thing brings up the cross, a tap on its right
+	// arm puts it into slot 1; the slot is used from R + right. A tap on the
+	// last page asks for the report. The picture shows the chosen cell blue.
+	{
+		InventoryPanel& panel = app.panel();
+		PanelInput none;
+		app.panelInput(none, dt);
+		u32 n = panel.shownCount();
+		for (u32 k = 0; k < panel.shownCount(); ++k)
+			if (app.inventory().items[panel.shown(k)].symbol == potion) n = k;
+		CHECK(n < panel.shownCount());
+		int x, y;
+		panel.tileCentre(n, x, y);
+		PanelInput touch;
+		touch.touching = true;
+		touch.x = x;
+		touch.y = y;
+		for (int i = 0; i < 20; ++i) app.panelInput(touch, dt);
+		CHECK(panel.assigning() && panel.selected() == potion);
+		app.panelInput(none, dt);
+		InventoryPanel::crossCentre(1, touch.x, touch.y);
+		app.panelInput(touch, dt);
+		app.panelInput(none, dt);
+		CHECK(!panel.assigning() && app.quickSlot(1) == potion);
+		g.setAttribute(g.npcMut(hero), 0, 10);
+		CHECK(app.quickUse(1));
+		for (int i = 0; i < 30 * 5 && app.itemBusy(); ++i) app.update(Input {}, dt);
+		CHECK(g.hitPoints(g.npc(hero)) == 40);
+		// A tap chooses, a second tap uses. While the inventory is open the
+		// character stands: the stick does not move it.
+		CHECK(panel.open());
+		{
+			const Vec3 at = app.player().feet;
+			Input push;
+			push.moveZ = 1.0f;
+			push.attack = true;
+			for (int i = 0; i < 30; ++i) app.update(push, dt);
+			CHECK(length(app.player().feet - at) < 1.0f && app.hero().role() != Hero::ATTACK);
+		}
+		panel.select(apple);
+		panel.tileCentre(n, touch.x, touch.y);
+		for (int i = 0; i < 2; ++i) app.panelInput(touch, dt);
+		app.panelInput(none, dt);
+		CHECK(panel.selected() == potion && panel.inspecting() > 0.0f && !app.itemBusy());
+		for (int i = 0; i < 2; ++i) app.panelInput(touch, dt);
+		app.panelInput(none, dt);
+		CHECK(app.itemBusy());
+		run(4.0f);
+		InventoryPanel::pageCentre(InventoryPanel::PAGES - 1, touch.x, touch.y);
+		app.panelInput(touch, dt);
+		CHECK(app.panelInput(none, dt).type == PANEL_REPORT);
+		CHECK(panel.draw(app.inventory(), true) && panel.canvas().ready());
+		// A tap on the bars closes it: the character goes again.
+		touch.x = 60;
+		touch.y = 8;
+		app.panelInput(touch, dt);
+		app.panelInput(none, dt);
+		CHECK(!panel.open());
+		{
+			const Vec3 at = app.player().feet;
+			Input push;
+			push.moveZ = 1.0f;
+			for (int i = 0; i < 30; ++i) app.update(push, dt);
+			CHECK(length(app.player().feet - at) > 50.0f);
+		}
+		panel.tileCentre(n, x, y);
+		const u16 px = panel.canvas().pixel(x - 30, y - 14); // (inside the chosen cell, clear of its picture)
+		const int r = (px >> 11) << 3, b = (px & 31) << 3;
+		CHECK(b > r + 20);
+	}
+	app.shutdown();
+	gfx::shutdown();
+}
+
 // Settings (settings.bin) and the pause menu.
 static void testSettings() {
 	const std::string path = gDir + "/settings.bin";
@@ -5381,6 +5629,7 @@ int main(int argc, char** argv) {
 	             {"mobs", testMobs},
 	             {"life", testLife},
 	             {"fight", testFight},
+	             {"inventory", testInventory},
 	             {"settings", testSettings},
 	             {"sky", testSky}};
 	for (auto& t : tests) {

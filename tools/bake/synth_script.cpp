@@ -97,17 +97,6 @@ const int DAM_INDEX_BLUNT = 1;
 const int DAM_INDEX_EDGE = 2;
 const int DAM_CRITICAL_MULTIPLIER = 2;
 const int HAI_TIME_UNCONSCIOUS = 20;
-const int MOVE_RUN = 1;
-const int MOVE_JUMPBACK = 3;
-const int MOVE_TURN = 4;
-const int MOVE_STRAFE = 5;
-const int MOVE_ATTACK = 6;
-const int MOVE_SIDEATTACK = 7;
-const int MOVE_FRONTATTACK = 8;
-const int MOVE_TRIPLEATTACK = 9;
-const int MOVE_PARADE = 17;
-const int MOVE_WAIT = 19;
-const int MAX_MOVE = 6;
 const int FAI_HUMAN_STRONG = 3;
 const int FAI_SCAVENGER = 15;
 const int FAI_MOLERAT = 17;
@@ -192,10 +181,6 @@ class C_INFO {
 	var string description;
 	var int    trade;
 	var int    permanent;
-};
-
-class C_FightAI {
-	var int move[MAX_MOVE];
 };
 
 class C_GILVALUES {
@@ -659,20 +644,7 @@ instance Gil_Values (C_GILVALUES) {
 	fight_range_base[GIL_MOLERAT] = 70;
 	fight_range_fist[GIL_MOLERAT] = 70;
 };
-// The fight AI: per tactic, the moves a fighter picks from in each situation.
-instance FA_ENEMY_PREHIT_3 (C_FightAI) { move[0] = MOVE_PARADE; move[1] = MOVE_JUMPBACK; move[2] = MOVE_SIDEATTACK; move[3] = MOVE_WAIT; };
-instance FA_MY_W_FOCUS_3 (C_FightAI) { move[0] = MOVE_ATTACK; move[1] = MOVE_TRIPLEATTACK; move[2] = MOVE_FRONTATTACK; move[3] = MOVE_STRAFE; };
-instance FA_MY_W_NOFOCUS_3 (C_FightAI) { move[0] = MOVE_TURN; };
-instance FA_MY_W_RUNTO_3 (C_FightAI) { move[0] = MOVE_TURN; };
-instance FA_MY_W_STRAFE_3 (C_FightAI) { move[0] = MOVE_TURN; };
-instance FA_MY_G_FOCUS_3 (C_FightAI) { move[0] = MOVE_RUN; };
-instance FA_MY_G_FK_NOFOCUS_3 (C_FightAI) { move[0] = MOVE_RUN; };
-instance FA_ENEMY_PREHIT_15 (C_FightAI) { move[0] = MOVE_JUMPBACK; move[1] = MOVE_ATTACK; };
-instance FA_MY_W_FOCUS_15 (C_FightAI) { move[0] = MOVE_ATTACK; move[1] = MOVE_ATTACK; move[2] = MOVE_WAIT; };
-instance FA_MY_W_NOFOCUS_15 (C_FightAI) { move[0] = MOVE_TURN; };
-instance FA_MY_W_STRAFE_15 (C_FightAI) { move[0] = MOVE_JUMPBACK; move[1] = MOVE_TURN; };
-instance FA_MY_G_FOCUS_15 (C_FightAI) { move[0] = MOVE_RUN; };
-instance FA_MY_G_FK_NOFOCUS_15 (C_FightAI) { move[0] = MOVE_RUN; };
+// (The fight AI tables are a script of their own, as in the game: syntheticFightScriptSource.)
 
 // ---------------------------------------------------------------- characters
 prototype Npc_Default (C_NPC) {
@@ -681,7 +653,7 @@ prototype Npc_Default (C_NPC) {
 	attribute[ATR_HITPOINTS_MAX] = 40;
 	attribute[ATR_HITPOINTS]     = 40;
 	senses_range = 2000;
-	damagetype = 2;
+	// (No damage type, as in the game: a person hits blunt, the engine says.)
 };
 
 instance PC_Hero (Npc_Default) {
@@ -924,6 +896,55 @@ func void STARTUP_CAVE() {
 func void INIT_CAVE() {
 };
 )DAEDALUS";
+}
+
+// The fight AI, compiled on its own as the game's Fight.src is (FIGHT.DAT):
+// per tactic, the moves a fighter picks from in each situation.
+const char* syntheticFightScriptSource() {
+	return R"DAEDALUS(
+const int MOVE_RUN = 1;
+const int MOVE_RUNBACK = 2;
+const int MOVE_JUMPBACK = 3;
+const int MOVE_TURN = 4;
+const int MOVE_STRAFE = 5;
+const int MOVE_ATTACK = 6;
+const int MOVE_SIDEATTACK = 7;
+const int MOVE_FRONTATTACK = 8;
+const int MOVE_TRIPLEATTACK = 9;
+const int MOVE_WHIRLATTACK = 10;
+const int MOVE_MASTERATTACK = 11;
+const int MOVE_TURNTOHIT = 15;
+const int MOVE_PARADE = 17;
+const int MOVE_STANDUP = 18;
+const int MOVE_WAIT = 19;
+const int MAX_MOVE = 6;
+const int MAX_FIGHTAI = 30;
+
+class C_FightAI {
+	var int move[MAX_MOVE];
+};
+
+instance FA_ENEMY_PREHIT_3 (C_FightAI) { move[0] = MOVE_PARADE; move[1] = MOVE_JUMPBACK; move[2] = MOVE_SIDEATTACK; move[3] = MOVE_WAIT; };
+instance FA_MY_W_FOCUS_3 (C_FightAI) { move[0] = MOVE_ATTACK; move[1] = MOVE_TRIPLEATTACK; move[2] = MOVE_FRONTATTACK; move[3] = MOVE_STRAFE; };
+instance FA_MY_W_NOFOCUS_3 (C_FightAI) { move[0] = MOVE_TURN; };
+instance FA_MY_W_RUNTO_3 (C_FightAI) { move[0] = MOVE_TURN; };
+instance FA_MY_W_STRAFE_3 (C_FightAI) { move[0] = MOVE_TURN; };
+instance FA_MY_G_FOCUS_3 (C_FightAI) { move[0] = MOVE_RUN; };
+instance FA_MY_G_FK_NOFOCUS_3 (C_FightAI) { move[0] = MOVE_RUN; };
+instance FA_ENEMY_PREHIT_15 (C_FightAI) { move[0] = MOVE_JUMPBACK; move[1] = MOVE_ATTACK; };
+instance FA_MY_W_FOCUS_15 (C_FightAI) { move[0] = MOVE_ATTACK; move[1] = MOVE_ATTACK; move[2] = MOVE_WAIT; };
+instance FA_MY_W_NOFOCUS_15 (C_FightAI) { move[0] = MOVE_TURN; };
+instance FA_MY_W_STRAFE_15 (C_FightAI) { move[0] = MOVE_JUMPBACK; move[1] = MOVE_TURN; };
+instance FA_MY_G_FOCUS_15 (C_FightAI) { move[0] = MOVE_RUN; };
+instance FA_MY_G_FK_NOFOCUS_15 (C_FightAI) { move[0] = MOVE_RUN; };
+
+)DAEDALUS";
+}
+
+void buildSyntheticFightScript(SrcScript& script) {
+	script = SrcScript();
+	script.source = "the built-in fight script";
+	compileDaedalus(syntheticFightScriptSource(), script);
 }
 
 void buildSyntheticScript(SrcScript& script) {

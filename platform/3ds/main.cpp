@@ -4,8 +4,13 @@
 // streaming, memory) - or, with the report switched off in the menu, the
 // buttons.
 //
-// Controls (the console scheme, after Gothic Classic on the consoles; the
-// menu's "Управление" switches to the classic scheme of the PC original):
+// Controls. By default the classic scheme of the PC original, the camera
+// always behind the character: Circle Pad up: run, down: hop back,
+// left/right: turn; C-Stick turns faster and tilts the view; L / R step aside;
+// locked on to an enemy with a weapon in hand the character keeps facing it,
+// Circle Pad left/right step round it, a C-Stick flick picks the next target;
+// the buttons as below. The menu's "Управление" switches to the console
+// scheme (after Gothic Classic on the consoles):
 //   Circle Pad    go where it points, as the camera sees it (a slight push: walk)
 //   C-Stick       turn the camera about the character; locked on: flick left or right
 //                 for the next target to that side
@@ -13,7 +18,8 @@
 //                                    hold for a combo: press again as a blow ends
 //   Y             parry (held)    X  draw the last weapon / put it away
 //   ZL            melee weapon (fists without one)     ZR  fists
-//   D-Pad Up      lock on to the enemy in front / let go
+//   D-Pad Up      lock on to the enemy in front / let go (drawing a weapon locks
+//                 on to a hostile one in front by itself: the menu's "Автозахват цели")
 //   D-Pad Down    sneak on / off
 //   L             quick magic (not yet)    R  quick access (not yet)
 //   START         pause menu: continue, graphics, controls, faults, save, leave
@@ -23,8 +29,6 @@
 //                 sdmc:/3ds/gothic3ds/slope.txt (added at its end): press it where the
 //                 character is stuck. The "pos" line counts the files written ("sd").
 //   START+SELECT  held for a second: leave at once (for testing)
-// Classic scheme: Circle Pad up: run, down: hop back, left/right: turn; C-Stick
-// turns faster and tilts the view; L / R step aside; the rest as above.
 // Flying, the next world and the time of day are in the menu's "Отладка".
 // The position is saved on leaving and restored on the next start; hold L while
 // starting to begin at the world's start point instead. The menu's settings are
@@ -289,16 +293,17 @@ int main(int, char**) {
 				in.fistSlot = (down & KEY_ZR) != 0;
 				in.focus = (down & KEY_DUP) != 0;
 				in.toggleSneak = (down & KEY_DDOWN) != 0;
-				if (console) {
-					// Locked on: the C-Stick flicked aside picks the next target.
-					if (app.targetLocked()) {
-						if (!flicked && (in.lookX > 0.7f || in.lookX < -0.7f)) {
-							in.switchTarget = in.lookX > 0.0f ? 1.0f : -1.0f;
-							flicked = true;
-						}
-						if (in.lookX < 0.3f && in.lookX > -0.3f) flicked = false;
-						in.lookX = 0;
+				// Locked on: the C-Stick flicked aside picks the next target
+				// (either scheme: the character faces the target by itself then).
+				if (app.targetLocked()) {
+					if (!flicked && (in.lookX > 0.7f || in.lookX < -0.7f)) {
+						in.switchTarget = in.lookX > 0.0f ? 1.0f : -1.0f;
+						flicked = true;
 					}
+					if (in.lookX < 0.3f && in.lookX > -0.3f) flicked = false;
+					in.lookX = 0;
+				}
+				if (console) {
 					if ((down & KEY_L) && !rHeld) app.toast("Быстрой магии пока нет");
 				} else {
 					in.strafe = (held & KEY_R ? 1.0f : 0.0f) - (held & KEY_L ? 1.0f : 0.0f);
@@ -531,9 +536,13 @@ int main(int, char**) {
 					reportLine("fight %s hp %ld/%ld %s%-8.8s", g3::weaponWord(app.hero().weapon())[0] ? g3::weaponWord(app.hero().weapon()) : "-",
 					     static_cast<long>(app.heroHitPoints()), static_cast<long>(app.heroHitPointsMax()), app.targetLocked() ? "@" : "",
 					     t >= 0 ? npcs.game().nameOf(npcs.game().npc(g3::u32(t))) : "");
-					reportLine("blows %lu/%lu all %lu par %lu ko %lu dead %lu ai %lu", static_cast<unsigned long>(fst.blowsLanded),
-					     static_cast<unsigned long>(fst.blowsTaken), static_cast<unsigned long>(ns.blows), static_cast<unsigned long>(ns.parried),
-					     static_cast<unsigned long>(ns.knockedOut), static_cast<unsigned long>(ns.killed), static_cast<unsigned long>(ns.moves));
+					// (d: the damage of the character's last blow; ai: moves of the fight
+					// AI, and where its tables are from - F FIGHT.DAT, S the scripts,
+					// - none read yet; "!" moves picked without a table.)
+					reportLine("blows %lu/%lu d%ld all %lu par %lu ko %lu x %lu ai %lu%c%s", static_cast<unsigned long>(fst.blowsLanded),
+					     static_cast<unsigned long>(fst.blowsTaken), static_cast<long>(fst.lastDamage), static_cast<unsigned long>(ns.blows),
+					     static_cast<unsigned long>(ns.parried), static_cast<unsigned long>(ns.knockedOut), static_cast<unsigned long>(ns.killed),
+					     static_cast<unsigned long>(ns.moves), ns.fightAi, ns.movesUntabled ? "!" : "");
 				}
 			} else {
 				reportLine("scripts: none in data.pak");

@@ -8,7 +8,9 @@ namespace g3 {
 namespace {
 
 constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
-constexpr u32 SETTINGS_VERSION = 1;
+// 2: the classic scheme became the default; a file of version 1 (whose
+// scheme was the console one unless changed) begins with the classic one again.
+constexpr u32 SETTINGS_VERSION = 2;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -31,7 +33,7 @@ void Settings::sanitize() {
 	drawMetres = u8(clamp<int>(drawMetres, 40, 200) / 10 * 10);
 	if (objects >= OBJECT_MODES) objects = OBJECTS_SMOOTH;
 	if (frameRate >= FRAME_MODES) frameRate = FRAMES_60;
-	if (scheme >= CONTROL_SCHEMES) scheme = CONTROLS_CONSOLE;
+	if (scheme >= CONTROL_SCHEMES) scheme = CONTROLS_CLASSIC;
 	cameraSpeed = u8(clamp<int>(cameraSpeed, 1, 10));
 	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal};
 	for (u8* f : flags) *f = *f ? 1 : 0;
@@ -85,6 +87,7 @@ bool Settings::load(const char* path) {
 	if (!ok) return false;
 	Settings s;
 	memcpy(&s, bytes, min<u32>(h.size, sizeof(Settings)));
+	if (h.version < 2) s.scheme = CONTROLS_CLASSIC;
 	s.sanitize();
 	*this = s;
 	return true;

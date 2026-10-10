@@ -47,7 +47,7 @@ const Item kGraphics[] = {
 
 const Item kControls[] = {
     {"Схема", CHOICE, &Settings::scheme, kSchemes, 2, 0, 0, nullptr, 0,
-     "Стик ведёт героя от камеры, C-стик — камера"},
+     "Классическая: камера всегда за спиной"},
     {"Скорость камеры", RANGE, &Settings::cameraSpeed, nullptr, 1, 1, 10, "", 0, nullptr},
     {"Инверсия по вертикали", TOGGLE, &Settings::invertY, nullptr, 0, 0, 0, nullptr, 0, nullptr},
     {"Камера за героем", TOGGLE, &Settings::autoCamera, nullptr, 0, 0, 0, nullptr, 0, "Камера заходит за спину на бегу"},

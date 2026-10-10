@@ -70,6 +70,29 @@ enum FightSituation : u8 {
 };
 extern const char* const kFightSituations[FS_COUNT];
 
+// "script/fight": the fight AI tables, as the baker read them from the game.
+// Gothic 1 keeps them in a compiled file of their own (FIGHT.DAT, from
+// Fight.src), not in GOTHIC.DAT; without this entry the engine looks for the
+// "FA_..." instances in the main script (the built-in scene, mods that have
+// them there). After the header: u8 moves[tactics][situations][FIGHT_AI_MOVES],
+// as FightMove (FM_NONE where the script has none); situations in the order
+// of FightSituation.
+constexpr u32 FIGHT_AI_MAGIC = fourcc('G', '3', 'F', 'A');
+constexpr u32 FIGHT_AI_VERSION = 1;
+constexpr u32 FIGHT_AI_MOVES = 6;
+struct FightAiHeader {
+	u32 magic;
+	u32 version;
+	u32 tactics;
+	u32 situations;
+};
+static_assert(sizeof(FightAiHeader) == 16, "FightAiHeader layout");
+
+// The scripts' names of the moves (Fight.d), by FightMove, and the numbers
+// Gothic 1 gives them (for a script that does not have the constants).
+extern const char* const kFightMoveNames[FM_COUNT];
+extern const i32 kFightMoveDefaults[FM_COUNT];
+
 // Steps of a move, as they are carried out one after the other.
 enum FightStep : u8 { STEP_NONE, STEP_MOVE, STEP_TURN, STEP_ATTACK, STEP_ATTACKL, STEP_ATTACKR, STEP_BLOCK, STEP_JUMPBACK,
                       STEP_STRAFEL, STEP_STRAFER, STEP_WAIT, STEP_WAITLONG };

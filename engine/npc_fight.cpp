@@ -62,25 +62,7 @@ void Npcs::bindFight() {
 	_fnUnconscious = _game.function("ZS_UNCONSCIOUS");
 	_fnDead = _game.function("ZS_DEAD");
 	// The moves, by the scripts' names (Fight.d).
-	static const char* const kMoveNames[FM_COUNT] = {"",
-	                                                 "MOVE_RUN",
-	                                                 "MOVE_RUNBACK",
-	                                                 "MOVE_JUMPBACK",
-	                                                 "MOVE_TURN",
-	                                                 "MOVE_STRAFE",
-	                                                 "MOVE_ATTACK",
-	                                                 "MOVE_SIDEATTACK",
-	                                                 "MOVE_FRONTATTACK",
-	                                                 "MOVE_TRIPLEATTACK",
-	                                                 "MOVE_WHIRLATTACK",
-	                                                 "MOVE_MASTERATTACK",
-	                                                 "MOVE_TURNTOHIT",
-	                                                 "MOVE_PARADE",
-	                                                 "MOVE_STANDUP",
-	                                                 "MOVE_WAIT",
-	                                                 "MOVE_WAIT_LONGER"};
-	static const i32 kMoveDefaults[FM_COUNT] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 17, 18, 19, 23};
-	for (u32 m = 1; m < FM_COUNT; ++m) _scriptMoves[m] = number(kMoveNames[m], kMoveDefaults[m]);
+	for (u32 m = 1; m < FM_COUNT; ++m) _scriptMoves[m] = number(kFightMoveNames[m], kFightMoveDefaults[m]);
 	for (FaiTable& t : _fai) t.read = false;
 	const struct {
 		const char* name;
@@ -103,6 +85,35 @@ void Npcs::bindFight() {
 	             {"AI_EQUIPBESTRANGEDWEAPON", xNoAction},
 	             {"AI_STOPAIM", xNoAction}};
 	for (const auto& e : table) vm.bind(e.name, e.fn, this);
+}
+
+bool Npcs::loadFightAi(Pak& pak) {
+	const PakEntry* e = pak.find("script/fight");
+	if (!e || e->size < sizeof(FightAiHeader) || e->size > (1u << 16)) return false;
+	u8* blob = static_cast<u8*>(pak.readAlloc(*e));
+	if (!blob) return false;
+	FightAiHeader h {};
+	memcpy(&h, blob, sizeof(h));
+	const bool ok = h.magic == FIGHT_AI_MAGIC && h.version == FIGHT_AI_VERSION && h.situations == FS_COUNT && h.tactics > 0 &&
+	                h.tactics <= 1024 && e->size == sizeof(h) + size_t(h.tactics) * FS_COUNT * FIGHT_AI_MOVES;
+	if (ok) {
+		static_assert(FIGHT_AI_MOVES == 6, "a table has six moves");
+		const u8* moves = blob + sizeof(h);
+		for (u32 t = 0; t < TACTICS; ++t) {
+			FaiTable& table = _fai[t];
+			table.read = true; // (a tactic the file does not have has no moves)
+			memset(table.moves, 0, sizeof(table.moves));
+			if (t >= h.tactics) continue;
+			for (u32 sit = 0; sit < FS_COUNT; ++sit)
+				for (u32 k = 0; k < FIGHT_AI_MOVES; ++k) {
+					const u8 m = moves[(size_t(t) * FS_COUNT + sit) * FIGHT_AI_MOVES + k];
+					table.moves[sit][k] = m < FM_COUNT ? m : u8(FM_NONE);
+				}
+		}
+		_stats.fightAi = 'F';
+	}
+	free(blob);
+	return ok;
 }
 
 // ---- geometry ----
@@ -270,6 +281,7 @@ bool Npcs::fetchMove(NpcActor& a) {
 	FaiTable& t = _fai[tactic];
 	if (!t.read) {
 		t.read = true;
+		_stats.fightAi = 'S';
 		memset(t.moves, 0, sizeof(t.moves));
 		ScriptVm& vm = _game.vm();
 		const u32 moveMember = vm.findMember("C_FIGHTAI", "MOVE");
@@ -310,7 +322,12 @@ bool Npcs::fetchMove(NpcActor& a) {
 	if (move == FM_NONE && dist <= gRange && focus) move = pick(running ? FS_MY_G_RUNTO : FS_MY_G_FOCUS);
 	if (move == FM_NONE) move = pick(FS_MY_G_FK_NOFOCUS);
 	if (move == FM_NONE) move = pick(FS_MY_W_NOFOCUS);
-	if (move == FM_NONE) move = FM_RUN; // (no table at all: go for it)
+	if (move == FM_NONE) {
+		// No table for this tactic at all: go for it - closer, turned to it,
+		// and a blow once within reach (closing in for ever is no fight).
+		++_stats.movesUntabled;
+		move = dist > wRange ? FM_RUN : focus ? FM_ATTACK : FM_TURN;
+	}
 	// Very close and facing it: waiting or turning is a hop back instead
 	// (as in the original, which keeps a wolf from standing in one's face).
 	const float closeup = 0.75f * float(_game.guildValue("FIGHT_RANGE_BASE", _game.guildOf(n), 60) +

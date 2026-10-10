@@ -2126,21 +2126,27 @@ bool importZenCamera(std::shared_ptr<const ZenGame> game, CameraSet& set, std::v
 	}
 }
 
-bool importZenScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<u8>& dat,
-                     std::vector<std::string>& notes) {
+namespace {
+
+// A compiled script of the game (`file` as "GOTHIC.DAT"): its symbols and
+// code, and the file itself. `topic` begins the report's lines, `without`
+// says what happens if it cannot be had.
+bool importZenCompiled(std::shared_ptr<const ZenGame> game, const std::string& file, const char* topic, const char* without,
+                       SrcScript& script, std::vector<u8>& dat, std::vector<std::string>& notes) {
 	script = SrcScript();
 	dat.clear();
 	// Compiled scripts are loose files of the installation; a mod may carry them in an archive.
-	const fs::path loose = findNoCase(game->dir, {"_work", "data", "scripts", "_compiled", "gothic.dat"});
+	const std::string lowerFile = lower(file);
+	const fs::path loose = findNoCase(game->dir, {"_work", "data", "scripts", "_compiled", lowerFile.c_str()});
 	std::unique_ptr<zenkit::Read> rd;
 	if (!loose.empty() && fs::is_regular_file(loose)) {
 		rd = zenkit::Read::from(loose);
-		script.source = "GOTHIC.DAT";
-	} else if (const zenkit::VfsNode* node = game->vfs.find("GOTHIC.DAT")) {
+		script.source = file;
+	} else if (const zenkit::VfsNode* node = game->vfs.find(file)) {
 		rd = node->open_read();
-		script.source = "GOTHIC.DAT (from an archive)";
+		script.source = file + " (from an archive)";
 	} else {
-		notes.push_back("scripts: GOTHIC.DAT not found (_work/Data/Scripts/_compiled); the world stays empty");
+		notes.push_back(std::string(topic) + ": " + file + " not found (_work/Data/Scripts/_compiled); " + without);
 		return false;
 	}
 	try {
@@ -2164,7 +2170,7 @@ bool importZenScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std
 		if (size < u64(codeSize) + 4 || stated != codeSize) {
 			// Not laid out as expected: this project's own reader may still cope.
 			readScriptDat(dat, script);
-			notes.push_back("scripts: GOTHIC.DAT has something after its code; read with this project's own reader");
+			notes.push_back(std::string(topic) + ": " + file + " has something after its code; read with this project's own reader");
 			return true;
 		}
 		script.code.assign(dat.end() - codeSize, dat.end());
@@ -2221,9 +2227,21 @@ bool importZenScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std
 	} catch (const std::exception& ex) {
 		script = SrcScript();
 		dat.clear();
-		notes.push_back(std::string("scripts: GOTHIC.DAT could not be read (") + ex.what() + "); the world stays empty");
+		notes.push_back(std::string(topic) + ": " + file + " could not be read (" + ex.what() + "); " + without);
 		return false;
 	}
+}
+
+} // namespace
+
+bool importZenScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<u8>& dat,
+                     std::vector<std::string>& notes) {
+	return importZenCompiled(game, "GOTHIC.DAT", "scripts", "the world stays empty", script, dat, notes);
+}
+
+bool importZenFightScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes) {
+	std::vector<u8> dat;
+	return importZenCompiled(game, "FIGHT.DAT", "fight AI", "the inhabitants fight without its tables", script, dat, notes);
 }
 
 void importZenWorld(std::shared_ptr<const ZenGame> game, const ZenImportOptions& opt, SrcScene& scene) {

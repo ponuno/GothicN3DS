@@ -530,12 +530,13 @@ int main(int argc, char** argv) {
 		if (fightDown >= 0) snprintf(downAt, sizeof(downAt), " (down at frame %d)", fightDown);
 		printf("fight             weapon in hand after %d frames; %d attacks pressed, %u blows landed (last %d damage), %u taken, "
 		       "%u fended off by the character, %u dodged; the enemy %s with %d hit points%s; the character %s with %d of %d; "
-		       "inhabitants: %u blows, %u parried, %u knocked out, %u killed, %u moves of the fight AI\n",
+		       "inhabitants: %u blows, %u parried, %u knocked out, %u killed, %u moves of the fight AI (tables: %s; %u without one)\n",
 		       fightDrawn, fightBlows, fs.blowsLanded, int(fs.lastDamage), fs.blowsTaken, fs.parried, fs.dodged,
 		       e.down == DOWN_DEAD ? "dead" : e.down == DOWN_UNCONSCIOUS ? "knocked out" : "standing", int(g.hitPoints(e)),
 		       downAt,
 		       app.hero().down() ? "down" : "standing", int(app.heroHitPoints()), int(app.heroHitPointsMax()), ns.blows, ns.parried,
-		       ns.knockedOut, ns.killed, ns.moves);
+		       ns.knockedOut, ns.killed, ns.moves,
+		       ns.fightAi == 'F' ? "FIGHT.DAT" : ns.fightAi == 'S' ? "the scripts" : "none read", ns.movesUntabled);
 	}
 	if (underwaterFrames) printf("camera under water %d frames\n", underwaterFrames);
 	if (app.worldSwitches()) printf("world switches    %u\n", app.worldSwitches());

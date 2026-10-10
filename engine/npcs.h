@@ -93,6 +93,8 @@ struct NpcStats {
 	u32 parried = 0;      // ... and that were fended off
 	u32 knockedOut = 0, killed = 0;
 	u32 moves = 0;        // moves of the fight AI begun
+	u32 movesUntabled = 0; // ... of which chosen without a table for the fighter's tactic
+	char fightAi = '-';   // where the tables are from: 'F' the game's FIGHT.DAT, 'S' the main script, '-' not read yet
 };
 
 // What an actor has been told to do.
@@ -376,6 +378,9 @@ private:
 
 	// ---- fighting (npc_fight.cpp) ----
 	void bindFight();
+	// The fight AI tables of "script/fight", if the archive has them
+	// (FIGHT.DAT); false leaves them to be read from the main script.
+	bool loadFightAi(Pak& pak);
 	bool beginFight(NpcActor& a, const World& world);   // begin() for the fight actions
 	bool carryOnFight(NpcActor& a, const World& world, float dt);
 	void tickFight(NpcActor& a, float dt);               // blows landing, being hit, drawing

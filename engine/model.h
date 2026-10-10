@@ -225,7 +225,9 @@ private:
 // before them - a single blow at 45% of it. Negative: there is no such blow.
 inline float clipBlowTime(const Clip& c, u32 index) {
 	const ClipFight* f = c.fight();
-	if (!f) return index == 0 ? c.duration() * 0.45f : -1.0f;
+	// (No tag of where the blow lands - a model script without one, or an
+	// archive baked before they were kept: a little before the middle.)
+	if (!f || f->hits == 0) return index == 0 ? c.duration() * 0.45f : -1.0f;
 	return index < f->hits && f->hit[index] != CLIP_NO_FRAME && c.header().fps > 0.0f ? float(f->hit[index]) / c.header().fps : -1.0f;
 }
 

@@ -22,7 +22,7 @@ enum FrameRateMode : u8 {
 
 enum ControlScheme : u8 {
 	CONTROLS_CONSOLE, // the stick moves the character the way it points as the camera sees it; the C-stick turns the camera
-	CONTROLS_CLASSIC, // as the PC original: forward/back along the character, left/right turn it
+	CONTROLS_CLASSIC, // as the PC original: forward/back along the character, left/right turn it; the camera behind it
 	CONTROL_SCHEMES
 };
 
@@ -33,7 +33,7 @@ struct Settings {
 	u8 dissolve = 1;         // objects dissolve in and out (a shader of its own: from the next start)
 	u8 frameRate = FRAMES_60;
 	// Controls.
-	u8 scheme = CONTROLS_CONSOLE;
+	u8 scheme = CONTROLS_CLASSIC; // (the default since settings.bin version 2)
 	u8 cameraSpeed = 5;      // 1..10
 	u8 invertY = 0;
 	u8 autoCamera = 1;       // the camera swings round behind a running character

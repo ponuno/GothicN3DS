@@ -40,6 +40,7 @@ bool Npcs::load(Pak& pak) {
 		}
 	}
 	bindAi();
+	loadFightAi(pak);
 	_stats.total = _game.npcCount();
 	return true;
 }

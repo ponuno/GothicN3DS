@@ -4236,7 +4236,8 @@ static void testWayNet() {
 }
 
 // The two synthetic worlds with a script of the caller's and the people it names.
-static BakeResult bakeLifeWorlds(const std::string& source, const std::string& path, std::vector<BakeWorld>& worlds) {
+static BakeResult bakeLifeWorlds(const std::string& source, const std::string& path, std::vector<BakeWorld>& worlds,
+                                 bool withFightAi = true) {
 	SrcScript script;
 	compileDaedalus(source, script);
 	worlds.assign(2, BakeWorld());
@@ -4260,6 +4261,11 @@ static BakeResult bakeLifeWorlds(const std::string& source, const std::string& p
 	bo.quiet = true;
 	BakeScripts scripts;
 	scripts.script = &script;
+	SrcScript fight;
+	if (withFightAi) {
+		buildSyntheticFightScript(fight);
+		scripts.fight = &fight;
+	}
 	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead};
 	PakWriter writer;
 	const BakeResult r = bakeWorlds(worlds, models, scripts, bo, writer);

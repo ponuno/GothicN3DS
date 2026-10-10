@@ -508,6 +508,17 @@ Input App::steerInput(const Input& in, float dt) {
 	if (_scheme == CONTROLS_CLASSIC) {
 		if (thirdPerson()) _camElevation = clamp(_camElevation - tilt * 60.0f * dt, -45.0f, 60.0f);
 		else _eyePitch = clamp(_eyePitch + tilt * 1.8f * dt, -1.4f, 1.4f);
+		// Locked on with a weapon in hand: the character keeps facing the
+		// enemy (the camera behind it, so the enemy ahead); left and right
+		// step round it instead of turning.
+		const GameNpc* t = _target >= 0 && _npcs.loaded() ? &_npcs.game().npc(u32(_target)) : nullptr;
+		if (thirdPerson() && _locked && t && _hero.weapon() != WEAPON_NONE) {
+			h.steer = true;
+			h.steerYaw = atan2f(t->pos[0] - _player.feet.x, t->pos[2] - _player.feet.z);
+			if (h.strafe == 0.0f && fabsf(in.moveX) > 0.5f && fabsf(in.moveX) > fabsf(in.moveZ)) h.strafe = in.moveX > 0 ? 1.0f : -1.0f;
+			if (h.strafe != 0.0f) h.moveZ = 0;
+			h.moveX = h.lookX = 0;
+		}
 		return h;
 	}
 	if (!thirdPerson()) {
@@ -661,7 +672,7 @@ void App::updateTarget(const Input& in, float dt) {
 			int t = armed ? _npcs.pickTarget(feet, _hero.yaw(), 800.0f, 0.9f, -1, 0, true) : -1;
 			if (t < 0) t = _npcs.pickTarget(feet, _hero.yaw(), armed ? 600.0f : 500.0f, armed ? 0.9f : 0.6f);
 			_target = t;
-			if (armed && _settings.autoTarget && t >= 0 && _scheme == CONTROLS_CONSOLE &&
+			if (armed && _settings.autoTarget && t >= 0 &&
 			    _npcs.game().attitude(u32(t), u32(heroIndex())) == _npcs.game().constant("ATT_HOSTILE", 0))
 				_locked = true;
 		}

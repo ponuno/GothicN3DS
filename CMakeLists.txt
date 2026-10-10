@@ -72,6 +72,7 @@ set(G3DS_BAKE_SOURCES
     tools/bake/model_bake.cpp
     tools/bake/script_bake.cpp
     tools/bake/populate.cpp
+    tools/bake/fight_ai.cpp
     tools/bake/daedalus.cpp
     tools/bake/synth_script.cpp
     tools/bake/synth_actor.cpp

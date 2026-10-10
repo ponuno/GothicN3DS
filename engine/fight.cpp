@@ -14,6 +14,25 @@ const char* const kFightSituations[FS_COUNT] = {"FA_ENEMY_PREHIT_",  "FA_ENEMY_S
                                                 "FA_MY_G_RUNTO_",    "FA_MY_G_STRAFE_",       "FA_MY_G_FOCUS_",   "FA_MY_FK_FOCUS_",
                                                 "FA_MY_G_FK_NOFOCUS_"};
 
+const char* const kFightMoveNames[FM_COUNT] = {"",
+                                              "MOVE_RUN",
+                                              "MOVE_RUNBACK",
+                                              "MOVE_JUMPBACK",
+                                              "MOVE_TURN",
+                                              "MOVE_STRAFE",
+                                              "MOVE_ATTACK",
+                                              "MOVE_SIDEATTACK",
+                                              "MOVE_FRONTATTACK",
+                                              "MOVE_TRIPLEATTACK",
+                                              "MOVE_WHIRLATTACK",
+                                              "MOVE_MASTERATTACK",
+                                              "MOVE_TURNTOHIT",
+                                              "MOVE_PARADE",
+                                              "MOVE_STANDUP",
+                                              "MOVE_WAIT",
+                                              "MOVE_WAIT_LONGER"};
+const i32 kFightMoveDefaults[FM_COUNT] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 17, 18, 19, 23};
+
 const char* weaponWord(u8 mode) {
 	switch (mode) {
 	case WEAPON_FIST: return "FIST";
@@ -221,7 +240,12 @@ i32 Game::meleeDamage(u32 a, u32 b) {
 	const GameNpc& na = _npcs[a];
 	const GameNpc& nb = _npcs[b];
 	const GameItemInfo* weapon = (na.weapon == WEAPON_1H || na.weapon == WEAPON_2H) && na.melee != SCRIPT_NONE ? itemInfo(na.melee) : nullptr;
-	const i32 type = weapon ? weapon->damageType : npcInt(na, _mDamageType);
+	i32 type = weapon ? weapon->damageType : npcInt(na, _mDamageType);
+	// A character the scripts give no damage type (every person of Gothic 1:
+	// Npc_Default has none, and neither has the player's) hits blunt, as the
+	// original engine sets it (OpenGothic: "vanilla behavior ... non-zero
+	// damage type"). Without this no fist did any harm.
+	if (type == 0) type = constant("DAM_BLUNT", 2);
 	const i32 strength = attributeOf(na, constant("ATR_STRENGTH", 4));
 	const i32 critical = constant("DAM_CRITICAL_MULTIPLIER", 2);
 	// Gothic 1: the talent is the chance of a critical blow. Talents are not

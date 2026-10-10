@@ -27,6 +27,9 @@ void buildSyntheticCave(SrcScene& scene);
 // compiled by this project's own compiler (daedalus.h).
 const char* syntheticScriptSource();
 void buildSyntheticScript(SrcScript& script);
+// Its fight AI tables, a script of their own as the game's (FIGHT.DAT).
+const char* syntheticFightScriptSource();
+void buildSyntheticFightScript(SrcScript& script);
 
 struct ZenImportOptions {
 	std::string zenName = "WORLD.ZEN"; // world file inside the game's archives
@@ -91,5 +94,8 @@ bool importZenCamera(std::shared_ptr<const ZenGame> game, CameraSet& set, std::v
 // with a line for the bake report in `notes`, if they cannot be read.
 bool importZenScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<u8>& dat,
                      std::vector<std::string>& notes);
+// The fight AI tables' script (FIGHT.DAT: Gothic 1 compiles Fight.src into a
+// file of its own). Returns false, with a line in `notes`, if it cannot be read.
+bool importZenFightScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
 
 } // namespace g3

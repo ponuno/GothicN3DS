@@ -337,7 +337,21 @@ void App::update(const Input& in, float dt) {
 		// A jump near a wall: the hands take hold of the ledge, if there is one in reach.
 		Ledge ledge;
 		const bool grab = _hero.wantsLedge(_player) && _player.probeLedge(_world, _hero.yaw(), ledge);
-		const Drive drive = _hero.control(heroIn, _player, dt, grab ? &ledge : nullptr);
+		// The jump key on the ground: a ledge ahead is climbed, a wall is jumped up at
+		// (the original's jump up), anything else is a jump forward.
+		Ledge ground;
+		bool wall = false;
+		if (heroIn.jump && _hero.wantsJumpUp(_player)) {
+			if (!_player.probeLedge(_world, _hero.yaw(), ground)) {
+				const float yaw = _hero.yaw(), reach = _player.config.radius + 45.0f;
+				const Vec3 dir = {sinf(yaw), 0, cosf(yaw)};
+				for (int k = 0; k < 2; ++k) {
+					const Vec3 a = {_player.feet.x, _player.feet.y + (k ? 160.0f : 100.0f), _player.feet.z};
+					wall = wall || !_world.lineFree(a, a + dir * reach, 10.0f);
+				}
+			}
+		}
+		const Drive drive = _hero.control(heroIn, _player, dt, grab ? &ledge : nullptr, ground.found ? &ground : nullptr, wall);
 		_player.update(_world, heroIn, _hero.yaw(), 0.0f, dt, &drive);
 		const SkyColors sky = skyColors();
 		const float indoorLight[3] = {1, 1, 1};

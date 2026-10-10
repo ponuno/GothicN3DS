@@ -580,6 +580,9 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 		// (a wall the hands take hold of).
 		b.detail = DETAIL_MEDIUM;
 		box(-700.0f, -700.0f, 150.0f, 150.0f, 0.785f, 4, WOOD);
+		// ... one to hang from (2.3 m: the high climb) and a wall too tall for any (4.2 m: a jump straight up).
+		box(-1100.0f, -700.0f, 150.0f, 230.0f, 0.785f, 4, WOOD);
+		box(-1500.0f, -700.0f, 150.0f, 420.0f, 0.785f, 4, WOOD);
 		b.detail = DETAIL_ALWAYS;
 	}
 

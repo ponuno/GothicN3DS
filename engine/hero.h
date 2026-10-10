@@ -46,8 +46,14 @@ public:
 	// Player::update().
 	// `ledge`, if given, is a ledge within the reach of a body in a jump
 	// (Player::probeLedge, asked when wantsLedge()): the character takes hold
-	// of it and climbs up.
-	Drive control(const Input& in, const Player& player, float dt, const Ledge* ledge = nullptr);
+	// of it and climbs up. `groundLedge`: one in reach of a body standing
+	// (asked when wantsJumpUp()): the jump key climbs it as the original does
+	// (low, middle or high - hanging from the edge first); `wall`: a wall
+	// right ahead without one - the jump goes straight up instead of forward.
+	Drive control(const Input& in, const Player& player, float dt, const Ledge* ledge = nullptr, const Ledge* groundLedge = nullptr,
+	              bool wall = false);
+	// On the ground and free to jump: the application probes for a ledge ahead.
+	bool wantsJumpUp(const Player& player) const;
 	// In a jump, and so far through it that its hands would take hold of a ledge.
 	bool wantsLedge(const Player& player) const;
 	bool mantling() const { return _body == MANTLE; }
@@ -170,7 +176,7 @@ private:
 	const Clip* weaponClip(const char* pattern, u8 mode) const;
 	void fightTick(float prevTime, const Clip* prevClip);
 	void useTick(float dt);
-	bool beginMantle(const Ledge& ledge, const Player& player);
+	bool beginMantle(const Ledge& ledge, const Player& player, bool fromGround);
 	void mantleDrive(Drive& drive, float dt);
 	bool beginUse(const Clip* in, const Clip* hold, const Clip* out, float seconds, float moment, bool stoop = false);
 
@@ -192,16 +198,28 @@ private:
 	bool _sneak = false;
 	bool _forceNext = false;
 	const Clip* _takeoff = nullptr;
-	// Climbing onto a ledge: the clips the model has for it, and the climb in play.
-	enum { CLIMB_CLIPS = 12 };
-	const Clip* _climbClips[CLIMB_CLIPS] = {};
-	u32 _climbCount = 0;
+	// Climbing onto a ledge, as in the original: from the ground a low
+	// (T_STAND_2_JUMPUPLOW, S_JUMPUPLOW, T_JUMPUPLOW_2_STAND), a middle
+	// (..._JUMPUPMID...) or a high one (T_STAND_2_JUMPUP, S_JUMPUP, T_JUMP_2_HANG,
+	// S_HANG, T_HANG_2_STAND); from a jump, the last steps of these.
+	enum { CLIMB_LOW_IN, CLIMB_LOW, CLIMB_LOW_OUT, CLIMB_MID_IN, CLIMB_MID, CLIMB_MID_OUT, CLIMB_UP_IN, CLIMB_UP, CLIMB_HANG_IN, CLIMB_HANG,
+	       CLIMB_HANG_OUT, CLIMB_CLIPS };
+	const Clip* _climb[CLIMB_CLIPS] = {};
+	enum { MANTLE_STEPS = 5 };
 	struct Mantle {
-		const Clip* clip = nullptr; // null: no animation for it, the jump's pose is held
+		const Clip* seq[MANTLE_STEPS] = {}; // the climb's clips in turn (none: the jump's pose is held)
+		float len[MANTLE_STEPS] = {};      // seconds each is played
+		float rise[MANTLE_STEPS] = {};     // cm each lifts the body (its root's way up, scaled to the ledge)
+		float free[MANTLE_STEPS] = {};     // cm more, without the animation's help (the flight up to the edge)
+		float scale = 1;
+		u8 n = 0, at = 0;
+		float clipTime = 0;
 		Vec3 start {0, 0, 0}, top {0, 0, 0};
-		float gap = 0, time = 0, duration = 0, rise = 0, forward = 0;
+		float gap = 0, time = 0, duration = 0;
 		float yaw = 0;
+		const Clip* current() const { return at < n ? seq[at] : nullptr; }
 	} _mantle;
+	bool _jumpUp = false; // a jump straight up (at a wall)
 	Vec3 _liftSum {0, 0, 0};
 	float _liftTime = 0, _liftY = 0;
 	Pose _drawn;

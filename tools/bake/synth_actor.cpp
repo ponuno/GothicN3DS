@@ -561,6 +561,58 @@ void buildSyntheticActor(SrcModel& model) {
 			p.rot[L_THIGH] = p.rot[R_THIGH] = aboutX(-0.9f * crouch);
 			p.rot[L_CALF] = p.rot[R_CALF] = aboutX(1.6f * crouch);
 		}));
+	// Climbing onto a ledge, under Gothic 1's names: low, middle, and high with a
+	// hang from the edge. The rise is in the root, as in the game's files.
+	{
+		const auto reach = [](float up, Pose& p) { // arms up by `up` 0..1
+			p.rot[L_ARM] = p.rot[R_ARM] = aboutX(-2.8f * up);
+		};
+		const auto crouch = [](float c, Pose& p) {
+			p.pos[ROOT][1] -= 18.0f * c;
+			p.rot[L_THIGH] = p.rot[R_THIGH] = aboutX(-0.9f * c);
+			p.rot[L_CALF] = p.rot[R_CALF] = aboutX(1.6f * c);
+		};
+		const auto climb = [](const char* name, const char* next, int frames, float rise, float forward, float armsFrom, float armsTo) {
+			return makeClip(name, next, frames, true, [rise, forward, armsFrom, armsTo](float phase, float, Pose& p) {
+				const float t = std::min(phase * float(1) / 1.0f, 1.0f);
+				p.pos[ROOT][1] += rise * t;
+				p.pos[ROOT][2] = forward * t;
+				p.rot[L_ARM] = p.rot[R_ARM] = aboutX(-2.8f * (armsFrom + (armsTo - armsFrom) * t));
+				p.rot[L_THIGH] = p.rot[R_THIGH] = aboutX(-0.6f * std::sin(t * 3.14159f));
+			});
+		};
+		const auto held = [reach, crouch](const char* name, float c, float up) {
+			return makeClip(name, name, 2, false, [reach, crouch, c, up](float, float, Pose& p) {
+				crouch(c, p);
+				reach(up, p);
+			});
+		};
+		const auto bend = [reach, crouch](const char* name, const char* next, int frames, float from, float to) {
+			return makeClip(name, next, frames, false, [reach, crouch, from, to](float phase, float, Pose& p) {
+				const float c = from + (to - from) * phase;
+				crouch(c, p);
+				reach(c, p);
+			});
+		};
+		model.clips.push_back(bend("T_STAND_2_JUMPUPLOW", "S_JUMPUPLOW", 3, 0.0f, 0.5f));
+		model.clips.push_back(climb("S_JUMPUPLOW", "T_JUMPUPLOW_2_STAND", 5, 56.0f, 0.0f, 0.5f, 1.0f));
+		model.clips.push_back(climb("T_JUMPUPLOW_2_STAND", "S_RUN", 8, 26.0f, 40.0f, 1.0f, 0.0f));
+		model.clips.push_back(bend("T_STAND_2_JUMPUPMID", "S_JUMPUPMID", 8, 0.0f, 0.7f));
+		model.clips.push_back(climb("S_JUMPUPMID", "T_JUMPUPMID_2_STAND", 3, 37.0f, 0.0f, 0.7f, 1.0f));
+		model.clips.push_back(climb("T_JUMPUPMID_2_STAND", "S_RUN", 20, 91.0f, 45.0f, 1.0f, 0.0f));
+		model.clips.push_back(bend("T_STAND_2_JUMPUP", "S_JUMPUP", 9, 0.0f, 1.0f));
+		model.clips.push_back(held("S_JUMPUP", 0.0f, 1.0f));
+		model.clips.push_back(climb("T_JUMP_2_HANG", "S_HANG", 17, 112.0f, 0.0f, 1.0f, 1.0f));
+		model.clips.push_back(held("S_HANG", 0.0f, 1.0f));
+		model.clips.push_back(climb("T_HANG_2_STAND", "S_RUN", 25, 168.0f, 50.0f, 1.0f, 0.0f));
+		// Picking a thing up: Gothic 1's "C_..._1", the lowest of three.
+		model.clips.push_back(bend("C_STAND_2_IGET_1", "C_IGET_1", 8, 0.0f, 1.0f));
+		model.clips.push_back(makeClip("C_IGET_1", "C_IGET_2_STAND_1", 2, false, [reach, crouch](float, float, Pose& p) {
+			crouch(1.0f, p);
+			reach(0.3f, p);
+		}));
+		model.clips.push_back(bend("C_IGET_2_STAND_1", "S_RUN", 8, 1.0f, 0.0f));
+	}
 	addFightClips(model);
 	// Drinking a potion, as "POTIONFAST" (food has no animation here: the
 	// engine's stand-still stands in for it).

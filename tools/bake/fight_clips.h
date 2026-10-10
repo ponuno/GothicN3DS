@@ -69,7 +69,8 @@ inline std::vector<std::string> itemUseClipNames() {
 			out.push_back(name);
 		}
 	// Picking a thing up from the ground.
-	for (const char* name : {"T_STAND_2_IGET", "S_IGET", "T_IGET_2_STAND"}) out.push_back(name);
+	for (const char* name : {"T_STAND_2_IGET", "S_IGET", "T_IGET_2_STAND", "C_STAND_2_IGET_1", "C_IGET_1", "C_IGET_2_STAND_1"})
+		out.push_back(name);
 	// Opening a chest: bending to it, the lid, and back.
 	for (const char* scheme : {"CHESTBIG", "CHESTSMALL"})
 		for (const char* f : {"T_%_STAND_2_S0", "S_%_S0", "T_%_S0_2_S1", "S_%_S1", "T_%_S1_2_S0", "T_%_S0_2_STAND", "T_%_S1_2_STAND"}) {

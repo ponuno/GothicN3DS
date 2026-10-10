@@ -2676,7 +2676,7 @@ static void testModel() {
 		CHECK(r.triangles == 59 * 4 && r.parts >= 3 && r.largestPalette == MODEL_PALETTE && r.clips == 2 && r.textures == 1);
 		CHECK(r.report.find("skeleton: 60 nodes") != std::string::npos);
 		const ModelBakeResult a = bakeModel(actor, bo, writer);
-		CHECK(a.parts == 2 && a.clips == 56 && a.largestPalette <= MODEL_PALETTE);
+		CHECK(a.parts == 2 && a.clips == 70 && a.largestPalette <= MODEL_PALETTE);
 		CHECK(a.report.find("S_1HATTACK 1.88s 3 blows") != std::string::npos && a.report.find("T_FISTPARADE_O 0.52s parry") != std::string::npos);
 		CHECK(a.report.find("blends: 5: T_RUNL_2_WALKL 0.20s") != std::string::npos);
 		CHECK(a.report.find("T_STAND_2_JUMP 0.48s 239cm/s up 74cm") != std::string::npos);
@@ -2990,7 +2990,7 @@ static void testModel() {
 	{
 		// The test character: loops wrap, moving clips know their speed.
 		Model m;
-		CHECK(m.load(pak, "hero") && m.nodeCount() == 14 && m.clipCount() == 56 && m.blendCount() == 5);
+		CHECK(m.load(pak, "hero") && m.nodeCount() == 14 && m.clipCount() == 70 && m.blendCount() == 5);
 		// The frames of a fight come through: three blows of a combo, each
 		// with its window and its end; a parry's frames; where a draw changes hands.
 		{
@@ -5575,7 +5575,16 @@ static void testInventory() {
 		a.confirm = true;
 		app.update(a, dt);
 		int frames = 0;
-		for (; frames < 90 && app.itemBusy(); ++frames) app.update(Input {}, dt);
+		int seen = 0;
+		static const char* const kIget[3] = {"C_STAND_2_IGET_1", "C_IGET_1", "C_IGET_2_STAND_1"};
+		for (; frames < 90 && app.itemBusy(); ++frames) {
+			app.update(Input {}, dt);
+			for (int k = 0; k < 3; ++k)
+				if (app.hero().animator().current() == app.hero().clip(kIget[k])) seen |= 1 << k;
+		}
+		// (Gothic 1's own animations of picking up: down, held, up again.)
+		std::printf("  picked up in %d frames, through %d of 7 of the original's animations\n", frames, seen);
+		CHECK(seen == 7);
 		CHECK(li.taken && g.itemCount(hero, apple) == apples + 1 && app.itemStats().pickedUp == 1 && app.lootTarget() != appleAt);
 		const std::string after = gDir + "/loot-after.bin";
 		CHECK(app.saveState(after.c_str()));
@@ -5837,30 +5846,89 @@ static void testChests() {
 			Vec3 nn;
 			CHECK(app.world().rayDown({-700.0f, 3000.0f, -700.0f}, 5000.0f, blockTop, nn) && blockTop > 200.0f);
 		}
+		static const char* const kMid[3] = {"T_STAND_2_JUMPUPMID", "S_JUMPUPMID", "T_JUMPUPMID_2_STAND"};
+		static const char* const kHang[3] = {"T_JUMP_2_HANG", "S_HANG", "T_HANG_2_STAND"};
 		int up = 0, tried = 0;
-		for (float start : {110.0f, 150.0f, 190.0f}) {
+		for (float start : {45.0f, 110.0f, 150.0f, 190.0f}) {
+			const bool standing = start < 60.0f; // (right at the wall: the jump key alone)
 			app.camera().yaw = 0.0f;
 			app.teleport({-700.0f, 700.0f, faceZ - start});
 			app.world().preload(app.camera().pos);
 			run(1.5f);
 			bool mantled = false;
+			int seenMid = 0, seenHang = 0;
 			for (int i = 0; i < 120; ++i) {
 				const bool was = app.hero().mantling();
 				Input in;
-				in.moveZ = was || mantled ? 0.0f : 1.0f; // (once up, it stands)
+				in.moveZ = was || mantled || standing ? 0.0f : 1.0f; // (once up, it stands)
 				in.jump = i < 20 && !mantled;
 				app.update(in, dt);
 				mantled = mantled || app.hero().mantling();
+				const Clip* c = app.hero().animator().current();
+				for (int k = 0; k < 3; ++k)
+					if (c && c == app.hero().clip(kMid[k])) seenMid |= 1 << k;
+				for (int k = 0; k < 3; ++k)
+					if (c && c == app.hero().clip(kHang[k])) seenHang |= 1 << k;
 				if (mantled && !app.hero().mantling() && was) break;
 			}
 			run(0.4f);
 			const Vec3 f = app.player().feet;
+			std::printf("  (climbed through: middle %d of 7, hang %d of 7)\n", seenMid, seenHang);
+			if (standing) CHECK(seenMid == 7); // (from the ground: the original's middle climb, all three steps)
 			std::printf("  a jump from %.0f cm: mantled %d, feet %.0f %.0f %.0f (the block's top is %.0f)\n", double(start), int(mantled), double(f.x),
 			            double(f.y), double(f.z), double(blockTop));
 			++tried;
 			up += mantled && std::fabs(f.y - blockTop) < 15.0f && f.z > faceZ + 10.0f && f.z < faceZ + 212.0f && app.player().grounded;
 		}
-		CHECK(up >= 2 && tried == 3);
+		CHECK(up >= 3 && tried == 4);
+		// The high one: the jump key right at it hangs from the edge and climbs on.
+		{
+			float top2 = 0;
+			Vec3 nn;
+			CHECK(app.world().rayDown({-1100.0f, 3000.0f, -700.0f}, 5000.0f, top2, nn));
+			app.camera().yaw = 0.0f;
+			app.teleport({-1100.0f, 700.0f, faceZ - 45.0f});
+			run(1.5f);
+			const float y0 = app.player().feet.y;
+			int seenHang = 0;
+			bool mantled = false;
+			for (int i = 0; i < 150; ++i) {
+				Input in;
+				in.jump = i < 3;
+				app.update(in, dt);
+				mantled = mantled || app.hero().mantling();
+				const Clip* c = app.hero().animator().current();
+				for (int k = 0; k < 3; ++k)
+					if (c && c == app.hero().clip(kHang[k])) seenHang |= 1 << k;
+			}
+			const Vec3 f = app.player().feet;
+			std::printf("  the high ledge (%.0f cm): mantled %d, hang %d of 7, feet %.0f %.0f %.0f\n", double(top2 - y0), int(mantled), seenHang,
+			            double(f.x), double(f.y), double(f.z));
+			CHECK(mantled && seenHang == 7 && std::fabs(f.y - top2) < 15.0f && app.player().grounded);
+		}
+		// The wall too tall: straight up and down again, not forward.
+		{
+			app.camera().yaw = 0.0f;
+			app.teleport({-1500.0f, 700.0f, faceZ - 45.0f});
+			run(1.5f);
+			const Vec3 f0 = app.player().feet;
+			float highest = f0.y;
+			bool upClip = false, mantled = false;
+			for (int i = 0; i < 60; ++i) {
+				Input in;
+				in.jump = i < 3;
+				app.update(in, dt);
+				highest = std::max(highest, app.player().feet.y);
+				mantled = mantled || app.hero().mantling();
+				const Clip* c = app.hero().animator().current();
+				upClip = upClip || (c && (c == app.hero().clip("T_STAND_2_JUMPUP") || c == app.hero().clip("S_JUMPUP")));
+			}
+			const Vec3 f = app.player().feet;
+			const float moved = std::sqrt((f.x - f0.x) * (f.x - f0.x) + (f.z - f0.z) * (f.z - f0.z));
+			std::printf("  at the tall wall: up %.0f cm, moved %.0f cm, the jump-up pose %d, mantled %d\n", double(highest - f0.y), double(moved),
+			            int(upClip), int(mantled));
+			CHECK(!mantled && upClip && highest - f0.y > 40.0f && moved < 20.0f && app.player().grounded);
+		}
 	}
 }
 

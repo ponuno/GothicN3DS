@@ -32,6 +32,8 @@ const float kMinFade = 0.1f;
 // A jump whose take-off animation does not lift the body (or a model without
 // one) is thrown instead: this fast upwards, for about 85 cm.
 const float kThrowUp = 408.0f;
+// A jump straight up at a wall: about 90 cm with the original's gravity.
+const float kJumpUpSpeed = 420.0f;
 
 float wrapAngle(float a) {
 	const float pi = 3.14159265f;
@@ -137,14 +139,10 @@ bool Hero::load(Pak& pak) {
 		}
 	}
 	// What the model script has for climbing onto a ledge (the clips that lift the body).
-	_climbCount = 0;
-	static const char* const kClimbNames[] = {"T_JUMPUPLOW", "T_STAND_2_JUMPUPLOW", "T_JUMPUPMID", "T_STAND_2_JUMPUPMID",
-	                                          "T_JUMPUP", "T_STAND_2_JUMPUP", "T_JUMP_2_HANG", "T_STAND_2_HANG",
-	                                          "T_HANG_2_STAND", "T_RUNL_2_JUMPUP", "T_JUMPUPLOW_2_STAND", "T_JUMPUPMID_2_STAND"};
-	for (const char* climbName : kClimbNames) {
-		const Clip* c = _model.clip(climbName);
-		if (c && c->rise() >= 25.0f && _climbCount < CLIMB_CLIPS) _climbClips[_climbCount++] = c;
-	}
+	static const char* const kClimbNames[CLIMB_CLIPS] = {"T_STAND_2_JUMPUPLOW", "S_JUMPUPLOW", "T_JUMPUPLOW_2_STAND", "T_STAND_2_JUMPUPMID",
+	                                                     "S_JUMPUPMID",         "T_JUMPUPMID_2_STAND", "T_STAND_2_JUMPUP", "S_JUMPUP",
+	                                                     "T_JUMP_2_HANG",       "S_HANG",      "T_HANG_2_STAND"};
+	for (int k = 0; k < CLIMB_CLIPS; ++k) _climb[k] = _model.clip(kClimbNames[k]);
 	_spine[0] = _model.findNode(hashName("BIP01 SPINE"));
 	_spine[1] = _model.findNode(hashName("BIP01 SPINE1"));
 	_spine[2] = _model.findNode(hashName("BIP01 SPINE2"));
@@ -171,8 +169,8 @@ void Hero::release() {
 	memset(_turn, 0, sizeof(_turn));
 	memset(_jumpBack, 0, sizeof(_jumpBack));
 	memset(_parryClip, 0, sizeof(_parryClip));
-	memset(_climbClips, 0, sizeof(_climbClips));
-	_climbCount = 0;
+	memset(_climb, 0, sizeof(_climb));
+	_jumpUp = false;
 	_mantle = Mantle();
 	_takeoff = nullptr;
 	_placed = false;
@@ -546,7 +544,17 @@ bool Hero::useItem(const char* scheme, float seconds, float moment) {
 
 bool Hero::pickUp(float seconds, float moment) {
 	if (!loaded()) return false;
-	return beginUse(_model.clip("T_STAND_2_IGET"), _model.clip("S_IGET"), _model.clip("T_IGET_2_STAND"), seconds, moment, true);
+	// Gothic 1's own: "C_STAND_2_IGET_1" ... (the model script combines three of
+	// them by the height of the thing; _1 reaches lowest, to the ground).
+	const Clip* in = _model.clip("T_STAND_2_IGET");
+	const Clip* hold = _model.clip("S_IGET");
+	const Clip* out = _model.clip("T_IGET_2_STAND");
+	if (!in) {
+		in = _model.clip("C_STAND_2_IGET_1");
+		hold = _model.clip("C_IGET_1");
+		out = _model.clip("C_IGET_2_STAND_1");
+	}
+	return beginUse(in, hold, out, seconds, moment, true);
 }
 
 // ---- a chest ----
@@ -739,7 +747,7 @@ void Hero::useTick(float dt) {
 	}
 }
 
-Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge* ledge) {
+Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge* ledge, const Ledge* groundLedge, bool wall) {
 	Drive drive;
 	if (!loaded() || dt <= 0.0f) return drive;
 
@@ -811,8 +819,16 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 			break;
 		case AIRBORNE:
 			_airTime += dt;
-			if (_jumping && ledge && ledge->found && beginMantle(*ledge, player)) {
+			if (_jumping && ledge && ledge->found && beginMantle(*ledge, player, false)) {
 				_roleNow = CLIMB;
+			} else if (_jumping && _jumpUp) {
+				// Straight up at a wall: the take-off, then the pose of the jump up.
+				const Clip* inClip = _climb[CLIMB_UP_IN];
+				if (!(inClip && cur == inClip && !_anim.finished())) {
+					if (_climb[CLIMB_UP]) act(_climb[CLIMB_UP], 0.08f);
+					else go(ST_JUMP, force, 0.15f);
+				}
+				_roleNow = JUMP;
 			} else if (_jumping) {
 				go(ST_JUMP, force, 0.15f);
 				_roleNow = JUMP;
@@ -848,6 +864,20 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 			} else if (player.climbing) {
 				go(idle, force);
 				_roleNow = IDLE;
+			} else if (jumpPressed && !busy && !wading && groundLedge && groundLedge->found && beginMantle(*groundLedge, player, true)) {
+				// A ledge ahead in reach: up onto it, as the original climbs.
+				_roleNow = CLIMB;
+			} else if (jumpPressed && !busy && !wading && wall) {
+				// A wall right ahead, nothing to take hold of: straight up.
+				drive.launch = true;
+				drive.velocity = {0, kJumpUpSpeed, 0};
+				if (_climb[CLIMB_UP_IN]) _anim.play(_climb[CLIMB_UP_IN], 0.08f);
+				else if (_climb[CLIMB_UP]) _anim.play(_climb[CLIMB_UP], 0.08f);
+				else _anim.play(stateClip(ST_JUMP), 0.12f);
+				_body = AIRBORNE;
+				_jumping = _jumpUp = true;
+				_airTime = 0;
+				_roleNow = JUMP;
 			} else if (jumpPressed && !busy && !wading) {
 				// Off the ground: through the take-off the script has for where
 				// the body is coming from.
@@ -980,10 +1010,11 @@ void Hero::updatePose(float dt) {
 	_drawn.pos[0].z = 0;
 	if (_body == MANTLE) {
 		_hipMix = 0;
-		if (_mantle.clip && _mantle.rise > 1.0f && _anim.current() == _mantle.clip) {
+		const Clip* c = _mantle.current();
+		if (c && _anim.current() == c) {
 			// The climb's height is in the body's place already.
-			_drawn.pos[0].y -= max(_mantle.clip->motion(_anim.time()).y, 0.0f);
-		} else {
+			_drawn.pos[0].y -= max(c->motion(_anim.time()).y, 0.0f);
+		} else if (!c) {
 			_drawn.pos[0].y = _restY;
 		}
 		return;
@@ -1020,39 +1051,77 @@ bool Hero::wantsLedge(const Player& player) const {
 	       !_down && !_reel && !player.swimming && player.waterDepth <= 0.0f && !player.climbing && !player.flying && player.velocityY < 260.0f;
 }
 
-bool Hero::beginMantle(const Ledge& ledge, const Player& player) {
-	if (!wantsLedge(player) || !ledge.found) return false;
+bool Hero::wantsJumpUp(const Player& player) const {
+	return loaded() && _body == GROUNDED && player.grounded && _weapon == WEAPON_NONE && !drawing() && !usingItem() && !_down && !_reel &&
+	       !(_blow.clip && _anim.current() == _blow.clip) && !player.swimming && player.waterDepth <= 0.0f && !player.climbing && !player.flying;
+}
+
+bool Hero::beginMantle(const Ledge& ledge, const Player& player, bool fromGround) {
+	if (!ledge.found || (fromGround ? !wantsJumpUp(player) : !wantsLedge(player))) return false;
 	_mantle = Mantle();
 	_mantle.start = player.feet;
 	_mantle.top = ledge.top;
 	_mantle.gap = ledge.gap;
 	_mantle.yaw = ledge.yaw;
-	// The clip whose lift is nearest the height (not lower than it, if one is that high).
-	const Clip* best = nullptr;
-	for (u32 i = 0; i < _climbCount; ++i) {
-		const Clip* c = _climbClips[i];
-		if (!best) {
-			best = c;
-			continue;
+	const float h = max(ledge.height, 0.0f);
+	// Which way up, by the height (as the original's three).
+	int steps[MANTLE_STEPS], n = 0;
+	int flight = -1; // the step the body flies up in (high: S_JUMPUP)
+	const bool canHang = _climb[CLIMB_HANG_IN] && _climb[CLIMB_HANG_OUT];
+	if (fromGround) {
+		if (h <= 110.0f && _climb[CLIMB_LOW_OUT]) {
+			steps[n++] = CLIMB_LOW_IN, steps[n++] = CLIMB_LOW, steps[n++] = CLIMB_LOW_OUT;
+		} else if (h <= 170.0f && _climb[CLIMB_MID_OUT]) {
+			steps[n++] = CLIMB_MID_IN, steps[n++] = CLIMB_MID, steps[n++] = CLIMB_MID_OUT;
+		} else if (canHang) {
+			steps[n++] = CLIMB_UP_IN, steps[n++] = CLIMB_UP, steps[n++] = CLIMB_HANG_IN, steps[n++] = CLIMB_HANG, steps[n++] = CLIMB_HANG_OUT;
+			flight = 1;
 		}
-		const float want = ledge.height * 0.85f;
-		const bool cOk = c->rise() >= want, bOk = best->rise() >= want;
-		if ((cOk && !bOk) || (cOk && bOk && c->rise() < best->rise()) || (!cOk && !bOk && c->rise() > best->rise())) best = c;
+	} else {
+		// From a jump the hands are at the edge already.
+		if (h <= 70.0f && _climb[CLIMB_LOW_OUT]) steps[n++] = CLIMB_LOW_OUT;
+		else if (h <= 120.0f && _climb[CLIMB_MID_OUT]) steps[n++] = CLIMB_MID_OUT;
+		else if (canHang) {
+			steps[n++] = CLIMB_HANG_IN, steps[n++] = CLIMB_HANG, steps[n++] = CLIMB_HANG_OUT;
+		}
 	}
-	if (best) {
-		_mantle.clip = best;
-		_mantle.rise = best->rise();
-		_mantle.duration = max(best->duration(), 0.3f);
-		_mantle.forward = best->motion(best->duration()).z;
-		_anim.play(best, 0.1f);
+	float clipRise = 0;
+	for (int k = 0; k < n; ++k) {
+		const Clip* c = _climb[steps[k]];
+		if (!c) continue; // (a step the model lacks is left out)
+		const u8 i = _mantle.n++;
+		_mantle.seq[i] = c;
+		// A held pose (one-frame loops) a moment; the rest as long as they are.
+		_mantle.len[i] = c->loops() ? (steps[k] == CLIMB_UP ? 0.15f : 0.2f) : max(c->duration(), 0.08f);
+		_mantle.rise[i] = c->loops() ? 0.0f : max(c->motion(c->duration()).y, 0.0f);
+		clipRise += _mantle.rise[i];
+		if (k == flight) flight = i;
+	}
+	if (_mantle.n) {
+		// The animations' way up fitted to the ledge: what they do not climb, the
+		// flight up to the edge does (high), or they are stretched a little.
+		float extra = h - clipRise;
+		if (extra > 0 && flight >= 0 && flight < _mantle.n) {
+			_mantle.free[flight] = extra;
+			_mantle.len[flight] += extra / 500.0f; // (as fast as a jump rises)
+		} else if (clipRise > 1.0f) {
+			_mantle.scale = clamp(h / clipRise, 0.3f, 2.0f);
+			for (u8 i = 0; i < _mantle.n; ++i) _mantle.rise[i] *= _mantle.scale;
+			extra = h - clipRise * _mantle.scale;
+			if (extra > 0) _mantle.free[0] += extra; // (taller than stretching covers)
+		} else {
+			_mantle.free[0] = h; // (no way up in the animations: a smooth rise)
+		}
+		for (u8 i = 0; i < _mantle.n; ++i) _mantle.duration += _mantle.len[i];
+		_anim.play(_mantle.seq[0], 0.1f);
 	} else {
 		// No animation for it (an older data.pak): the pose of a jump, held
 		// while the body is drawn up.
-		_mantle.duration = 0.55f + ledge.height / 350.0f;
+		_mantle.duration = 0.55f + h / 350.0f;
 		_anim.play(stateClip(ST_JUMP), 0.1f);
 	}
 	_body = MANTLE;
-	_jumping = false;
+	_jumping = _jumpUp = false;
 	_yaw = ledge.yaw;
 	_roleNow = CLIMB;
 	return true;
@@ -1062,12 +1131,22 @@ float Hero::mantleProgress() const {
 	return _body == MANTLE && _mantle.duration > 0 ? clamp(_mantle.time / _mantle.duration, 0.0f, 1.0f) : 0.0f;
 }
 
-// Where the climb has put the body: first up against the wall, then up and over
-// the edge as far as the animation has risen and gone forward.
+// Where the climb has put the body: first up against the wall, then up as far
+// as the animations have risen (and the flight to the edge), over it in the last.
 void Hero::mantleDrive(Drive& drive, float dt) {
 	_mantle.time += dt;
+	_mantle.clipTime += dt;
 	drive.place = true;
-	const float u = clamp(_mantle.time / _mantle.duration, 0.0f, 1.0f);
+	const auto smooth = [](float x) {
+		x = clamp(x, 0.0f, 1.0f);
+		return x * x * (3.0f - 2.0f * x);
+	};
+	// On to the next step of the climb.
+	while (_mantle.n && _mantle.at + 1 < _mantle.n && _mantle.clipTime >= _mantle.len[_mantle.at]) {
+		_mantle.clipTime -= _mantle.len[_mantle.at];
+		++_mantle.at;
+		_anim.play(_mantle.seq[_mantle.at], 0.06f);
+	}
 	if (_mantle.time >= _mantle.duration) {
 		drive.position = _mantle.top;
 		drive.land = true;
@@ -1075,27 +1154,34 @@ void Hero::mantleDrive(Drive& drive, float dt) {
 		_jumping = false;
 		_forceNext = true;
 		_anim.play(stateClip(_walkMode ? ST_WALK : ST_RUN), 0.2f);
-		_mantle.clip = nullptr;
+		_mantle.n = 0;
 		return;
 	}
-	const auto smooth = [](float x) {
-		x = clamp(x, 0.0f, 1.0f);
-		return x * x * (3.0f - 2.0f * x);
-	};
-	float py = smooth(u), pz = smooth((u - 0.45f) / 0.55f);
-	if (_mantle.clip && _mantle.clip == _anim.current()) {
-		const Vec3 m = _mantle.clip->motion(_anim.time());
-		if (_mantle.rise > 1.0f) py = clamp(m.y / _mantle.rise, 0.0f, 1.0f);
-		if (_mantle.forward > 15.0f) pz = clamp(m.z / _mantle.forward, 0.0f, 1.0f);
-	}
+	const float u = clamp(_mantle.time / _mantle.duration, 0.0f, 1.0f);
 	const Vec3 dir = {sinf(_mantle.yaw), 0, cosf(_mantle.yaw)};
 	Vec3 flat = _mantle.top - _mantle.start;
 	flat.y = 0;
 	const float total = length(flat);
 	const float inward = max(total - _mantle.gap, 0.0f);
 	const float snap = smooth(_mantle.time / 0.2f);
+	float up = 0, pz = 0;
+	if (_mantle.n) {
+		const u8 at = _mantle.at;
+		for (u8 i = 0; i < at; ++i) up += _mantle.rise[i] + _mantle.free[i];
+		const Clip* c = _mantle.seq[at];
+		const float t = _mantle.clipTime / max(_mantle.len[at], 1e-3f);
+		if (_mantle.rise[at] > 0.0f) up += min(max(c->motion(_mantle.clipTime).y, 0.0f) * _mantle.scale, _mantle.rise[at]);
+		up += _mantle.free[at] * smooth(t);
+		if (at + 1 == _mantle.n) {
+			const float fwd = c->motion(c->duration()).z;
+			pz = fwd > 15.0f ? clamp(c->motion(_mantle.clipTime).z / fwd, 0.0f, 1.0f) : smooth(t);
+		}
+	} else {
+		up = (_mantle.top.y - _mantle.start.y) * smooth(u);
+		pz = smooth((u - 0.45f) / 0.55f);
+	}
 	Vec3 p = _mantle.start + dir * (_mantle.gap * snap + inward * pz);
-	p.y = _mantle.start.y + (_mantle.top.y - _mantle.start.y) * py;
+	p.y = _mantle.start.y + min(up, max(_mantle.top.y - _mantle.start.y, 0.0f));
 	drive.position = p;
 }
 
@@ -1132,7 +1218,7 @@ void Hero::follow(const Player& player, const World& world, const float dayLight
 			const Clip* cur = _anim.current();
 			_forceNext = cur && !cur->loops() && !_anim.finished() && cur != _reel && !_down;
 			_body = GROUNDED;
-			_jumping = false;
+			_jumping = _jumpUp = false;
 		} else if (_body == TAKEOFF && _leftGround) {
 			_body = GROUNDED; // came down again before the take-off was over
 			_takeoff = nullptr;

@@ -1863,6 +1863,21 @@ static void testPacer() {
 	FramePacer p;
 	for (int f = 0; f < 600; ++f) p.update(cost(0.7f, p.detailScale()));
 	CHECK(p.detailScale() == 1.0f && p.interval() == 1);
+	{
+		// The objects are given back only once the load has settled: a load
+		// that keeps coming and going (walking, turning the camera) does not
+		// bring them back and take them away again and again.
+		FramePacer q;
+		for (int f = 0; f < 40; ++f) q.update(0.98f); // too heavy: objects go
+		const float cut = q.detailScale();
+		for (int f = 0; f < 300; ++f) q.update(f % 60 < 40 ? 0.5f : 0.85f); // light, but not for 1.5 s on end
+		const float unsettled = q.detailScale();
+		for (int f = 0; f < 80; ++f) q.update(0.5f);
+		const float early = q.detailScale();
+		for (int f = 0; f < 120; ++f) q.update(0.5f);
+		if (getenv("G3_TRACE")) std::printf("pacer: %f %f %f %f %d\n", double(cut), double(unsettled), double(early), double(q.detailScale()), q.interval());
+		CHECK(q.interval() == 1 && cut < 0.9f && std::fabs(unsettled - cut) < 1e-6f && std::fabs(early - cut) < 1e-6f && q.detailScale() > cut + 0.05f);
+	}
 
 	// A view that needs 105% at full detail. The pacer finds a detail level
 	// that fits and stays at 60 fps, without hunting.

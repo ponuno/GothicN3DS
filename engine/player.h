@@ -72,6 +72,12 @@ public:
 	Vec3 eye() const { return {feet.x, _eyeY, feet.z}; }
 	// False until the ground under the spawn point has been found.
 	bool placed() const { return _placed; }
+	// What the controller is in the middle of, for diagnostics (g3ds-host --slope-probe).
+	struct Debug {
+		bool sliding, resting, blocked;
+		Vec3 slideVel, carry;
+	};
+	Debug debug() const { return Debug {_sliding, _resting, _blocked, _slideVel, _carry}; }
 
 private:
 	void walk(const World& world, const Input& in, float yaw, float dt, const Drive* drive);

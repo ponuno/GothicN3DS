@@ -23,7 +23,10 @@ struct PacerConfig {
 	float high = 0.90f;      // load above which detail is taken away
 	float low = 0.80f;       // load below which it is given back
 	float minDetail = 0.35f; // shortest object distance, as a share of the configured one
-	float recover = 0.004f;  // detail given back per frame (the full range takes about 3 s)
+	float recover = 0.002f;  // detail given back per frame (the full range takes about 5 s) ...
+	u32 calmFrames = 90;     // ... once the load has been below `low` this many frames running (1.5 s):
+	                         // walking and turning the camera the load comes and goes, and the
+	                         // objects with it - they are given back only when it has settled
 	float enterHalf = 1.0f;  // load that, at minimum detail, counts towards half rate
 	u32 enterFrames = 20;    // consecutive overloaded frames before going to half rate
 	// Half rate (30 fps). Loads are still shares of one 60 Hz refresh.
@@ -60,7 +63,7 @@ private:
 	float _detail = 1.0f;
 	float _load = 0.0f;
 	int _interval = 1;
-	u32 _over = 0, _under = 0;
+	u32 _over = 0, _under = 0, _calm = 0;
 	bool _probing = false;
 	u32 _sinceProbe = 0, _probeWait = 0, _settled = 0, _atFullRate = 0;
 };

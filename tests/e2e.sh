@@ -49,6 +49,9 @@ synth)
 		> "$out/day.txt"
 	grep -q "Digger  *BSANVIL " "$out/day.txt" || fail "the smith is not at his anvil"
 	[ "$(num mobsUsed)" -gt 0 ] || fail "nothing was used by day"
+	# The slope probe: the character stands, runs and jumps at a place, and says how it went.
+	"$host" --pak "$out/data.pak" --slope-probe 0,400,4940 > "$out/slope.txt" || fail "the slope probe did not run"
+	grep -q "^slope probe: 0 of 9 runs stuck" "$out/slope.txt" || fail "the slope probe found the character stuck on open ground"
 	"$host" --pak "$out/data.pak" --still --cam 600,330,650,62,-14 --time 23.6 --frames 700 --shots 0 --who --stats "$out/stats.json" \
 		> "$out/night.txt"
 	grep -q " BEDHIGH " "$out/night.txt" || fail "nobody went to bed"

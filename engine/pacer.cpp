@@ -6,7 +6,7 @@ void FramePacer::reset() {
 	_detail = 1.0f;
 	_load = 0.0f;
 	_interval = 1;
-	_over = _under = 0;
+	_over = _under = _calm = 0;
 	_probing = false;
 	_sinceProbe = _settled = _atFullRate = 0;
 	_probeWait = cfg.probeEvery;
@@ -27,8 +27,12 @@ void FramePacer::update(float frameLoad) {
 			// The further over, the bigger the step; never so big that it is
 			// seen as one.
 			_detail -= clamp((_load - cfg.high) * 0.5f, 0.01f, 0.08f);
+			_calm = 0;
 		} else if (_load < cfg.low) {
-			_detail += cfg.recover;
+			// (Only once the load has settled: see PacerConfig::calmFrames.)
+			if (++_calm >= cfg.calmFrames) _detail += cfg.recover;
+		} else {
+			_calm = 0;
 		}
 		_detail = clamp(_detail, cfg.minDetail, 1.0f);
 

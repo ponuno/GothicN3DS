@@ -225,7 +225,7 @@ private:
 	float _groundY = 0;   // where the feet last stood
 	// The climb's lift at this moment: what the animation's own rise gives (the
 	// pose gives up as much), and what the body is lifted without it.
-	void mantleLift(float& anim, float& total) const;
+	void mantleLift(float& anim, float& total, float* raw = nullptr) const;
 	Vec3 _liftSum {0, 0, 0};
 	float _liftTime = 0, _liftY = 0;
 	Pose _drawn;

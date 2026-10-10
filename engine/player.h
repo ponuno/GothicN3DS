@@ -56,7 +56,7 @@ struct PlayerConfig {
 	float floatSpeed = 220.0f; // cm/s the body rises to the surface with
 	float climbSpeed = 170.0f; // cm/s up or down a ladder
 	float driveGravity = 981.0f; // cm/s^2 for a driven body: the original's
-	float ledgeReach = 250.0f;   // highest ledge (above the feet) the hands of a jumping body take hold of
+	float ledgeReach = 310.0f;   // highest ledge (above the feet) the hands of a jumping body take hold of
 	float ledgeMin = 55.0f;      // lowest: below, a jump simply lands on it
 	float ledgeRange = 90.0f;    // how far ahead of the body's edge the wall may be, cm
 };

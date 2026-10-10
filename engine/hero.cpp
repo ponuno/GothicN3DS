@@ -1021,9 +1021,11 @@ void Hero::updatePose(float dt) {
 		const Clip* c = _mantle.current();
 		if (c && _anim.current() == c) {
 			// The climb's height is in the body's place already (as far as the body has it).
-			float anim, total;
-			mantleLift(anim, total);
-			_drawn.pos[0].y -= anim;
+			// (The root's own way up, whole: when the climb is fitted to a lower ledge the
+			// body carries the fitted part, and the pose must not add the rest on top of it.)
+			float anim, total, raw;
+			mantleLift(anim, total, &raw);
+			_drawn.pos[0].y -= raw;
 		} else if (!c) {
 			_drawn.pos[0].y = _restY;
 		}
@@ -1068,7 +1070,7 @@ bool Hero::wantsJumpUp(const Player& player) const {
 
 bool Hero::beginMantle(const Ledge& ledge, const Player& player, bool fromGround) {
 	if (!ledge.found || (fromGround ? !wantsJumpUp(player) : !wantsLedge(player))) return false;
-	if (!fromGround && ledge.top.y - _groundY > 270.0f) return false; // (too high for a jump, whatever the feet have risen to)
+	if (!fromGround && ledge.top.y - _groundY > 330.0f) return false; // (too high for a jump, whatever the feet have risen to)
 	_mantle = Mantle();
 	_mantle.start = player.feet;
 	_mantle.top = ledge.top;
@@ -1145,8 +1147,9 @@ float Hero::mantleProgress() const {
 
 // Where the climb has put the body: first up against the wall, then up as far
 // as the animations have risen (and the flight to the edge), over it in the last.
-void Hero::mantleLift(float& anim, float& total) const {
+void Hero::mantleLift(float& anim, float& total, float* raw) const {
 	anim = total = 0;
+	if (raw) *raw = 0;
 	if (!_mantle.n) return;
 	const auto smooth = [](float x) {
 		x = clamp(x, 0.0f, 1.0f);
@@ -1161,6 +1164,7 @@ void Hero::mantleLift(float& anim, float& total) const {
 		const float now = min(_mantle.clipTime, c->duration());
 		for (int f = 0; f <= 16; ++f) top = max(top, c->motion(now * float(f) / 16.0f).y);
 		anim = _mantle.rise[at] * clamp(top / _mantle.peak[at], 0.0f, 1.0f);
+		if (raw) *raw = top;
 	}
 	total += anim + _mantle.free[at] * smooth(_mantle.clipTime / max(_mantle.len[at], 1e-3f));
 }

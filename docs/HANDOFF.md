@@ -381,3 +381,4 @@ Request: (1) grab ledges when jumping, (2) pickup animation, (3) containers/ches
 - Jump-spam limit: `kJumpRecover` = 0.55 s on the ground after landing before the next plain/wall jump (`_jumpCool` in Hero::control). Ledge climbs are not limited.
 - The host `--walk` script no longer jumps in the cave world (it cleared the pool and e2e_synth saw no swimming).
 - Unverified on console: real-skeleton climb root motion; tune kJumpRecover if it feels too slow/fast.
+- Climb fix: `updatePose` subtracts the clip root's whole (unscaled) rise (`mantleLift(..., &raw)`), the body carries only the fitted part; before, a climb fitted to a low ledge drew the hips above the edge and dropped them at the end ("up then down"). `ledgeReach` 250→310, jump-grab limit 270→330.

@@ -84,6 +84,12 @@ struct SrcMob {
 	float yaw;
 	int states = 1;
 	std::vector<SrcMobSlot> slots;
+	// A container (oCMobContainer).
+	bool container = false;
+	bool locked = false;
+	std::string key;      // upper case item instance, "" for none
+	std::string pick;     // "LRRL"
+	std::string contents; // "ITMI_GOLD:75, ITFO_FISH:2"
 };
 
 // A thing lying about (g3ds/game.h, WorldItem).

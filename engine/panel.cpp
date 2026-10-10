@@ -25,7 +25,7 @@ constexpr u32 HP = 0xB0261EFFu, HP_LIGHT = 0xD8584AFFu, MANA = 0x2A4CBCFFu, MANA
 
 // The quick slots' keys, as on the PC's keyboard.
 const char* const kKeys[QUICK_SLOTS] = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"};
-const char* const kPageTitles[] = {"", "Инвентарь", "Дневник", "Персонаж"};
+const char* const kPageTitles[] = {"", "Инвентарь", "Дневник", "Персонаж", "Сундук", "Замок"};
 
 // The signs of the tabs, in the order of ItemTab.
 const u8 kTabIcons[ITEM_TABS] = {ICON_ALL, ICON_WEAPONS, ICON_ARMOR, ICON_MAGIC, ICON_POTION, ICON_APPLE, ICON_OTHER};
@@ -314,10 +314,37 @@ void InventoryPanel::openPage(PanelPage p) {
 	if (p >= PANEL_PAGES || p == _page) return;
 	_page = p;
 	_assigning = false;
-	_inspect = p == PAGE_INVENTORY ? kInspectTime : 0.0f;
+	_inspect = p == PAGE_INVENTORY || p == PAGE_CHEST ? kInspectTime : 0.0f;
+	if (p == PAGE_CHEST) {
+		_side = 0;
+		_scroll = 0;
+		_selected = 0xFFFFFFFFu;
+		_filteredVersion = 0xFFFFFFFFu;
+	}
 	_topic = -1;
 	_listScroll = 0;
 	_dirty = true;
+}
+
+void InventoryPanel::setSide(int side) {
+	side = side ? 1 : 0;
+	if (side == _side) return;
+	_side = u8(side);
+	_scroll = 0;
+	_selected = 0xFFFFFFFFu;
+	_inspect = kInspectTime;
+	_filteredVersion = 0xFFFFFFFFu;
+	_dirty = true;
+}
+
+void InventoryPanel::stripCentre(int k, int& x, int& y) {
+	x = 2 + k * 107 + 52;
+	y = TABS_Y + TABS_H / 2;
+}
+
+void InventoryPanel::lockCentre(int k, int& x, int& y) {
+	x = k ? 240 : 80;
+	y = 168;
 }
 
 void InventoryPanel::setTab(ItemTab t) {
@@ -328,19 +355,25 @@ void InventoryPanel::setTab(ItemTab t) {
 }
 
 void InventoryPanel::refilter(const InventoryView& v) {
-	if (_filteredVersion == v.version && _filteredTab == _tab) return;
+	if (_filteredVersion == v.version && _filteredTab == _tab && _filteredPage == _page && _filteredSide == _side) return;
 	_filteredVersion = v.version;
 	_filteredTab = _tab;
+	_filteredPage = _page;
+	_filteredSide = _side;
 	_shownCount = 0;
-	for (u32 i = 0; i < v.count; ++i)
-		if (_tab == TAB_ALL || tabOf(v.items[i].kind) == _tab) _shown[_shownCount++] = i;
+	const ItemEntry* list = items(v);
+	const u32 total = itemCount(v);
+	for (u32 i = 0; i < total && _shownCount < INVENTORY_MAX; ++i)
+		if (_page == PAGE_CHEST || _tab == TAB_ALL || tabOf(list[i].kind) == _tab) _shown[_shownCount++] = i;
 	_scroll = clamp(_scroll, 0, maxScroll());
 	_dirty = true;
 }
 
 const ItemEntry* InventoryPanel::entryOf(const InventoryView& v, u32 symbol) const {
-	for (u32 i = 0; i < v.count; ++i)
-		if (v.items[i].symbol == symbol) return &v.items[i];
+	const ItemEntry* list = items(v);
+	const u32 total = itemCount(v);
+	for (u32 i = 0; i < total; ++i)
+		if (list[i].symbol == symbol) return &list[i];
 	return nullptr;
 }
 
@@ -411,11 +444,25 @@ InventoryPanel::Hit InventoryPanel::hitTest(int x, int y) const {
 		inSlot(h.index);
 		return h;
 	}
-	if (_page != PAGE_INVENTORY) {
+	if (_page == PAGE_LOCK) {
+		for (int k = 0; k < 2; ++k) {
+			int cx, cy;
+			lockCentre(k, cx, cy);
+			if (abs(x - cx) <= 68 && abs(y - cy) <= 40) {
+				h.region = R_LOCK;
+				h.index = k;
+			}
+		}
+		return h;
+	}
+	if (!gridPage()) {
 		h.region = R_LIST;
 		return h;
 	}
-	if (y >= TABS_Y - 2) {
+	if (_page == PAGE_CHEST && y >= TABS_Y - 2) {
+		h.region = R_STRIP;
+		h.index = clamp((x - 2) / 107, 0, 2);
+	} else if (y >= TABS_Y - 2) {
 		if (x < PILL_W + 2) h.region = R_PREV_TAB;
 		else if (x >= PILL_W + 2 + TAB_PAGES * TAB_W) h.region = R_NEXT_TAB;
 		else {
@@ -438,13 +485,23 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 	PanelCommand cmd;
 	refilter(v);
 	if (_flash > 0.0f && (_flash -= dt) <= 0.0f) _dirty = true;
-	if (_inspect > 0.0f && !_assigning && _page != PAGE_INVENTORY) _inspect = 0.0f;
+	if (_inspect > 0.0f && !_assigning && !gridPage()) _inspect = 0.0f;
 	const ItemEntry* sel = entryOf(v, _selected);
 	if (_assigning && !(sel && (sel->flags & ITEMF_QUICK))) {
 		_assigning = false; // (used up meanwhile)
 		_dirty = true;
 	}
 	const auto use = [&](const ItemEntry* e) {
+		if (e && _page == PAGE_CHEST) {
+			// Over to the other side: all of the stack.
+			cmd.type = PANEL_CHEST_MOVE;
+			cmd.symbol = e->symbol;
+			cmd.amount = e->count;
+			cmd.slot = _side == 0 ? 0 : 1;
+			_inspect = kInspectTime;
+			_dirty = true;
+			return;
+		}
 		if (!e || !(e->flags & ITEMF_ACTION)) return;
 		cmd.type = PANEL_USE;
 		cmd.symbol = e->symbol;
@@ -472,8 +529,9 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 		_flashSlot = slot;
 	};
 	const auto close = [&]() {
+		const u8 was = _page;
 		openPage(PAGE_PLAY);
-		cmd.type = PANEL_CURSOR_OFF;
+		cmd.type = was == PAGE_CHEST ? u8(PANEL_CHEST_CLOSE) : was == PAGE_LOCK ? u8(PANEL_LOCK_CANCEL) : u8(PANEL_CURSOR_OFF);
 	};
 	const auto nextPage = [&](int step) {
 		// L / R on the diary and the character: the pages round.
@@ -483,11 +541,21 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 
 	// ---- the buttons (a page open) ----
 	if (open()) {
-		if (_page == PAGE_INVENTORY) {
-			if (!sel && _shownCount) choose(v.items[_shown[0]].symbol);
+		const ItemEntry* list = items(v);
+		if (_page == PAGE_LOCK) {
+			// The pick: left or right.
+			if (in.left || in.prevTab) {
+				cmd.type = PANEL_LOCK_PICK;
+				cmd.slot = 0;
+			} else if (in.right || in.nextTab) {
+				cmd.type = PANEL_LOCK_PICK;
+				cmd.slot = 1;
+			}
+		} else if (gridPage()) {
+			if (!sel && _shownCount) choose(list[_shown[0]].symbol);
 			int at = -1;
 			for (u32 i = 0; i < _shownCount; ++i)
-				if (v.items[_shown[i]].symbol == _selected) at = int(i);
+				if (list[_shown[i]].symbol == _selected) at = int(i);
 			if (_assigning) {
 				// The ten slots: the D-Pad walks them, A picks.
 				const int before = _pickerSlot;
@@ -506,15 +574,22 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 					if (u32(n + COLS) < _shownCount) n += COLS;
 					else if (u32((n / COLS + 1) * COLS) < _shownCount) n = int(_shownCount) - 1; // (to the last, shorter row)
 				}
-				choose(v.items[_shown[n]].symbol);
+				choose(list[_shown[n]].symbol);
 				keepInSight(u32(n));
 			}
-			if (in.prevTab && !_assigning) setTab(ItemTab((_tab + ITEM_TABS - 1) % ITEM_TABS));
-			if (in.nextTab && !_assigning) setTab(ItemTab((_tab + 1) % ITEM_TABS));
-			if (in.confirm && !_assigning) use(sel);
-			if (in.assign && sel && (sel->flags & ITEMF_QUICK)) {
-				_assigning = !_assigning;
-				_dirty = true;
+			if (_page == PAGE_CHEST) {
+				// L and R: the chest's things or the pack's. X: everything out of the chest.
+				if (in.prevTab || in.nextTab) setSide(_side ? 0 : 1);
+				if (in.assign && _side == 0 && v.chest.count) cmd.type = PANEL_CHEST_ALL;
+				if (in.confirm) use(entryOf(v, _selected));
+			} else {
+				if (in.prevTab && !_assigning) setTab(ItemTab((_tab + ITEM_TABS - 1) % ITEM_TABS));
+				if (in.nextTab && !_assigning) setTab(ItemTab((_tab + 1) % ITEM_TABS));
+				if (in.confirm && !_assigning) use(sel);
+				if (in.assign && sel && (sel->flags & ITEMF_QUICK)) {
+					_assigning = !_assigning;
+					_dirty = true;
+				}
 			}
 		} else {
 			if (in.prevTab) nextPage(-1);
@@ -540,10 +615,12 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 		_start = hitTest(in.x, in.y);
 		_startX = _x = in.x;
 		_startY = _y = in.y;
-		_startScroll = _page == PAGE_INVENTORY ? _scroll : _listScroll;
+		_startScroll = gridPage() ? _scroll : _listScroll;
 		_held = 0;
 		_moved = _longDone = false;
-		if (_start.region == R_SLOT || _start.region == R_BUTTON || _start.region == R_PICKER) _dirty = true; // (pressed)
+		if (_start.region == R_SLOT || _start.region == R_BUTTON || _start.region == R_PICKER || _start.region == R_STRIP ||
+		    _start.region == R_LOCK)
+			_dirty = true; // (pressed)
 	} else if (in.touching) {
 		_held += dt;
 		_x = in.x;
@@ -564,10 +641,10 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 				_dirty = true;
 			}
 		}
-		if (!_moved && !_longDone && _held > 0.5f && _start.region == R_TILE) {
+		if (!_moved && !_longDone && _held > 0.5f && _start.region == R_TILE && _page == PAGE_INVENTORY) {
 			// Held on a thing: chosen, and the ten slots come up.
 			_longDone = true;
-			choose(v.items[_shown[_start.index]].symbol);
+			choose(items(v)[_shown[_start.index]].symbol);
 			if (sel && (sel->flags & ITEMF_QUICK)) _assigning = true;
 		}
 	} else if (_touching) {
@@ -577,7 +654,7 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 			if (end.region == R_PICKER && end.index >= 0 && end.index == _start.index) assign(end.index);
 			else if (end.index < 0 && _start.index < 0) _assigning = false; // (a tap beside the slots: never mind)
 		} else if (_moved) {
-			if (_page == PAGE_INVENTORY) _scroll = clamp((_scroll + CELL_H / 2) / CELL_H * CELL_H, 0, maxScroll()); // (on a whole row)
+			if (gridPage()) _scroll = clamp((_scroll + CELL_H / 2) / CELL_H * CELL_H, 0, maxScroll()); // (on a whole row)
 		} else if (!_longDone && end.region == _start.region && end.index == _start.index) {
 			switch (end.region) {
 			case R_SLOT:
@@ -587,6 +664,16 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 				_flashSlot = end.index;
 				break;
 			case R_BUTTON: openPage(PanelPage(PAGE_INVENTORY + end.index)); break;
+			case R_STRIP:
+				if (end.index < 2) setSide(end.index);
+				else if (_side == 0 && v.chest.count) cmd.type = PANEL_CHEST_ALL;
+				break;
+			case R_LOCK:
+				cmd.type = PANEL_LOCK_PICK;
+				cmd.slot = u8(end.index);
+				_flash = 0.15f;
+				_flashSlot = 100 + end.index;
+				break;
 			case R_BACK:
 			case R_BARS: close(); break;
 			case R_KIND:
@@ -596,7 +683,7 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 			case R_PREV_TAB: setTab(ItemTab((_tab + ITEM_TABS - 1) % ITEM_TABS)); break;
 			case R_NEXT_TAB: setTab(ItemTab((_tab + 1) % ITEM_TABS)); break;
 			case R_TILE: {
-				const ItemEntry& e = v.items[_shown[end.index]];
+				const ItemEntry& e = items(v)[_shown[end.index]];
 				if (e.symbol == _selected && _inspect > 0.0f) use(&e);
 				else choose(e.symbol);
 				break;
@@ -648,6 +735,11 @@ bool InventoryPanel::draw(const InventoryView& v, bool force) {
 		break;
 	case PAGE_DIARY: drawDiary(v); break;
 	case PAGE_CHARACTER: drawCharacter(v); break;
+	case PAGE_CHEST:
+		drawGrid(v);
+		drawStrip(v);
+		break;
+	case PAGE_LOCK: drawLock(v); break;
 	default: drawPlay(v); break;
 	}
 	if (_assigning) drawPicker(v);
@@ -678,7 +770,8 @@ void InventoryPanel::drawBars(const InventoryView& v, bool header) {
 	_canvas.fill(2, 2, BACK_W - 4, BARS_H - 1, 0x2A2E34FFu);
 	_canvas.frame(2, 2, BACK_W - 4, BARS_H - 1, CELL_LINE);
 	_canvas.text((BACK_W - 2) / 2, 3, "\xE2\x97\x80", TITLE, ui::TEXT, ui::CENTER);
-	_canvas.text(BACK_W + 2, 3, kPageTitles[_page], TITLE, ui::TEXT, ui::LEFT, 0, true);
+	_canvas.text(BACK_W + 2, 3, _page == PAGE_CHEST && v.chest.name[0] ? v.chest.name : kPageTitles[_page], TITLE, ui::TEXT, ui::LEFT, 84,
+	             true);
 	bar(140, 222, v.hp, v.hpMax, HP, HP_LIGHT);
 	bar(238, 311, v.mana, v.manaMax, MANA, MANA_LIGHT);
 }
@@ -762,7 +855,7 @@ void InventoryPanel::drawGrid(const InventoryView& v) {
 		for (int c = 0; c < COLS; ++c) {
 			const u32 n = u32(r * COLS + c);
 			const int x = x0 + c * CELL_W, y = y0 + r * CELL_H - _scroll;
-			const ItemEntry* e = n < _shownCount ? &v.items[_shown[n]] : nullptr;
+			const ItemEntry* e = n < _shownCount ? &items(v)[_shown[n]] : nullptr;
 			const bool chosen = e && e->symbol == _selected;
 			cell(x, y, CELL_W, CELL_H, chosen, e && _flash > 0.0f && e->symbol == _flashSymbol);
 			if (!e) continue;
@@ -793,7 +886,7 @@ void InventoryPanel::drawGrid(const InventoryView& v) {
 	_canvas.fill(x0, y1, x1 + 1, y1 + 1, CELL_LINE);
 	for (u32 n = 0; n < _shownCount; ++n) {
 		// (The chosen cell's white edge stays on top of the lines.)
-		if (v.items[_shown[n]].symbol != _selected) continue;
+		if (items(v)[_shown[n]].symbol != _selected) continue;
 		const int x = x0 + int(n % COLS) * CELL_W, y = y0 + int(n / COLS) * CELL_H - _scroll;
 		_canvas.frame(x, y, min(x + CELL_W + 1, x1 + 1), y + CELL_H + 1, SEL_EDGE);
 	}
@@ -803,8 +896,9 @@ void InventoryPanel::drawGrid(const InventoryView& v) {
 		_canvas.fill(x1 - 3, y + 1, x1 - 1, y + h, 0xE8ECF0A0u);
 	}
 	if (_shownCount == 0)
-		_canvas.text((x0 + x1) / 2, y0 + GRID_H / 2 - 7, v.present ? kTabNames[_tab] : "Инвентаря нет", TEXT_DIM, ui::TEXT, ui::CENTER, 0,
-		             true);
+		_canvas.text((x0 + x1) / 2, y0 + GRID_H / 2 - 7,
+		             _page == PAGE_CHEST ? (_side == 0 ? "Сундук пуст" : "В рюкзаке пусто") : v.present ? kTabNames[_tab] : "Инвентаря нет",
+		             TEXT_DIM, ui::TEXT, ui::CENTER, 0, true);
 	_canvas.unclip();
 	if (v.messageTime > 0.0f && v.message[0]) {
 		// The last news over the bottom of the grid.
@@ -812,6 +906,61 @@ void InventoryPanel::drawGrid(const InventoryView& v) {
 		_canvas.fill(Canvas::W / 2 - w / 2, y1 - 17, Canvas::W / 2 + w / 2, y1 - 1, 0x000000C0u);
 		_canvas.text(Canvas::W / 2, y1 - 16, v.message, GOLD, ui::TEXT, ui::CENTER, Canvas::W - 8);
 	}
+}
+
+// The chest page's strip: the chest's things, the pack's, everything out of the chest.
+void InventoryPanel::drawStrip(const InventoryView& v) {
+	const int x0 = 2, x1 = Canvas::W - 2, y0 = TABS_Y, y1 = TABS_Y + TABS_H;
+	_canvas.gradient(x0, y0, x1, y1, TAB_TOP, TAB_BOTTOM);
+	_canvas.fill(x0, y0, x1, y0 + 1, TAB_LIGHT);
+	_canvas.fill(x0, y1 - 1, x1, y1, TAB_DARK);
+	static const char* const kNames[3] = {"Сундук", "Рюкзак", "Взять всё"};
+	for (int k = 0; k < 3; ++k) {
+		int cx, cy;
+		stripCentre(k, cx, cy);
+		const bool on = k < 2 && k == _side;
+		const bool pressed = _touching && !_moved && _start.region == R_STRIP && _start.index == k;
+		const bool off = k == 2 && (_side != 0 || v.chest.count == 0);
+		if (on || pressed) {
+			_canvas.fill(cx - 51, y0 + 1, cx + 51, y1 - 1, pressed ? SEL_BOTTOM : TAB_ON);
+			_canvas.fill(cx - 46, y1 - 3, cx + 46, y1 - 2, 0xE8ECF0FFu);
+		}
+		if (k > 0) _canvas.fill(cx - 53, y0 + 3, cx - 52, y1 - 3, TAB_LIGHT);
+		char label[40];
+		if (k == 0) snprintf(label, sizeof(label), "Сундук %lu", static_cast<unsigned long>(v.chest.count));
+		else snprintf(label, sizeof(label), "%s", kNames[k]);
+		_canvas.text(cx, y0 + 4, label, off ? TEXT_DIM : on ? TITLE : TEXT, ui::TEXT, ui::CENTER, 100, true);
+	}
+}
+
+// The lock: the squares of the combination, and the pick, left or right.
+void InventoryPanel::drawLock(const InventoryView& v) {
+	const InventoryView::Chest& c = v.chest;
+	char buf[64];
+	snprintf(buf, sizeof(buf), "Отмычек: %d", int(c.picks));
+	_canvas.text(Canvas::W / 2, BARS_H + 12, buf, c.picks ? TEXT : WARN, ui::TEXT, ui::CENTER, 0, true);
+	// The combination: a square for each turn.
+	const int n = clamp(int(c.length), 1, 16), w = 16, gap = 4;
+	const int total = n * w + (n - 1) * gap, x0 = (Canvas::W - total) / 2, y0 = 70;
+	for (int k = 0; k < n; ++k) {
+		const int x = x0 + k * (w + gap);
+		const bool done = k < c.progress;
+		_canvas.fill(x, y0, x + w, y0 + w, done ? GOLD : 0x0B0D10E0u);
+		_canvas.frame(x, y0, x + w, y0 + w, done ? 0xFFFFFFFFu : CELL_LINE);
+	}
+	_canvas.text(Canvas::W / 2, y0 + 28, c.text[0] ? c.text : "Верно — дальше, неверно — отмычка сломается", c.text[0] ? GOLD : TEXT_DIM,
+	             ui::TEXT, ui::CENTER, Canvas::W - 10, true);
+	for (int k = 0; k < 2; ++k) {
+		int cx, cy;
+		lockCentre(k, cx, cy);
+		const int bx0 = cx - 68, by0 = cy - 40, bx1 = cx + 68, by1 = cy + 40;
+		const bool pressed = (_touching && !_moved && _start.region == R_LOCK && _start.index == k) || (_flash > 0.0f && _flashSlot == 100 + k);
+		_canvas.gradient(bx0, by0, bx1, by1, pressed ? SEL_TOP : TAB_TOP, pressed ? SEL_BOTTOM : TAB_BOTTOM);
+		_canvas.frame(bx0, by0, bx1, by1, pressed ? SEL_EDGE : TAB_LIGHT);
+		_canvas.fill(bx0 + 1, by1 - 2, bx1 - 1, by1 - 1, TAB_DARK);
+		_canvas.text(cx, cy - 8, k ? "Вправо \xE2\x96\xB6" : "\xE2\x97\x80 Влево", TITLE, ui::TITLE, ui::CENTER, 0, true);
+	}
+	_canvas.text(Canvas::W / 2, 214, "Крестовина или L / R — тоже; B — бросить", TEXT_DIM, ui::TEXT, ui::CENTER, Canvas::W - 8, true);
 }
 
 void InventoryPanel::drawPicker(const InventoryView& v) {

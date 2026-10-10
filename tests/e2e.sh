@@ -133,7 +133,7 @@ if [ "$mode" = synth ]; then
 	grep -q "way net: 13 points, 15 connections" "$out/info.txt" || fail "the way net was not baked"
 	grep -q "life: the scripts have 10 states; the people of these worlds are put into 6: " "$out/info.txt" || fail "the states were not looked through"
 	grep -q "life: the states call 33 engine functions, 33 of which the engine carries out" "$out/info.txt" || fail "the states' needs were not reported"
-	grep -q "things to use: 6 of 5 kinds, with 7 places to stand at" "$out/info.txt" || fail "the things to use were not baked"
+	grep -q "things to use: 8 of 6 kinds, with 10 places to stand at" "$out/info.txt" || fail "the things to use were not baked"
 	grep -q "the scripts name 4 of them: BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: CHESTBIG" "$out/info.txt" || fail "the things the scripts use were not reported"
 	grep -q "  BENCH: T_BENCH_STAND_2_S0 0.40s ->S_BENCH_S0 root +0 +0 -36 (carries)" "$out/info.txt" || fail "what using the things looks like was not reported"
 	grep -q "clusters: the chunks are cut into .* boxes of 10 m" "$out/info.txt" || fail "the chunks were not cut into clusters"

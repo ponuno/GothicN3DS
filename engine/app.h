@@ -2,6 +2,7 @@
 // player and the sky. Platforms feed it input and call update()/render().
 #pragma once
 #include "g3ds/pak.h"
+#include "chests.h"
 #include "hero.h"
 #include "inventory.h"
 #include "loot.h"
@@ -188,6 +189,15 @@ public:
 	const Loot& loot() const { return _loot; }
 	Loot& loot() { return _loot; }
 	int lootTarget() const { return _lootTarget; }
+	// ---- the chests (containers.cpp) ----
+	// The containers of this world, the one the character could open now (A; -1
+	// for none), and what the character is doing at one.
+	const Chests& chests() const { return _chests; }
+	Chests& chests() { return _chests; }
+	int chestTarget() const { return _chestTarget; }
+	enum ChestStage : u8 { CH_NONE, CH_LOCK, CH_GLIDE, CH_OPEN, CH_CLOSING };
+	u8 chestStage() const { return _chest.stage; }
+	int chestIndex() const { return _chest.stage != CH_NONE ? int(_chest.index) : -1; }
 	// The platform says R is held: the quick slots are shown on the top screen.
 	struct ItemStats {
 		u32 used = 0;        // potions and food that did their work
@@ -298,6 +308,8 @@ private:
 	u16 _noPicture[256] = {};
 	u32 _noPictureCount = 0;
 	i16 thumbOf(u16 visual);
+	// One line of the inventory (or of a chest, `carried` false): name, picture, action, info box.
+	void fillEntry(ItemEntry& e, u32 symbol, i32 count, const GameNpc& h, bool carried);
 	// The thing turning in the top screen's info box: its model.
 	Model _showModel;
 	u16 _showVisual = 0;
@@ -312,6 +324,28 @@ private:
 	InventoryPanel _panel;
 	Loot _loot;
 	int _lootTarget = -1;
+	// The chests.
+	Chests _chests;
+	int _chestTarget = -1;
+	struct ChestJob {
+		u8 stage = CH_NONE;
+		u32 index = 0;
+		float time = 0;
+		Vec3 from {0, 0, 0}, to {0, 0, 0};
+		float yawFrom = 0, yawTo = 0;
+		u8 progress = 0, picks = 0;
+		bool shown = false;  // the chest page has been put up (closing it ends the use)
+		char news[64] = ""; // the lock page's line (a pick broke)
+	};
+	ChestJob _chest;
+	void chestUpdate(Input& in, float dt);
+	void chestCommand(const PanelCommand& c);
+	void chestStart(u32 index);
+	void chestBegin();         // walks to the chest and opens it
+	void chestEnd(bool hurried);
+	void chestMove(u32 symbol, i32 amount, bool toChest);
+	void chestView(const GameNpc& hero);
+	const char* chestName(u32 index) const; // "Большой сундук" ...
 };
 
 } // namespace g3

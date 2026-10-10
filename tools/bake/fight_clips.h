@@ -70,7 +70,31 @@ inline std::vector<std::string> itemUseClipNames() {
 		}
 	// Picking a thing up from the ground.
 	for (const char* name : {"T_STAND_2_IGET", "S_IGET", "T_IGET_2_STAND"}) out.push_back(name);
+	// Opening a chest: bending to it, the lid, and back.
+	for (const char* scheme : {"CHESTBIG", "CHESTSMALL"})
+		for (const char* f : {"T_%_STAND_2_S0", "S_%_S0", "T_%_S0_2_S1", "S_%_S1", "T_%_S1_2_S0", "T_%_S0_2_STAND", "T_%_S1_2_STAND"}) {
+			std::string name;
+			for (const char* c = f; *c; ++c) {
+				if (*c == '%') name += scheme;
+				else name += *c;
+			}
+			out.push_back(name);
+		}
+	// Climbing onto a ledge.
+	for (const char* name : {"T_JUMPUPLOW", "T_STAND_2_JUMPUPLOW", "T_JUMPUPMID", "T_STAND_2_JUMPUPMID", "T_JUMPUP", "T_STAND_2_JUMPUP",
+	                         "T_JUMP_2_HANG", "T_STAND_2_HANG", "S_HANG", "T_HANG_2_STAND", "T_RUNL_2_JUMPUP", "T_JUMPUPLOW_2_STAND",
+	                         "T_JUMPUPMID_2_STAND"})
+		out.push_back(name);
 	return out;
+}
+
+// Names the model script may have for climbing and picking up under other
+// names than those above: every animation of the player's character that has
+// one of these words in it is brought along, and the report lists them.
+inline bool isHeroReachFamily(const std::string& upperName) {
+	for (const char* word : {"JUMPUP", "HANG", "CLIMB", "LEDGE", "IGET", "PLUNDER", "PICKUP", "TAKE", "CHEST"})
+		if (upperName.find(word) != std::string::npos) return true;
+	return false;
 }
 
 } // namespace g3

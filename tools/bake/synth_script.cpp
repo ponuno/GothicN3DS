@@ -820,6 +820,24 @@ instance ItMiNugget (C_ITEM) {
 	description = name;
 };
 
+// The chests' keys and lock picks (the scene's chests name them).
+instance ItKeLockpick (C_ITEM) {
+	name = "Lockpick";
+	mainflag = ITEM_KAT_NONE;
+	flags = ITEM_MULTI;
+	value = 10;
+	visual = "ItKe_Lockpick_01.3ds";
+	description = name;
+};
+
+instance ItKe_CampChest (C_ITEM) {
+	name = "Key";
+	mainflag = ITEM_KAT_NONE;
+	value = 5;
+	visual = "ItKe_Key_01.3ds";
+	description = "Key to the small chest";
+};
+
 // ---------------------------------------------------------------- fighting
 instance Gil_Values (C_GILVALUES) {
 	fight_range_base[GIL_HUMAN] = 60;

@@ -468,6 +468,7 @@ void App::panelCommand(const PanelCommand& c) {
 	case PANEL_USE_SLOT: quickUse(c.slot); break;
 	case PANEL_ASSIGN: setQuickSlot(c.slot, c.symbol); break;
 	case PANEL_CLEAR_SLOT: setQuickSlot(c.slot, NONE); break;
+	case PANEL_CHEST_MOVE: case PANEL_CHEST_ALL: case PANEL_CHEST_CLOSE: case PANEL_LOCK_PICK: case PANEL_LOCK_CANCEL: chestCommand(c); break;
 	default: break; // (the report and the cursor are the platform's)
 	}
 }
@@ -571,9 +572,9 @@ void App::itemsUpdate(Input& in, float dt) {
 		const bool drink = it && kindOf(g, *it) == IK_POTION;
 		const char* scheme = it ? g.text(it->scheme) : "";
 		// Without the animations: a potion takes a second, food two (the item works 60% in);
-		// picking up, 0.7 s (in hand at 0.4).
-		const float seconds = _job.pickup ? 0.7f : drink ? 1.2f : 2.0f;
-		if (_job.pickup ? _hero.pickUp(seconds, 0.4f) : _hero.useItem(scheme, seconds, seconds * 0.6f)) {
+		// picking up, a second (in hand at 0.45: the bend shows).
+		const float seconds = _job.pickup ? 1.0f : drink ? 1.2f : 2.0f;
+		if (_job.pickup ? _hero.pickUp(seconds, 0.45f) : _hero.useItem(scheme, seconds, seconds * 0.6f)) {
 			_job.stage = JOB_USING;
 			_job.wait = 0;
 			const GameNpc& h = g.npc(u32(hi));
@@ -657,91 +658,27 @@ void App::itemsUpdate(Input& in, float dt) {
 
 // ---- what the bottom screen shows ----
 
-const InventoryView& App::inventory() {
-	InventoryView& v = _inv;
-	const int hi = heroIndex();
-	if (hi < 0) {
-		if (v.present) {
-			v.present = false;
-			v.count = 0;
-			++v.version;
-		}
-		return v;
-	}
+void App::fillEntry(ItemEntry& e, u32 symbol, i32 count, const GameNpc& h, bool carried) {
 	Game& g = _npcs.game();
-	const GameNpc& h = g.npc(u32(hi));
-	// A stamp of all that is shown: made anew only when it changes.
-	u32 stamp = 0x9E3779B9u;
-	stamp = mix(stamp, g.itemsVersion());
-	stamp = mix(stamp, _equipVersion);
-	stamp = mix(stamp, h.melee);
-	stamp = mix(stamp, h.ranged);
-	stamp = mix(stamp, h.armorItem);
-	stamp = mix(stamp, _hero.weapon());
-	for (u32 q : _quick) stamp = mix(stamp, q);
-	for (int a = 0; a < 6; ++a) stamp = mix(stamp, u32(g.attributeOf(h, a)));
-	const bool combat = heroInCombat();
-	stamp = mix(stamp, combat);
-	stamp = mix(stamp, _job.stage);
-	stamp = mix(stamp, _job.symbol);
-	stamp = mix(stamp, _queued);
-	stamp = mix(stamp, g.logVersion());
-	stamp = mix(stamp, u32(i32(_inv.messageTime > 0.0f)));
-	if (stamp == _invStamp && v.present) return v;
-	_invStamp = stamp;
-
-	v.present = true;
-	v.hp = g.attributeOf(h, 0);
-	v.hpMax = g.attributeOf(h, 1);
-	v.mana = g.attributeOf(h, 2);
-	v.manaMax = g.attributeOf(h, 3);
-	v.combat = combat;
-	v.busy = _job.stage != JOB_NONE;
-	v.busyShare = 0.0f; // (no bar: as in the original, the animation says how far it is)
-	v.busyText[0] = 0;
-	v.ore = 0;
-	char name[48];
-	if (v.busy) {
-		const GameItemInfo* it = g.itemInfo(_job.symbol);
-		scriptText(it ? g.text(it->description ? it->description : it->name) : "", name, sizeof(name));
-		const bool drink = it && kindOf(g, *it) == IK_POTION;
-		switch (_job.stage) {
-		case JOB_PUTAWAY: snprintf(v.busyText, sizeof(v.busyText), "Убирает оружие…"); break;
-		case JOB_START:
-		case JOB_USING:
-			snprintf(v.busyText, sizeof(v.busyText), "%s %s", _job.pickup ? "Поднимает:" : drink ? "Пьёт:" : "Ест:", name);
-			break;
-		case JOB_REDRAW: snprintf(v.busyText, sizeof(v.busyText), "Снова берёт оружие…"); break;
-		default: snprintf(v.busyText, sizeof(v.busyText), "Меняет оружие: %s", name); break;
-		}
-	}
-
-	// The things carried.
-	const u32 inHand = (_hero.weapon() == WEAPON_1H || _hero.weapon() == WEAPON_2H) ? h.melee : NONE;
-	v.count = 0;
-	for (u32 i = 0; i < g.itemStackCount() && v.count < INVENTORY_MAX; ++i) {
-		const GameItem& st = g.itemStack(i);
-		if (st.npc != u32(hi) || st.count <= 0) continue;
-		const GameItemInfo* it = g.itemInfo(st.symbol);
-		if (!it) continue;
-		ItemEntry& e = v.items[v.count];
-		memset(&e, 0, sizeof(e));
-		e.symbol = st.symbol;
-		e.count = st.count;
+	const GameItemInfo* it = g.itemInfo(symbol);
+	memset(&e, 0, sizeof(e));
+	if (!it) return;
+	{
+		e.symbol = symbol;
+		e.count = count;
 		e.value = it->value;
 		e.kind = kindOf(g, *it);
 		pictureOf(g, *it, e.kind, e.icon, e.tint);
 		scriptText(g.text(it->description ? it->description : it->name), e.name, sizeof(e.name));
-		if (e.icon == ICON_ORE) v.ore += st.count;
-		const bool worn = st.symbol == h.melee || st.symbol == h.ranged || st.symbol == h.armorItem || st.symbol == _amulet ||
-		                  st.symbol == _rings[0] || st.symbol == _rings[1];
+		const u32 inHand = (_hero.weapon() == WEAPON_1H || _hero.weapon() == WEAPON_2H) ? h.melee : NONE;
+		const bool worn = carried && (symbol == h.melee || symbol == h.ranged || symbol == h.armorItem || symbol == _amulet ||
+		                              symbol == _rings[0] || symbol == _rings[1]);
 		if (worn) e.flags |= ITEMF_EQUIPPED;
-		if (st.symbol == inHand) e.flags |= ITEMF_IN_HAND;
+		if (carried && symbol == inHand) e.flags |= ITEMF_IN_HAND;
 		char why[48];
-		if (!worn && !meetsNeeds(*it, why, sizeof(why))) e.flags |= ITEMF_BLOCKED;
-		if (v.busy && _job.symbol == st.symbol) e.flags |= ITEMF_BUSY;
-		for (int q = 0; q < QUICK_SLOTS; ++q)
-			if (_quick[q] == st.symbol) e.quick |= u16(1u << q);
+		if (carried && !worn && !meetsNeeds(*it, why, sizeof(why))) e.flags |= ITEMF_BLOCKED;
+		for (int q = 0; q < QUICK_SLOTS && carried; ++q)
+			if (_quick[q] == symbol) e.quick |= u16(1u << q);
 		// The action.
 		const char* action = "";
 		switch (e.kind) {
@@ -760,6 +697,7 @@ const InventoryView& App::inventory() {
 		if (action[0]) e.flags |= ITEMF_ACTION;
 		// Anything with an action may go into a quick slot (a potion, a weapon, armour).
 		if (e.flags & ITEMF_ACTION) e.flags |= ITEMF_QUICK;
+		if (!carried) e.flags &= u8(~ITEMF_QUICK);
 		e.picture = thumbOf(it->visual);
 		// The info box: the scripts' own lines first, as the original shows them.
 		for (int k = 0; k < 6; ++k) {
@@ -799,6 +737,83 @@ const InventoryView& App::inventory() {
 					for (int r = 0; r < e.rowCount; ++r)
 						if (e.rows[r].value[0] && atol(e.rows[r].value) == it->condValue[k]) e.rows[r].warn = 1;
 		}
+	}
+}
+
+const InventoryView& App::inventory() {
+	InventoryView& v = _inv;
+	const int hi = heroIndex();
+	if (hi < 0) {
+		if (v.present) {
+			v.present = false;
+			v.count = 0;
+			++v.version;
+		}
+		return v;
+	}
+	Game& g = _npcs.game();
+	const GameNpc& h = g.npc(u32(hi));
+	// A stamp of all that is shown: made anew only when it changes.
+	u32 stamp = 0x9E3779B9u;
+	stamp = mix(stamp, g.itemsVersion());
+	stamp = mix(stamp, _equipVersion);
+	stamp = mix(stamp, h.melee);
+	stamp = mix(stamp, h.ranged);
+	stamp = mix(stamp, h.armorItem);
+	stamp = mix(stamp, _hero.weapon());
+	for (u32 q : _quick) stamp = mix(stamp, q);
+	for (int a = 0; a < 6; ++a) stamp = mix(stamp, u32(g.attributeOf(h, a)));
+	const bool combat = heroInCombat();
+	stamp = mix(stamp, combat);
+	stamp = mix(stamp, _job.stage);
+	stamp = mix(stamp, _job.symbol);
+	stamp = mix(stamp, _queued);
+	stamp = mix(stamp, g.logVersion());
+	stamp = mix(stamp, u32(i32(_inv.messageTime > 0.0f)));
+	stamp = mix(stamp, _chests.version());
+	stamp = mix(stamp, u32(_chest.stage));
+	stamp = mix(stamp, u32(_chest.progress));
+	stamp = mix(stamp, u32(_chest.picks));
+	stamp = mix(stamp, u32(_chest.news[0]));
+	if (stamp == _invStamp && v.present) return v;
+	_invStamp = stamp;
+
+	v.present = true;
+	v.hp = g.attributeOf(h, 0);
+	v.hpMax = g.attributeOf(h, 1);
+	v.mana = g.attributeOf(h, 2);
+	v.manaMax = g.attributeOf(h, 3);
+	v.combat = combat;
+	v.busy = _job.stage != JOB_NONE;
+	v.busyShare = 0.0f; // (no bar: as in the original, the animation says how far it is)
+	v.busyText[0] = 0;
+	v.ore = 0;
+	char name[48];
+	if (v.busy) {
+		const GameItemInfo* it = g.itemInfo(_job.symbol);
+		scriptText(it ? g.text(it->description ? it->description : it->name) : "", name, sizeof(name));
+		const bool drink = it && kindOf(g, *it) == IK_POTION;
+		switch (_job.stage) {
+		case JOB_PUTAWAY: snprintf(v.busyText, sizeof(v.busyText), "Убирает оружие…"); break;
+		case JOB_START:
+		case JOB_USING:
+			snprintf(v.busyText, sizeof(v.busyText), "%s %s", _job.pickup ? "Поднимает:" : drink ? "Пьёт:" : "Ест:", name);
+			break;
+		case JOB_REDRAW: snprintf(v.busyText, sizeof(v.busyText), "Снова берёт оружие…"); break;
+		default: snprintf(v.busyText, sizeof(v.busyText), "Меняет оружие: %s", name); break;
+		}
+	}
+
+	// The things carried.
+	v.count = 0;
+	for (u32 i = 0; i < g.itemStackCount() && v.count < INVENTORY_MAX; ++i) {
+		const GameItem& st = g.itemStack(i);
+		if (st.npc != u32(hi) || st.count <= 0) continue;
+		if (!g.itemInfo(st.symbol)) continue;
+		ItemEntry& e = v.items[v.count];
+		fillEntry(e, st.symbol, st.count, h, true);
+		if (e.icon == ICON_ORE) v.ore += st.count;
+		if (v.busy && _job.symbol == st.symbol) e.flags |= ITEMF_BUSY;
 		++v.count;
 	}
 	// In the pages' order (insertion sort: a few dozen at most).
@@ -902,6 +917,7 @@ const InventoryView& App::inventory() {
 				}
 		}
 	}
+	chestView(h);
 	++v.version;
 	return v;
 }
@@ -1222,9 +1238,19 @@ void App::drawItemHud() {
 	const InventoryView& v = inventory();
 	if (!v.present) return;
 	(void)W;
+	// A name over a thing in reach, with the button that takes it: as the
+	// original shows what is in focus, and what A does.
+	const auto tag = [&](Vec3 at, const char* text) {
+		int x, y;
+		if (!projectToScreen(at, x, y)) return;
+		const int w = _ui.measure(text) + 30;
+		y = clamp(y - 30, 20, H - 60);
+		_ui.rect(x - w / 2, y - 2, x + w / 2, y + Ui::lineHeight() + 1, 0x0A0C10A0u);
+		_ui.rect(x - w / 2 + 3, y + 1, x - w / 2 + 16, y + Ui::lineHeight() - 1, 0xC4C8CCFFu);
+		_ui.text(x - w / 2 + 10, y - 1, "A", 0x1C2024FFu, ui::TEXT, ui::CENTER, false);
+		_ui.text(x - w / 2 + 21, y, text, ui::WHITE);
+	};
 	if (_lootTarget >= 0 && u32(_lootTarget) < _loot.count()) {
-		// The thing in reach: its name over it, as the original shows what is
-		// in focus, and what A does.
 		const LootItem& li = _loot.item(u32(_lootTarget));
 		Game& g = _npcs.game();
 		const GameItemInfo* it = g.itemInfo(li.symbol);
@@ -1232,25 +1258,32 @@ void App::drawItemHud() {
 		scriptText(it ? g.text(it->description ? it->description : it->name) : "", name, sizeof(name));
 		if (li.amount > 1) snprintf(line, sizeof(line), "%s ×%ld", name, static_cast<long>(li.amount));
 		else snprintf(line, sizeof(line), "%s", name);
-		int x, y;
-		if (projectToScreen({li.pos.x, li.pos.y + 40.0f, li.pos.z}, x, y)) {
-			const int w = _ui.measure(line) + 30;
-			y = clamp(y - 30, 20, H - 60);
-			_ui.rect(x - w / 2, y - 2, x + w / 2, y + Ui::lineHeight() + 1, 0x0A0C10A0u);
-			_ui.rect(x - w / 2 + 3, y + 1, x - w / 2 + 16, y + Ui::lineHeight() - 1, 0xC4C8CCFFu);
-			_ui.text(x - w / 2 + 10, y - 1, "A", 0x1C2024FFu, ui::TEXT, ui::CENTER, false);
-			_ui.text(x - w / 2 + 21, y, line, ui::WHITE);
+		tag({li.pos.x, li.pos.y + 40.0f, li.pos.z}, line);
+	} else if (_chestTarget >= 0 && u32(_chestTarget) < _chests.count() && _chest.stage == CH_NONE) {
+		const Mobs& mobs = _npcs.mobs();
+		const u32 mob = _chests.mob(u32(_chestTarget));
+		if (mob < mobs.count()) {
+			const WorldMob& m = mobs.mob(mob);
+			char line[80];
+			snprintf(line, sizeof(line), _chests.locked(u32(_chestTarget)) ? "%s (заперт)" : "%s", chestName(u32(_chestTarget)));
+			tag({m.pos[0], m.pos[1] + 75.0f, m.pos[2]}, line);
 		}
 	}
-	if (!itemOverlay()) return;
+	const bool lockPage = _panel.page() == InventoryPanel::PAGE_LOCK && _chest.stage == CH_LOCK;
+	if (!itemOverlay() && !lockPage) return;
 	const int line = Ui::lineHeight();
 	// The info box of the chosen thing: its name, the "what ... number" lines
 	// on the left, the thing itself turning on the right (drawShowcase: the
 	// box leaves that part clear).
 	const u32 shown = _panel.selected();
+	// (On the chest page's first side the things are the chest's.)
+	const bool chestPage = _panel.page() == InventoryPanel::PAGE_CHEST;
+	const bool chestSide = chestPage && _panel.side() == 0;
+	const ItemEntry* list = chestSide ? v.chest.items : v.items;
+	const u32 listCount = chestSide ? v.chest.count : v.count;
 	const ItemEntry* e = nullptr;
-	for (u32 i = 0; i < v.count; ++i)
-		if (v.items[i].symbol == shown) e = &v.items[i];
+	for (u32 i = 0; i < listCount && !lockPage; ++i)
+		if (list[i].symbol == shown) e = &list[i];
 	const int x0 = INFO_X0, x1 = INFO_X1, y0 = INFO_Y0, y1 = INFO_Y1, xm = INFO_X1 - MODEL_W;
 	if (e) {
 		_ui.rect(x0, y0, xm, y1, 0x0A0C10B4u);
@@ -1278,6 +1311,19 @@ void App::drawItemHud() {
 		x += kw + 4;
 		x += _ui.text(x, y, what, on ? 0xD8D6D0FFu : ui::DARK) + 10;
 	};
+	if (lockPage) {
+		hint("L", "Влево", true);
+		hint("R", "Вправо", true);
+		hint("B", "Отмена", true);
+		return;
+	}
+	if (chestPage) {
+		hint("A", "Переложить", e != nullptr);
+		hint("L R", _panel.side() == 0 ? "Рюкзак" : "Сундук", true);
+		if (v.chest.count > 0) hint("X", "Взять всё", true);
+		hint("B", "Закрыть", true);
+		return;
+	}
 	const bool can = e && (e->flags & ITEMF_ACTION) && !((e->flags & ITEMF_BLOCKED) && !(e->flags & ITEMF_EQUIPPED));
 	const char* action = !e ? "—" : e->action[0] ? e->action : "—";
 	if (_panel.assigning()) {

@@ -1,6 +1,6 @@
 # Передача работы: контекст и ТЗ
 
-Документ для продолжения работы в новом чате. Состояние на 10.10.2026 (вечер, раунд 6): **инвентарь на нижнем экране** в стиле Gothic Classic (раздел 5, раунд 6). **`data.pak` нужно запечь заново** (анимации питья и еды героя; старый архив работает — герой тогда просто стоит 1,2/2 с). На консоли раунд 6 не проверялся. Раунд 5: **бой** (герой и жители, комбо по событиям модели, парирование, отскок, оглушение и смерть по правилам Gothic, боевой ИИ по таблицам `FA_*`), **захват цели**, **меню паузы на верхнем экране** (графика, управление, отладка; `settings.bin`), **консольное управление** по образцу Gothic Classic, интерфейс (здоровье, цель, сообщения) своим шрифтом с кириллицей. Растворение объектов теперь включено по умолчанию. **`data.pak` нужно запечь заново** (боевые анимации и их события; старый архив работает, но без них). На консоли раунд 5 ещё не проверялся. Что сделано — раздел 5, раунд 5; ТЗ — раздел 6.
+Документ для продолжения работы в новом чате. Состояние на 10.10.2026 (ночь, раунд 7): **уступы** (хватание при прыжке), **наклон при подборе**, **сундуки** (двусторонний обмен, ключ, отмычка; раздел «Round 7» в конце). Раньше: раунд 6 — **инвентарь на нижнем экране** в стиле Gothic Classic (раздел 5, раунд 6). **`data.pak` нужно запечь заново** (анимации питья и еды героя; старый архив работает — герой тогда просто стоит 1,2/2 с). На консоли раунд 6 не проверялся. Раунд 5: **бой** (герой и жители, комбо по событиям модели, парирование, отскок, оглушение и смерть по правилам Gothic, боевой ИИ по таблицам `FA_*`), **захват цели**, **меню паузы на верхнем экране** (графика, управление, отладка; `settings.bin`), **консольное управление** по образцу Gothic Classic, интерфейс (здоровье, цель, сообщения) своим шрифтом с кириллицей. Растворение объектов теперь включено по умолчанию. **`data.pak` нужно запечь заново** (боевые анимации и их события; старый архив работает, но без них). На консоли раунд 5 ещё не проверялся. Что сделано — раздел 5, раунд 5; ТЗ — раздел 6.
 
 ## 0. Как начать новый чат
 
@@ -342,3 +342,24 @@ cd /home/claude && rm -f gothic3ds-base.zip && zip -qr gothic3ds-base.zip gothic
 8. В ответе: что изменено; что собрано (тесты — у пользователя); что проверит только консоль; какие строки отчёта запекания и какие фото нижнего экрана прислать; нужно ли запекать `data.pak` заново.
 
 Если когда-нибудь появятся коммиты в git: проект здесь не репозиторий, коммитов не было; пользователь загружает файлы в GitHub сам.
+
+## Round 7 (ledges, pickup stoop, chests - finished; the old "Round 4 unfinished" section)
+
+Request: (1) grab ledges when jumping, (2) pickup animation, (3) containers/chests, two-way (take AND put things, separate chest/pack lists, a button to swap sides).
+
+### Done (PC: all 6 ctest entries pass in release; ASan run of the `chests` test only; `scripts/check_3ds.sh` clean)
+- Ledge grab: `Player::probeLedge`, Hero MANTLE body, root-motion climb clips (`T_JUMPUP*`, `T_STAND_2_HANG` ... loaded if present in data.pak), fallback jump pose. Hooked in `App` via `_hero.control(..., ledge)`. **Not while in water** (`player.waterDepth > 0`): the cave pool's bank (65 cm) took the wading character out of the pool and broke `e2e_synth` ("nobody swam in the cave pool: 0 frames").
+- Pickup stoop: procedural spine/head bend (`_stoop`) in `Hero::pickUp`; the timed pickup (no clip) is now 1.0 s with the thing in hand at 0.45 s.
+- Chests: baker table `world/<name>/chests` (`WorldChest`, `bake.cpp`, `import_zen.cpp` reads `zenkit::VContainer`; report line `containers: ...`), runtime `engine/chests.{h,cpp}` (contents, key, pick combination, 'G3CS' save block), `engine/containers.cpp` (`App::chestUpdate/Start/Begin/End/Move/Command/View/Name`), `Hero::openMob/closeMob/mobOpen/atMob`, panel pages PAGE_CHEST (sides Сундук/Рюкзак, L/R switch, A moves a stack, X takes all) and PAGE_LOCK (L/R by the combination, a wrong turn breaks the pick).
+- Fixed in this round: after a lock was picked with a broken pick on the way, the chest page closed at once (`ChestJob::news` doubled as the "page shown" flag; now `ChestJob::shown`). `loadState` now puts the containers back as they were made before applying the state's changes (`Chests::resetChanges`): a chest changed after the save used to keep its new contents/unlocked state.
+- HUD (`drawItemHud`): label "A <chest>" (+ "(заперт)") over `_chestTarget`; chest page: info box of the chosen thing from the chest's list on side 0, hints "A Переложить / L R Рюкзак|Сундук / X Взять всё / B Закрыть"; lock page: "L Влево / R Вправо / B Отмена".
+- Test scene (`tools/bake/synth.cpp`, `synth_script.cpp`): CHESTBIG open (nuggets, apples, 3 lockpicks, key), CHESTSMALL locked with key `ITKE_CAMPCHEST`, CHESTSMALL locked with pick combination `LRL`, each with slot `ZS_POS0`; stone block 150 cm high at (-700, -700); items `ItKeLockpick`, `ItKe_CampChest`. Counts changed in tests: 8 mobs, "things to use: 8 of 6 kinds, with 10 places", 15 item runs in `test_script`.
+- New test `chests` (`tests/test_core.cpp`, `testChests`): table, A -> page, moves both ways, take all, state.bin round trip, key chest, combination with a broken pick, no key/no pick stays shut, last pick breaks, ledge climb from 3 distances (feet on the block top).
+
+### NOT done / to do next
+1. Host scenario/screenshots for chests (the bottom screen's chest/lock pages in `g3ds-host` images).
+2. Chest lid animation of the world mesh is not drawn. No talent check for lockpicking.
+3. Real G1 clip names for climb/chest are unverified: the bake report line "character: animations of reaching in the model script ..." lists what exists; fix names in `tools/bake/fight_clips.h` (`itemUseClipNames`, `isHeroReachFamily`) and `hero.cpp` (`_climbClips`) from the user's next bake log.
+4. `data.pak` MUST be rebaked (chests table, hero reach/chest clips). Old pak: ledge uses the fallback pose, chests have no table.
+5. Console: nothing of this round was run on the 3DS (UI layout of the chest page, the lock page, the stoop, the climb). `build-zk/` was not rebuilt in this session (it is the build with ZenKit; `build/` here is configured with ZenKit via `FETCHCONTENT_SOURCE_DIR_ZENKIT` and builds `test_zen`/`e2e_zen` as well).
+6. Ledge from water (climbing out of a pool by a jump) is switched off; the original has it (`T_SWIM_2_JUMPUP`-like clips). Needs its own state.

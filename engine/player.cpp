@@ -110,7 +110,7 @@ void Player::standAt(float y) {
 // take-off that never ends). It is stood on the nearest floor - below it, or
 // failing that above it - and can walk off from there.
 void Player::unstick(const World& world, float dt) {
-	if (grounded || swimming || climbing || flying || !_placed) {
+	if (grounded || swimming || climbing || flying || !_placed || _mantle) {
 		_airTime = 0;
 		_airFrom = feet;
 		return;
@@ -196,6 +196,54 @@ bool Player::climb(const World& world, const Input& in, float dt) {
 	return true;
 }
 
+// Where a jump's hands find a ledge. The floor is felt for ahead of the body
+// from above (rayDown finds the highest surface under the point): where the
+// first point with a floor between the two heights follows a point without
+// one (or a much lower one), there is a wall between them, and its edge.
+bool Player::probeLedge(const World& world, float yaw, Ledge& out) const {
+	out = Ledge();
+	const PlayerConfig& cfg = config;
+	const Vec3 dir = {sinf(yaw), 0, cosf(yaw)};
+	const float top = feet.y + cfg.ledgeReach + 15.0f;
+	const float drop = cfg.ledgeReach + 15.0f + 140.0f;
+	float prevY = -1e9f;
+	bool prevHit = false;
+	const float from = cfg.radius - 8.0f, to = cfg.radius + cfg.ledgeRange;
+	for (float d = from; d <= to; d += 10.0f) {
+		float y;
+		Vec3 n;
+		const bool hit = world.rayDown({feet.x + dir.x * d, top, feet.z + dir.z * d}, drop, y, n);
+		const float rel = hit ? y - feet.y : -1e9f;
+		if (hit && rel >= cfg.ledgeMin && rel <= cfg.ledgeReach && n.y >= cfg.minFloorNormal) {
+			// A wall only if what came before is clearly lower (or nothing).
+			if (d <= from + 1.0f || (prevHit && prevY > y - 35.0f)) return false;
+			// The place on top: a body's width in from the edge, on the same floor.
+			const float inD = d + 22.0f;
+			const Vec3 at = {feet.x + dir.x * inD, 0, feet.z + dir.z * inD};
+			float y2;
+			Vec3 n2;
+			if (!world.rayDown({at.x, top, at.z}, drop, y2, n2) || fabsf(y2 - y) > 25.0f || n2.y < cfg.minFloorNormal) return false;
+			// Room to stand there: the body's two spheres are not pushed.
+			const float r = cfg.radius;
+			const float heights[2] = {cfg.stepHeight + r, cfg.eyeHeight - r};
+			for (float h : heights) {
+				Vec3 c = {at.x, y2 + h, at.z};
+				const Vec3 c0 = c;
+				if (world.pushSphere(c, r) && (fabsf(c.x - c0.x) + fabsf(c.z - c0.z) > 4.0f || c.y < c0.y - 4.0f)) return false;
+			}
+			out.found = true;
+			out.top = {at.x, y2, at.z};
+			out.height = y2 - feet.y;
+			out.gap = max(d - 5.0f - cfg.radius, 0.0f);
+			out.yaw = yaw;
+			return true;
+		}
+		prevHit = hit;
+		prevY = hit ? y : -1e9f;
+	}
+	return false;
+}
+
 void Player::walk(const World& world, const Input& in, float yaw, float dt, const Drive* drive) {
 	const PlayerConfig& cfg = config;
 
@@ -209,6 +257,24 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 		grounded = true;
 		velocityY = 0;
 		_placed = true;
+	}
+
+	// A climb onto a ledge: the animation has the body.
+	_mantle = drive && drive->place;
+	if (_mantle) {
+		feet = drive->position;
+		velocityY = 0;
+		_carry = {0, 0, 0};
+		climbing = swimming = false;
+		_sliding = false;
+		_blocked = false;
+		_step = 'm';
+		grounded = drive->land;
+		if (drive->land) {
+			_resting = false;
+			_airTime = 0;
+		}
+		return;
 	}
 
 	// Horizontal move in small steps so thin walls cannot be skipped. Going

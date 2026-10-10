@@ -51,6 +51,7 @@ bool App::init(const char* pakPath, const char* worldName) {
 	if (_npcs.load(_pak)) {
 		_npcs.enterWorld(_pak, _world, this->worldName(), _player.eye(), _env.timeOfDay);
 		_loot.enterWorld(_pak, this->worldName(), _world.entryHash(), _npcs.game());
+		_chests.enterWorld(_pak, this->worldName(), _world.entryHash(), _npcs.game());
 	}
 	HeroLink link;
 	link.hit = heroHitThunk;
@@ -91,8 +92,11 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	const float drawDistance = _world.config().drawDistance;
 	// Give the old world's memory back before the new one asks for its own.
 	_npcs.leaveWorld();
+	chestEnd(true);
 	_loot.leaveWorld();
+	_chests.leaveWorld();
 	_lootTarget = -1;
+	_chestTarget = -1;
 	_world.close();
 	gfx::releaseDestroyed();
 	if (!_world.open(&_pak, worldEntryHash)) {
@@ -112,7 +116,10 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	setDrawDistance(drawDistance); // the far plane depends on the chunk size
 	_world.preload(_cam.pos);
 	_npcs.enterWorld(_pak, _world, worldName(), _player.eye(), _env.timeOfDay);
-	if (_npcs.loaded()) _loot.enterWorld(_pak, worldName(), _world.entryHash(), _npcs.game());
+	if (_npcs.loaded()) {
+		_loot.enterWorld(_pak, worldName(), _world.entryHash(), _npcs.game());
+		_chests.enterWorld(_pak, worldName(), _world.entryHash(), _npcs.game());
+	}
 	_portalLock = true;
 	++_switches;
 	return true;
@@ -171,6 +178,7 @@ bool App::saveState(const char* path) const {
 	const bool ok = fwrite(&s, sizeof(s), 1, f) == 1;
 	saveInventory(f);
 	_loot.saveTaken(f);
+	_chests.saveChanged(f);
 	return (fclose(f) == 0) && ok;
 }
 
@@ -213,7 +221,12 @@ bool App::loadState(const char* path) {
 	// player through it on arrival.
 	_portalLock = true;
 	// What was carried and worn (version 2).
-	if (s.version >= 2 && loadInventory(f)) _loot.loadTaken(f);
+	if (s.version >= 2 && loadInventory(f) && _loot.loadTaken(f)) {
+		// (The containers as they were made, then the changes the state names.)
+		chestEnd(true);
+		if (_npcs.loaded()) _chests.resetChanges(_pak, worldName(), _world.entryHash(), _npcs.game());
+		_chests.loadChanged(f);
+	}
 	fclose(f);
 	return true;
 }
@@ -233,6 +246,7 @@ void App::shutdown() {
 	_ui.release();
 	_panel.release();
 	_loot.release();
+	_chests.release();
 	_pictures.release();
 	_showModel.release();
 	_npcs.release();
@@ -310,16 +324,20 @@ void App::update(const Input& in, float dt) {
 			fightIn.attack = fightIn.parry = fightIn.drawWeapon = fightIn.meleeSlot = fightIn.fistSlot = false;
 			fightIn.focus = false;
 		}
+		chestUpdate(fightIn, dt);
 		itemsUpdate(fightIn, dt); // (a job holds the hands: its frames take the fight keys)
 		fightInput(fightIn, dt);
 		Input heroIn = steerInput(in, dt);
-		if (_hero.usingItem() || _panel.open()) {
+		if (_hero.usingItem() || _panel.open() || _chest.stage != CH_NONE) {
 			// Drinking or eating, or looking into the inventory: the character
 			// stands (it cannot jump off either). The camera still turns.
 			heroIn.jump = false;
 			heroIn.moveX = heroIn.moveZ = heroIn.strafe = 0;
 		}
-		const Drive drive = _hero.control(heroIn, _player, dt);
+		// A jump near a wall: the hands take hold of the ledge, if there is one in reach.
+		Ledge ledge;
+		const bool grab = _hero.wantsLedge(_player) && _player.probeLedge(_world, _hero.yaw(), ledge);
+		const Drive drive = _hero.control(heroIn, _player, dt, grab ? &ledge : nullptr);
 		_player.update(_world, heroIn, _hero.yaw(), 0.0f, dt, &drive);
 		const SkyColors sky = skyColors();
 		const float indoorLight[3] = {1, 1, 1};

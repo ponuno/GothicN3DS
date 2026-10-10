@@ -527,7 +527,7 @@ int main(int, char**) {
 			} else if (hero.loaded()) {
 				static const char* const kRoles[g3::Hero::ROLE_COUNT] = {"stand", "run",   "walk",  "back", "step",
 				                                                         "turn",  "jump",  "fall",  "swim", "float",
-				                                                         "attack", "parry", "hit", "down", "draw", "use"};
+				                                                         "attack", "parry", "hit", "down", "draw", "use", "climb"};
 				reportLine("hero %-5s %3.0f cm/s %s%s cam %s", kRoles[hero.role()], double(hero.speed()),
 				     hero.walking() ? "walk " : "", app.thirdPerson() ? "3rd" : "1st", app.cameraSet().fromGame ? "game" : "own");
 			} else {

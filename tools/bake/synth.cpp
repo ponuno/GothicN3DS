@@ -559,7 +559,28 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 		// The anvil: one stands a pace from it, on whichever side one comes from.
 		const size_t anvil = thing("BSANVIL", -500.0f - 160.0f, 500.0f, 0.0f, 0, 32.0f, 75.0f);
 		slot(anvil, "ZS_POS0_DIST", 0.0f, 75.0f, 3.14159f);
-		thing("CHESTBIG", -500.0f, 500.0f - 260.0f, 0.0f, 1, 55.0f, 60.0f);
+		// The chests: an open one with a few things in it, among them a key and
+		// lock picks; a small one that the key opens; a small one that only a pick
+		// opens, turning it left, right, left. Each is stood before from the north.
+		const auto chest = [&](const char* kind, float x, float z, float w, float h, const char* contents, bool locked, const char* key,
+		                       const char* pick) {
+			const size_t c = thing(kind, x, z, 0.0f, 1, w, h);
+			slot(c, "ZS_POS0", 0.0f, 90.0f, 3.14159f);
+			SrcMob& m = scene.mobs[c];
+			m.container = true;
+			m.locked = locked;
+			m.key = key;
+			m.pick = pick;
+			m.contents = contents;
+		};
+		chest("CHESTBIG", -500.0f, 500.0f - 260.0f, 55.0f, 60.0f, "ITMINUGGET:75, ITFOAPPLE:2, ITKELOCKPICK:3, ITKE_CAMPCHEST:1", false, "", "");
+		chest("CHESTSMALL", -330.0f, 500.0f - 260.0f, 38.0f, 40.0f, "ITFO_POTION_HEALTH_01:2", true, "ITKE_CAMPCHEST", "");
+		chest("CHESTSMALL", -680.0f, 500.0f - 260.0f, 38.0f, 40.0f, "ITMINUGGET:20", true, "", "LRL");
+		// A ledge: a block of stone 150 cm high in the camp, to jump up to
+		// (a wall the hands take hold of).
+		b.detail = DETAIL_MEDIUM;
+		box(-700.0f, -700.0f, 150.0f, 150.0f, 0.785f, 4, WOOD);
+		b.detail = DETAIL_ALWAYS;
 	}
 
 	// Start just outside the gate, looking back at the camp.

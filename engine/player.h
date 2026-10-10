@@ -56,6 +56,9 @@ struct PlayerConfig {
 	float floatSpeed = 220.0f; // cm/s the body rises to the surface with
 	float climbSpeed = 170.0f; // cm/s up or down a ladder
 	float driveGravity = 981.0f; // cm/s^2 for a driven body: the original's
+	float ledgeReach = 195.0f;   // highest ledge (above the feet) the hands of a jumping body take hold of
+	float ledgeMin = 55.0f;      // lowest: below, a jump simply lands on it
+	float ledgeRange = 70.0f;    // how far ahead of the body's edge the wall may be, cm
 };
 
 // Movement decided elsewhere: by the animated character, which goes where
@@ -66,6 +69,22 @@ struct Drive {
 	bool lift = false;       // the animation carries the body through the air (a jump's take-off): no gravity
 	bool launch = false;     // leave the ground now, with `velocity`
 	Vec3 velocity {0, 0, 0}; // cm/s
+	// The animation puts the body: a climb onto a ledge. The body goes to
+	// `position` as it is (no walls, no floor, no gravity); `land` stands it
+	// on the ground there (the last frame of the climb).
+	bool place = false;
+	bool land = false;
+	Vec3 position {0, 0, 0};
+};
+
+// A ledge within the reach of a jumping body: where its hands take hold,
+// where it stands once up.
+struct Ledge {
+	bool found = false;
+	Vec3 top {0, 0, 0};   // the feet's place on top of it
+	float height = 0;     // of the top above the feet now, cm
+	float gap = 0;        // from the feet to the wall's face, cm (the body is brought to it)
+	float yaw = 0;        // the way to the wall (facing it)
 };
 
 class Player {
@@ -84,6 +103,12 @@ public:
 	// `drive` null: the player's input moves the body directly.
 	void update(const World& world, const Input& in, float yaw, float pitch, float dt, const Drive* drive = nullptr);
 	Vec3 eye() const { return {feet.x, _eyeY, feet.z}; }
+	// Looks ahead (along `yaw`) for a ledge to take hold of: a wall that
+	// rises above the feet by between ledgeMin and ledgeReach and has floor
+	// on top of it with room to stand. For a body in a jump.
+	bool probeLedge(const World& world, float yaw, Ledge& out) const;
+	// An animation is putting the body (Drive::place) this frame.
+	bool placedByAnimation() const { return _mantle; }
 	// False until the ground under the spawn point has been found.
 	bool placed() const { return _placed; }
 	// What the controller is in the middle of, for diagnostics (g3ds-host
@@ -124,6 +149,7 @@ private:
 	bool _placed = false;
 	bool _blocked = false; // the last horizontal move ran into something
 	bool _letGo = false;   // jumped off a ladder: do not grab it again before landing
+	bool _mantle = false;  // put by an animation this frame (Drive::place)
 	Vec3 _carry {0, 0, 0}; // driven: the horizontal velocity the body keeps in the air
 	// Sliding down a slope too steep to stand on: the lowest the feet have
 	// got so far, and for how long they have got no lower. A slide that

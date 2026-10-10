@@ -612,12 +612,14 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		}
 
 		// ---- the things people use ----
-		std::string mobNote;
+		std::string mobNote, chestNote;
 		if (!scene.mobs.empty()) {
 			std::string names;
 			std::map<std::string, u32> nameAt;
 			std::vector<WorldMob> mobs;
 			std::vector<MobSlot> slots;
+			std::vector<WorldChest> chests;
+			size_t chestItems = 0, chestLocked = 0;
 			std::map<std::string, u32> byScheme;
 			size_t withoutSlots = 0;
 			for (const SrcMob& src : scene.mobs) {
@@ -650,6 +652,26 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				}
 				withoutSlots += m.slotCount == 0;
 				++byScheme[src.scheme];
+				if (src.container) {
+					WorldChest c {};
+					c.mob = u32(mobs.size());
+					c.flags = src.locked ? u32(CHEST_LOCKED) : 0u;
+					c.key = src.key.empty() ? 0u : hashName(src.key.c_str());
+					const auto intern = [&](const std::string& text) {
+						auto found = nameAt.find("\x01" + text);
+						if (found != nameAt.end()) return found->second;
+						const u32 where = u32(names.size());
+						names += text;
+						names.push_back('\0');
+						nameAt["\x01" + text] = where;
+						return where;
+					};
+					c.pick = intern(src.pick);
+					c.contents = intern(src.contents);
+					chests.push_back(c);
+					chestItems += std::count(src.contents.begin(), src.contents.end(), ',') + (src.contents.empty() ? 0 : 1);
+					chestLocked += src.locked;
+				}
 				mobs.push_back(m);
 			}
 			while (names.size() % 4) names.push_back('\0');
@@ -665,6 +687,19 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			append(blob, slots);
 			blob.insert(blob.end(), names.begin(), names.end());
 			pak.add("world/" + bw.name + "/mobs", ASSET_META, blob);
+			if (!chests.empty()) {
+				ChestsHeader ch {};
+				ch.magic = CHESTS_MAGIC;
+				ch.version = CHESTS_VERSION;
+				ch.count = u32(chests.size());
+				ch.nameBytes = u32(names.size());
+				std::vector<u8> cblob(sizeof(ch));
+				std::memcpy(cblob.data(), &ch, sizeof(ch));
+				append(cblob, chests);
+				cblob.insert(cblob.end(), names.begin(), names.end());
+				pak.add("world/" + bw.name + "/chests", ASSET_META, cblob);
+				chestNote = format("containers: %zu (%zu locked), with %zu stacks of things inside", chests.size(), chestLocked, chestItems);
+			}
 			std::vector<std::pair<u32, std::string>> order;
 			for (const auto& [scheme, count] : byScheme) order.push_back({count, scheme});
 			std::sort(order.rbegin(), order.rend());
@@ -740,6 +775,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		if (!pointNotes[w].empty()) line(pointNotes[w]);
 		if (!wayNote.empty()) line(wayNote);
 		if (!mobNote.empty()) line(mobNote);
+		if (!chestNote.empty()) line(chestNote);
 		if (!ladders.empty()) line(format("ladders: %zu", ladders.size()));
 		if (!scene.portals.empty()) {
 			std::string list;

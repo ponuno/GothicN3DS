@@ -150,6 +150,18 @@ struct InventoryView {
 	float messageTime = 0;  // seconds it still shows
 	u32 count = 0;
 	ItemEntry items[INVENTORY_MAX];
+	// A container the character is at (a chest): what is in it, and the lock
+	// that is being picked.
+	enum { CHEST_MAX = 40 };
+	struct Chest {
+		bool open = false;       // its contents are shown
+		bool lock = false;       // its lock is being picked
+		char name[40] = "";
+		u32 count = 0;
+		ItemEntry items[CHEST_MAX];
+		u8 length = 0, progress = 0, picks = 0; // the lock: letters of the combination, got right, picks left
+		char text[64] = "";      // news of the lock
+	} chest;
 	// The character's page.
 	struct Sheet {
 		char name[48] = "";
@@ -195,11 +207,17 @@ enum PanelCommandType : u8 {
 	PANEL_REPORT,       // the numbers instead of the inventory
 	PANEL_CURSOR_OFF,   // the buttons go back to the game
 	PANEL_SELECT,       // (internal) nothing for the application
+	PANEL_CHEST_MOVE,   // `amount` of `symbol` from the chest to the pack (slot 0) or from the pack to the chest (slot 1)
+	PANEL_CHEST_ALL,    // everything out of the chest
+	PANEL_CHEST_CLOSE,  // done with the chest
+	PANEL_LOCK_PICK,    // the pick turned left (slot 0) or right (slot 1)
+	PANEL_LOCK_CANCEL,  // give up on the lock
 };
 struct PanelCommand {
 	u8 type = PANEL_NONE;
 	u8 slot = 0;
 	u32 symbol = 0;
+	i32 amount = 0;
 };
 
 } // namespace g3

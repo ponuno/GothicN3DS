@@ -18,6 +18,10 @@
 //              and the report's numbers
 //   diary      the topics the scripts wrote (Log_CreateTopic, Log_AddEntry)
 //   character  level, experience, attributes, protection, what is worn
+//   chest      (opened at a chest) its things or the pack's, one side at a
+//              time; a tap chooses, a second tap moves the thing over to the
+//              other side; buttons: the chest, the pack, take everything
+//   lock       (a locked chest) the pick: left or right, as the combination goes
 // While a page is open the character stands still - as in the original the
 // inventory may be used in a fight, at that price. SELECT or the buttons open
 // them; SELECT, B or the back arrow at the top close them.
@@ -115,7 +119,7 @@ private:
 
 class InventoryPanel {
 public:
-	enum PanelPage : u8 { PAGE_PLAY, PAGE_INVENTORY, PAGE_DIARY, PAGE_CHARACTER, PANEL_PAGES };
+	enum PanelPage : u8 { PAGE_PLAY, PAGE_INVENTORY, PAGE_DIARY, PAGE_CHARACTER, PAGE_CHEST, PAGE_LOCK, PANEL_PAGES };
 	// Where things are (for the platform and the tests).
 	static constexpr int BARS_H = 20;
 	// The play page: two rows of five quick slots, three buttons under them.
@@ -161,7 +165,14 @@ public:
 		_dirty = true;
 	}
 	// Seconds the chosen thing's info box still shows on the top screen.
-	float inspecting() const { return _page == PAGE_INVENTORY ? _inspect : 0.0f; }
+	float inspecting() const { return _page == PAGE_INVENTORY || _page == PAGE_CHEST ? _inspect : 0.0f; }
+	// The chest page shows the chest's things (0) or the pack's (1).
+	int side() const { return _side; }
+	void setSide(int side);
+	// The middle of the chest page's button `k` (0 the chest, 1 the pack, 2 take all) and of
+	// the lock page's (0 left, 1 right).
+	static void stripCentre(int k, int& x, int& y);
+	static void lockCentre(int k, int& x, int& y);
 	// What is in the grid, in order: indices into the view's items.
 	u32 shownCount() const { return _shownCount; }
 	u32 shown(u32 i) const { return _shown[i]; }
@@ -177,13 +188,17 @@ public:
 
 private:
 	static constexpr float kInspectTime = 4.0f;
-	enum Region : u8 { R_NONE, R_SLOT, R_BUTTON, R_BACK, R_KIND, R_PREV_TAB, R_NEXT_TAB, R_TILE, R_GRID, R_PICKER, R_LIST, R_BARS };
+	enum Region : u8 { R_NONE, R_SLOT, R_BUTTON, R_BACK, R_KIND, R_PREV_TAB, R_NEXT_TAB, R_TILE, R_GRID, R_PICKER, R_LIST, R_BARS, R_STRIP, R_LOCK };
 	struct Hit {
 		u8 region = R_NONE;
 		int index = -1;
 	};
 	Hit hitTest(int x, int y) const;
 	void refilter(const InventoryView& v);
+	// The things the grid shows: the pack's, or on the chest page's first side the chest's.
+	const ItemEntry* items(const InventoryView& v) const { return _page == PAGE_CHEST && _side == 0 ? v.chest.items : v.items; }
+	u32 itemCount(const InventoryView& v) const { return _page == PAGE_CHEST && _side == 0 ? v.chest.count : v.count; }
+	bool gridPage() const { return _page == PAGE_INVENTORY || _page == PAGE_CHEST; }
 	const ItemEntry* entryOf(const InventoryView& v, u32 symbol) const;
 	void keepInSight(u32 index);
 	int maxScroll() const;
@@ -194,6 +209,8 @@ private:
 	void drawPicker(const InventoryView& v);
 	void drawDiary(const InventoryView& v);
 	void drawCharacter(const InventoryView& v);
+	void drawStrip(const InventoryView& v);
+	void drawLock(const InventoryView& v);
 	void drawThing(int x, int y, int w, int h, i16 picture, u8 icon, u32 tint, bool dim);
 	void slotTile(int slot, const InventoryView& v, bool picker);
 	void cell(int x, int y, int w, int h, bool chosen, bool lit);
@@ -202,6 +219,7 @@ private:
 	const ItemPictures* _pictures = nullptr;
 	u8 _page = PAGE_PLAY;
 	u8 _tab = TAB_ALL;
+	u8 _side = 0;
 	int _scroll = 0;
 	int _listScroll = 0; // the diary's
 	int _topic = -1;     // the diary's topic opened
@@ -211,6 +229,7 @@ private:
 	u32 _shownCount = 0;
 	u32 _filteredVersion = 0xFFFFFFFFu;
 	u8 _filteredTab = 0xFF;
+	u8 _filteredPage = 0xFF, _filteredSide = 0xFF;
 	u32 _drawnVersion = 0xFFFFFFFFu;
 	bool _dirty = true;
 	bool _assigning = false; // the ten slots are up: the next tap (or the D-Pad and A) picks one

@@ -117,6 +117,36 @@ struct MobSlot {
 };
 static_assert(sizeof(MobSlot) == 20, "MobSlot layout");
 
+// "world/<name>/chests": the containers of a world (oCMobContainer: chests,
+// crates), each one of the mobs of "mobs" (its place, its scheme CHESTBIG or
+// CHESTSMALL, the places to stand at). What each holds at the start, and
+// whether it is locked and with what.
+//   ChestsHeader | WorldChest[count] | char names[nameBytes] (padded to 4)
+constexpr u32 CHESTS_MAGIC = fourcc('G', '3', 'C', 'H');
+constexpr u32 CHESTS_VERSION = 1;
+
+struct ChestsHeader {
+	u32 magic;
+	u32 version;
+	u32 count;
+	u32 nameBytes;
+};
+static_assert(sizeof(ChestsHeader) == 16, "ChestsHeader layout");
+
+enum WorldChestFlags : u32 {
+	CHEST_LOCKED = 1 << 0,
+};
+
+struct WorldChest {
+	u32 mob;      // index into the world's mobs
+	u32 flags;    // WorldChestFlags
+	u32 key;      // hashName of the item instance that opens it, 0 for none
+	u32 pick;     // offset into names: the combination of the lock ("LRRL"), "" if it cannot be picked
+	u32 contents; // offset into names: "ITMI_GOLD:75, ITFO_FISH:2, ITMI_QUARTZ"
+	u32 reserved[3];
+};
+static_assert(sizeof(WorldChest) == 32, "WorldChest layout");
+
 // "world/<name>/items": the things lying about in a world - placed in the
 // world file (oCItem) and by its start-up scripts (Wld_InsertItem), in that
 // order (a thing's index is what state.bin keeps of it once taken).

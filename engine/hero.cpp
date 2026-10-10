@@ -6,6 +6,12 @@ namespace g3 {
 
 namespace {
 
+float smoothStep(float x) {
+	x = x < 0.0f ? 0.0f : x > 1.0f ? 1.0f : x;
+	return x * x * (3.0f - 2.0f * x);
+}
+
+
 // The states' names in ZenGin's model scripts: the animation is "S_<name>",
 // transitions between two are "T_<a>_2_<b>".
 const char* const kShort[] = {"RUN", "RUNL", "WALK", "WALKL", "WALKBL", "WALKWL", "JUMP", "FALLDN", "FALL", "SWIM", "SWIMF", "SWIMB", "STAND"};
@@ -130,6 +136,20 @@ bool Hero::load(Pak& pak) {
 			_parryClip[r] = _model.clip(buf);
 		}
 	}
+	// What the model script has for climbing onto a ledge (the clips that lift the body).
+	_climbCount = 0;
+	static const char* const kClimbNames[] = {"T_JUMPUPLOW", "T_STAND_2_JUMPUPLOW", "T_JUMPUPMID", "T_STAND_2_JUMPUPMID",
+	                                          "T_JUMPUP", "T_STAND_2_JUMPUP", "T_JUMP_2_HANG", "T_STAND_2_HANG",
+	                                          "T_HANG_2_STAND", "T_RUNL_2_JUMPUP", "T_JUMPUPLOW_2_STAND", "T_JUMPUPMID_2_STAND"};
+	for (const char* climbName : kClimbNames) {
+		const Clip* c = _model.clip(climbName);
+		if (c && c->rise() >= 25.0f && _climbCount < CLIMB_CLIPS) _climbClips[_climbCount++] = c;
+	}
+	_spine[0] = _model.findNode(hashName("BIP01 SPINE"));
+	_spine[1] = _model.findNode(hashName("BIP01 SPINE1"));
+	_spine[2] = _model.findNode(hashName("BIP01 SPINE2"));
+	_headNode = _model.findNode(hashName("BIP01 HEAD"));
+	_stoop = 0;
 	_restY = _model.node(0).restPos[1];
 	_anim.bind(&_model);
 	_anim.play(stateClip(ST_RUN), 0.0f);
@@ -149,6 +169,9 @@ void Hero::release() {
 	memset(_turn, 0, sizeof(_turn));
 	memset(_jumpBack, 0, sizeof(_jumpBack));
 	memset(_parryClip, 0, sizeof(_parryClip));
+	memset(_climbClips, 0, sizeof(_climbClips));
+	_climbCount = 0;
+	_mantle = Mantle();
 	_takeoff = nullptr;
 	_placed = false;
 	_weapon = WEAPON_NONE;
@@ -170,6 +193,7 @@ void Hero::reset(Vec3 feet, float yaw) {
 	_hipMix = 0;
 	_jumping = _leftGround = _forceNext = false;
 	_takeoff = nullptr;
+	_mantle = Mantle();
 	_placed = false; // the next follow() takes the position without reading a speed into the jump
 	_drawTo = 0xFF;
 	_blow.reset();
@@ -520,10 +544,100 @@ bool Hero::useItem(const char* scheme, float seconds, float moment) {
 
 bool Hero::pickUp(float seconds, float moment) {
 	if (!loaded()) return false;
-	return beginUse(_model.clip("T_STAND_2_IGET"), _model.clip("S_IGET"), _model.clip("T_IGET_2_STAND"), seconds, moment);
+	return beginUse(_model.clip("T_STAND_2_IGET"), _model.clip("S_IGET"), _model.clip("T_IGET_2_STAND"), seconds, moment, true);
 }
 
-bool Hero::beginUse(const Clip* in, const Clip* hold, const Clip* out, float seconds, float moment) {
+// ---- a chest ----
+
+bool Hero::openMob(const char* scheme) {
+	if (!loaded() || !scheme || !*scheme || _down || _reel || _body != GROUNDED || _weapon != WEAPON_NONE || drawing() || usingItem()) return false;
+	const Clip* cur = _anim.current();
+	if (_blow.clip && cur == _blow.clip) return false;
+	_use = Use();
+	_sneak = false;
+	char name[64];
+	const auto find = [&](const char* pattern) {
+		snprintf(name, sizeof(name), pattern, scheme);
+		return _model.clip(name);
+	};
+	const Clip* in = find("T_%s_STAND_2_S0");
+	const Clip* lid = find("T_%s_S0_2_S1");
+	_use.nIn = _use.nOut = 0;
+	if (in) _use.seqIn[_use.nIn++] = in;
+	if (in && lid) _use.seqIn[_use.nIn++] = lid;
+	const Clip* back = find("T_%s_S1_2_S0");
+	const Clip* away = find("T_%s_S0_2_STAND");
+	if (!away) away = find("T_%s_S1_2_STAND");
+	if (in && lid && back) _use.seqOut[_use.nOut++] = back;
+	if (in && away) _use.seqOut[_use.nOut++] = away;
+	_use.hold = lid ? find("S_%s_S1") : find("S_%s_S0");
+	_use.phase = USE_MOB_IN;
+	_use.stoopHold = _use.nIn == 0;
+	_use.at2 = 0;
+	if (_use.nIn) _anim.play(_use.seqIn[0], 0.12f);
+	else go(_walkMode ? ST_WALK : ST_RUN, true, 0.15f);
+	_roleNow = USE;
+	return true;
+}
+
+void Hero::closeMob() {
+	if (_use.phase == USE_MOB_IN || _use.phase == USE_MOB_HOLD) _use.release = true;
+}
+
+// The chest: the way in through its clips (or a bow), held while open, and out.
+void Hero::mobTick(float dt) {
+	const Clip* c = _anim.current();
+	switch (_use.phase) {
+	case USE_MOB_IN:
+		if (_use.nIn == 0) {
+			if (_use.time >= 0.45f) _use.phase = USE_MOB_HOLD;
+			_stoop = smoothStep(clamp(_use.time / 0.45f, 0.0f, 1.0f));
+		} else if (c != _use.seqIn[_use.at2] || _anim.finished()) {
+			if (++_use.at2 < _use.nIn) {
+				_anim.play(_use.seqIn[_use.at2], 0.08f);
+			} else {
+				_use.phase = USE_MOB_HOLD;
+				if (_use.hold) _anim.play(_use.hold, 0.1f);
+			}
+		}
+		if (_use.phase == USE_MOB_HOLD) _use.moment = true; // (the lid is up)
+		if (_use.release && _use.phase == USE_MOB_IN) {
+			// Let go before it was open: out through what was played.
+			_use.phase = USE_MOB_OUT;
+			_use.at2 = 0;
+			if (_use.nOut) _anim.play(_use.seqOut[0], 0.1f);
+		}
+		break;
+	case USE_MOB_HOLD:
+		_stoop = _use.stoopHold ? 1.0f : 0.0f;
+		if (_use.release) {
+			_use.phase = USE_MOB_OUT;
+			_use.at2 = 0;
+			if (_use.nOut) _anim.play(_use.seqOut[0], 0.1f);
+		}
+		break;
+	case USE_MOB_OUT:
+		if (_use.nOut == 0) {
+			_use.time2 += dt;
+			_stoop = _use.stoopHold ? 1.0f - smoothStep(clamp(_use.time2 / 0.4f, 0.0f, 1.0f)) : 0.0f;
+			if (_use.time2 >= (_use.stoopHold ? 0.4f : 0.05f)) _use.phase = USE_NONE;
+		} else if (c != _use.seqOut[_use.at2] || _anim.finished()) {
+			if (++_use.at2 < _use.nOut) _anim.play(_use.seqOut[_use.at2], 0.08f);
+			else _use.phase = USE_NONE;
+		}
+		break;
+	default: break;
+	}
+	if (_use.phase == USE_NONE) {
+		_stoop = 0;
+		const bool moment = _use.moment;
+		_use = Use();
+		_use.moment = moment;
+		_forceNext = true;
+	}
+}
+
+bool Hero::beginUse(const Clip* in, const Clip* hold, const Clip* out, float seconds, float moment, bool stoop) {
 	if (!loaded() || _down || _reel || _body != GROUNDED || _weapon != WEAPON_NONE || drawing() || usingItem()) return false;
 	const Clip* cur = _anim.current();
 	if (_blow.clip && cur == _blow.clip) return false;
@@ -540,6 +654,7 @@ bool Hero::beginUse(const Clip* in, const Clip* hold, const Clip* out, float sec
 	} else {
 		// No animation for it: standing still for as long as it takes.
 		_use.phase = USE_TIMED;
+		_use.stoop = stoop;
 		_use.seconds = max(seconds, 0.1f);
 		_use.at = clamp(moment, 0.0f, _use.seconds);
 		go(_walkMode ? ST_WALK : ST_RUN, true, 0.15f);
@@ -553,15 +668,32 @@ float Hero::useProgress() const {
 	return clamp(_use.time / _use.seconds, 0.0f, 1.0f);
 }
 
-void Hero::cancelUse() { _use = Use(); }
+void Hero::cancelUse() {
+	_use = Use();
+	_stoop = 0;
+}
 
 // After the animation has moved on: the item does its work when it is at
 // the mouth (or after its time), and the character is free again when it
 // is put down.
 void Hero::useTick(float dt) {
 	_use.moment = false;
-	if (_use.phase == USE_NONE) return;
+	if (_use.phase == USE_NONE) {
+		_stoop = 0;
+		return;
+	}
 	_use.time += dt;
+	if (_use.phase >= USE_MOB_IN) {
+		mobTick(dt);
+		return;
+	}
+	// A thing from the ground without an animation for it: bent over to it, up again.
+	if (_use.phase == USE_TIMED && _use.stoop) {
+		const float u = clamp(_use.time / _use.seconds, 0.0f, 1.0f);
+		_stoop = u < 0.35f ? smoothStep(u / 0.35f) : u < 0.65f ? 1.0f : 1.0f - smoothStep((u - 0.65f) / 0.35f);
+	} else {
+		_stoop = 0;
+	}
 	const Clip* c = _anim.current();
 	switch (_use.phase) {
 	case USE_IN:
@@ -598,13 +730,14 @@ void Hero::useTick(float dt) {
 		_use.moment = true;
 	}
 	if (_use.phase == USE_NONE) {
+		_stoop = 0;
 		const bool moment = _use.moment;
 		_use = Use();
 		_use.moment = moment;
 	}
 }
 
-Drive Hero::control(const Input& in, const Player& player, float dt) {
+Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge* ledge) {
 	Drive drive;
 	if (!loaded() || dt <= 0.0f) return drive;
 
@@ -623,7 +756,7 @@ Drive Hero::control(const Input& in, const Player& player, float dt) {
 	const int strafe = in.strafe > 0.5f ? 1 : in.strafe < -0.5f ? -1 : 0;
 	const bool jumpPressed = in.jump && !_jumpHeld;
 	_jumpHeld = in.jump;
-	const bool locked = _down || _reel || (_blow.clip && _anim.current() == _blow.clip) || drawing() || usingItem();
+	const bool locked = _down || _reel || (_blow.clip && _anim.current() == _blow.clip) || drawing() || usingItem() || _body == MANTLE;
 	float turnRate = 0;
 	if (in.steer) {
 		// Towards a heading, as fast as a body turns (the console scheme).
@@ -634,7 +767,7 @@ Drive Hero::control(const Input& in, const Player& player, float dt) {
 		turnRate = step / dt;
 	} else {
 		turnRate = clamp(in.moveX, -1.0f, 1.0f) * kTurnSpeed + clamp(in.lookX, -1.0f, 1.0f) * kLookTurnSpeed;
-		if (locked && (_down || usingItem())) turnRate = 0;
+		if (locked && (_down || usingItem() || _body == MANTLE)) turnRate = 0;
 		_yaw = wrapAngle(_yaw + turnRate * dt);
 	}
 	const bool turning = fabsf(turnRate) >= kTurnAnimSpeed;
@@ -645,7 +778,10 @@ Drive Hero::control(const Input& in, const Player& player, float dt) {
 	const Clip* cur = _anim.current();
 	const bool force = _forceNext;
 	_forceNext = false;
-	if (_down || _reel || drawing() || (_blow.clip && cur == _blow.clip) || usingItem()) {
+	if (_body == MANTLE) {
+		// Climbing onto a ledge: the climb has the body.
+		_roleNow = CLIMB;
+	} else if (_down || _reel || drawing() || (_blow.clip && cur == _blow.clip) || usingItem()) {
 		// Down, reeling, taking a weapon in hand, swinging a blow, using an
 		// item: the animation has the body until it is through.
 		if (_down) _roleNow = DOWN;
@@ -673,7 +809,9 @@ Drive Hero::control(const Input& in, const Player& player, float dt) {
 			break;
 		case AIRBORNE:
 			_airTime += dt;
-			if (_jumping) {
+			if (_jumping && ledge && ledge->found && beginMantle(*ledge, player)) {
+				_roleNow = CLIMB;
+			} else if (_jumping) {
 				go(ST_JUMP, force, 0.15f);
 				_roleNow = JUMP;
 			} else if (_airTime > 0.25f) { // a kerb is not a fall
@@ -683,6 +821,9 @@ Drive Hero::control(const Input& in, const Player& player, float dt) {
 			break;
 		case TAKEOFF:
 			_roleNow = JUMP;
+			break;
+		case MANTLE:
+			_roleNow = CLIMB;
 			break;
 		case GROUNDED: {
 			const bool wading = player.waterDepth > player.config.wadeDepth;
@@ -805,6 +946,9 @@ Drive Hero::control(const Input& in, const Player& player, float dt) {
 		break;
 	case AIRBORNE:
 		break; // ballistic: the controller keeps the body's pace
+	case MANTLE:
+		mantleDrive(drive, dt);
+		break;
 	default:
 		if (player.climbing) {
 			// Ladders have no animation yet: the controller's own slow step.
@@ -832,6 +976,16 @@ void Hero::updatePose(float dt) {
 	_drawn = _anim.pose();
 	_drawn.pos[0].x = 0;
 	_drawn.pos[0].z = 0;
+	if (_body == MANTLE) {
+		_hipMix = 0;
+		if (_mantle.clip && _mantle.rise > 1.0f && _anim.current() == _mantle.clip) {
+			// The climb's height is in the body's place already.
+			_drawn.pos[0].y -= max(_mantle.clip->motion(_anim.time()).y, 0.0f);
+		} else {
+			_drawn.pos[0].y = _restY;
+		}
+		return;
+	}
 	if (_body == TAKEOFF && _takeoff && _anim.current() == _takeoff) {
 		// Only what lifts the body has gone into its position: the crouch
 		// before the leap is still the pose's to show.
@@ -839,6 +993,98 @@ void Hero::updatePose(float dt) {
 		return;
 	}
 	_drawn.pos[0].y += (_restY - _drawn.pos[0].y) * _hipMix;
+	if (_stoop > 0.01f) {
+		// Bent forward from the waist, the head up a little to see ahead.
+		static const float kBend[3] = {0.5f, 0.45f, 0.25f};
+		for (int k = 0; k < 3; ++k) _model.turnNode(_drawn, _spine[k], 0.0f, kBend[k] * _stoop);
+		_model.turnNode(_drawn, _headNode, 0.0f, -0.3f * _stoop);
+	}
+}
+
+// ---- climbing onto a ledge ----
+
+bool Hero::wantsLedge(const Player& player) const {
+	return loaded() && _body == AIRBORNE && _jumping && _airTime >= 0.08f && _weapon == WEAPON_NONE && !drawing() && !usingItem() &&
+	       !_down && !_reel && !player.swimming && player.waterDepth <= 0.0f && !player.climbing && !player.flying && player.velocityY < 260.0f;
+}
+
+bool Hero::beginMantle(const Ledge& ledge, const Player& player) {
+	if (!wantsLedge(player) || !ledge.found) return false;
+	_mantle = Mantle();
+	_mantle.start = player.feet;
+	_mantle.top = ledge.top;
+	_mantle.gap = ledge.gap;
+	_mantle.yaw = ledge.yaw;
+	// The clip whose lift is nearest the height (not lower than it, if one is that high).
+	const Clip* best = nullptr;
+	for (u32 i = 0; i < _climbCount; ++i) {
+		const Clip* c = _climbClips[i];
+		if (!best) {
+			best = c;
+			continue;
+		}
+		const float want = ledge.height * 0.85f;
+		const bool cOk = c->rise() >= want, bOk = best->rise() >= want;
+		if ((cOk && !bOk) || (cOk && bOk && c->rise() < best->rise()) || (!cOk && !bOk && c->rise() > best->rise())) best = c;
+	}
+	if (best) {
+		_mantle.clip = best;
+		_mantle.rise = best->rise();
+		_mantle.duration = max(best->duration(), 0.3f);
+		_mantle.forward = best->motion(best->duration()).z;
+		_anim.play(best, 0.1f);
+	} else {
+		// No animation for it (an older data.pak): the pose of a jump, held
+		// while the body is drawn up.
+		_mantle.duration = 0.55f + ledge.height / 350.0f;
+		_anim.play(stateClip(ST_JUMP), 0.1f);
+	}
+	_body = MANTLE;
+	_jumping = false;
+	_yaw = ledge.yaw;
+	_roleNow = CLIMB;
+	return true;
+}
+
+float Hero::mantleProgress() const {
+	return _body == MANTLE && _mantle.duration > 0 ? clamp(_mantle.time / _mantle.duration, 0.0f, 1.0f) : 0.0f;
+}
+
+// Where the climb has put the body: first up against the wall, then up and over
+// the edge as far as the animation has risen and gone forward.
+void Hero::mantleDrive(Drive& drive, float dt) {
+	_mantle.time += dt;
+	drive.place = true;
+	const float u = clamp(_mantle.time / _mantle.duration, 0.0f, 1.0f);
+	if (_mantle.time >= _mantle.duration) {
+		drive.position = _mantle.top;
+		drive.land = true;
+		_body = GROUNDED;
+		_jumping = false;
+		_forceNext = true;
+		_anim.play(stateClip(_walkMode ? ST_WALK : ST_RUN), 0.2f);
+		_mantle.clip = nullptr;
+		return;
+	}
+	const auto smooth = [](float x) {
+		x = clamp(x, 0.0f, 1.0f);
+		return x * x * (3.0f - 2.0f * x);
+	};
+	float py = smooth(u), pz = smooth((u - 0.45f) / 0.55f);
+	if (_mantle.clip && _mantle.clip == _anim.current()) {
+		const Vec3 m = _mantle.clip->motion(_anim.time());
+		if (_mantle.rise > 1.0f) py = clamp(m.y / _mantle.rise, 0.0f, 1.0f);
+		if (_mantle.forward > 15.0f) pz = clamp(m.z / _mantle.forward, 0.0f, 1.0f);
+	}
+	const Vec3 dir = {sinf(_mantle.yaw), 0, cosf(_mantle.yaw)};
+	Vec3 flat = _mantle.top - _mantle.start;
+	flat.y = 0;
+	const float total = length(flat);
+	const float inward = max(total - _mantle.gap, 0.0f);
+	const float snap = smooth(_mantle.time / 0.2f);
+	Vec3 p = _mantle.start + dir * (_mantle.gap * snap + inward * pz);
+	p.y = _mantle.start.y + (_mantle.top.y - _mantle.start.y) * py;
+	drive.position = p;
 }
 
 void Hero::follow(const Player& player, const World& world, const float dayLight[3], float dt) {
@@ -853,7 +1099,9 @@ void Hero::follow(const Player& player, const World& world, const float dayLight
 	_speed += (speed - _speed) * min(dt * 12.0f, 1.0f);
 
 	// What is the body in now?
-	if (player.swimming) {
+	if (_body == MANTLE) {
+		// (The climb ends in control().)
+	} else if (player.swimming) {
 		if (_body != SWIMMING) {
 			_body = SWIMMING;
 			_jumping = false;

@@ -988,6 +988,13 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 		out.pos[2] = vob.position.z;
 		out.yaw = std::atan2(col[2].x, col[2].z);
 		out.states = std::clamp(mob.states, 0, 16);
+		if (const auto* box = dynamic_cast<const zenkit::VContainer*>(&vob)) {
+			out.container = true;
+			out.locked = box->locked;
+			out.key = upper(box->key);
+			out.pick = upper(box->pick_string);
+			out.contents = upper(box->contents);
+		}
 		if (mob.mesh)
 			for (const auto& [name, node] : mob.mesh->slots) {
 				SrcMobSlot slot;
@@ -1690,6 +1697,21 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 				wanted.push_back(name);
 				optional.insert(name);
 			}
+		// What the script has for reaching: climbing, hanging, picking up, chests.
+		std::string reachFound;
+		const auto reachFamily = [&](const std::string& rawName) {
+			const std::string name = upper(rawName);
+			if (!isHeroReachFamily(name)) return;
+			if (std::find(wanted.begin(), wanted.end(), name) == wanted.end()) {
+				wanted.push_back(name);
+				optional.insert(name);
+			}
+			if (reachFound.find(" " + name + ",") == std::string::npos) reachFound += " " + name + ",";
+		};
+		for (const zenkit::MdsAnimation& a : script.animations) reachFamily(a.name);
+		for (const zenkit::MdsAnimationAlias& a : script.aliases) reachFamily(a.name);
+		model.notes.push_back("character: animations of reaching in the model script (ledges, picking up, chests):" +
+		                      (reachFound.empty() ? std::string(" none") : reachFound));
 		for (const zenkit::MdsAnimation& a : script.animations)
 			if (isHeroTransition(upper(a.name)) && std::find(wanted.begin(), wanted.end(), upper(a.name)) == wanted.end())
 				wanted.push_back(upper(a.name));

@@ -28,9 +28,9 @@ namespace g3 {
 class Hero {
 public:
 	// What the character is doing, in broad terms (for display and tests).
-	enum Role { IDLE, RUN, WALK, BACK, STRAFE, TURN, JUMP, FALL, SWIM, SWIM_IDLE, ATTACK, PARRY, HIT, DOWN, DRAW, USE, ROLE_COUNT };
+	enum Role { IDLE, RUN, WALK, BACK, STRAFE, TURN, JUMP, FALL, SWIM, SWIM_IDLE, ATTACK, PARRY, HIT, DOWN, DRAW, USE, CLIMB, ROLE_COUNT };
 	// What the body is in.
-	enum Body { GROUNDED, TAKEOFF, AIRBORNE, SWIMMING };
+	enum Body { GROUNDED, TAKEOFF, AIRBORNE, SWIMMING, MANTLE };
 
 	// False if the archive has no hero (the game then stays first-person).
 	bool load(Pak& pak);
@@ -44,7 +44,15 @@ public:
 	// animation from what the player asks for and what the body is in, and
 	// says where the animation carries the body. Hand the result to
 	// Player::update().
-	Drive control(const Input& in, const Player& player, float dt);
+	// `ledge`, if given, is a ledge within the reach of a body in a jump
+	// (Player::probeLedge, asked when wantsLedge()): the character takes hold
+	// of it and climbs up.
+	Drive control(const Input& in, const Player& player, float dt, const Ledge* ledge = nullptr);
+	// In a jump, and so far through it that its hands would take hold of a ledge.
+	bool wantsLedge(const Player& player) const;
+	bool mantling() const { return _body == MANTLE; }
+	// How far through the climb onto a ledge, 0..1.
+	float mantleProgress() const;
 	// Second half, after the controller has moved the body: follows it,
 	// notices take-off, landing and water, takes the light of the ground.
 	// `dayLight` is the time-of-day tint the world is drawn with.
@@ -121,6 +129,16 @@ public:
 	// "T_IGET_2_STAND" as the model has them; the same rules as useItem (the
 	// moment is when the hand is at the ground).
 	bool pickUp(float seconds, float moment);
+	// A chest: the character bends to it (the model script's "T_<SCHEME>_STAND_2_S0"
+	// and the lid's "T_<SCHEME>_S0_2_S1"; bent over without them) and stays
+	// at it, `mobOpen()` from the moment the lid is up, until closeMob() lets
+	// it stand again. The same conditions as useItem.
+	bool openMob(const char* scheme);
+	bool mobOpen() const { return _use.phase == USE_MOB_HOLD && !_use.release; }
+	void closeMob();
+	bool atMob() const { return _use.phase == USE_MOB_IN || _use.phase == USE_MOB_HOLD || _use.phase == USE_MOB_OUT; }
+	// How far the character is bent over (for the tests).
+	float stoop() const { return _stoop; }
 	bool usingItem() const { return _use.phase != USE_NONE; }
 	// True for the frame the item does its work (it is drunk, eaten).
 	bool useMoment() const { return _use.moment; }
@@ -129,6 +147,7 @@ public:
 	// True if the model has the animations of the scheme.
 	bool canAnimateUse(const char* scheme) const;
 
+	void cancelUse(); // drops any use/mantle in progress
 private:
 	enum State { ST_RUN, ST_RUNL, ST_WALK, ST_WALKL, ST_WALKBL, ST_WALKWL, ST_JUMP, ST_FALLDN, ST_FALL, ST_SWIM, ST_SWIMF, ST_SWIMB, ST_COUNT };
 	static constexpr int STAND = ST_COUNT; // the pseudo-state of the transitions' names
@@ -151,8 +170,9 @@ private:
 	const Clip* weaponClip(const char* pattern, u8 mode) const;
 	void fightTick(float prevTime, const Clip* prevClip);
 	void useTick(float dt);
-	void cancelUse();
-	bool beginUse(const Clip* in, const Clip* hold, const Clip* out, float seconds, float moment);
+	bool beginMantle(const Ledge& ledge, const Player& player);
+	void mantleDrive(Drive& drive, float dt);
+	bool beginUse(const Clip* in, const Clip* hold, const Clip* out, float seconds, float moment, bool stoop = false);
 
 	Model _model;
 	Animator _anim;
@@ -172,6 +192,16 @@ private:
 	bool _sneak = false;
 	bool _forceNext = false;
 	const Clip* _takeoff = nullptr;
+	// Climbing onto a ledge: the clips the model has for it, and the climb in play.
+	enum { CLIMB_CLIPS = 12 };
+	const Clip* _climbClips[CLIMB_CLIPS] = {};
+	u32 _climbCount = 0;
+	struct Mantle {
+		const Clip* clip = nullptr; // null: no animation for it, the jump's pose is held
+		Vec3 start {0, 0, 0}, top {0, 0, 0};
+		float gap = 0, time = 0, duration = 0, rise = 0, forward = 0;
+		float yaw = 0;
+	} _mantle;
 	Vec3 _liftSum {0, 0, 0};
 	float _liftTime = 0, _liftY = 0;
 	Pose _drawn;
@@ -188,7 +218,7 @@ private:
 	bool _down = false;
 	const Clip* _parryClip[ROWS] = {};
 	// Using an item.
-	enum UsePhase : u8 { USE_NONE, USE_IN, USE_HOLD, USE_OUT, USE_TIMED };
+	enum UsePhase : u8 { USE_NONE, USE_IN, USE_HOLD, USE_OUT, USE_TIMED, USE_MOB_IN, USE_MOB_HOLD, USE_MOB_OUT };
 	struct Use {
 		const Clip* in = nullptr;
 		const Clip* hold = nullptr;
@@ -197,8 +227,19 @@ private:
 		bool done = false;   // the item has done its work
 		bool moment = false; // ... this frame
 		float time = 0, seconds = 0, at = 0; // how long so far; all of it, when it works (estimated for the animations)
+		bool stoop = false; // no animation for it: bends over instead (a thing from the ground)
+		// A chest: the clips to its open lid and the clips back.
+		const Clip* seqIn[3] = {};
+		const Clip* seqOut[3] = {};
+		u8 nIn = 0, nOut = 0, at2 = 0;
+		float time2 = 0;      // seconds on the way out, without clips
+		bool release = false; // closed: on the way back
+		bool stoopHold = false; // no animations for the chest: bent over while it is open
 	};
 	Use _use;
+	float _stoop = 0; // how far bent over, 0..1 (drawn by updatePose)
+	int _spine[3] = {-1, -1, -1}, _headNode = -1;
+	void mobTick(float dt);
 };
 
 } // namespace g3

@@ -4490,8 +4490,8 @@ func void Rtn_start_502() {
 		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 8 families more; fighting 105 "
 		           "more; baked per skeleton: humans 61, scavenger 13, molerat 13"));
 		// The things of the camp, and which of them the scripts know.
-		CHECK(said("things to use: 6 of 5 kinds, with 7 places to stand at (1 have none: nobody can use those): BEDHIGH x2"));
-		CHECK(said("things to use: the worlds have 5 kinds; the scripts name 4 of them: BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: CHESTBIG"));
+		CHECK(said("things to use: 8 of 6 kinds, with 10 places to stand at (0 have none: nobody can use those): CHESTSMALL x2, BEDHIGH x2"));
+		CHECK(said("things to use: the worlds have 6 kinds; the scripts name 4 of them: BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: CHESTBIG, CHESTSMALL"));
 		CHECK(said("way net: 13 points, 15 connections") && said("10 free points") && said(" 11 states, "));
 		// What the states need of the engine is on record.
 		CHECK(said("life: the scripts have 11 states; the people of these worlds are put into 7: ZS_MM_ALLSCHEDULER x6, ZS_GUARD x3"));
@@ -4536,7 +4536,7 @@ func void Rtn_start_502() {
 		const WayNet& net = npcs.wayNet();
 		CHECK(net.loaded() && net.nodeCount() == 13 && net.freeCount() == 10);
 		const Mobs& mobs = npcs.mobs();
-		CHECK(mobs.loaded() && mobs.count() == 6);
+		CHECK(mobs.loaded() && mobs.count() == 8);
 		// What a character is at: the thing's kind if it is in it, "" if not.
 		const auto inThing = [&](u32 npc) -> std::string {
 			const NpcActor* a = npcs.actorOf(npc);
@@ -4784,7 +4784,7 @@ func void Rtn_start_502() {
 				CHECK(inThing(smith) == "BEDHIGH" && npcs.actorOf(smith)->mob != a->mob && npcs.stats().mobsInUse == 2);
 				u32 free = 0;
 				for (u32 m = 0; m < mobs.count(); ++m) free += mobs.userOf(m) < 0;
-				CHECK(free == 4 && npcs.stats().mobsUsed == 4);
+				CHECK(free == 6 && npcs.stats().mobsUsed == 4);
 			}
 			CHECK((poor || night.farthestOff < 190.0f) && night.travelled > 1000.0f); // (the seat is 1.7 m off the path)
 			u32 asleep = 0;
@@ -5661,6 +5661,209 @@ static void testSettings() {
 	}
 }
 
+// The chests of the test camp: an open one, a locked one with its key, a locked
+// one with a combination; a block of stone to climb onto.
+static void testChests() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/chests.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.settings().immortal = 1;
+	app.applySettings();
+	const u32 hero = u32(g.hero() - &g.npc(0));
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	const auto find = [&](const char* name) {
+		const u32 sym = g.vm().find(name);
+		CHECK(sym != SCRIPT_NONE && g.isItem(sym));
+		return sym;
+	};
+	const u32 nugget = find("ITMINUGGET"), apple = find("ITFOAPPLE"), pick = find("ITKELOCKPICK"), key = find("ITKE_CAMPCHEST");
+	const u32 potion = find("ITFO_POTION_HEALTH_01");
+	run(1.0f);
+
+	// 1. The table: three containers, one open, one locked with a key, one with a combination.
+	Chests& chests = app.chests();
+	CHECK(chests.count() == 3);
+	if (chests.count() != 3) return;
+	u32 bigC = 0, keyC = 0, pickC = 0;
+	for (u32 i = 0; i < 3; ++i) {
+		if (!chests.locked(i)) bigC = i;
+		else if (chests.key(i) != SCRIPT_NONE) keyC = i;
+		else pickC = i;
+	}
+	CHECK(!chests.locked(bigC) && chests.stackCount(bigC) == 4);
+	CHECK(chests.locked(keyC) && chests.key(keyC) == key && chests.stackCount(keyC) == 1);
+	CHECK(chests.locked(pickC) && std::strcmp(chests.pick(pickC), "LRL") == 0 && chests.stackCount(pickC) == 1);
+
+	// Stands the character a pace south of the chest, facing it, and presses A.
+	const auto before = [&](u32 c) {
+		const Mobs& mobs = npcs.mobs();
+		const WorldMob& m = mobs.mob(chests.mob(c));
+		app.camera().yaw = 3.14159265f;
+		app.teleport({m.pos[0], m.pos[1] + 220.0f, m.pos[2] + 90.0f});
+		run(1.5f);
+	};
+	const auto pressA = [&]() {
+		Input in;
+		in.confirm = true;
+		app.update(in, dt);
+	};
+	const auto count = [&](u32 sym) { return g.itemCount(hero, sym); };
+	const auto chestHas = [&](u32 c, u32 sym) {
+		for (u32 k = 0; k < chests.stackCount(c); ++k)
+			if (chests.stack(c, k).symbol == sym) return chests.stack(c, k).count;
+		return 0;
+	};
+	const auto cmd = [&](u8 type, u8 slot = 0, u32 sym = 0, i32 amount = 0) {
+		PanelCommand c;
+		c.type = type;
+		c.slot = slot;
+		c.symbol = sym;
+		c.amount = amount;
+		app.panelCommand(c);
+	};
+
+	// 2. The open chest: A, the chest page, things both ways, everything out.
+	before(bigC);
+	CHECK(app.chestTarget() == int(bigC) && app.chestStage() == App::CH_NONE);
+	pressA();
+	run(3.0f);
+	CHECK(app.chestStage() == App::CH_OPEN && app.panel().page() == InventoryPanel::PAGE_CHEST);
+	{
+		const InventoryView& v = app.inventory();
+		CHECK(v.chest.open && !v.chest.lock && v.chest.count == 4 && std::strcmp(v.chest.name, "Большой сундук") == 0);
+	}
+	const i32 apples = count(apple);
+	cmd(PANEL_CHEST_MOVE, 0, nugget, 75);
+	CHECK(count(nugget) == 75 && chestHas(bigC, nugget) == 0 && chests.stackCount(bigC) == 3);
+	cmd(PANEL_CHEST_MOVE, 1, apple, 1); // (one of the pack's apples into the chest)
+	CHECK(count(apple) == apples - 1 && chestHas(bigC, apple) == 3);
+	cmd(PANEL_CHEST_MOVE, 1, potion, 99); // (no more than there are)
+	CHECK(count(potion) == 0 && chestHas(bigC, potion) == 3);
+	cmd(PANEL_CHEST_MOVE, 0, potion, 3);
+	CHECK(count(potion) == 3);
+	cmd(PANEL_CHEST_ALL);
+	CHECK(chests.stackCount(bigC) == 0 && count(pick) == 3 && count(key) == 1 && count(apple) == apples + 2);
+	// Persistence: what changed is in state.bin; the key goes back into the chest, a load puts it back where it was.
+	const std::string statePath = gDir + "/chests-state.bin";
+	CHECK(app.saveState(statePath.c_str()));
+	cmd(PANEL_CHEST_MOVE, 1, nugget, 10);
+	CHECK(chestHas(bigC, nugget) == 10);
+	CHECK(app.loadState(statePath.c_str()));
+	run(0.5f);
+	CHECK(chests.stackCount(bigC) == 0 && count(nugget) == 75);
+	cmd(PANEL_CHEST_CLOSE);
+	run(2.5f);
+	CHECK(app.chestStage() == App::CH_NONE && app.panel().page() == InventoryPanel::PAGE_PLAY);
+
+	// 3. The locked chest with a key: the key in the pack opens it at once.
+	before(keyC);
+	CHECK(app.chestTarget() == int(keyC));
+	pressA();
+	run(3.0f);
+	CHECK(!chests.locked(keyC) && app.chestStage() == App::CH_OPEN);
+	cmd(PANEL_CHEST_ALL);
+	CHECK(count(potion) == 5 && chests.stackCount(keyC) == 0);
+	cmd(PANEL_CHEST_CLOSE);
+	run(2.5f);
+	CHECK(app.chestStage() == App::CH_NONE);
+
+	// 4. The combination: right first is wrong (the pick breaks, back to the start),
+	// then left, right, left opens it.
+	before(pickC);
+	CHECK(app.chestTarget() == int(pickC));
+	pressA();
+	run(0.5f);
+	CHECK(app.chestStage() == App::CH_LOCK && app.panel().page() == InventoryPanel::PAGE_LOCK);
+	{
+		const InventoryView& v = app.inventory();
+		CHECK(v.chest.lock && v.chest.length == 3 && v.chest.picks == 3 && v.chest.progress == 0);
+	}
+	cmd(PANEL_LOCK_PICK, 0); // L
+	CHECK(app.inventory().chest.progress == 1);
+	cmd(PANEL_LOCK_PICK, 0); // L again: wrong, the pick breaks
+	CHECK(count(pick) == 2 && app.inventory().chest.progress == 0 && app.chestStage() == App::CH_LOCK);
+	cmd(PANEL_LOCK_PICK, 0);
+	cmd(PANEL_LOCK_PICK, 1);
+	CHECK(chests.locked(pickC));
+	cmd(PANEL_LOCK_PICK, 0);
+	CHECK(!chests.locked(pickC) && count(pick) == 2);
+	run(3.0f);
+	CHECK(app.chestStage() == App::CH_OPEN && chestHas(pickC, nugget) == 20);
+	cmd(PANEL_CHEST_CLOSE);
+	run(2.5f);
+	CHECK(app.chestStage() == App::CH_NONE);
+
+	// 5. Without the key and the pick (the saved state has them locked again): it stays shut.
+	CHECK(app.loadState(statePath.c_str()));
+	run(0.5f);
+	CHECK(chests.locked(keyC) && chests.locked(pickC));
+	g.giveItems(hero, key, -count(key));
+	g.giveItems(hero, pick, -count(pick));
+	before(keyC);
+	pressA();
+	run(1.0f);
+	CHECK(app.chestStage() == App::CH_NONE && chests.locked(keyC));
+	before(pickC);
+	pressA();
+	run(1.0f);
+	CHECK(app.chestStage() == App::CH_NONE && chests.locked(pickC));
+	// ... and with only a few picks, all of them breaking: the last one goes, the lock stays.
+	g.giveItems(hero, pick, 2);
+	pressA();
+	run(0.5f);
+	CHECK(app.chestStage() == App::CH_LOCK);
+	cmd(PANEL_LOCK_PICK, 1);
+	cmd(PANEL_LOCK_PICK, 1);
+	CHECK(count(pick) == 0 && app.chestStage() == App::CH_NONE && chests.locked(pickC));
+
+	// 6. A ledge: a jump at the block of stone (150 cm) takes hold of it and climbs onto it.
+	{
+		const float faceZ = -700.0f - 106.0f; // (the block's south face)
+		float blockTop = 0;
+		{
+			Vec3 nn;
+			CHECK(app.world().rayDown({-700.0f, 3000.0f, -700.0f}, 5000.0f, blockTop, nn) && blockTop > 200.0f);
+		}
+		int up = 0, tried = 0;
+		for (float start : {110.0f, 150.0f, 190.0f}) {
+			app.camera().yaw = 0.0f;
+			app.teleport({-700.0f, 700.0f, faceZ - start});
+			app.world().preload(app.camera().pos);
+			run(1.5f);
+			bool mantled = false;
+			for (int i = 0; i < 120; ++i) {
+				const bool was = app.hero().mantling();
+				Input in;
+				in.moveZ = was || mantled ? 0.0f : 1.0f; // (once up, it stands)
+				in.jump = i < 20 && !mantled;
+				app.update(in, dt);
+				mantled = mantled || app.hero().mantling();
+				if (mantled && !app.hero().mantling() && was) break;
+			}
+			run(0.4f);
+			const Vec3 f = app.player().feet;
+			std::printf("  a jump from %.0f cm: mantled %d, feet %.0f %.0f %.0f (the block's top is %.0f)\n", double(start), int(mantled), double(f.x),
+			            double(f.y), double(f.z), double(blockTop));
+			++tried;
+			up += mantled && std::fabs(f.y - blockTop) < 15.0f && f.z > faceZ + 10.0f && f.z < faceZ + 212.0f && app.player().grounded;
+		}
+		CHECK(up >= 2 && tried == 3);
+	}
+}
+
 int main(int argc, char** argv) {
 	gDir = argc > 1 ? argv[1] : ".";
 	const char* only = argc > 2 ? argv[2] : nullptr; // run the tests whose name contains this
@@ -5690,6 +5893,7 @@ int main(int argc, char** argv) {
 	             {"life", testLife},
 	             {"fight", testFight},
 	             {"inventory", testInventory},
+             {"chests", testChests},
 	             {"settings", testSettings},
 	             {"sky", testSky}};
 	for (auto& t : tests) {

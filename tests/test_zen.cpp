@@ -1462,7 +1462,7 @@ void checkScene(const SrcScene& scene, bool flipped, bool withObjects) {
 	for (const SrcTriangle& t : scene.triangles) {
 		CHECK(t.material != MAT_PORTAL);
 		if (t.material >= MAT_COUNT) continue; // objects: see checkObjects
-		CHECK(t.detail == DETAIL_ALWAYS);
+		CHECK((t.detail & 3) == DETAIL_ALWAYS);
 		if (t.material == MAT_FENCE) {
 			++fence;
 			CHECK(t.v[0].rgba[0] == 0x11 && t.v[0].rgba[1] == 0x22 && t.v[0].rgba[2] == 0x33);
@@ -1542,7 +1542,7 @@ void checkObjects(const SrcScene& scene) {
 		++box->triangles;
 		CHECK(m.noCollision == !box->collides);
 		// Half the diagonal of a 100 x 200 x 200 box is 150 cm: a small object.
-		CHECK(t.detail == DETAIL_SMALL);
+		CHECK((t.detail & 3) == DETAIL_SMALL);
 		for (const SrcVertex& v : t.v) {
 			// Position: rotation and translation applied, box stands 100 cm up.
 			CHECK(std::fabs(std::fabs(v.pos[0] - box->x) - box->halfX) < 0.01f);
@@ -1610,7 +1610,7 @@ void checkModels(const SrcScene& scene) {
 					CHECK(found);
 				}
 			}
-			CHECK(t.detail == DETAIL_MEDIUM); // the model spans 200 x 250 x 160 cm
+			CHECK((t.detail & 3) == DETAIL_MEDIUM); // the model spans 200 x 250 x 160 cm
 		}
 		CHECK(rigid == kBoxTriangles && skinned == 1);
 	}

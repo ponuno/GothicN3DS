@@ -12,7 +12,8 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // scheme was the console one unless changed) begins with the classic one again.
 // 3: the bottom screen shows the inventory unless the numbers are asked for
 // (the "report" switch began again at "off"); the weapon back after a potion.
-constexpr u32 SETTINGS_VERSION = 3;
+// 4: language, density of small objects, range of the inhabitants, the free frame rate.
+constexpr u32 SETTINGS_VERSION = 4;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -31,11 +32,24 @@ u32 checkOf(const u8* bytes, u32 size) {
 
 } // namespace
 
+void Settings::resetGraphics() {
+	const Settings d;
+	drawMetres = d.drawMetres;
+	objects = d.objects;
+	dissolve = d.dissolve;
+	frameRate = d.frameRate;
+	density = d.density;
+	npcDistance = d.npcDistance;
+}
+
 void Settings::sanitize() {
 	drawMetres = u8(clamp<int>(drawMetres, 40, 200) / 10 * 10);
 	if (objects >= OBJECT_MODES) objects = OBJECTS_SMOOTH;
 	if (frameRate >= FRAME_MODES) frameRate = FRAMES_60;
 	if (scheme >= CONTROL_SCHEMES) scheme = CONTROLS_CLASSIC;
+	if (language > 3) language = 0;
+	if (density > 2) density = 0;
+	if (npcDistance > 2) npcDistance = 1;
 	cameraSpeed = u8(clamp<int>(cameraSpeed, 1, 10));
 	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack};
 	for (u8* f : flags) *f = *f ? 1 : 0;

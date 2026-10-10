@@ -10,6 +10,7 @@
 //  * Things go both ways: a tap chooses, a second tap moves the stack over.
 //    What is worn does not go into a chest.
 //  * The world goes on while a chest is open, the character stands.
+#include "lang.h"
 #include "app.h"
 
 #include <stdio.h>
@@ -59,7 +60,7 @@ void App::chestStart(u32 index) {
 			const GameItemInfo* ki = g.itemInfo(key);
 			scriptText(ki ? g.text(ki->description ? ki->description : ki->name) : "", name, sizeof(name));
 			_chests.unlock(index);
-			snprintf(buf, sizeof(buf), "Открыто ключом: %s", name);
+			snprintf(buf, sizeof(buf), tr("Открыто ключом: %s"), name);
 			itemMessage(buf, false);
 		} else {
 			const u32 pick = g.vm().findHash(hashName("ITKELOCKPICK"));
@@ -73,7 +74,7 @@ void App::chestStart(u32 index) {
 				_invStamp = 0;
 				return;
 			}
-			itemMessage(combo[0] ? "Заперто: нужен ключ или отмычка" : "Заперто: нужен ключ", true);
+			itemMessage(combo[0] ? tr("Заперто: нужен ключ или отмычка") : tr("Заперто: нужен ключ"), true);
 			_chest = ChestJob();
 			return;
 		}
@@ -158,7 +159,7 @@ void App::chestUpdate(Input& in, float dt) {
 				_chest.stage = CH_OPEN;
 				_chest.time = 0;
 			} else {
-				itemMessage("Сейчас нельзя");
+				itemMessage(tr("Сейчас нельзя"));
 				_chest = ChestJob();
 			}
 		}
@@ -203,8 +204,8 @@ void App::chestMove(u32 symbol, i32 amount, bool toChest) {
 		const i32 taken = _chests.remove(_chest.index, symbol, amount);
 		if (taken <= 0) return;
 		g.giveItems(u32(hi), symbol, taken);
-		if (taken > 1) snprintf(buf, sizeof(buf), "Взято: %s ×%ld", name, static_cast<long>(taken));
-		else snprintf(buf, sizeof(buf), "Взято: %s", name);
+		if (taken > 1) snprintf(buf, sizeof(buf), tr("Взято: %s ×%ld"), name, static_cast<long>(taken));
+		else snprintf(buf, sizeof(buf), tr("Взято: %s"), name);
 		itemMessage(buf, false);
 		++_itemStats.pickedUp;
 	} else {
@@ -215,17 +216,17 @@ void App::chestMove(u32 symbol, i32 amount, bool toChest) {
 		if (worn) n = have > 1 ? (n < have - 1 ? n : have - 1) : 0;
 		if (_job.stage != JOB_NONE && _job.symbol == symbol) n = 0;
 		if (n <= 0) {
-			snprintf(buf, sizeof(buf), worn ? "Сначала снимите: %s" : "Нельзя: %s", name);
+			snprintf(buf, sizeof(buf), worn ? tr("Сначала снимите: %s") : tr("Нельзя: %s"), name);
 			itemMessage(buf);
 			return;
 		}
 		if (!_chests.add(_chest.index, symbol, n)) {
-			itemMessage("Сундук полон");
+			itemMessage(tr("Сундук полон"));
 			return;
 		}
 		g.giveItems(u32(hi), symbol, -n);
-		if (n > 1) snprintf(buf, sizeof(buf), "Положено: %s ×%ld", name, static_cast<long>(n));
-		else snprintf(buf, sizeof(buf), "Положено: %s", name);
+		if (n > 1) snprintf(buf, sizeof(buf), tr("Положено: %s ×%ld"), name, static_cast<long>(n));
+		else snprintf(buf, sizeof(buf), tr("Положено: %s"), name);
 		itemMessage(buf, false);
 	}
 	_invStamp = 0;
@@ -263,7 +264,7 @@ void App::chestCommand(const PanelCommand& c) {
 			if (!combo[++_chest.progress]) {
 				// The last turn: it opens.
 				_chests.unlock(_chest.index);
-				itemMessage("Замок открыт", false);
+				itemMessage(tr("Замок открыт"), false);
 				_panel.openPage(InventoryPanel::PAGE_PLAY);
 				chestBegin();
 			}
@@ -273,11 +274,11 @@ void App::chestCommand(const PanelCommand& c) {
 			_chest.progress = 0;
 			if (_chest.picks > 0) --_chest.picks;
 			if (_chest.picks == 0) {
-				itemMessage("Отмычка сломалась. Отмычек больше нет", true);
+				itemMessage(tr("Отмычка сломалась. Отмычек больше нет"), true);
 				_panel.openPage(InventoryPanel::PAGE_PLAY);
 				_chest = ChestJob();
 			} else {
-				snprintf(_chest.news, sizeof(_chest.news), "Отмычка сломалась");
+				snprintf(_chest.news, sizeof(_chest.news), "%s", tr("Отмычка сломалась"));
 				++_itemStats.refused;
 			}
 		}
@@ -294,7 +295,7 @@ const char* App::chestName(u32 index) const {
 	const char* scheme = mob < mobs.count() ? mobs.scheme(mob) : "";
 	const bool big = strstr(scheme, "BIG") != nullptr || strstr(scheme, "big") != nullptr;
 	const bool small = strstr(scheme, "SMALL") != nullptr || strstr(scheme, "small") != nullptr;
-	return big ? "Большой сундук" : small ? "Малый сундук" : "Ящик";
+	return big ? tr("Большой сундук") : small ? tr("Малый сундук") : tr("Ящик");
 }
 
 // The chest as the bottom screen shows it.

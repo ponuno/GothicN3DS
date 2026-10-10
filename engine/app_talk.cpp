@@ -1,7 +1,8 @@
 // Talking to the inhabitants: A at a character in front of the hero begins a
 // talk (the scripts run it, npcs.h); while it lasts the hero stands facing the
 // partner, the bottom screen is the dialogue page and the words come up as
-// subtitles on the top one.
+// the dialogue box at the top of the top one.
+#include "lang.h"
 #include "app.h"
 
 #include <math.h>
@@ -70,14 +71,14 @@ void App::talkUpdate(Input& in, float dt) {
 	if (t >= 0 && _npcs.canTalk(u32(t))) _talkTarget = t;
 	if (_talkTarget >= 0 && (in.confirm || in.attack)) {
 		in.confirm = in.attack = false;
-		if (!_npcs.talkTo(u32(_talkTarget))) toast("Сейчас не до разговоров");
+		if (!_npcs.talkTo(u32(_talkTarget))) toast(tr("Сейчас не до разговоров"));
 	}
 }
 
 void App::drawSubtitle() {
 	const TalkView& v = _npcs.talkView();
 	if (!v.active || !v.saying || !v.line[0]) return;
-	const int W = gfx::SCREEN_W, H = gfx::SCREEN_H;
+	const int W = gfx::SCREEN_W;
 	// A greedy wrap by words into at most four lines.
 	char lines[4][320];
 	int count = 0;
@@ -104,8 +105,9 @@ void App::drawSubtitle() {
 	if (cur[0] && count < 4) snprintf(lines[count++], sizeof(lines[0]), "%s", cur);
 	if (!count) return;
 	const int lh = Ui::lineHeight();
-	const int top = H - 12 - (count + 1) * lh;
-	_ui.rect(10, top - 4, W - 10, H - 6, 0x000000B0u);
+	// At the top of the picture, as the game's dialogue box: the speaker's name and the words.
+	const int top = 10;
+	_ui.rect(10, top - 5, W - 10, top + (count + 1) * lh + 3, 0x000000B8u);
 	_ui.text(W / 2, top, v.speaker, v.heroSays ? ui::WHITE : ui::GOLD, ui::TEXT, ui::CENTER);
 	for (int i = 0; i < count; ++i) _ui.text(W / 2, top + (i + 1) * lh, lines[i], ui::WHITE, ui::TEXT, ui::CENTER);
 }

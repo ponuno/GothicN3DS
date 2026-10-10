@@ -162,6 +162,9 @@ public:
 	// nodeCount of them - and each model is drawn with them.
 	void skinMatrices(const Pose& pose, float yaw, float lean, const float* scale, Mat34* skin) const;
 	void drawSkinned(const Mat34* skin, Vec3 origin, const float light[3]) const;
+	// Where a node of `pose` is, turned as skinMatrices() turns the body (what
+	// a held thing is drawn with); false without such a node.
+	bool nodeMatrix(const Pose& pose, int node, float yaw, float lean, const float* scale, Mat34& out) const;
 	u32 triangles() const { return _h.indexCount / 3; }
 
 private:
@@ -185,12 +188,18 @@ public:
 	// Makes `clip` the current one. Nothing happens if it already is. The
 	// pose fades over `blend` seconds (negative: what the clip itself asks).
 	void play(const Clip* clip, float blend = -1.0f);
+	// Plays `clip` backwards, from its last frame to its first (the model script's
+	// aliases marked "R": putting a weapon away is drawing it in reverse). It does
+	// not go on to the clip the script names next; finished() is true at the start.
+	void playReversed(const Clip* clip, float blend = -1.0f);
+	bool reversed() const { return _rate < 0.0f; }
 	// Starts the current clip over (a step that is taken again).
 	void restart(float blend);
 	// Jumps to `time` in the current clip (a combo going on with its next
 	// blow from where the last one ends). What the root travels meanwhile
 	// counts as moved.
-	void seek(float time);
+	// The pose fades over `blend` seconds from what is on screen.
+	void seek(float time, float blend = 0.0f);
 	// Playback speed of the current clip; 1 is as authored.
 	void setRate(float rate) { _rate = rate; }
 	void update(float dt) {

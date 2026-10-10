@@ -48,6 +48,7 @@ struct NpcConfig {
 struct HeroLink {
 	bool prehit = false;   // a blow of the player's is on its way (the enemies' fight AI fends it off)
 	bool running = false;
+	bool sneaking = false; // the character creeps: creatures then see it only in front of them
 	// An inhabitant's blow lands on the player's character.
 	void (*hit)(void* user, u32 attacker) = nullptr;
 	void* user = nullptr;
@@ -254,6 +255,7 @@ struct NpcActor {
 	float flee = 0;        // seconds of fleeing left
 	u8 drawTo = 0xFF;      // WeaponMode being taken in hand (0xFF: none)
 	float drawAt = -1.0f;  // seconds into the draw where it changes hands
+	bool drawBack = false; // the weapon is being put away: its drawing plays backwards
 	bool hitFromBehind = false;
 };
 
@@ -282,6 +284,8 @@ public:
 	void update(Pak& pak, const World& world, Vec3 eye, float hours, float dt);
 	// Call in PASS_WORLD. `dayLight` as for the world (1 1 1 indoors).
 	void draw(const Mat4& viewProj, const float dayLight[3]);
+	// Whose models and archive the weapons in their hands are drawn from.
+	void setHeldSource(class Loot* loot, Pak* pak) { _heldLoot = loot; _heldPak = pak; }
 
 	NpcConfig& config() { return _cfg; }
 	const NpcStats& stats() const { return _stats; }
@@ -521,6 +525,7 @@ private:
 	void perceive(NpcActor& a, const World& world);
 	void react(NpcActor& a, u32 fn, int other, int victim);
 	bool sees(const NpcActor& a, u32 other, bool inFront) const;
+	bool seenAllRound(const GameNpc& n, const GameNpc& o) const;
 	bool refusesState(u32 fn) const;
 	void turnHead(NpcActor& a, float dt);
 	static void xPercEnable(ScriptVm& vm, void* user);
@@ -595,6 +600,8 @@ private:
 	TexturePool _pool;
 	Piece _pieces[PIECES];
 	NpcActor _actors[ACTORS];
+	class Loot* _heldLoot = nullptr;
+	Pak* _heldPak = nullptr;
 	Pak* _pak = nullptr; // while update() or enterWorld() runs
 	const World* _world = nullptr; // ... and the world
 	u32 _clipBytes = 0;

@@ -21,6 +21,9 @@ struct StreamConfig {
 	// Scales the distances of the smaller classes; the frame pacer lowers it
 	// when the GPU cannot keep up.
 	float detailScale = 1.0f;
+	// How many of the four thinning layers of the small objects are drawn (4: all; the rest of the
+	// bushes, stones and litter is left out for a sparser, lighter picture).
+	u8 smallLayers = 4;
 	// What is drawn goes this much farther out than it comes in (1.1: 10%
 	// farther), so that an object at its distance does not come and go with
 	// every step and every sway of the camera.
@@ -134,6 +137,7 @@ private:
 	struct Batch {
 		u16 material;
 		u8 detail;
+		u8 layer; // of the small objects: 0..3, see StreamConfig::smallLayers
 		u8 cluster;
 		u8 shown; // smaller classes: how much of it is drawn, 0..255 (dissolving in between; see StreamConfig::fadeMs)
 		u32 firstIndex, indexCount;

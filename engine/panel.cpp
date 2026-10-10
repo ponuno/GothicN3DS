@@ -1,3 +1,4 @@
+#include "lang.h"
 #include "panel.h"
 
 #include "g3ds/script.h"
@@ -815,7 +816,7 @@ void InventoryPanel::drawBars(const InventoryView& v, bool header) {
 		_canvas.frame(2, 2, BACK_W - 4, BARS_H - 1, CELL_LINE);
 		_canvas.text((BACK_W - 2) / 2, 3, "\xE2\x97\x80", TITLE, ui::TEXT, ui::CENTER);
 	}
-	_canvas.text(_page == PAGE_DIALOG ? 8 : BACK_W + 2, 3, _page == PAGE_CHEST && v.chest.name[0] ? v.chest.name : kPageTitles[_page], TITLE, ui::TEXT, ui::LEFT, 84,
+	_canvas.text(_page == PAGE_DIALOG ? 8 : BACK_W + 2, 3, _page == PAGE_CHEST && v.chest.name[0] ? v.chest.name : tr(kPageTitles[_page]), TITLE, ui::TEXT, ui::LEFT, 84,
 	             true);
 	bar(140, 222, v.hp, v.hpMax, HP, HP_LIGHT);
 	bar(238, 311, v.mana, v.manaMax, MANA, MANA_LIGHT);
@@ -854,7 +855,7 @@ void InventoryPanel::drawPlay(const InventoryView& v) {
 		_canvas.frame(x0, y0, x1, y1, pressed ? SEL_EDGE : TAB_LIGHT);
 		_canvas.fill(x0 + 1, y1 - 2, x1 - 1, y1 - 1, TAB_DARK);
 		_canvas.icon(cx - 16, y0 + 12, kIcons[k], 0xE8ECF0FFu, 2, Canvas::ICON_MONO);
-		_canvas.text(cx, y0 + 52, kNames[k], TITLE, ui::TEXT, ui::CENTER, 0, true);
+		_canvas.text(cx, y0 + 52, tr(kNames[k]), TITLE, ui::TEXT, ui::CENTER, 0, true);
 	}
 	if (v.messageTime > 0.0f && v.message[0])
 		_canvas.text(Canvas::W / 2, BUTTON_Y - 17, v.message, GOLD, ui::TEXT, ui::CENTER, Canvas::W - 8, true);
@@ -942,7 +943,7 @@ void InventoryPanel::drawGrid(const InventoryView& v) {
 	}
 	if (_shownCount == 0)
 		_canvas.text((x0 + x1) / 2, y0 + GRID_H / 2 - 7,
-		             _page == PAGE_CHEST ? (_side == 0 ? "Сундук пуст" : "В рюкзаке пусто") : v.present ? kTabNames[_tab] : "Инвентаря нет",
+		             _page == PAGE_CHEST ? (_side == 0 ? tr("Сундук пуст") : tr("В рюкзаке пусто")) : v.present ? tr(kTabNames[_tab]) : tr("Инвентаря нет"),
 		             TEXT_DIM, ui::TEXT, ui::CENTER, 0, true);
 	_canvas.unclip();
 	if (v.messageTime > 0.0f && v.message[0]) {
@@ -972,8 +973,8 @@ void InventoryPanel::drawStrip(const InventoryView& v) {
 		}
 		if (k > 0) _canvas.fill(cx - 53, y0 + 3, cx - 52, y1 - 3, TAB_LIGHT);
 		char label[40];
-		if (k == 0) snprintf(label, sizeof(label), "Сундук %lu", static_cast<unsigned long>(v.chest.count));
-		else snprintf(label, sizeof(label), "%s", kNames[k]);
+		if (k == 0) snprintf(label, sizeof(label), tr("Сундук %lu"), static_cast<unsigned long>(v.chest.count));
+		else snprintf(label, sizeof(label), "%s", tr(kNames[k]));
 		_canvas.text(cx, y0 + 4, label, off ? TEXT_DIM : on ? TITLE : TEXT, ui::TEXT, ui::CENTER, 100, true);
 	}
 }
@@ -982,7 +983,7 @@ void InventoryPanel::drawStrip(const InventoryView& v) {
 void InventoryPanel::drawLock(const InventoryView& v) {
 	const InventoryView::Chest& c = v.chest;
 	char buf[64];
-	snprintf(buf, sizeof(buf), "Отмычек: %d", int(c.picks));
+	snprintf(buf, sizeof(buf), tr("Отмычек: %d"), int(c.picks));
 	_canvas.text(Canvas::W / 2, BARS_H + 12, buf, c.picks ? TEXT : WARN, ui::TEXT, ui::CENTER, 0, true);
 	// The combination: a square for each turn.
 	const int n = clamp(int(c.length), 1, 16), w = 16, gap = 4;
@@ -993,7 +994,7 @@ void InventoryPanel::drawLock(const InventoryView& v) {
 		_canvas.fill(x, y0, x + w, y0 + w, done ? GOLD : 0x0B0D10E0u);
 		_canvas.frame(x, y0, x + w, y0 + w, done ? 0xFFFFFFFFu : CELL_LINE);
 	}
-	_canvas.text(Canvas::W / 2, y0 + 28, c.text[0] ? c.text : "Верно — дальше, неверно — отмычка сломается", c.text[0] ? GOLD : TEXT_DIM,
+	_canvas.text(Canvas::W / 2, y0 + 28, c.text[0] ? c.text : tr("Верно — дальше, неверно — отмычка сломается"), c.text[0] ? GOLD : TEXT_DIM,
 	             ui::TEXT, ui::CENTER, Canvas::W - 10, true);
 	for (int k = 0; k < 2; ++k) {
 		int cx, cy;
@@ -1003,15 +1004,16 @@ void InventoryPanel::drawLock(const InventoryView& v) {
 		_canvas.gradient(bx0, by0, bx1, by1, pressed ? SEL_TOP : TAB_TOP, pressed ? SEL_BOTTOM : TAB_BOTTOM);
 		_canvas.frame(bx0, by0, bx1, by1, pressed ? SEL_EDGE : TAB_LIGHT);
 		_canvas.fill(bx0 + 1, by1 - 2, bx1 - 1, by1 - 1, TAB_DARK);
-		_canvas.text(cx, cy - 8, k ? "Вправо \xE2\x96\xB6" : "\xE2\x97\x80 Влево", TITLE, ui::TITLE, ui::CENTER, 0, true);
+		_canvas.text(cx, cy - 8, k ? tr("Вправо \xE2\x96\xB6") : tr("\xE2\x97\x80 Влево"), TITLE, ui::TITLE, ui::CENTER, 0, true);
 	}
-	_canvas.text(Canvas::W / 2, 214, "Крестовина или L / R — тоже; B — бросить", TEXT_DIM, ui::TEXT, ui::CENTER, Canvas::W - 8, true);
+	_canvas.text(Canvas::W / 2, 214, tr("Крестовина или L / R — тоже; B — бросить"), TEXT_DIM, ui::TEXT, ui::CENTER, Canvas::W - 8, true);
 }
 
 void InventoryPanel::drawDialog(const InventoryView& v) {
+	// Only the ways to go on: the words (and who says them) are in the dialogue box
+	// on the top screen.
 	const TalkView& t = v.talk;
 	const int x0 = 6, x1 = Canvas::W - 6;
-	_canvas.text(Canvas::W / 2, BARS_H + 5, t.partner[0] ? t.partner : "…", GOLD, ui::TITLE, ui::CENTER, Canvas::W - 12, true);
 	if (t.choosing && t.count) {
 		for (u32 k = 0; k < t.count && k < u32(TALK_ITEMS); ++k) {
 			const int y = TALK_Y + int(k) * TALK_ROW;
@@ -1027,17 +1029,7 @@ void InventoryPanel::drawDialog(const InventoryView& v) {
 		}
 		return;
 	}
-	if (t.saying) {
-		int y = TALK_Y;
-		if (!t.heroSays && t.speaker[0]) {
-			_canvas.text(x0, y, t.speaker, GOLD, ui::TEXT, ui::LEFT, x1 - x0, true);
-			y += 16;
-		}
-		_canvas.paragraph(x0, y, x1 - x0, t.line, t.heroSays ? TITLE : TEXT, 9);
-		_canvas.text(Canvas::W / 2, Canvas::H - 20, "A — дальше", TEXT_DIM, ui::TEXT, ui::CENTER, 0, true);
-		return;
-	}
-	_canvas.text(Canvas::W / 2, TALK_Y + 20, "…", TEXT_DIM, ui::TITLE, ui::CENTER, 0, true);
+	if (t.saying) _canvas.text(Canvas::W / 2, Canvas::H - 20, tr("A — дальше"), TEXT_DIM, ui::TEXT, ui::CENTER, 0, true);
 }
 
 void InventoryPanel::drawPicker(const InventoryView& v) {
@@ -1049,7 +1041,7 @@ void InventoryPanel::drawPicker(const InventoryView& v) {
 		drawThing(Canvas::W / 2 - 50, SLOT_Y + 2 * SLOT_H + 12, 40, 40, sel->picture, sel->icon, sel->tint, false);
 		_canvas.text(Canvas::W / 2 - 4, SLOT_Y + 2 * SLOT_H + 16, sel->name, TITLE, ui::TEXT, ui::LEFT, 150, true);
 	}
-	_canvas.text(Canvas::W / 2, SLOT_Y + 2 * SLOT_H + 60, "В какой слот? Та же вещь в своём слоте — убрать", TEXT, ui::TEXT, ui::CENTER,
+	_canvas.text(Canvas::W / 2, SLOT_Y + 2 * SLOT_H + 60, tr("В какой слот? Та же вещь в своём слоте — убрать"), TEXT, ui::TEXT, ui::CENTER,
 	             Canvas::W - 8, true);
 }
 
@@ -1058,7 +1050,7 @@ void InventoryPanel::drawDiary(const InventoryView& v) {
 	_canvas.clip(0, BARS_H + 2, Canvas::W, Canvas::H);
 	int y = BARS_H + 4 - _listScroll;
 	if (!v.topicCount) {
-		_canvas.paragraph(x0, y + 8, x1 - x0, "Записей пока нет. Их делают скрипты игры (Log_AddEntry) в разговорах и заданиях.", TEXT_DIM);
+		_canvas.paragraph(x0, y + 8, x1 - x0, tr("Записей пока нет. Их делают скрипты игры (Log_AddEntry) в разговорах и заданиях."), TEXT_DIM);
 	}
 	static const char* const kStatus[] = {"", "идёт", "выполнено", "провалено", "устарело"};
 	// The tasks first, then the notes.
@@ -1069,14 +1061,14 @@ void InventoryPanel::drawDiary(const InventoryView& v) {
 			if ((topic.section == 1) != (pass == 1)) continue;
 			if (!headed) {
 				headed = true;
-				_canvas.text(x0, y + 1, pass ? "Заметки" : "Задания", TITLE, ui::TEXT, ui::LEFT, 0, true);
+				_canvas.text(x0, y + 1, pass ? tr("Заметки") : tr("Задания"), TITLE, ui::TEXT, ui::LEFT, 0, true);
 				y += 16;
 			}
 			const bool openTopic = _topic == int(t);
 			_topicY[t] = y;
 			_canvas.fill(x0 - 2, y, x1 + 2, y + 15, openTopic ? TAB_ON : 0xFFFFFF10u);
 			_canvas.text(x0 + 2, y + 1, topic.name, openTopic ? TITLE : TEXT, ui::TEXT, ui::LEFT, x1 - x0 - 80, true);
-			_canvas.text(x1 - 2, y + 1, topic.status < 5 ? kStatus[topic.status] : "", topic.status == 2 ? GOLD : topic.status == 3 ? WARN : TEXT_DIM,
+			_canvas.text(x1 - 2, y + 1, topic.status < 5 ? tr(kStatus[topic.status]) : "", topic.status == 2 ? GOLD : topic.status == 3 ? WARN : TEXT_DIM,
 			             ui::TEXT, ui::RIGHT);
 			y += 16;
 			if (!openTopic) continue;
@@ -1107,33 +1099,33 @@ void InventoryPanel::drawCharacter(const InventoryView& v) {
 	int yl = y, yr = y;
 	const int lx = 8, lw = 146, rx = 166, rw = 146;
 	snprintf(buf, sizeof(buf), "%ld", static_cast<long>(s.level));
-	row(lx, lw, yl, "Уровень", buf, TITLE);
+	row(lx, lw, yl, tr("Уровень"), buf, TITLE);
 	snprintf(buf, sizeof(buf), "%ld / %ld", static_cast<long>(s.exp), static_cast<long>(s.expNext));
-	row(lx, lw, yl, "Опыт", buf, TEXT);
+	row(lx, lw, yl, tr("Опыт"), buf, TEXT);
 	snprintf(buf, sizeof(buf), "%ld", static_cast<long>(s.learn));
-	row(lx, lw, yl, "Очки обучения", buf, s.learn > 0 ? GOLD : TEXT);
+	row(lx, lw, yl, tr("Очки обучения"), buf, s.learn > 0 ? GOLD : TEXT);
 	snprintf(buf, sizeof(buf), "%ld", static_cast<long>(s.strength));
-	row(lx, lw, yl, "Сила", buf, TEXT);
+	row(lx, lw, yl, tr("Сила"), buf, TEXT);
 	snprintf(buf, sizeof(buf), "%ld", static_cast<long>(s.dexterity));
-	row(lx, lw, yl, "Ловкость", buf, TEXT);
+	row(lx, lw, yl, tr("Ловкость"), buf, TEXT);
 	snprintf(buf, sizeof(buf), "%ld / %ld", static_cast<long>(v.hp), static_cast<long>(v.hpMax));
-	row(lx, lw, yl, "Здоровье", buf, TEXT);
+	row(lx, lw, yl, tr("Здоровье"), buf, TEXT);
 	snprintf(buf, sizeof(buf), "%ld / %ld", static_cast<long>(v.mana), static_cast<long>(v.manaMax));
-	row(lx, lw, yl, "Мана", buf, TEXT);
-	_canvas.text(rx, yr, "Защита", TITLE, ui::TEXT, ui::LEFT, 0, true);
+	row(lx, lw, yl, tr("Мана"), buf, TEXT);
+	_canvas.text(rx, yr, tr("Защита"), TITLE, ui::TEXT, ui::LEFT, 0, true);
 	yr += 15;
 	static const char* const kProt[4] = {"от оружия", "от стрел", "от огня", "от магии"};
 	for (int k = 0; k < 4; ++k) {
 		snprintf(buf, sizeof(buf), "%ld", static_cast<long>(s.protection[k]));
-		row(rx, rw, yr, kProt[k], buf, TEXT);
+		row(rx, rw, yr, tr(kProt[k]), buf, TEXT);
 	}
 	yr += 4;
-	_canvas.text(rx, yr, "Снаряжение", TITLE, ui::TEXT, ui::LEFT, 0, true);
+	_canvas.text(rx, yr, tr("Снаряжение"), TITLE, ui::TEXT, ui::LEFT, 0, true);
 	yr += 15;
 	const char* worn[3] = {s.melee, s.ranged, s.armor};
 	static const char* const kWorn[3] = {"Оружие:", "Дальнее:", "Броня:"};
 	for (int k = 0; k < 3; ++k) {
-		_canvas.text(rx, yr, kWorn[k], TEXT_DIM, ui::TEXT, ui::LEFT, 0, true);
+		_canvas.text(rx, yr, tr(kWorn[k]), TEXT_DIM, ui::TEXT, ui::LEFT, 0, true);
 		_canvas.text(rx + 56, yr, worn[k][0] ? worn[k] : "—", TEXT, ui::TEXT, ui::LEFT, rw - 56, true);
 		yr += 15;
 	}

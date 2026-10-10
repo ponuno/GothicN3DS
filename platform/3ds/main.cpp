@@ -55,6 +55,7 @@
 //   D-Pad Left  nobody perceives anything (sets the menu's "Восприятие: Выкл")
 //   D-Pad Right objects appear at once, without dissolving (the menu's
 //            "Растворение" otherwise decides, from the next start)
+#include "lang.h"
 #include "app.h"
 #include "gfx_c3d.h"
 #include "pacer.h"
@@ -234,6 +235,7 @@ int main(int, char**) {
 		const g3::Settings& st = app.settings();
 		pacer.cfg.minDetail = st.minDetail(); // (steady: too heavy means 30 fps, the objects stay)
 		pacer.cfg.halfOnly = st.frameRate == g3::FRAMES_30;
+		pacer.cfg.freeRate = st.frameRate == g3::FRAMES_FREE;
 	};
 	pace();
 	int interval = 1;
@@ -249,6 +251,7 @@ int main(int, char**) {
 	bool flicked = false;                  // the C-Stick was flicked aside (locked on: the next target)
 	bool reportShown = true;
 	bool panelShown = false;               // the inventory's picture is on the bottom screen
+	u32 swallowed = 0;                     // buttons a page or the menu used: the game ignores them until let go
 
 	while (aptMainLoop()) {
 		hidScanInput();
@@ -312,7 +315,10 @@ int main(int, char**) {
 			app.settings().save(kSettingsPath);
 		}
 		if (!inventoryScreen || menu.isOpen()) panel.setCursor(false);
-		const u32 gameDown = down & ~taken, gameHeld = held & ~taken;
+		// A button the inventory (or the menu) took stays taken while it is held:
+		// B closes the inventory and must not then also be a jump.
+		swallowed = (swallowed | taken | (menu.isOpen() ? held : 0u)) & held;
+		const u32 gameDown = down & ~taken & ~swallowed, gameHeld = held & ~taken & ~swallowed;
 
 		// ---- the pause menu: the game stands still ----
 		bool record = false;
@@ -335,6 +341,10 @@ int main(int, char**) {
 				break;
 			} else if (act != g3::MENU_NONE && act != g3::MENU_CLOSED) {
 				app.menuAction(act, kStatePath);
+				if (act == g3::MENU_RESET_GRAPHICS) {
+					pace();
+					app.settings().save(kSettingsPath);
+				}
 			}
 			app.render();
 		} else {
@@ -369,12 +379,12 @@ int main(int, char**) {
 					in.lookX = 0;
 				}
 				if (console) {
-					if ((gameDown & KEY_L) && !rHeld) app.toast("Быстрой магии пока нет");
+					if ((gameDown & KEY_L) && !rHeld) app.toast(g3::tr("Быстрой магии пока нет"));
 				} else {
 					in.strafe = (gameHeld & KEY_R ? 1.0f : 0.0f) - (gameHeld & KEY_L ? 1.0f : 0.0f);
 				}
 				if ((gameDown & KEY_SELECT) && !rHeld && !(held & KEY_START) && !inventoryScreen)
-					app.toast("Инвентарь — на нижнем экране (меню: Графика)");
+					app.toast(g3::tr("Инвентарь — на нижнем экране (меню: Графика)"));
 			} else {
 				// Flying (the menu's "Отладка"): a free camera.
 				if (held & KEY_A) in.lookX = 1.0f;
@@ -386,9 +396,9 @@ int main(int, char**) {
 				in.fast = (held & (KEY_ZL | KEY_ZR)) != 0;
 			}
 			if (quickSave) {
-				app.toast(app.saveState(kStatePath) ? "Позиция сохранена" : "Не удалось сохранить");
+				app.toast(app.saveState(kStatePath) ? g3::tr("Позиция сохранена") : g3::tr("Не удалось сохранить"));
 			} else if (quickLoad) {
-				app.toast(app.loadState(kStatePath) ? "Позиция загружена" : "Сохранённой позиции нет");
+				app.toast(app.loadState(kStatePath) ? g3::tr("Позиция загружена") : g3::tr("Сохранённой позиции нет"));
 			} else if ((down & KEY_START) && !(held & KEY_SELECT)) {
 				menu.open();
 				panel.setCursor(false);

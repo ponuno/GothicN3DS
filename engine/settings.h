@@ -17,6 +17,7 @@ enum ObjectMode : u8 {
 enum FrameRateMode : u8 {
 	FRAMES_60,   // 60, a steady 30 while the frame does not fit
 	FRAMES_30,   // always a steady 30 (more detail, smoother under load)
+	FRAMES_FREE, // each frame goes out at the first refresh after it is done: 30..60, never held to a steady 30
 	FRAME_MODES
 };
 
@@ -49,6 +50,10 @@ struct Settings {
 	u8 immortal = 0;         // the player's character takes no damage
 	// Version 3: the inventory.
 	u8 weaponBack = 1;       // after a potion the weapon is taken in hand again (with its animation)
+	// Version 4: language, the thinning of small objects, the range of the inhabitants.
+	u8 language = 0;         // Lang (lang.h): 0 Russian, 1 English, 2 Polish, 3 German
+	u8 density = 0;          // small objects drawn: 0 all, 1 three layers of four, 2 two of four (needs data baked with the layers)
+	u8 npcDistance = 1;      // how far the inhabitants are drawn: 0 20 m, 1 30 m, 2 45 m
 
 	// Clamps every value into its range (after reading a file of another version).
 	void sanitize();
@@ -58,6 +63,11 @@ struct Settings {
 	float smallObjectsCm() const;
 	// The least the pacer may take the objects down to (FramePacer minDetail).
 	float minDetail() const;
+	// Of the four thinning layers of the small objects, how many are drawn.
+	u8 smallLayers() const { return u8(4 - density); }
+	float npcRangeCm() const { return npcDistance == 0 ? 2000.0f : npcDistance == 2 ? 4500.0f : 3000.0f; }
+	// The graphics page's values as they were at first.
+	void resetGraphics();
 
 	// settings.bin. load() leaves the defaults and returns false if the file
 	// is missing or damaged.

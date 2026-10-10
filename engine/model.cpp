@@ -422,6 +422,19 @@ void Model::skinMatrices(const Pose& pose, float yaw, float lean, const float* s
 	}
 }
 
+bool Model::nodeMatrix(const Pose& pose, int node, float yaw, float lean, const float* scale, Mat34& out) const {
+	if (!_nodes || node < 0 || u32(node) >= _h.nodeCount) return false;
+	Mat34* const world = gDrawWorld;
+	worldTransforms(pose, world);
+	const Quat tip = {0, 0, sinf(-lean * 0.5f), cosf(-lean * 0.5f)};
+	Mat34 turn = mat34From(quatMul(quatFromYaw(yaw), tip), {0, 0, 0});
+	if (scale)
+		for (int r = 0; r < 3; ++r)
+			for (int c = 0; c < 3; ++c) turn.m[r][c] *= scale[c];
+	out = mul(turn, world[node]);
+	return true;
+}
+
 void Model::drawSkinned(const Mat34* skin, Vec3 origin, const float light[3]) const {
 	if (!_mesh) return;
 	float palette[MODEL_PALETTE * 12];
@@ -517,6 +530,20 @@ void Animator::play(const Clip* clip, float blend) {
 	evaluate();
 }
 
+void Animator::playReversed(const Clip* clip, float blend) {
+	if (!_model || !clip) return;
+	// (Always from the top: even if it is the clip now playing, forwards or not.)
+	_from = _pose;
+	if (_clip) _clip->sample(_time, _base);
+	_clip = clip;
+	_time = clip->duration();
+	_rate = -1.0f;
+	_finished = false;
+	_fadeTime = blend >= 0.0f ? blend : 0.15f;
+	_fade = _fadeTime > 0.0f ? 0.0f : 1.0f;
+	evaluate();
+}
+
 void Animator::restart(float blend) {
 	if (!_model || !_clip) return;
 	_from = _pose;
@@ -527,12 +554,18 @@ void Animator::restart(float blend) {
 	evaluate();
 }
 
-void Animator::seek(float time) {
+void Animator::seek(float time, float blend) {
 	if (!_model || !_clip) return;
+	if (blend > 0.0f) {
+		_from = _pose;
+		_fadeTime = blend;
+		_fade = 0.0f;
+	}
 	time = clamp(time, 0.0f, _clip->duration());
 	_moved = _moved + (_clip->motion(time) - _clip->motion(_time));
 	_time = time;
 	_finished = !_clip->loops() && _time >= _clip->duration();
+	if (blend > 0.0f) evaluate();
 }
 
 void Animator::evaluate() {
@@ -556,7 +589,14 @@ void Animator::advance(float dt) {
 	if (_clip) {
 		const Vec3 before = _clip->motion(_time);
 		_time += dt * _rate;
-		if (!_clip->loops() && _time >= _clip->duration()) {
+		if (_rate < 0.0f) {
+			// Backwards: the way the root went is undone, and it ends at the first frame.
+			if (_time <= 0.0f) {
+				_time = 0.0f;
+				_finished = true;
+			}
+			_moved = _moved + (_clip->motion(_time) - before);
+		} else if (!_clip->loops() && _time >= _clip->duration()) {
 			_moved = _moved + (_clip->motion(_clip->duration()) - before);
 			// Over: on to the clip the model script names as the next one.
 			const Clip* next = _clip->header().next ? _model->clip(_clip->header().next) : nullptr;

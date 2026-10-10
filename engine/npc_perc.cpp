@@ -50,9 +50,16 @@ bool Npcs::sees(const NpcActor& a, u32 other, bool inFront) const {
 	const float dx = o.pos[0] - n.pos[0], dz = o.pos[2] - n.pos[2], dy = o.pos[1] - n.pos[1];
 	const float range = _game.sensesRange(n);
 	if (dx * dx + dy * dy + dz * dz > range * range) return false;
-	if (inFront && dx * dx + dz * dz > 1.0f && fabsf(wrap(atan2f(dx, dz) - n.yaw)) >= 1.75f) return false;
+	if (inFront && !seenAllRound(n, o) && dx * dx + dz * dz > 1.0f && fabsf(wrap(atan2f(dx, dz) - n.yaw)) >= 1.75f) return false;
 	// (A sphere of 12 cm stepped along: nothing a person could be hidden by slips through.)
 	return !_world || _world->lineFree({n.pos[0], n.pos[1] + 160.0f, n.pos[2]}, {o.pos[0], o.pos[1] + 160.0f, o.pos[2]}, 12.0f);
+}
+
+// Whether `n` sees `o` whichever way it faces: a creature does, unless the other
+// is the player's character creeping (the stealth mode of the original).
+bool Npcs::seenAllRound(const GameNpc& n, const GameNpc& o) const {
+	if (!_game.isMonster(n)) return false;
+	return !(o.hero && _heroLink.sneaking);
 }
 
 // The states of fighting: there is no fighting yet, so the engine does not
@@ -87,7 +94,7 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 	const GameNpc* hero = _game.hero();
 	const u32 heroIndex = hero ? u32(hero - &_game.npc(0)) : 0xFFFFFFFFu;
 	// The player.
-	if (_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer] && hero && sees(a, heroIndex, false))
+	if (_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer] && hero && sees(a, heroIndex, _heroLink.sneaking))
 		react(a, a.perc[_percPlayer], int(heroIndex), -1);
 	// The nearest enemy: anybody about it is hostile to, the player too.
 	const u32 enemyFn = _percEnemy >= 0 && _percEnemy < Game::PERC_TYPES ? a.perc[_percEnemy] : 0;
@@ -117,7 +124,7 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 			if (o.used && o.ready && count < ACTORS) consider(o.npc);
 		if (hero) consider(heroIndex);
 		for (u32 k = 0; k < count; ++k)
-			if (sees(a, who[k], false)) {
+			if (sees(a, who[k], _heroLink.sneaking && who[k] == heroIndex)) {
 				react(a, enemyFn, int(who[k]), -1);
 				break;
 			}
@@ -139,7 +146,7 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 			if (kind == 1 && o.down != DOWN_DEAD) return;
 			const float dx = o.pos[0] - n.pos[0], dy = o.pos[1] - n.pos[1], dz = o.pos[2] - n.pos[2];
 			const float d = dx * dx + dy * dy + dz * dz;
-			if (d < bestD && sees(a, index, false)) {
+			if (d < bestD && sees(a, index, _heroLink.sneaking && index == heroIndex)) {
 				bestD = d;
 				best = int(index);
 			}

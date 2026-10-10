@@ -214,6 +214,8 @@ private:
 		float peak[MANTLE_STEPS] = {};     // the highest its root gets (cm, unscaled)
 		float free[MANTLE_STEPS] = {};     // cm more, without the animation's help (the flight up to the edge)
 		float scale = 1;
+		u8 kind[MANTLE_STEPS] = {};        // 0 flying up, 1 reaching for the edge, 2 hanging on it, 3 pulling over it
+		float bodyY = 0;                   // where the body is this frame (the hands are fitted to the edge from it)
 		u8 n = 0, at = 0;
 		float clipTime = 0;
 		Vec3 start {0, 0, 0}, top {0, 0, 0};
@@ -234,7 +236,10 @@ private:
 	u8 _drawTo = 0xFF;      // being taken in hand (0xFF: nothing)
 	float _drawAt = 0;      // seconds into the draw where the hands change
 	const Clip* _drawClip = nullptr;
+	bool _drawBack = false; // the weapon is being put away: the clip plays backwards
 	BlowTracker _blow;
+	bool _comboQueued = false; // pressed just before the window of the next blow opened
+	bool goOn(const ClipFight* f, float fps, float t);
 	bool _comboBroken = false; // pressed outside the window: no more blows of this attack
 	bool _blowLanded = false;
 	bool _parryHeld = false;
@@ -263,7 +268,8 @@ private:
 	};
 	Use _use;
 	float _stoop = 0; // how far bent over, 0..1 (drawn by updatePose)
-	int _spine[3] = {-1, -1, -1}, _headNode = -1, _armNodes[2] = {-1, -1};
+	int _spine[3] = {-1, -1, -1}, _headNode = -1, _armNodes[2] = {-1, -1}, _handNodes[2] = {-1, -1};
+	float mantleHandsWeight() const; // how much of the climb the hands are on the edge for (0..1)
 	void mobTick(float dt);
 };
 

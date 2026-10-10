@@ -264,7 +264,8 @@ LoadStatus World::finishChunk(LoadResult& r) {
 		const ChunkBatch& src = batches[b];
 		Batch& dst = l.batches[b];
 		dst.material = src.material;
-		dst.detail = src.detail < DETAIL_COUNT ? src.detail : u8(DETAIL_COUNT - 1);
+		dst.detail = (src.detail & 3) < DETAIL_COUNT ? u8(src.detail & 3) : u8(DETAIL_COUNT - 1);
+		dst.layer = u8((src.detail >> 2) & 3);
 		dst.cluster = src.cluster;
 		dst.shown = 0;
 		dst.firstIndex = src.firstIndex;
@@ -705,7 +706,7 @@ void World::drawBatches(Loaded& l, bool blended) {
 			const float limit = _cfg.detailDistance[batch.detail] * _cfg.detailScale;
 			const float reach = batch.shown ? limit * _cfg.detailHysteresis : limit;
 			bool inRange = true;
-			if (_clusterNear[c] > reach)
+			if ((batch.detail == DETAIL_SMALL && batch.layer >= _cfg.smallLayers) || _clusterNear[c] > reach)
 				inRange = false;
 			else if (_clusterFar[c] > reach)
 				inRange = aabbDistance(batch.bbMin, batch.bbMax, _camera) <= reach;
@@ -721,7 +722,8 @@ void World::drawBatches(Loaded& l, bool blended) {
 		} else if (batch.detail != DETAIL_ALWAYS) {
 			// Out of view: in or out at once, by the nearest point of the box.
 			const float limit = _cfg.detailDistance[batch.detail] * _cfg.detailScale;
-			batch.shown = _clusterNear[c] <= (batch.shown ? limit * _cfg.detailHysteresis : limit) ? 255 : 0;
+			const bool thinned = batch.detail == DETAIL_SMALL && batch.layer >= _cfg.smallLayers;
+			batch.shown = !thinned && _clusterNear[c] <= (batch.shown ? limit * _cfg.detailHysteresis : limit) ? 255 : 0;
 		}
 		if (visible && _clusterState[c] == CLUSTER_PARTLY) visible = aabbInFrustum(_frustum, batch.bbMin, batch.bbMax);
 		const bool follows = runCount && batch.material == runMaterial && batch.firstIndex == runFirst + runCount + gap;

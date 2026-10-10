@@ -8,7 +8,9 @@
 #include "g3ds/tex.h"
 #include "gfx_soft.h"
 #include "importers.h"
+#include "lang.h"
 #include "loader.h"
+#include "ui_font.h"
 #include "waynet.h"
 #include "model_bake.h"
 #include "pacer.h"
@@ -4492,10 +4494,10 @@ func void Rtn_start_502() {
 		// The things of the camp, and which of them the scripts know.
 		CHECK(said("things to use: 8 of 6 kinds, with 10 places to stand at (0 have none: nobody can use those): CHESTSMALL x2, BEDHIGH x2"));
 		CHECK(said("things to use: the worlds have 6 kinds; the scripts name 4 of them: BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: CHESTBIG, CHESTSMALL"));
-		CHECK(said("way net: 13 points, 15 connections") && said("10 free points") && said(" 11 states, "));
+		CHECK(said("way net: 13 points, 15 connections") && said("10 free points") && said(" 12 states, "));
 		// What the states need of the engine is on record.
-		CHECK(said("life: the scripts have 11 states; the people of these worlds are put into 7: ZS_MM_ALLSCHEDULER x6, ZS_GUARD x3"));
-		CHECK(said("life: the states call 40 engine functions, 40 of which the engine carries out; the others do nothing yet, by the number of states that call them: none"));
+		CHECK(said("life: the scripts have 12 states; the people of these worlds are put into 7: ZS_MM_ALLSCHEDULER x6, ZS_GUARD x3"));
+		CHECK(said("life: the states call 45 engine functions, 45 of which the engine carries out; the others do nothing yet, by the number of states that call them: none"));
 	}
 	const SrcScene& scene = worlds[0].scene; // (its places are on the ground now)
 	const auto wayPoint = [&](const char* name) -> const SrcWayPoint& {
@@ -5023,7 +5025,6 @@ func void Rtn_start_502() {
 		chaos += R"(
 var int chaos_starts; var int chaos_loops; var int chaos_ends;
 extern func void AI_Teleport(var C_NPC n, var string wp);
-extern func void Npc_ClearAIQueue(var C_NPC n);
 extern func int Npc_WasInState(var C_NPC n, var func state);
 extern func string Npc_GetNextWP(var C_NPC n);
 extern func int Npc_GetDistToPlayer(var C_NPC n);
@@ -5130,6 +5131,9 @@ func void Rtn_start_600() {
 		npcs.config().range = 20000.0f;
 		app.teleport({0.0f, 600.0f, 3300.0f});
 		for (int i = 0; i < 30 * 40; ++i) app.update(Input {}, 1.0f / 30.0f);
+		// (Thorus has something to tell the player and waits for him to listen: nobody does here, so the talk is dropped.)
+		npcs.talkAbort();
+		for (int i = 0; i < 30 * 15; ++i) app.update(Input {}, 1.0f / 30.0f);
 		const NpcActor* thorus = nullptr;
 		for (u32 i = 0; i < npcs.actorCount(); ++i)
 			if (npcs.actor(i).used && game.npc(npcs.actor(i).npc).symbol == game.vm().find("GRD_200_THORUS")) thorus = &npcs.actor(i);
@@ -5615,6 +5619,53 @@ static void testInventory() {
 	gfx::shutdown();
 }
 
+// The thinning of small objects: four layers baked into the batches; the
+// menu's density leaves the last ones out.
+static void testThinning() {
+	SrcScene scene;
+	scene.materials.resize(2);
+	scene.materials[0].name = "floor";
+	scene.materials[0].hasColor = true;
+	scene.materials[0].color[0] = 40;
+	scene.materials[1].name = "bush";
+	scene.materials[1].hasColor = true;
+	scene.materials[1].color[1] = 200;
+	const float f[4][3] = {{-2000, 0, -2000}, {2000, 0, -2000}, {2000, 0, 2000}, {-2000, 0, 2000}};
+	addQuad(scene, f[3], f[2], f[1], f[0], 0);
+	for (int layer = 0; layer < 4; ++layer) {
+		const float x = -300.0f + 200.0f * float(layer);
+		const float c[4][3] = {{x - 50, 0, 1000}, {x + 50, 0, 1000}, {x + 50, 100, 1000}, {x - 50, 100, 1000}};
+		const size_t first = scene.triangles.size();
+		addQuad(scene, c[0], c[1], c[2], c[3], 1);
+		addQuad(scene, c[1], c[0], c[3], c[2], 1);
+		for (size_t t = first; t < scene.triangles.size(); ++t) scene.triangles[t].detail = u8(DETAIL_SMALL | (layer << 2));
+	}
+	scene.spawnPos[1] = 150.0f;
+	scene.hasSpawn = true;
+	const std::string path = gDir + "/thin.pak";
+	bakeScenePak(scene, path, "t", 8000.0f);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), "t"));
+	World& w = app.world();
+	app.player().flying = true;
+	app.camera().yaw = 0;
+	app.teleport({0, 150, 0});
+	w.preload(app.camera().pos);
+	auto drawn = [&](u8 layers) {
+		w.config().smallLayers = layers;
+		w.config().fadeMs = 0.0f; // (in and out at once)
+		for (int i = 0; i < 3; ++i) {
+			app.update(Input {}, 1.0f / 30.0f);
+			app.render();
+		}
+		return w.stats().trianglesDrawn;
+	};
+	const u32 all = drawn(4), three = drawn(3), two = drawn(2), none = drawn(0);
+	std::printf("  thinning: %u triangles with 4 layers, %u with 3, %u with 2, %u with none\n", all, three, two, none);
+	CHECK(all == none + 16 && three == none + 12 && two == none + 8);
+}
+
 // Settings (settings.bin) and the pause menu.
 static void testSettings() {
 	const std::string path = gDir + "/settings.bin";
@@ -5686,6 +5737,59 @@ static void testSettings() {
 			}
 		CHECK(widest <= 304);
 		CHECK(ui.measure("Вы погибли", ui::TITLE) > ui.measure("Вы погибли", ui::TEXT));
+	}
+	// Languages: every text in all four, the same %-conversions as the key's,
+	// every letter in the font, every line of the menu fits the panel.
+	{
+		auto conversions = [](const char* t) {
+			std::string out;
+			for (; *t; ++t)
+				if (*t == '%') {
+					out += *t;
+					while (t[1] && !std::strchr("sdlufx%", t[1])) ++t;
+					while (t[1] == 'l' || t[1] == 's' || t[1] == 'd' || t[1] == 'u' || t[1] == 'f' || t[1] == 'x') out += *++t;
+					if (t[1] == '%') ++t;
+				}
+			return out;
+		};
+		bool complete = true, same = true, letters = true;
+		for (u32 i = 0; i < langEntries(); ++i)
+			for (u8 l = 0; l < LANG_COUNT; ++l) {
+				const char* t = langText(i, l);
+				complete = complete && t && *t;
+				same = same && t && conversions(t) == conversions(langKey(i));
+				for (const char* p = t; t && *p;) {
+					const u32 c = utf8Next(p);
+					bool found = c < 128;
+					for (const uifont::Glyph& g : uifont::kGlyphs) found = found || g.code == c;
+					letters = letters && found;
+				}
+			}
+		CHECK(langEntries() > 200 && complete && same && letters);
+		Ui ui;
+		Menu m;
+		Settings s;
+		char value[48];
+		const u32 missesBefore = langMisses();
+		for (u8 l = 0; l < LANG_COUNT; ++l) {
+			setLanguage(l);
+			int widest = 0;
+			for (int p = 0; p < Menu::PAGES; ++p)
+				for (int i = 0; i < m.itemCount(Menu::Page(p)); ++i) {
+					m.value(Menu::Page(p), i, s, value, sizeof(value));
+					const int line = ui.measure(m.label(Menu::Page(p), i)) + ui.measure(value) + 40;
+					widest = std::max({widest, line, ui.measure(m.note(Menu::Page(p), i))});
+					if (std::getenv("G3_TRACE") && (line > 304 || ui.measure(m.note(Menu::Page(p), i)) > 304))
+						std::printf("  lang %d wide: %s / %s / %s\n", int(l), m.label(Menu::Page(p), i), value, m.note(Menu::Page(p), i));
+				}
+			CHECK(widest <= 304);
+			CHECK(l == LANG_RU ? std::strcmp(tr("Сила"), "Сила") == 0 : std::strcmp(tr("Сила"), "Сила") != 0);
+		}
+		setLanguage(LANG_DE);
+		CHECK(std::strcmp(tr("Сила"), "Stärke") == 0 && std::strcmp(tr("Нет такого текста"), "Нет такого текста") == 0);
+		setLanguage(LANG_RU);
+		// (The menu's own texts are all in the table; the one asked for above is the single miss.)
+		CHECK(langMisses() == missesBefore + 1);
 	}
 }
 
@@ -6080,6 +6184,7 @@ int main(int argc, char** argv) {
 	             {"streaming worlds", testStreamingWorlds},
 	             {"pacer", testPacer},
 	             {"detail fade", testDetailFade},
+             {"thinning", testThinning},
 	             {"collision", testCollision},
 	             {"model", testModel},
 	             {"hero", testHero},

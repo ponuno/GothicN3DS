@@ -28,11 +28,12 @@ enum MenuAction : u8 {
 	MENU_HEAL,
 	MENU_GIVE_WEAPON,
 	MENU_GIVE_ITEMS,
+	MENU_RESET_GRAPHICS, // the graphics page's values back to the defaults
 };
 
 class Menu {
 public:
-	enum Page : u8 { PAGE_MAIN, PAGE_GRAPHICS, PAGE_CONTROLS, PAGE_DEBUG, PAGES };
+	enum Page : u8 { PAGE_MAIN, PAGE_GRAPHICS, PAGE_GAME, PAGE_CONTROLS, PAGE_INTERFACE, PAGE_DEBUG, PAGES };
 
 	void open();
 	void close() { _open = false; }
@@ -48,7 +49,8 @@ public:
 	// For tests: the label and the shown value of an item of the page.
 	int itemCount(Page page) const;
 	const char* label(Page page, int item) const;
-	const char* note(Page page, int item) const; // "" if none
+	// "" if none; of a choice, the note of its value in `s` (null: the longest).
+	const char* note(Page page, int item, const Settings* s = nullptr) const;
 	void value(Page page, int item, const Settings& s, char* out, u32 size) const;
 
 private:

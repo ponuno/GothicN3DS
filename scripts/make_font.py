@@ -18,6 +18,7 @@ W, H = 256, 256
 chars = [chr(c) for c in range(32, 127)]
 chars += [chr(c) for c in range(0x410, 0x450)] + ["Ё", "ё"]
 chars += list("«»—–…№°←→↑↓×•▶◀▼▲")
+chars += list("ąćęłńóśźżĄĆĘŁŃÓŚŹŻäöüßÄÖÜ")
 
 sizes = [("text", REG, 11, 13), ("title", BOLD, 15, 18)]
 

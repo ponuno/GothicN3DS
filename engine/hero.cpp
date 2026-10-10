@@ -150,6 +150,8 @@ bool Hero::load(Pak& pak) {
 	_headNode = _model.findNode(hashName("BIP01 HEAD"));
 	_armNodes[0] = _model.findNode(hashName("BIP01 L UPPERARM"));
 	_armNodes[1] = _model.findNode(hashName("BIP01 R UPPERARM"));
+	_handNodes[0] = _model.findNode(hashName("BIP01 L HAND"));
+	_handNodes[1] = _model.findNode(hashName("BIP01 R HAND"));
 	_stoop = 0;
 	_restY = _model.node(0).restPos[1];
 	_anim.bind(&_model);
@@ -333,8 +335,17 @@ bool Hero::draw(u8 mode) {
 		mode = WEAPON_NONE;
 	}
 	const Clip* c = nullptr;
+	bool backwards = false;
 	if (mode == WEAPON_NONE) {
-		c = weaponClip("T_%sRUN_2_%s", _weapon);
+		// Away with it: the drawing played in reverse, as the model script's "R" aliases
+		// do it ("T_1H_2_RUN" is "T_RUN_2_1H" backwards). Only without that, the clips
+		// of the other naming.
+		c = weaponClip("T_RUN_2_%s", _weapon);
+		if (!c) c = weaponClip("T_%s_2_%sRUN", _weapon);
+		if (!c) c = weaponClip("T_MOVE_2_%sMOVE", _weapon);
+		backwards = c != nullptr;
+		if (!c) c = weaponClip("T_%s_2_RUN", _weapon);
+		if (!c) c = weaponClip("T_%sRUN_2_%s", _weapon);
 		if (!c) c = weaponClip("T_%sMOVE_2_MOVE", _weapon);
 	} else {
 		c = weaponClip("T_RUN_2_%s", mode);
@@ -349,12 +360,26 @@ bool Hero::draw(u8 mode) {
 		_forceNext = true;
 		return true;
 	}
-	_anim.play(c, 0.15f);
+	if (backwards) _anim.playReversed(c, 0.15f);
+	else _anim.play(c, 0.15f);
 	const ClipFight* f = c->fight();
 	_drawTo = mode;
 	_drawClip = c;
-	_drawAt = f && f->fightMode != CLIP_NO_FRAME ? c->frameTime(f->fightMode) : c->duration() * 0.5f;
+	_drawBack = backwards;
+	// Where the hands change, in seconds of playing (backwards: counted from the end of the clip).
+	const float at = f && f->fightMode != CLIP_NO_FRAME ? c->frameTime(f->fightMode) : c->duration() * 0.5f;
+	_drawAt = backwards ? c->duration() - at : at;
 	_roleNow = DRAW;
+	return true;
+}
+
+// The combo goes on with its next blow, from where this one ends.
+bool Hero::goOn(const ClipFight* f, float fps, float t) {
+	const float end = blowEnd(f, _blow.combo, fps);
+	if (end > t) _anim.seek(end, 0.08f);
+	++_blow.combo;
+	_blow.landed = _blow.combo;
+	_comboQueued = false;
 	return true;
 }
 
@@ -380,12 +405,15 @@ bool Hero::attack(int kind) {
 		if (c == cur) {
 			// The same attack again: within the window the combo goes on with
 			// its next blow, from where this one ends; outside it, it is over.
-			if (inWindow && !_comboBroken && _blow.combo + 1u < f->hits) {
-				const float end = blowEnd(f, _blow.combo, fps);
-				if (end > t) _anim.seek(end);
-				++_blow.combo;
-				_blow.landed = _blow.combo;
-				return true;
+			if (inWindow && !_comboBroken && _blow.combo + 1u < f->hits) return goOn(f, fps, t);
+			// Pressed a little before the window opens: kept, and the combo goes
+			// on the moment it does (so an early press does not spoil it).
+			if (!inWindow && !_comboBroken && _blow.combo + 1u < f->hits && f->windows > _blow.combo) {
+				const float from = float(f->window[_blow.combo * 2]) / fps;
+				if (t <= from && from - t < 0.35f) {
+					_comboQueued = true;
+					return false;
+				}
 			}
 			if (!inWindow) _comboBroken = true;
 			return false;
@@ -401,6 +429,7 @@ bool Hero::attack(int kind) {
 	_blow.reset();
 	_blow.clip = c;
 	_comboBroken = false;
+	_comboQueued = false;
 	_roleNow = ATTACK;
 	return true;
 }
@@ -483,7 +512,10 @@ void Hero::fightTick(float prevTime, const Clip* prevClip) {
 	const bool same = c == prevClip;
 	_blowLanded = false;
 	if (_drawTo != 0xFF) {
-		const bool past = (prevClip == _drawClip && (!same || (prevTime < _drawAt && t >= _drawAt))) || c != _drawClip || _drawAt <= 0.0f;
+		// (Played backwards, the time is counted from the clip's end.)
+		const float played = _drawBack && c ? c->duration() - t : t;
+		const float playedBefore = _drawBack && prevClip ? prevClip->duration() - prevTime : prevTime;
+		const bool past = (prevClip == _drawClip && (!same || (playedBefore < _drawAt && played >= _drawAt))) || c != _drawClip || _drawAt <= 0.0f;
 		if (past) _weapon = _drawTo;
 		// The draw goes on through the clips the script lets follow it; it is
 		// over when a state of standing or going is reached (or nothing follows).
@@ -491,6 +523,7 @@ void Hero::fightTick(float prevTime, const Clip* prevClip) {
 			_weapon = _drawTo;
 			_drawTo = 0xFF;
 			_drawClip = nullptr;
+			_drawBack = false;
 			_forceNext = _anim.finished();
 		}
 	}
@@ -505,10 +538,15 @@ void Hero::fightTick(float prevTime, const Clip* prevClip) {
 				_blow.landed = u8(_blow.combo + 1);
 				_blowLanded = true;
 			}
+			if (_comboQueued) {
+				if (_comboBroken) _comboQueued = false;
+				else if (inComboWindow(f, _blow.combo, fps, t) && _blow.combo + 1u < f->hits) goOn(f, fps, t);
+			}
 			const float end = blowEnd(f, _blow.combo, fps);
 			if ((end >= 0.0f && t >= end) || _anim.finished()) {
 				// Not carried on: the attack stops where the blow ends.
 				_blow.reset();
+				_comboQueued = false;
 				_anim.play(stateClip(_walkMode ? ST_WALK : ST_RUN), 0.15f);
 			}
 		}
@@ -779,7 +817,10 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 		// Towards a heading, as fast as a body turns (the console scheme).
 		const float err = wrapAngle(in.steerYaw - _yaw);
 		const float stepMax = kSteerSpeed * dt;
-		const float step = locked ? 0.0f : clamp(err, -stepMax, stepMax);
+		// In a blow still on its way the body follows the enemy a little (slower than walking
+		// round), so that the blows of a combo go at him and not where the first one went.
+		const bool aiming = _blow.clip && _anim.current() == _blow.clip && !_reel && !_down && prehit();
+		const float step = aiming ? clamp(err, -stepMax * 0.6f, stepMax * 0.6f) : locked ? 0.0f : clamp(err, -stepMax, stepMax);
 		_yaw = wrapAngle(_yaw + step);
 		turnRate = step / dt;
 	} else {
@@ -1104,6 +1145,10 @@ bool Hero::beginMantle(const Ledge& ledge, const Player& player, bool fromGround
 		if (!c) continue; // (a step the model lacks is left out)
 		const u8 i = _mantle.n++;
 		_mantle.seq[i] = c;
+		_mantle.kind[i] = (steps[k] == CLIMB_LOW_IN || steps[k] == CLIMB_MID_IN || steps[k] == CLIMB_HANG_IN) ? 1
+		                  : (steps[k] == CLIMB_LOW || steps[k] == CLIMB_MID || steps[k] == CLIMB_HANG)          ? 2
+		                  : (steps[k] == CLIMB_LOW_OUT || steps[k] == CLIMB_MID_OUT || steps[k] == CLIMB_HANG_OUT) ? 3
+		                                                                                                          : 0;
 		// A held pose (one-frame loops) a moment; the rest as long as they are.
 		_mantle.len[i] = c->loops() ? (steps[k] == CLIMB_UP ? 0.15f : 0.2f) : max(c->duration(), 0.08f);
 		_mantle.rise[i] = c->loops() ? 0.0f : max(c->motion(c->duration()).y, 0.0f);
@@ -1217,7 +1262,30 @@ void Hero::mantleDrive(Drive& drive, float dt) {
 	}
 	Vec3 p = _mantle.start + dir * (_mantle.gap * snap + inward * pz);
 	p.y = _mantle.start.y + min(up, max(_mantle.top.y - _mantle.start.y, 0.0f));
+	_mantle.bodyY = p.y;
 	drive.position = p;
+}
+
+// How firmly the hands are on the edge now: reaching for it, they come to it; hanging
+// on it, they are there; pulling over, they let go in the second half. (The flight
+// up to the edge, and a climb the model has no clips for, take no hold.)
+float Hero::mantleHandsWeight() const {
+	if (!_mantle.n || _mantle.at >= _mantle.n) return 0.0f;
+	const auto smooth = [](float x) {
+		x = clamp(x, 0.0f, 1.0f);
+		return x * x * (3.0f - 2.0f * x);
+	};
+	const float t = clamp(_mantle.clipTime / max(_mantle.len[_mantle.at], 1e-3f), 0.0f, 1.0f);
+	float w = 0.0f;
+	switch (_mantle.kind[_mantle.at]) {
+	case 1: w = smooth((t - 0.15f) / 0.85f); break;
+	case 2: w = 1.0f; break;
+	case 3: w = 1.0f - smooth((t - 0.35f) / 0.55f); break;
+	default: break;
+	}
+	// A climb that starts with the hands already up (out of a jump) takes hold at once, not at a jerk.
+	if (_mantle.kind[0] >= 2) w *= smooth(_mantle.time / 0.18f);
+	return w;
 }
 
 void Hero::follow(const Player& player, const World& world, const float dayLight[3], float dt) {

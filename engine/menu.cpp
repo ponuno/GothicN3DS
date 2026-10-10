@@ -1,3 +1,4 @@
+#include "lang.h"
 #include "menu.h"
 
 #include <stdio.h>
@@ -9,6 +10,8 @@ namespace {
 
 enum Kind : u8 { ACTION, PAGE, TOGGLE, CHOICE, RANGE };
 
+// The texts here are the Russian ones (lang.h): Menu::label, note and value
+// give them in the language of the moment.
 struct Item {
 	const char* label;
 	Kind kind;
@@ -19,69 +22,87 @@ struct Item {
 	const char* unit;         // RANGE
 	u8 target;                // ACTION: a MenuAction; PAGE: a page
 	const char* note;         // shown under the list while the item is selected
+	const char* const* notes; // CHOICE: a note for each value (instead of `note`), or null
 };
 
 const char* const kObjects[] = {"Плавность", "Баланс", "Устойчиво"};
-const char* const kFrames[] = {"60 (30 под нагрузкой)", "Ровно 30"};
+const char* const kObjectNotes[] = {"Под нагрузкой мелочь вдали убирается",
+                                    "Мелкие 45 м, средние 85 м, убирается мало",
+                                    "Мелкие 60 м, средние 100 м; при нагрузке 30 к/с"};
+const char* const kDensity[] = {"100 %", "75 %", "50 %"};
+const char* const kDensityNotes[] = {"Все кусты, камни и мусор", "Каждый четвёртый мелкий предмет убран",
+                                     "Каждый второй мелкий предмет убран"};
+const char* const kNpcRange[] = {"20 м", "30 м", "45 м"};
+const char* const kFrames[] = {"60 (30 под нагрузкой)", "Ровно 30", "Свободно до 60"};
+const char* const kFrameNotes[] = {"60, а при перегрузке ровные 30", "Всегда 30: больше деталей, нет рывков",
+                                   "Кадр выходит, как только готов (30–60)"};
 const char* const kSchemes[] = {"Консольная", "Классическая"};
+const char* const kSchemeNotes[] = {"Стик ведёт туда, куда указывает на экране", "Как в оригинале: камера всегда за спиной"};
 const char* const kBottom[] = {"Инвентарь", "Отчёт"};
+const char* const kLanguages[] = {"Русский", "English", "Polski", "Deutsch"};
 
+#define NONE nullptr, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr
 const Item kMain[] = {
-    {"Продолжить", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_CLOSED, nullptr},
-    {"Графика", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GRAPHICS, nullptr},
-    {"Управление", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_CONTROLS, nullptr},
-    {"Отладка", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG, nullptr},
-    {"Сохранить позицию", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_SAVE, "То же: R + START в игре"},
-    {"Загрузить позицию", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_LOAD, "То же: R + SELECT в игре"},
-    {"Выйти в Homebrew Launcher", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_EXIT, "Позиция и настройки сохранятся"},
+    {"Продолжить", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_CLOSED, nullptr, nullptr},
+    {"Графика", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GRAPHICS, "Дальность, детали, частота кадров", nullptr},
+    {"Игра", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GAME, "Бой и предметы", nullptr},
+    {"Управление", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_CONTROLS, "Схема, камера", nullptr},
+    {"Интерфейс", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_INTERFACE, "Язык, подсказки, нижний экран", nullptr},
+    {"Отладка", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG, nullptr, nullptr},
+    {"Сохранить позицию", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_SAVE, "То же: R + START в игре", nullptr},
+    {"Загрузить позицию", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_LOAD, "То же: R + SELECT в игре", nullptr},
+    {"Выйти в Homebrew Launcher", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_EXIT, "Позиция и настройки сохранятся", nullptr},
 };
-
 const Item kGraphics[] = {
-    {"Дальность прорисовки", RANGE, &Settings::drawMetres, nullptr, 10, 40, 200, "м", 0, "Дальше — больше нагрузки на видеочип"},
-    {"Мелкие объекты", CHOICE, &Settings::objects, kObjects, 3, 0, 0, nullptr, 0,
-     "Меньше мелочи вдали — ровнее 60 к/с"},
-    {"Растворение объектов", TOGGLE, &Settings::dissolve, nullptr, 0, 0, 0, nullptr, 0, "Вступит в силу после перезапуска"},
-    {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 2, 0, 0, nullptr, 0, nullptr},
-    {"Интерфейс в игре", TOGGLE, &Settings::hud, nullptr, 0, 0, 0, nullptr, 0, "Здоровье, цель, подсказки"},
-    {"Нижний экран", CHOICE, &Settings::report, kBottom, 2, 0, 0, nullptr, 0, "Отчёт: цифры для проверки"},
+    {"Дальность прорисовки", RANGE, &Settings::drawMetres, nullptr, 10, 40, 200, "м", 0, "Дальше — больше нагрузки на видеочип", nullptr},
+    {"Мелкие и средние объекты", CHOICE, &Settings::objects, kObjects, 3, 0, 0, nullptr, 0, nullptr, kObjectNotes},
+    {"Густота мелких объектов", CHOICE, &Settings::density, kDensity, 3, 0, 0, nullptr, 0, nullptr, kDensityNotes},
+    {"Жители вдали", CHOICE, &Settings::npcDistance, kNpcRange, 3, 0, 0, nullptr, 0, "Как далеко видны жители и звери", nullptr},
+    {"Плавное появление", TOGGLE, &Settings::dissolve, nullptr, 0, 0, 0, nullptr, 0, "Вступит в силу после перезапуска", nullptr},
+    {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 3, 0, 0, nullptr, 0, nullptr, kFrameNotes},
+    {"Сбросить графику", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_RESET_GRAPHICS, "Вернуть значения по умолчанию", nullptr},
 };
-
+const Item kGame[] = {
+    {"Автозахват цели", TOGGLE, &Settings::autoTarget, nullptr, 0, 0, 0, nullptr, 0, "Взял оружие — цель захвачена", nullptr},
+    {"Оружие после зелья", TOGGLE, &Settings::weaponBack, nullptr, 0, 0, 0, nullptr, 0, "Выпил — снова берёт оружие в руки", nullptr},
+};
 const Item kControls[] = {
-    {"Схема", CHOICE, &Settings::scheme, kSchemes, 2, 0, 0, nullptr, 0,
-     "Классическая: камера всегда за спиной"},
-    {"Скорость камеры", RANGE, &Settings::cameraSpeed, nullptr, 1, 1, 10, "", 0, nullptr},
-    {"Инверсия по вертикали", TOGGLE, &Settings::invertY, nullptr, 0, 0, 0, nullptr, 0, nullptr},
-    {"Камера за героем", TOGGLE, &Settings::autoCamera, nullptr, 0, 0, 0, nullptr, 0, "Камера заходит за спину на бегу"},
-    {"Автозахват цели", TOGGLE, &Settings::autoTarget, nullptr, 0, 0, 0, nullptr, 0, "Взял оружие — цель захвачена"},
-    {"Вид от первого лица", TOGGLE, &Settings::firstPerson, nullptr, 0, 0, 0, nullptr, 0, nullptr},
-    {"Оружие после зелья", TOGGLE, &Settings::weaponBack, nullptr, 0, 0, 0, nullptr, 0, "Выпил — снова берёт оружие в руки"},
+    {"Схема", CHOICE, &Settings::scheme, kSchemes, 2, 0, 0, nullptr, 0, nullptr, kSchemeNotes},
+    {"Скорость камеры", RANGE, &Settings::cameraSpeed, nullptr, 1, 1, 10, "", 0, nullptr, nullptr},
+    {"Инверсия по вертикали", TOGGLE, &Settings::invertY, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr},
+    {"Камера за героем", TOGGLE, &Settings::autoCamera, nullptr, 0, 0, 0, nullptr, 0, "Камера заходит за спину на бегу", nullptr},
+    {"Вид от первого лица", TOGGLE, &Settings::firstPerson, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr},
 };
-
+const Item kInterface[] = {
+    {"Язык / Language", CHOICE, &Settings::language, kLanguages, 4, 0, 0, nullptr, 0, "Тексты игры берутся из её данных", nullptr},
+    {"Интерфейс в игре", TOGGLE, &Settings::hud, nullptr, 0, 0, 0, nullptr, 0, "Здоровье, цель, подсказки", nullptr},
+    {"Нижний экран", CHOICE, &Settings::report, kBottom, 2, 0, 0, nullptr, 0, "Отчёт: цифры для проверки", nullptr},
+};
 const Item kDebug[] = {
-    {"Восприятие жителей", TOGGLE, &Settings::perception, nullptr, 0, 0, 0, nullptr, 0, nullptr},
-    {"Жизнь жителей", TOGGLE, &Settings::life, nullptr, 0, 0, 0, nullptr, 0, "Выкл: стоят на местах распорядка"},
-    {"Драки жителей", TOGGLE, &Settings::fights, nullptr, 0, 0, 0, nullptr, 0, "Выкл: состояния атаки не начинаются"},
-    {"Бессмертие", TOGGLE, &Settings::immortal, nullptr, 0, 0, 0, nullptr, 0, nullptr},
-    {"Вылечить", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_HEAL, nullptr},
-    {"Дать лучшее оружие", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_GIVE_WEAPON, "Из оружия, что есть в скриптах"},
-    {"Дать набор предметов", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_GIVE_ITEMS, "Зелья, еда, оружие, броня, кольца"},
-    {"Полёт вкл/выкл", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_FLY, "Свободная камера без столкновений"},
-    {"Следующий мир", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_NEXT_WORLD, nullptr},
-    {"Время +1 час", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_HOUR, nullptr},
+    {"Восприятие жителей", TOGGLE, &Settings::perception, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr},
+    {"Жизнь жителей", TOGGLE, &Settings::life, nullptr, 0, 0, 0, nullptr, 0, "Выкл: стоят на местах распорядка", nullptr},
+    {"Драки жителей", TOGGLE, &Settings::fights, nullptr, 0, 0, 0, nullptr, 0, "Выкл: состояния атаки не начинаются", nullptr},
+    {"Бессмертие", TOGGLE, &Settings::immortal, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr},
+    {"Вылечить", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_HEAL, nullptr, nullptr},
+    {"Дать лучшее оружие", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_GIVE_WEAPON, "Из оружия, что есть в скриптах", nullptr},
+    {"Дать набор предметов", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_GIVE_ITEMS, "Зелья, еда, оружие, броня, кольца", nullptr},
+    {"Полёт вкл/выкл", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_FLY, "Свободная камера без столкновений", nullptr},
+    {"Следующий мир", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_NEXT_WORLD, nullptr, nullptr},
+    {"Время +1 час", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_HOUR, nullptr, nullptr},
 };
+#undef NONE
 
 struct PageDef {
 	const char* title;
 	const Item* items;
 	int count;
 };
-
+#define PAGE_OF(title, arr) {title, arr, int(sizeof(arr) / sizeof(arr[0]))}
 const PageDef kPages[Menu::PAGES] = {
-    {"Пауза", kMain, int(sizeof(kMain) / sizeof(kMain[0]))},
-    {"Графика", kGraphics, int(sizeof(kGraphics) / sizeof(kGraphics[0]))},
-    {"Управление", kControls, int(sizeof(kControls) / sizeof(kControls[0]))},
-    {"Отладка", kDebug, int(sizeof(kDebug) / sizeof(kDebug[0]))},
+    PAGE_OF("Пауза", kMain),         PAGE_OF("Графика", kGraphics),   PAGE_OF("Игра", kGame),
+    PAGE_OF("Управление", kControls), PAGE_OF("Интерфейс", kInterface), PAGE_OF("Отладка", kDebug),
 };
+#undef PAGE_OF
 
 } // namespace
 
@@ -94,12 +115,27 @@ void Menu::open() {
 int Menu::itemCount(Page page) const { return page < PAGES ? kPages[page].count : 0; }
 
 const char* Menu::label(Page page, int item) const {
-	return page < PAGES && item >= 0 && item < kPages[page].count ? kPages[page].items[item].label : "";
+	return page < PAGES && item >= 0 && item < kPages[page].count ? tr(kPages[page].items[item].label) : "";
 }
 
-const char* Menu::note(Page page, int item) const {
-	const char* n = page < PAGES && item >= 0 && item < kPages[page].count ? kPages[page].items[item].note : nullptr;
-	return n ? n : "";
+namespace {
+
+// The note of an item: for a choice, the one of its value (without settings: the longest).
+const char* noteOf(const Item& it, const Settings* s) {
+	if (it.kind == CHOICE && it.notes) {
+		if (s) return tr(it.notes[s->*it.field < it.count ? s->*it.field : 0]);
+		const char* best = it.notes[0];
+		for (int k = 1; k < it.count; ++k)
+			if (strlen(tr(it.notes[k])) > strlen(tr(best))) best = it.notes[k];
+		return tr(best);
+	}
+	return it.note ? tr(it.note) : "";
+}
+
+} // namespace
+
+const char* Menu::note(Page page, int item, const Settings* s) const {
+	return page < PAGES && item >= 0 && item < kPages[page].count ? noteOf(kPages[page].items[item], s) : "";
 }
 
 void Menu::value(Page page, int item, const Settings& s, char* out, u32 size) const {
@@ -108,9 +144,9 @@ void Menu::value(Page page, int item, const Settings& s, char* out, u32 size) co
 	if (page >= PAGES || item < 0 || item >= kPages[page].count) return;
 	const Item& it = kPages[page].items[item];
 	switch (it.kind) {
-	case TOGGLE: snprintf(out, size, "%s", s.*it.field ? "Вкл" : "Выкл"); break;
-	case CHOICE: snprintf(out, size, "%s", it.names[s.*it.field < it.count ? s.*it.field : 0]); break;
-	case RANGE: snprintf(out, size, "%d%s%s", int(s.*it.field), it.unit[0] ? " " : "", it.unit); break;
+	case TOGGLE: snprintf(out, size, "%s", s.*it.field ? tr("Вкл") : tr("Выкл")); break;
+	case CHOICE: snprintf(out, size, "%s", tr(it.names[s.*it.field < it.count ? s.*it.field : 0])); break;
+	case RANGE: snprintf(out, size, "%d%s%s", int(s.*it.field), it.unit[0] ? " " : "", tr(it.unit)); break;
 	default: break;
 	}
 }
@@ -177,7 +213,7 @@ void Menu::draw(Ui& ui, const Settings& s, const char* status, const char* messa
 	ui.rect(0, 0, gfx::SCREEN_W, gfx::SCREEN_H, 0x00000070u);
 	ui.rect(x0, top, x1, bottom, ui::PANEL);
 	ui.frame(x0, top, x1, bottom, 0x8C7A50FFu);
-	ui.text(gfx::SCREEN_W / 2, top + 6, page.title, ui::GOLD, ui::TITLE, ui::CENTER);
+	ui.text(gfx::SCREEN_W / 2, top + 6, tr(page.title), ui::GOLD, ui::TITLE, ui::CENTER);
 	int y = top + 6 + Ui::lineHeight(ui::TITLE);
 	if (status && *status) {
 		ui.text(gfx::SCREEN_W / 2, y, status, ui::GREY, ui::TEXT, ui::CENTER);
@@ -190,7 +226,7 @@ void Menu::draw(Ui& ui, const Settings& s, const char* status, const char* messa
 		const Item& it = page.items[i];
 		const bool on = i == sel;
 		if (on) ui.rect(x0 + 6, y - 1, x1 - 6, y + line - 2, 0x6E5A2E90u);
-		ui.text(x0 + 14, y, it.label, on ? ui::WHITE : ui::GREY);
+		ui.text(x0 + 14, y, tr(it.label), on ? ui::WHITE : ui::GREY);
 		if (it.kind == PAGE) {
 			ui.text(x1 - 14, y, "\xE2\x86\x92", on ? ui::WHITE : ui::DARK, ui::TEXT, ui::RIGHT);
 		} else if (it.kind != ACTION) {
@@ -211,9 +247,9 @@ void Menu::draw(Ui& ui, const Settings& s, const char* status, const char* messa
 	const int foot = bottom - 6 - Ui::lineHeight(ui::TEXT);
 	if (message && *message)
 		ui.text(gfx::SCREEN_W / 2, foot - Ui::lineHeight(ui::TEXT), message, ui::GREEN, ui::TEXT, ui::CENTER);
-	else if (cur.note)
-		ui.text(gfx::SCREEN_W / 2, foot - Ui::lineHeight(ui::TEXT), cur.note, ui::DARK + 0x30303000u, ui::TEXT, ui::CENTER);
-	ui.text(gfx::SCREEN_W / 2, foot, _page == PAGE_MAIN ? "A — выбрать   B, START — вернуться в игру" : "A — выбрать   \xE2\x97\x80\xE2\x96\xB6 — изменить   B — назад",
+	else if (*noteOf(cur, &s))
+		ui.text(gfx::SCREEN_W / 2, foot - Ui::lineHeight(ui::TEXT), noteOf(cur, &s), ui::DARK + 0x30303000u, ui::TEXT, ui::CENTER);
+	ui.text(gfx::SCREEN_W / 2, foot, _page == PAGE_MAIN ? tr("A — выбрать   B, START — вернуться в игру") : tr("A — выбрать   \xE2\x97\x80\xE2\x96\xB6 — изменить   B — назад"),
 	        ui::DARK + 0x20202000u, ui::TEXT, ui::CENTER);
 }
 

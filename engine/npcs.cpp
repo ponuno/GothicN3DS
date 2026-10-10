@@ -1,4 +1,5 @@
 #include "npcs.h"
+#include "loot.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -444,6 +445,8 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 		body.drawSkinned(skin, feet, light);
 		_stats.triangles += body.triangles();
 		_stats.drawCalls += body.partCount();
+		if (_heldLoot && _heldPak && n.down == DOWN_NONE)
+			_heldLoot->drawCarried(*_heldPak, _game, a.rig->model, *pose, n.yaw, 0.0f, scale, n.weapon, n.melee, feet, light);
 		if (a.head) {
 			a.head->model.drawSkinned(skin, feet, light);
 			_stats.triangles += a.head->model.triangles();

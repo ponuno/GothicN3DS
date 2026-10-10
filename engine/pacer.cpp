@@ -53,7 +53,7 @@ void FramePacer::update(float frameLoad, bool turning) {
 			++_over;
 		else
 			_over = 0;
-		if (_over >= cfg.enterFrames) {
+		if (_over >= cfg.enterFrames && !cfg.freeRate) {
 			_interval = 2;
 			_over = _under = 0;
 			_probing = false;

@@ -1482,8 +1482,10 @@ void Npcs::xCanSeeNpc(ScriptVm& vm, void* user) {
 		const float range = self._game.sensesRange(n);
 		if (n.placed && o.placed && n.world == o.world && distance(n.pos, o.pos) <= range) {
 			// In front of it, more or less (walls are not looked through yet: they are not looked at).
+			// As in the original, an animal sees all round; only a character that creeps
+			// is not seen from behind.
 			const float dx = o.pos[0] - n.pos[0], dz = o.pos[2] - n.pos[2];
-			sees = dx * dx + dz * dz < 1.0f || fabsf(wrapAngle(atan2f(dx, dz) - n.yaw)) < 1.75f;
+			sees = self.seenAllRound(n, o) || dx * dx + dz * dz < 1.0f || fabsf(wrapAngle(atan2f(dx, dz) - n.yaw)) < 1.75f;
 		}
 	}
 	vm.pushInt(sees);

@@ -47,6 +47,10 @@ struct PacerConfig {
 	// from the first frame, never back to full rate. The detail is still kept
 	// within the time there is.
 	bool halfOnly = false;
+	// The other way round (the menu's "free up to 60"): never half rate. A frame that does not
+	// fit goes out at the next refresh, so the rate lies anywhere between 30 and 60; the detail is
+	// kept within the time there is as at 60.
+	bool freeRate = false;
 };
 
 class FramePacer {

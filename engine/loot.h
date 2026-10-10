@@ -61,6 +61,15 @@ public:
 	const LootItem& item(u32 i) const { return _items[i]; }
 	// The nearest thing not taken within `reach` (cm) of `feet`, no more than
 	// `halfAngle` off `yaw`; -1 if none.
+	// Draws the item `symbol` (a weapon in a hand or on the belt) with `attach`
+	// as its place (model space of the character standing at `origin`); reads
+	// its model the first time. In PASS_WORLD.
+	void drawHeld(Pak& pak, Game& game, u32 symbol, const Mat34& attach, Vec3 origin, const float light[3]);
+	// A character's melee weapon `melee` (item instance, SCRIPT_NONE for none):
+	// in the hand while a weapon of the hands is drawn (`weapon`: a WeaponMode),
+	// else on the belt (one hand) or the back (two).
+	void drawCarried(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, float lean, const float* scale,
+	                 u8 weapon, u32 melee, Vec3 origin, const float light[3]);
 	int nearest(Vec3 feet, float yaw, float reach, float halfAngle) const;
 	// Takes it away (picked up); false if it is gone already.
 	bool take(u32 index);

@@ -189,11 +189,26 @@ bool Npcs::startDraw(NpcActor& a, u8 mode) {
 	if (mode == n.weapon) return false;
 	if (a.phase == NpcActor::MOVING) stopWalking(a);
 	const Clip* c = nullptr;
+	bool backwards = false;
 	if (mode == WEAPON_NONE) {
+		// Put away: the drawing played backwards (the model script's "R" aliases).
 		const char* w = weaponWord(n.weapon);
 		char name[40];
-		snprintf(name, sizeof(name), "T_%sRUN_2_%s", w, w);
+		snprintf(name, sizeof(name), "T_RUN_2_%s", w);
 		c = clip(a, name);
+		if (!c) {
+			snprintf(name, sizeof(name), "T_%s_2_%sRUN", w, w);
+			c = clip(a, name);
+		}
+		if (!c) {
+			snprintf(name, sizeof(name), "T_MOVE_2_%sMOVE", w);
+			c = clip(a, name);
+		}
+		backwards = c != nullptr;
+		if (!c) {
+			snprintf(name, sizeof(name), "T_%sRUN_2_%s", w, w);
+			c = clip(a, name);
+		}
 		if (!c) {
 			snprintf(name, sizeof(name), "T_%sMOVE_2_MOVE", w);
 			c = clip(a, name);
@@ -219,11 +234,14 @@ bool Npcs::startDraw(NpcActor& a, u8 mode) {
 		else fightIdle(a, 0.2f);
 		return false;
 	}
-	a.anim.play(c, -1.0f);
-	a.carried = c->moves();
+	if (backwards) a.anim.playReversed(c, 0.12f);
+	else a.anim.play(c, -1.0f);
+	a.carried = !backwards && c->moves();
 	const ClipFight* f = c->fight();
 	a.drawTo = mode;
-	a.drawAt = f && f->fightMode != CLIP_NO_FRAME ? c->frameTime(f->fightMode) : c->duration() * 0.5f;
+	a.drawBack = backwards;
+	const float at = f && f->fightMode != CLIP_NO_FRAME ? c->frameTime(f->fightMode) : c->duration() * 0.5f;
+	a.drawAt = backwards ? c->duration() - at : at;
 	a.wait = c->duration();
 	// (A draw that goes through several clips: the rest follows by itself.)
 	return true;
@@ -668,10 +686,13 @@ void Npcs::tickFight(NpcActor& a, float dt) {
 	if (a.faiWait > 0.0f) a.faiWait -= dt;
 	if (a.drawTo != 0xFF) {
 		// The hands change where the animation says (or when it is over).
-		if ((sameClip && a.animPrev < a.drawAt && t >= a.drawAt) || !sameClip || a.anim.finished() || a.drawAt <= 0.0f) n.weapon = a.drawTo;
+		const float played = a.drawBack && c ? c->duration() - t : t;
+		const float playedBefore = a.drawBack && c ? c->duration() - a.animPrev : a.animPrev;
+		if ((sameClip && playedBefore < a.drawAt && played >= a.drawAt) || !sameClip || a.anim.finished() || a.drawAt <= 0.0f) n.weapon = a.drawTo;
 		if (a.anim.finished() || (c && c->loops())) {
 			n.weapon = a.drawTo;
 			a.drawTo = 0xFF;
+			a.drawBack = false;
 			if (n.weapon == WEAPON_NONE) fallBack(a, 0.2f);
 			else fightIdle(a, 0.2f);
 		}

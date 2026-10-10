@@ -216,6 +216,7 @@ public:
 private:
 	void checkPortals();
 	void placeCamera(float dt);
+	bool talkCamera(Vec3& look, Vec3& pos);
 	// The parts of a frame of the game with a character.
 	Input steerInput(const Input& in, float dt);
 	void fightInput(const Input& in, float dt);
@@ -266,6 +267,10 @@ private:
 	float _orbitYaw = 0;
 	float _lookIdle = 10.0f;
 	float _steerLag = 0; // how far the character still has to turn (it leans into it)
+	// The jump key was held while the hands were busy (inventory, chest, talk,
+	// drinking): it does not jump until it has been let go once (B closes the
+	// inventory and must not also jump).
+	bool _jumpLatch = false;
 	// Fighting.
 	int _target = -1;
 	bool _locked = false;

@@ -1,6 +1,7 @@
 // The player's inventory: what it is made of (App::inventory), what using
 // a thing does (App::itemAction and the jobs of App::itemsUpdate), the quick
 // slots, and keeping it in state.bin. The rules are in inventory.h.
+#include "lang.h"
 #include "app.h"
 
 #include "g3ds/item_view.h"
@@ -139,13 +140,13 @@ void pictureOf(const Game& g, const GameItemInfo& it, u8 kind, u8& icon, u32& ti
 // The scripts' attributes by number (ATR_ ...), as the info box names them.
 const char* attributeWord(i32 a) {
 	switch (a) {
-	case 0: return "Здоровье";
-	case 1: return "Макс. здоровье";
-	case 2: return "Мана";
-	case 3: return "Макс. мана";
-	case 4: return "Сила";
-	case 5: return "Ловкость";
-	default: return "Свойство";
+	case 0: return tr("Здоровье");
+	case 1: return tr("Макс. здоровье");
+	case 2: return tr("Мана");
+	case 3: return tr("Макс. мана");
+	case 4: return tr("Сила");
+	case 5: return tr("Ловкость");
+	default: return tr("Свойство");
 	}
 }
 
@@ -204,7 +205,7 @@ bool App::meetsNeeds(const GameItemInfo& it, char* why, u32 size) const {
 	for (int k = 0; k < 3; ++k) {
 		if (it.condValue[k] <= 0) continue;
 		if (g.attributeOf(*h, it.condAtr[k]) < it.condValue[k]) {
-			if (why) snprintf(why, size, "Нужно: %s %ld", attributeWord(it.condAtr[k]), static_cast<long>(it.condValue[k]));
+			if (why) snprintf(why, size, tr("Нужно: %s %ld"), attributeWord(it.condAtr[k]), static_cast<long>(it.condValue[k]));
 			return false;
 		}
 	}
@@ -232,12 +233,12 @@ bool App::itemAction(u32 symbol) {
 	scriptText(g.text(it->description ? it->description : it->name), name, sizeof(name));
 	char buf[96];
 	if (g.itemCount(u32(hi), symbol) <= 0) {
-		snprintf(buf, sizeof(buf), "Нет: %s", name);
+		snprintf(buf, sizeof(buf), tr("Нет: %s"), name);
 		itemMessage(buf);
 		return false;
 	}
 	if (_hero.down()) {
-		itemMessage("Сейчас нельзя");
+		itemMessage(tr("Сейчас нельзя"));
 		return false;
 	}
 	const u8 kind = kindOf(g, *it);
@@ -245,7 +246,7 @@ bool App::itemAction(u32 symbol) {
 	case IK_POTION:
 	case IK_FOOD:
 		if (it->onUse == NONE) {
-			snprintf(buf, sizeof(buf), "%s: этим не воспользоваться", name);
+			snprintf(buf, sizeof(buf), tr("%s: этим не воспользоваться"), name);
 			itemMessage(buf);
 			return false;
 		}
@@ -256,10 +257,10 @@ bool App::itemAction(u32 symbol) {
 	case IK_AMULET:
 	case IK_RING: return equipItem(symbol, *it, kind);
 	case IK_RUNE:
-	case IK_SCROLL: itemMessage("Магии пока нет"); return false;
-	case IK_DOC: itemMessage("Читать пока нельзя"); return false;
-	case IK_LIGHT: itemMessage("Факелов пока нет"); return false;
-	case IK_AMMO: itemMessage("Стрелы берутся с луком"); return false;
+	case IK_SCROLL: itemMessage(tr("Магии пока нет")); return false;
+	case IK_DOC: itemMessage(tr("Читать пока нельзя")); return false;
+	case IK_LIGHT: itemMessage(tr("Факелов пока нет")); return false;
+	case IK_AMMO: itemMessage(tr("Стрелы берутся с луком")); return false;
 	default:
 		snprintf(buf, sizeof(buf), "%s", name);
 		itemMessage(buf, false);
@@ -277,12 +278,12 @@ bool App::startUse(u32 symbol) {
 		const GameItemInfo* it = g.itemInfo(symbol);
 		char name[48], buf[80];
 		scriptText(it ? g.text(it->description ? it->description : it->name) : "", name, sizeof(name));
-		snprintf(buf, sizeof(buf), "Следом: %s", name);
+		snprintf(buf, sizeof(buf), tr("Следом: %s"), name);
 		itemMessage(buf, false);
 		return true;
 	}
 	if (_player.swimming || _player.climbing || _player.flying) {
-		itemMessage(_player.swimming ? "Не в воде" : "Сейчас нельзя");
+		itemMessage(_player.swimming ? tr("Не в воде") : tr("Сейчас нельзя"));
 		return false;
 	}
 	_job = ItemJob();
@@ -327,7 +328,7 @@ bool App::equipItem(u32 symbol, const GameItemInfo& it, u8 kind) {
 		return false;
 	}
 	if (_job.stage != JOB_NONE && kind == IK_MELEE) {
-		itemMessage("Руки заняты");
+		itemMessage(tr("Руки заняты"));
 		return false;
 	}
 	++_equipVersion;
@@ -338,13 +339,13 @@ bool App::equipItem(u32 symbol, const GameItemInfo& it, u8 kind) {
 			if (_hero.weapon() == WEAPON_1H || _hero.weapon() == WEAPON_2H) {
 				// In the hands: away with it (it stays on the belt).
 				if (!heroTake(WEAPON_NONE)) {
-					itemMessage("Сейчас нельзя");
+					itemMessage(tr("Сейчас нельзя"));
 					return false;
 				}
 				return true;
 			}
 			h.melee = NONE;
-			snprintf(buf, sizeof(buf), "Снято: %s", name);
+			snprintf(buf, sizeof(buf), tr("Снято: %s"), name);
 			itemMessage(buf, false);
 			return true;
 		}
@@ -357,17 +358,17 @@ bool App::equipItem(u32 symbol, const GameItemInfo& it, u8 kind) {
 			return true;
 		}
 		h.melee = symbol;
-		snprintf(buf, sizeof(buf), "Оружие: %s", name);
+		snprintf(buf, sizeof(buf), tr("Оружие: %s"), name);
 		itemMessage(buf, false);
 		return true;
 	case IK_RANGED:
 		h.ranged = worn ? NONE : symbol;
-		snprintf(buf, sizeof(buf), worn ? "Снято: %s" : "%s (стрельбы пока нет)", name);
+		snprintf(buf, sizeof(buf), worn ? tr("Снято: %s") : tr("%s (стрельбы пока нет)"), name);
 		itemMessage(buf, false);
 		return true;
 	case IK_ARMOR:
 		g.setArmor(u32(hi), worn ? NONE : symbol);
-		snprintf(buf, sizeof(buf), worn ? "Снято: %s" : "Надето: %s", name);
+		snprintf(buf, sizeof(buf), worn ? tr("Снято: %s") : tr("Надето: %s"), name);
 		itemMessage(buf, false);
 		return true;
 	case IK_AMULET:
@@ -379,7 +380,7 @@ bool App::equipItem(u32 symbol, const GameItemInfo& it, u8 kind) {
 			_amulet = symbol;
 			equipRing(symbol, true);
 		}
-		snprintf(buf, sizeof(buf), worn ? "Снято: %s" : "Надето: %s", name);
+		snprintf(buf, sizeof(buf), worn ? tr("Снято: %s") : tr("Надето: %s"), name);
 		itemMessage(buf, false);
 		return true;
 	default: // a ring
@@ -391,13 +392,13 @@ bool App::equipItem(u32 symbol, const GameItemInfo& it, u8 kind) {
 			const int free = _rings[0] == NONE ? 0 : _rings[1] == NONE ? 1 : -1;
 			if (free < 0) {
 				--_itemStats.changed;
-				itemMessage("Два кольца уже надеты");
+				itemMessage(tr("Два кольца уже надеты"));
 				return false;
 			}
 			_rings[free] = symbol;
 			equipRing(symbol, true);
 		}
-		snprintf(buf, sizeof(buf), worn ? "Снято: %s" : "Надето: %s", name);
+		snprintf(buf, sizeof(buf), worn ? tr("Снято: %s") : tr("Надето: %s"), name);
 		itemMessage(buf, false);
 		return true;
 	}
@@ -425,7 +426,7 @@ bool App::quickUse(int slot) {
 	if (slot < 0 || slot >= QUICK_SLOTS) return false;
 	const u32 s = _quick[slot];
 	if (s == NONE) {
-		itemMessage("Слот пуст");
+		itemMessage(tr("Слот пуст"));
 		return false;
 	}
 	_panel.invalidate();
@@ -440,7 +441,7 @@ bool App::quickUse(int slot) {
 		if (h.melee != s) return itemAction(s);                 // (put on - swapped in hand if one is held)
 		const u8 mode = meleeMode();
 		if (_hero.weapon() == mode) return heroTake(WEAPON_NONE);
-		return heroTake(mode) || (itemMessage("Сейчас нельзя"), false);
+		return heroTake(mode) || (itemMessage(tr("Сейчас нельзя")), false);
 	}
 	return itemAction(s);
 }
@@ -457,7 +458,7 @@ void App::setQuickSlot(int slot, u32 symbol) {
 		const GameItemInfo* it = g.itemInfo(symbol);
 		char name[48], buf[80];
 		scriptText(it ? g.text(it->description ? it->description : it->name) : "", name, sizeof(name));
-		snprintf(buf, sizeof(buf), "Слот %d: %s", (slot + 1) % 10, name);
+		snprintf(buf, sizeof(buf), tr("Слот %d: %s"), (slot + 1) % 10, name);
 		itemMessage(buf, false);
 	}
 }
@@ -548,7 +549,7 @@ void App::itemsUpdate(Input& in, float dt) {
 	if (wantsFight && (_job.stage == JOB_PUTAWAY || _job.stage == JOB_START)) {
 		_job = ItemJob();
 		_queued = NONE;
-		itemMessage("Отменено", false);
+		itemMessage(tr("Отменено"), false);
 		return;
 	}
 	// The hands are the job's: no blows, no parries meanwhile.
@@ -567,7 +568,7 @@ void App::itemsUpdate(Input& in, float dt) {
 			heroTake(WEAPON_NONE); // (refused while a blow or a stumble lasts: tried again)
 		}
 		if (_job.wait > 3.0f) {
-			itemMessage("Не получилось убрать оружие");
+			itemMessage(tr("Не получилось убрать оружие"));
 			done();
 		}
 		break;
@@ -583,7 +584,7 @@ void App::itemsUpdate(Input& in, float dt) {
 			const GameNpc& h = g.npc(u32(hi));
 			for (int a = 0; a < 6; ++a) _job.before[a] = g.attributeOf(h, a);
 		} else if (_job.wait > 3.0f) {
-			itemMessage("Сейчас нельзя");
+			itemMessage(tr("Сейчас нельзя"));
 			done();
 		}
 		break;
@@ -595,14 +596,14 @@ void App::itemsUpdate(Input& in, float dt) {
 				const i32 n = _loot.item(_job.loot).amount;
 				g.giveItems(u32(hi), _job.symbol, n);
 				++_itemStats.pickedUp;
-				if (n > 1) snprintf(buf, sizeof(buf), "Взято: %s ×%ld", name, static_cast<long>(n));
-				else snprintf(buf, sizeof(buf), "Взято: %s", name);
+				if (n > 1) snprintf(buf, sizeof(buf), tr("Взято: %s ×%ld"), name, static_cast<long>(n));
+				else snprintf(buf, sizeof(buf), tr("Взято: %s"), name);
 				itemMessage(buf, false);
 			}
 		} else if (_hero.useMoment() && !_job.applied) {
 			_job.applied = true;
 			if (!it || g.itemCount(u32(hi), _job.symbol) <= 0) {
-				snprintf(buf, sizeof(buf), "Нет: %s", name);
+				snprintf(buf, sizeof(buf), tr("Нет: %s"), name);
 				itemMessage(buf);
 			} else {
 				g.giveItems(u32(hi), _job.symbol, -1);
@@ -623,7 +624,7 @@ void App::itemsUpdate(Input& in, float dt) {
 		}
 		if (!_hero.usingItem()) {
 			if (!_job.applied) {
-				snprintf(buf, sizeof(buf), "Прервано: %s", name);
+				snprintf(buf, sizeof(buf), tr("Прервано: %s"), name);
 				++_itemStats.interrupted;
 				itemMessage(buf, false);
 			}
@@ -643,7 +644,7 @@ void App::itemsUpdate(Input& in, float dt) {
 			GameNpc& h = g.npcMut(u32(hi));
 			h.melee = _job.symbol;
 			++_equipVersion;
-			snprintf(buf, sizeof(buf), "Оружие: %s", name);
+			snprintf(buf, sizeof(buf), tr("Оружие: %s"), name);
 			itemMessage(buf, false);
 			_job.stage = JOB_SWAP_DRAW;
 			_job.wait = 0;
@@ -685,15 +686,15 @@ void App::fillEntry(ItemEntry& e, u32 symbol, i32 count, const GameNpc& h, bool 
 		// The action.
 		const char* action = "";
 		switch (e.kind) {
-		case IK_POTION: action = it->onUse != NONE ? "Выпить" : ""; break;
+		case IK_POTION: action = it->onUse != NONE ? tr("Выпить") : ""; break;
 		case IK_FOOD:
-			action = it->onUse == NONE ? "" : e.icon == ICON_BOTTLE ? "Выпить" : "Съесть";
+			action = it->onUse == NONE ? "" : e.icon == ICON_BOTTLE ? tr("Выпить") : tr("Съесть");
 			break;
-		case IK_MELEE: action = (e.flags & ITEMF_IN_HAND) ? "Убрать" : worn ? "Снять" : "Взять"; break;
-		case IK_RANGED: action = worn ? "Снять" : "Взять"; break;
+		case IK_MELEE: action = (e.flags & ITEMF_IN_HAND) ? tr("Убрать") : worn ? tr("Снять") : tr("Взять"); break;
+		case IK_RANGED: action = worn ? tr("Снять") : tr("Взять"); break;
 		case IK_ARMOR:
 		case IK_AMULET:
-		case IK_RING: action = worn ? "Снять" : "Надеть"; break;
+		case IK_RING: action = worn ? tr("Снять") : tr("Надеть"); break;
 		default: break;
 		}
 		snprintf(e.action, sizeof(e.action), "%s", action);
@@ -715,24 +716,24 @@ void App::fillEntry(ItemEntry& e, u32 symbol, i32 count, const GameNpc& h, bool 
 			if (e.kind == IK_MELEE || e.kind == IK_RANGED) {
 				i32 dmg = it->damageTotal;
 				for (i32 d : it->damage) dmg += d;
-				row(e, "Урон", dmg);
+				row(e, tr("Урон"), dmg);
 			} else if (e.kind == IK_ARMOR) {
-				row(e, "Защита от оружия", it->protection[g.constant("PROT_EDGE", 2)]);
-				row(e, "Защита от стрел", it->protection[g.constant("PROT_POINT", 6)]);
-				row(e, "Защита от огня", it->protection[g.constant("PROT_FIRE", 3)]);
-				row(e, "Защита от магии", it->protection[g.constant("PROT_MAGIC", 5)]);
+				row(e, tr("Защита от оружия"), it->protection[g.constant("PROT_EDGE", 2)]);
+				row(e, tr("Защита от стрел"), it->protection[g.constant("PROT_POINT", 6)]);
+				row(e, tr("Защита от огня"), it->protection[g.constant("PROT_FIRE", 3)]);
+				row(e, tr("Защита от магии"), it->protection[g.constant("PROT_MAGIC", 5)]);
 			}
 			for (int k = 0; k < 3; ++k)
 				if (it->condValue[k] > 0) {
 					char label[40];
-					snprintf(label, sizeof(label), "Нужно: %s", attributeWord(it->condAtr[k]));
+					snprintf(label, sizeof(label), tr("Нужно: %s"), attributeWord(it->condAtr[k]));
 					row(e, label, it->condValue[k], true, g.attributeOf(h, it->condAtr[k]) < it->condValue[k]);
 				}
 			if (e.kind == IK_MELEE) {
 				const i32 two = g.constant("ITEM_2HD_SWD", 1 << 16) | g.constant("ITEM_2HD_AXE", 1 << 17);
-				row(e, (it->flags & two) ? "Двуручное оружие" : "Одноручное оружие", 0, false);
+				row(e, (it->flags & two) ? tr("Двуручное оружие") : tr("Одноручное оружие"), 0, false);
 			}
-			if (it->value > 0) row(e, "Цена", it->value);
+			if (it->value > 0) row(e, tr("Цена"), it->value);
 		} else {
 			// (The scripts' lines name what it takes; the warning is ours.)
 			for (int k = 0; k < 3; ++k)
@@ -798,13 +799,13 @@ const InventoryView& App::inventory() {
 		scriptText(it ? g.text(it->description ? it->description : it->name) : "", name, sizeof(name));
 		const bool drink = it && kindOf(g, *it) == IK_POTION;
 		switch (_job.stage) {
-		case JOB_PUTAWAY: snprintf(v.busyText, sizeof(v.busyText), "Убирает оружие…"); break;
+		case JOB_PUTAWAY: snprintf(v.busyText, sizeof(v.busyText), "%s", tr("Убирает оружие…")); break;
 		case JOB_START:
 		case JOB_USING:
-			snprintf(v.busyText, sizeof(v.busyText), "%s %s", _job.pickup ? "Поднимает:" : drink ? "Пьёт:" : "Ест:", name);
+			snprintf(v.busyText, sizeof(v.busyText), "%s %s", _job.pickup ? tr("Поднимает:") : drink ? tr("Пьёт:") : tr("Ест:"), name);
 			break;
-		case JOB_REDRAW: snprintf(v.busyText, sizeof(v.busyText), "Снова берёт оружие…"); break;
-		default: snprintf(v.busyText, sizeof(v.busyText), "Меняет оружие: %s", name); break;
+		case JOB_REDRAW: snprintf(v.busyText, sizeof(v.busyText), "%s", tr("Снова берёт оружие…")); break;
+		default: snprintf(v.busyText, sizeof(v.busyText), tr("Меняет оружие: %s"), name); break;
 		}
 	}
 
@@ -1279,7 +1280,7 @@ void App::drawItemHud() {
 		if (mob < mobs.count()) {
 			const WorldMob& m = mobs.mob(mob);
 			char line[80];
-			snprintf(line, sizeof(line), _chests.locked(u32(_chestTarget)) ? "%s (заперт)" : "%s", chestName(u32(_chestTarget)));
+			snprintf(line, sizeof(line), _chests.locked(u32(_chestTarget)) ? tr("%s (заперт)") : "%s", chestName(u32(_chestTarget)));
 			tag({m.pos[0], m.pos[1] + 75.0f, m.pos[2]}, line);
 		}
 	}
@@ -1287,7 +1288,7 @@ void App::drawItemHud() {
 		const GameNpc& t = _npcs.game().npc(u32(_talkTarget));
 		char name[48], line[96];
 		scriptText(_npcs.game().nameOf(t), name, sizeof(name));
-		snprintf(line, sizeof(line), "Поговорить: %s", name);
+		snprintf(line, sizeof(line), tr("Поговорить: %s"), name);
 		tag({t.pos[0], t.pos[1] + 215.0f, t.pos[2]}, line);
 	}
 	const bool lockPage = _panel.page() == InventoryPanel::PAGE_LOCK && _chest.stage == CH_LOCK;
@@ -1333,27 +1334,27 @@ void App::drawItemHud() {
 		x += _ui.text(x, y, what, on ? 0xD8D6D0FFu : ui::DARK) + 10;
 	};
 	if (lockPage) {
-		hint("L", "Влево", true);
-		hint("R", "Вправо", true);
-		hint("B", "Отмена", true);
+		hint("L", tr("Влево"), true);
+		hint("R", tr("Вправо"), true);
+		hint("B", tr("Отмена"), true);
 		return;
 	}
 	if (chestPage) {
-		hint("A", "Переложить", e != nullptr);
-		hint("L R", _panel.side() == 0 ? "Рюкзак" : "Сундук", true);
-		if (v.chest.count > 0) hint("X", "Взять всё", true);
-		hint("B", "Закрыть", true);
+		hint("A", tr("Переложить"), e != nullptr);
+		hint("L R", _panel.side() == 0 ? tr("Рюкзак") : tr("Сундук"), true);
+		if (v.chest.count > 0) hint("X", tr("Взять всё"), true);
+		hint("B", tr("Закрыть"), true);
 		return;
 	}
 	const bool can = e && (e->flags & ITEMF_ACTION) && !((e->flags & ITEMF_BLOCKED) && !(e->flags & ITEMF_EQUIPPED));
 	const char* action = !e ? "—" : e->action[0] ? e->action : "—";
 	if (_panel.assigning()) {
-		hint("A", "В слот", true);
-		hint("B", "Отмена", true);
+		hint("A", tr("В слот"), true);
+		hint("B", tr("Отмена"), true);
 	} else {
 		hint("A", action, can);
-		if (e && (e->flags & ITEMF_QUICK)) hint("X", "В слот", true);
-		hint("B", "Закрыть", true);
+		if (e && (e->flags & ITEMF_QUICK)) hint("X", tr("В слот"), true);
+		hint("B", tr("Закрыть"), true);
 	}
 }
 

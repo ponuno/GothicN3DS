@@ -173,7 +173,7 @@ public:
 	int side() const { return _side; }
 	void setSide(int side);
 	// The dialogue page: row `k` of the menu (the middle of its left part's y).
-	static constexpr int TALK_Y = 40, TALK_ROW = 16;
+	static constexpr int TALK_Y = 32, TALK_ROW = 16;
 	int talkCursor() const { return _talkCursor; }
 	// The middle of the chest page's button `k` (0 the chest, 1 the pack, 2 take all) and of
 	// the lock page's (0 left, 1 right).

@@ -1,5 +1,6 @@
 // What is drawn over the picture (App::drawOverlay): the HUD - the
 // character's health, the target, a line of news - and the pause menu.
+#include "lang.h"
 #include "app.h"
 
 #include <stdio.h>
@@ -30,16 +31,16 @@ void App::drawOverlay() {
 		const u8 w = _hero.weapon();
 		const char* held = nullptr;
 		char weaponName[48] = "";
-		if (w == WEAPON_FIST) held = "Кулаки";
+		if (w == WEAPON_FIST) held = tr("Кулаки");
 		else if (w == WEAPON_1H || w == WEAPON_2H) {
 			const GameNpc* h = heroNpc();
 			const GameItemInfo* it = h && h->melee != SCRIPT_NONE && game ? _npcs.game().itemInfo(h->melee) : nullptr;
-			snprintf(weaponName, sizeof(weaponName), "%s", it && it->name ? game->text(it->name) : "Оружие");
+			snprintf(weaponName, sizeof(weaponName), "%s", it && it->name ? game->text(it->name) : tr("Оружие"));
 			held = weaponName;
 		}
 		if (items) {
 		} else if (held) _ui.text(W - 10, H - 6 - Ui::lineHeight(), held, ui::GOLD, ui::TEXT, ui::RIGHT);
-		else if (_hero.sneaking()) _ui.text(W - 10, H - 6 - Ui::lineHeight(), "Крадётся", ui::GREY, ui::TEXT, ui::RIGHT);
+		else if (_hero.sneaking()) _ui.text(W - 10, H - 6 - Ui::lineHeight(), tr("Крадётся"), ui::GREY, ui::TEXT, ui::RIGHT);
 		// The target: its name and health at the top, a mark over its head.
 		if (game && _target >= 0) {
 			const GameNpc& t = game->npc(u32(_target));
@@ -62,10 +63,10 @@ void App::drawOverlay() {
 		if (_hero.down()) {
 			if (_deadTime > 0.0f) {
 				_ui.rect(0, H / 2 - 30, W, H / 2 + 30, 0x000000A0u);
-				_ui.text(W / 2, H / 2 - 22, "Вы погибли", ui::RED, ui::TITLE, ui::CENTER);
-				if (_deadTime > 1.5f) _ui.text(W / 2, H / 2 + 2, "A — загрузить позицию", ui::GREY, ui::TEXT, ui::CENTER);
+				_ui.text(W / 2, H / 2 - 22, tr("Вы погибли"), ui::RED, ui::TITLE, ui::CENTER);
+				if (_deadTime > 1.5f) _ui.text(W / 2, H / 2 + 2, tr("A — загрузить позицию"), ui::GREY, ui::TEXT, ui::CENTER);
 			} else {
-				_ui.text(W / 2, H / 2 - 8, "Без сознания…", ui::GREY, ui::TITLE, ui::CENTER);
+				_ui.text(W / 2, H / 2 - 8, tr("Без сознания…"), ui::GREY, ui::TITLE, ui::CENTER);
 			}
 		}
 	}

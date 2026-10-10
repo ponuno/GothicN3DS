@@ -209,6 +209,8 @@ public:
 	// Members of the characters' class the engine reads.
 	i32 guildOf(const GameNpc& n) const { return _mGuild != SCRIPT_NONE && n.object ? _vm.getInt(_mGuild, 0, n.object) : 0; }
 	float sensesRange(const GameNpc& n) const;
+	// An animal or a beast, not a person (the guilds past GIL_SEPERATOR_HUM).
+	bool isMonster(const GameNpc& n) const { return _humanGuilds > 0 && guildOf(n) > _humanGuilds; }
 	const GameNpc* hero() const { return _hero != SCRIPT_NONE ? &_npcs[_hero] : nullptr; }
 	const GameRoutine& routine(u32 i) const { return _routines[i]; }
 	const char* text(GameText id) const { return id < _textCount ? _texts[id] : ""; }
@@ -488,6 +490,7 @@ private:
 	u32 _hero = SCRIPT_NONE;
 	u32 _seed = 1;
 	float _hours = 8.0f;
+	i32 _humanGuilds = 0; // GIL_SEPERATOR_HUM (0: not known)
 	GameStats _stats;
 	// Symbols of the scripts this code reads.
 	u32 _clsNpc = SCRIPT_NONE, _clsItem = SCRIPT_NONE;

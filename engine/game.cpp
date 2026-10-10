@@ -191,6 +191,9 @@ bool Game::bindAll() {
 		_guildCount = count > 0 && count <= 256 ? u32(count) : 64u;
 		_guildAtt = static_cast<i32*>(calloc(size_t(_guildCount) * _guildCount, sizeof(i32))); // (ATT_HOSTILE is 0)
 		if (!_guildAtt) _guildCount = 0;
+		// Where the people's guilds end and the creatures' begin.
+		const u32 sep = _vm.find("GIL_SEPERATOR_HUM");
+		_humanGuilds = sep != SCRIPT_NONE && _vm.symbol(sep).type == SCRIPT_INT ? _vm.getInt(sep) : 0;
 	}
 	if (_mStartState != SCRIPT_NONE && _vm.symbol(_mStartState).type != SCRIPT_FUNC && _vm.symbol(_mStartState).type != SCRIPT_INT)
 		_mStartState = SCRIPT_NONE;

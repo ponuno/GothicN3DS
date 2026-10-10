@@ -325,7 +325,10 @@ struct CellBuilder {
 	std::vector<BakedChunk>& out;
 	std::map<std::pair<int, int>, int> nextPart;
 
-	static u8 detailOf(const WorkTri& t) { return t.detail < DETAIL_COUNT ? t.detail : u8(DETAIL_COUNT - 1); }
+	static u8 classOf(const WorkTri& t) { return (t.detail & 3) < DETAIL_COUNT ? u8(t.detail & 3) : u8(DETAIL_COUNT - 1); }
+	static u8 layerOf(const WorkTri& t) { return u8((t.detail >> 2) & 3); }
+	// What a batch is told by: the class and the layer.
+	static u8 detailOf(const WorkTri& t) { return u8(classOf(t) | (layerOf(t) << 2)); }
 
 	void build(Group& g) {
 		std::vector<u32>& tris = g.tris;
@@ -387,7 +390,7 @@ struct CellBuilder {
 		auto sortKey = [&](u32 t) {
 			const WorkTri& tri = work[t];
 			const u32 m = u32(remap[tri.material]);
-			return (u64(order[m]) << 40) | (u64(detailOf(tri)) << 32) | (u64(m) << 8) | clusterId(t);
+			return (u64(order[m]) << 40) | (u64(classOf(tri)) << 32) | (u64(m) << 10) | (u64(clusterId(t)) << 2) | layerOf(tri);
 		};
 		std::stable_sort(tris.begin(), tris.end(), [&](u32 a, u32 b) { return sortKey(a) < sortKey(b); });
 
@@ -454,7 +457,7 @@ struct CellBuilder {
 						b.bbMax[a] = std::max(b.bbMax[a], p[a]);
 					}
 				}
-				stats.detailTriangles[b.detail] += b.indexCount / 3;
+				stats.detailTriangles[b.detail & 3] += b.indexCount / 3;
 			}
 			stats.batches += cur.batches.size();
 			for (int a = 0; a < 3; ++a) {

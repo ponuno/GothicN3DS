@@ -1,3 +1,4 @@
+#include "lang.h"
 #include "app.h"
 
 #include "sys.h"
@@ -48,6 +49,7 @@ bool App::init(const char* pakPath, const char* worldName) {
 	_portalLock = false;
 	// The game's scripts, if the archive has them, and through them the
 	// people of this world.
+	_npcs.setHeldSource(&_loot, &_pak);
 	if (_npcs.load(_pak)) {
 		_npcs.enterWorld(_pak, _world, this->worldName(), _player.eye(), _env.timeOfDay);
 		_loot.enterWorld(_pak, this->worldName(), _world.entryHash(), _npcs.game());
@@ -329,11 +331,18 @@ void App::update(const Input& in, float dt) {
 		talkUpdate(fightIn, dt);
 		fightInput(fightIn, dt);
 		Input heroIn = steerInput(in, dt);
-		if (_hero.usingItem() || _panel.open() || _chest.stage != CH_NONE) {
+		const bool handsBusy = _hero.usingItem() || _panel.open() || _chest.stage != CH_NONE || talking();
+		if (handsBusy) {
 			// Drinking or eating, or looking into the inventory: the character
 			// stands (it cannot jump off either). The camera still turns.
-			heroIn.jump = false;
 			heroIn.moveX = heroIn.moveZ = heroIn.strafe = 0;
+			_jumpLatch = true;
+		}
+		// The key that closed the inventory (B) is still down in the frames after:
+		// it jumps only once it has been let go and pressed again.
+		if (_jumpLatch) {
+			if (!heroIn.jump && !handsBusy) _jumpLatch = false;
+			heroIn.jump = false;
 		}
 		// A jump near a wall: the hands take hold of the ledge, if there is one in reach.
 		Ledge ledge;
@@ -405,6 +414,46 @@ static float cameraRoom(const World& world, Vec3 from, Vec3 dir, float range, fl
 	return range;
 }
 
+// The dialogue shot of the original: the camera hangs behind the character's
+// shoulder (a little to the right and up) and looks at the head of the one it
+// talks to; the one who speaks gets the frame (the looked-at point moves towards
+// them). `look` and `pos` are set when a talk is on; the way from the
+// character's head to the camera is kept free of walls.
+bool App::talkCamera(Vec3& look, Vec3& pos) {
+	if (!_npcs.loaded() || !_npcs.talkView().active || !thirdPerson()) return false;
+	const int partner = _npcs.talkPartner();
+	if (partner < 0) return false;
+	const GameNpc& n = _npcs.game().npc(u32(partner));
+	const TalkView& tv = _npcs.talkView();
+	const float height = max(_hero.hipHeight() * 1.72f, 120.0f); // (eyes above the feet)
+	const Vec3 eye = {_player.feet.x, _player.feet.y + height, _player.feet.z};
+	const Vec3 head = {n.pos[0], n.pos[1] + height, n.pos[2]};
+	Vec3 axis = {head.x - eye.x, 0.0f, head.z - eye.z};
+	const float dist = sqrtf(axis.x * axis.x + axis.z * axis.z);
+	if (dist < 20.0f) return false;
+	axis = axis * (1.0f / dist);
+	const Vec3 right = {axis.z, 0.0f, -axis.x};
+	// Whose turn it is: the camera moves a little with it (the partner speaking: the
+	// shot is on them; the character: it takes both).
+	const bool partnerSpeaks = tv.saying && !tv.heroSays;
+	const float share = partnerSpeaks ? 0.88f : tv.saying ? 0.55f : 0.72f;
+	look = eye + (head - eye) * share;
+	look.y = eye.y - 4.0f + (partnerSpeaks ? 6.0f : 0.0f);
+	const float back = clamp(100.0f + dist * 0.12f, 100.0f, 150.0f);
+	Vec3 want = eye - axis * back + right * (partnerSpeaks ? 42.0f : 52.0f);
+	want.y = eye.y + 12.0f;
+	// Not through a wall: the way from the head to the place is free as far as it goes.
+	Vec3 d = want - eye;
+	const float len = length(d);
+	if (len > 1.0f) {
+		d = d * (1.0f / len);
+		const float room = cameraRoom(_world, eye, d, len, _cam.boomRadius);
+		want = eye + d * min(room, len);
+	}
+	pos = want;
+	return true;
+}
+
 // Free camera and first person: at the player's eyes. Third person: behind
 // the character, as the game's camera scripts set it up (see Camera).
 void App::placeCamera(float dt) {
@@ -430,9 +479,13 @@ void App::placeCamera(float dt) {
 	// script's offset, which is given in the character's own axes).
 	const Vec3 feet = _player.feet;
 	const Vec3 offset = {def.targetOffsetX * cy + def.targetOffsetZ * sy, def.targetOffsetY, -def.targetOffsetX * sy + def.targetOffsetZ * cy};
-	const Vec3 want = Vec3 {feet.x, feet.y + _hero.hipHeight(), feet.z} + offset;
+	Vec3 want = Vec3 {feet.x, feet.y + _hero.hipHeight(), feet.z} + offset;
+	// In a talk the camera is the game's dialogue shot: over the shoulder of the
+	// character, on the one it talks to.
+	Vec3 talkDest {0, 0, 0};
+	const bool talkCam = talkCamera(want, talkDest);
 	if (!_camPlaced) _camTarget = want;
-	else _camTarget = _camTarget + (want - _camTarget) * (1.0f - expf(-_cam.targetPace * dt));
+	else _camTarget = _camTarget + (want - _camTarget) * (1.0f - expf((talkCam ? -5.0f : -_cam.targetPace) * dt));
 	// The leash has an end: the character cannot leave the picture.
 	{
 		const Vec3 d = _camTarget - want;
@@ -453,8 +506,8 @@ void App::placeCamera(float dt) {
 	};
 	Vec3 dir = backwards(elevation);
 	float range = def.bestRange * 100.0f;
-	float room = cameraRoom(_world, _camTarget, dir, range, _cam.boomRadius);
-	if (room < _cam.topDownBelow) {
+	float room = talkCam ? range : cameraRoom(_world, _camTarget, dir, range, _cam.boomRadius);
+	if (!talkCam && room < _cam.topDownBelow) {
 		// No room behind (the back to a wall): the game looks down from above
 		// then - steeply, or straight down if even that is in the wall.
 		dir = backwards(_cam.topDownElevation * rad);
@@ -468,9 +521,9 @@ void App::placeCamera(float dt) {
 			}
 		}
 	}
-	const Vec3 dest = _camTarget + dir * room;
+	const Vec3 dest = talkCam ? talkDest : _camTarget + dir * room;
 	if (!_camPlaced) _camOrigin = dest;
-	else _camOrigin = _camOrigin + (dest - _camOrigin) * (1.0f - expf(-0.25f * def.veloTrans * dt));
+	else _camOrigin = _camOrigin + (dest - _camOrigin) * (1.0f - expf((talkCam ? -4.0f : -0.25f * def.veloTrans) * dt));
 	_camPlaced = true;
 	// Trailing must not take the camera through a wall: the way from the
 	// looked-after point to the camera stays free.
@@ -490,19 +543,21 @@ void App::placeCamera(float dt) {
 	const float flat = sqrtf(look.x * look.x + look.z * look.z);
 	const float lookYaw = flat < 4.0f ? heroYaw : atan2f(look.x, look.z);
 	_cam.pos = _camOrigin;
-	_cam.yaw = lookYaw - def.rotOffsetY * rad;
+	const float rotX = talkCam ? 0.0f : def.rotOffsetX, rotY = talkCam ? 0.0f : def.rotOffsetY;
+	_cam.yaw = lookYaw - rotY * rad;
 	// The scripts were written for a 4:3 picture. This one is wider and shows
 	// less above and below; the view is tipped down by what is missing, so
 	// that the lower edge - the character's feet - shows what it shows there.
 	const float aspect = float(gfx::SCREEN_W) / float(gfx::SCREEN_H);
 	const float wide = atanf(tanf(_cam.fovY * 0.5f) * aspect * 0.75f) - _cam.fovY * 0.5f;
-	_cam.pitch = clamp(atan2f(look.y, flat) + def.rotOffsetX * rad - max(wide, 0.0f), -1.5f, 1.5f);
+	_cam.pitch = clamp(atan2f(look.y, flat) + rotX * rad - (talkCam ? 0.25f : 1.0f) * max(wide, 0.0f), -1.5f, 1.5f);
 	// How far the view hangs behind the character's turn (console: how far
 	// the character still has to turn to where it is steered).
 	float lag = heroYaw + def.bestAzimuth * rad - lookYaw;
 	while (lag > 3.14159265f) lag -= 6.2831853f;
 	while (lag < -3.14159265f) lag += 6.2831853f;
 	if (orbit) lag = _steerLag;
+	if (talkCam) lag = 0.0f;
 	_hero.setTurnLag(flat < 4.0f ? 0.0f : lag);
 	// With the camera inside the character there is nothing to see of it but its inside.
 	_heroVisible = length(look) > 45.0f;
@@ -553,7 +608,13 @@ void App::render() {
 	_npcs.draw(viewProj, indoor ? indoorLight : sky.light);
 	_loot.draw(_cam.pos, indoor ? indoorLight : sky.light);
 	drawShowcase();
-	if (_heroVisible) _hero.draw();
+	if (_heroVisible) {
+		_hero.draw();
+		const GameNpc* hn = heroNpc();
+		if (hn && _hero.loaded())
+			_loot.drawCarried(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
+			                  hn->melee, _hero.feet(), _hero.light());
+	}
 	gfx::setPass(gfx::PASS_BLEND);
 	_world.drawBlended();
 	drawOverlay();
@@ -692,6 +753,7 @@ void App::syncHeroNpc() {
 	link.user = this;
 	link.prehit = _hero.prehit();
 	link.running = _hero.role() == Hero::RUN;
+	link.sneaking = _hero.sneaking();
 	_npcs.setHeroLink(link);
 	// Finished off by somebody while it lay there.
 	if (h.down == DOWN_DEAD && !(_hero.down() && _deadTime > 0.0f)) {
@@ -920,7 +982,7 @@ void App::respawn(const char* statePath) {
 		_cam.yaw = wh.spawnYaw;
 		teleport({wh.spawnPos[0], wh.spawnPos[1], wh.spawnPos[2]});
 	}
-	toast("Вы снова на ногах");
+	toast(tr("Вы снова на ногах"));
 }
 
 // ---- settings and the menu ----
@@ -931,7 +993,10 @@ void App::applySettings() {
 	StreamConfig& cfg = _world.config();
 	cfg.detailDistance[DETAIL_MEDIUM] = _settings.mediumObjectsCm();
 	cfg.detailDistance[DETAIL_SMALL] = _settings.smallObjectsCm();
+	cfg.smallLayers = _settings.smallLayers();
+	setLanguage(_settings.language);
 	NpcConfig& nc = _npcs.config();
+	nc.range = _settings.npcRangeCm();
 	nc.perceive = _settings.perception != 0;
 	nc.alive = _settings.life != 0;
 	nc.fights = _settings.fights != 0;
@@ -954,14 +1019,14 @@ bool App::menuAction(MenuAction action, const char* statePath) {
 	if (statePath) _statePath = statePath;
 	switch (action) {
 	case MENU_SAVE:
-		snprintf(_menuMessage, sizeof(_menuMessage), "%s", statePath && saveState(statePath) ? "Позиция сохранена" : "Не удалось сохранить");
+		snprintf(_menuMessage, sizeof(_menuMessage), "%s", statePath && saveState(statePath) ? tr("Позиция сохранена") : tr("Не удалось сохранить"));
 		return true;
 	case MENU_LOAD:
 		if (statePath && loadState(statePath)) {
 			_menu.close();
-			toast("Позиция загружена");
+			toast(tr("Позиция загружена"));
 		} else {
-			snprintf(_menuMessage, sizeof(_menuMessage), "Сохранённой позиции нет");
+			snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Сохранённой позиции нет"));
 		}
 		return true;
 	case MENU_EXIT: return false;
@@ -982,7 +1047,7 @@ bool App::menuAction(MenuAction action, const char* statePath) {
 	case MENU_HOUR:
 		_env.timeOfDay += 1.0f;
 		if (_env.timeOfDay >= 24.0f) _env.timeOfDay -= 24.0f;
-		snprintf(_menuMessage, sizeof(_menuMessage), "Время %02d:%02d", int(_env.timeOfDay), int(_env.timeOfDay * 60.0f) % 60);
+		snprintf(_menuMessage, sizeof(_menuMessage), tr("Время %02d:%02d"), int(_env.timeOfDay), int(_env.timeOfDay * 60.0f) % 60);
 		return true;
 	case MENU_FLY:
 		_player.flying = !_player.flying;
@@ -991,30 +1056,35 @@ bool App::menuAction(MenuAction action, const char* statePath) {
 			_camPlaced = false;
 		}
 		_menu.close();
-		toast(_player.flying ? "Полёт: стик — вперёд, L/R — вниз/вверх" : "Полёт выключен");
+		toast(_player.flying ? tr("Полёт: стик — вперёд, L/R — вниз/вверх") : tr("Полёт выключен"));
 		return true;
 	case MENU_HEAL: {
 		const int hi = heroIndex();
 		if (hi >= 0) _npcs.game().setAttribute(_npcs.game().npcMut(u32(hi)), 0, max(heroHitPointsMax(), i32(1)));
-		snprintf(_menuMessage, sizeof(_menuMessage), "Здоровье восстановлено");
+		snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Здоровье восстановлено"));
 		return true;
 	}
 	case MENU_GIVE_WEAPON: {
 		const int hi = heroIndex();
 		const u32 best = hi >= 0 ? _npcs.game().bestMeleeOfAll() : SCRIPT_NONE;
 		if (best == SCRIPT_NONE) {
-			snprintf(_menuMessage, sizeof(_menuMessage), "Оружия в скриптах нет");
+			snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Оружия в скриптах нет"));
 			return true;
 		}
 		_npcs.game().equip(u32(hi), best);
 		const GameItemInfo* it = _npcs.game().itemInfo(best);
-		snprintf(_menuMessage, sizeof(_menuMessage), "%.40s", it && it->name ? _npcs.game().text(it->name) : "Оружие выдано");
+		snprintf(_menuMessage, sizeof(_menuMessage), "%.40s", it && it->name ? _npcs.game().text(it->name) : tr("Оружие выдано"));
 		return true;
 	}
+	case MENU_RESET_GRAPHICS:
+		_settings.resetGraphics();
+		applySettings();
+		snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Графика сброшена"));
+		return true;
 	case MENU_GIVE_ITEMS: {
 		const u32 n = giveItemKit();
-		if (n) snprintf(_menuMessage, sizeof(_menuMessage), "Выдано: %lu видов", static_cast<unsigned long>(n));
-		else snprintf(_menuMessage, sizeof(_menuMessage), "Предметов в скриптах нет");
+		if (n) snprintf(_menuMessage, sizeof(_menuMessage), tr("Выдано: %lu видов"), static_cast<unsigned long>(n));
+		else snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Предметов в скриптах нет"));
 		return true;
 	}
 	default: return true;

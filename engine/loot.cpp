@@ -153,6 +153,45 @@ void Loot::draw(Vec3 eye, const float dayLight[3], float range) {
 	}
 }
 
+void Loot::drawHeld(Pak& pak, Game& game, u32 symbol, const Mat34& attach, Vec3 origin, const float light[3]) {
+	const GameItemInfo* info = game.itemInfo(symbol);
+	if (!info || !info->visual) return;
+	int found = -1;
+	for (u32 k = 0; k < _lookCount; ++k)
+		if (_looks[k].visual == info->visual) found = int(k);
+	if (found < 0) {
+		if (_lookCount >= LOOKS) return;
+		char name[96];
+		snprintf(name, sizeof(name), "model/item.%s", game.text(info->visual));
+		Look& look = _looks[_lookCount];
+		look.visual = info->visual;
+		const bool ok = look.model.loadEntry(pak, hashName(name), &_pool) && look.model.hasMesh();
+		if (!ok) look.model.release();
+		found = int(_lookCount++);
+	}
+	const Model& m = _looks[found].model;
+	if (!m.loaded()) return;
+	m.drawSkinned(&attach, origin, light);
+}
+
+void Loot::drawCarried(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, float lean, const float* scale,
+                       u8 weapon, u32 melee, Vec3 origin, const float light[3]) {
+	if (melee == 0xFFFFFFFFu) return;
+	const GameItemInfo* info = game.itemInfo(melee);
+	if (!info) return;
+	const i32 twoHanded = game.constant("ITEM_2HD_SWD", 1 << 16) | game.constant("ITEM_2HD_AXE", 1 << 17);
+	const bool two = (info->flags & twoHanded) != 0;
+	static const u32 hand = hashName("ZS_RIGHTHAND"), belt = hashName("ZS_SWORD"), back = hashName("ZS_LONGSWORD");
+	const bool inHand = weapon == 2 || weapon == 3; // WEAPON_1H, WEAPON_2H
+	static const u32 rightHand = hashName("BIP01 R HAND"), pelvis = hashName("BIP01 PELVIS"), spine = hashName("BIP01 SPINE1");
+	// (A skeleton without the game's attachment nodes: the hand, the hip, the back.)
+	int node = host.findNode(inHand ? hand : (two ? back : belt));
+	if (node < 0) node = host.findNode(inHand ? rightHand : (two ? spine : pelvis));
+	Mat34 at;
+	if (!host.nodeMatrix(pose, node, yaw, lean, scale, at)) return;
+	drawHeld(pak, game, melee, at, origin, light);
+}
+
 int Loot::nearest(Vec3 feet, float yaw, float reach, float halfAngle) const {
 	int best = -1;
 	float bestScore = 1e30f;

@@ -205,64 +205,74 @@ bool Player::probeLedge(const World& world, float yaw, Ledge& out) const {
 	const PlayerConfig& cfg = config;
 	LedgeStats& st = _ledgeStats;
 	++st.probes;
-	st.why = 0;
+	st.why = 1; // nothing in reach ahead
 	const Vec3 dir = {sinf(yaw), 0, cosf(yaw)};
 	const float top = feet.y + cfg.ledgeReach + 15.0f;
 	const float drop = cfg.ledgeReach + 15.0f + 140.0f;
-	float prevY = -1e9f;
-	bool prevHit = false;
 	const float from = cfg.radius - 8.0f, to = cfg.radius + cfg.ledgeRange;
-	for (float d = from; d <= to; d += 10.0f) {
-		float y;
+	// The floor ahead, felt for from above, step by step. The edge is where it
+	// first stands clearly above the feet - a wall or a steep rock face, not
+	// only a sheer one (the original's climb takes hold of a rough slope too).
+	float ys[16];
+	bool hits[16];
+	int count = 0;
+	for (float d = from; d <= to && count < 16; d += 10.0f, ++count) {
 		Vec3 n;
-		const bool hit = world.rayDown({feet.x + dir.x * d, top, feet.z + dir.z * d}, drop, y, n);
-		const float rel = hit ? y - feet.y : -1e9f;
-		if (hit && rel >= cfg.ledgeMin && rel <= cfg.ledgeReach && n.y >= cfg.minFloorNormal) {
-			st.height = rel;
-			// A wall only if what came before is clearly lower (or nothing).
-			if (d <= from + 1.0f || (prevHit && prevY > y - 35.0f)) {
-				st.why = 2; // a slope up, or already over it
-				return false;
-			}
-			// The place on top: a body's width in from the edge (or farther: rock is rough), on the same floor.
-			const float r = cfg.radius;
-			const float heights[2] = {cfg.stepHeight + r, cfg.eyeHeight - r};
-			st.why = 3;
-			static const float kInside[3] = {22.0f, 40.0f, 60.0f};
-			for (float inside : kInside) {
-				const float inD = d + inside;
-				const Vec3 at = {feet.x + dir.x * inD, 0, feet.z + dir.z * inD};
-				float y2;
-				Vec3 n2;
-				if (!world.rayDown({at.x, top, at.z}, drop, y2, n2) || fabsf(y2 - y) > 40.0f || n2.y < 0.45f) continue;
-				// Room to stand there: the body's two spheres are not pushed far.
-				bool room = true;
-				for (float h : heights) {
-					Vec3 c = {at.x, y2 + h, at.z};
-					const Vec3 c0 = c;
-					if (world.pushSphere(c, r) && (fabsf(c.x - c0.x) + fabsf(c.z - c0.z) > 22.0f || c.y < c0.y - 12.0f)) room = false;
-				}
-				if (!room) {
-					st.why = 4;
-					continue;
-				}
-				out.found = true;
-				out.top = {at.x, y2, at.z};
-				out.height = y2 - feet.y;
-				out.gap = max(d - 5.0f - cfg.radius, 0.0f);
-				out.yaw = yaw;
-				++st.found;
-				st.why = 0;
-				return true;
-			}
-			return false;
-		}
-		if (hit && rel > cfg.ledgeReach) st.why = 5; // too high
-		else if (hit && rel >= cfg.ledgeMin && st.why == 0) st.why = 6; // too steep to stand on
-		prevHit = hit;
-		prevY = hit ? y : -1e9f;
+		hits[count] = world.rayDown({feet.x + dir.x * d, top, feet.z + dir.z * d}, drop, ys[count], n);
 	}
-	if (st.why == 0) st.why = 1; // nothing in reach ahead
+	int edge = -1;
+	for (int k = 0; k < count && edge < 0; ++k) {
+		if (!hits[k]) continue;
+		const float rel = ys[k] - feet.y;
+		if (rel > cfg.ledgeReach) {
+			st.why = 5; // too high
+			st.height = rel;
+			break;
+		}
+		if (rel < cfg.ledgeMin) continue;
+		st.height = rel;
+		// Steep: a rise of a body's step within a hand's breadth or two (a slope the
+		// character could walk up is no ledge).
+		const float before = k >= 3 && hits[k - 3] ? ys[k - 3] : (k >= 1 && hits[k - 1] ? ys[k - 1] : feet.y);
+		if (ys[k] - before < 30.0f) {
+			st.why = 2; // a slope up, or already over it
+			continue;
+		}
+		edge = k;
+	}
+	if (edge < 0) return false;
+	const float d = from + 10.0f * float(edge), y = ys[edge];
+	// The place on top: a body's width in from the edge or farther (rock is rough, and a slope
+	// goes on up), on a floor a body can stand on, with room.
+	const float r = cfg.radius;
+	const float heights[2] = {cfg.stepHeight + r, cfg.eyeHeight - r};
+	static const float kInside[6] = {22.0f, 40.0f, 60.0f, 80.0f, 100.0f, 130.0f};
+	st.why = 3;
+	for (float inside : kInside) {
+		const float inD = d + inside;
+		const Vec3 at = {feet.x + dir.x * inD, 0, feet.z + dir.z * inD};
+		float y2;
+		Vec3 n2;
+		if (!world.rayDown({at.x, top + 40.0f, at.z}, drop + 40.0f, y2, n2) || y2 < y - 12.0f || y2 - feet.y > cfg.ledgeReach + 40.0f || n2.y < 0.45f) continue;
+		bool room = true;
+		for (float h : heights) {
+			Vec3 c = {at.x, y2 + h, at.z};
+			const Vec3 c0 = c;
+			if (world.pushSphere(c, r) && (fabsf(c.x - c0.x) + fabsf(c.z - c0.z) > 22.0f || c.y < c0.y - 12.0f)) room = false;
+		}
+		if (!room) {
+			st.why = 4;
+			continue;
+		}
+		out.found = true;
+		out.top = {at.x, y2, at.z};
+		out.height = y2 - feet.y;
+		out.gap = max(d - 5.0f - cfg.radius, 0.0f);
+		out.yaw = yaw;
+		++st.found;
+		st.why = 0;
+		return true;
+	}
 	return false;
 }
 

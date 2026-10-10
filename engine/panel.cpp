@@ -556,6 +556,7 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 			int at = -1;
 			for (u32 i = 0; i < _shownCount; ++i)
 				if (list[_shown[i]].symbol == _selected) at = int(i);
+			const bool wasAssigning = _assigning; // (A that picks a slot must not also use the thing)
 			if (_assigning) {
 				// The ten slots: the D-Pad walks them, A picks.
 				const int before = _pickerSlot;
@@ -583,9 +584,9 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 				if (in.assign && _side == 0 && v.chest.count) cmd.type = PANEL_CHEST_ALL;
 				if (in.confirm) use(entryOf(v, _selected));
 			} else {
-				if (in.prevTab && !_assigning) setTab(ItemTab((_tab + ITEM_TABS - 1) % ITEM_TABS));
-				if (in.nextTab && !_assigning) setTab(ItemTab((_tab + 1) % ITEM_TABS));
-				if (in.confirm && !_assigning) use(sel);
+				if (in.prevTab && !wasAssigning) setTab(ItemTab((_tab + ITEM_TABS - 1) % ITEM_TABS));
+				if (in.nextTab && !wasAssigning) setTab(ItemTab((_tab + 1) % ITEM_TABS));
+				if (in.confirm && !wasAssigning) use(sel);
 				if (in.assign && sel && (sel->flags & ITEMF_QUICK)) {
 					_assigning = !_assigning;
 					_dirty = true;

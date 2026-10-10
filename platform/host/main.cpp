@@ -411,7 +411,7 @@ int main(int argc, char** argv) {
 			// Walk ahead, weaving a little, and jump now and then.
 			in.moveZ = 1.0f;
 			in.lookX = (f / 90) % 2 == 0 ? 0.12f : -0.2f;
-			in.jump = f % 75 == 40;
+			in.jump = f % 75 == 40 && !(worldName && worldName[0] == 'c'); // (in the cave the walk wades into the pool; a jump would clear it)
 		} else if (!still) {
 			// A lazy S-curve flight: enough to cross chunk borders and exercise
 			// load/unload. The path stays level; only the view is tilted down.

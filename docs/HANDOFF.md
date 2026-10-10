@@ -374,3 +374,10 @@ Request: (1) grab ledges when jumping, (2) pickup animation, (3) containers/ches
 - Jump at a wall: the original jumps UP. Now on a grounded jump press `App` probes from the ground (`Hero::wantsJumpUp`, `Player::probeLedge`); a ledge -> `beginMantle(..., fromGround)` with a sequence by height (<=110 low, <=170 middle, else high with hang; the high one gets the missing height as the flight in `S_JUMPUP`, others are scaled 0.3..2); no ledge but a wall within radius+45 at 100/160 cm -> straight-up jump (`kJumpUpSpeed` 420, `T_STAND_2_JUMPUP` then `S_JUMPUP`), the airborne grab still works at its top. Airborne grab: low out / mid out / hang sequence by height.
 - Synthetic actor got these clips under the same names (70 hero clips now); scene: blocks 150, 230, 420 cm at (-700/-1100/-1500, -700). Tests: `chests` (middle climb from standing, high hang climb, straight-up jump at the tall wall), `inventory` (pickup through the three C_ clips).
 - Still to verify on the console: how the real root tracks look through the climb (feet follow the clips' rises; the drawn root subtracts the current clip's rise), the jump-up height, chest UNLOCK/TRY/PICK animations.
+
+## Third console feedback (jump/climb round)
+- Jumps are higher (kThrowUp 480, takeoff boost +100, wall jump-up kJumpUpSpeed 540); `Player::probeLedge` rewritten: tolerates steep slopes, six top offsets; `Hero::mantleLift` makes the climb monotone (no rise-then-fall); `Use::holdFor` shortens the pickup crouch.
+- Quick-slot picker: A now only assigns (`wasAssigning` in panel.cpp); choosing the slot that already holds the item clears it (toggle).
+- Jump-spam limit: `kJumpRecover` = 0.55 s on the ground after landing before the next plain/wall jump (`_jumpCool` in Hero::control). Ledge climbs are not limited.
+- The host `--walk` script no longer jumps in the cave world (it cleared the pool and e2e_synth saw no swimming).
+- Unverified on console: real-skeleton climb root motion; tune kJumpRecover if it feels too slow/fast.

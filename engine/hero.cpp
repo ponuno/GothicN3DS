@@ -31,9 +31,10 @@ const float kTurnAnimSpeed = 0.5236f; // 30 degrees a second
 const float kMinFade = 0.1f;
 // A jump whose take-off animation does not lift the body (or a model without
 // one) is thrown instead: this fast upwards, for about 85 cm.
-const float kThrowUp = 408.0f;
-// A jump straight up at a wall: about 90 cm with the original's gravity.
-const float kJumpUpSpeed = 420.0f;
+const float kThrowUp = 480.0f; // (the original jumps well over a man's height)
+// A jump straight up at a wall: about 150 cm with the original's gravity.
+const float kJumpUpSpeed = 540.0f;
+const float kJumpRecover = 0.55f; // seconds on the ground before the next jump
 
 float wrapAngle(float a) {
 	const float pi = 3.14159265f;
@@ -659,7 +660,8 @@ bool Hero::beginUse(const Clip* in, const Clip* hold, const Clip* out, float sec
 	if (_use.in) {
 		_use.phase = USE_IN;
 		_use.at = _use.in->duration();
-		_use.seconds = _use.at + (_use.hold ? 0.3f : 0.0f) + (_use.out ? _use.out->duration() : 0.0f);
+		_use.holdFor = stoop ? 0.04f : 0.3f; // (picking up: no waiting down there)
+		_use.seconds = _use.at + (_use.hold ? _use.holdFor : 0.0f) + (_use.out ? _use.out->duration() : 0.0f);
 		_anim.play(_use.in, 0.12f);
 	} else {
 		// No animation for it: standing still for as long as it takes.
@@ -714,7 +716,7 @@ void Hero::useTick(float dt) {
 		}
 		break;
 	case USE_HOLD:
-		if (!_use.hold || _use.time >= _use.at + 0.3f) {
+		if (!_use.hold || _use.time >= _use.at + _use.holdFor) {
 			_use.phase = USE_OUT;
 			if (_use.out) _anim.play(_use.out, 0.1f);
 		}
@@ -766,6 +768,11 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 	const int strafe = in.strafe > 0.5f ? 1 : in.strafe < -0.5f ? -1 : 0;
 	const bool jumpPressed = in.jump && !_jumpHeld;
 	_jumpHeld = in.jump;
+	// No hopping on the spot: after a jump the legs need a moment on the ground.
+	if (_body == GROUNDED && player.grounded) _jumpCool = max(0.0f, _jumpCool - dt);
+	else if (_body != GROUNDED) _jumpCool = kJumpRecover;
+	const bool canJump = _jumpCool <= 0.0f;
+	if (_body == GROUNDED && player.grounded) _groundY = player.feet.y;
 	const bool locked = _down || _reel || (_blow.clip && _anim.current() == _blow.clip) || drawing() || usingItem() || _body == MANTLE;
 	float turnRate = 0;
 	if (in.steer) {
@@ -867,7 +874,7 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 			} else if (jumpPressed && !busy && !wading && groundLedge && groundLedge->found && beginMantle(*groundLedge, player, true)) {
 				// A ledge ahead in reach: up onto it, as the original climbs.
 				_roleNow = CLIMB;
-			} else if (jumpPressed && !busy && !wading && wall) {
+			} else if (jumpPressed && canJump && !busy && !wading && wall) {
 				// A wall right ahead, nothing to take hold of: straight up.
 				drive.launch = true;
 				drive.velocity = {0, kJumpUpSpeed, 0};
@@ -878,7 +885,7 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 				_jumping = _jumpUp = true;
 				_airTime = 0;
 				_roleNow = JUMP;
-			} else if (jumpPressed && !busy && !wading) {
+			} else if (jumpPressed && canJump && !busy && !wading) {
 				// Off the ground: through the take-off the script has for where
 				// the body is coming from.
 				int from = curState;
@@ -970,6 +977,7 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 			// through it, as in the original.
 			drive.launch = true;
 			drive.velocity = _liftTime > 0 ? _liftSum * (1.0f / _liftTime) : Vec3 {0, 0, 0};
+			drive.velocity.y += 100.0f; // (what the animation lifted is only the start of the jump)
 			_body = AIRBORNE;
 			_jumping = true;
 			_airTime = 0;
@@ -1012,8 +1020,10 @@ void Hero::updatePose(float dt) {
 		_hipMix = 0;
 		const Clip* c = _mantle.current();
 		if (c && _anim.current() == c) {
-			// The climb's height is in the body's place already.
-			_drawn.pos[0].y -= max(c->motion(_anim.time()).y, 0.0f);
+			// The climb's height is in the body's place already (as far as the body has it).
+			float anim, total;
+			mantleLift(anim, total);
+			_drawn.pos[0].y -= anim;
 		} else if (!c) {
 			_drawn.pos[0].y = _restY;
 		}
@@ -1058,6 +1068,7 @@ bool Hero::wantsJumpUp(const Player& player) const {
 
 bool Hero::beginMantle(const Ledge& ledge, const Player& player, bool fromGround) {
 	if (!ledge.found || (fromGround ? !wantsJumpUp(player) : !wantsLedge(player))) return false;
+	if (!fromGround && ledge.top.y - _groundY > 270.0f) return false; // (too high for a jump, whatever the feet have risen to)
 	_mantle = Mantle();
 	_mantle.start = player.feet;
 	_mantle.top = ledge.top;
@@ -1094,6 +1105,7 @@ bool Hero::beginMantle(const Ledge& ledge, const Player& player, bool fromGround
 		// A held pose (one-frame loops) a moment; the rest as long as they are.
 		_mantle.len[i] = c->loops() ? (steps[k] == CLIMB_UP ? 0.15f : 0.2f) : max(c->duration(), 0.08f);
 		_mantle.rise[i] = c->loops() ? 0.0f : max(c->motion(c->duration()).y, 0.0f);
+		for (int f = 0; f <= 16 && !c->loops(); ++f) _mantle.peak[i] = max(_mantle.peak[i], c->motion(c->duration() * float(f) / 16.0f).y);
 		clipRise += _mantle.rise[i];
 		if (k == flight) flight = i;
 	}
@@ -1133,6 +1145,26 @@ float Hero::mantleProgress() const {
 
 // Where the climb has put the body: first up against the wall, then up as far
 // as the animations have risen (and the flight to the edge), over it in the last.
+void Hero::mantleLift(float& anim, float& total) const {
+	anim = total = 0;
+	if (!_mantle.n) return;
+	const auto smooth = [](float x) {
+		x = clamp(x, 0.0f, 1.0f);
+		return x * x * (3.0f - 2.0f * x);
+	};
+	for (u8 i = 0; i < _mantle.at; ++i) total += _mantle.rise[i] + _mantle.free[i];
+	const u8 at = _mantle.at;
+	const Clip* c = _mantle.seq[at];
+	if (_mantle.rise[at] > 0.0f && _mantle.peak[at] > 1.0f) {
+		// Never down again: the highest the root has been so far, as a share of its highest.
+		float top = 0;
+		const float now = min(_mantle.clipTime, c->duration());
+		for (int f = 0; f <= 16; ++f) top = max(top, c->motion(now * float(f) / 16.0f).y);
+		anim = _mantle.rise[at] * clamp(top / _mantle.peak[at], 0.0f, 1.0f);
+	}
+	total += anim + _mantle.free[at] * smooth(_mantle.clipTime / max(_mantle.len[at], 1e-3f));
+}
+
 void Hero::mantleDrive(Drive& drive, float dt) {
 	_mantle.time += dt;
 	_mantle.clipTime += dt;
@@ -1166,12 +1198,11 @@ void Hero::mantleDrive(Drive& drive, float dt) {
 	const float snap = smooth(_mantle.time / 0.2f);
 	float up = 0, pz = 0;
 	if (_mantle.n) {
+		float anim;
+		mantleLift(anim, up);
 		const u8 at = _mantle.at;
-		for (u8 i = 0; i < at; ++i) up += _mantle.rise[i] + _mantle.free[i];
 		const Clip* c = _mantle.seq[at];
 		const float t = _mantle.clipTime / max(_mantle.len[at], 1e-3f);
-		if (_mantle.rise[at] > 0.0f) up += min(max(c->motion(_mantle.clipTime).y, 0.0f) * _mantle.scale, _mantle.rise[at]);
-		up += _mantle.free[at] * smooth(t);
 		if (at + 1 == _mantle.n) {
 			const float fwd = c->motion(c->duration()).z;
 			pz = fwd > 15.0f ? clamp(c->motion(_mantle.clipTime).z / fwd, 0.0f, 1.0f) : smooth(t);

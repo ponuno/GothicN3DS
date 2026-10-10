@@ -3450,7 +3450,7 @@ static void testHero() {
 	CHECK(takeoffFrames >= 12 && takeoffFrames <= 15 && airFrames > 8 && landFrames >= 4 && hipsKept);
 	std::printf("  jump: crouch to %.1f cm (hips at rest: 95), top %.1f cm, landed at z = %.0f\n", double(deepest), double(top), double(pl.feet.z));
 	CHECK(deepest < 90.0f && deepest > 60.0f);
-	CHECK(top > 75.0f && top < 100.0f && lowest > -0.5f);
+	CHECK(top > 75.0f && top < 130.0f && lowest > -0.5f);
 	CHECK(pl.grounded && hero.body() == Hero::GROUNDED && current() == sRun && std::fabs(pl.feet.y) < 0.3f);
 	CHECK(pl.feet.z > 200.0f && pl.feet.z < 420.0f);
 	// Out of the run: further and higher.
@@ -3465,7 +3465,7 @@ static void testHero() {
 		step(1.0f);
 		top = std::max(top, pl.feet.y);
 	}
-	CHECK(f < 60 && top > 85.0f && top < 130.0f && pl.feet.z - zRun > 350.0f);
+	CHECK(f < 60 && top > 85.0f && top < 150.0f && pl.feet.z - zRun > 350.0f);
 	// Landing in a run: straight back into it (the script's fade), no stop.
 	step(1.0f);
 	CHECK(current() == sRunL);
@@ -3762,7 +3762,7 @@ static void testHero() {
 			// the pace of the take-off animation (239 cm/s; out of the run 480).
 			std::printf("  thrown jump %s: top %.1f cm, %d frames, %.0f cm forward\n", variant ? "from a run" : "from standing", double(peak),
 			            frames, double(p.feet.z - z0));
-			CHECK(peak > 75.0f && peak < 90.0f && frames > 20 && frames < 30);
+			CHECK(peak > 90.0f && peak < 125.0f && frames > 20 && frames < 36);
 			CHECK(variant ? p.feet.z - z0 > 350.0f : (p.feet.z - z0 > 150.0f && p.feet.z - z0 < 230.0f));
 			for (int i = 0; i < 40; ++i) go(0.0f, false);
 			CHECK(a.hero().body() == Hero::GROUNDED && a.hero().animator().current() == a.hero().clip("S_RUN"));
@@ -5491,6 +5491,25 @@ static void testInventory() {
 		InventoryPanel::slotCentre(1, x, y);
 		tap(x, y);
 		CHECK(!panel.assigning() && app.quickSlot(1) == potion);
+		// The same with the buttons: X brings up the slots, A puts the thing into one - and does not use it as well.
+		{
+			const i32 had = g.itemCount(hero, potion);
+			panel.select(potion);
+			PanelInput xBtn, aBtn, right;
+			xBtn.assign = true;
+			aBtn.confirm = true;
+			right.right = true;
+			app.panelInput(xBtn, dt);
+			CHECK(panel.assigning());
+			app.panelInput(right, dt);
+			app.panelInput(right, dt);
+			app.panelInput(aBtn, dt);
+			int inSlots = 0;
+			for (int k = 0; k < 10; ++k) inSlots += app.quickSlot(k) == potion;
+			CHECK(!panel.assigning() && !app.itemBusy() && g.itemCount(hero, potion) == had && inSlots == 1);
+			for (int k = 0; k < 10; ++k) app.setQuickSlot(k, SCRIPT_NONE);
+			app.setQuickSlot(1, potion);
+		}
 		// While the inventory is open the character stands: the stick does not move it.
 		{
 			const Vec3 at = app.player().feet;
@@ -5857,6 +5876,7 @@ static void testChests() {
 			run(1.5f);
 			bool mantled = false;
 			int seenMid = 0, seenHang = 0;
+			bool onTop = false;
 			for (int i = 0; i < 120; ++i) {
 				const bool was = app.hero().mantling();
 				Input in;
@@ -5864,6 +5884,10 @@ static void testChests() {
 				in.jump = i < 20 && !mantled;
 				app.update(in, dt);
 				mantled = mantled || app.hero().mantling();
+				{
+					const Vec3 pf = app.player().feet;
+					onTop = onTop || (app.player().grounded && std::fabs(pf.y - blockTop) < 15.0f && pf.z > faceZ + 10.0f && pf.z < faceZ + 212.0f);
+				}
 				const Clip* c = app.hero().animator().current();
 				for (int k = 0; k < 3; ++k)
 					if (c && c == app.hero().clip(kMid[k])) seenMid |= 1 << k;
@@ -5878,7 +5902,7 @@ static void testChests() {
 			std::printf("  a jump from %.0f cm: mantled %d, feet %.0f %.0f %.0f (the block's top is %.0f)\n", double(start), int(mantled), double(f.x),
 			            double(f.y), double(f.z), double(blockTop));
 			++tried;
-			up += mantled && std::fabs(f.y - blockTop) < 15.0f && f.z > faceZ + 10.0f && f.z < faceZ + 212.0f && app.player().grounded;
+			up += onTop; // (from a run the jump clears it and lands on it, or the hands take hold)
 		}
 		CHECK(up >= 3 && tried == 4);
 		// The high one: the jump key right at it hangs from the edge and climbs on.

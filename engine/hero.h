@@ -194,6 +194,7 @@ private:
 	float _yaw = 0, _speed = 0, _airTime = 0, _turnLag = 0, _lean = 0;
 	float _restY = 100.0f, _hipMix = 0;
 	float _light[3] = {1, 1, 1};
+	float _jumpCool = 0.0f;
 	bool _placed = false, _walkMode = false, _slow = false, _jumpHeld = false, _jumping = false, _leftGround = false;
 	bool _sneak = false;
 	bool _forceNext = false;
@@ -210,6 +211,7 @@ private:
 		const Clip* seq[MANTLE_STEPS] = {}; // the climb's clips in turn (none: the jump's pose is held)
 		float len[MANTLE_STEPS] = {};      // seconds each is played
 		float rise[MANTLE_STEPS] = {};     // cm each lifts the body (its root's way up, scaled to the ledge)
+		float peak[MANTLE_STEPS] = {};     // the highest its root gets (cm, unscaled)
 		float free[MANTLE_STEPS] = {};     // cm more, without the animation's help (the flight up to the edge)
 		float scale = 1;
 		u8 n = 0, at = 0;
@@ -220,6 +222,10 @@ private:
 		const Clip* current() const { return at < n ? seq[at] : nullptr; }
 	} _mantle;
 	bool _jumpUp = false; // a jump straight up (at a wall)
+	float _groundY = 0;   // where the feet last stood
+	// The climb's lift at this moment: what the animation's own rise gives (the
+	// pose gives up as much), and what the body is lifted without it.
+	void mantleLift(float& anim, float& total) const;
 	Vec3 _liftSum {0, 0, 0};
 	float _liftTime = 0, _liftY = 0;
 	Pose _drawn;
@@ -245,6 +251,7 @@ private:
 		bool done = false;   // the item has done its work
 		bool moment = false; // ... this frame
 		float time = 0, seconds = 0, at = 0; // how long so far; all of it, when it works (estimated for the animations)
+		float holdFor = 0.3f; // seconds the hold is kept
 		bool stoop = false; // no animation for it: bends over instead (a thing from the ground)
 		// A chest: the clips to its open lid and the clips back.
 		const Clip* seqIn[3] = {};

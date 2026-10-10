@@ -451,3 +451,5 @@ make
 ## Лицензии
 
 Сторонний код и его лицензии перечислены в [third_party/README.md](third_party/README.md). Лицензия на сам проект пока не выбрана.
+
+Jump notes: a plain jump needs ~0.55 s on the ground after landing (anti-hopping); ledge climbs and A in the quick-slot picker only assign (no use).

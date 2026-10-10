@@ -1,3 +1,5 @@
+#include <cstdio>
+#include <cstdlib>
 #include "mock3ds.h"
 
 #include <citro3d.h>
@@ -587,6 +589,12 @@ void C3D_TexDelete(C3D_Tex* tex) {
 	tex->data = nullptr;
 }
 void C3D_TexBind(int unitId, C3D_Tex* tex) {
+	// As citro3d does: for units 1 and 2 it reads the texture's type first,
+	// so a null texture there is a data abort on the console.
+	if (unitId > 0 && !tex) {
+		fprintf(stderr, "mock3ds: C3D_TexBind(%d, NULL) reads through a null pointer on the console\n", unitId);
+		abort();
+	}
 	if (unitId == 0) gBoundTex = tex;
 }
 

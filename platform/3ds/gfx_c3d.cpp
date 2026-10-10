@@ -500,7 +500,10 @@ void frameBegin(const FrameDesc& f) {
 	// Not dissolving.
 	if (!gPlainShader) C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocFading, false);
 	setFadeStages(false, 255);
-	C3D_TexBind(1, nullptr);
+	// The noise stays bound to unit 1: citro3d cannot unbind units 1 and 2
+	// (C3D_TexBind reads the type of the texture it is given, null or not -
+	// that crashed the console). No texture stage reads it unless dissolving.
+	if (gNoiseReady) C3D_TexBind(1, &gNoise);
 	gFade = 255;
 	gBlend = BLEND_UNSET;
 	setBlend(BLEND_OFF);
@@ -590,7 +593,6 @@ void setFade(float visible) {
 	gFade = share;
 	if (on != was) {
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocFading, on);
-		C3D_TexBind(1, on ? &gNoise : nullptr);
 		setFadeStages(on, share);
 	} else {
 		C3D_TexEnvColor(C3D_GetTexEnv(3), u32(share) << 24);

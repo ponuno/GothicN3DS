@@ -27,6 +27,12 @@
 //            states, no walking - as in the version before they lived
 //   ZL       whole chunks are drawn, as before they were cut into clusters
 //            (what the clusters save shows in "tris" and "gpu")
+//   D-Pad Down  steady objects: small and medium objects are drawn farther
+//            out (60 and 100 m instead of 35 and 70) and the pacer never
+//            takes them away - it goes to 30 fps instead when the frame is
+//            too heavy; nobody comes and goes with the load either
+//   D-Pad Left  nobody perceives anything (the inhabitants do not notice the
+//            player or each other), as before perception
 #include "app.h"
 #include "gfx_c3d.h"
 #include "pacer.h"
@@ -64,7 +70,7 @@ static float stick(int v) {
 
 // The bottom-screen report: laid out once every 30 frames, written a line
 // per frame (printing all of it at once takes several milliseconds).
-static const int kReportLines = 27; // (row 28 is for the steps of leaving)
+static const int kReportLines = 28; // (row 29 is for the steps of leaving)
 static char gReport[kReportLines][48];
 static int gReportCount = 0;
 
@@ -78,7 +84,7 @@ static void reportLine(const char* fmt, ...) {
 }
 
 // A line at the bottom of the bottom screen (below the report).
-static void exitStep(const char* text) { printf("\x1b[28;1H%-39.39s", text); }
+static void exitStep(const char* text) { printf("\x1b[29;1H%-39.39s", text); }
 
 static void waitForStart() {
 	while (aptMainLoop()) {
@@ -113,6 +119,8 @@ int main(int, char**) {
 	const bool nobody = (startKeys & KEY_SELECT) != 0; // the scripts run, their people are not drawn
 	const bool standing = (startKeys & KEY_DUP) != 0;  // they stand: no states, no walking
 	const bool wholeChunks = (startKeys & KEY_ZL) != 0; // no culling inside chunks
+	const bool steady = (startKeys & KEY_DDOWN) != 0;   // objects drawn farther, never taken away by the pacer
+	const bool blind = (startKeys & KEY_DLEFT) != 0;    // no perception
 	gfx::c3dSetClassicFrames(classic);
 	gfx::c3dSetPlainShader(plainShader);
 
@@ -123,6 +131,10 @@ int main(int, char**) {
 	stream.background = background;
 	stream.maxLoadsPerFrame = background ? 1 : 2;
 	stream.clusterCulling = !wholeChunks;
+	if (steady) {
+		stream.detailDistance[g3::DETAIL_MEDIUM] = 10000.0f;
+		stream.detailDistance[g3::DETAIL_SMALL] = 6000.0f;
+	}
 	bool ok = gfx::init();
 	if (!ok) printf("gfx init failed\n");
 	if (ok && !app.init(kPakPath, nullptr)) {
@@ -148,6 +160,7 @@ int main(int, char**) {
 	if ((startKeys & KEY_A) || plainShader) app.setThirdPerson(false);
 	if (nobody || plainShader) app.npcs().config().maxShown = 0;
 	app.npcs().config().alive = !standing;
+	app.npcs().config().perceive = !blind;
 	printf("loading...\n");
 	app.world().preload(app.camera().pos);
 	consoleClear();
@@ -155,7 +168,9 @@ int main(int, char**) {
 	u32 frame = 0;
 	float msAccum = 0.0f, msWorst = 0.0f, updateAccum = 0.0f, updateWorst = 0.0f;
 	u32 lateFrames = 0; // frames of this report that missed their refresh
+	u32 lastPerceived = 0;
 	g3::FramePacer pacer;
+	if (steady) pacer.cfg.minDetail = 1.0f; // (too heavy: 30 fps, the objects stay)
 	int interval = 1;
 	int reportLines = 0;
 	u32 lastStateCalls = 0;
@@ -276,7 +291,7 @@ int main(int, char**) {
 			     double(app.world().takeWorstLoadMs()), static_cast<unsigned long>(ws.chunksInFlight));
 			reportLine("detail %3.0f%%  %2d fps  late %2lu/30", double(app.world().config().detailScale * 100.0f),
 			     interval == 2 ? 30 : 60, static_cast<unsigned long>(lateFrames));
-			reportLine("frames %s  pacer %s", fs.overlapped ? "overlapped" : "classic", pacing ? "on" : "off");
+			reportLine("frames %s  pacer %s%s", fs.overlapped ? "overlapped" : "classic", pacing ? "on" : "off", steady ? " STEADY" : "");
 			// Triangles drawn, of those in the chunks in view (the rest is what
 			// the clusters save); draw calls; chunks.
 			reportLine("tris %6lu/%6lu dr %4lu ch %2lu%s", static_cast<unsigned long>(ws.trianglesDrawn),
@@ -354,6 +369,14 @@ int main(int, char**) {
 					     kStages[a->mobStage < 6 ? a->mobStage : 0], int(a->mobState), static_cast<long>(npcs.bodyState(*a)), double(off));
 					reportLine("ani %-24.24s %-8.8s", npcs.animationName(*a), npcs.doing(*a));
 				}
+				// What they notice: reactions a second, how many look at
+				// somebody, fights the scripts wanted (there are none yet), and
+				// what the nearest said last.
+				const g3::NpcActor* near = npcs.nearest();
+				reportLine("perc %2lu/s look %lu fight %lu%s %-12.12s", static_cast<unsigned long>((ns.perceived - lastPerceived) * 2),
+				     static_cast<unsigned long>(ns.looking), static_cast<unsigned long>(ns.fightsRefused), blind ? " OFF" : "",
+				     near && near->said[0] ? near->said : "");
+				lastPerceived = ns.perceived;
 			} else {
 				reportLine("scripts: none in data.pak");
 			}

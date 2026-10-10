@@ -266,10 +266,30 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 				// keeps pressing the body up the slope it slides down, and it
 				// hangs there, sliding for ever.
 				_carry = {0, 0, 0};
-				feet.x += n.x * 400.0f * dt;
-				feet.z += n.z * 400.0f * dt;
+				// The slide has a pace of its own that gathers downhill: in a
+				// gully between two steep faces the pushes across it cancel
+				// out against the rock, and what is left takes the body down
+				// along the gully (it used to rock from side to side there,
+				// hardly getting any lower).
+				if (!_sliding) _slideVel = {n.x * 400.0f, 0, n.z * 400.0f};
+				_slideVel.x += n.x * 1600.0f * dt;
+				_slideVel.z += n.z * 1600.0f * dt;
+				const float pace = sqrtf(_slideVel.x * _slideVel.x + _slideVel.z * _slideVel.z);
+				if (pace > 700.0f) _slideVel = _slideVel * (700.0f / pace);
+				feet.x += _slideVel.x * dt;
+				feet.z += _slideVel.z * dt;
 				velocityY = max(velocityY, -600.0f);
+				const Vec3 slid = feet;
 				collideWalls(world);
+				// Whatever ran into rock is stopped: only the pace along it stays.
+				const float px = feet.x - slid.x, pz = feet.z - slid.z, pushed = sqrtf(px * px + pz * pz);
+				if (pushed > 0.01f) {
+					const float into = (_slideVel.x * px + _slideVel.z * pz) / pushed;
+					if (into < 0.0f) {
+						_slideVel.x -= px / pushed * into;
+						_slideVel.z -= pz / pushed * into;
+					}
+				}
 				if (!_sliding || feet.y < _slideLow - 2.0f) {
 					_sliding = true;
 					_slideLow = feet.y;

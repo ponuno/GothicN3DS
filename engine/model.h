@@ -135,6 +135,11 @@ public:
 	u32 textureBytes() const { return _textureBytes; }
 
 	void restPose(Pose& pose) const;
+	// Turns a node of `pose` (a head) by `yaw` about the model's up axis and
+	// then by `pitch` (positive: down) about the axis across where it then
+	// looks - in model space, whatever way the node's own axes point. The
+	// way it looks is reckoned from where the root faces.
+	void turnNode(Pose& pose, int node, float yaw, float pitch) const;
 	// Node transforms in model space for `pose` (`world`, nodeCount entries).
 	void worldTransforms(const Pose& pose, Mat34* world) const;
 
@@ -203,6 +208,7 @@ private:
 	bool _finished = false;
 	Vec3 _moved {0, 0, 0};
 	Pose _pose, _from;
+	Pose _base; // what the nodes without a track in the clip keep (see play())
 };
 
 } // namespace g3

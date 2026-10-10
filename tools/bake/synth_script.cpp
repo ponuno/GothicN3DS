@@ -53,6 +53,13 @@ const int BS_MOBINTERACT_INTERRUPT = 32784; // 16, interruptable
 const string MOB_SIT = "BENCH,CHAIR,GROUND,THRONE";
 const string MOB_LIE = "BED,BEDHIGH,BEDLOW";
 const int PERC_ASSESSPLAYER = 1;
+const int PERC_ASSESSENEMY  = 2;
+const int PERC_ASSESSWARN   = 20;
+const int ATT_HOSTILE  = 0;
+const int ATT_ANGRY    = 1;
+const int ATT_NEUTRAL  = 2;
+const int ATT_FRIENDLY = 3;
+const int AIV_SEENPLAYER = 4;
 
 const int AIV_WASDEFEATED = 3;
 const int AIV_PARTYMEMBER = 12;
@@ -199,6 +206,23 @@ extern func void   Npc_SetStateTime(var C_NPC n, var int seconds);
 extern func int    Npc_GetBodyState(var C_NPC n);
 extern func void   Npc_SetPercTime(var C_NPC n, var float seconds);
 extern func void   Npc_PercEnable(var C_NPC n, var int perception, var func reaction);
+extern func void   Npc_PercDisable(var C_NPC n, var int perception);
+extern func void   Perc_SetRange(var int perception, var int range);
+extern func void   Npc_SendPassivePerc(var C_NPC n, var int perception, var C_NPC victim, var C_NPC other);
+extern func int    Npc_CanSeeNpcFreeLOS(var C_NPC a, var C_NPC b);
+extern func void   AI_LookAtNpc(var C_NPC n, var C_NPC other);
+extern func void   AI_StopLookAt(var C_NPC n);
+extern func void   AI_GotoNpc(var C_NPC n, var C_NPC other);
+extern func void   AI_OutputSVM(var C_NPC n, var C_NPC target, var string svm);
+extern func void   Wld_SetGuildAttitude(var int guild1, var int attitude, var int guild2);
+extern func int    Wld_GetGuildAttitude(var int guild1, var int guild2);
+extern func void   Wld_ExchangeGuildAttitudes(var string table);
+extern func int    Npc_GetAttitude(var C_NPC a, var C_NPC b);
+extern func void   Npc_SetTempAttitude(var C_NPC n, var int attitude);
+extern func void   Npc_SetTarget(var C_NPC n, var C_NPC target);
+extern func int    Npc_GetTarget(var C_NPC n);
+extern func int    Npc_IsDead(var C_NPC n);
+extern func int    Npc_HasItems(var C_NPC n, var int item);
 extern func int    Npc_IsInState(var C_NPC n, var func state);
 extern func string Npc_GetNearestWP(var C_NPC n);
 extern func int    AI_UseMob(var C_NPC n, var string scheme, var int targetState);
@@ -232,6 +256,7 @@ func void B_SetAttributes(var C_NPC slf, var int strength, var int hitpoints) {
 func void ZS_Guard() {
 	Npc_SetPercTime(self, 1);
 	Npc_PercEnable(self, PERC_ASSESSPLAYER, B_AssessSC);
+	Npc_PercEnable(self, PERC_ASSESSWARN, B_AssessWarn);
 	AI_StandUp(self);
 	AI_SetWalkmode(self, NPC_WALK);
 	AI_GotoWP(self, self.wp);
@@ -239,6 +264,11 @@ func void ZS_Guard() {
 	AI_PlayAni(self, "T_STAND_2_LGUARD");
 };
 func int ZS_Guard_Loop() {
+	// The player has gone: the guard looks ahead again.
+	if (self.aivar[AIV_SEENPLAYER] && (Npc_GetDistToNpc(self, hero) > 1200)) {
+		self.aivar[AIV_SEENPLAYER] = FALSE;
+		AI_StopLookAt(self);
+	};
 	if (Hlp_Random(100) < 10) { AI_PlayAni(self, "T_LGUARD_SCRATCH"); };
 	AI_Wait(self, 1);
 	return LOOP_CONTINUE;
@@ -246,7 +276,40 @@ func int ZS_Guard_Loop() {
 func void ZS_Guard_End() {
 	AI_PlayAni(self, "T_LGUARD_2_STAND");
 };
-func void B_AssessSC() {};
+// Perceptions, in the manner of the original's B_AssessSC: the guard who sees
+// the player come near looks at him, asks what he wants, and tells the
+// guards about of him.
+func void B_AssessSC() {
+	if (Npc_CanSeeNpcFreeLOS(self, other) && (Npc_GetDistToNpc(self, other) < 800)) {
+		if (!self.aivar[AIV_SEENPLAYER]) {
+			self.aivar[AIV_SEENPLAYER] = TRUE;
+			AI_LookAtNpc(self, other);
+			AI_OutputSVM(self, other, "$WHATDOYOUWANT");
+			Npc_SendPassivePerc(self, PERC_ASSESSWARN, other, self);
+		};
+	};
+};
+func void B_AssessWarn() {
+	AI_LookAtNpc(self, other);
+};
+func void InitPerceptions() {
+	Perc_SetRange(PERC_ASSESSWARN, 3000);
+};
+// (There is no fighting yet: the engine does not begin this state.)
+func void ZS_MM_Attack() {
+	AI_GotoNpc(self, other);
+};
+func int ZS_MM_Attack_Loop() {
+	AI_Wait(self, 1);
+	return LOOP_CONTINUE;
+};
+func void ZS_MM_Attack_End() {};
+var int mm_enemy_seen;
+func void B_MM_AssessEnemy() {
+	mm_enemy_seen += 1;
+	Npc_SetTarget(self, other);
+	AI_StartState(self, ZS_MM_Attack, 0, "");
+};
 
 func void ZS_Stand() {
 	AI_StandUp(self);
@@ -370,6 +433,7 @@ func void ZS_MM_Rtn_Sleep_End() {
 	AI_StandUp(self);
 };
 func void ZS_MM_Rtn_Roam() {
+	Npc_PercEnable(self, PERC_ASSESSENEMY, B_MM_AssessEnemy);
 	AI_SetWalkmode(self, NPC_WALK);
 };
 func int ZS_MM_Rtn_Roam_Loop() {
@@ -644,8 +708,26 @@ func void STARTUP_SUB_WILDERNESS() {
 	Wld_InsertNpc(Molerat,    "FOREST_MOLERAT_1");
 	Wld_InsertItem(ItMw_Sword, "CAMP_SMITH");
 };
+// What the guilds think of one another: the humans of a square of the
+// table, the creatures one by one (as the original's B_InitGuildAttitudes
+// and B_InitMonsterAttitudes).
+const int GIL_ATTITUDES[16] = {
+	ATT_NEUTRAL, ATT_NEUTRAL, ATT_NEUTRAL, ATT_NEUTRAL,
+	ATT_NEUTRAL, ATT_FRIENDLY, ATT_FRIENDLY, ATT_FRIENDLY,
+	ATT_NEUTRAL, ATT_FRIENDLY, ATT_FRIENDLY, ATT_FRIENDLY,
+	ATT_NEUTRAL, ATT_FRIENDLY, ATT_FRIENDLY, ATT_FRIENDLY
+};
+func void B_InitGuildAttitudes() {
+	Wld_ExchangeGuildAttitudes("GIL_ATTITUDES");
+	Wld_SetGuildAttitude(GIL_SCAVENGER, ATT_NEUTRAL, GIL_MOLERAT);
+	Wld_SetGuildAttitude(GIL_MOLERAT, ATT_NEUTRAL, GIL_SCAVENGER);
+	Wld_SetGuildAttitude(GIL_SCAVENGER, ATT_NEUTRAL, GIL_SCAVENGER);
+	Wld_SetGuildAttitude(GIL_MOLERAT, ATT_NEUTRAL, GIL_MOLERAT);
+	Wld_SetGuildAttitude(GIL_SCAVENGER, ATT_HOSTILE, GIL_NONE);
+};
 func void STARTUP_WORLD() {
 	Kapitel = 1;
+	B_InitGuildAttitudes();
 	STARTUP_SUB_CAMP();
 	STARTUP_SUB_WILDERNESS();
 	Wld_SetTime(8, 0);

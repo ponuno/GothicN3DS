@@ -438,6 +438,23 @@ void Model::draw(const Pose& pose, Vec3 origin, float yaw, const float light[3],
 	drawSkinned(gDrawSkin, origin, light);
 }
 
+void Model::turnNode(Pose& pose, int node, float yaw, float pitch) const {
+	if (!_nodes || node < 0 || u32(node) >= _h.nodeCount) return;
+	// The parent's rotation in model space: the chain from the root down.
+	int chain[MODEL_MAX_NODES], depth = 0;
+	for (int k = _nodes[node].parent; k >= 0 && depth < int(MODEL_MAX_NODES); k = _nodes[k].parent) chain[depth++] = k;
+	Quat parent = quatIdentity();
+	while (depth > 0) parent = quatMul(parent, pose.rot[chain[--depth]]);
+	const Vec3 f = quatRotate(pose.rot[0], {0, 0, 1});
+	const float look = (f.x * f.x + f.z * f.z > 1e-6f ? atan2f(f.x, f.z) : 0.0f) + yaw;
+	const Vec3 across = quatRotate(quatFromYaw(look), {1, 0, 0});
+	const float s = sinf(pitch * 0.5f);
+	const Quat tilt = {across.x * s, across.y * s, across.z * s, cosf(pitch * 0.5f)};
+	const Quat turn = quatMul(tilt, quatFromYaw(yaw));
+	const Quat inv = {-parent.x, -parent.y, -parent.z, parent.w};
+	pose.rot[node] = quatNormalize(quatMul(inv, quatMul(turn, quatMul(parent, pose.rot[node]))));
+}
+
 // ---- Animator ----
 
 void Animator::bind(const Model* model) {
@@ -452,12 +469,20 @@ void Animator::bind(const Model* model) {
 	if (model && model->loaded()) {
 		model->restPose(_pose);
 		_from = _pose;
+		_base = _pose;
 	}
 }
 
 void Animator::play(const Clip* clip, float blend) {
 	if (!_model || clip == _clip) return;
 	_from = _pose; // what is on screen now is where the fade starts
+	// What the clip that ends left the nodes in is what the next one starts
+	// from: a node the new clip has no track for stays where it was, as in
+	// ZenGin. (The game's "S_BENCH_S1" and "S_BED_FRONT_S1" have no track
+	// for the root: it stays as the step into them left it - turned round,
+	// down on the seat, lying - and not upright at standing height.)
+	if (!clip) _model->restPose(_base); // (nothing to play: back to rest)
+	else if (_clip) _clip->sample(_time, _base);
 	_clip = clip;
 	_time = 0;
 	_rate = 1.0f;
@@ -481,8 +506,7 @@ void Animator::restart(float blend) {
 
 void Animator::evaluate() {
 	if (!_model || !_model->loaded()) return;
-	Pose target;
-	_model->restPose(target); // nodes the clip does not animate keep their rest transform
+	Pose target = _base; // nodes the clip does not animate keep what the clips before left them in
 	if (_clip) _clip->sample(_time, target);
 	if (_fade >= 1.0f) {
 		_pose = target;

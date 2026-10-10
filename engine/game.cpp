@@ -64,6 +64,12 @@ void Game::release() {
 	free(_textHash);
 	free(_armors);
 	free(_worlds);
+	free(_guildAtt);
+	free(_items);
+	_guildAtt = nullptr;
+	_items = nullptr;
+	_guildCount = _itemCount = _itemCap = 0;
+	for (float& r : _percRange) r = -1.0f;
 	_npcs = nullptr;
 	_routines = nullptr;
 	_texts = nullptr;
@@ -96,6 +102,7 @@ bool Game::bindAll() {
 	_mStartState = _vm.findMember("C_NPC", "START_AISTATE");
 	_mSensesRange = _vm.findMember("C_NPC", "SENSES_RANGE");
 	_mGuild = _vm.findMember("C_NPC", "GUILD");
+	_mAttribute = _vm.findMember("C_NPC", "ATTRIBUTE");
 	// (Each must be what the engine takes it for, whatever the scripts declare.)
 	const auto must = [&](u32& member, u8 type) {
 		if (member != SCRIPT_NONE && _vm.symbol(member).type != type) member = SCRIPT_NONE;
@@ -103,6 +110,17 @@ bool Game::bindAll() {
 	must(_mWp, SCRIPT_STRING);
 	must(_mSensesRange, SCRIPT_INT);
 	must(_mGuild, SCRIPT_INT);
+	must(_mAttribute, SCRIPT_INT);
+	for (float& r : _percRange) r = -1.0f;
+	{
+		// The table of what the guilds think of one another: GIL_MAX of them,
+		// all hostile until the scripts say otherwise (as in the original).
+		const u32 max = _vm.find("GIL_MAX");
+		const i32 count = max != SCRIPT_NONE && _vm.symbol(max).type == SCRIPT_INT ? _vm.getInt(max) : 0;
+		_guildCount = count > 0 && count <= 256 ? u32(count) : 64u;
+		_guildAtt = static_cast<i32*>(calloc(size_t(_guildCount) * _guildCount, sizeof(i32))); // (ATT_HOSTILE is 0)
+		if (!_guildAtt) _guildCount = 0;
+	}
 	if (_mStartState != SCRIPT_NONE && _vm.symbol(_mStartState).type != SCRIPT_FUNC && _vm.symbol(_mStartState).type != SCRIPT_INT)
 		_mStartState = SCRIPT_NONE;
 
@@ -132,6 +150,22 @@ bool Game::bindAll() {
 	             {"NPC_ISPLAYER", xIsPlayer},
 	             {"WLD_SETTIME", xSetTime},
 	             {"WLD_ISTIME", xIsTime},
+	             {"WLD_SETGUILDATTITUDE", xSetGuildAttitude},
+	             {"WLD_GETGUILDATTITUDE", xGetGuildAttitude},
+	             {"WLD_EXCHANGEGUILDATTITUDES", xExchangeGuildAttitudes},
+	             {"CREATEINVITEM", xCreateInvItem},
+	             {"CREATEINVITEMS", xCreateInvItems},
+	             {"NPC_REMOVEINVITEM", xRemoveInvItem},
+	             {"NPC_REMOVEINVITEMS", xRemoveInvItems},
+	             {"NPC_HASITEMS", xHasItems},
+	             {"NPC_GETATTITUDE", xGetAttitude},
+	             {"NPC_GETPERMATTITUDE", xGetPermAttitude},
+	             {"NPC_SETATTITUDE", xSetAttitude},
+	             {"NPC_SETTEMPATTITUDE", xSetTempAttitude},
+	             {"NPC_ISDEAD", xIsDead},
+	             {"NPC_SETTARGET", xSetTarget},
+	             {"NPC_GETTARGET", xGetTarget},
+	             {"PERC_SETRANGE", xSetPercRange},
 	             // Lines for the developers' log: there is nobody to read them.
 	             {"PRINTDEBUG", xNothing},
 	             {"PRINTDEBUGINST", xNothing},
@@ -146,7 +180,166 @@ bool Game::bindAll() {
 		_hero = addNpc(hero, true);
 		if (_hero != SCRIPT_NONE && _vm.heroSymbol() != SCRIPT_NONE) _vm.setInstance(_vm.heroSymbol(), _npcs[_hero].object);
 	}
+	// The reach of the perceptions, as the engine has the scripts set it at the start.
+	const u32 init = _vm.find("INITPERCEPTIONS");
+	if (init != SCRIPT_NONE && _vm.isPlainFunction(init) && _vm.symbol(init).count == 0) _vm.callInt(init);
 	return true;
+}
+
+// ---- what the characters think of one another, what they carry ----
+
+i32 Game::guildAttitude(i32 g1, i32 g2) const {
+	if (g1 < 0 || g2 < 0 || u32(g1) >= _guildCount || u32(g2) >= _guildCount) return 0;
+	return _guildAtt[u32(g1) * _guildCount + u32(g2)];
+}
+
+i32 Game::attitude(u32 a, u32 b) const {
+	if (a >= _npcCount || b >= _npcCount) return 0;
+	const GameNpc& na = _npcs[a];
+	const GameNpc& nb = _npcs[b];
+	if (na.hero || nb.hero) {
+		// Towards the player (or the player towards one): the character's own mood first.
+		const GameNpc& n = na.hero ? nb : na;
+		if (n.tempAttitude >= 0) return n.tempAttitude;
+		if (n.attitude >= 0) return n.attitude;
+	}
+	return guildAttitude(guildOf(na), guildOf(nb));
+}
+
+i32 Game::itemCount(u32 npc, u32 symbol) const {
+	for (u32 i = 0; i < _itemCount; ++i)
+		if (_items[i].npc == npc && _items[i].symbol == symbol) return _items[i].count;
+	return 0;
+}
+
+void Game::addItems(ScriptInstance* inst, i32 symbol, i32 count) {
+	const GameNpc* n = npcOf(inst);
+	if (!n || symbol < 0 || u32(symbol) >= _vm.symbolCount() || count == 0) return;
+	const u32 npc = u32(n - _npcs);
+	for (u32 i = 0; i < _itemCount; ++i)
+		if (_items[i].npc == npc && _items[i].symbol == u32(symbol)) {
+			const long long total = (long long)_items[i].count + count;
+			_items[i].count = i32(total < 0 ? 0 : total > (1 << 30) ? (1 << 30) : total);
+			return;
+		}
+	if (count < 0 || !grow(_items, _itemCap, _itemCount + 1, 256)) return;
+	_items[_itemCount++] = GameItem {npc, u32(symbol), count};
+}
+
+void Game::xSetGuildAttitude(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 g2 = vm.popInt(), att = vm.popInt(), g1 = vm.popInt();
+	if (g1 >= 0 && g2 >= 0 && u32(g1) < g._guildCount && u32(g2) < g._guildCount) g._guildAtt[u32(g1) * g._guildCount + u32(g2)] = att;
+}
+
+void Game::xGetGuildAttitude(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 g2 = vm.popInt(), g1 = vm.popInt();
+	vm.pushInt(g.guildAttitude(g1, g2));
+}
+
+// The table of the scripts' constant of that name: TAB_ANZAHL numbers, a
+// square of the first guilds.
+void Game::xExchangeGuildAttitudes(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const u32 table = vm.find(vm.popString());
+	if (table == SCRIPT_NONE || vm.symbol(table).type != SCRIPT_INT) return;
+	u32 side = 0;
+	while ((side + 1) * (side + 1) <= vm.symbol(table).count) ++side;
+	side = min(side, g._guildCount);
+	for (u32 i = 0; i < side; ++i)
+		for (u32 k = 0; k < side; ++k) g._guildAtt[i * g._guildCount + k] = vm.getInt(table, i * side + k);
+}
+
+void Game::xCreateInvItem(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 item = vm.popInt();
+	g.addItems(vm.popInstance(), item, 1);
+}
+
+void Game::xCreateInvItems(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 count = vm.popInt(), item = vm.popInt();
+	if (count > 0) g.addItems(vm.popInstance(), item, count);
+	else (void)vm.popInstance();
+}
+
+void Game::xRemoveInvItem(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 item = vm.popInt();
+	g.addItems(vm.popInstance(), item, -1);
+}
+
+void Game::xRemoveInvItems(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 count = vm.popInt(), item = vm.popInt();
+	if (count > 0) g.addItems(vm.popInstance(), item, -count);
+	else (void)vm.popInstance();
+}
+
+void Game::xHasItems(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 item = vm.popInt();
+	const int who = g.indexOf(vm.popInstance());
+	vm.pushInt(who >= 0 && item >= 0 ? g.itemCount(u32(who), u32(item)) : 0);
+}
+
+void Game::xGetAttitude(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const int b = g.indexOf(vm.popInstance()), a = g.indexOf(vm.popInstance());
+	vm.pushInt(a >= 0 && b >= 0 ? g.attitude(u32(a), u32(b)) : 0);
+}
+
+void Game::xGetPermAttitude(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const int b = g.indexOf(vm.popInstance()), a = g.indexOf(vm.popInstance());
+	if (a < 0 || b < 0) {
+		vm.pushInt(0);
+		return;
+	}
+	const GameNpc& na = g._npcs[a];
+	const GameNpc& nb = g._npcs[b];
+	const GameNpc& n = na.hero ? nb : na;
+	vm.pushInt((na.hero || nb.hero) && n.attitude >= 0 ? n.attitude : g.guildAttitude(g.guildOf(na), g.guildOf(nb)));
+}
+
+void Game::xSetAttitude(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 att = vm.popInt();
+	if (GameNpc* n = g.npcOf(vm.popInstance())) n->attitude = i8(clamp<i32>(att, -1, 3));
+}
+
+void Game::xSetTempAttitude(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 att = vm.popInt();
+	if (GameNpc* n = g.npcOf(vm.popInstance())) n->tempAttitude = i8(clamp<i32>(att, -1, 3));
+}
+
+void Game::xIsDead(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const GameNpc* n = g.npcOf(vm.popInstance());
+	vm.pushInt(n && g.hitPoints(*n) <= 0);
+}
+
+void Game::xSetTarget(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const int target = g.indexOf(vm.popInstance());
+	if (GameNpc* n = g.npcOf(vm.popInstance())) n->target = target;
+}
+
+// True if the character has a target; OTHER is it from now on.
+void Game::xGetTarget(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const GameNpc* n = g.npcOf(vm.popInstance());
+	const bool has = n && n->target >= 0 && u32(n->target) < g._npcCount;
+	if (has) vm.setInstance(vm.otherSymbol(), g._npcs[n->target].object);
+	vm.pushInt(has);
+}
+
+void Game::xSetPercRange(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 range = vm.popInt(), perc = vm.popInt();
+	if (perc >= 0 && perc < PERC_TYPES) g._percRange[perc] = float(clamp<i32>(range, 0, 100000));
 }
 
 GameText Game::intern(const char* text, bool model) {
@@ -206,7 +399,10 @@ const char* const* Game::lifeFunctions(u32& count) {
 	    "NPC_GETDISTTONPC",  "NPC_GETDISTTOPLAYER", "NPC_GETNEARESTWP", "NPC_GETNEXTWP",     "NPC_ISONFP",       "WLD_ISFPAVAILABLE",
 	    "WLD_ISNEXTFPAVAILABLE", "NPC_ISINSTATE",  "NPC_WASINSTATE",    "NPC_GETSTATETIME",  "NPC_SETSTATETIME", "NPC_GETBODYSTATE",
 	    "NPC_SETPERCTIME",   "WLD_DETECTNPC",      "NPC_CANSEENPC",     "AI_USEMOB",         "WLD_ISMOBAVAILABLE", "WLD_GETMOBSTATE",
-	    "NPC_GETDETECTEDMOB"};
+	    "NPC_GETDETECTEDMOB",
+	    // Perception (npc_perc.cpp).
+	    "NPC_PERCENABLE",    "NPC_PERCDISABLE",    "NPC_PERCEIVEALL",   "NPC_SENDPASSIVEPERC", "AI_LOOKATNPC",   "AI_STOPLOOKAT",
+	    "AI_OUTPUTSVM",      "AI_OUTPUTSVM_OVERLAY", "NPC_CANSEENPCFREELOS", "AI_QUICKLOOK"};
 	count = u32(sizeof(names) / sizeof(names[0]));
 	return names;
 }

@@ -42,6 +42,12 @@ void upperCopy(char* to, size_t size, const char* from) {
 
 bool startsWith(const char* s, const char* prefix) { return strncmp(s, prefix, strlen(prefix)) == 0; }
 
+void copyName(char* to, size_t size, const char* from) {
+	size_t n = 0;
+	for (; from && from[n] && n + 1 < size; ++n) to[n] = from[n];
+	to[n] = 0;
+}
+
 } // namespace
 
 float Npcs::distance(const float a[3], const float b[3]) {
@@ -143,6 +149,10 @@ void Npcs::wake(NpcActor& a) {
 	a.fist = !m.hasClip(hashName("S_RUN")) && !m.hasClip(hashName("S_WALK")) &&
 	         (m.hasClip(hashName("S_FISTRUN")) || m.hasClip(hashName("S_FISTWALK")));
 	for (const Clip*& k : a.named) k = nullptr; // (of the model it had before, if any)
+	// What it perceives and looks at comes with the state it begins anew.
+	for (u32& p : a.perc) p = 0;
+	a.lookAt = -1;
+	a.headYaw = a.headPitch = 0;
 	a.idle = modeClip(a, "S_%s", true);
 	a.anim.play(a.idle, 0.0f);
 	// Everybody in a rhythm of his own.
@@ -502,7 +512,7 @@ void Npcs::pushFront(NpcActor& a, const NpcAction& act) {
 // ---- states ----
 
 // Calls a function of a state with SELF and OTHER meaning what they mean to it.
-i32 Npcs::invoke(NpcActor& a, u32 fn) {
+i32 Npcs::invoke(NpcActor& a, u32 fn, int victim) {
 	ScriptVm& vm = _game.vm();
 	if (!vm.isPlainFunction(fn)) return 0;
 	const u32 self = vm.selfSymbol(), other = vm.otherSymbol();
@@ -511,7 +521,7 @@ i32 Npcs::invoke(NpcActor& a, u32 fn) {
 	ScriptInstance* const victimBefore = vm.instanceOf(_victim);
 	vm.setInstance(self, _game.npc(a.npc).object);
 	vm.setInstance(other, a.other >= 0 && u32(a.other) < _game.npcCount() ? _game.npc(u32(a.other)).object : nullptr);
-	vm.setInstance(_victim, nullptr);
+	vm.setInstance(_victim, victim >= 0 && u32(victim) < _game.npcCount() ? _game.npc(u32(victim)).object : nullptr);
 	const double before = sys::timeMs();
 	const i32 result = vm.callInt(fn);
 	_stats.scriptMs += float(sys::timeMs() - before);
@@ -535,6 +545,12 @@ void Npcs::clearState(NpcActor& a, bool finalize) {
 void Npcs::startState(NpcActor& a, u32 fn, bool finalizeOld, const char* wp, bool byRoutine) {
 	ScriptVm& vm = _game.vm();
 	if (!vm.isPlainFunction(fn) || vm.symbol(fn).count != 0) return;
+	if (!byRoutine && refusesState(fn)) {
+		// There is no fighting yet: whoever the scripts send into a fight
+		// goes on with what he was doing.
+		++_stats.fightsRefused;
+		return;
+	}
 	GameNpc& n = _game.npcMut(a.npc);
 	if (a.state == fn) {
 		// Asked for again: it begins anew.
@@ -865,6 +881,15 @@ bool Npcs::begin(NpcActor& a, const World& world) {
 	case NPC_ACT_CONTINUE_ROUTINE:
 		clearState(a, true);
 		return true;
+	case NPC_ACT_LOOK:
+		a.lookAt = act.i;
+		return true;
+	case NPC_ACT_SAY:
+		// No voices and no subtitles yet: the time it takes to say it.
+		copyName(a.said, sizeof(a.said), act.text);
+		a.wait = 1.4f;
+		a.phase = NpcActor::WAITING;
+		return false;
 	case NPC_ACT_TELEPORT:
 		_net.drop(a.npc);
 		memcpy(n.pos, act.pos, 3 * sizeof(float));
@@ -940,6 +965,7 @@ bool Npcs::carryOn(NpcActor& a, const World& world, float dt) {
 	case NPC_ACT_PLAY_ANI:
 	case NPC_ACT_STAND_UP:
 	case NPC_ACT_WAIT:
+	case NPC_ACT_SAY:
 		a.wait -= dt;
 		if (a.wait > 0.0f) return false;
 		a.phase = NpcActor::IDLE;
@@ -1012,6 +1038,9 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 			tickState(a);
 			if (a.action.kind == NPC_ACT_NONE && !a.queueCount) break;
 		}
+		a.percWait -= dt;
+		if (_cfg.perceive && a.percWait <= 0.0f) perceive(a, world);
+		turnHead(a, dt);
 	}
 	// A gesture that has run out leaves it standing (or sitting) as before.
 	if (a.anim.finished() && a.phase != NpcActor::MOVING && a.action.kind != NPC_ACT_PLAY_ANI && a.action.kind != NPC_ACT_USE_MOB)
@@ -1472,6 +1501,7 @@ void Npcs::bindAi() {
 	const char* const* names = Game::lifeFunctions(count);
 	static_assert(sizeof(table) / sizeof(table[0]) == 37, "one function per name");
 	for (u32 i = 0; i < count && i < sizeof(table) / sizeof(table[0]); ++i) vm.bind(names[i], table[i], this);
+	bindPerception();
 }
 
 } // namespace g3

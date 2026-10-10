@@ -36,6 +36,7 @@ struct NpcConfig {
 	u32 loadsPerFrame = 1; // models read from the archive per frame (each is a hitch)
 	u32 clipBudget = 1536u * 1024u; // bytes of animations in memory at most
 	bool alive = true;     // false: everybody just stands where his routine has him
+	bool perceive = true;  // false: nobody notices anybody (Npc_PercEnable is taken note of, nothing more)
 };
 
 struct NpcStats {
@@ -70,6 +71,10 @@ struct NpcStats {
 	u32 mobsInUse = 0;    // things in use right now
 	u32 mobsFailed = 0;   // times somebody stood at a thing and had no animation for using it
 	float scriptMs = 0;   // milliseconds the last update() spent inside the scripts' functions
+	// Perception.
+	u32 perceived = 0;    // reactions called since the start (the player seen, an enemy, a passive perception)
+	u32 fightsRefused = 0; // states of fighting the scripts asked for and did not get (there is no fighting yet)
+	u32 looking = 0;      // actors looking at somebody right now
 };
 
 // What an actor has been told to do.
@@ -89,6 +94,8 @@ enum NpcActionKind : u8 {
 	NPC_ACT_CONTINUE_ROUTINE,
 	NPC_ACT_TELEPORT,   // pos (xyz, yaw)
 	NPC_ACT_USE_MOB,    // text: the kind of thing ("BENCH"); i: the state to take it to, -1: leave it
+	NPC_ACT_LOOK,       // i: character to look at, -1: straight ahead again
+	NPC_ACT_SAY,        // i: character spoken to or -1; text: what (an SVM name, "$WHATDOYOUWANT")
 };
 
 struct NpcAction {
@@ -184,6 +191,15 @@ struct NpcActor {
 	const Clip* named[NAMES] = {};
 	char names[NAMES][28] = {};
 	u8 nextName = 0;
+	// What it perceives: per perception (the scripts' PERC_ numbers) the
+	// function that reacts, 0 for none; when it looks next.
+	u32 perc[Game::PERC_TYPES] = {};
+	float percWait = 0;
+	// Who it looks at (AI_LookAtNpc), -1 for nobody; how far its head is
+	// turned right now, radians (left/right, down/up).
+	int lookAt = -1;
+	float headYaw = 0, headPitch = 0;
+	char said[24] = ""; // the last thing it said (AI_OutputSVM), for reports
 };
 
 class Npcs {
@@ -264,7 +280,7 @@ private:
 	void tickState(NpcActor& a);
 	void startState(NpcActor& a, u32 fn, bool finalizeOld, const char* wp, bool byRoutine);
 	void clearState(NpcActor& a, bool finalize);
-	i32 invoke(NpcActor& a, u32 fn);
+	i32 invoke(NpcActor& a, u32 fn, int victim = -1);
 	bool begin(NpcActor& a, const World& world);
 	bool carryOn(NpcActor& a, const World& world, float dt);
 	bool walkTo(NpcActor& a, const float target[3], float radius, float dt, bool last);
@@ -289,6 +305,28 @@ private:
 	void releaseMob(NpcActor& a);
 	bool useMob(NpcActor& a, const World& world, float dt);
 	int findMob(u32 npc, const char* kind, int except) const;
+
+	// ---- perception (npc_perc.cpp) ----
+	void bindPerception();
+	void perceive(NpcActor& a, const World& world);
+	void react(NpcActor& a, u32 fn, int other, int victim);
+	bool sees(const NpcActor& a, u32 other, bool inFront) const;
+	bool refusesState(u32 fn) const;
+	void turnHead(NpcActor& a, float dt);
+	static void xPercEnable(ScriptVm& vm, void* user);
+	static void xPercDisable(ScriptVm& vm, void* user);
+	static void xPerceiveAll(ScriptVm& vm, void* user);
+	static void xSendPassivePerc(ScriptVm& vm, void* user);
+	static void xLookAtNpc(ScriptVm& vm, void* user);
+	static void xStopLookAt(ScriptVm& vm, void* user);
+	static void xOutputSvm(ScriptVm& vm, void* user);
+	static void xOutputSvmOverlay(ScriptVm& vm, void* user);
+	static void xCanSeeNpcFreeLos(ScriptVm& vm, void* user);
+	static void xQuickLook(ScriptVm& vm, void* user);
+	i32 _percPlayer = 1, _percEnemy = 2; // the scripts' numbers of the active perceptions
+	enum { FIGHT_STATES = 16 };
+	u32 _fightStates[FIGHT_STATES] = {};
+	u32 _fightStateCount = 0;
 	static float distance(const float a[3], const float b[3]);
 
 	// The engine functions of life the scripts call.

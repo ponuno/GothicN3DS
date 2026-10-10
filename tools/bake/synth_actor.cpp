@@ -135,18 +135,21 @@ Quat aboutZ(float a) { return {0, 0, std::sin(a * 0.5f), std::cos(a * 0.5f)}; }
 // transform, and the runtime has to cope with that.
 const int kTracks[] = {ROOT, SPINE, CHEST, HEAD, L_ARM, L_FOREARM, R_ARM, R_FOREARM, L_THIGH, L_CALF, R_THIGH, R_CALF};
 
-template <class Fn> SrcClip makeClip(const char* name, const char* next, int frames, bool moves, Fn pose) {
+// `withRoot` false: no track for the root - as the game's "S_BENCH_S1" and
+// "S_BED_FRONT_S1", which leave it where the step into them put it.
+template <class Fn> SrcClip makeClip(const char* name, const char* next, int frames, bool moves, Fn pose, bool withRoot = true) {
 	SrcClip clip;
 	clip.name = name;
 	clip.next = next;
 	clip.fps = 25.0f;
 	clip.moves = moves;
 	clip.blendIn = clip.blendOut = 0.15f;
-	clip.nodes.assign(std::begin(kTracks), std::end(kTracks));
+	for (int node : kTracks)
+		if (withRoot || node != ROOT) clip.nodes.push_back(node);
 	for (int f = 0; f < frames; ++f) {
 		Pose p = restPose();
 		pose(float(f) / float(frames), float(f) / clip.fps, p);
-		for (int node : kTracks) {
+		for (int node : clip.nodes) {
 			SrcClipSample s;
 			std::memcpy(s.pos, p.pos[node], sizeof(s.pos));
 			s.rot[0] = p.rot[node].x;
@@ -633,11 +636,14 @@ void addInhabitantClips(SrcModel& model) {
 		sit(0.8f * phase, p);
 		p.pos[ROOT][2] = seat;
 	}));
-	model.clips.push_back(makeClip("S_BENCH_S1", "S_BENCH_S1", 50, false, [sit, seat](float phase, float, Pose& p) {
-		sit(0.8f, p);
-		p.pos[ROOT][2] = seat;
-		p.rot[HEAD] = aboutX(0.05f * std::sin(phase * kTau));
-	}));
+	model.clips.push_back(makeClip(
+	    "S_BENCH_S1", "S_BENCH_S1", 50, false,
+	    [sit, seat](float phase, float, Pose& p) {
+		    sit(0.8f, p);
+		    p.pos[ROOT][2] = seat;
+		    p.rot[HEAD] = aboutX(0.05f * std::sin(phase * kTau));
+	    },
+	    false));
 	model.clips.push_back(makeClip("T_BENCH_S1_2_S0", "S_BENCH_S0", 12, false, [sit, seat](float phase, float, Pose& p) {
 		sit(0.8f * (1.0f - phase), p);
 		p.pos[ROOT][2] = seat;
@@ -653,10 +659,13 @@ void addInhabitantClips(SrcModel& model) {
 		sit(0.5f * (1.0f - phase), p);
 		lie(phase, p);
 	}));
-	model.clips.push_back(makeClip("S_BEDHIGH_S1", "S_BEDHIGH_S1", 60, false, [lie](float phase, float, Pose& p) {
-		lie(1.0f, p);
-		p.rot[CHEST] = aboutX(0.03f * std::sin(phase * kTau));
-	}));
+	model.clips.push_back(makeClip(
+	    "S_BEDHIGH_S1", "S_BEDHIGH_S1", 60, false,
+	    [lie](float phase, float, Pose& p) {
+		    lie(1.0f, p);
+		    p.rot[CHEST] = aboutX(0.03f * std::sin(phase * kTau));
+	    },
+	    false));
 	model.clips.push_back(makeClip("T_BEDHIGH_S1_2_S0", "S_BEDHIGH_S0", 14, false, [sit, lie](float phase, float, Pose& p) {
 		sit(0.5f * phase, p);
 		lie(1.0f - phase, p);

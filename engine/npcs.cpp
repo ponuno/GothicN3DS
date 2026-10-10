@@ -362,13 +362,15 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	const float feet[3] = {eye.x, eye.y - 170.0f, eye.z};
 	_game.setHeroPlace(feet, 0.0f);
 	select(pak, world, eye, _cfg.loadsPerFrame);
-	u32 actors = 0, walking = 0;
+	u32 actors = 0, walking = 0, looking = 0;
 	for (NpcActor& a : _actors) {
 		if (!a.used || !a.ready) continue;
 		tick(a, world, dt, hoursPassed);
 		++actors;
 		walking += a.phase == NpcActor::MOVING;
+		looking += a.lookAt >= 0;
 	}
+	_stats.looking = looking;
 	u32 inUse = 0;
 	for (const NpcActor& a : _actors) inUse += a.used && a.mob >= 0 && a.mobStage >= NpcActor::MOB_ENTERING;
 	_stats.mobsInUse = inUse;
@@ -411,7 +413,17 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 		const float* scale = scaled ? n.look.scale : nullptr;
 		// Body and head are on one skeleton: its bone matrices serve both.
 		static Mat34 skin[MODEL_MAX_NODES];
-		body.skinMatrices(a.anim.pose(), n.yaw, 0.0f, scale, skin);
+		const Pose* pose = &a.anim.pose();
+		static Pose turned;
+		if (fabsf(a.headYaw) > 0.01f || fabsf(a.headPitch) > 0.01f) {
+			const int head = a.rig->model.findNode(hashName("BIP01 HEAD"));
+			if (head > 0) {
+				turned = *pose;
+				a.rig->model.turnNode(turned, head, a.headYaw, a.headPitch);
+				pose = &turned;
+			}
+		}
+		body.skinMatrices(*pose, n.yaw, 0.0f, scale, skin);
 		body.drawSkinned(skin, feet, light);
 		_stats.triangles += body.triangles();
 		_stats.drawCalls += body.partCount();

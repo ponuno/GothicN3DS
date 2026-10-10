@@ -58,6 +58,17 @@ struct GameNpc {
 	// see npcs.h): a new time of day changes what its routine wants, not
 	// where it is.
 	bool active = false;
+	// What it thinks of the player (the scripts' ATT_ numbers), -1 for what
+	// its guild thinks; a passing mood over that.
+	i8 attitude = -1, tempAttitude = -1;
+	int target = -1; // Npc_SetTarget: a character, -1 for none
+};
+
+// A stack of items a character carries (CreateInvItems).
+struct GameItem {
+	u32 npc;
+	u32 symbol;
+	i32 count;
 };
 
 struct GameStats {
@@ -125,6 +136,21 @@ public:
 	// The character's name as the scripts give it ("Thorus").
 	const char* nameOf(const GameNpc& n) const;
 
+	// What one guild thinks of another, as the table the scripts fill in
+	// (Wld_SetGuildAttitude, Wld_ExchangeGuildAttitudes) says: ATT_HOSTILE (0)
+	// .. ATT_FRIENDLY (3); hostile for guilds out of range, as in the original.
+	i32 guildAttitude(i32 guild1, i32 guild2) const;
+	// What character `a` thinks of `b` (Npc_GetAttitude): towards the player
+	// its own attitude if it has one, else its guild's.
+	i32 attitude(u32 a, u32 b) const;
+	// How many of an item (instance symbol) a character carries.
+	i32 itemCount(u32 npc, u32 itemSymbol) const;
+	// How far a perception reaches (Perc_SetRange), cm; -1 if the scripts set none.
+	float perceptionRange(i32 perc) const { return perc >= 0 && perc < PERC_TYPES ? _percRange[perc] : -1.0f; }
+	enum { PERC_TYPES = 64 };
+	// The hit points (attribute 0) of a character: dead at 0.
+	i32 hitPoints(const GameNpc& n) const { return _mAttribute != SCRIPT_NONE && n.object ? _vm.getInt(_mAttribute, 0, n.object) : 1; }
+
 	// A number that stands for a look's meshes and textures: the same in the
 	// baker and on the console, which is how baked models are found.
 	u32 lookKey(const GameLook& look) const;
@@ -187,6 +213,23 @@ private:
 	static void xSetTime(ScriptVm& vm, void* user);
 	static void xIsTime(ScriptVm& vm, void* user);
 	static void xNothing(ScriptVm& vm, void* user);
+	static void xSetGuildAttitude(ScriptVm& vm, void* user);
+	static void xGetGuildAttitude(ScriptVm& vm, void* user);
+	static void xExchangeGuildAttitudes(ScriptVm& vm, void* user);
+	static void xCreateInvItem(ScriptVm& vm, void* user);
+	static void xCreateInvItems(ScriptVm& vm, void* user);
+	static void xRemoveInvItem(ScriptVm& vm, void* user);
+	static void xRemoveInvItems(ScriptVm& vm, void* user);
+	static void xHasItems(ScriptVm& vm, void* user);
+	static void xGetAttitude(ScriptVm& vm, void* user);
+	static void xGetPermAttitude(ScriptVm& vm, void* user);
+	static void xSetAttitude(ScriptVm& vm, void* user);
+	static void xSetTempAttitude(ScriptVm& vm, void* user);
+	static void xIsDead(ScriptVm& vm, void* user);
+	static void xSetTarget(ScriptVm& vm, void* user);
+	static void xGetTarget(ScriptVm& vm, void* user);
+	static void xSetPercRange(ScriptVm& vm, void* user);
+	void addItems(ScriptInstance* npc, i32 symbol, i32 count);
 
 	ScriptVm _vm;
 	GameNpc* _npcs = nullptr;
@@ -198,6 +241,11 @@ private:
 	u32 _textCount = 0, _textCap = 0;
 	Armor* _armors = nullptr;
 	u32 _armorCount = 0, _armorCap = 0;
+	i32* _guildAtt = nullptr; // _guildCount x _guildCount
+	u32 _guildCount = 0;
+	GameItem* _items = nullptr;
+	u32 _itemCount = 0, _itemCap = 0;
+	float _percRange[PERC_TYPES];
 	World* _worlds = nullptr;
 	u32 _worldCount = 0, _worldCap = 0;
 	u16 _world = 0;
@@ -209,7 +257,7 @@ private:
 	u32 _clsNpc = SCRIPT_NONE, _clsItem = SCRIPT_NONE;
 	u32 _mRoutine = SCRIPT_NONE, _mName = SCRIPT_NONE, _mVisualChange = SCRIPT_NONE, _mVisualSkin = SCRIPT_NONE,
 	    _mWear = SCRIPT_NONE, _mMainFlag = SCRIPT_NONE, _mWp = SCRIPT_NONE, _mStartState = SCRIPT_NONE,
-	    _mSensesRange = SCRIPT_NONE, _mGuild = SCRIPT_NONE;
+	    _mSensesRange = SCRIPT_NONE, _mGuild = SCRIPT_NONE, _mAttribute = SCRIPT_NONE;
 };
 
 } // namespace g3

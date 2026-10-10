@@ -130,6 +130,8 @@ void describeMobClips(const std::string& rigName, const SrcModel& model, const s
 				if (std::fabs(turn) >= 5.0f) what += format(" turns %+.0f", double(turn));
 				what += clip.moves ? " M" : "";
 				what += !loop && (clip.moves || reach > 2.0f) ? " (carries)" : "";
+			} else {
+				what += " no root (keeps the step's before)";
 			}
 			have += (have.empty() ? "" : ", ") + what;
 		}

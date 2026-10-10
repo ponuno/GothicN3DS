@@ -2174,6 +2174,13 @@ static void testCollision() {
 		const float v2[4][3] = {{1900, 0, -1500}, {1300, 0, -1500}, {1300, 200 * tan65, -1700}, {1900, 200 * tan65, -1700}};
 		addQuad(scene, v1[0], v1[1], v1[2], v1[3], 0);
 		addQuad(scene, v2[0], v2[1], v2[2], v2[3], 0);
+		// The same crease, but its bottom falling 25 degrees along X (a gully
+		// in the rocks): from 400 cm up at x = -1900 to 120 at x = -1300.
+		const float a0 = 400, a1 = 400 - 600 * 0.46631f, up = 200 * tan65;
+		const float g1[4][3] = {{-1900, a0, -1500}, {-1300, a1, -1500}, {-1300, a1 + up, -1300}, {-1900, a0 + up, -1300}};
+		const float g2[4][3] = {{-1300, a1, -1500}, {-1900, a0, -1500}, {-1900, a0 + up, -1700}, {-1300, a1 + up, -1700}};
+		addQuad(scene, g1[0], g1[1], g1[2], g1[3], 0);
+		addQuad(scene, g2[0], g2[1], g2[2], g2[3], 0);
 	}
 	scene.spawnPos[1] = 220.0f;
 	scene.hasSpawn = true;
@@ -2302,6 +2309,24 @@ static void testCollision() {
 		app.camera().yaw = 90.0f * 0.0174533f;
 		walk(30);
 		CHECK(pl.feet.x > 1750.0f);
+	}
+
+	// Dropped into the gully: it slides down along it (or stands in it) - it
+	// does not hang there, rocking from one side to the other.
+	app.teleport({-1850, 900 + 170.0f, -1470});
+	app.update(Input {}, dt);
+	pl.feet = {-1850, 900, -1470};
+	pl.grounded = false;
+	pl.velocityY = 0;
+	{
+		int frames = 0;
+		while (!pl.grounded && frames < 300) {
+			app.update(Input {}, dt);
+			++frames;
+		}
+		std::printf("       dropped into the gully: %s after %d frames at %.0f %.0f %.0f\n", pl.grounded ? "standing" : "still sliding", frames,
+		            double(pl.feet.x), double(pl.feet.y), double(pl.feet.z));
+		CHECK(pl.grounded && frames < 120);
 	}
 
 	place(0, 0, 0); // jump: about v^2 / 2g = 82 cm, then land
@@ -2605,6 +2630,19 @@ static void testModel() {
 		an.play(nullptr, 0.0f); // back to rest
 		an.update(0.01f);
 		CHECK(an.current() == nullptr && std::fabs(an.pose().pos[0].y - 10.0f) < 1e-4f);
+		// A clip without a track for a node leaves it where the clip before
+		// left it, as in ZenGin: T_NOD has none for the root, so after S_BEND
+		// it stays bent up at 14 (the game's "S_BENCH_S1" has no root track
+		// either: the root stays as the step into it left it, down on the seat).
+		an.play(bend, 0.0f);
+		for (int i = 0; i < 20; ++i) an.update(0.05f);
+		CHECK(std::fabs(an.pose().pos[0].y - 14.0f) < 0.01f);
+		an.play(nod, 0.0f);
+		an.update(0.02f);
+		CHECK(an.current() == nod && std::fabs(an.pose().pos[0].y - 14.0f) < 0.01f);
+		an.play(nullptr, 0.0f);
+		an.update(0.01f);
+		CHECK(std::fabs(an.pose().pos[0].y - 10.0f) < 1e-4f);
 
 		// Drawn where the source mesh is - at rest and curled up - seen from
 		// the side, standing somewhere in the world and turned.
@@ -2840,6 +2878,12 @@ static void testHero() {
 		const float tan65 = 2.14451f;
 		const float sl[4][3] = {{-1800, 0, -2600}, {-2800, 0, -2600}, {-2800, 300 * tan65, -2900}, {-1800, 300 * tan65, -2900}};
 		addQuad(scene, sl[0], sl[1], sl[2], sl[3], 0);
+		// A gully between two such faces, its bottom falling 25 degrees towards +X.
+		const float a0 = 400, a1 = 400 - 600 * 0.46631f, up = 250 * tan65;
+		const float g1[4][3] = {{2000, a0, -1500}, {2600, a1, -1500}, {2600, a1 + up, -1250}, {2000, a0 + up, -1250}};
+		const float g2[4][3] = {{2600, a1, -1500}, {2000, a0, -1500}, {2000, a0 + up, -1750}, {2600, a1 + up, -1750}};
+		addQuad(scene, g1[0], g1[1], g1[2], g1[3], 0);
+		addQuad(scene, g2[0], g2[1], g2[2], g2[3], 0);
 	}
 	scene.spawnPos[0] = 0;
 	scene.spawnPos[1] = 175;
@@ -2889,6 +2933,32 @@ static void testHero() {
 	CHECK(app.init(path.c_str(), nullptr));
 	app.world().preload(app.camera().pos);
 	const Hero& hero = app.hero();
+	{
+		// A head turned to look at somebody: its way ahead turns by the yaw
+		// about the model's up axis, then tips down by the pitch - with the
+		// chest bent forward under it, too.
+		const Model& m = hero.model();
+		const int head = m.findNode(hashName("BIP01 HEAD")), chest = m.findNode(hashName("BIP01 SPINE1"));
+		CHECK(head > 0 && chest > 0);
+		if (head > 0 && chest > 0) {
+			for (int bent = 0; bent < 2; ++bent) {
+				Pose p;
+				m.restPose(p);
+				if (bent) p.rot[chest] = {std::sin(0.2f), 0, 0, std::cos(0.2f)};
+				static Mat34 w[MODEL_MAX_NODES];
+				m.worldTransforms(p, w);
+				const Vec3 o0 = transformPoint(w[head], {0, 0, 0}), d0 = transformPoint(w[head], {0, 0, 10}) - o0;
+				m.turnNode(p, head, 0.5f, 0.3f);
+				m.worldTransforms(p, w);
+				const Vec3 o1 = transformPoint(w[head], {0, 0, 0}), d1 = transformPoint(w[head], {0, 0, 10}) - o1;
+				const Vec3 across = quatRotate(quatFromYaw(0.5f), {1, 0, 0});
+				const Quat tilt = {across.x * std::sin(0.15f), across.y * std::sin(0.15f), across.z * std::sin(0.15f), std::cos(0.15f)};
+				const Vec3 want = quatRotate(quatMul(tilt, quatFromYaw(0.5f)), d0);
+				CHECK(length(o1 - o0) < 0.01f && length(d1 - want) < 0.02f);
+				if (!bent) CHECK(std::fabs(d1.x - 10.0f * std::sin(0.5f) * std::cos(0.3f)) < 0.02f && d1.y < -2.9f);
+			}
+		}
+	}
 	Player& pl = app.player();
 	CHECK(hero.loaded() && app.thirdPerson() && app.steersHero() && !app.cameraSet().fromGame);
 	const Clip* const sRun = hero.clip("S_RUN");
@@ -3171,6 +3241,24 @@ static void testHero() {
 		std::printf("       a running jump at the steep slope: up to %.0f cm (frame %d), then at z %.0f, %.0f up, %s, body %d\n", double(peak),
 		            highest, double(pl.feet.z), double(pl.feet.y), pl.grounded ? "standing" : "sliding", int(hero.body()));
 		CHECK(peak > 40.0f && pl.feet.z > -2700.0f && pl.feet.y < 50.0f && pl.grounded && still >= 30 && hero.body() == Hero::GROUNDED);
+	}
+	// ... and at the gully, from above: in the end it stands, on its feet.
+	app.camera().yaw = 180.0f * deg;
+	app.teleport({2100, 1000.0f + 170.0f, -1100});
+	app.update(Input {}, dt);
+	pl.feet = {2100, 1000, -1100};
+	pl.grounded = false;
+	{
+		int frames = 0;
+		for (; frames < 240; ++frames) step(frames < 90 ? 1.0f : 0.0f, 0.0f, 0.0f, frames == 5);
+		int still = 0;
+		for (int i = 0; i < 30; ++i) {
+			step(0.0f);
+			still += pl.grounded;
+		}
+		std::printf("       into the gully: at %.0f %.0f %.0f, %s, body %d\n", double(pl.feet.x), double(pl.feet.y), double(pl.feet.z),
+		            pl.grounded ? "standing" : "sliding", int(hero.body()));
+		CHECK(pl.grounded && still == 30 && hero.body() == Hero::GROUNDED);
 	}
 
 	// ---- light: like the ground it stands on, tinted by the time of day ----
@@ -4101,10 +4189,10 @@ func void Rtn_start_502() {
 		// The things of the camp, and which of them the scripts know.
 		CHECK(said("things to use: 6 of 5 kinds, with 7 places to stand at (1 have none: nobody can use those): BEDHIGH x2"));
 		CHECK(said("things to use: the worlds have 5 kinds; the scripts name 4 of them: BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: CHESTBIG"));
-		CHECK(said("way net: 13 points, 15 connections") && said("10 free points") && said(" 8 states, "));
+		CHECK(said("way net: 13 points, 15 connections") && said("10 free points") && said(" 9 states, "));
 		// What the states need of the engine is on record.
-		CHECK(said("life: the scripts have 8 states; the people of these worlds are put into 7: ZS_MM_ALLSCHEDULER x6, ZS_GUARD x3"));
-		CHECK(said("of which the engine carries out; the others do nothing yet, by the number of states that call them: NPC_PERCENABLE x1"));
+		CHECK(said("life: the scripts have 9 states; the people of these worlds are put into 7: ZS_MM_ALLSCHEDULER x6, ZS_GUARD x3"));
+		CHECK(said("life: the states call 34 engine functions, 34 of which the engine carries out; the others do nothing yet, by the number of states that call them: none"));
 	}
 	const SrcScene& scene = worlds[0].scene; // (its places are on the ground now)
 	const auto wayPoint = [&](const char* name) -> const SrcWayPoint& {
@@ -4326,6 +4414,12 @@ func void Rtn_start_502() {
 				const SrcMob& bench = mobOf("BENCH", 0);
 				CHECK(inThing(smith) == "BENCH" && b->mobState == 1 && std::string(b->stance) == "BENCH_S1" && b->atFree == -1);
 				CHECK(b->anim.current() == b->rig->model.clip("S_BENCH_S1"));
+				{
+					// Down on the seat, though "S_BENCH_S1" has no root track.
+					Pose rest;
+					b->rig->model.restPose(rest);
+					CHECK(b->anim.pose().pos[0].y < rest.pos[0].y - 35.0f);
+				}
 				bool onSlot = false;
 				for (const SrcMobSlot& slot : bench.slots) {
 					const float backX = slot.pos[0] - std::sin(slot.yaw) * 40.0f, backZ = slot.pos[2] - std::cos(slot.yaw) * 40.0f;
@@ -4411,6 +4505,16 @@ func void Rtn_start_502() {
 					const NpcActor* a = npcs.actorOf(sleeper);
 					outOfBed += !a || inThing(sleeper) != "BEDHIGH" || std::string(a->stance) != "BEDHIGH_S1" ||
 					            a->anim.current() != a->rig->model.clip("S_BEDHIGH_S1");
+					// Lying: "S_BEDHIGH_S1" has no track for the root, which
+					// stays as the step into the bed left it - down and tipped
+					// over -, not upright at standing height (asleep standing
+					// in the air, as on the console).
+					if (a && a->rig) {
+						Pose rest;
+						a->rig->model.restPose(rest);
+						const Quat r = a->anim.pose().rot[0];
+						outOfBed += a->anim.pose().pos[0].y > rest.pos[0].y - 25.0f || std::fabs(r.w) > 0.9f;
+					}
 				}
 				notBusy += second >= 3 && global("PROBE_SLEEPER_BODY") != 15; // (the one who asks has a state to begin first)
 			}
@@ -4468,6 +4572,45 @@ func void Rtn_start_502() {
 		CHECK(game.vm().stats().errors == 0 && game.vm().stats().aborted == 0 && game.vm().stats().nullAccess == 0);
 		// (What everybody stands in was read before the budget was cut.)
 		CHECK(poor ? (ns.clipsRefused > 0 && ns.clips <= 4) : (ns.clipsRefused == 0 && ns.clips >= 15 && ns.clipBytes > 40000));
+
+		// ---- what they notice ----
+		if (variant == 0) {
+			const u32 heroIndex = u32(game.hero() - &game.npc(0));
+			// The guilds' table and the creatures' own lines, as the start-up set them.
+			CHECK(game.attitude(thorus, heroIndex) == 2 && game.attitude(heroIndex, thorus) == 2 && game.attitude(thorus, jackal) == 3);
+			CHECK(game.guildAttitude(20, 21) == 2 && game.guildAttitude(20, 0) == 0 && game.guildAttitude(99, 0) == 0);
+			// The creatures saw the player at the gate, an enemy, and would
+			// have gone for him: there is no fighting, they roam on.
+			CHECK(global("MM_ENEMY_SEEN") > 0 && npcs.stats().fightsRefused > 0);
+			u32 targeting = 0;
+			for (u32 i = 0; i < npcs.actorCount(); ++i) {
+				const NpcActor& c = npcs.actor(i);
+				if (!c.used || !c.fist) continue;
+				CHECK(c.state != game.vm().find("ZS_MM_ATTACK"));
+				targeting += game.npc(c.npc).target == int(heroIndex);
+			}
+			CHECK(targeting >= 1);
+			// The player walks up to the gate guard, to his left: he turns his
+			// head to him, asks what he wants and tells the other guard, who
+			// looks at him.
+			const SrcWayPoint& post = wayPoint("CAMP_GATE_GUARD_L");
+			const u32 perceivedBefore = npcs.stats().perceived;
+			app.teleport({post.pos[0] + 300.0f, post.pos[1] + 170.0f, post.pos[2] + 400.0f});
+			run(3.0f, thorus, nullptr);
+			const NpcActor* t = npcs.actorOf(thorus);
+			const NpcActor* j = npcs.actorOf(jackal);
+			CHECK(t && t->lookAt == int(heroIndex) && std::string(t->said) == "$WHATDOYOUWANT" && npcs.stats().perceived > perceivedBefore);
+			if (t) std::printf("       the guard looks at the player: head %.2f rad round, %.2f down\n", double(t->headYaw), double(t->headPitch));
+			CHECK(t && t->headYaw > 0.4f && t->headYaw < 0.8f && t->state == zsGuard);
+			CHECK(j && j->lookAt == int(thorus) && npcs.stats().looking >= 2);
+			// ... the head is turned in the pose that is drawn (the rig's head bone).
+			app.render();
+			// And when the player has gone, the guard looks ahead again.
+			app.teleport({post.pos[0], post.pos[1] + 170.0f, post.pos[2] + 2500.0f});
+			run(4.0f, thorus, nullptr);
+			t = npcs.actorOf(thorus);
+			CHECK(t && t->lookAt == -1 && std::fabs(t->headYaw) < 0.05f);
+		}
 
 		// ---- the player leaves: everybody is simply where his routine has him ----
 		if (variant == 0) {
@@ -4573,7 +4716,6 @@ func void Rtn_start_502() {
 		for (int i = 0; i < 40; ++i) flood += "AI_Wait(self, 0.02); ";
 		chaos += R"(
 var int chaos_starts; var int chaos_loops; var int chaos_ends;
-extern func void AI_GotoNpc(var C_NPC n, var C_NPC to);
 extern func void AI_Teleport(var C_NPC n, var string wp);
 extern func void Npc_ClearAIQueue(var C_NPC n);
 extern func int Npc_WasInState(var C_NPC n, var func state);

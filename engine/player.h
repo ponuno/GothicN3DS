@@ -89,6 +89,7 @@ private:
 	// goes nowhere (a crease between two slopes, a stone in the way) ends
 	// with the body standing where it is ...
 	float _slideLow = 0, _slideStill = 0;
+	Vec3 _slideVel {0, 0, 0}; // cm/s, horizontal
 	bool _sliding = false;
 	// ... and it may stand there, and walk on at that height, on a floor too
 	// steep for anywhere else.

@@ -1713,6 +1713,13 @@ void Npcs::bindAi() {
 	bindPerception();
 	bindFight();
 	bindItems();
+	vm.onUnbound(&Npcs::unboundThunk, this);
+}
+
+void Npcs::unboundThunk(u32 symbol, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	self._lastUnbound = self._game.vm().symbol(symbol).nameHash;
+	++self._unboundCount;
 }
 
 } // namespace g3

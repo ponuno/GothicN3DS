@@ -761,7 +761,18 @@ i32 Npcs::strike(u32 attacker, u32 victim, bool fromBehind) {
 	const u32 stateBefore = a ? a->state : 0u;
 	const u8 queuedBefore = a ? a->queueCount : u8(0);
 	const bool listens = a && a->ready && _percDamage >= 0 && _percDamage < Game::PERC_TYPES && a->perc[_percDamage] && _cfg.alive;
+	const u32 unboundBefore = _unboundCount;
 	if (listens) react(*a, a->perc[_percDamage], int(attacker), int(victim));
+	if (victim != heroIndex && attacker == heroIndex) {
+		// (For the debug line: did it hear the blow, what did it do about it.)
+		const char* before = stateName(stateBefore);
+		const char* after = a ? stateName(a->state) : "";
+		if (strncmp(before, "ZS_", 3) == 0) before += 3;
+		if (strncmp(after, "ZS_", 3) == 0) after += 3;
+		snprintf(_lastHitNote, sizeof(_lastHitNote), "hit %.9s L%d %.10s>%.10s q%d a%d u%d", _game.nameOf(v), listens ? 1 : 0, before, after,
+		         a ? int(a->queueCount) : -1, int(_game.attitude(victim, heroIndex)), int(_unboundCount - unboundBefore));
+		_lastHitAge = 0.0f;
+	}
 	sendPerception(_percFightSound, victim, int(attacker), int(victim));
 	if (a) {
 		a->hitFlag = true;

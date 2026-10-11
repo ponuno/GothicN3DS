@@ -274,6 +274,12 @@ bool Npcs::debugNearest(char* out, size_t size) const {
 	return true;
 }
 
+bool Npcs::debugLastHit(char* out, size_t size) const {
+	if (!size || _lastHitAge > 30.0f || !_lastHitNote[0]) return false;
+	snprintf(out, size, "%s", _lastHitNote);
+	return true;
+}
+
 // Turns the head towards whoever it looks at, at a natural pace, as far as a
 // neck goes; and back again.
 void Npcs::turnHead(NpcActor& a, float dt) {

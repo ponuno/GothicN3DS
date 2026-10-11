@@ -357,6 +357,7 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 }
 
 void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt) {
+	_lastHitAge += dt;
 	if (!loaded()) return;
 	_pak = &pak;
 	_world = &world;

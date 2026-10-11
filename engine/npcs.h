@@ -392,6 +392,11 @@ public:
 	// One line about the nearest character to the player within 15 m (for the FPS counter's debug line):
 	// who, state, whether its enemy perception is on, its wait, attitude, distance. False if none.
 	bool debugNearest(char* out, size_t size) const;
+	// What the last blow on somebody (not the player's character) did to it, and the last external the
+	// scripts called that nobody implements (its name hash): for the debug lines. False if nothing yet.
+	bool debugLastHit(char* out, size_t size) const;
+	u32 lastUnbound() const { return _lastUnbound; }
+	u32 unboundCount() const { return _unboundCount; }
 	// Everybody within the reach of its senses of `source` looks round at its next frame.
 	void noticeNow(u32 source);
 	// Somebody has gone down (HP, scripts' state ZS_Unconscious or ZS_Dead):
@@ -490,6 +495,10 @@ private:
 	i32 bodyStateOf(const NpcActor& a) const;
 	// The player's character's, as the scripts see it (BS_RUN, BS_JUMP, BS_SWIM ... for the pursuit that gives up).
 	i32 heroBodyState() const;
+	char _lastHitNote[64] = {};
+	float _lastHitAge = 1e9f;
+	u32 _lastUnbound = 0, _unboundCount = 0;
+	static void unboundThunk(u32 symbol, void* user);
 	const Clip* mobClip(NpcActor& a, int from, int to, char* nameOut);
 	void releaseMob(NpcActor& a);
 	bool useMob(NpcActor& a, const World& world, float dt);

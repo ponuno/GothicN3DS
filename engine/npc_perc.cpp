@@ -158,7 +158,12 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 	if (heroInReach && (_game.isMonster(n) || _game.attitude(a.npc, heroIndex) == _game.constant("ATT_HOSTILE", 0)))
 		a.percWait = min(a.percWait, _cfg.noticeEvery);
 	// (Not before its state has begun: the reactions count on what it set up.)
-	if (!a.state || !a.started || !a.ready) return;
+	// Between two states too (one has ended, the queue it left - the way back to its place - is
+	// still being walked): the perceptions it had stay on, as OpenGothic has it. Only a state that
+	// has not begun yet is waited for.
+	if (!a.ready || (a.state && !a.started)) return;
+	const u32 state0 = a.state;
+	const auto still = [&]() { return a.state == state0; }; // (a reaction may have begun another)
 	const World* before = _world;
 	_world = &world;
 	// The player.
@@ -166,7 +171,7 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 		react(a, a.perc[_percPlayer], int(heroIndex), -1);
 	// The nearest enemy: anybody about it is hostile to, the player too.
 	const u32 enemyFn = _percEnemy >= 0 && _percEnemy < Game::PERC_TYPES ? a.perc[_percEnemy] : 0;
-	if (enemyFn && a.state) {
+	if (enemyFn && still()) {
 		// The hostile ones about, nearest first; the line of sight is looked
 		// at for one after the other until one is seen (it is the costly part).
 		u32 who[ACTORS + 1];
@@ -200,7 +205,7 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 	// A creature that is hostile to the player, awake, with the player close and neither of its
 	// perceptions answered by its scripts (nothing enabled for the player or an enemy): it
 	// goes for the player on its own, rather than stand about until the player is under its nose.
-	if (a.state && _cfg.beastsRetaliate && hero && heroInReach && _game.isMonster(n) && n.down == DOWN_NONE && !enemyFn &&
+	if (a.state && still() && _cfg.beastsRetaliate && hero && heroInReach && _game.isMonster(n) && n.down == DOWN_NONE && !enemyFn &&
 	    !(_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer]) && !inFightState(a) &&
 	    _game.hitPoints(*hero) > 0 && hero->down == DOWN_NONE && _game.attitude(a.npc, heroIndex) == _game.constant("ATT_HOSTILE", 0)) {
 		const float dx = hero->pos[0] - n.pos[0], dy = hero->pos[1] - n.pos[1], dz = hero->pos[2] - n.pos[2];
@@ -210,7 +215,7 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 	}
 	// Somebody about with a weapon in hand (PERC_ASSESSFIGHTER); a body on
 	// the ground (PERC_ASSESSBODY). The nearest that is seen.
-	for (int kind = 0; kind < 2 && a.state; ++kind) {
+	for (int kind = 0; kind < 2 && still(); ++kind) {
 		const i32 perc = kind == 0 ? _percFighter : _percBody;
 		const u32 fn = perc >= 0 && perc < Game::PERC_TYPES ? a.perc[perc] : 0;
 		if (!fn) continue;
@@ -234,7 +239,7 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 			if (o.used && o.ready) consider(o.npc);
 		if (hero) consider(heroIndex);
 		if (best >= 0) react(a, fn, best, -1);
-		if (!a.state) break; // (the reaction may have ended the state)
+		if (!still()) break; // (the reaction may have ended the state)
 	}
 	_world = before;
 }
@@ -261,9 +266,11 @@ bool Npcs::debugNearest(char* out, size_t size) const {
 	const bool enemy = _percEnemy >= 0 && _percEnemy < Game::PERC_TYPES && best->perc[_percEnemy];
 	const char* state = best->state ? stateName(best->state) : "-";
 	if (strncmp(state, "ZS_", 3) == 0) state += 3;
-	snprintf(out, size, "%.10s %.14s d%d a%d E%d rdy%d st%d w%d s%d %s", _game.nameOf(n), state, int(sqrtf(bestD) / 100.0f),
+	const i32 hb = heroBodyState() & 0x7F;
+	const char* body = hb == 3 ? "RUN" : hb == 8 ? "JMP" : hb == 5 ? "SWM" : "STD";
+	snprintf(out, size, "%.10s %.14s t%d d%d a%d E%d rdy%d st%d w%d s%d %s %s", _game.nameOf(n), state, int(best->stateTime), int(sqrtf(bestD) / 100.0f),
 	         int(_game.attitude(best->npc, heroIndex)), enemy ? 1 : 0, best->ready ? 1 : 0, best->started ? 1 : 0,
-	         int(best->percWait * 10.0f), int(_game.sensesRange(n) / 100.0f), _cfg.perceive ? "P" : "noP");
+	         int(best->percWait * 10.0f), int(_game.sensesRange(n) / 100.0f), _cfg.perceive ? "P" : "noP", body);
 	return true;
 }
 

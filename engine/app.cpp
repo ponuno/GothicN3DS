@@ -425,6 +425,13 @@ void App::update(const Input& in, float dt) {
 		const float indoorLight[3] = {1, 1, 1};
 		_hero.follow(_player, _world, _world.indoor() ? indoorLight : sky.light, dt);
 		if (_hero.blowLanded()) heroBlow();
+		if (dt > 0.0f) {
+			const float dx = _player.feet.x - _heroLastFeet.x, dz = _player.feet.z - _heroLastFeet.z;
+			const float v = sqrtf(dx * dx + dz * dz) / dt;
+			// (A teleport is no run.)
+			_heroSpeed += ((v < 2000.0f ? v : 0.0f) - _heroSpeed) * min(1.0f, dt * 4.0f);
+		}
+		_heroLastFeet = _player.feet;
 		syncHeroNpc();
 	} else {
 		// A free first-person camera: no character, or flying.
@@ -820,7 +827,9 @@ void App::syncHeroNpc() {
 	link.hit = heroHitThunk;
 	link.user = this;
 	link.prehit = _hero.prehit();
-	link.running = _hero.role() == Hero::RUN;
+	// Running as the scripts see it (BS_RUN): on the move faster than a walk, whatever the
+	// animation (a blow taken on the run, a weapon in hand) - the pursuit's clock goes on.
+	link.running = _hero.role() == Hero::RUN || (_heroSpeed > 250.0f && !_hero.sneaking());
 	link.jumping = _hero.body() == Hero::AIRBORNE || _hero.body() == Hero::TAKEOFF;
 	link.swimming = _player.swimming;
 	link.sneaking = _hero.sneaking();
@@ -1292,6 +1301,12 @@ void App::namedSound(const char* names, int npc, float gain) {
 // A footstep, a swish of the sword: an event of the model script's, at the
 // moment the clip reaches its frame.
 void App::soundEvent(const ClipSfxEvent& event, int npc) {
+	// The player's footsteps are heard (OpenGothic's tickAnimationTags): whoever is about and
+	// listens (a sleeping creature, a guard) gets PERC_ASSESSQUIETSOUND - unless he creeps.
+	if (npc < 0 && event.kind == CLIP_SFX_GROUND && !_hero.sneaking() && _npcs.loaded()) {
+		const int hi = heroIndex();
+		if (hi >= 0) _npcs.sendPerception("PERC_ASSESSQUIETSOUND", u32(hi), hi, hi);
+	}
 	if (!_sound.ready()) return;
 	Vec3 at = _player.feet;
 	if (npc >= 0) {

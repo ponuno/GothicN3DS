@@ -573,3 +573,9 @@ Cause: `speech.pak` in PCM16 at 48 kHz was 2.02 GiB; `Pak` seeks with `long(offs
 ### Раунд 16 — отставание погони и звук угрозы
 - `Npc_GetBodyState(hero)` всегда возвращал «стоит» (игрок не актёр) → `ZS_MM_Attack_Loop` каждый кадр делал `Npc_SetStateTime(0)` и звери не бросали погоню (`AIV_MM_FollowTime`, 10 с бега/прыжка; у людей `HAI_TIME_FOLLOW` в `ZS_Attack`). Теперь `Npcs::heroBodyState()` (BS_RUN/JUMP/SWIM/DEAD…) по `HeroLink::running/jumping/swimming`. Шаг/стоя сбрасывают таймер — как в оригинале.
 - Угроза: `T_WARN` у существа без звуковых событий в клипе пробует `<МОДЕЛЬ>_WARN|_GROWL|_THREAT|_AGGRO|_ANGRY|_ATTACK` (`playAni`). Имена угаданы; если ни одного нет в архиве, первое попадает в отчёт звуков (`Sound::writeReport`) — по нему можно найти настоящее имя. Если у T_WARN в модели есть `*eventSFX`, играет он.
+
+### Раунд 16 — шаги игрока, восприятие между состояниями, бег для погони
+- Шаги игрока (`CLIP_SFX_GROUND` события героя, не крадясь) рассылают `PERC_ASSESSQUIETSOUND` (как `Npc::tickAnimationTags` в OG). Этим просыпаются спящие звери (`B_MM_AssessQuietSound_Sleep`, в пределах `AIV_MM_DrohRange`) и оборачиваются люди (`B_AssessQuietSound`). Дальность — `Perc_SetRange` скриптов (1000 см).
+- Восприятие работало только при запущенном состоянии; между состояниями (старое кончилось, очередь — путь домой — ещё идёт) НПС ничего не замечал. Теперь как в OG: блокируется только состояние, которое ещё не началось (`perceive`, `sendPerception`, `perceiveSingle`).
+- `HeroLink::running` теперь ещё и по скорости (`App::_heroSpeed` > 250 см/с), чтобы удар на бегу/оружие в руках не сбрасывали часы погони.
+- Отладочная строка: `t<время в состоянии>` и тело игрока для скриптов `RUN/JMP/SWM/STD`.

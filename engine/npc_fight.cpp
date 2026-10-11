@@ -962,7 +962,7 @@ void Npcs::sendPerception(i32 perc, u32 sender, int other, int victim) {
 	if (depth > 0) return;
 	++depth;
 	for (NpcActor& a : _actors) {
-		if (!a.used || !a.ready || a.npc == sender || !a.perc[perc] || !a.state || !a.started) continue;
+		if (!a.used || !a.ready || a.npc == sender || !a.perc[perc] || (a.state && !a.started)) continue;
 		const GameNpc& n = _game.npc(a.npc);
 		if (n.world != s.world || n.down != DOWN_NONE) continue;
 		const float r = range >= 0.0f ? range : _game.sensesRange(n);
@@ -990,7 +990,7 @@ void Npcs::perceiveSingle(u32 receiver, const char* percName, int other) {
 	const i32 perc = _game.constant(percName, -1);
 	if (perc < 0 || perc >= Game::PERC_TYPES || !_cfg.perceive || !_cfg.alive || other < 0) return;
 	for (NpcActor& a : _actors)
-		if (a.used && a.ready && a.npc == receiver && a.perc[perc] && a.state && a.started && _game.npc(a.npc).down == DOWN_NONE)
+		if (a.used && a.ready && a.npc == receiver && a.perc[perc] && !(a.state && !a.started) && _game.npc(a.npc).down == DOWN_NONE)
 			react(a, a.perc[perc], other, -1);
 }
 

@@ -254,6 +254,9 @@ private:
 	// The fight's sounds by name ("CS_IAM_ME_FL|CS_IAM"): the first the scripts know, at character `npc`.
 	void namedSound(const char* names, int npc, float gain);
 	static void namedSoundThunk(void* user, const char* names, int npc, float gain);
+	// How fast the player's character goes over the ground (cm/s, smoothed): a pursuer sees it running.
+	float _heroSpeed = 0;
+	Vec3 _heroLastFeet {0, 0, 0};
 	u8 _heroWeaponHeard = 0; // the hero's hands when that last made a sound
 	static bool soundLocate(void* user, ScriptInstance* who, Vec3& pos);
 	void placeCamera(float dt);

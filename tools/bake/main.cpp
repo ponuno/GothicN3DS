@@ -408,6 +408,10 @@ int main(int argc, char** argv) {
 		}
 		pak.write(out);
 		std::printf("%s written (%zu entries); the rest (voices, music) follows\n", out.c_str(), pak.items().size());
+		// (The fight clips again, here at the end of the report, where the tail of it shows them.)
+		for (const SrcModel& m : models)
+			for (const std::string& note : m.notes)
+				if (note.compare(0, 9, "fightclip") == 0) std::printf("%s: %s\n", m.name.c_str(), note.c_str());
 		std::fflush(stdout);
 		const size_t outSlash = out.find_last_of("/\\");
 		const std::string outDir = outSlash == std::string::npos ? std::string() : out.substr(0, outSlash + 1);

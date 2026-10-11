@@ -2192,23 +2192,31 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 			lc.mdsLast = int(a.last_frame);
 			const int firstFrame = std::min(int(a.first_frame), int(a.last_frame));
 			const auto ownFrame = [&](int frame) { return std::max(frame - firstFrame, 0); };
+			// The tags of a fight (the blow's frame, the end of the blow, the combo window, the
+			// parry) count in frames of the animation itself, as OpenGothic reads them - not in
+			// frames of the file it is cut from: "T_2HATTACKR" is frames 37..72 of its file, its
+			// tags are those of "T_2HATTACKL" (frames 1..36), and taking 37 off them left every
+			// tag at 0 - a blow that never landed. (A blow's frame past the first frame is the
+			// file's own count; before it, the animation's.)
+			const auto tagFrame = [&](int frame) { return frame < firstFrame ? std::max(frame, 0) : std::max(frame - firstFrame, 0); };
+			const auto relFrame = [&](int frame) { return std::max(frame, 0); };
 			for (const zenkit::MdsEventTag& ev : a.events) {
 				switch (ev.type) {
 				case zenkit::MdsEventType::OPTIMAL_FRAME:
 					// (Several tags: the first one counts, as in the original.)
 					if (lc.hits.empty() && !ev.frames.empty())
-						for (int f : ev.frames) lc.hits.push_back(ownFrame(f));
+						for (int f : ev.frames) lc.hits.push_back(tagFrame(f));
 					else if (lc.hits.empty())
-						lc.hits.push_back(ownFrame(ev.frame));
+						lc.hits.push_back(tagFrame(ev.frame));
 					break;
 				case zenkit::MdsEventType::HIT_END:
-					for (int f : ev.frames) lc.hitEnds.push_back(ownFrame(f));
+					for (int f : ev.frames) lc.hitEnds.push_back(relFrame(f));
 					break;
 				case zenkit::MdsEventType::COMBO_WINDOW:
-					for (int f : ev.frames) lc.windows.push_back(ownFrame(f));
+					for (int f : ev.frames) lc.windows.push_back(relFrame(f));
 					break;
 				case zenkit::MdsEventType::PARRY_FRAME:
-					for (int f : ev.frames) lc.parry.push_back(ownFrame(f));
+					for (int f : ev.frames) lc.parry.push_back(relFrame(f));
 					break;
 				case zenkit::MdsEventType::SET_FIGHT_MODE:
 					if (lc.fightMode < 0) lc.fightMode = ownFrame(ev.frame);

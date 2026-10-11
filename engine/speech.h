@@ -24,6 +24,8 @@ public:
 
 	// `speechPakPath`: the archive of recordings. False (nothing will be heard) if it is not
 	// there or the platform has no channel to spare.
+	// The archive may be in pieces (the console cannot seek past 2 GiB): "speech2.pak", "speech3.pak" ...
+	// beside it are opened too.
 	bool init(const char* speechPakPath, AudioOut* out);
 	void shutdown();
 	bool ready() const { return _ready; }
@@ -49,7 +51,10 @@ private:
 	AudioOut* _out = nullptr;
 	bool _ready = false;
 	float _volume = 0.8f;
-	Pak _pak;
+	enum { MAX_PAKS = 4 };
+	Pak _paks[MAX_PAKS];
+	u32 _pakCount = 0;
+	bool _unusable = false; // a speech.pak was there and could not be opened
 	// Two blocks, used in turn: the one that played last is freed when the next line starts.
 	void* _block[2] = {};
 	u32 _blockBytes[2] = {};

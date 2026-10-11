@@ -1,5 +1,6 @@
 #include "speech.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -8,7 +9,26 @@ namespace g3 {
 bool Speech::init(const char* speechPakPath, AudioOut* out) {
 	shutdown();
 	if (!out || out->channels() <= u32(CHANNEL) || !speechPakPath) return false;
-	if (!_pak.open(speechPakPath)) return false;
+	// "…/speech.pak", then "…/speech2.pak" ...
+	char path[320];
+	for (u32 k = 0; k < MAX_PAKS; ++k) {
+		if (k == 0) {
+			snprintf(path, sizeof(path), "%s", speechPakPath);
+		} else {
+			snprintf(path, sizeof(path), "%s", speechPakPath);
+			char* dot = strrchr(path, '.');
+			if (!dot) break;
+			snprintf(dot, sizeof(path) - size_t(dot - path), "%u.pak", unsigned(k + 1));
+		}
+		if (_paks[_pakCount].open(path)) ++_pakCount;
+		else if (k == 0) break;
+	}
+	if (!_pakCount) {
+		FILE* f = fopen(speechPakPath, "rb");
+		_unusable = f != nullptr; // (there, but not to be read: damaged, or too big for the console's seek)
+		if (f) fclose(f);
+		return false;
+	}
 	_out = out;
 	_ready = true;
 	return true;
@@ -21,7 +41,8 @@ void Speech::shutdown() {
 		_block[i] = nullptr;
 		_blockBytes[i] = 0;
 	}
-	_pak.close();
+	for (Pak& p : _paks) p.close();
+	_pakCount = 0;
 	_ready = false;
 	_out = nullptr;
 }
@@ -35,12 +56,15 @@ bool Speech::playing() const { return _ready && _out->playing(CHANNEL); }
 float Speech::play(u32 lineHash, float gain) {
 	if (!_ready) return 0.0f;
 	_out->stop(CHANNEL);
-	const PakEntry* e = _pak.find(speechEntryHash(lineHash));
+	Pak* pak = nullptr;
+	const PakEntry* e = nullptr;
+	for (u32 k = 0; k < _pakCount && !e; ++k)
+		if ((e = _paks[k].find(speechEntryHash(lineHash))) != nullptr) pak = &_paks[k];
 	if (!e || e->size <= sizeof(SoundHeader) || e->codec != PAK_RAW) {
 		++_missing;
 		return 0.0f;
 	}
-	u8* blob = static_cast<u8*>(_pak.readAlloc(*e));
+	u8* blob = static_cast<u8*>(pak->readAlloc(*e));
 	if (!blob) {
 		++_broken;
 		return 0.0f;
@@ -86,11 +110,16 @@ float Speech::play(u32 lineHash, float gain) {
 
 void Speech::writeReport(FILE* f) const {
 	if (!_ready) {
-		fprintf(f, "voices: off (no speech.pak beside data.pak)\n");
+		if (_unusable)
+			fprintf(f, "voices: off (speech.pak is there but cannot be opened: damaged, or over 2 GiB, which the console cannot seek in - bake again, the baker splits it)\n");
+		else
+			fprintf(f, "voices: off (no speech.pak beside data.pak)\n");
 		return;
 	}
-	fprintf(f, "voices: %u recordings in speech.pak; played %u, lines without a recording %u, damaged %u\n", _pak.count(), _played,
-	        _missing, _broken);
+	u32 recordings = 0;
+	for (u32 k = 0; k < _pakCount; ++k) recordings += _paks[k].count();
+	fprintf(f, "voices: %u recordings in %u archive(s); played %u, lines without a recording %u, damaged %u\n", recordings, _pakCount,
+	        _played, _missing, _broken);
 }
 
 } // namespace g3

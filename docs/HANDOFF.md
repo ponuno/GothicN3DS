@@ -488,3 +488,6 @@ Unknown until real scripts are run: whether the real `IntroduceChapter` argument
 
 Run by Claude: `ctest` in the normal build (4/4) and the ZenKit build (6/6), `scripts/check_3ds.sh` clean. Console: not run.
 
+### Round 12, later: voices stopped after the move to 16-bit
+Cause: `speech.pak` in PCM16 at 48 kHz was 2.02 GiB; `Pak` seeks with `long(offset)`, which is 32 bits on the console (checked: `sizeof(off_t)` is 4 in the console's newlib headers), so the table at the end of the file could not be reached, `Speech::init` failed and there was no sound and no message. IMA (~0.5 GB) never got near it. Fix: `bakeSpeechShards` begins a new archive at 1.875 GiB (`speech.pak`, `speech2.pak` ... up to 4; stale ones of an older bake are deleted), `Speech` opens all it finds beside the first, `Pak` refuses an offset above 2 GiB on a 32-bit `long` instead of seeking to a wrong place, and `sound.txt` says "speech.pak is there but cannot be opened ..." when the file exists and cannot be read. Re-bake needed for voices (data.pak is unchanged but the baker makes everything in one run). `music.pak` is far below the limit (the same applies to it if it ever passes 2 GiB). Tests: `speech` (shards, no room, broken file). Not run on the console.
+

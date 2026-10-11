@@ -16,6 +16,16 @@ void logf(const char* fmt, ...) {
 	fputc('\n', stdout);
 }
 
+namespace {
+
+// stdio's seek takes a `long`: 32 bits on the console, so nothing past 2 GiB can be reached there.
+bool seekTo(FILE* f, u64 offset) {
+	if (sizeof(long) < 8 && offset > 0x7FFFFFFFull) return false;
+	return fseek(f, long(offset), SEEK_SET) == 0;
+}
+
+} // namespace
+
 bool Pak::open(const char* path) {
 	close();
 	_file = fopen(path, "rb");
@@ -28,11 +38,11 @@ bool Pak::open(const char* path) {
 		ok = _table && _names;
 	}
 	if (ok) {
-		ok = fseek(_file, long(_hdr.tableOffset), SEEK_SET) == 0 &&
+		ok = seekTo(_file, _hdr.tableOffset) &&
 		     fread(_table, sizeof(PakEntry), _hdr.entryCount, _file) == _hdr.entryCount;
 	}
 	if (ok && _hdr.namesSize) {
-		ok = fseek(_file, long(_hdr.namesOffset), SEEK_SET) == 0 &&
+		ok = seekTo(_file, _hdr.namesOffset) &&
 		     fread(_names, 1, _hdr.namesSize, _file) == _hdr.namesSize;
 	}
 	if (ok) {
@@ -79,7 +89,7 @@ const PakEntry* Pak::find(u32 hash) const {
 }
 
 bool Pak::read(const PakEntry& e, void* dst) {
-	if (!_file || fseek(_file, long(e.offset), SEEK_SET) != 0) return false;
+	if (!_file || !seekTo(_file, e.offset)) return false;
 
 	if (e.codec == PAK_RAW) {
 		if (e.packedSize != e.size) return false;
@@ -104,7 +114,7 @@ bool Pak::read(const PakEntry& e, void* dst) {
 
 bool Pak::readRange(const PakEntry& e, u32 offset, void* dst, u32 size) {
 	if (!_file || e.codec != PAK_RAW || e.packedSize != e.size || u64(offset) + size > e.size) return false;
-	if (fseek(_file, long(e.offset) + long(offset), SEEK_SET) != 0) return false;
+	if (!seekTo(_file, u64(e.offset) + offset)) return false;
 	_bytesRead += size;
 	return fread(dst, 1, size, _file) == size;
 }

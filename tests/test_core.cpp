@@ -3926,6 +3926,43 @@ static void testSpeech() {
 		for (u32 i = 0; i < a2.last().frames; ++i) pk = std::max(pk, std::abs(int(a2.last().samples[i])));
 		CHECK(pk > 10000);
 	}
+	// In pieces (the console cannot seek past 2 GiB of a file): one recording to an archive, found in whichever it is in.
+	{
+		std::vector<std::unique_ptr<PakWriter>> shards;
+		const SpeechBakeResult sh = bakeSpeechShards(names, buildSyntheticSound, 48000, 2, shards, false, 1000, 4);
+		CHECK(sh.baked == 2 && shards.size() == 2 && shards[0]->items().size() == 1 && shards[1]->items().size() == 1);
+		fs::create_directories(dir + "/shards");
+		shards[0]->write(dir + "/shards/speech.pak");
+		shards[1]->write(dir + "/shards/speech2.pak");
+		HostAudio a3;
+		Speech sp3;
+		CHECK(sp3.init((dir + "/shards/speech.pak").c_str(), &a3));
+		CHECK(sp3.play(hashName("DIA_Thorus_Hello_09_00"), 1.0f) > 1.0f);
+		CHECK(sp3.play(hashName("DIA_Thorus_Job_15_00"), 1.0f) > 0.5f);
+		CHECK(a3.startedCount() == 2 && sp3.missing() == 0);
+		// No room left: the recording is reported, not dropped silently.
+		std::vector<std::unique_ptr<PakWriter>> tight;
+		const SpeechBakeResult no = bakeSpeechShards(names, buildSyntheticSound, 48000, 2, tight, false, 1000, 1);
+		CHECK(no.baked == 1 && no.unusable.size() == 1);
+		// A file that is there but is no archive: refused, and the report says why.
+		{
+			FILE* f = std::fopen((dir + "/shards/broken.pak").c_str(), "wb");
+			if (f) {
+				std::fputs("not an archive", f);
+				std::fclose(f);
+			}
+			HostAudio a4;
+			Speech sp4;
+			CHECK(!sp4.init((dir + "/shards/broken.pak").c_str(), &a4));
+			char report[512] = "";
+			FILE* r = fmemopen(report, sizeof(report) - 1, "w");
+			if (r) {
+				sp4.writeReport(r);
+				std::fclose(r);
+			}
+			CHECK(std::strstr(report, "cannot be opened") != nullptr);
+		}
+	}
 
 	HostAudio audio;
 	Speech speech;

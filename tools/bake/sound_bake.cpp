@@ -550,9 +550,54 @@ std::vector<u8> encodeSpeech(const SrcSound& sound, bool ima) {
 	return blob;
 }
 
+namespace {
+
+// What bakeSpeech and bakeSpeechShards share: `add` takes a finished recording (false: no room left).
+SpeechBakeResult bakeSpeechInto(const std::vector<std::string>& lineNames,
+                                const std::function<bool(const std::string&, std::vector<u8>&)>& fetch, u32 rate, unsigned threads,
+                                bool ima, const std::function<bool(const std::string&, const std::vector<u8>&)>& add,
+                                const char* noRoom);
+
+} // namespace
+
 SpeechBakeResult bakeSpeech(const std::vector<std::string>& lineNames,
                             const std::function<bool(const std::string&, std::vector<u8>&)>& fetch, u32 rate, unsigned threads,
                             PakWriter& pak, bool ima) {
+	u64 total = 0;
+	return bakeSpeechInto(lineNames, fetch, rate, threads, ima,
+	                      [&](const std::string& name, const std::vector<u8>& blob) {
+		                      if (total + blob.size() > 0xE0000000ull) return false;
+		                      pak.add(name, ASSET_SOUND, blob, false);
+		                      total += blob.size();
+		                      return true;
+	                      },
+	                      "the archive would pass 3.5 GB; use --voice-codec ima or a lower --voice-rate");
+}
+
+SpeechBakeResult bakeSpeechShards(const std::vector<std::string>& lineNames,
+                                  const std::function<bool(const std::string&, std::vector<u8>&)>& fetch, u32 rate, unsigned threads,
+                                  std::vector<std::unique_ptr<PakWriter>>& shards, bool ima, u64 shardBytes, u32 maxShards) {
+	u64 inShard = 0;
+	return bakeSpeechInto(lineNames, fetch, rate, threads, ima,
+	                      [&](const std::string& name, const std::vector<u8>& blob) {
+		                      if (shards.empty() || inShard + blob.size() > shardBytes) {
+			                      if (shards.size() >= maxShards) return false;
+			                      shards.push_back(std::make_unique<PakWriter>());
+			                      inShard = 0;
+		                      }
+		                      shards.back()->add(name, ASSET_SOUND, blob, false);
+		                      inShard += blob.size();
+		                      return true;
+	                      },
+	                      "no room left in the archives; use --voice-codec ima or a lower --voice-rate");
+}
+
+namespace {
+
+SpeechBakeResult bakeSpeechInto(const std::vector<std::string>& lineNames,
+                                const std::function<bool(const std::string&, std::vector<u8>&)>& fetch, u32 rate, unsigned threads,
+                                bool ima, const std::function<bool(const std::string&, const std::vector<u8>&)>& add,
+                                const char* noRoom) {
 	SpeechBakeResult result;
 	result.lines = u32(lineNames.size());
 	if (rate == 0 || !fetch) return result;
@@ -607,10 +652,9 @@ SpeechBakeResult bakeSpeech(const std::vector<std::string>& lineNames,
 		work();
 		for (std::thread& t : pool) t.join();
 		for (Done& d : done) {
-			if (d.ok && result.bytes + d.blob.size() > 0xE0000000ull) {
-				result.unusable.push_back(d.name + ": the archive would pass 3.5 GB; use --voice-codec ima or a lower --voice-rate");
+			if (d.ok && !add(d.name, d.blob)) {
+				result.unusable.push_back(d.name + ": " + noRoom);
 			} else if (d.ok) {
-				pak.add(d.name, ASSET_SOUND, d.blob, false);
 				result.bytes += d.blob.size();
 				++result.baked;
 			} else if (!d.why.empty()) {
@@ -620,5 +664,7 @@ SpeechBakeResult bakeSpeech(const std::vector<std::string>& lineNames,
 	}
 	return result;
 }
+
+} // namespace
 
 } // namespace g3

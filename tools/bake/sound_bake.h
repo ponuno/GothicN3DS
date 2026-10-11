@@ -5,6 +5,7 @@
 #include "pak_writer.h"
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -76,6 +77,12 @@ struct SpeechBakeResult {
 SpeechBakeResult bakeSpeech(const std::vector<std::string>& lineNames,
                             const std::function<bool(const std::string&, std::vector<u8>&)>& fetch, u32 rate, unsigned threads,
                             PakWriter& pak, bool ima = false);
+// The same, into several archives: the console cannot seek past 2 GiB of a file, so a new one is begun
+// when `shardBytes` would be passed (the first is "speech.pak", then "speech2.pak" ...; at most `maxShards`).
+SpeechBakeResult bakeSpeechShards(const std::vector<std::string>& lineNames,
+                                  const std::function<bool(const std::string&, std::vector<u8>&)>& fetch, u32 rate, unsigned threads,
+                                  std::vector<std::unique_ptr<PakWriter>>& shards, bool ima = false, u64 shardBytes = 0x78000000ull,
+                                  u32 maxShards = 4);
 // The blob of one recording (SoundHeader + IMA ADPCM), for the tests too.
 std::vector<u8> encodeSpeech(const SrcSound& sound, bool ima = false);
 

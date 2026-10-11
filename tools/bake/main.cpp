@@ -350,8 +350,9 @@ int main(int argc, char** argv) {
 			std::vector<std::string> names;
 			names.reserve(dialogue.lines.size());
 			for (const auto& l : dialogue.lines) names.push_back(l.first);
-			PakWriter speechPak;
-			const SpeechBakeResult sr = bakeSpeech(names, scripts.soundFile, opt.voiceRate, opt.threads, speechPak, opt.voiceIma);
+			// (The console cannot seek past 2 GiB of one file: the recordings go into archives of less than that.)
+			std::vector<std::unique_ptr<PakWriter>> speechPaks;
+			const SpeechBakeResult sr = bakeSpeechShards(names, scripts.soundFile, opt.voiceRate, opt.threads, speechPaks, opt.voiceIma);
 			std::printf("voices: %u lines of dialogue, %u recordings baked (%.1f MB at up to %u Hz, %s)", sr.lines, sr.baked,
 			            double(sr.bytes) / 1048576.0, opt.voiceRate, opt.voiceIma ? "IMA ADPCM" : "16-bit, full quality");
 			if (!sr.unusable.empty()) {
@@ -360,9 +361,14 @@ int main(int argc, char** argv) {
 			}
 			std::printf("\n");
 			if (sr.baked > 0) {
-				const std::string speechPath = outDir + "speech.pak";
-				speechPak.write(speechPath);
-				std::printf("wrote %s: %zu voices\n", speechPath.c_str(), speechPak.items().size());
+				for (size_t k = 0; k < speechPaks.size(); ++k) {
+					const std::string speechPath = outDir + (k == 0 ? std::string("speech.pak") : "speech" + std::to_string(k + 1) + ".pak");
+					speechPaks[k]->write(speechPath);
+					std::printf("wrote %s: %zu voices\n", speechPath.c_str(), speechPaks[k]->items().size());
+				}
+				// (An older bake may have left more archives than this one needs; they would be stale.)
+				for (size_t k = speechPaks.size(); k < 4; ++k)
+					std::remove((outDir + (k == 0 ? std::string("speech.pak") : "speech" + std::to_string(k + 1) + ".pak")).c_str());
 			} else {
 				std::printf("WARNING: no speech.pak written: none of the %u lines has a WAV in the game's files (Speech.vdf, or "
 				            "_work/Data/Sound/Speech). The game then shows subtitles only; --no-voices hides this message.\n",

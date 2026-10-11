@@ -274,7 +274,12 @@ inline float clipBlowTime(const Clip& c, u32 index) {
 	// (No tag of where the blow lands - a model script without one, or an
 	// archive baked before they were kept: a little before the middle.)
 	if (!f || f->hits == 0) return index == 0 ? c.duration() * 0.45f : -1.0f;
-	return index < f->hits && f->hit[index] != CLIP_NO_FRAME && c.header().fps > 0.0f ? float(f->hit[index]) / c.header().fps : -1.0f;
+	if (index >= f->hits || f->hit[index] == CLIP_NO_FRAME || c.header().fps <= 0.0f) return -1.0f;
+	const float t = float(f->hit[index]) / c.header().fps;
+	// (A tag past the clip's end - frames counted in the file the animation is cut from, not
+	// in the animation - would never be reached and the blow never land: a little before the middle.)
+	if (t >= c.duration()) return index == 0 ? c.duration() * 0.45f : -1.0f;
+	return t;
 }
 
 } // namespace g3

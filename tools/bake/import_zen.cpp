@@ -2138,6 +2138,9 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 				lc.layer = int(a.layer);
 				lc.moves = a.flags & zenkit::AnimationFlags::MOVE;
 				lc.fly = a.flags & zenkit::AnimationFlags::FLY;
+				// An animation of its own may be played backwards too ("R"): G1's putting a
+				// sword away is the drawing's file read the other way (as OpenGothic has it).
+				lc.reversed = a.direction == zenkit::AnimationDirection::BACKWARD;
 				described = true;
 				break;
 			}
@@ -2183,8 +2186,9 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		// The frames of a fight are the animation's own (an alias has those
 		// of the one it names); they count from its first frame.
 		for (const zenkit::MdsAnimation& a : script.animations) {
-			if (upper(a.name) != file || lc.reversed) continue;
-			const auto ownFrame = [&](int frame) { return std::max(frame - int(a.first_frame), 0); };
+			if (upper(a.name) != file) continue;
+			const int firstFrame = std::min(int(a.first_frame), int(a.last_frame));
+			const auto ownFrame = [&](int frame) { return std::max(frame - firstFrame, 0); };
 			for (const zenkit::MdsEventTag& ev : a.events) {
 				switch (ev.type) {
 				case zenkit::MdsEventType::OPTIMAL_FRAME:
@@ -2261,6 +2265,28 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		if (!described) {
 			lc.next = upper(lc.ani.next);
 			lc.layer = int(lc.ani.layer);
+		}
+		if (lc.reversed) {
+			// Played backwards: the samples are turned round below, and so are the frames
+			// of its events (they were written for the animation played forwards).
+			const int last = int(lc.ani.frame_count) - 1;
+			const auto flip = [&](int f) { return std::max(last - f, 0); };
+			for (std::vector<int>* list : {&lc.hits, &lc.hitEnds, &lc.windows, &lc.parry}) {
+				for (int& f : *list) f = flip(f);
+				std::reverse(list->begin(), list->end());
+			}
+			// (A combo window or a parry is a pair "from to": still from before to.)
+			if (lc.fightMode >= 0) lc.fightMode = flip(lc.fightMode);
+			for (SrcClip::Sfx& e : lc.sfx) e.frame = flip(e.frame);
+			std::stable_sort(lc.sfx.begin(), lc.sfx.end(), [](const SrcClip::Sfx& x, const SrcClip::Sfx& y) { return x.frame < y.frame; });
+		}
+		// (For the report: the side blows and the drawing of a weapon, how they came out.)
+		if (name.find("ATTACKL") != std::string::npos || name.find("ATTACKR") != std::string::npos || name.find("RUN_2_1H") != std::string::npos ||
+		    name.find("RUN_2_2H") != std::string::npos || name.find("1H_2_1HRUN") != std::string::npos) {
+			char buf[200];
+			std::snprintf(buf, sizeof(buf), "clip %s: %u frames%s, %zu hits%s%s", name.c_str(), unsigned(lc.ani.frame_count),
+			              lc.reversed ? " (backwards)" : "", lc.hits.size(), file != name ? " from " : "", file != name ? file.c_str() : "");
+			model.notes.push_back(buf);
 		}
 		loadedClips.push_back(std::move(lc));
 	}

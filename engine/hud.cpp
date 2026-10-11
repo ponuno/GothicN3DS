@@ -77,18 +77,6 @@ void App::drawOverlay() {
 		char fps[16];
 		snprintf(fps, sizeof(fps), "%d FPS", int(_fps + 0.5f));
 		_ui.text(W - 6, 4, fps, ui::GOLD, ui::TEXT, ui::RIGHT);
-		// (The nearest character: what it is doing and whether it can notice the player.)
-		char who[96];
-		int row = 1;
-		if (_npcs.loaded() && _npcs.debugNearest(who, sizeof(who))) _ui.text(W - 6, 4 + Ui::lineHeight() * row++, who, ui::GREY, ui::TEXT, ui::RIGHT);
-		for (int k = 0; k < 2; ++k)
-			if (_npcs.loaded() && _npcs.debugLastHit(who, sizeof(who), k)) _ui.text(W - 6, 4 + Ui::lineHeight() * row++, who, ui::GREY, ui::TEXT, ui::RIGHT);
-		if (_npcs.loaded() && _npcs.unboundCount()) {
-			char hashes[40] = {};
-			for (u32 k = 0; k < _npcs.unboundSeenCount() && k < 3; ++k) snprintf(hashes + strlen(hashes), sizeof(hashes) - strlen(hashes), " %08X", unsigned(_npcs.unboundSeen(k)));
-			snprintf(who, sizeof(who), "unb %u%s", unsigned(_npcs.unboundCount()), hashes);
-			_ui.text(W - 6, 4 + Ui::lineHeight() * row++, who, ui::GREY, ui::TEXT, ui::RIGHT);
-		}
 	}
 	if (!menuOpen && _chapterTime > 0.0f) {
 		// The card of a chapter: it fades in, stays, fades out.

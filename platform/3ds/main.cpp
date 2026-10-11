@@ -380,7 +380,21 @@ int main(int, char**) {
 				// ZR locks on to a target / lets go; the D-Pad gives a blow its direction.
 				in.focus = (gameDown & KEY_ZR) != 0;
 				in.blowDir = (gameHeld & KEY_DRIGHT) ? 1 : (gameHeld & KEY_DLEFT) ? -1 : 0;
-				in.dpadUp = (gameDown & dpad & KEY_DUP) != 0;
+				// As the original's: with A held, a press of the D-Pad is the blow - up ahead,
+				// left and right to the sides (a press of A with the D-Pad already held works too).
+				if ((gameHeld & KEY_A) && !(gameDown & KEY_A)) {
+					if (gameDown & KEY_DLEFT) {
+						in.attack = true;
+						in.blowDir = -1;
+					} else if (gameDown & KEY_DRIGHT) {
+						in.attack = true;
+						in.blowDir = 1;
+					} else if (gameDown & KEY_DUP) {
+						in.attack = true;
+						in.blowDir = 0;
+					}
+				}
+				in.dpadUp = (gameDown & dpad & KEY_DUP) != 0 && !(gameHeld & KEY_A); // (with A held it is a blow, not the fists)
 				in.toggleSneak = (gameDown & dpad & KEY_DDOWN) != 0;
 				// Locked on: the C-Stick flicked aside picks the next target
 				// (either scheme: the character faces the target by itself then).

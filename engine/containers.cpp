@@ -233,11 +233,6 @@ void App::chestUpdate(Input& in, float dt) {
 	_chestTarget = -1;
 	_corpseTarget = -1;
 	if (_chest.stage == CH_NONE) {
-		if (hi >= 0 && _hero.loaded() && !_hero.down() && _hero.weapon() != WEAPON_NONE && !_panel.open() && _job.stage == JOB_NONE &&
-		    _lootTarget < 0 && _player.grounded && !_player.swimming && !_player.climbing)
-			_corpseBlocked = corpseNearest(false) >= 0; // (a body to search, but the weapon is out)
-		else
-			_corpseBlocked = false;
 		if (hi < 0 || !_hero.loaded() || _hero.down() || _hero.weapon() != WEAPON_NONE || _hero.drawing() ||
 		    _job.stage != JOB_NONE || _panel.open() || _player.swimming || _player.climbing || _hero.mantling() || _lootTarget >= 0 ||
 		    !_player.grounded)

@@ -625,6 +625,12 @@ void buildSyntheticActor(SrcModel& model) {
 			reach(0.3f, p);
 		}));
 		model.clips.push_back(bend("C_IGET_2_STAND_1", "S_RUN", 8, 1.0f, 0.0f));
+		// Searching a body ("T_PLUNDER"): down to it and up again, in one clip.
+		model.clips.push_back(makeClip("T_PLUNDER", "S_RUN", 50, false, [reach, crouch](float phase, float, Pose& p) {
+			const float c = std::sin(phase * 3.14159265f);
+			crouch(c, p);
+			reach(0.5f * c, p);
+		}));
 	}
 	addFightClips(model);
 	// Drinking a potion, as "POTIONFAST" (food has no animation here: the

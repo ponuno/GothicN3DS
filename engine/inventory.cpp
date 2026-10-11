@@ -1297,11 +1297,6 @@ void App::drawItemHud() {
 			tag({m.pos[0], m.pos[1] + 75.0f, m.pos[2]}, line);
 		}
 	}
-	if (_corpseBlocked && _lootTarget < 0 && _chestTarget < 0 && _chest.stage == CH_NONE) {
-		const int bi = corpseNearest(false);
-		if (bi >= 0) tag({_npcs.game().npc(u32(bi)).pos[0], _npcs.game().npc(u32(bi)).pos[1] + 60.0f, _npcs.game().npc(u32(bi)).pos[2]},
-		                 tr("Уберите оружие, чтобы обыскать"));
-	}
 	if (_corpseTarget >= 0 && _lootTarget < 0 && _chestTarget < 0 && _chest.stage == CH_NONE) {
 		const GameNpc& b = _npcs.game().npc(u32(_corpseTarget));
 		char name[40], line[96];

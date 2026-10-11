@@ -396,7 +396,6 @@ private:
 	Chests _chests;
 	int _chestTarget = -1;
 	int _corpseTarget = -1;
-	bool _corpseBlocked = false; // a body in reach, but the weapon is drawn
 	struct ChestJob {
 		u8 stage = CH_NONE;
 		u32 index = 0;

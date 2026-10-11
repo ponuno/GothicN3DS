@@ -2684,7 +2684,7 @@ static void testModel() {
 		CHECK(r.triangles == 59 * 4 && r.parts >= 3 && r.largestPalette == MODEL_PALETTE && r.clips == 2 && r.textures == 1);
 		CHECK(r.report.find("skeleton: 60 nodes") != std::string::npos);
 		const ModelBakeResult a = bakeModel(actor, bo, writer);
-		CHECK(a.parts == 2 && a.clips == 70 && a.largestPalette <= MODEL_PALETTE);
+		CHECK(a.parts == 2 && a.clips == 71 && a.largestPalette <= MODEL_PALETTE);
 		CHECK(a.report.find("S_1HATTACK 1.88s 3 blows") != std::string::npos && a.report.find("T_FISTPARADE_O 0.52s parry") != std::string::npos);
 		CHECK(a.report.find("blends: 5: T_RUNL_2_WALKL 0.20s") != std::string::npos);
 		CHECK(a.report.find("T_STAND_2_JUMP 0.48s 239cm/s up 74cm") != std::string::npos);
@@ -2998,7 +2998,7 @@ static void testModel() {
 	{
 		// The test character: loops wrap, moving clips know their speed.
 		Model m;
-		CHECK(m.load(pak, "hero") && m.nodeCount() == 14 && m.clipCount() == 70 && m.blendCount() == 5);
+		CHECK(m.load(pak, "hero") && m.nodeCount() == 14 && m.clipCount() == 71 && m.blendCount() == 5);
 		// The frames of a fight come through: three blows of a combo, each
 		// with its window and its end; a parry's frames; where a draw changes hands.
 		{
@@ -7110,11 +7110,36 @@ static void testCorpses() {
 		in.confirm = true;
 		app.update(in, dt);
 	}
-	run(3.0f);
+	// (The page is up while the search animation is still going, not after it.)
+	{
+		const Clip* plunder = app.hero().clip("T_PLUNDER");
+		CHECK(plunder != nullptr);
+		float t = 0;
+		while (!app.hero().mobOpen() && t < 4.0f) {
+			app.update(Input {}, dt);
+			t += dt;
+		}
+		CHECK(plunder && t > 0.2f && t < plunder->duration() * 0.9f);
+	}
+	run(1.0f);
 	CHECK(app.chestStage() == App::CH_OPEN && app.corpseOpen() == body && app.panel().page() == InventoryPanel::PAGE_CHEST);
 	{
 		const InventoryView& v = app.inventory();
 		CHECK(v.chest.open && v.chest.count >= 2 && v.chest.name[0]);
+	}
+	// Bent over the body the head is ahead of the hips (not behind them, nor to the side):
+	// the hero is built to face +Z in model space.
+	if (app.hero().stoop() > 0.9f) {
+		const Model& hm = app.hero().model();
+		static Mat34 world[MODEL_MAX_NODES];
+		hm.worldTransforms(app.hero().pose(), world);
+		const int head = hm.findNode(hashName("BIP01 HEAD")), pelvis = hm.findNode(hashName("BIP01 SPINE"));
+		CHECK(head >= 0 && pelvis >= 0);
+		if (head >= 0 && pelvis >= 0) {
+			const float ahead = world[head].m[2][3] - world[pelvis].m[2][3];
+			const float aside = std::fabs(world[head].m[0][3] - world[pelvis].m[0][3]);
+			CHECK(ahead > 5.0f && aside < ahead);
+		}
 	}
 	const i32 hn = g.itemCount(hero, nugget), ha = g.itemCount(hero, apple);
 	// Out only: nothing goes in.

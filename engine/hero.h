@@ -268,6 +268,7 @@ private:
 		float time2 = 0;      // seconds on the way out, without clips
 		bool release = false; // closed: on the way back
 		bool stoopHold = false; // no animations for the chest: bent over while it is open
+		float openAt = 0;       // a body: the page is up this many seconds into the search animation (0: when it is over)
 	};
 	Use _use;
 	float _stoop = 0; // how far bent over, 0..1 (drawn by updatePose)

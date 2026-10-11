@@ -623,6 +623,13 @@ bool Hero::openMob(const char* scheme) {
 	};
 	const Clip* in = find("T_%s_STAND_2_S0");
 	const Clip* lid = find("T_%s_S0_2_S1");
+	// A body is searched with the original's own animation (the scripts play it for
+	// the people who rob the dead: B_AssessBody, "T_PLUNDER"): one clip, bending down and up.
+	if (strcmp(scheme, "CORPSE") == 0) {
+		in = _model.clip("T_PLUNDER");
+		lid = nullptr;
+		if (in) _use.openAt = in->duration() * 0.55f;
+	}
 	_use.nIn = _use.nOut = 0;
 	if (in) _use.seqIn[_use.nIn++] = in;
 	if (in && lid) _use.seqIn[_use.nIn++] = lid;
@@ -653,6 +660,9 @@ void Hero::mobTick(float dt) {
 		if (_use.nIn == 0) {
 			if (_use.time >= 0.45f) _use.phase = USE_MOB_HOLD;
 			_stoop = smoothStep(clamp(_use.time / 0.45f, 0.0f, 1.0f));
+		} else if (_use.openAt > 0.0f && _use.at2 == 0 && _use.nIn == 1 && c == _use.seqIn[0] && _use.time >= _use.openAt) {
+			// (The hands are on the body: its things are shown while the search goes on.)
+			_use.phase = USE_MOB_HOLD;
 		} else if (c != _use.seqIn[_use.at2] || _anim.finished()) {
 			if (++_use.at2 < _use.nIn) {
 				_anim.play(_use.seqIn[_use.at2], 0.08f);
@@ -1113,6 +1123,10 @@ void Hero::updatePose(float dt) {
 			const float len = sqrtf(d.x * d.x + d.z * d.z);
 			if (len > 1.0f) across = {d.x / len, 0.0f, d.z / len};
 		}
+		// Which way the turn tips the body: the up direction goes to across x up = (-z, 0, x); the
+		// model faces +Z, so the axis must point to +X for that to be forward. (Left-to-right
+		// arm gave the opposite sign on a skeleton whose left side is at -X: it bent backwards.)
+		if (across.x < 0.0f) across = {-across.x, 0.0f, -across.z};
 		for (int k = 0; k < 3; ++k) _model.turnNodeAbout(_drawn, _spine[k], across, kBend[k] * _stoop);
 		_model.turnNodeAbout(_drawn, _headNode, across, -0.3f * _stoop);
 	}

@@ -36,6 +36,11 @@ ScriptInstance* Game::itemObject(u32 symbol, i32 loot, i32 amount) {
 	return slot->inst;
 }
 
+i32 Game::itemMaterial(u32 symbol) {
+	const GameItemInfo* it = itemInfo(symbol);
+	return it ? it->material : -1;
+}
+
 i32 Game::itemObjectLoot(const ScriptInstance* inst) const {
 	if (!inst) return -2;
 	for (const ItemObject& o : _itemObjects)

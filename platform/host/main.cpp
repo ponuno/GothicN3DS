@@ -614,9 +614,9 @@ int main(int argc, char** argv) {
 		       ns.models, ns.textures, double(ns.textureBytes) / 1048576.0, npcWaitingMax, npcNoModelMax);
 		printf("life              %s: %u living at most, %u walking at once; %u state functions called, %u actions carried out "
 		       "(%u dropped); ways: %u found, %u not, %u characters put at their goal; animations: %u read, %.2f MB in memory, "
-		       "%u missing, %u refused; way net: %u points, %u free points; things to use: %u, got into %u times, %u in use at the end\n",
+		       "%u missing, %u refused, %u let go; way net: %u points, %u free points; things to use: %u, got into %u times, %u in use at the end\n",
 		       standing ? "off (--standing)" : "on", npcActorsMax, npcWalkingMax, ns.stateCalls, ns.actions, ns.queueFull, ns.paths,
-		       ns.noPath, ns.snapped, ns.clips, double(ns.clipBytes) / 1048576.0, ns.clipsMissing, ns.clipsRefused,
+		       ns.noPath, ns.snapped, ns.clips, double(ns.clipBytes) / 1048576.0, ns.clipsMissing, ns.clipsRefused, ns.clipsEvicted,
 		       app.npcs().wayNet().nodeCount(), app.npcs().wayNet().freeCount(), app.npcs().mobs().count(), ns.mobsUsed, ns.mobsInUse);
 		if (who)
 			for (u32 i = 0; i < app.npcs().actorCount(); ++i) {

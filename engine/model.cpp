@@ -232,7 +232,7 @@ bool Model::hasClip(u32 nameHash) const {
 	return false;
 }
 
-const Clip* Model::fetch(Pak& pak, u32 nameHash, u32& inMemory, u32 budget) {
+const Clip* Model::fetch(Pak& pak, u32 nameHash, u32& inMemory, u32 budget, u32 stamp) {
 	const Clip* first = nullptr;
 	// The clip and what follows it ("T_STAND_2_SIT", then "S_SIT").
 	for (int hops = 0; hops < 4 && nameHash; ++hops) {
@@ -241,6 +241,7 @@ const Clip* Model::fetch(Pak& pak, u32 nameHash, u32& inMemory, u32 budget) {
 			if (_clipRefs[i].nameHash == nameHash) at = i;
 		if (at == _h.clipCount) break;
 		Clip& c = _clips[at];
+		if (_clipUsed) _clipUsed[at] = stamp;
 		if (!c.loaded() && !_clipTried[at]) {
 			const PakEntry* e = pak.find(_clipRefs[at].entryHash);
 			if (!e || inMemory + e->size > budget) break; // (not marked as tried: there may be room later)
@@ -253,6 +254,44 @@ const Clip* Model::fetch(Pak& pak, u32 nameHash, u32& inMemory, u32 budget) {
 		nameHash = c.header().next;
 	}
 	return first;
+}
+
+bool Model::chainWaiting(u32 nameHash) const {
+	for (int hops = 0; hops < 4 && nameHash; ++hops) {
+		u32 at = _h.clipCount;
+		for (u32 i = 0; i < _h.clipCount; ++i)
+			if (_clipRefs[i].nameHash == nameHash) at = i;
+		if (at == _h.clipCount) return false;
+		const Clip& c = _clips[at];
+		if (!c.loaded()) return !_clipTried[at];
+		if (c.loops() || c.header().next == nameHash) return false;
+		nameHash = c.header().next;
+	}
+	return false;
+}
+
+int Model::oldestClip(const Clip* const* pinned, u32 pinnedCount, u32 before, u32& stamp) const {
+	int best = -1;
+	for (u32 i = 0; i < _h.clipCount; ++i) {
+		const Clip& c = _clips[i];
+		if (!c.loaded() || !_clipUsed || _clipUsed[i] >= before) continue;
+		bool pin = false;
+		for (u32 k = 0; k < pinnedCount && !pin; ++k) pin = pinned[k] == &c;
+		if (pin) continue;
+		if (best < 0 || _clipUsed[i] < stamp) {
+			best = int(i);
+			stamp = _clipUsed[i];
+		}
+	}
+	return best;
+}
+
+u32 Model::dropClip(int i) {
+	if (i < 0 || u32(i) >= _h.clipCount || !_clips[i].loaded()) return 0;
+	const u32 bytes = _clips[i].bytes();
+	_clips[i].release();
+	_clipTried[i] = 0;
+	return bytes;
 }
 
 bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool, bool lazyClips) {
@@ -277,8 +316,9 @@ bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool, bool lazyClips
 		// Zeroed memory is a valid, empty Clip (and nothing here needs operator new).
 		_clips = static_cast<Clip*>(calloc(size_t(_h.clipCount) + 1, sizeof(Clip)));
 		_clipTried = static_cast<u8*>(calloc(size_t(_h.clipCount) + 1, 1));
+		_clipUsed = static_cast<u32*>(calloc(size_t(_h.clipCount) + 1, sizeof(u32)));
 		_textures = static_cast<gfx::Texture**>(calloc(size_t(_h.partCount) + 1, sizeof(gfx::Texture*)));
-		ok = _nodes && _parts && _clipRefs && _blends && _clips && _clipTried && _textures;
+		ok = _nodes && _parts && _clipRefs && _blends && _clips && _clipTried && _clipUsed && _textures;
 	}
 	const WorldVertex* vertices = nullptr;
 	const u16* indices = nullptr;
@@ -370,6 +410,8 @@ void Model::release() {
 	free(_clips);
 	free(_clipTried);
 	_clipTried = nullptr;
+	free(_clipUsed);
+	_clipUsed = nullptr;
 	free(_textures);
 	free(_nodes);
 	free(_parts);

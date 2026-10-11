@@ -96,6 +96,7 @@ struct GameItemInfo {
 	u32 onEquip, onUnequip; // rings and amulets: what wearing them does
 	i32 condAtr[3], condValue[3]; // what it takes: attribute >= value (value 0: nothing)
 	i32 value;            // ore
+	i32 material;         // C_ITEM.MATERIAL (MAT_WOOD 0, MAT_METAL 2 ...): what it sounds like
 };
 
 // A stack of items a character carries (CreateInvItems).
@@ -340,6 +341,8 @@ public:
 	// given up (variables that still refer to it then refer to nothing, as
 	// they would to a thing that is gone). Null if `symbol` is no item.
 	ScriptInstance* itemObject(u32 symbol, i32 loot = -1, i32 amount = 1);
+	// C_ITEM.MATERIAL of a kind of item (the scripts' MAT_ numbers), -1 if unknown.
+	i32 itemMaterial(u32 symbol);
 	// The thing in the world an object of itemObject() stands for: its index,
 	// -1 for an item carried, -2 if the object is none of them.
 	i32 itemObjectLoot(const ScriptInstance* inst) const;

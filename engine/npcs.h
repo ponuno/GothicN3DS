@@ -86,6 +86,7 @@ struct NpcStats {
 	u32 clips = 0;        // animations read since the world was entered
 	u32 clipBytes = 0;    // animations in memory
 	u32 clipsRefused = 0; // animations not read because the budget was spent
+	u32 clipsEvicted = 0; // animations let go to make room for others
 	u32 clipsMissing = 0; // animations the scripts asked for that the model does not have
 	u32 stateCalls = 0;   // script functions of states called since the start
 	u32 actions = 0;      // actions carried out since the start
@@ -278,6 +279,7 @@ struct NpcActor {
 	const Clip* animClip = nullptr;
 	float flee = 0;        // seconds of fleeing left
 	u8 drawTo = 0xFF;      // WeaponMode being taken in hand (0xFF: none)
+	u8 heardWeapon = 0;    // what it had in hand when that last made a sound
 	float drawAt = -1.0f;  // seconds into the draw where it changes hands
 	bool drawBack = false; // the weapon is being put away: its drawing plays backwards
 	bool hitFromBehind = false;
@@ -349,6 +351,20 @@ public:
 	void setHeroLink(const HeroLink& link) { _heroLink = link; }
 	// Told of the sound events of the clips the characters play.
 	void setSoundHook(const SoundEventHook& hook) { _soundHook = hook; }
+	// Told of the fight's other sounds, by the scripts' names (C_SFX): `names` is a list
+	// "CS_IAM_ME_FL|CS_IAM_UD_FL|CS_IAM" to try in turn, the first one known sounds, at
+	// character `npc`.
+	struct NamedSoundHook {
+		void (*fn)(void* user, const char* names, int npc, float gain) = nullptr;
+		void* user = nullptr;
+	};
+	void setNamedSoundHook(const NamedSoundHook& hook) { _namedSoundHook = hook; }
+	// The sounds themselves, as ZenGin and OpenGothic make them (also for the player's character):
+	void emitSound(u32 npc, const char* names, float gain = 1.0f);
+	void emitSvm(u32 npc, const char* what);              // its voice: "SVM_<voice>_DEAD", "_AARGH"
+	void emitHit(u32 attacker, u32 victim);               // a blow lands: "CS_IAM_<weapon>_<armour>", "CS_MAM"
+	void emitParry(u32 npc);                              // weapon on weapon: "CS_IAI_ME_ME"
+	void emitDraw(u32 npc, u8 from, u8 to, u32 weaponItem); // "DRAWSOUND_ME"/"_WO", "UNDRAWSOUND_..."
 	// The voices: `play` is told a line (hashName of its name) is begun by a character (-1: nobody known; `hero`:
 	// the player's) and returns how many seconds the recording lasts, 0 if it has none; `stop` ends it early.
 	struct SpeechHook {
@@ -420,6 +436,7 @@ public:
 
 private:
 	SoundEventHook _soundHook;
+	NamedSoundHook _namedSoundHook;
 	SpeechHook _speechHook;
 	enum { PIECES = 48, ACTORS = 16 }; // three models each
 	typedef NpcPiece Piece;
@@ -457,7 +474,9 @@ private:
 	void clearQueue(NpcActor& a);
 	bool push(NpcActor* a, const NpcAction& act);
 	void pushFront(NpcActor& a, const NpcAction& act);
-	const Clip* clip(NpcActor& a, const char* name);
+	// `force`: read even past the budget when nothing can be let go (a fall must not be missing).
+	const Clip* clip(NpcActor& a, const char* name, bool force = false);
+	bool evictClip(); // lets the animation not played for longest go; false: nothing to let go
 	const Clip* modeClip(NpcActor& a, const char* pattern, bool orOtherMode);
 	NpcActor* actorFor(ScriptInstance* inst);
 	int npcFor(ScriptInstance* inst) const { return _game.indexOf(inst); }
@@ -683,7 +702,7 @@ private:
 	NpcActor _actors[ACTORS];
 	class Loot* _heldLoot = nullptr;
 	Pak* _heldPak = nullptr;
-	Pak* _pak = nullptr; // while update() or enterWorld() runs
+	Pak* _pak = nullptr; // the archive of the world entered (animations are read from it at any time)
 	const World* _world = nullptr; // ... and the world
 	u32 _clipBytes = 0;
 	u32 _victim = SCRIPT_NONE; // the scripts' global of that name

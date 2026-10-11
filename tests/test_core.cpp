@@ -7131,6 +7131,43 @@ static void testCorpses() {
 	run(0.3f);
 	CHECK(app.corpseTarget() < 0);
 
+	// The memory for animations full (as after a long game on the console): the one
+	// who falls still gets its fall - what has not been played for longest makes room.
+	{
+		static std::vector<std::string> heard;
+		heard.clear();
+		Npcs::NamedSoundHook h;
+		h.fn = [](void*, const char* names, int, float) { heard.push_back(names); };
+		npcs.setNamedSoundHook(h);
+		int other = -1;
+		for (u32 i = 0; i < g.npcCount() && other < 0; ++i)
+			if (i != hero && i != b && !g.isMonster(g.npc(i)) && g.npc(i).placed && g.npc(i).world == g.currentWorld() &&
+			    g.npc(i).down == DOWN_NONE && npcs.actorOf(i))
+				other = int(i);
+		CHECK(other >= 0);
+		if (other >= 0) {
+			const u32 o = u32(other);
+			npcs.config().clipBudget = npcs.stats().clipBytes; // (no room left at all)
+			const u32 evictedBefore = npcs.stats().clipsEvicted;
+			npcs.strike(hero, o, false);
+			npcs.goDown(o, int(hero), true, false);
+			run(3.0f);
+			const NpcActor* oa = npcs.actorOf(o);
+			CHECK(oa && std::strncmp(oa->stance, "DEAD", 4) == 0 && !oa->noLying);
+			CHECK(oa && oa->rig &&
+			      (oa->anim.current() == oa->rig->model.clip("S_DEAD") || oa->anim.current() == oa->rig->model.clip("S_DEADB") ||
+			       oa->anim.current() == oa->rig->model.clip("T_DEAD") || oa->anim.current() == oa->rig->model.clip("T_DEADB")));
+			CHECK(npcs.stats().clipsEvicted > evictedBefore);
+			CHECK(npcs.stats().clipBytes <= npcs.config().clipBudget);
+			// ... and the blow and the fall were heard.
+			bool hit = false;
+			for (const std::string& n : heard) hit = hit || n.find("CS_MAM") != std::string::npos || n.find("CS_IAM") != std::string::npos;
+			CHECK(hit);
+		}
+		npcs.config().clipBudget = 1536u * 1024u;
+		npcs.setNamedSoundHook(Npcs::NamedSoundHook {});
+	}
+
 	// A creature goes down the same way: it lies in its dead pose, and carries its trophies.
 	int beast = -1;
 	for (u32 i = 0; i < g.npcCount() && beast < 0; ++i)
@@ -7149,12 +7186,38 @@ static void testCorpses() {
 		if (a) {
 			CHECK(std::strncmp(a->stance, "DEAD", 4) == 0);
 			CHECK(a->anim.current() != nullptr);
-			// (Without a way of falling the blow or the run it was in ends: it stands, tipped over.)
-			CHECK(a->noLying == !(a->rig && (a->rig->model.clip("T_DEAD") || a->rig->model.clip("T_DEADB") || a->rig->model.clip("S_DEAD") ||
-			                                 a->rig->model.clip("S_DEADB"))));
-			if (a->noLying) CHECK(a->anim.current() == a->idle && a->slump > 0.99f);
+			// (It has a fall - read at once, though the blow came from outside the actors' update -
+			// and lies in it; the synthetic creatures all have one.)
+			CHECK(!a->noLying && a->rig && (a->anim.current() == a->rig->model.clip("S_DEAD") || a->anim.current() == a->rig->model.clip("T_DEAD")));
 		}
 		CHECK(g.itemCount(m, apple) == 3);
+	}
+
+	// Drawing the sword: the whole draw is played (the hands change in its middle,
+	// not at the first frame), and it is heard.
+	{
+		static std::vector<std::string> heard;
+		heard.clear();
+		Npcs::NamedSoundHook h;
+		h.fn = [](void*, const char* names, int, float) { heard.push_back(names); };
+		npcs.setNamedSoundHook(h);
+		before();
+		CHECK(app.menuAction(MENU_GIVE_WEAPON, nullptr) && g.npc(hero).melee != SCRIPT_NONE);
+		Input in;
+		in.meleeSlot = true;
+		app.update(in, dt);
+		app.update(Input {}, dt);
+		CHECK(app.hero().drawing() && app.hero().weapon() == WEAPON_NONE);
+		float took = 0;
+		while (app.hero().weapon() == WEAPON_NONE && took < 3.0f) {
+			app.update(Input {}, dt);
+			took += dt;
+		}
+		CHECK(app.hero().weapon() == WEAPON_1H && took > 0.15f);
+		bool drew = false;
+		for (const std::string& n : heard) drew = drew || n.find("DRAWSOUND") != std::string::npos;
+		CHECK(drew);
+		npcs.setNamedSoundHook(Npcs::NamedSoundHook {});
 	}
 }
 

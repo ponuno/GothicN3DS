@@ -484,11 +484,32 @@ u32 Sound::request(int defIndex, bool located, Vec3 pos, float gain, float range
 
 u32 Sound::play(const char* name, const Vec3* at, float gain, float range) {
 	if (!ready() || !name || !name[0]) return 0;
-	const int d = defFor(hashName(name), name);
+	int d = defFor(hashName(name), name);
 	if (d < 0 || _defs[d].state != 1) {
 		++_stats.unknown;
 		note(name, false);
 		return 0;
+	}
+	// One of its variants as ZenGin and OpenGothic do: "CS_IAM_ME_FL", "CS_IAM_ME_FL_A1" ...
+	if (_defs[d].variants < 0) {
+		int n = 0;
+		char v[64];
+		for (int k = 1; k <= 9; ++k) {
+			snprintf(v, sizeof(v), "%s_A%d", name, k);
+			const int vd = defFor(hashName(v), v);
+			if (vd < 0 || _defs[vd].state != 1) break;
+			n = k;
+		}
+		_defs[d].variants = i8(n);
+	}
+	if (_defs[d].variants > 0) {
+		const int pick = int(random01() * float(_defs[d].variants + 1));
+		if (pick > 0 && pick <= _defs[d].variants) {
+			char v[64];
+			snprintf(v, sizeof(v), "%s_A%d", name, pick);
+			const int vd = defFor(hashName(v), v);
+			if (vd >= 0 && _defs[vd].state == 1) d = vd;
+		}
 	}
 	return request(d, at != nullptr, at ? *at : Vec3 {0, 0, 0}, gain, range, -1, -1);
 }

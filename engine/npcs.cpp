@@ -190,7 +190,9 @@ void Npcs::enterWorld(Pak& pak, const World& world, const char* asset, Vec3 eye,
 	// Whoever is around the player is there when the world appears.
 	++_frame;
 	select(pak, world, eye, 0xFFFFu);
-	_pak = nullptr;
+	// (The archive stays known: animations are read outside update() too - a blow
+	// of the player's that kills somebody needs its fall at once. Without it the
+	// fall was missing until the next load, which read S_DEAD.)
 	_world = nullptr;
 }
 
@@ -395,7 +397,6 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	_stats.actors = actors;
 	_stats.walking = walking;
 	_stats.clipBytes = _clipBytes;
-	_pak = nullptr;
 	_world = nullptr;
 }
 

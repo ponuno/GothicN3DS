@@ -809,6 +809,11 @@ void App::syncHeroNpc() {
 	if (i < 0) return;
 	GameNpc& h = _npcs.game().npcMut(u32(i));
 	h.weapon = _hero.weapon();
+	if (_hero.weapon() != _heroWeaponHeard) {
+		// The hands have just changed: the sword's ring as it leaves the sheath.
+		if (!_hero.down()) _npcs.emitDraw(u32(i), _heroWeaponHeard, _hero.weapon(), h.melee);
+		_heroWeaponHeard = _hero.weapon();
+	}
 	_npcs.setHeroYaw(_hero.yaw());
 	HeroLink link;
 	link.hit = heroHitThunk;
@@ -1000,6 +1005,7 @@ void App::heroHit(u32 attacker) {
 	const bool beast = a.weapon == WEAPON_FIST && g.guildOf(a) >= g.constant("GIL_SEPERATOR_HUM", 16);
 	if ((_hero.parrying() && front && !beast) || (_hero.dodging() && front)) {
 		(_hero.parrying() ? _fight.parried : _fight.dodged) += 1;
+		if (_hero.parrying()) _npcs.emitParry(u32(hi));
 		_npcs.sendPerception("PERC_ASSESSFIGHTSOUND", u32(hi), int(attacker), hi);
 		return;
 	}
@@ -1008,6 +1014,8 @@ void App::heroHit(u32 attacker) {
 	g.setAttribute(h, 0, hp);
 	h.lastHit = int(attacker);
 	++_fight.blowsTaken;
+	_npcs.emitHit(attacker, u32(hi));
+	if (hp > 1 && dmg > 0 && (_fight.blowsTaken & 1)) _npcs.emitSvm(u32(hi), "AARGH");
 	_hero.hit(fromBehind);
 	_npcs.sendPerception("PERC_ASSESSFIGHTSOUND", u32(hi), int(attacker), hi);
 	if (hp <= 1 && g.attitude(u32(hi), attacker) != g.constant("ATT_HOSTILE", 0)) {
@@ -1232,6 +1240,38 @@ void App::startSound() {
 	hook.user = this;
 	_hero.setSoundHook(hook);
 	_npcs.setSoundHook(hook);
+	Npcs::NamedSoundHook named;
+	named.fn = &App::namedSoundThunk;
+	named.user = this;
+	_npcs.setNamedSoundHook(named);
+}
+
+void App::namedSoundThunk(void* user, const char* names, int npc, float gain) { static_cast<App*>(user)->namedSound(names, npc, gain); }
+
+void App::namedSound(const char* names, int npc, float gain) {
+	if (!_sound.ready() || !names) return;
+	Vec3 at = _player.feet;
+	if (npc >= 0 && npc != heroIndex() && _npcs.loaded()) {
+		const GameNpc& n = _npcs.game().npc(u32(npc));
+		at = {n.pos[0], n.pos[1], n.pos[2]};
+	}
+	at.y += 100.0f; // (the height of the blow, the mouth)
+	const float range = 2500.0f; // (as OpenGothic's)
+	if (length(at - _cam.pos) > range * 1.2f) return;
+	char name[48];
+	for (const char* p = names; *p;) {
+		const char* end = strchr(p, '|');
+		const size_t n = end ? size_t(end - p) : strlen(p);
+		const size_t k = n < sizeof(name) - 1 ? n : sizeof(name) - 1;
+		memcpy(name, p, k);
+		name[k] = 0;
+		if (_sound.knows(name)) {
+			_sound.play(name, &at, gain, range);
+			return;
+		}
+		if (!end) break;
+		p = end + 1;
+	}
 }
 
 // A footstep, a swish of the sword: an event of the model script's, at the

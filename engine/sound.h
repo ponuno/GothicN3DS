@@ -125,6 +125,7 @@ private:
 		float pitchOff = 0, pitchVar = 0; // semitones
 		bool loop = false;
 		u8 state = 0; // 0 unused, 1 good, 2 unknown
+		i8 variants = -1; // how many "<name>_A1", "_A2" ... there are (-1: not looked for)
 	};
 	struct Voice {
 		bool active = false;

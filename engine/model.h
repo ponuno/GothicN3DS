@@ -132,7 +132,16 @@ public:
 	// the model has none of that name, it cannot be read, or reading it would
 	// take the clips in memory past `budget` bytes (`inMemory` is that count,
 	// kept by the caller across its models).
-	const Clip* fetch(Pak& pak, u32 nameHash, u32& inMemory, u32 budget);
+	// `stamp` marks the clips as used now (see oldestClip()).
+	const Clip* fetch(Pak& pak, u32 nameHash, u32& inMemory, u32 budget, u32 stamp = 0);
+	// Some clip of the chain fetch() reads for `nameHash` is still to be read
+	// (it was left for want of room, not because it is broken).
+	bool chainWaiting(u32 nameHash) const;
+	// Room for others: the clip in memory used longest ago (by fetch()'s
+	// stamp), not one of `pinned` and used before `before`; -1 if none.
+	int oldestClip(const Clip* const* pinned, u32 pinnedCount, u32 before, u32& stamp) const;
+	// Lets clip `i` go (it can be read again later); the bytes it gave back.
+	u32 dropClip(int i);
 	bool hasClip(u32 nameHash) const;
 	// Bytes of the clips that are in memory.
 	u32 clipBytes() const;
@@ -180,6 +189,7 @@ private:
 	ModelBlend* _blends = nullptr;
 	Clip* _clips = nullptr;
 	u8* _clipTried = nullptr; // per clip: reading it has been tried
+	u32* _clipUsed = nullptr; // per clip: fetch()'s stamp when it was last asked for
 	gfx::Mesh* _mesh = nullptr;
 	gfx::Texture** _textures = nullptr; // per part; shared pointers are freed once
 	TexturePool* _pool = nullptr;       // where the textures come from, if not our own

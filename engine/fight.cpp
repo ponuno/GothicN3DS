@@ -158,6 +158,7 @@ const GameItemInfo* Game::itemInfo(u32 symbol) {
 		info.condValue[k] = _iCondValue != SCRIPT_NONE && k < _vm.symbol(_iCondValue).count ? _vm.getInt(_iCondValue, k, item) : 0;
 	}
 	info.value = get(_iValue, 0);
+	info.material = get(_vm.findMember("C_ITEM", "MATERIAL"), 0);
 	_vm.destroy(item);
 	_itemInfos[_itemInfoCount] = info;
 	return &_itemInfos[_itemInfoCount++];

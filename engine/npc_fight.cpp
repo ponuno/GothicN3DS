@@ -190,42 +190,26 @@ bool Npcs::startDraw(NpcActor& a, u8 mode) {
 	if (a.phase == NpcActor::MOVING) stopWalking(a);
 	const Clip* c = nullptr;
 	bool backwards = false;
-	if (mode == WEAPON_NONE) {
-		// Put away: the drawing played backwards (the model script's "R" aliases).
-		const char* w = weaponWord(n.weapon);
+	// The clips as for the player's character (Hero::draw): the draw itself, its alias backwards.
+	const auto named = [&](const char* pattern, u8 m) {
+		const char* w = weaponWord(m);
 		char name[40];
-		snprintf(name, sizeof(name), "T_RUN_2_%s", w);
-		c = clip(a, name);
+		snprintf(name, sizeof(name), pattern, w, w);
+		return clip(a, name);
+	};
+	if (mode == WEAPON_NONE) {
+		c = named("T_%sRUN_2_%s", n.weapon);
+		if (!c) c = named("T_%sMOVE_2_MOVE", n.weapon);
 		if (!c) {
-			snprintf(name, sizeof(name), "T_%s_2_%sRUN", w, w);
-			c = clip(a, name);
-		}
-		if (!c) {
-			snprintf(name, sizeof(name), "T_MOVE_2_%sMOVE", w);
-			c = clip(a, name);
-		}
-		backwards = c != nullptr;
-		if (!c) {
-			snprintf(name, sizeof(name), "T_%sRUN_2_%s", w, w);
-			c = clip(a, name);
-		}
-		if (!c) {
-			snprintf(name, sizeof(name), "T_%sMOVE_2_MOVE", w);
-			c = clip(a, name);
+			c = named("T_%s_2_%sRUN", n.weapon);
+			if (!c) c = named("T_RUN_2_%s", n.weapon);
+			if (!c) c = named("T_MOVE_2_%sMOVE", n.weapon);
+			backwards = c != nullptr;
 		}
 	} else {
-		const char* w = weaponWord(mode);
-		char name[40];
-		snprintf(name, sizeof(name), "T_RUN_2_%s", w);
-		c = clip(a, name);
-		if (!c) {
-			snprintf(name, sizeof(name), "T_%s_2_%sRUN", w, w);
-			c = clip(a, name);
-		}
-		if (!c) {
-			snprintf(name, sizeof(name), "T_MOVE_2_%sMOVE", w);
-			c = clip(a, name);
-		}
+		c = named("T_%s_2_%sRUN", mode);
+		if (!c) c = named("T_RUN_2_%s", mode);
+		if (!c) c = named("T_MOVE_2_%sMOVE", mode);
 	}
 	if (!c || a.fist) {
 		// No animation for it (creatures always "fight with fists"): at once.
@@ -684,6 +668,10 @@ void Npcs::tickFight(NpcActor& a, float dt) {
 	const bool sameClip = c == a.animClip;
 	if (a.stumble > -1.0f) a.stumble = max(a.stumble - dt, -1.0f);
 	if (a.faiWait > 0.0f) a.faiWait -= dt;
+	if (n.weapon != a.heardWeapon) {
+		if (n.down == DOWN_NONE) emitDraw(a.npc, a.heardWeapon, n.weapon, n.melee);
+		a.heardWeapon = n.weapon;
+	}
 	if (a.drawTo != 0xFF) {
 		// The hands change where the animation says (or when it is over).
 		const float played = a.drawBack && c ? c->duration() - t : t;
@@ -758,6 +746,7 @@ i32 Npcs::strike(u32 attacker, u32 victim, bool fromBehind) {
 		const bool beast = att.weapon == WEAPON_FIST && _game.guildOf(att) >= _game.constant("GIL_SEPERATOR_HUM", 16);
 		if (c && !beast && inParry(c->fight(), c->header().fps, a->anim.time()) && inFocus(*a, attacker, 1.05f)) {
 			++_stats.parried;
+			emitParry(victim);
 			sendPerception(_percFightSound, victim, int(attacker), int(victim));
 			return -1;
 		}
@@ -784,6 +773,7 @@ i32 Npcs::strike(u32 attacker, u32 victim, bool fromBehind) {
 	}
 	const i32 dmg = _game.meleeDamage(attacker, victim);
 	++_stats.blows;
+	emitHit(attacker, victim);
 	if (a && a->ready && a->mob < 0 && dmg > 0 && a->stumble <= -0.75f) {
 		// Reeling: from in front back, from behind forward. (A blow that does
 		// no harm - armour - does not stagger, nor does one that comes while
@@ -813,6 +803,7 @@ i32 Npcs::strike(u32 attacker, u32 victim, bool fromBehind) {
 		}
 	} else {
 		sendPerception(_percOthersDamage, victim, int(attacker), int(victim));
+		if (dmg > 0 && (_stats.blows & 1)) emitSvm(victim, "AARGH"); // (every other blow, as OpenGothic's rand(2))
 	}
 	if (a) a->hitFromBehind = fromBehind;
 	// A creature that was hit and whose scripts did nothing about it (they listen for no
@@ -833,6 +824,7 @@ void Npcs::goDown(u32 npc, int attacker, bool dead, bool fromBehind) {
 	n.lastHit = attacker;
 	if (dead) _game.setAttribute(n, 0, 0);
 	(dead ? _stats.killed : _stats.knockedOut) += 1;
+	emitSvm(npc, dead ? "DEAD" : "AARGH");
 	NpcActor* a = nullptr;
 	for (NpcActor& x : _actors)
 		if (x.used && x.npc == npc) a = &x;
@@ -851,14 +843,14 @@ void Npcs::goDown(u32 npc, int attacker, bool dead, bool fromBehind) {
 		const char* in = dead ? (fromBehind ? "DEAD" : "DEADB") : (fromBehind ? "WOUNDED" : "WOUNDEDB");
 		char held[16];
 		snprintf(held, sizeof(held), "S_%s", in);
-		const Clip* c = clip(*a, tr);
+		const Clip* c = clip(*a, tr, dead);
 		if (!c) {
 			// (A model with only one way of falling.)
-			c = clip(*a, dead ? "T_DEAD" : "T_STAND_2_WOUNDED");
+			c = clip(*a, dead ? "T_DEAD" : "T_STAND_2_WOUNDED", dead);
 			in = dead ? "DEAD" : "WOUNDED";
 		}
 		snprintf(a->stance, sizeof(a->stance), "%s", in);
-		if (!c) c = clip(*a, held);
+		if (!c) c = clip(*a, held, dead);
 		if (c) a->anim.play(c, 0.1f);
 		a->noLying = dead && !c;
 		a->slump = 0.0f;
@@ -886,6 +878,74 @@ void Npcs::goDown(u32 npc, int attacker, bool dead, bool fromBehind) {
 		}
 	}
 	sendPerception(dead ? _percMurder : _percDefeat, npc, attacker, int(npc));
+}
+
+// ---- the sounds of fighting ----
+
+namespace {
+
+// The scripts' MAT_ numbers as the sound names spell them.
+const char* materialTag(i32 m) {
+	switch (m) {
+	case 0: return "WO";
+	case 1: return "ST";
+	case 2: return "ME";
+	case 3: return "LE";
+	case 4: return "CL";
+	case 5: return "GL";
+	default: return "UD";
+	}
+}
+
+} // namespace
+
+void Npcs::emitSound(u32 npc, const char* names, float gain) {
+	if (_namedSoundHook.fn && npc < _game.npcCount()) _namedSoundHook.fn(_namedSoundHook.user, names, int(npc), gain);
+}
+
+void Npcs::emitSvm(u32 npc, const char* what) {
+	if (npc >= _game.npcCount()) return;
+	const i32 voice = _game.npcInt(_game.npc(npc), _game.vm().findMember("C_NPC", "VOICE"));
+	if (voice <= 0) return;
+	char name[40];
+	snprintf(name, sizeof(name), "SVM_%ld_%s", static_cast<long>(voice), what);
+	emitSound(npc, name);
+}
+
+void Npcs::emitHit(u32 attacker, u32 victim) {
+	if (attacker >= _game.npcCount() || victim >= _game.npcCount()) return;
+	const GameNpc& a = _game.npc(attacker);
+	const GameNpc& v = _game.npc(victim);
+	// What it is hit on: metal or wooden armour, else flesh (the only ones the originals have).
+	const char* armour = "FL";
+	if (v.armorItem != SCRIPT_NONE) {
+		const i32 m = _game.itemMaterial(v.armorItem);
+		if (m == 0 || m == 2) armour = materialTag(m);
+	}
+	char names[96];
+	if ((a.weapon == WEAPON_1H || a.weapon == WEAPON_2H) && a.melee != SCRIPT_NONE) {
+		const char* w = materialTag(_game.itemMaterial(a.melee));
+		snprintf(names, sizeof(names), "CS_IAM_%s_%s|CS_IAM_%s_FL|CS_IAM_UD_FL|CS_IAM", w, armour, w);
+	} else {
+		// Fists, or a beast's teeth and claws ("JA": jaws).
+		const bool beast = _game.isMonster(a);
+		snprintf(names, sizeof(names), "CS_MAM_%s_%s|CS_MAM_%s_FL|CS_MAM", beast ? "JA" : "FI", armour, beast ? "JA" : "FI");
+	}
+	emitSound(victim, names);
+}
+
+void Npcs::emitParry(u32 npc) { emitSound(npc, "CS_IAI_ME_ME|CS_IAI"); }
+
+void Npcs::emitDraw(u32 npc, u8 from, u8 to, u32 weaponItem) {
+	const bool melee = to == WEAPON_1H || to == WEAPON_2H || from == WEAPON_1H || from == WEAPON_2H;
+	if (!melee || weaponItem == SCRIPT_NONE) return;
+	const char* m = _game.itemMaterial(weaponItem) == 2 ? "ME" : "WO";
+	char names[96];
+	if (to == WEAPON_NONE) // (Gothic 1 has no sound of its own for putting away: the drawing's, softer)
+		snprintf(names, sizeof(names), "UNDRAWSOUND_%s|DRAWSOUND_%s", m, m);
+	else
+		snprintf(names, sizeof(names), "DRAWSOUND_%s|DRAWSOUND_ME", m);
+	emitSound(npc, names, to == WEAPON_NONE ? 0.7f : 1.0f);
 }
 
 // ---- perceptions sent by the engine ----

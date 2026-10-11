@@ -36,7 +36,7 @@ const float kThrowUp = 480.0f; // (the original jumps well over a man's height)
 const float kJumpUpSpeed = 540.0f;
 const float kJumpRecover = 0.55f; // seconds on the ground before the next jump
 // Playing speed of taking a weapon in hand and of putting it away (1: as authored).
-const float kDrawRate = 0.7f, kHolsterRate = 0.6f;
+const float kDrawRate = 1.0f, kHolsterRate = 1.0f; // (as authored, now that the right clips are played)
 
 float wrapAngle(float a) {
 	const float pi = 3.14159265f;
@@ -338,20 +338,25 @@ bool Hero::draw(u8 mode) {
 	}
 	const Clip* c = nullptr;
 	bool backwards = false;
+	// As OpenGothic's AnimationSolver (and ZenGin) picks them: drawing standing is
+	// "T_1H_2_1HRUN" - the whole draw, with the frame where the hands change
+	// (DEF_FIGHTMODE) and its sound - and putting away "T_1HRUN_2_1H" (the model
+	// script's alias of it backwards). "T_RUN_2_1H" is only the short reach
+	// before it: drawing with that alone put the sword in the hand at once.
 	if (mode == WEAPON_NONE) {
-		// Away with it: the drawing played in reverse, as the model script's "R" aliases
-		// do it ("T_1H_2_RUN" is "T_RUN_2_1H" backwards). Only without that, the clips
-		// of the other naming.
-		c = weaponClip("T_RUN_2_%s", _weapon);
-		if (!c) c = weaponClip("T_%s_2_%sRUN", _weapon);
-		if (!c) c = weaponClip("T_MOVE_2_%sMOVE", _weapon);
-		backwards = c != nullptr;
-		if (!c) c = weaponClip("T_%s_2_RUN", _weapon);
-		if (!c) c = weaponClip("T_%sRUN_2_%s", _weapon);
+		c = weaponClip("T_%sRUN_2_%s", _weapon);
 		if (!c) c = weaponClip("T_%sMOVE_2_MOVE", _weapon);
+		if (!c) {
+			// Without the alias: the drawing played in reverse.
+			c = weaponClip("T_%s_2_%sRUN", _weapon);
+			if (!c) c = weaponClip("T_RUN_2_%s", _weapon);
+			if (!c) c = weaponClip("T_MOVE_2_%sMOVE", _weapon);
+			backwards = c != nullptr;
+		}
+		if (!c) c = weaponClip("T_%s_2_RUN", _weapon);
 	} else {
-		c = weaponClip("T_RUN_2_%s", mode);
-		if (!c) c = weaponClip("T_%s_2_%sRUN", mode);
+		c = weaponClip("T_%s_2_%sRUN", mode);
+		if (!c) c = weaponClip("T_RUN_2_%s", mode);
 		if (!c) c = weaponClip("T_MOVE_2_%sMOVE", mode);
 	}
 	_blow.reset();
@@ -362,8 +367,6 @@ bool Hero::draw(u8 mode) {
 		_forceNext = true;
 		return true;
 	}
-	// (Slower than authored: at 1:1 the draw is over before it is seen, and the put-away - the same
-	// clip backwards, ending on the first frame - hardly shows at all.)
 	if (backwards) {
 		_anim.playReversed(c, 0.15f);
 		_anim.setRate(-kHolsterRate);

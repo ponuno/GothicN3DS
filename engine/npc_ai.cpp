@@ -80,14 +80,27 @@ const char* Npcs::doing(const NpcActor& a) const {
 // ---- animations ----
 
 // The clip of that name, read from the archive if need be.
-const Clip* Npcs::clip(NpcActor& a, const char* name) {
+const Clip* Npcs::clip(NpcActor& a, const char* name, bool force) {
 	if (!a.rig) return nullptr;
 	Model& m = a.rig->model;
 	const u32 hash = hashName(name);
 	if (!m.hasClip(hash)) return nullptr;
 	if (!_pak) return m.clip(hash);
 	const u32 before = _clipBytes;
-	const Clip* c = m.fetch(*_pak, hash, _clipBytes, _cfg.clipBudget);
+	const Clip* c = m.fetch(*_pak, hash, _clipBytes, _cfg.clipBudget, _frame + 1);
+	// No room: what has not been played for longest goes (never what somebody is in
+	// the middle of), until the clip and those that follow it are in. Without this the
+	// memory for animations filled up in the course of a game and stayed full: whoever
+	// came to fall then had no T_DEAD, and lay down only after a reload.
+	for (int tries = 0; tries < 24 && m.chainWaiting(hash); ++tries) {
+		if (!evictClip()) break;
+		const Clip* again = m.fetch(*_pak, hash, _clipBytes, _cfg.clipBudget, _frame + 1);
+		if (!c) c = again;
+	}
+	if (force && m.chainWaiting(hash)) {
+		const Clip* again = m.fetch(*_pak, hash, _clipBytes, 0xFFFFFFFFu, _frame + 1);
+		if (!c) c = again;
+	}
 	if (_clipBytes != before) ++_stats.clips;
 	if (!c) ++_stats.clipsRefused;
 	if (c) {
@@ -100,6 +113,35 @@ const Clip* Npcs::clip(NpcActor& a, const char* name) {
 		}
 	}
 	return c;
+}
+
+bool Npcs::evictClip() {
+	// Pinned: what each one is playing, falls back into, strikes with.
+	const Clip* pinned[3 * ACTORS];
+	u32 n = 0;
+	for (const NpcActor& a : _actors) {
+		if (!a.used || n + 3 > 3 * ACTORS) continue;
+		if (a.anim.current()) pinned[n++] = a.anim.current();
+		if (a.idle) pinned[n++] = a.idle;
+		if (a.blow.clip) pinned[n++] = static_cast<const Clip*>(a.blow.clip);
+	}
+	Piece* where = nullptr;
+	int which = -1;
+	u32 oldest = 0;
+	for (Piece& p : _pieces) {
+		if (!p.hash || p.failed) continue;
+		u32 stamp = 0;
+		const int i = p.model.oldestClip(pinned, n, _frame + 1, stamp);
+		if (i >= 0 && (which < 0 || stamp < oldest)) {
+			where = &p;
+			which = i;
+			oldest = stamp;
+		}
+	}
+	if (!where) return false;
+	_clipBytes -= min(_clipBytes, where->model.dropClip(which));
+	++_stats.clipsEvicted;
+	return true;
 }
 
 const char* Npcs::animationName(const NpcActor& a) const {
@@ -168,12 +210,13 @@ void Npcs::wake(NpcActor& a) {
 	a.stumble = -1.0f;
 	a.noLying = false;
 	a.slump = 0.0f;
+	a.heardWeapon = a.npc < _game.npcCount() ? _game.npc(a.npc).weapon : u8(WEAPON_NONE);
 	if (a.npc < _game.npcCount() && _game.npc(a.npc).down == DOWN_DEAD) {
 		// Where it fell, as it fell.
-		const Clip* lying = clip(a, "S_DEADB");
+		const Clip* lying = clip(a, "S_DEADB", true);
 		snprintf(a.stance, sizeof(a.stance), "DEADB");
 		if (!lying) {
-			lying = clip(a, "S_DEAD");
+			lying = clip(a, "S_DEAD", true);
 			snprintf(a.stance, sizeof(a.stance), "DEAD");
 		}
 		if (lying) {

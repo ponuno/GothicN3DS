@@ -6,6 +6,7 @@
 #include "hero.h"
 #include "inventory.h"
 #include "loot.h"
+#include "particles.h"
 #include "menu.h"
 #include "npcs.h"
 #include "panel.h"
@@ -213,6 +214,8 @@ public:
 	// pick up now (A, hands empty; -1 for none).
 	const Loot& loot() const { return _loot; }
 	Loot& loot() { return _loot; }
+	const Particles& particles() const { return _particles; }
+	Particles& particles() { return _particles; }
 	int lootTarget() const { return _lootTarget; }
 	// ---- talks (app_talk.cpp; the rules are npcs.h) ----
 	// The character a press of A would talk to (-1 for none), and whether a
@@ -394,6 +397,7 @@ private:
 	InventoryView _inv;
 	InventoryPanel _panel;
 	Loot _loot;
+	Particles _particles;
 	int _lootTarget = -1;
 	// The chests.
 	Chests _chests;

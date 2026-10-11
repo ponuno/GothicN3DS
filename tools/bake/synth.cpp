@@ -7,6 +7,7 @@
 #include "importers.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <stdexcept>
 #include <cstring>
@@ -260,6 +261,27 @@ void addMaterials(SrcScene& scene) {
 }
 
 } // namespace
+
+bool buildSyntheticParticleTexture(const std::string& name, SrcImage& img) {
+	std::string base;
+	for (char c : name.substr(0, name.find('.'))) base += char(std::tolower((unsigned char)c));
+	const bool spark = base == "synth_spark", smoke = base == "synth_smoke";
+	if (!spark && !smoke) return false;
+	img.width = img.height = 32;
+	img.rgba.assign(32 * 32 * 4, 0);
+	for (int y = 0; y < 32; ++y)
+		for (int x = 0; x < 32; ++x) {
+			const float dx = (x - 15.5f) / 16.0f, dy = (y - 15.5f) / 16.0f;
+			const float r = std::sqrt(dx * dx + dy * dy);
+			const float f = r >= 1.0f ? 0.0f : (1.0f - r) * (1.0f - r);
+			u8* px = &img.rgba[size_t(y * 32 + x) * 4];
+			px[0] = spark ? 255 : 150;
+			px[1] = spark ? u8(120 + 100 * f) : 150;
+			px[2] = spark ? u8(40 + 80 * f) : 150;
+			px[3] = u8(255 * f);
+		}
+	return true;
+}
 
 void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 	enum { GRASS, ROCK, DIRT, WOOD, THATCH, WATER, PALISADE, TREE, MISSING, GLOW, WEB, MAT_COUNT };
@@ -636,6 +658,17 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 			it.rot[3] = std::cos(l.yaw * 0.5f);
 			it.amount = l.amount;
 			scene.items.push_back(it);
+		}
+	}
+	{
+		// A fire and its smoke, a few steps from where the player starts.
+		for (const char* effect : {"SYNTH_FIRE", "SYNTH_SMOKE"}) {
+			SrcEmitter e;
+			e.effect = effect;
+			e.pos[0] = scene.spawnPos[0] + 250.0f;
+			e.pos[2] = scene.spawnPos[2] - 400.0f;
+			e.pos[1] = height(e.pos[0], e.pos[2]) + (effect[6] == 'S' ? 60.0f : 10.0f);
+			scene.emitters.push_back(e);
 		}
 	}
 	scene.notes.push_back("synthetic scene: " + std::to_string(N) + "x" + std::to_string(N) + " terrain cells, " +

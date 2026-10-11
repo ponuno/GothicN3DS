@@ -122,6 +122,14 @@ struct SrcMusicZone {
 	float volume = 1.0f;
 };
 
+// A particle effect the world carries (a torch, a fire, a smoke): the script
+// instance's name (upper case), where, and the way its carrier faces.
+struct SrcEmitter {
+	std::string effect;
+	float pos[3];
+	float yaw = 0;
+};
+
 struct SrcImage {
 	int width = 0, height = 0;
 	std::vector<u8> rgba; // top-down
@@ -150,6 +158,7 @@ struct SrcScene {
 	std::vector<SrcMob> mobs;
 	std::vector<SrcAmbient> ambient;
 	std::vector<SrcMusicZone> musicZones;
+	std::vector<SrcEmitter> emitters;
 	std::vector<SrcWorldItem> items; // the world file's things (the scripts add theirs when baked)
 	std::vector<std::string> notes; // importer remarks for the bake report
 };

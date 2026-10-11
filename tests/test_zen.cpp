@@ -1605,7 +1605,7 @@ void checkObjects(const SrcScene& scene) {
 	CHECK(hasNote(scene, "winding flipped"));
 	CHECK(hasNote(scene, "3 without collision")); // box C, the door and the decal
 	CHECK(hasNote(scene, "2 object visuals not found: HUMANS.MDS, MISSING.3DS"));
-	CHECK(hasNote(scene, "1 particle effects"));
+	CHECK(hasNote(scene, "particle effects: 1 placed by the world"));
 	CHECK(hasNote(scene, "lightmaps: 1 triangles, 1 lit") || hasNote(scene, "lightmaps: 2 triangles, 2 lit"));
 }
 

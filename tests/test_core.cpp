@@ -4023,7 +4023,7 @@ static void testMusic() {
 	buildSyntheticActor(models[0]);
 	BakeScripts scripts;
 	scripts.script = &script;
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture};
 	scripts.soundFile = buildSyntheticSound;
 	SrcScript sfxScript, musicScript;
 	buildSyntheticSfxScript(sfxScript);
@@ -4151,7 +4151,7 @@ static void testSound() {
 	buildSyntheticActor(models[0]);
 	BakeScripts scripts;
 	scripts.script = &script;
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture};
 	scripts.soundFile = buildSyntheticSound;
 	SrcScript sfxScript;
 	buildSyntheticSfxScript(sfxScript);
@@ -4328,7 +4328,7 @@ static void testInhabitants() {
 	};
 	BakeScripts scripts;
 	scripts.script = &script;
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture};
 	const std::string path = gDir + "/people.pak";
 	BakeResult baked;
 	bake(path, scripts, &baked);
@@ -4756,7 +4756,7 @@ static BakeResult bakeLifeWorlds(const std::string& source, const std::string& p
 		buildSyntheticFightScript(fight);
 		scripts.fight = &fight;
 	}
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture};
 	PakWriter writer;
 	const BakeResult r = bakeWorlds(worlds, models, scripts, bo, writer);
 	writer.write(path);
@@ -6547,6 +6547,41 @@ static void testDialogs() {
 
 // The chests of the test camp: an open one, a locked one with its key, a locked
 // one with a combination; a block of stone to climb onto.
+// Particle effects: the synthetic world has a fire and its smoke by the start; they run only near the player.
+static void testParticles() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/particles.pak";
+	const BakeResult r = bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	CHECK(r.report.find("particles: 2 effects in the scripts (2 pictures baked, 0 of the names have none), 2 emitters in the worlds") != std::string::npos);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded()) return;
+	app.world().preload(app.camera().pos);
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	const Particles& p = app.particles();
+	CHECK(p.stats().emitters == 2);
+	run(0.5f);
+	CHECK(p.stats().running == 2 && p.stats().effects == 2);
+	run(3.0f);
+	// 30 + 6 a second, living 0.9 s and 2.5 s: some tens, within the pool.
+	CHECK(p.stats().particles >= 20 && p.stats().particles <= Particles::MAX_PARTICLES);
+	app.render();
+	CHECK(p.stats().drawCalls >= 1);
+	// A one-off effect of the scripts' own.
+	CHECK(app.particles().stats().effects == 2);
+	CHECK(app.particles().play(hashName("SYNTH_FIRE"), {0, 0, 0}, 0.0f, 1.0f));
+	CHECK(!app.particles().play(hashName("NO_SUCH_EFFECT"), {0, 0, 0}, 0.0f, 1.0f));
+	// Far away nothing emits and what is alive dies out.
+	app.teleport({app.camera().pos.x + 9000.0f, app.camera().pos.y, app.camera().pos.z});
+	run(4.0f);
+	CHECK(p.stats().running <= 1); // (only the one-off effect, left behind)
+	CHECK(p.stats().particles < 40);
+}
+
 static void testChests() {
 	std::vector<BakeWorld> worlds;
 	const std::string path = gDir + "/chests.pak";
@@ -7488,6 +7523,7 @@ int main(int argc, char** argv) {
 	             {"fight", testFight},
 	             {"inventory", testInventory},
              {"chests", testChests},
+             {"particles", testParticles},
              {"dialogs", testDialogs},
              {"npcai", testNpcAi},
              {"npc items", testNpcItems},

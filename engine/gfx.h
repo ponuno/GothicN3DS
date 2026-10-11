@@ -70,6 +70,11 @@ void textureDestroy(Texture* t);
 
 Mesh* meshCreate(const WorldVertex* vertices, u32 vertexCount, const u16* indices, u32 indexCount);
 void meshDestroy(Mesh* m);
+// Overwrites the first `vertexCount` vertices of a mesh (at most as many as it
+// was made with); the indices stay. For geometry that changes every frame
+// (particles): make several meshes and use them in turn, so that the one the
+// GPU is still drawing is not the one written.
+void meshUpdate(Mesh* m, const WorldVertex* vertices, u32 vertexCount);
 
 void frameBegin(const FrameDesc& f);
 // Starts in PASS_WORLD after frameBegin.

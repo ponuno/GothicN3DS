@@ -651,6 +651,12 @@ int main(int argc, char** argv) {
 		       ns.knockedOut, ns.killed, ns.moves,
 		       ns.fightAi == 'F' ? "FIGHT.DAT" : ns.fightAi == 'S' ? "the scripts" : "none read", ns.movesUntabled);
 	}
+	{
+		const ParticleStats& ps = app.particles().stats();
+		if (ps.emitters || ps.effects)
+			printf("particles         %u emitters in this world, %u running, %u effects read, %u particles alive, %u draw calls in the last frame\n",
+			       ps.emitters, ps.running, ps.effects, ps.particles, ps.drawCalls);
+	}
 	if (pickup || inventory) {
 		const LootStats& ls = app.loot().stats();
 		printf("things lying about %u in this world, %u taken (%u picked up by the character), %u drawn in the last frame, %u looks in memory, %u without one\n",

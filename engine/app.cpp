@@ -55,6 +55,7 @@ bool App::init(const char* pakPath, const char* worldName) {
 	if (_npcs.load(_pak)) {
 		_npcs.enterWorld(_pak, _world, this->worldName(), _player.eye(), _env.timeOfDay);
 		_loot.enterWorld(_pak, this->worldName(), _world.entryHash(), _npcs.game());
+		_particles.enterWorld(_pak, this->worldName(), _npcs.game());
 		_chests.enterWorld(_pak, this->worldName(), _world.entryHash(), _npcs.game());
 	}
 	HeroLink link;
@@ -108,6 +109,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	_npcs.leaveWorld();
 	chestEnd(true);
 	_loot.leaveWorld();
+	_particles.leaveWorld();
 	_chests.leaveWorld();
 	_lootTarget = -1;
 	_chestTarget = -1;
@@ -133,6 +135,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	_npcs.enterWorld(_pak, _world, worldName(), _player.eye(), _env.timeOfDay);
 	if (_npcs.loaded()) {
 		_loot.enterWorld(_pak, worldName(), _world.entryHash(), _npcs.game());
+		_particles.enterWorld(_pak, worldName(), _npcs.game());
 		_chests.enterWorld(_pak, worldName(), _world.entryHash(), _npcs.game());
 	}
 	_portalLock = true;
@@ -304,6 +307,7 @@ void App::shutdown() {
 	_ui.release();
 	_panel.release();
 	_loot.release();
+	_particles.release();
 	_chests.release();
 	_pictures.release();
 	_showModel.release();
@@ -365,6 +369,7 @@ void App::update(const Input& in, float dt) {
 	const double t1 = sys::timeMs();
 	_npcs.update(_pak, _world, _player.eye(), _env.timeOfDay, dt);
 	if (_npcs.loaded()) _loot.update(_pak, _world, _npcs.game(), _player.eye());
+	_particles.update(dt, _player.eye());
 	const double t2 = sys::timeMs();
 
 	const bool wasFlying = _player.flying;
@@ -388,6 +393,11 @@ void App::update(const Input& in, float dt) {
 		talkUpdate(fightIn, dt);
 		fightInput(fightIn, dt);
 		Input heroIn = steerInput(in, dt);
+		// D-Pad down in the fighting stance: a hop back, as the stick pulled back does.
+		if (in.dodge && _hero.weapon() != WEAPON_NONE) {
+			heroIn.moveZ = -1.0f;
+			heroIn.strafe = 0;
+		}
 		// (A job that has the weapon put away and the item to take stands the character too: no step in the frame between.)
 		const bool handsBusy = _hero.usingItem() || _job.stage == JOB_PUTAWAY || _job.stage == JOB_START || _panel.open() || _chest.stage != CH_NONE || talking();
 		if (handsBusy) {
@@ -686,6 +696,7 @@ void App::render() {
 	}
 	gfx::setPass(gfx::PASS_BLEND);
 	_world.drawBlended();
+	_particles.draw(fd.view, _cam.pos, indoor ? indoorLight : sky.light);
 	drawOverlay();
 	gfx::frameEnd();
 }

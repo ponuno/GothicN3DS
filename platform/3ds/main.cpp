@@ -396,6 +396,7 @@ int main(int, char**) {
 				}
 				in.dpadUp = (gameDown & dpad & KEY_DUP) != 0 && !(gameHeld & KEY_A); // (with A held it is a blow, not the fists)
 				in.toggleSneak = (gameDown & dpad & KEY_DDOWN) != 0;
+				in.dodge = in.toggleSneak; // (the application takes it as a dodge while a weapon is in hand)
 				// Locked on: the C-Stick flicked aside picks the next target
 				// (either scheme: the character faces the target by itself then).
 				if (app.targetLocked()) {

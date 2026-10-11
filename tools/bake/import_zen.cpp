@@ -26,6 +26,7 @@
 #include <zenkit/Font.hh>
 #include <zenkit/Vfs.hh>
 #include <zenkit/World.hh>
+#include <zenkit/world/VobTree.hh>
 #include <zenkit/vobs/MovableObject.hh>
 #include <zenkit/vobs/Sound.hh>
 #include <zenkit/vobs/Trigger.hh>
@@ -799,6 +800,13 @@ struct ObjectStats {
 		std::string slot, tree;
 	};
 	std::map<std::string, Fire> fires;
+	// The effects a fire place's tree file holds (FIRETREE_*.ZEN): name and place relative to the fire.
+	struct TreeEmitter {
+		std::string effect;
+		float pos[3];
+	};
+	std::map<std::string, std::vector<TreeEmitter>> trees;
+	u32 emitters = 0, fireEmitters = 0, fireWithoutTree = 0;
 	std::map<std::string, u32> lights;
 	// The things people use, with the mesh each is drawn with (null: none).
 	struct Mob {
@@ -813,6 +821,42 @@ bool namedLikeLight(const std::string& upperName) {
 	for (const char* word : {"LAMP", "LANTERN", "LATERN", "TORCH", "FACKEL", "FIRE", "FEUER", "LIGHT", "CANDLE", "KERZE", "SCONCE"})
 		if (upperName.find(word) != std::string::npos) return true;
 	return false;
+}
+
+
+// "FIRE_SMALL.PFX" -> "FIRE_SMALL"
+std::string effectName(const zenkit::VirtualObject& vob) {
+	if (!vob.visual || vob.visual->name.empty()) return std::string();
+	std::string n = stripExtension(upper(vob.visual->name));
+	return extensionOf(upper(vob.visual->name)) == "PFX" ? n : std::string();
+}
+
+void treeEmitters(const zenkit::VirtualObject& vob, std::vector<ObjectStats::TreeEmitter>& out, int depth) {
+	if (depth > 6) return;
+	const std::string effect = effectName(vob);
+	if (!effect.empty()) out.push_back({effect, {vob.position.x, vob.position.y, vob.position.z}});
+	for (const auto& child : vob.children)
+		if (child) treeEmitters(*child, out, depth + 1);
+}
+
+// The effects of a fire place's tree file, empty if it has none or cannot be read.
+const std::vector<ObjectStats::TreeEmitter>& fireTree(const zenkit::Vfs& vfs, zenkit::GameVersion version, ObjectStats& stats,
+                                                      const std::string& name) {
+	auto it = stats.trees.find(name);
+	if (it != stats.trees.end()) return it->second;
+	std::vector<ObjectStats::TreeEmitter>& list = stats.trees[name];
+	if (name.empty()) return list;
+	try {
+		if (const zenkit::VfsNode* node = vfs.find(name)) {
+			auto rd = node->open_read();
+			auto archive = zenkit::ReadArchive::from(rd.get());
+			if (archive)
+				if (auto root = zenkit::parse_vob_tree(*archive, version)) treeEmitters(*root, list, 0);
+		}
+	} catch (const std::exception&) {
+		list.clear();
+	}
+	return list;
 }
 
 // Objects smaller than this (bounding radius, cm) are only drawn near the camera.
@@ -953,6 +997,34 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 				f.slot = upper(fire->slot);
 				f.tree = upper(fire->vob_tree);
 			}
+			// The flames and smoke of the fire place: its tree file's effects, set where the place stands.
+			{
+				const zenkit::Vec3* c = vob->rotation.columns;
+				const float yaw = std::atan2(c[2].x, c[2].z);
+				const std::vector<ObjectStats::TreeEmitter>& tree = fireTree(vfs, version, stats, fire ? upper(fire->vob_tree) : std::string());
+				for (const ObjectStats::TreeEmitter& te : tree) {
+					SrcEmitter e;
+					e.effect = te.effect;
+					e.yaw = yaw;
+					e.pos[0] = vob->position.x + c[0].x * te.pos[0] + c[1].x * te.pos[1] + c[2].x * te.pos[2];
+					e.pos[1] = vob->position.y + c[0].y * te.pos[0] + c[1].y * te.pos[1] + c[2].y * te.pos[2];
+					e.pos[2] = vob->position.z + c[0].z * te.pos[0] + c[1].z * te.pos[1] + c[2].z * te.pos[2];
+					scene.emitters.push_back(e);
+					++stats.fireEmitters;
+				}
+				if (tree.empty()) {
+					// No tree file to be read: a plain fire over the place.
+					SrcEmitter e;
+					e.effect = "FIRE";
+					e.yaw = yaw;
+					e.pos[0] = vob->position.x;
+					e.pos[1] = vob->position.y + 30.0f;
+					e.pos[2] = vob->position.z;
+					scene.emitters.push_back(e);
+					++stats.fireEmitters;
+					++stats.fireWithoutTree;
+				}
+			}
 		}
 		// Something to use: a bed, a bench, an anvil. (Ladders are climbed, which is the player's business.)
 		const auto* usable = vob->type == zenkit::VirtualObjectType::oCMobLadder ? nullptr
@@ -966,6 +1038,14 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 
 		if (ext == "PFX") {
 			++stats.particles;
+			SrcEmitter e;
+			e.effect = stripExtension(name);
+			e.pos[0] = vob->position.x;
+			e.pos[1] = vob->position.y;
+			e.pos[2] = vob->position.z;
+			e.yaw = std::atan2(vob->rotation.columns[2].x, vob->rotation.columns[2].z);
+			scene.emitters.push_back(e);
+			++stats.emitters;
 			continue;
 		}
 		if (ext == "TGA") {
@@ -1212,9 +1292,12 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 	scene.notes.push_back("objects by size: " + std::to_string(detailCount[DETAIL_ALWAYS]) + " large, " +
 	                      std::to_string(detailCount[DETAIL_MEDIUM]) + " medium, " + std::to_string(detailCount[DETAIL_SMALL]) +
 	                      " small");
-	if (stats.particles || stats.sprites || stats.unsupported)
-		scene.notes.push_back("objects skipped (not supported yet): " + std::to_string(stats.particles) +
-		                      " particle effects, " + std::to_string(stats.sprites) + " camera-facing sprites, " +
+	if (stats.emitters || stats.fireEmitters)
+		scene.notes.push_back("particle effects: " + std::to_string(stats.emitters) + " placed by the world, " +
+		                      std::to_string(stats.fireEmitters) + " from fire places' trees" +
+		                      (stats.fireWithoutTree ? " (" + std::to_string(stats.fireWithoutTree) + " fire places without a readable tree: a plain FIRE)" : std::string()));
+	if (stats.sprites || stats.unsupported)
+		scene.notes.push_back("objects skipped (not supported yet): " + std::to_string(stats.sprites) + " camera-facing sprites, " +
 		                      std::to_string(stats.unsupported) + " other");
 	if (unlit) scene.notes.push_back("objects: " + std::to_string(unlit) + " have no ground below them, lit with the world average");
 	// Models that were not read from files of their own name, and everything
@@ -2499,6 +2582,7 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 
 LookSource zenLookSource(std::shared_ptr<const ZenGame> game) {
 	LookSource source;
+	source.texture = textureLoader(game);
 	// A thing lying about: its mesh (".3DS", compiled to ".MRM"; a few are
 	// morph meshes or models), one node, turned as the world file turns it.
 	source.item = [game](const std::string& visual, SrcModel& model) {

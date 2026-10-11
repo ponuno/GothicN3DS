@@ -464,6 +464,14 @@ Mesh* meshCreate(const WorldVertex* vertices, u32 vertexCount, const u16* indice
 	return m;
 }
 
+void meshUpdate(Mesh* m, const WorldVertex* vertices, u32 vertexCount) {
+	if (!m || !vertices) return;
+	if (vertexCount > m->vertexCount) vertexCount = m->vertexCount;
+	const u32 bytes = vertexCount * u32(sizeof(WorldVertex));
+	memcpy(m->vertices, vertices, bytes);
+	GSPGPU_FlushDataCache(m->vertices, bytes);
+}
+
 void meshDestroy(Mesh* m) {
 	if (!m) return;
 	if (gBoundMesh == m) gBoundMesh = nullptr;

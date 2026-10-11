@@ -9,6 +9,8 @@
 #include "g3ds/item_view.h"
 #include "item_icon.h"
 #include "model_bake.h"
+#include "texture_bake.h"
+#include "g3ds/pfx.h"
 #include "script_check.h"
 
 #include <algorithm>
@@ -876,6 +878,88 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		}
 		if (missingTextures.size() > 12) list += ", ...";
 		line(format("WARNING: %zu textures of the inhabitants not found (drawn untextured): ", missingTextures.size()) + list);
+	}
+
+
+	// ---- particle effects: the pictures of every C_PARTICLEFX of the scripts, and the effects the worlds carry ----
+	{
+		const u32 cls = game.vm().find("C_PARTICLEFX");
+		const u32 member = cls == SCRIPT_NONE ? SCRIPT_NONE : game.vm().findMember("C_PARTICLEFX", "VISNAME_S");
+		std::set<std::string> effects;           // upper case names of the instances
+		std::set<std::string> wanted;            // picture names, lower case without extension
+		u32 instances = 0, noPicture = 0;
+		if (cls != SCRIPT_NONE && member != SCRIPT_NONE) {
+			for (u32 sym = 0; sym < game.vm().symbolCount(); ++sym) {
+				const ScriptSymbol& sy = game.vm().symbol(sym);
+				if (sy.type != SCRIPT_INSTANCE || !(sy.flags & SCRIPTF_CONST) || game.vm().classOf(sym) != cls) continue;
+				ScriptInstance* inst = game.vm().create(sym);
+				if (!inst) continue;
+				++instances;
+				std::string pic = game.vm().getString(member, 0, inst);
+				game.vm().destroy(inst);
+				std::transform(pic.begin(), pic.end(), pic.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+				const size_t dot = pic.rfind('.');
+				if (dot != std::string::npos) pic.resize(dot);
+				if (pic.empty()) {
+					++noPicture;
+					continue;
+				}
+				wanted.insert(pic);
+			}
+		}
+		// Frames of an animated picture: NAME_A0, NAME_A1 ...
+		size_t baked = 0;
+		std::vector<std::string> missingPics;
+		if (scripts.looks.texture) {
+			const auto bakeOne = [&](const std::string& name) {
+				const std::string pakName = "tex/" + name;
+				if (pak.has(pakName)) return true;
+				SrcImage img;
+				if (!scripts.looks.texture(name + ".tga", img)) return false;
+				pak.add(pakName, ASSET_TEXTURE, bakeTexture(img, opt.tex));
+				++baked;
+				return true;
+			};
+			for (const std::string& name : wanted) {
+				if (!bakeOne(name)) {
+					missingPics.push_back(name);
+					continue;
+				}
+				const size_t a = name.find("_a0");
+				if (a == std::string::npos) continue;
+				for (size_t k = 1; k < 32; ++k)
+					if (!bakeOne(name.substr(0, a) + "_a" + std::to_string(k) + name.substr(a + 3))) break;
+			}
+		}
+		size_t emitters = 0, unknownEffects = 0;
+		for (size_t w = 0; w < worlds.size(); ++w) {
+			std::vector<WorldEmitter> table;
+			for (const SrcEmitter& e : worlds[w].scene.emitters) {
+				const u32 sym = game.vm().findHash(hashName(e.effect.c_str()));
+				if (sym == SCRIPT_NONE || game.vm().classOf(sym) != cls) {
+					++unknownEffects;
+					continue;
+				}
+				table.push_back({hashName(e.effect.c_str()), {e.pos[0], e.pos[1], e.pos[2]}, e.yaw});
+			}
+			if (table.empty()) continue;
+			std::vector<u8> blob(emittersBlobSize(u32(table.size())));
+			const EmittersHeader h {EMITTERS_MAGIC, EMITTERS_VERSION, u32(table.size()), 0};
+			std::memcpy(blob.data(), &h, sizeof(h));
+			std::memcpy(blob.data() + sizeof(h), table.data(), table.size() * sizeof(WorldEmitter));
+			pak.add("world/" + worlds[w].name + "/emitters", ASSET_META, blob);
+			emitters += table.size();
+		}
+		if (instances || emitters || unknownEffects)
+			line(format("particles: %u effects in the scripts (%zu pictures baked, %zu of the names have none), %zu emitters in the worlds%s",
+			            instances, baked, missingPics.size(), emitters,
+			            unknownEffects ? format(", %zu with an effect the scripts lack", unknownEffects).c_str() : ""));
+		if (!missingPics.empty()) {
+			std::string list;
+			for (size_t i = 0; i < missingPics.size() && i < 12; ++i) list += (i ? ", " : "") + missingPics[i];
+			line("  pictures not found: " + list + (missingPics.size() > 12 ? ", ..." : ""));
+		}
+		(void)noPicture;
 	}
 
 	// ---- the things lying about: the world files' and the start-up scripts' ----

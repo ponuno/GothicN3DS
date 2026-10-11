@@ -65,6 +65,8 @@ struct LookSource {
 	// gives (lower case, without extension), one node. May be empty: the
 	// things are placed, and not drawn.
 	std::function<bool(const std::string& visual, SrcModel& model)> item;
+	// A picture by the name the scripts give it ("FIRE_A0.TGA"); false if there is none.
+	std::function<bool(const std::string& name, SrcImage& image)> texture;
 };
 
 // The game's scripts: baked into the archive, run to see who lives in the

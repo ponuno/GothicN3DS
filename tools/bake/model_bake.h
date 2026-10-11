@@ -37,6 +37,8 @@ bool buildSyntheticBody(const std::string& script, const std::string& mesh, int 
 bool buildSyntheticHead(const std::string& script, const std::string& head, int tex, int skin, int teeth, SrcModel& model);
 // A thing lying about in the synthetic scene: a box of its proportions.
 bool buildSyntheticItem(const std::string& visual, SrcModel& model);
+// The pictures of the synthetic scripts' particle effects ("SYNTH_SPARK.TGA", "SYNTH_SMOKE.TGA").
+bool buildSyntheticParticleTexture(const std::string& name, SrcImage& image);
 
 // The test character of the synthetic scene: a jointed figure with the clips
 // the hero needs (stand, run, walk, jump, fall, swim), named as in Gothic.

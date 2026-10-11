@@ -37,6 +37,7 @@ struct Input {
 	bool focus = false;       // pressed: lock on to the enemy in front, or let go
 	int blowDir = 0;          // held: the D-Pad's direction of a blow with a weapon in hand: -1 from the left, +1 from the right, 0 ahead
 	bool dpadUp = false;      // pressed: D-Pad up (without a weapon in hand: the fists)
+	bool dodge = false;       // pressed: D-Pad down - with a weapon in hand a hop back (as the stick pulled back)
 	float switchTarget = 0;   // -1 / +1 pressed: the next target to the left / right
 	bool confirm = false;     // pressed: A (to get up again after death)
 };

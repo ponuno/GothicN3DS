@@ -347,6 +347,12 @@ Mesh* meshCreate(const WorldVertex* vertices, u32 vertexCount, const u16* indice
 	return m;
 }
 
+void meshUpdate(Mesh* m, const WorldVertex* vertices, u32 vertexCount) {
+	if (!m || !vertices) return;
+	if (vertexCount > m->vertexCount) vertexCount = m->vertexCount;
+	memcpy(m->vertices, vertices, size_t(vertexCount) * sizeof(WorldVertex));
+}
+
 void meshDestroy(Mesh* m) {
 	if (!m) return;
 	gMem.meshBytes -= m->vertexCount * u32(sizeof(WorldVertex)) + m->indexCount * u32(sizeof(u16));

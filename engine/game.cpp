@@ -226,6 +226,7 @@ bool Game::bindAll() {
 	             {"INTTOFLOAT", xIntToFloat},
 	             {"FLOATTOINT", xFloatToInt},
 	             {"NPC_ISPLAYER", xIsPlayer},
+	             {"NPC_ISINCUTSCENE", xIsInCutscene},
 	             {"WLD_SETTIME", xSetTime},
 	             {"WLD_ISTIME", xIsTime},
 	             {"WLD_SETGUILDATTITUDE", xSetGuildAttitude},
@@ -1091,6 +1092,12 @@ void Game::xGetNpc(ScriptVm& vm, void*) {
 void Game::xGetInstanceId(ScriptVm& vm, void*) {
 	const ScriptInstance* inst = vm.popInstance();
 	vm.pushInt(inst ? i32(inst->symbol) : -1);
+}
+
+// No cutscenes here: nobody is in one.
+void Game::xIsInCutscene(ScriptVm& vm, void*) {
+	(void)vm.popInstance();
+	vm.pushInt(0);
 }
 
 void Game::xIsValid(ScriptVm& vm, void*) { vm.pushInt(vm.popInstance() != nullptr); }

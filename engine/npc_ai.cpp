@@ -1720,6 +1720,9 @@ void Npcs::unboundThunk(u32 symbol, void* user) {
 	Npcs& self = *static_cast<Npcs*>(user);
 	self._lastUnbound = self._game.vm().symbol(symbol).nameHash;
 	++self._unboundCount;
+	for (u32 i = 0; i < self._unboundSeenCount; ++i)
+		if (self._unboundSeen[i] == self._lastUnbound) return;
+	if (self._unboundSeenCount < 6) self._unboundSeen[self._unboundSeenCount++] = self._lastUnbound;
 }
 
 } // namespace g3

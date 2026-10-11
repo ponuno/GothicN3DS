@@ -772,6 +772,7 @@ i32 Npcs::strike(u32 attacker, u32 victim, bool fromBehind) {
 		snprintf(_lastHitNote, sizeof(_lastHitNote), "hit %.9s L%d %.10s>%.10s q%d a%d u%d", _game.nameOf(v), listens ? 1 : 0, before, after,
 		         a ? int(a->queueCount) : -1, int(_game.attitude(victim, heroIndex)), int(_unboundCount - unboundBefore));
 		_lastHitAge = 0.0f;
+		_lastHitNpc = int(victim);
 	}
 	sendPerception(_percFightSound, victim, int(attacker), int(victim));
 	if (a) {

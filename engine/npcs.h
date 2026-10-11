@@ -394,9 +394,12 @@ public:
 	bool debugNearest(char* out, size_t size) const;
 	// What the last blow on somebody (not the player's character) did to it, and the last external the
 	// scripts called that nobody implements (its name hash): for the debug lines. False if nothing yet.
-	bool debugLastHit(char* out, size_t size) const;
+	bool debugLastHit(char* out, size_t size, int row = 0) const;
 	u32 lastUnbound() const { return _lastUnbound; }
 	u32 unboundCount() const { return _unboundCount; }
+	// The distinct unimplemented externals called so far (name hashes, up to 6).
+	u32 unboundSeen(u32 i) const { return i < _unboundSeenCount ? _unboundSeen[i] : 0; }
+	u32 unboundSeenCount() const { return _unboundSeenCount; }
 	// Everybody within the reach of its senses of `source` looks round at its next frame.
 	void noticeNow(u32 source);
 	// Somebody has gone down (HP, scripts' state ZS_Unconscious or ZS_Dead):
@@ -498,6 +501,9 @@ private:
 	char _lastHitNote[64] = {};
 	float _lastHitAge = 1e9f;
 	u32 _lastUnbound = 0, _unboundCount = 0;
+	u32 _unboundSeen[6] = {};
+	u32 _unboundSeenCount = 0;
+	int _lastHitNpc = -1;
 	static void unboundThunk(u32 symbol, void* user);
 	const Clip* mobClip(NpcActor& a, int from, int to, char* nameOut);
 	void releaseMob(NpcActor& a);

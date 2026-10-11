@@ -557,6 +557,7 @@ private:
 	static void xPrintScreen(ScriptVm& vm, void* user);
 	static void xKnowsPlayer(ScriptVm& vm, void* user);
 	static void xSetKnowsPlayer(ScriptVm& vm, void* user);
+	static void xIsInCutscene(ScriptVm& vm, void* user);
 	static void xSetTalentValue(ScriptVm& vm, void* user);
 	static void xGetTalentValue(ScriptVm& vm, void* user);
 	GameInfo* _infos = nullptr;

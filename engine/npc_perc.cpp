@@ -274,9 +274,19 @@ bool Npcs::debugNearest(char* out, size_t size) const {
 	return true;
 }
 
-bool Npcs::debugLastHit(char* out, size_t size) const {
+bool Npcs::debugLastHit(char* out, size_t size, int row) const {
 	if (!size || _lastHitAge > 30.0f || !_lastHitNote[0]) return false;
-	snprintf(out, size, "%s", _lastHitNote);
+	if (row == 0) {
+		snprintf(out, size, "%s", _lastHitNote);
+		return true;
+	}
+	// Live: what it is doing now.
+	const NpcActor* a = _lastHitNpc >= 0 ? actorOf(u32(_lastHitNpc)) : nullptr;
+	if (!a) return false;
+	const char* state = a->state ? stateName(a->state) : "-";
+	if (strncmp(state, "ZS_", 3) == 0) state += 3;
+	snprintf(out, size, "now %.14s t%d act%d ph%d q%d w%d", state, int(a->stateTime), int(a->action.kind), int(a->phase), int(a->queueCount),
+	         int(a->wait * 10.0f));
 	return true;
 }
 

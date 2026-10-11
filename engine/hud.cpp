@@ -81,9 +81,12 @@ void App::drawOverlay() {
 		char who[96];
 		int row = 1;
 		if (_npcs.loaded() && _npcs.debugNearest(who, sizeof(who))) _ui.text(W - 6, 4 + Ui::lineHeight() * row++, who, ui::GREY, ui::TEXT, ui::RIGHT);
-		if (_npcs.loaded() && _npcs.debugLastHit(who, sizeof(who))) _ui.text(W - 6, 4 + Ui::lineHeight() * row++, who, ui::GREY, ui::TEXT, ui::RIGHT);
+		for (int k = 0; k < 2; ++k)
+			if (_npcs.loaded() && _npcs.debugLastHit(who, sizeof(who), k)) _ui.text(W - 6, 4 + Ui::lineHeight() * row++, who, ui::GREY, ui::TEXT, ui::RIGHT);
 		if (_npcs.loaded() && _npcs.unboundCount()) {
-			snprintf(who, sizeof(who), "unbound %u last %08X", unsigned(_npcs.unboundCount()), unsigned(_npcs.lastUnbound()));
+			char hashes[40] = {};
+			for (u32 k = 0; k < _npcs.unboundSeenCount() && k < 3; ++k) snprintf(hashes + strlen(hashes), sizeof(hashes) - strlen(hashes), " %08X", unsigned(_npcs.unboundSeen(k)));
+			snprintf(who, sizeof(who), "unb %u%s", unsigned(_npcs.unboundCount()), hashes);
 			_ui.text(W - 6, 4 + Ui::lineHeight() * row++, who, ui::GREY, ui::TEXT, ui::RIGHT);
 		}
 	}

@@ -75,9 +75,9 @@ struct SpeechBakeResult {
 // at a time; the rest of the work is shared among `threads`.
 SpeechBakeResult bakeSpeech(const std::vector<std::string>& lineNames,
                             const std::function<bool(const std::string&, std::vector<u8>&)>& fetch, u32 rate, unsigned threads,
-                            PakWriter& pak);
+                            PakWriter& pak, bool ima = false);
 // The blob of one recording (SoundHeader + IMA ADPCM), for the tests too.
-std::vector<u8> encodeSpeech(const SrcSound& sound);
+std::vector<u8> encodeSpeech(const SrcSound& sound, bool ima = false);
 
 // The music zones of a world: the blob of "world/<name>/music".
 struct SrcMusicZone;

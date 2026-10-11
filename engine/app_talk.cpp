@@ -53,10 +53,51 @@ void App::talkUpdate(Input& in, float dt) {
 			_invStamp = 0;
 		}
 	}
-	// What the scripts print (Print, PrintScreen).
+	// A chapter begins (IntroduceChapter): its card comes up.
+	{
+		const GameChapter& ch = _npcs.game().chapter();
+		if (ch.serial != _chapterSeen) {
+			_chapterSeen = ch.serial;
+			_chapterCard = ch;
+			_chapterLength = _chapterTime = clamp(float(ch.delay) / 1000.0f, 3.0f, 10.0f);
+			if (ch.sound[0] && _sound.ready()) {
+				char name[48];
+				snprintf(name, sizeof(name), "%s", ch.sound);
+				char* dot = strrchr(name, '.');
+				if (dot) *dot = 0;
+				_sound.play(name, nullptr);
+			}
+		}
+		if (_chapterTime > 0.0f) _chapterTime -= dt;
+	}
+	// The diary's entries are "seen" once the diary has been looked at and left.
+	{
+		const bool diary = _panel.page() == InventoryPanel::PAGE_DIARY;
+		if (_diaryOpen && !diary) _diarySeen = _npcs.game().logVersion();
+		_diaryOpen = diary;
+	}
+	// What the scripts print (Print, PrintScreen), and what the diary has done.
 	if (_toastTime <= 0.0f) {
 		GameMessage m;
-		if (_npcs.game().takeMessage(m)) toast(m.text, m.seconds > 0.0f ? m.seconds : 2.5f);
+		GameLogNotice note;
+		if (_npcs.game().takeMessage(m)) {
+			toast(m.text, m.seconds > 0.0f ? m.seconds : 2.5f);
+		} else if (_npcs.game().takeLogNotice(note)) {
+			char topic[64];
+			scriptText(note.topic, topic, sizeof(topic));
+			// (A long name is cut so that the line fits the screen.)
+			if (_ui.ready()) {
+				for (size_t n = strlen(topic); n > 4 && _ui.measure(topic) > 200; topic[--n] = 0) {
+				}
+			}
+			const bool task = note.section == 0;
+			const char* format = note.kind == LOGN_NEW_TOPIC ? (task ? tr("Новое задание: %s") : tr("Новая заметка: %s"))
+			                     : note.kind == LOGN_STATUS ? (note.status == 2 ? tr("Задание выполнено: %s") : tr("Задание провалено: %s"))
+			                                                : tr("Дневник обновлён: %s");
+			char line[160];
+			snprintf(line, sizeof(line), format, topic);
+			toast(line, 3.0f);
+		}
 	}
 	if (on) return;
 	_talkTarget = -1;

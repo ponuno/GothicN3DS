@@ -42,7 +42,7 @@ target_compile_options(g3sys PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
 
 # The script machine and the game's rules. The baker runs them too: it has to
 # know what the scripts put into the world to bake what that needs.
-add_library(g3script STATIC engine/script.cpp engine/game.cpp engine/game_dialog.cpp engine/fight.cpp)
+add_library(g3script STATIC engine/script.cpp engine/game.cpp engine/game_dialog.cpp engine/game_save.cpp engine/fight.cpp)
 target_include_directories(g3script PUBLIC engine)
 target_link_libraries(g3script PUBLIC g3core)
 target_compile_options(g3script PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
@@ -76,6 +76,7 @@ set(G3DS_BAKE_SOURCES
     tools/bake/item_icon.cpp
     tools/bake/fight_ai.cpp
     tools/bake/dialogue_bake.cpp
+    tools/bake/font_bake.cpp
     tools/bake/daedalus.cpp
     tools/bake/synth_script.cpp
     tools/bake/synth_actor.cpp

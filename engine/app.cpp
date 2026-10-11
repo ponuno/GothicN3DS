@@ -1,8 +1,10 @@
 #include "lang.h"
 #include "app.h"
+#include "bytes.h"
 
 #include "sys.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 namespace g3 {
@@ -62,6 +64,14 @@ bool App::init(const char* pakPath, const char* worldName) {
 	startSound();
 	startSpeech();
 	// The overlay (menus, the HUD): without it the game still runs.
+	// The game's own font, if the archive has it (and Ui::init() puts it in the texture).
+	ui::clearGameFont();
+	if (const PakEntry* fe = _pak.find("font/ui")) {
+		if (void* fd = _pak.readAlloc(*fe)) {
+			ui::setGameFont(fd, fe->size);
+			free(fd);
+		}
+	}
 	_ui.init();
 	// The bottom screen's inventory (a picture of its own, drawn by the processor).
 	_panel.init();
@@ -128,6 +138,9 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	++_switches;
 	_sound.stopAll();
 	_sound.enterWorld(_pak, worldName());
+	_barrierSearched = false;
+	_barrierName = nullptr;
+	_barrierHum = 0;
 	_music.enterWorld(_pak, worldName());
 	return true;
 }
@@ -137,7 +150,10 @@ namespace {
 constexpr u32 STATE_MAGIC = fourcc('G', '3', 'S', 'T');
 // 2: the inventory follows (App::saveInventory); a file of version 1 still
 // loads, leaving the inventory as it is.
-constexpr u32 STATE_VERSION = 2;
+// 3: the scripts' and the characters' state follows (Game::save), in a
+// section of its own; a file of version 2 still loads without it.
+constexpr u32 STATE_VERSION = 3;
+constexpr u32 GAME_SECTION = fourcc('G', 'S', 'C', 'R');
 
 struct SavedState {
 	u32 magic;
@@ -186,7 +202,14 @@ bool App::saveState(const char* path) const {
 	saveInventory(f);
 	_loot.saveTaken(f);
 	_chests.saveChanged(f);
-	return (fclose(f) == 0) && ok;
+	bool game = true;
+	if (_npcs.loaded()) {
+		ByteSink payload;
+		_npcs.game().save(payload);
+		const u32 head[3] = {GAME_SECTION, u32(payload.size), byteCheck(payload.data, payload.size)};
+		game = !payload.failed && fwrite(head, sizeof(head), 1, f) == 1 && (payload.size == 0 || fwrite(payload.data, payload.size, 1, f) == 1);
+	}
+	return (fclose(f) == 0) && ok && game;
 }
 
 bool App::loadState(const char* path) {
@@ -233,9 +256,31 @@ bool App::loadState(const char* path) {
 		chestEnd(true);
 		if (_npcs.loaded()) _chests.resetChanges(_pak, worldName(), _world.entryHash(), _npcs.game());
 		_chests.loadChanged(f);
+		if (s.version >= 3) loadGameSection(f);
 	}
 	fclose(f);
 	return true;
+}
+
+// The scripts' state (version 3): what the story has made of the world.
+bool App::loadGameSection(FILE* f) {
+	u32 head[3];
+	if (!_npcs.loaded() || fread(head, sizeof(head), 1, f) != 1 || head[0] != GAME_SECTION || head[1] > (64u << 20)) return false;
+	u8* bytes = static_cast<u8*>(malloc(head[1] ? head[1] : 1u));
+	if (!bytes) return false;
+	bool ok = (head[1] == 0 || fread(bytes, head[1], 1, f) == 1) && byteCheck(bytes, head[1]) == head[2];
+	if (ok) {
+		_npcs.leaveWorld(); // (the actors are made again from the state restored)
+		ByteSource in(bytes, head[1]);
+		ok = _npcs.game().restore(in);
+		_chapterSeen = _npcs.game().chapter().serial;
+		_diarySeen = _npcs.game().logVersion();
+		_lootTarget = -1;
+		_target = -1;
+		_locked = false;
+	}
+	free(bytes);
+	return ok;
 }
 
 void App::setDrawDistance(float cm) {
@@ -286,6 +331,7 @@ void App::checkPortals() {
 void App::update(const Input& in, float dt) {
 	collisionStatsReset(); // (what collisionStats() says is one frame's worth)
 	_clock += dt;
+	if (dt > 0.0f) _fps += (clamp(1.0f / dt, 0.0f, 120.0f) - _fps) * min(dt * 3.0f, 1.0f);
 	_env.timeOfDay += in.timeStep;
 	if (_env.dayLength > 0) _env.timeOfDay += dt * 24.0f / _env.dayLength;
 	while (_env.timeOfDay >= 24.0f) _env.timeOfDay -= 24.0f;
@@ -403,6 +449,7 @@ void App::update(const Input& in, float dt) {
 	placeCamera(dt);
 	_sound.setListener(_cam.pos, _cam.yaw);
 	_sound.update(dt, _env.timeOfDay);
+	barrierHum();
 	_music.update(dt, _cam.pos, _env.timeOfDay, heroInCombat() ? MUSIC_FIGHT : MUSIC_CALM);
 	_times.stream = float(t1 - t0);
 	_times.npcs = float(t2 - t1);
@@ -612,7 +659,7 @@ void App::render() {
 	gfx::frameBegin(fd);
 	if (!indoor) {
 		gfx::setPass(gfx::PASS_SKY);
-		_sky.draw(_cam.pos, _cam.zFar * 0.5f, sky);
+		_sky.draw(_cam.pos, _cam.zFar * 0.5f, sky, _settings.barrier ? 1.0f : 0.0f, float(_clock));
 	}
 	gfx::setPass(gfx::PASS_WORLD);
 	const Mat4 viewProj = mul(proj, fd.view);
@@ -867,16 +914,13 @@ void App::fightInput(const Input& in, float dt) {
 		const u8 want = meleeMode();
 		take(_hero.weapon() == want ? u8(WEAPON_NONE) : want);
 	}
-	if (in.fistSlot) take(_hero.weapon() == WEAPON_FIST ? u8(WEAPON_NONE) : u8(WEAPON_FIST));
+	// (On the console D-Pad up takes the fists when the hands are empty; with a weapon it is the blow ahead.)
+	if (in.fistSlot || (in.dpadUp && (_hero.weapon() == WEAPON_NONE || _hero.weapon() == WEAPON_FIST)))
+		take(_hero.weapon() == WEAPON_FIST ? u8(WEAPON_NONE) : u8(WEAPON_FIST));
 	if (in.attack && _hero.weapon() != WEAPON_NONE) {
-		// To the side: the stick pushed left or right as the character faces.
-		float side = in.moveX;
-		if (_scheme == CONTROLS_CONSOLE && thirdPerson() && !_locked) {
-			const float x = in.moveX, z = in.moveZ;
-			const float m = sqrtf(x * x + z * z);
-			side = m > 0.5f ? m * sinf(wrapYaw(_orbitYaw + atan2f(x, z) - _hero.yaw())) : 0.0f;
-		}
-		_hero.attack(side < -0.6f ? 1 : side > 0.6f ? 2 : 0);
+		// The direction of the blow is the D-Pad's, held as A is pressed (left: from the left,
+		// right: from the right, else ahead); the stick only moves.
+		_hero.attack(in.blowDir < 0 ? 1 : in.blowDir > 0 ? 2 : 0);
 	}
 	_hero.setParry(in.parry && _hero.weapon() != WEAPON_NONE);
 }
@@ -1009,6 +1053,7 @@ void App::applySettings() {
 	cfg.detailDistance[DETAIL_SMALL] = _settings.smallObjectsCm();
 	cfg.smallLayers = _settings.smallLayers();
 	setLanguage(_settings.language);
+	_env.dayLength = _settings.dayLengthSeconds();
 	NpcConfig& nc = _npcs.config();
 	nc.range = _settings.npcRangeCm();
 	nc.perceive = _settings.perception != 0;
@@ -1024,6 +1069,27 @@ void App::applySettings() {
 		_camPlaced = false;
 		_eyePitch = 0;
 	}
+}
+
+// The names the Barrier's sound could have in the scripts (the first the sound script knows is used).
+void App::barrierHum() {
+	if (!_barrierSearched && _sound.ready()) {
+		_barrierSearched = true;
+		static const char* const kNames[] = {"MFX_BARRIERE_AMBIENT", "MFX_BARRIER_AMBIENT", "BARRIERE_AMBIENT", "BARRIER_AMBIENT", "MFX_BARRIERE_LOOP",
+		                                      "BARRIERE_LOOP"};
+		for (const char* n : kNames)
+			if (_sound.knows(n)) {
+				_barrierName = n;
+				break;
+			}
+	}
+	const bool want = _barrierName && _settings.barrier && !_world.indoor();
+	if (!want) {
+		if (_barrierHum) _sound.stop(_barrierHum);
+		_barrierHum = 0;
+		return;
+	}
+	if (!_barrierHum || !_sound.playing(_barrierHum)) _barrierHum = _sound.play(_barrierName, nullptr, 0.4f);
 }
 
 void App::toast(const char* text, float seconds) {

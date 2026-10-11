@@ -111,6 +111,11 @@ bool importZenFightScript(std::shared_ptr<const ZenGame> game, SrcScript& script
 bool importZenSfxScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
 bool importZenMusicScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
 
+// The game's fonts (Fonts.vdf): the one of the text and the one of the titles.
+// False, with a line in `notes`, if they are not in the archives.
+struct SrcFonts;
+bool importZenFonts(std::shared_ptr<const ZenGame> game, SrcFonts& fonts, std::vector<std::string>& notes);
+
 // The words people say (OU.BIN). Returns false, with a line in `notes`, if the
 // game has none.
 bool importZenDialogue(std::shared_ptr<const ZenGame> game, SrcDialogue& dialogue, std::vector<std::string>& notes);

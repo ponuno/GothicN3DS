@@ -6,6 +6,8 @@
 #include "sound_bake.h"
 #include "chunker.h"
 #include "daedalus.h"
+#include "font_bake.h"
+#include "g3ds/font.h"
 #include "g3ds/pak.h"
 #include "g3ds/tex.h"
 #include "gfx_soft.h"
@@ -3884,7 +3886,7 @@ static void testSpeech() {
 	std::vector<std::string> names;
 	for (const auto& l : dialogue.lines) names.push_back(l.first);
 	PakWriter pak;
-	const SpeechBakeResult r = bakeSpeech(names, buildSyntheticSound, 11025, 2, pak);
+	const SpeechBakeResult r = bakeSpeech(names, buildSyntheticSound, 11025, 2, pak, true);
 	CHECK(r.lines == names.size() && r.baked == 2 && r.unusable.empty());
 	CHECK(pak.items().size() == 2);
 	// The encoder and the decoder: a tone comes back close to what went in.
@@ -3892,7 +3894,7 @@ static void testSpeech() {
 		SrcSound tone;
 		tone.rate = 11025;
 		for (int i = 0; i < 4000; ++i) tone.samples.push_back(i16(std::lround(9000.0 * std::sin(double(i) * 0.07))));
-		const std::vector<u8> blob = encodeSpeech(tone);
+		const std::vector<u8> blob = encodeSpeech(tone, true); // (IMA: the default is 16-bit)
 		SoundHeader h;
 		std::memcpy(&h, blob.data(), sizeof(h));
 		CHECK(speechValid(h, u32(blob.size())) && blob.size() == sizeof(SoundHeader) + 4 + 2000);
@@ -3908,6 +3910,22 @@ static void testSpeech() {
 	const std::string dir = gDir + "/speech_game";
 	fs::create_directories(dir);
 	pak.write(dir + "/speech.pak");
+	// Full quality (the default): 16-bit samples as recorded, nothing resampled.
+	{
+		PakWriter full;
+		const SpeechBakeResult fr = bakeSpeech(names, buildSyntheticSound, 48000, 2, full);
+		CHECK(fr.baked == 2 && full.items().size() == 2);
+		fs::create_directories(dir + "/full");
+		full.write(dir + "/full/speech.pak");
+		HostAudio a2;
+		Speech sp2;
+		CHECK(sp2.init((dir + "/full/speech.pak").c_str(), &a2));
+		const float len = sp2.play(hashName("DIA_Thorus_Job_15_00"), 1.0f);
+		CHECK(len > 0.59f && len < 0.61f && a2.last().rate == 44100 && a2.last().frames == 26460);
+		int pk = 0;
+		for (u32 i = 0; i < a2.last().frames; ++i) pk = std::max(pk, std::abs(int(a2.last().samples[i])));
+		CHECK(pk > 10000);
+	}
 
 	HostAudio audio;
 	Speech speech;
@@ -6169,6 +6187,84 @@ static void testSettings() {
 		CHECK(widest <= 304);
 		CHECK(ui.measure("Вы погибли", ui::TITLE) > ui.measure("Вы погибли", ui::TEXT));
 	}
+	// The game's own font: its glyphs come before the built-in ones, which stand in for what it lacks;
+	// damaged data is refused and the built-in font stays.
+	{
+		FontHeader h {};
+		h.magic = FONT_MAGIC;
+		h.version = FONT_VERSION;
+		h.atlasW = u16(FONT_ATLAS_W);
+		h.atlasH = 16;
+		h.glyphCount = 2;
+		h.line[0] = 10;
+		h.line[1] = 12;
+		h.ascent[0] = 8;
+		h.ascent[1] = 10;
+		FontGlyphRec a0 {}, a1 {};
+		a0.code = a1.code = 'A';
+		a0.x = 1; a0.y = 1; a0.size = 0; a0.w = 5; a0.h = 7; a0.advance = 6;
+		a1.x = 8; a1.y = 1; a1.size = 1; a1.w = 5; a1.h = 9; a1.advance = 7;
+		std::vector<u8> blob(sizeof(h) + 2 * sizeof(FontGlyphRec) + size_t(FONT_ATLAS_W) * h.atlasH, 0);
+		std::memcpy(blob.data(), &h, sizeof(h));
+		std::memcpy(blob.data() + sizeof(h), &a0, sizeof(a0));
+		std::memcpy(blob.data() + sizeof(h) + sizeof(a0), &a1, sizeof(a1));
+		blob[sizeof(h) + 2 * sizeof(FontGlyphRec) + 1 * FONT_ATLAS_W + 1] = 255; // a texel of the first glyph
+		ui::GlyphBox before, g;
+		CHECK(ui::glyph('A', ui::TEXT, before) && before.y < 256);
+		CHECK(!ui::setGameFont(blob.data(), u32(blob.size() - 1)));
+		CHECK(ui::glyph('A', ui::TEXT, g) && g.y == before.y && g.advance == before.advance);
+		CHECK(ui::setGameFont(blob.data(), u32(blob.size())));
+		CHECK(ui::glyph('A', ui::TEXT, g) && g.advance == 6 && g.w == 5 && g.y >= 512);
+		CHECK(ui::glyph('A', ui::TITLE, g) && g.advance == 7 && g.h == 9);
+		CHECK(ui::coverage(1, 512 + 1) == 15 && ui::coverage(2, 512 + 1) == 0);
+		CHECK(ui::glyph('B', ui::TEXT, g) && g.y < 256); // (not in the game's font: the built-in glyph)
+		CHECK(Ui::lineHeight(ui::TEXT) == 12 && Ui::lineHeight(ui::TITLE) == 14);
+		ui::clearGameFont();
+		CHECK(ui::glyph('A', ui::TEXT, g) && g.y == before.y && Ui::lineHeight() == uifont::LINE[0]);
+
+		// The baker: two sheets of 16x16 cells (byte b at column b % 16, row b / 16), a Russian code page.
+		SrcFonts fonts;
+		fonts.codepage = 1251;
+		for (int s = 0; s < 2; ++s) {
+			SrcFontFace& f = fonts.face[s];
+			f.name = s ? "BIG" : "SMALL";
+			f.height = s ? 14 : 8;
+			const int cell = f.height + 2;
+			f.sheet.width = f.sheet.height = 256;
+			f.sheet.rgba.assign(size_t(256) * 256 * 4, 0);
+			for (int b = 0; b < 256; ++b) {
+				SrcFontFace::Cell c;
+				c.width = 6 + s * 3;
+				const int cx = (b % 16) * 16, cy = (b / 16) * 16;
+				c.u0 = float(cx) / 256.0f;
+				c.v0 = float(cy) / 256.0f;
+				c.u1 = float(cx + c.width) / 256.0f;
+				c.v1 = float(cy + cell) / 256.0f;
+				f.cells.push_back(c);
+				if (b == 0x20) continue; // (a space: nothing in its cell)
+				for (int y = 0; y < f.height; ++y)
+					for (int x = 0; x < c.width - 1; ++x) f.sheet.rgba[(size_t(cy + y) * 256 + cx + x) * 4 + 3] = 255;
+			}
+		}
+		std::vector<u8> baked;
+		std::string report, why;
+		CHECK(bakeFont(fonts, baked, report, why) && why.empty());
+		CHECK(ui::setGameFont(baked.data(), u32(baked.size())));
+		ui::GlyphBox ya, space;
+		CHECK(ui::glyph(0x42F, ui::TEXT, ya) && ya.y >= 512 && ya.advance == 6 && ya.w == 6 && ya.h == 10); // byte 0xDF is Я in 1251: not 'ß'
+		CHECK(ui::glyph(0x42F, ui::TITLE, g) && g.advance == 9 && g.h == 16);
+		CHECK(ui::glyph('A', ui::TEXT, g) && g.y >= 512 && ui::coverage(g.x, g.y) == 15);
+		CHECK(ui::glyph(' ', ui::TEXT, space) && space.advance == 6 && space.w == 0);
+		CHECK(ui::glyph(0x25BC, ui::TEXT, g) && g.y < 256); // (the marker is not in the game's fonts: the built-in one)
+		CHECK(std::string(report).find("code page 1251") != std::string::npos);
+		ui::clearGameFont();
+		// (A page where the same byte is another letter.)
+		fonts.codepage = 1252;
+		CHECK(bakeFont(fonts, baked, report, why) && ui::setGameFont(baked.data(), u32(baked.size())));
+		CHECK(ui::glyph(0xE4, ui::TEXT, g) && g.y >= 512);
+		ui::clearGameFont();
+		CHECK(detectCodePage({std::string(300, '\xE0')}) == 1251 && detectCodePage({std::string(300, 'a')}) == 1252);
+	}
 	// Languages: every text in all four, the same %-conversions as the key's,
 	// every letter in the font, every line of the menu fits the panel.
 	{
@@ -6326,6 +6422,86 @@ static void testDialogs() {
 	npcs.talkAbort();
 	run(0.5f);
 	CHECK(!npcs.talkView().active);
+
+	// 5. The story has moved on: a chapter began (the card is up), the diary says so.
+	if (favour >= 0) {
+		CHECK(g.chapterNumber() == 2);
+		CHECK(std::strcmp(g.chapter().title, "Chapter 2") == 0 && g.chapter().serial == 2);
+		CHECK(app.chapterSeen() == 2);
+		run(11.0f);
+		CHECK(app.chapterTime() <= 0.0f);
+
+		// What was written is "fresh" until the diary has been looked at and left.
+		{
+			app.panel().openPage(InventoryPanel::PAGE_DIARY);
+			run(0.3f);
+			bool fresh = false;
+			for (u32 i = 0; i < app.inventory().topicCount; ++i) fresh = fresh || app.inventory().topics[i].fresh;
+			CHECK(fresh);
+			app.panel().openPage(InventoryPanel::PAGE_PLAY);
+			run(0.3f);
+			for (u32 i = 0; i < app.inventory().topicCount; ++i) CHECK(!app.inventory().topics[i].fresh);
+		}
+		// 6. Saved, then undone, then loaded: the quest, the chapter, the routine,
+		// the diary and the infos are as they were.
+		const std::string state = gDir + "/quest.state";
+		CHECK(app.saveState(state.c_str()));
+		const u32 delivery = g.vm().find("MIS_DELIVERY"), kapitel = g.vm().find("KAPITEL");
+		const u32 restFn = g.routine(g.npc(thorus).routineFirst).state;
+		const i8 attitude = g.npc(thorus).attitude;
+		const u32 topics = g.logTopicCount(), entries = g.logEntryCount();
+		const int hello = g.infoIndex(g.vm().find("DIA_THORUS_HELLO"));
+		CHECK(hello >= 0 && g.info(u32(hello)).told);
+		g.vm().setInt(delivery, 0, nullptr, 0);
+		g.vm().setInt(kapitel, 0, nullptr, 1);
+		g.setInfoTold(u32(hello), false);
+		g.npcMut(thorus).attitude = 0;
+		g.giveItems(thorus, apple, 3);
+		g.pushMessage("noise", 1.0f);
+		CHECK(app.loadState(state.c_str()));
+		CHECK(g.vm().getInt(delivery) == g.constant("LOG_SUCCESS", 2));
+		CHECK(g.chapterNumber() == 2);
+		CHECK(g.info(u32(hello)).told);
+		CHECK(g.logTopicCount() == topics && g.logEntryCount() == entries);
+		bool success = false;
+		for (u32 i = 0; i < g.logTopicCount(); ++i)
+			if (g.logTopic(i).status == g.constant("LOG_SUCCESS", 2)) success = true;
+		CHECK(success);
+		CHECK(g.npc(thorus).attitude == attitude);
+		CHECK(g.itemCount(thorus, apple) == 0);
+		CHECK(g.routine(g.npc(thorus).routineFirst).state == restFn);
+		// The diary shows the chapter and the finished task.
+		{
+			app.panel().openPage(InventoryPanel::PAGE_DIARY);
+			run(0.3f);
+			const InventoryView& dv = app.inventory();
+			CHECK(std::strcmp(dv.chapter, "Chapter 2") == 0 && dv.chapterNumber == 2);
+			bool finished = false;
+			for (u32 i = 0; i < dv.topicCount; ++i) finished = finished || dv.topics[i].status == 2;
+			CHECK(finished);
+			app.panel().openPage(InventoryPanel::PAGE_PLAY);
+			run(0.3f);
+		}
+		GameLogNotice note;
+		CHECK(!g.takeLogNotice(note) || note.topic[0]);
+		// (A card seen before the save does not come up again by loading it.)
+		run(0.5f);
+		CHECK(app.chapterTime() <= 0.0f && app.chapterSeen() == 2);
+		// A damaged state is refused, not half-loaded.
+		{
+			FILE* f = std::fopen(state.c_str(), "r+b");
+			CHECK(f != nullptr);
+			if (f) {
+				std::fseek(f, -8, SEEK_END);
+				const unsigned char junk[4] = {1, 2, 3, 4};
+				std::fwrite(junk, 1, 4, f);
+				std::fclose(f);
+			}
+			g.vm().setInt(delivery, 0, nullptr, 0);
+			app.loadState(state.c_str());
+			CHECK(g.vm().getInt(delivery) == 0); // (the damaged section changed nothing)
+		}
+	}
 }
 
 // The chests of the test camp: an open one, a locked one with its key, a locked

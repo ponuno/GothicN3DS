@@ -42,7 +42,9 @@ void App::drawOverlay() {
 		} else if (held) _ui.text(W - 10, H - 6 - Ui::lineHeight(), held, ui::GOLD, ui::TEXT, ui::RIGHT);
 		else if (_hero.sneaking()) _ui.text(W - 10, H - 6 - Ui::lineHeight(), tr("Крадётся"), ui::GREY, ui::TEXT, ui::RIGHT);
 		// The target: its name and health at the top, a mark over its head.
-		if (game && _target >= 0) {
+		// (Not during a talk: the partner's name is the dialogue box's, the target's
+		// white name above it was a stray second copy.)
+		if (game && _target >= 0 && !_npcs.talkView().active) {
 			const GameNpc& t = game->npc(u32(_target));
 			const char* name = game->nameOf(t);
 			const int hi = heroIndex();
@@ -71,6 +73,20 @@ void App::drawOverlay() {
 		}
 	}
 	if (_settings.hud && !menuOpen && character) drawItemHud();
+	if (_settings.showFps) {
+		char fps[16];
+		snprintf(fps, sizeof(fps), "%d FPS", int(_fps + 0.5f));
+		_ui.text(W - 6, 4, fps, ui::GOLD, ui::TEXT, ui::RIGHT);
+	}
+	if (!menuOpen && _chapterTime > 0.0f) {
+		// The card of a chapter: it fades in, stays, fades out.
+		const float t = _chapterLength - _chapterTime;
+		const float a = min(min(t / 0.8f, _chapterTime / 1.0f), 1.0f);
+		const u32 alpha = u32(clamp(a, 0.0f, 1.0f) * 255.0f);
+		_ui.rect(0, 0, W, H, (0x000000u << 8) | (alpha * 200u / 255u));
+		_ui.text(W / 2, H / 2 - 26, _chapterCard.title, (ui::GOLD & 0xFFFFFF00u) | alpha, ui::TITLE, ui::CENTER);
+		_ui.text(W / 2, H / 2 + 6, _chapterCard.subtitle, (ui::WHITE & 0xFFFFFF00u) | alpha, ui::TEXT, ui::CENTER);
+	}
 	if (!menuOpen) drawSubtitle();
 	if (!menuOpen && _toastTime > 0.0f && _toast[0]) {
 		// (Above the inventory's info box while that is up.)

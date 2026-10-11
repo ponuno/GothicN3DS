@@ -18,12 +18,16 @@ class Sky {
 public:
 	~Sky() { release(); }
 	// Draws the dome. Call between gfx::setPass(PASS_SKY) and PASS_WORLD.
-	void draw(Vec3 camera, float radius, const SkyColors& colors);
+	// `barrier` > 0 draws the colony's Barrier too: a dome of faint blue-violet
+	// webs and flashes over the sky (its strength, 0..1), moving with `seconds`.
+	void draw(Vec3 camera, float radius, const SkyColors& colors, float barrier = 0.0f, float seconds = 0.0f);
 	void release();
 
 private:
 	gfx::Mesh* _mesh = nullptr;
 	SkyColors _built {};
+	float _builtBarrier = 0.0f;
+	int _builtStep = -1;
 	u32 _indexCount = 0;
 };
 

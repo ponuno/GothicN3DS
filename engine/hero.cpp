@@ -35,6 +35,8 @@ const float kThrowUp = 480.0f; // (the original jumps well over a man's height)
 // A jump straight up at a wall: about 150 cm with the original's gravity.
 const float kJumpUpSpeed = 540.0f;
 const float kJumpRecover = 0.55f; // seconds on the ground before the next jump
+// Playing speed of taking a weapon in hand and of putting it away (1: as authored).
+const float kDrawRate = 0.7f, kHolsterRate = 0.6f;
 
 float wrapAngle(float a) {
 	const float pi = 3.14159265f;
@@ -360,8 +362,15 @@ bool Hero::draw(u8 mode) {
 		_forceNext = true;
 		return true;
 	}
-	if (backwards) _anim.playReversed(c, 0.15f);
-	else _anim.play(c, 0.15f);
+	// (Slower than authored: at 1:1 the draw is over before it is seen, and the put-away - the same
+	// clip backwards, ending on the first frame - hardly shows at all.)
+	if (backwards) {
+		_anim.playReversed(c, 0.15f);
+		_anim.setRate(-kHolsterRate);
+	} else {
+		_anim.play(c, 0.15f);
+		_anim.setRate(kDrawRate);
+	}
 	const ClipFight* f = c->fight();
 	_drawTo = mode;
 	_drawClip = c;
@@ -811,7 +820,10 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 	else if (_body != GROUNDED) _jumpCool = kJumpRecover;
 	const bool canJump = _jumpCool <= 0.0f;
 	if (_body == GROUNDED && player.grounded) _groundY = player.feet.y;
-	const bool locked = _down || _reel || (_blow.clip && _anim.current() == _blow.clip) || drawing() || usingItem() || _body == MANTLE;
+	// In a jump the body goes where the take-off sent it, as in the original: no turning
+	// (and so no steering of the leap by the take-off animation's root motion) until it lands.
+	const bool inJump = _body == TAKEOFF || (_body == AIRBORNE && _jumping);
+	const bool locked = _down || _reel || (_blow.clip && _anim.current() == _blow.clip) || drawing() || usingItem() || _body == MANTLE || inJump;
 	float turnRate = 0;
 	if (in.steer) {
 		// Towards a heading, as fast as a body turns (the console scheme).
@@ -825,7 +837,7 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 		turnRate = step / dt;
 	} else {
 		turnRate = clamp(in.moveX, -1.0f, 1.0f) * kTurnSpeed + clamp(in.lookX, -1.0f, 1.0f) * kLookTurnSpeed;
-		if (locked && (_down || usingItem() || _body == MANTLE)) turnRate = 0;
+		if (locked && (_down || usingItem() || _body == MANTLE || inJump)) turnRate = 0;
 		_yaw = wrapAngle(_yaw + turnRate * dt);
 	}
 	const bool turning = fabsf(turnRate) >= kTurnAnimSpeed;

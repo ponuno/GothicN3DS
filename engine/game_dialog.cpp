@@ -45,6 +45,8 @@ void Game::bindDialogues() {
 	_mInfoPermanent = _vm.findMember("C_INFO", "PERMANENT");
 	_mInfoTrade = _vm.findMember("C_INFO", "TRADE");
 	_mId = _vm.findMember("C_NPC", "ID");
+	_kapitel = _vm.find("KAPITEL");
+	if (_kapitel != SCRIPT_NONE && _vm.symbol(_kapitel).type != SCRIPT_INT) _kapitel = SCRIPT_NONE;
 	const auto must = [&](u32& member, u8 type) {
 		if (member != SCRIPT_NONE && _vm.symbol(member).type != type) member = SCRIPT_NONE;
 	};
@@ -69,7 +71,7 @@ void Game::bindDialogues() {
 	             {"INFO_ADDCHOICE", xAddChoice},         {"INFO_CLEARCHOICES", xClearChoices},
 	             {"NPC_EXCHANGEROUTINE", xExchangeRoutine}, {"PRINT", xPrint},
 	             {"PRINTSCREEN", xPrintScreen},          {"NPC_KNOWSPLAYER", xKnowsPlayer},
-	             {"NPC_SETKNOWSPLAYER", xSetKnowsPlayer}};
+	             {"NPC_SETKNOWSPLAYER", xSetKnowsPlayer}, {"INTRODUCECHAPTER", xIntroduceChapter}};
 	for (const auto& e : table) _vm.bind(e.name, e.fn, this);
 
 	// Every C_INFO instance the scripts define, made once: its code says whom it belongs to.
@@ -338,6 +340,29 @@ void Game::xExchangeRoutine(ScriptVm& vm, void* user) {
 	copyText(name, sizeof(name), vm.popString());
 	const int npc = g.indexOf(vm.popInstance());
 	if (npc >= 0) g.exchangeRoutine(u32(npc), name);
+}
+
+// ---- chapters ----
+
+// IntroduceChapter(title, subtitle, texture, sound, delay): the card that
+// opens a chapter. The application shows it (chapter().serial changes).
+void Game::xIntroduceChapter(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	GameChapter c;
+	c.delay = vm.popInt();
+	copyText(c.sound, sizeof(c.sound), vm.popString());
+	char texture[40];
+	copyText(texture, sizeof(texture), vm.popString());
+	char subtitle[64];
+	copyText(subtitle, sizeof(subtitle), vm.popString());
+	char title[48];
+	copyText(title, sizeof(title), vm.popString());
+	copyText(c.texture, sizeof(c.texture), texture);
+	copyText(c.subtitle, sizeof(c.subtitle), subtitle);
+	copyText(c.title, sizeof(c.title), title);
+	c.serial = g._chapter.serial + 1;
+	g._chapter = c;
+	++g._logVersion; // (the diary names the chapter)
 }
 
 } // namespace g3

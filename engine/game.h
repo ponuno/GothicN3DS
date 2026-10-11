@@ -14,6 +14,11 @@
 #include "script.h"
 
 namespace g3 {
+struct ByteSink;
+struct ByteSource;
+} // namespace g3
+
+namespace g3 {
 
 // A text the game keeps (names of models, of places): Game::text(id). 0 is "".
 typedef u16 GameText;
@@ -148,6 +153,25 @@ struct GameChoice {
 struct GameMessage {
 	char text[96];
 	float seconds;
+};
+
+// What the diary just did, for a line of news (Game::takeLogNotice).
+enum GameLogNoticeKind : u8 { LOGN_NEW_TOPIC = 1, LOGN_ENTRY = 2, LOGN_STATUS = 3 };
+struct GameLogNotice {
+	u8 kind;
+	u8 section;
+	u8 status; // for LOGN_STATUS
+	char topic[64];
+};
+
+// The chapter title card the scripts put up (IntroduceChapter).
+struct GameChapter {
+	char title[48] = "";    // "Kapitel 1"
+	char subtitle[64] = ""; // "Das Minental"
+	char texture[40] = "";  // the card's picture ("chapter1.tga"), not baked
+	char sound[40] = "";    // what is played with it ("chapter_01.wav")
+	i32 delay = 0;          // how long the scripts want it shown, ms
+	u32 serial = 0;         // counts the cards put up (the screen shows a new one)
 };
 
 struct GameStats {
@@ -285,6 +309,21 @@ public:
 	u32 logEntryCount() const { return _logEntryCount; }
 	const GameLogEntry& logEntry(u32 i) const { return _logEntries[i]; }
 	u32 logVersion() const { return _logVersion; }
+	// What the diary has done since it was last asked, oldest first; false when there is nothing.
+	bool takeLogNotice(GameLogNotice& out);
+	void clearLogNotices() { _noticeCount = 0; }
+	// The chapter card put up last, and the story's chapter number (the
+	// scripts' Kapitel; 0 if they have none).
+	const GameChapter& chapter() const { return _chapter; }
+	i32 chapterNumber() const { return _kapitel != SCRIPT_NONE ? _vm.getInt(_kapitel) : 0; }
+	// ---- saving (game_save.cpp) ----
+	// Everything the scripts and the engine changed since the start: script
+	// variables, the characters (members, place, routine, what they carry,
+	// attitude, whether they live), what has been told, the diary, the
+	// chapter. Characters of a world not entered yet are kept and given their
+	// state when they are made.
+	void save(ByteSink& out) const;
+	bool restore(ByteSource& in);
 	// Counts every change of what anybody carries (the inventory redraws on it).
 	u32 itemsVersion() const { return _itemsVersion; }
 	// True if `symbol` is an item instance of the scripts.
@@ -481,6 +520,23 @@ private:
 	static void xLogCreateTopic(ScriptVm& vm, void* user);
 	static void xLogSetTopicStatus(ScriptVm& vm, void* user);
 	static void xLogAddEntry(ScriptVm& vm, void* user);
+	GameLogNotice _notices[8] = {};
+	u32 _noticeFirst = 0, _noticeCount = 0;
+	void notice(u8 kind, u8 section, u8 status, const char* topic);
+	GameChapter _chapter;
+	u32 _kapitel = SCRIPT_NONE;
+	static void xIntroduceChapter(ScriptVm& vm, void* user);
+	// Saved characters whose world has not been entered yet (game_save.cpp).
+	struct Pending {
+		u32 symbol, ordinal;
+		u8* blob;
+		u32 size;
+	};
+	Pending* _pending = nullptr;
+	u32 _pendingCount = 0, _pendingCap = 0;
+	void restoreNpc(u32 index, ByteSource& in);
+	void applyPending(u32 index);
+	void freePending();
 	GameDrop* _drops = nullptr;
 	u32 _dropCount = 0, _dropCap = 0;
 	float _percRange[PERC_TYPES];

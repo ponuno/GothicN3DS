@@ -39,6 +39,7 @@ const char* const kFrameNotes[] = {"60, а при перегрузке ровн�
 const char* const kSchemes[] = {"Консольная", "Классическая"};
 const char* const kSchemeNotes[] = {"Стик ведёт туда, куда указывает на экране", "Как в оригинале: камера всегда за спиной"};
 const char* const kBottom[] = {"Инвентарь", "Отчёт"};
+const char* const kTimeFlow[] = {"Стоит", "Сутки за 24 мин", "Сутки за 1 ч", "Сутки за 2 ч"};
 const char* const kLanguages[] = {"Русский", "English", "Polski", "Deutsch"};
 
 #define NONE nullptr, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr
@@ -59,12 +60,14 @@ const Item kGraphics[] = {
     {"Мелкие и средние объекты", CHOICE, &Settings::objects, kObjects, 3, 0, 0, nullptr, 0, nullptr, kObjectNotes},
     {"Густота мелких объектов", CHOICE, &Settings::density, kDensity, 3, 0, 0, nullptr, 0, nullptr, kDensityNotes},
     {"Жители вдали", CHOICE, &Settings::npcDistance, kNpcRange, 3, 0, 0, nullptr, 0, "Как далеко видны жители и звери", nullptr},
+    {"Купол Барьера", TOGGLE, &Settings::barrier, nullptr, 0, 0, 0, nullptr, 0, "Сияние неба и гул, если есть в данных", nullptr},
     {"Плавное появление", TOGGLE, &Settings::dissolve, nullptr, 0, 0, 0, nullptr, 0, "Вступит в силу после перезапуска", nullptr},
     {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 3, 0, 0, nullptr, 0, nullptr, kFrameNotes},
     {"Сбросить графику", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_RESET_GRAPHICS, "Вернуть значения по умолчанию", nullptr},
 };
 const Item kGame[] = {
     {"Автозахват цели", TOGGLE, &Settings::autoTarget, nullptr, 0, 0, 0, nullptr, 0, "Взял оружие — цель захвачена", nullptr},
+    {"Течение времени", CHOICE, &Settings::timeFlow, kTimeFlow, 4, 0, 0, nullptr, 0, "Реальное время на игровые сутки", nullptr},
     {"Оружие после зелья", TOGGLE, &Settings::weaponBack, nullptr, 0, 0, 0, nullptr, 0, "Выпил — снова берёт оружие в руки", nullptr},
 };
 const Item kControls[] = {
@@ -77,6 +80,7 @@ const Item kControls[] = {
 const Item kInterface[] = {
     {"Язык / Language", CHOICE, &Settings::language, kLanguages, 4, 0, 0, nullptr, 0, "Тексты игры берутся из её данных", nullptr},
     {"Интерфейс в игре", TOGGLE, &Settings::hud, nullptr, 0, 0, 0, nullptr, 0, "Здоровье, цель, подсказки", nullptr},
+    {"Показывать FPS", TOGGLE, &Settings::showFps, nullptr, 0, 0, 0, nullptr, 0, "Счётчик кадров сверху справа", nullptr},
     {"Нижний экран", CHOICE, &Settings::report, kBottom, 2, 0, 0, nullptr, 0, "Отчёт: цифры для проверки", nullptr},
 };
 const Item kSound[] = {

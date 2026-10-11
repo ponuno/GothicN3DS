@@ -1,5 +1,6 @@
 // Used when the project is configured with -DG3DS_WITH_ZENKIT=OFF.
 #include "g3ds/model.h"
+#include "font_bake.h"
 #include "importers.h"
 #include "script_check.h"
 
@@ -30,6 +31,7 @@ bool importZenScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<u8>
 bool importZenFightScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<std::string>&) { unavailable(); }
 bool importZenSfxScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<std::string>&) { unavailable(); }
 bool importZenMusicScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<std::string>&) { unavailable(); }
+bool importZenFonts(std::shared_ptr<const ZenGame>, SrcFonts&, std::vector<std::string>&) { unavailable(); }
 bool importZenDialogue(std::shared_ptr<const ZenGame>, SrcDialogue&, std::vector<std::string>&) { unavailable(); }
 
 ScriptCheckResult checkScript(const std::vector<u8>&, const SrcScript&, const std::vector<u8>&, const ScriptCheckOptions&) {

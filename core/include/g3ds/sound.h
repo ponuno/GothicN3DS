@@ -160,18 +160,19 @@ static_assert(sizeof(MusicZone) == 64, "MusicZone layout");
 // What the characters say. One entry for each line of the game's dialogue that
 // has a recording, named "speech/<8 hex digits>": hashName() of the line's name
 // ("DIA_Diego_Hallo_11_00"), the one dialog/index has. The blob is a
-// SoundHeader (format SOUND_IMA4, mono) and the samples as IMA ADPCM: the first
+// SoundHeader (format SOUND_PCM16, the recording as it is - the default - or SOUND_IMA4, a quarter the size) and mono samples; IMA ADPCM: the first
 // sample whole (4 bytes: the predictor and the step index), then the other
-// frames-1 as 4-bit codes, the low nibble first. It is a quarter of the size of
-// 16-bit samples, which at a hundred hours of speech matters.
+// frames-1 as 4-bit codes, the low nibble first (--voice-codec ima).
 constexpr u32 SPEECH_MAX_FRAMES = 22050u * 90u;
 
 inline u32 imaBytes(u32 frames) { return 4u + (frames > 0 ? (frames - 1u + 1u) / 2u : 0u); }
 
 inline bool speechValid(const SoundHeader& h, u32 blobSize) {
-	return h.magic == SOUND_MAGIC && h.version == SOUND_VERSION && h.format == SOUND_IMA4 && h.frames > 0 &&
-	       h.frames <= SPEECH_MAX_FRAMES && h.rate >= SOUND_MIN_RATE && h.rate <= SOUND_MAX_RATE &&
-	       blobSize == u32(sizeof(SoundHeader)) + imaBytes(h.frames);
+	if (h.magic != SOUND_MAGIC || h.version != SOUND_VERSION || h.frames == 0 || h.frames > SPEECH_MAX_FRAMES ||
+	    h.rate < SOUND_MIN_RATE || h.rate > SOUND_MAX_RATE)
+		return false;
+	if (h.format == SOUND_PCM16) return blobSize == u32(sizeof(SoundHeader)) + h.frames * 2u;
+	return h.format == SOUND_IMA4 && blobSize == u32(sizeof(SoundHeader)) + imaBytes(h.frames);
 }
 
 inline u32 speechEntryHash(u32 lineHash) {

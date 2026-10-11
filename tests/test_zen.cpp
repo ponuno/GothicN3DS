@@ -9,6 +9,8 @@
 // (ZenKit's own tests/samples) a few genuine game files are parsed as well.
 #include "bake.h"
 #include "daedalus.h"
+#include "font_bake.h"
+#include "g3ds/font.h"
 #include "g3ds/game.h"
 #include "script_check.h"
 #include "g3ds/math.h"
@@ -20,6 +22,7 @@
 #include "pak_writer.h"
 
 #include <zenkit/Archive.hh>
+#include <zenkit/Font.hh>
 #include <zenkit/Mesh.hh>
 #include <zenkit/ModelAnimation.hh>
 #include <zenkit/ModelHierarchy.hh>
@@ -1395,6 +1398,31 @@ std::vector<std::byte> saveTexture(int size, zenkit::TextureFormat format, void 
 	return out;
 }
 
+// A font sheet: white ink in the left 6 pixels of every 8x8 cell, opaque black elsewhere.
+void fontPixel(int x, int, uint8_t* p) {
+	const uint8_t v = (x % 8) < 6 ? 255 : 0;
+	p[0] = p[1] = p[2] = v;
+	p[3] = 255;
+}
+
+std::vector<std::byte> saveFont(const char* texture, uint32_t height) {
+	zenkit::Font font;
+	font.name = texture;
+	font.height = height;
+	for (int b = 0; b < 256; ++b) {
+		zenkit::FontGlyph g {};
+		g.width = 7;
+		const float cx = float((b % 16) * 8), cy = float((b / 16) * 8);
+		g.uv[0] = zenkit::Vec2 {cx / 128.0f, cy / 128.0f};
+		g.uv[1] = zenkit::Vec2 {(cx + 6.0f) / 128.0f, (cy + float(height)) / 128.0f};
+		font.glyphs.push_back(g);
+	}
+	std::vector<std::byte> bytes;
+	auto w = zenkit::Write::to(&bytes);
+	font.save(w.get());
+	return bytes;
+}
+
 void grassPixel(int, int, uint8_t* p) {
 	p[0] = 40;
 	p[1] = 160;
@@ -1985,6 +2013,12 @@ int main(int argc, char** argv) {
 		addToVfs(texDir, "FIX_SKIN_V0_C0-C.TEX", saveTexture(32, zenkit::TextureFormat::DXT1, yellowPixel));
 		addToVfs(texDir, "FIX_SKIN_V4_C1-C.TEX", saveTexture(32, zenkit::TextureFormat::DXT1, bluePixel));
 
+		// The game's fonts (Fonts.vdf in a real install): a text one and a title one.
+		addToVfs(texDir, "FONT_OLD_10_WHITE-C.TEX", saveTexture(128, zenkit::TextureFormat::DXT1, fontPixel));
+		addToVfs(texDir, "FONT_OLD_20_WHITE-C.TEX", saveTexture(128, zenkit::TextureFormat::DXT1, fontPixel));
+		addToVfs(texDir, "FONT_OLD_10_WHITE.FNT", saveFont("FONT_OLD_10_WHITE.TGA", 6));
+		addToVfs(texDir, "FONT_OLD_20_WHITE.FNT", saveFont("FONT_OLD_20_WHITE.TGA", 7));
+
 		auto out = zenkit::Write::to(dir / "game" / "DATA" / "fixture.VDF");
 		vfs.save(out.get(), zenkit::GameVersion::GOTHIC_1);
 	}
@@ -1996,6 +2030,25 @@ int main(int argc, char** argv) {
 			game = openZenGame((dir / "game").string(), notes);
 			CHECK(zenGameHasFile(*game, "FIXTURE2.ZEN") && zenGameHasFile(*game, "fixture.zen"));
 			CHECK(!zenGameHasFile(*game, "WORLD.ZEN"));
+			{
+				// The fonts of the overlay, read from the archive and packed.
+				SrcFonts fonts;
+				std::vector<std::string> fontNotes;
+				CHECK(importZenFonts(game, fonts, fontNotes));
+				CHECK(fonts.face[0].name == "FONT_OLD_10_WHITE" && fonts.face[0].height == 6 && fonts.face[1].height == 7);
+				CHECK(fonts.face[0].cells.size() == 256 && fonts.face[0].sheet.width == 128 && fonts.face[0].sheet.height == 128);
+				fonts.codepage = 1251;
+				std::vector<u8> blob;
+				std::string report, why;
+				CHECK(bakeFont(fonts, blob, report, why));
+				FontHeader fh {};
+				CHECK(blob.size() > sizeof(fh));
+				if (blob.size() > sizeof(fh)) {
+					std::memcpy(&fh, blob.data(), sizeof(fh));
+					CHECK(fh.magic == FONT_MAGIC && fh.codepage == 1251 && fh.line[0] == 6 && fh.line[1] == 7 && fh.glyphCount > 300);
+					CHECK(blob.size() == sizeof(fh) + size_t(fh.glyphCount) * sizeof(FontGlyphRec) + size_t(fh.atlasW) * fh.atlasH);
+				}
+			}
 
 			SrcScene scene;
 			ZenImportOptions opt;

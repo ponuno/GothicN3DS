@@ -4,6 +4,7 @@
 #include "sound_bake.h"
 #include "g3ds/model.h"
 #include "g3ds/tex.h"
+#include "font_bake.h"
 #include "importers.h"
 #include "model_bake.h"
 
@@ -101,6 +102,8 @@ void usage() {
 	          "  --hero-body NAME   world: its body mesh (default: HUM_BODY_NAKED0)\n"
 	          "  --hero-head NAME   world: its head mesh (default: HUM_HEAD_PONY; \"\" for none)\n"
 	          "  --hero-skin B,C,H  world: texture variants of body, skin colour and head (default: 4,1,9)\n"
+	          "  --font-cp N        world: the code page of the game's fonts (1250, 1251, 1252; default: told from the texts)\n"
+	          "  --no-font          world: keep the overlay's own font, do not take the game's\n"
 	          "  --no-objects       world mesh only, skip trees, bridges and other world objects\n"
 	          "  --no-lightmaps     keep the vertex light on lightmapped (indoor) polygons\n"
 	          "  --threads N        worker threads");
@@ -134,7 +137,8 @@ int main(int argc, char** argv) {
 		SynthOptions synth;
 		std::string out = "data.pak", firstName, gameDir;
 		std::vector<std::string> levels;
-		bool follow = true, hero = true, withScripts = true;
+		bool follow = true, hero = true, withScripts = true, withFont = true;
+		int fontCodePage = 0;
 		for (int i = 2; i < argc; ++i) {
 			const std::string a = argv[i];
 			auto value = [&]() -> std::string {
@@ -156,12 +160,19 @@ int main(int argc, char** argv) {
 			else if (a == "--no-follow") follow = false;
 			else if (a == "--no-hero") hero = false;
 			else if (a == "--no-scripts") withScripts = false;
+			else if (a == "--no-font") withFont = false;
+			else if (a == "--font-cp") fontCodePage = std::stoi(value());
 			else if (a == "--sound-rate") opt.soundRate = u32(std::stoul(value()));
 			else if (a == "--no-sound") opt.soundRate = 0;
 			else if (a == "--music-dir") opt.musicDir = value();
 			else if (a == "--music-rate") opt.musicRate = u32(std::stoul(value()));
 			else if (a == "--voice-rate") opt.voiceRate = u32(std::stoul(value()));
 			else if (a == "--no-voices") opt.voiceRate = 0;
+			else if (a == "--voice-codec") {
+				const std::string v = value();
+				if (v != "pcm" && v != "ima") throw std::runtime_error("--voice-codec wants pcm or ima");
+				opt.voiceIma = v == "ima";
+			}
 			else if (a == "--hero-script") actor.script = value();
 			else if (a == "--hero-body") actor.body = value();
 			else if (a == "--hero-head") actor.head = value();
@@ -199,6 +210,8 @@ int main(int argc, char** argv) {
 		SrcScript script, fightScript, sfxScript, musicScript;
 		SrcDialogue dialogue;
 		bool haveDialogue = false;
+		SrcFonts fonts;
+		bool haveFonts = false;
 		std::vector<u8> scriptDat;
 		BakeScripts scripts;
 		if (cmd == "synth") {
@@ -296,6 +309,14 @@ int main(int argc, char** argv) {
 				// ... and what they say.
 				haveDialogue = importZenDialogue(game, dialogue, worlds[0].scene.notes);
 			}
+			// The game's own fonts for the overlay.
+			if (withFont && !worlds.empty() && importZenFonts(game, fonts, worlds[0].scene.notes)) {
+				std::vector<std::string> texts;
+				texts.reserve(dialogue.lines.size());
+				for (const auto& l : dialogue.lines) texts.push_back(l.second);
+				fonts.codepage = fontCodePage ? fontCodePage : detectCodePage(texts);
+				haveFonts = true;
+			}
 		}
 		if (!firstName.empty()) worlds[0].name = firstName;
 
@@ -306,6 +327,16 @@ int main(int argc, char** argv) {
 			std::string line;
 			for (DialogueAsset& asset : bakeDialogue(dialogue, line)) pak.add(asset.name, ASSET_BLOB, asset.bytes);
 			std::printf("%s\n", line.c_str());
+		}
+		if (haveFonts) {
+			std::vector<u8> blob;
+			std::string report, why;
+			if (bakeFont(fonts, blob, report, why)) {
+				pak.add("font/ui", ASSET_BLOB, blob);
+				std::printf("%s\n", report.c_str());
+			} else {
+				std::printf("font: not baked (%s); the overlay keeps its own font\n", why.c_str());
+			}
 		}
 		if (haveCamera) {
 			const u8* bytes = reinterpret_cast<const u8*>(&camera);
@@ -320,9 +351,9 @@ int main(int argc, char** argv) {
 			names.reserve(dialogue.lines.size());
 			for (const auto& l : dialogue.lines) names.push_back(l.first);
 			PakWriter speechPak;
-			const SpeechBakeResult sr = bakeSpeech(names, scripts.soundFile, opt.voiceRate, opt.threads, speechPak);
-			std::printf("voices: %u lines of dialogue, %u recordings baked (%.1f MB at up to %u Hz, IMA ADPCM)", sr.lines, sr.baked,
-			            double(sr.bytes) / 1048576.0, opt.voiceRate);
+			const SpeechBakeResult sr = bakeSpeech(names, scripts.soundFile, opt.voiceRate, opt.threads, speechPak, opt.voiceIma);
+			std::printf("voices: %u lines of dialogue, %u recordings baked (%.1f MB at up to %u Hz, %s)", sr.lines, sr.baked,
+			            double(sr.bytes) / 1048576.0, opt.voiceRate, opt.voiceIma ? "IMA ADPCM" : "16-bit, full quality");
 			if (!sr.unusable.empty()) {
 				std::printf("; %zu could not be used:", sr.unusable.size());
 				for (size_t i = 0; i < sr.unusable.size() && i < 4; ++i) std::printf(" [%s]", sr.unusable[i].c_str());

@@ -1,5 +1,7 @@
 #include "script.h"
 
+#include "bytes.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1076,6 +1078,128 @@ bool ScriptVm::step() {
 		return false;
 	}
 	return !_abandon;
+}
+
+// ---- saving ----
+
+void ScriptVm::saveGlobals(ByteSink& out) const {
+	out.u32v(_h.symbolCount);
+	out.u32v(_h.dataCount);
+	out.u32v(_h.stringCount);
+	out.u32v(_h.codeSize);
+	out.put(_data, size_t(_h.dataCount) * 4);
+	// (Only the strings the scripts have written; the others are the image's.)
+	u32 owned = 0;
+	for (u32 i = 0; i < _h.stringCount; ++i) owned += _stringOwned[i] ? 1u : 0u;
+	out.u32v(owned);
+	for (u32 i = 0; i < _h.stringCount; ++i)
+		if (_stringOwned[i]) {
+			out.u32v(i);
+			out.str(_strings[i]);
+		}
+}
+
+bool ScriptVm::loadGlobals(ByteSource& in) {
+	if (!loaded()) return false;
+	if (in.u32v() != _h.symbolCount || in.u32v() != _h.dataCount || in.u32v() != _h.stringCount || in.u32v() != _h.codeSize || in.bad)
+		return false;
+	if (in.left() < size_t(_h.dataCount) * 4) return false;
+	in.get(_data, size_t(_h.dataCount) * 4);
+	const u32 owned = in.u32v();
+	for (u32 k = 0; k < owned && !in.bad; ++k) {
+		const u32 slot = in.u32v();
+		const u32 n = in.u32v();
+		if (in.bad || slot >= _h.stringCount || n > in.left()) {
+			in.bad = true;
+			break;
+		}
+		char* copy = static_cast<char*>(malloc(size_t(n) + 1));
+		if (!copy) {
+			in.bad = true;
+			break;
+		}
+		in.get(copy, n);
+		copy[n] = 0;
+		if (_stringOwned[slot]) free(const_cast<char*>(_strings[slot]));
+		_strings[slot] = copy;
+		_stringOwned[slot] = 1;
+	}
+	return !in.bad;
+}
+
+u32 ScriptVm::stringMembers(u32 cls, u32* offsets, u32 max) const {
+	u32 n = 0;
+	for (u32 i = 0; i < _h.symbolCount; ++i) {
+		const ScriptSymbol& s = _symbols[i];
+		if (s.type != SCRIPT_STRING || !(s.flags & SCRIPTF_MEMBER) || s.parent != i32(cls)) continue;
+		for (u32 k = 0; k < (s.count ? s.count : 1u); ++k)
+			if (n < max) offsets[n++] = s.value + k * SCRIPT_STRING_SIZE;
+	}
+	return n;
+}
+
+void ScriptVm::saveObject(const ScriptInstance* inst, const u32* strings, u32 stringCount, ByteSink& out) const {
+	out.u32v(inst->size);
+	u8* raw = static_cast<u8*>(malloc(inst->size ? inst->size : 1u));
+	if (!raw) {
+		out.failed = true;
+		return;
+	}
+	memcpy(raw, inst->data(), inst->size);
+	u32 texts = 0;
+	for (u32 i = 0; i < stringCount; ++i) {
+		if (strings[i] + 4 > inst->size) continue;
+		u32 handle;
+		memcpy(&handle, raw + strings[i], 4);
+		const u32 zero = 0;
+		memcpy(raw + strings[i], &zero, 4);
+		if (handle && handle <= _dynamicCount && _dynamic[handle - 1] && *_dynamic[handle - 1]) ++texts;
+	}
+	out.put(raw, inst->size);
+	free(raw);
+	out.u32v(texts);
+	for (u32 i = 0; i < stringCount; ++i) {
+		if (strings[i] + 4 > inst->size) continue;
+		u32 handle;
+		memcpy(&handle, inst->data() + strings[i], 4);
+		if (handle && handle <= _dynamicCount && _dynamic[handle - 1] && *_dynamic[handle - 1]) {
+			out.u32v(strings[i]);
+			out.str(_dynamic[handle - 1]);
+		}
+	}
+}
+
+bool ScriptVm::loadObject(ScriptInstance* inst, const u32* strings, u32 stringCount, ByteSource& in) {
+	const u32 size = in.u32v();
+	if (in.bad || size != inst->size || in.left() < size) return false;
+	u8* data = const_cast<u8*>(inst->data());
+	for (u32 i = 0; i < stringCount; ++i) {
+		if (strings[i] + 4 > inst->size) continue;
+		u32 old;
+		memcpy(&old, data + strings[i], 4);
+		freeDynamic(old);
+	}
+	in.get(data, size);
+	const u32 texts = in.u32v();
+	for (u32 k = 0; k < texts && !in.bad; ++k) {
+		const u32 at = in.u32v();
+		const u32 n = in.u32v();
+		if (in.bad || at + 4 > size || n > in.left()) {
+			in.bad = true;
+			break;
+		}
+		char* text = static_cast<char*>(malloc(size_t(n) + 1));
+		if (!text) {
+			in.bad = true;
+			break;
+		}
+		in.get(text, n);
+		text[n] = 0;
+		const u32 handle = newDynamic(text);
+		free(text);
+		memcpy(data + at, &handle, 4);
+	}
+	return !in.bad;
 }
 
 } // namespace g3

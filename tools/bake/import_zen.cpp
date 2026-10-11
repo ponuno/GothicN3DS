@@ -4,6 +4,7 @@
 // is redistributed; the user bakes their own copy.
 #include "g3ds/model.h"
 #include "fight_clips.h"
+#include "font_bake.h"
 #include "importers.h"
 
 #include "g3ds/world.h"
@@ -22,6 +23,7 @@
 #include <zenkit/MultiResolutionMesh.hh>
 #include <zenkit/Stream.hh>
 #include <zenkit/Texture.hh>
+#include <zenkit/Font.hh>
 #include <zenkit/Vfs.hh>
 #include <zenkit/World.hh>
 #include <zenkit/vobs/MovableObject.hh>
@@ -2480,6 +2482,59 @@ bool importZenMusicScript(std::shared_ptr<const ZenGame> game, SrcScript& script
 }
 
 // The words people say: the game's output units, a cutscene library of its
+// The two faces of the overlay: the first name found in each list.
+bool importZenFonts(std::shared_ptr<const ZenGame> game, SrcFonts& fonts, std::vector<std::string>& notes) {
+	static const char* const kText[] = {"FONT_OLD_10_WHITE.FNT", "FONT_DEFAULT.FNT", "FONT_OLD_10_WHITE_HI.FNT"};
+	static const char* const kTitle[] = {"FONT_OLD_20_WHITE.FNT", "FONT_OLD_20_WHITE_HI.FNT", "FONT_OLD_10_WHITE.FNT"};
+	const char* const* lists[2] = {kText, kTitle};
+	std::string found;
+	for (int s = 0; s < 2; ++s) {
+		bool done = false;
+		for (int k = 0; k < 3 && !done; ++k) {
+			const zenkit::VfsNode* node = game->vfs.find(lists[s][k]);
+			if (!node) continue;
+			try {
+				zenkit::Font font;
+				auto rd = node->open_read();
+				font.load(rd.get());
+				SrcFontFace& face = fonts.face[s];
+				face = SrcFontFace();
+				face.name = lists[s][k];
+				face.name.resize(face.name.size() - 4);
+				face.height = int(font.height);
+				if (!loadZenTexture(game->vfs, font.name, face.sheet)) throw std::runtime_error("its texture '" + font.name + "' is not in the archives");
+				for (const zenkit::FontGlyph& g : font.glyphs) {
+					SrcFontFace::Cell c;
+					c.width = g.width;
+					c.u0 = g.uv[0].x;
+					c.v0 = g.uv[0].y;
+					c.u1 = g.uv[1].x;
+					c.v1 = g.uv[1].y;
+					face.cells.push_back(c);
+				}
+				done = true;
+			} catch (const std::exception& ex) {
+				notes.push_back(std::string("fonts: ") + lists[s][k] + " could not be read (" + ex.what() + ")");
+			}
+		}
+		if (!done) {
+			// List what there is, for the next try.
+			std::function<void(const zenkit::VfsNode&)> walk = [&](const zenkit::VfsNode& n) {
+				for (const auto& c : n.children()) {
+					const std::string& name = c.name();
+					if (name.size() > 4 && upper(name.substr(name.size() - 4)) == ".FNT") found += (found.empty() ? "" : ", ") + name;
+					walk(c);
+				}
+			};
+			walk(game->vfs.root());
+			notes.push_back("fonts: none of the expected fonts found" + (found.empty() ? std::string(" (no .FNT in the archives)") : "; the archives have: " + found) +
+			                "; the overlay keeps its own font");
+			return false;
+		}
+	}
+	return true;
+}
+
 // own beside the compiled scripts (OU.BIN in Gothic 1; a translation may name
 // it otherwise or keep it in text form, which the same reader takes).
 bool importZenDialogue(std::shared_ptr<const ZenGame> game, SrcDialogue& dialogue, std::vector<std::string>& notes) {

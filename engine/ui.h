@@ -25,6 +25,11 @@ struct GlyphBox {
 bool glyph(u32 code, int size, GlyphBox& out);
 // How much of a texel of the atlas the glyphs cover, 0..15.
 int coverage(int x, int y);
+// The game's own font ("font/ui" of the archive, g3ds/font.h), used before the
+// built-in one: set before Ui::init(). False (and the built-in font stays) if
+// the data is damaged; clearGameFont() goes back to the built-in one.
+bool setGameFont(const void* data, u32 size);
+void clearGameFont();
 } // namespace ui
 
 class Ui {

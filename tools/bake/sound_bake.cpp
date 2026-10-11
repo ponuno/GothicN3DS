@@ -508,7 +508,8 @@ std::vector<u8> bakeAmbient(const std::vector<SrcAmbient>& sounds) {
 
 namespace g3 {
 
-std::vector<u8> encodeSpeech(const SrcSound& sound) {
+std::vector<u8> encodeSpeech(const SrcSound& sound, bool ima) {
+	if (!ima) return encodeSound(sound);
 	const u32 frames = u32(sound.samples.size());
 	SoundHeader h {};
 	h.magic = SOUND_MAGIC;
@@ -551,7 +552,7 @@ std::vector<u8> encodeSpeech(const SrcSound& sound) {
 
 SpeechBakeResult bakeSpeech(const std::vector<std::string>& lineNames,
                             const std::function<bool(const std::string&, std::vector<u8>&)>& fetch, u32 rate, unsigned threads,
-                            PakWriter& pak) {
+                            PakWriter& pak, bool ima) {
 	SpeechBakeResult result;
 	result.lines = u32(lineNames.size());
 	if (rate == 0 || !fetch) return result;
@@ -593,7 +594,7 @@ SpeechBakeResult bakeSpeech(const std::vector<std::string>& lineNames,
 					d.why = lineNames[from + k] + ": unusable length or rate";
 					continue;
 				}
-				d.blob = encodeSpeech(sound);
+				d.blob = encodeSpeech(sound, ima);
 				char name[16];
 				speechEntryName(hashName(lineNames[from + k].c_str()), name);
 				d.name = name;
@@ -606,7 +607,9 @@ SpeechBakeResult bakeSpeech(const std::vector<std::string>& lineNames,
 		work();
 		for (std::thread& t : pool) t.join();
 		for (Done& d : done) {
-			if (d.ok) {
+			if (d.ok && result.bytes + d.blob.size() > 0xE0000000ull) {
+				result.unusable.push_back(d.name + ": the archive would pass 3.5 GB; use --voice-codec ima or a lower --voice-rate");
+			} else if (d.ok) {
 				pak.add(d.name, ASSET_SOUND, d.blob, false);
 				result.bytes += d.blob.size();
 				++result.baked;

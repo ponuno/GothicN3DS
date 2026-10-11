@@ -286,6 +286,18 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				for (size_t i = 0; i < sb.unusable.size() && i < 4; ++i) text += " [" + sb.unusable[i] + "]";
 			}
 			line(text);
+			// The Barrier's hum: which sound instances the scripts have for it (the engine looks for MFX_BARRIERE_AMBIENT and the like).
+			const SrcScript* names = haveSfx ? scripts.sfx : scripts.script;
+			if (names) {
+				std::string found;
+				for (const SrcSymbol& s : names->symbols) {
+					std::string up = s.name;
+					for (char& c : up) c = char(std::toupper(static_cast<unsigned char>(c)));
+					if (up.find("BARRI") != std::string::npos) found += (found.empty() ? "" : ", ") + s.name;
+				}
+				line(found.empty() ? "barrier: no sound instance named like it in the scripts; the dome is silent"
+				                   : "barrier: sound instances named like it: " + found);
+			}
 		} catch (const std::exception& ex) {
 			line(std::string("WARNING: sounds not baked: ") + ex.what());
 		}

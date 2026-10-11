@@ -179,8 +179,11 @@ struct InventoryView {
 		char name[64];
 		u8 status;    // LOG_RUNNING 1, LOG_SUCCESS 2, LOG_FAILED 3, LOG_OBSOLETE 4 (0: none given)
 		u8 section;   // LOG_MISSION 0, LOG_NOTE 1
+		bool fresh;   // written to since the diary was last looked at
 		u16 first, count; // into entries
 	};
+	char chapter[48] = "", chapterSub[64] = ""; // the chapter the story is in (the last card), as the scripts word it
+	i32 chapterNumber = 0;                      // the scripts' Kapitel, 0 if none
 	Topic topics[DIARY_TOPICS];
 	u32 topicCount = 0;
 	char entries[DIARY_ENTRIES][200];

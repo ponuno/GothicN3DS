@@ -58,6 +58,9 @@ bool Game::adopt(u8* image, u32 size) {
 }
 
 void Game::release() {
+	freePending();
+	_chapter = GameChapter();
+	_kapitel = SCRIPT_NONE;
 	_vm.release();
 	free(_npcs);
 	free(_routines);
@@ -340,13 +343,43 @@ int Game::logTopicOf(const char* name, bool make) {
 	return int(_logTopicCount++);
 }
 
+// A line of news for the player, unless the last one is about the same topic
+// and not shown yet (a task begun with its first entry says it once).
+void Game::notice(u8 kind, u8 section, u8 status, const char* topic) {
+	const u32 cap = u32(sizeof(_notices) / sizeof(_notices[0]));
+	if (_noticeCount) {
+		const GameLogNotice& last = _notices[(_noticeFirst + _noticeCount - 1) % cap];
+		if (strcmp(last.topic, topic) == 0 && (kind == LOGN_ENTRY || last.kind == kind)) return;
+	}
+	if (_noticeCount == cap) {
+		_noticeFirst = (_noticeFirst + 1) % cap;
+		--_noticeCount;
+	}
+	GameLogNotice& n = _notices[(_noticeFirst + _noticeCount++) % cap];
+	n.kind = kind;
+	n.section = section;
+	n.status = status;
+	copyText(n.topic, sizeof(n.topic), topic);
+}
+
+bool Game::takeLogNotice(GameLogNotice& out) {
+	if (!_noticeCount) return false;
+	out = _notices[_noticeFirst];
+	_noticeFirst = (_noticeFirst + 1) % u32(sizeof(_notices) / sizeof(_notices[0]));
+	--_noticeCount;
+	return true;
+}
+
 void Game::xLogCreateTopic(ScriptVm& vm, void* user) {
 	Game& g = *static_cast<Game*>(user);
 	const i32 section = vm.popInt();
-	const int t = g.logTopicOf(vm.popString(), true);
+	const char* name = vm.popString();
+	const u32 before = g._logTopicCount;
+	const int t = g.logTopicOf(name, true);
 	if (t < 0) return;
 	g._logTopics[t].section = u8(section);
 	g._logTopics[t].order = ++g._logVersion;
+	if (g._logTopicCount != before) g.notice(LOGN_NEW_TOPIC, u8(section), 0, g._logTopics[t].name);
 }
 
 void Game::xLogSetTopicStatus(ScriptVm& vm, void* user) {
@@ -354,8 +387,10 @@ void Game::xLogSetTopicStatus(ScriptVm& vm, void* user) {
 	const i32 status = vm.popInt();
 	const int t = g.logTopicOf(vm.popString(), true);
 	if (t < 0) return;
+	const u8 was = g._logTopics[t].status;
 	g._logTopics[t].status = u8(status);
 	g._logTopics[t].order = ++g._logVersion;
+	if (was != u8(status) && (status == 2 || status == 3)) g.notice(LOGN_STATUS, g._logTopics[t].section, u8(status), g._logTopics[t].name);
 }
 
 void Game::xLogAddEntry(ScriptVm& vm, void* user) {
@@ -367,6 +402,7 @@ void Game::xLogAddEntry(ScriptVm& vm, void* user) {
 	if (!copy) return;
 	g._logEntries[g._logEntryCount++] = GameLogEntry {u32(t), copy};
 	g._logTopics[t].order = ++g._logVersion;
+	g.notice(LOGN_ENTRY, g._logTopics[t].section, 0, g._logTopics[t].name);
 }
 
 void Game::giveItems(u32 npc, u32 symbol, i32 count) {
@@ -724,6 +760,7 @@ u32 Game::addNpc(u32 symbol, bool hero) {
 	// have got in between, as routines insert nobody.
 	n.routineCount = u16(min<u32>(_routineCount - n.routineFirst, 0xFFFF));
 	if (n.routineCount) ++_stats.withRoutine;
+	applyPending(index);
 	return index;
 }
 

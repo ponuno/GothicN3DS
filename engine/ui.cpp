@@ -2,6 +2,7 @@
 
 #include "icons.h"
 #include "ui_font.h"
+#include "g3ds/font.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -38,7 +39,41 @@ u32 utf8Next(const char*& s) {
 
 namespace {
 
-const uifont::Glyph* glyphOf(u32 code, int size) {
+// A glyph as the overlay draws it, from the game's font or the built-in one.
+struct G {
+	int x, y, w, h, left, top, advance;
+};
+
+// The game's font ("font/ui", g3ds/font.h), if the archive has one: its atlas
+// lies in the overlay's texture below the built-in one and the icons.
+constexpr int EXT_Y = 512;
+struct GameFont {
+	bool on = false;
+	FontHeader h {};
+	FontGlyphRec* glyphs = nullptr;
+	u8* coverage = nullptr; // atlasW * atlasH
+};
+GameFont gGame;
+
+bool extGlyph(u32 code, int size, G& out) {
+	if (!gGame.on) return false;
+	int lo = 0, hi = gGame.h.glyphCount;
+	while (lo < hi) {
+		const int mid = (lo + hi) / 2;
+		const FontGlyphRec& g = gGame.glyphs[mid];
+		if (g.size < size || (g.size == size && g.code < code))
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	if (lo >= int(gGame.h.glyphCount)) return false;
+	const FontGlyphRec& g = gGame.glyphs[lo];
+	if (g.size != size || g.code != code) return false;
+	out = {g.x, g.y + EXT_Y, g.w, g.h, g.left, g.top, g.advance};
+	return true;
+}
+
+bool builtinGlyph(u32 code, int size, G& out) {
 	int lo = 0, hi = uifont::GLYPHS;
 	while (lo < hi) {
 		const int mid = (lo + hi) / 2;
@@ -48,35 +83,90 @@ const uifont::Glyph* glyphOf(u32 code, int size) {
 		else
 			hi = mid;
 	}
-	if (lo < uifont::GLYPHS && uifont::kGlyphs[lo].size == size && uifont::kGlyphs[lo].code == code) return &uifont::kGlyphs[lo];
-	return nullptr;
+	if (lo >= uifont::GLYPHS || uifont::kGlyphs[lo].size != size || uifont::kGlyphs[lo].code != code) return false;
+	const uifont::Glyph& g = uifont::kGlyphs[lo];
+	// (Next to the game's glyphs it stands on the same baseline.)
+	const int dy = gGame.on ? int(gGame.h.ascent[size]) - uifont::ASCENT[size] : 0;
+	out = {g.x, g.y, g.w, g.h, g.left, g.top + dy, g.advance};
+	return true;
 }
 
-const uifont::Glyph* glyphOrMark(u32 code, int size) {
-	if (code == 0x401) code = 0x415; // (should the atlas lack Ё, Е will do)
-	const uifont::Glyph* g = glyphOf(code, size);
-	return g ? g : glyphOf('?', size);
+bool glyphOf(u32 code, int size, G& out) { return extGlyph(code, size, out) || builtinGlyph(code, size, out); }
+
+bool glyphOrMark(u32 code, int size, G& out) {
+	if (glyphOf(code, size, out)) return true;
+	if (code == 0x401 && glyphOf(0x415, size, out)) return true; // (should the fonts lack Ё, Е will do)
+	return glyphOf('?', size, out);
 }
 
 } // namespace
 
 namespace ui {
 
+bool setGameFont(const void* data, u32 size) {
+	clearGameFont();
+	if (!data || size < sizeof(FontHeader)) return false;
+	FontHeader h;
+	memcpy(&h, data, sizeof(h));
+	if (h.magic != FONT_MAGIC || h.version != FONT_VERSION || h.atlasW != FONT_ATLAS_W || h.atlasH == 0 || h.atlasH > FONT_ATLAS_MAX_H ||
+	    h.glyphCount == 0)
+		return false;
+	const size_t glyphBytes = size_t(h.glyphCount) * sizeof(FontGlyphRec), atlasBytes = size_t(h.atlasW) * h.atlasH;
+	if (size != sizeof(h) + glyphBytes + atlasBytes) return false;
+	FontGlyphRec* glyphs = static_cast<FontGlyphRec*>(malloc(glyphBytes));
+	u8* coverage = static_cast<u8*>(malloc(atlasBytes));
+	if (!glyphs || !coverage) {
+		free(glyphs);
+		free(coverage);
+		return false;
+	}
+	memcpy(glyphs, static_cast<const u8*>(data) + sizeof(h), glyphBytes);
+	memcpy(coverage, static_cast<const u8*>(data) + sizeof(h) + glyphBytes, atlasBytes);
+	// Sorted by size and code (it is searched by halving), every glyph inside the atlas.
+	bool ok = h.line[0] > 0 && h.line[1] > 0;
+	for (u32 i = 0; i < h.glyphCount && ok; ++i) {
+		const FontGlyphRec& g = glyphs[i];
+		ok = g.size < 2 && u32(g.x) + g.w <= h.atlasW && u32(g.y) + g.h <= h.atlasH;
+		if (i) ok = ok && (glyphs[i - 1].size < g.size || (glyphs[i - 1].size == g.size && glyphs[i - 1].code < g.code));
+	}
+	if (!ok) {
+		free(glyphs);
+		free(coverage);
+		return false;
+	}
+	gGame.h = h;
+	gGame.glyphs = glyphs;
+	gGame.coverage = coverage;
+	gGame.on = true;
+	return true;
+}
+
+void clearGameFont() {
+	free(gGame.glyphs);
+	free(gGame.coverage);
+	gGame = GameFont();
+}
+
 bool glyph(u32 code, int size, GlyphBox& out) {
-	const uifont::Glyph* g = glyphOrMark(code, size == TITLE ? 1 : 0);
-	if (!g) return false;
-	out.x = g->x;
-	out.y = g->y;
-	out.w = g->w;
-	out.h = g->h;
-	out.left = g->left;
-	out.top = g->top;
-	out.advance = g->advance;
+	G g;
+	if (!glyphOrMark(code, size == TITLE ? 1 : 0, g)) return false;
+	out.x = g.x;
+	out.y = g.y;
+	out.w = g.w;
+	out.h = g.h;
+	out.left = g.left;
+	out.top = g.top;
+	out.advance = g.advance;
 	return true;
 }
 
 int coverage(int x, int y) {
-	if (x < 0 || y < 0 || x >= uifont::ATLAS_W || y >= uifont::ATLAS_H) return 0;
+	if (x < 0 || y < 0) return 0;
+	if (gGame.on && y >= EXT_Y) {
+		if (x >= int(gGame.h.atlasW) || y - EXT_Y >= int(gGame.h.atlasH)) return 0;
+		return gGame.coverage[size_t(y - EXT_Y) * gGame.h.atlasW + x] >> 4;
+	}
+	if (x >= uifont::ATLAS_W || y >= uifont::ATLAS_H) return 0;
 	const int i = y * uifont::ATLAS_W + x;
 	const u8 b = uifont::kAtlas[i / 2];
 	return (i & 1) ? (b >> 4) : (b & 15);
@@ -176,6 +266,7 @@ constexpr int ICON_ROWS = (icons::COUNT + ICONS_PER_ROW - 1) / ICONS_PER_ROW;
 constexpr int SHADING_Y = ICONS_Y + ICON_ROWS * icons::SIZE;
 constexpr int TEXTURE_H = uifont::ATLAS_H * 2;
 static_assert(SHADING_Y + ICON_ROWS * icons::SIZE <= TEXTURE_H, "the icons fit under the font");
+static_assert(EXT_Y == TEXTURE_H, "the game's font lies under the icons");
 
 u8 shadeOf(char role) {
 	switch (role) {
@@ -197,7 +288,9 @@ u8 shadeOf(char role) {
 bool Ui::init() {
 	release();
 	const int W = uifont::ATLAS_W;
-	u8* coverage = static_cast<u8*>(calloc(size_t(W) * TEXTURE_H, 1));
+	// (With the game's font the texture is twice as high: its atlas lies under the rest.)
+	const int H = gGame.on ? TEXTURE_H + int(FONT_ATLAS_MAX_H) : TEXTURE_H;
+	u8* coverage = static_cast<u8*>(calloc(size_t(W) * H, 1));
 	if (!coverage) return false;
 	for (int i = 0; i < uifont::ATLAS_W * uifont::ATLAS_H / 2; ++i) {
 		coverage[i * 2] = u8((uifont::kAtlas[i] & 15) * 17);
@@ -212,7 +305,8 @@ bool Ui::init() {
 				coverage[(SHADING_Y + y0 + y) * W + x0 + x] = shadeOf(role);
 			}
 	}
-	_font = gfx::uiTextureCreate(u16(W), u16(TEXTURE_H), coverage);
+	if (gGame.on) memcpy(coverage + size_t(EXT_Y) * W, gGame.coverage, size_t(W) * gGame.h.atlasH);
+	_font = gfx::uiTextureCreate(u16(W), u16(H), coverage);
 	free(coverage);
 	_count = 0;
 	return _font != nullptr;
@@ -224,7 +318,10 @@ void Ui::release() {
 	_count = 0;
 }
 
-int Ui::lineHeight(int size) { return uifont::LINE[size == ui::TITLE ? 1 : 0]; }
+int Ui::lineHeight(int size) {
+	const int s = size == ui::TITLE ? 1 : 0;
+	return gGame.on ? gGame.h.line[s] + 2 : uifont::LINE[s];
+}
 
 void Ui::quad(int x0, int y0, int x1, int y1, int u0, int v0, int u1, int v1, u32 rgba) {
 	if (x1 <= x0 || y1 <= y0 || x1 <= 0 || y1 <= 0 || x0 >= gfx::SCREEN_W || y0 >= gfx::SCREEN_H) return;
@@ -251,7 +348,7 @@ int Ui::measure(const char* s, int size) const {
 	size = size == ui::TITLE ? 1 : 0;
 	int w = 0;
 	for (u32 c; s && (c = utf8Next(s)) != 0;)
-		if (const uifont::Glyph* g = glyphOrMark(c, size)) w += g->advance;
+		if (G g; glyphOrMark(c, size, g)) w += g.advance;
 	return w;
 }
 
@@ -266,12 +363,12 @@ int Ui::text(int x, int y, const char* s, u32 rgba, int size, int align, bool sh
 		int pen = x + (pass == 0 ? 1 : 0);
 		const int top = y + (pass == 0 ? 1 : 0);
 		for (const char* p = s; const u32 c = utf8Next(p);) {
-			const uifont::Glyph* g = glyphOrMark(c, size);
-			if (!g) continue;
-			if (g->w)
-				quad(pen + g->left, top + g->top, pen + g->left + g->w, top + g->top + g->h, g->x, g->y, g->x + g->w, g->y + g->h,
+			G g;
+			if (!glyphOrMark(c, size, g)) continue;
+			if (g.w)
+				quad(pen + g.left, top + g.top, pen + g.left + g.w, top + g.top + g.h, g.x, g.y, g.x + g.w, g.y + g.h,
 				     pass == 0 ? shade : rgba);
-			pen += g->advance;
+			pen += g.advance;
 		}
 	}
 	return width;

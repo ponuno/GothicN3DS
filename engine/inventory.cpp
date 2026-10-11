@@ -773,6 +773,7 @@ const InventoryView& App::inventory() {
 	stamp = mix(stamp, _job.symbol);
 	stamp = mix(stamp, _queued);
 	stamp = mix(stamp, g.logVersion());
+	stamp = mix(stamp, _diarySeen);
 	stamp = mix(stamp, u32(i32(_inv.messageTime > 0.0f)));
 	stamp = mix(stamp, _npcs.talkView().version);
 	stamp = mix(stamp, _chests.version());
@@ -889,8 +890,12 @@ const InventoryView& App::inventory() {
 		nameOfItem(h.armorItem, sh.armor, sizeof(sh.armor));
 	}
 	// The diary: the topics most recently written to first, each with its entries.
-	if (g.logVersion() != _logStamp) {
-		_logStamp = g.logVersion();
+	const u32 diaryStamp = mix(mix(0x9E3779B9u, g.logVersion()), _diarySeen);
+	if (diaryStamp != _logStamp) {
+		_logStamp = diaryStamp;
+		scriptText(g.chapter().title, v.chapter, sizeof(v.chapter));
+		scriptText(g.chapter().subtitle, v.chapterSub, sizeof(v.chapterSub));
+		v.chapterNumber = g.chapterNumber();
 		u32 order[InventoryView::DIARY_TOPICS];
 		u32 n = 0;
 		for (u32 t = 0; t < g.logTopicCount(); ++t) {
@@ -921,6 +926,7 @@ const InventoryView& App::inventory() {
 			scriptText(lt.name, t.name, sizeof(t.name));
 			t.status = lt.status;
 			t.section = lt.section;
+			t.fresh = lt.order > _diarySeen;
 			t.first = u16(v.entryCount);
 			t.count = 0;
 			// (Newest entries first, as many as there is room for.)

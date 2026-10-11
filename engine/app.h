@@ -91,6 +91,7 @@ public:
 	// not in this archive.
 	bool saveState(const char* path) const;
 	bool loadState(const char* path);
+	bool loadGameSection(FILE* f);
 	float drawDistance() const { return _world.config().drawDistance; }
 
 	Camera& camera() { return _cam; }
@@ -124,6 +125,7 @@ public:
 	u32 worldSwitches() const { return _switches; }
 	// Seconds since init; drives texture animation. Settable for reproducible pictures.
 	double clock() const { return _clock; }
+	float fps() const { return _fps; }
 	void setClock(double seconds) { _clock = seconds; }
 	// True while the camera is below a water surface.
 	bool underwater() const { return _underwater; }
@@ -144,6 +146,14 @@ public:
 	Ui& ui() { return _ui; }
 	// A line of text in the middle of the picture for a few seconds.
 	void toast(const char* text, float seconds = 2.5f);
+	// The chapter card: seconds it is still up, and the last one seen.
+	float chapterTime() const { return _chapterTime; }
+	u32 chapterSeen() const { return _chapterSeen; }
+	// Takes the chapter card down, and the ones put up so far with it (for tests that look at the world alone).
+	void skipChapters() {
+		if (_npcs.loaded()) _chapterSeen = _npcs.game().chapter().serial;
+		_chapterTime = 0.0f;
+	}
 	const char* toastText() const { return _toastTime > 0.0f ? _toast : ""; }
 	// Where the position is saved (the menu and getting up after death load from there).
 	void setStatePath(const char* path) { _statePath = path; }
@@ -269,6 +279,10 @@ private:
 	Environment _env;
 	const char* _error = "";
 	double _clock = 0;       // seconds since init: drives texture animation
+	u32 _barrierHum = 0;     // the Barrier's hum playing (a Sound handle)
+	const char* _barrierName = nullptr; // the scripts' name of it, found once (null: none)
+	bool _barrierSearched = false;
+	float _fps = 60.0f;      // frames per second, smoothed (the counter of Settings::showFps)
 	u32 _switches = 0;
 	bool _portalLock = false; // just arrived: ignore portals until the player has left their boxes
 	bool _underwater = false;
@@ -286,6 +300,14 @@ private:
 	Ui _ui;
 	char _toast[96] = "";
 	float _toastTime = 0;
+	// The chapter card (IntroduceChapter): the last one seen, the one on
+	// the screen and for how long it still is.
+	u32 _chapterSeen = 0;
+	// The diary: what was written before this was seen when it was last looked at; and whether it is looked at now.
+	u32 _diarySeen = 0;
+	bool _diaryOpen = false;
+	GameChapter _chapterCard;
+	float _chapterTime = 0, _chapterLength = 0;
 	char _menuMessage[48] = "";
 	void drawOverlay();
 	// Controls: the scheme; the console scheme's camera, which the second
@@ -378,6 +400,8 @@ private:
 	ChestJob _chest;
 	void talkUpdate(Input& in, float dt);
 	void drawSubtitle();
+	// The Barrier's hum: heard outdoors while the setting is on, if the scripts have a sound for it.
+	void barrierHum();
 	int _talkTarget = -1;
 	void chestUpdate(Input& in, float dt);
 	void chestCommand(const PanelCommand& c);

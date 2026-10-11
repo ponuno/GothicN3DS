@@ -71,7 +71,10 @@ float Speech::play(u32 lineHash, float gain) {
 		++_broken;
 		return seconds;
 	}
-	imaDecode(blob + sizeof(SoundHeader), h.frames, pcm);
+	if (h.format == SOUND_IMA4)
+		imaDecode(blob + sizeof(SoundHeader), h.frames, pcm);
+	else
+		memcpy(pcm, blob + sizeof(SoundHeader), bytes);
 	free(blob);
 	_out->publishSamples(pcm, bytes);
 	_block[_cur] = pcm;

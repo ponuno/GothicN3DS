@@ -732,6 +732,7 @@ extern func void   Npc_ChangeAttribute(var C_NPC n, var int atr, var int value);
 extern func void   Log_CreateTopic(var string name, var int section);
 extern func void   Log_SetTopicStatus(var string name, var int status);
 extern func void   Log_AddEntry(var string topic, var string entry);
+extern func void   IntroduceChapter(var string title, var string subtitle, var string texture, var string sound, var int waittime);
 const int LOG_MISSION = 0;
 const int LOG_NOTE = 1;
 const int LOG_RUNNING = 1;
@@ -1190,6 +1191,10 @@ func void DIA_Thorus_DeliveryDone_Info() {
 	Log_AddEntry(TOPIC_Delivery, "Thorus has had his apple and thanked me for it.");
 	CreateInvItems(hero, ItFo_Potion_Health_01, 1);
 	B_GiveXP(150);
+	// The story goes on: a chapter ends, the next begins.
+	Kapitel = 2;
+	Log_AddEntry(TOPIC_Delivery, "Chapter 2 has begun: the camp knows my name now.");
+	IntroduceChapter("Chapter 2", "A Name in the Camp", "chapter2.tga", "chapter_02.wav", 6000);
 	// The favour is done: he goes to sit at the fire, as his new routine says.
 	Npc_ExchangeRoutine(self, "rest");
 };
@@ -1330,6 +1335,7 @@ func void STARTUP_WORLD() {
 	Log_CreateTopic(TOPIC_Camp, LOG_MISSION);
 	Log_SetTopicStatus(TOPIC_Camp, LOG_RUNNING);
 	Log_AddEntry(TOPIC_Camp, "The guard at the gate said I should look round the camp first.");
+	IntroduceChapter("Chapter 1", "The Colony", "chapter1.tga", "chapter_01.wav", 6000);
 };
 func void INIT_WORLD() {
 	var C_NPC thorus;

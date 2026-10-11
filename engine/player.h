@@ -35,6 +35,8 @@ struct Input {
 	bool meleeSlot = false;   // pressed: the melee weapon (or the fists without one)
 	bool fistSlot = false;    // pressed: the fists
 	bool focus = false;       // pressed: lock on to the enemy in front, or let go
+	int blowDir = 0;          // held: the D-Pad's direction of a blow with a weapon in hand: -1 from the left, +1 from the right, 0 ahead
+	bool dpadUp = false;      // pressed: D-Pad up (without a weapon in hand: the fists)
 	float switchTarget = 0;   // -1 / +1 pressed: the next target to the left / right
 	bool confirm = false;     // pressed: A (to get up again after death)
 };

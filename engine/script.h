@@ -11,6 +11,11 @@
 #include "g3ds/script.h"
 
 namespace g3 {
+struct ByteSink;
+struct ByteSource;
+} // namespace g3
+
+namespace g3 {
 
 // An object of a script class (a character, an item, ...): `size` bytes laid
 // out as the class' members say. Created and owned by the machine.
@@ -142,6 +147,17 @@ public:
 		_onError = fn;
 		_onErrorUser = user;
 	}
+
+	// ---- saving ----
+	// Every global variable (the numbers and the strings the scripts have
+	// changed), and the members of one object. A state saved with one script
+	// image is refused by another (loadGlobals returns false).
+	void saveGlobals(ByteSink& out) const;
+	bool loadGlobals(ByteSource& in);
+	// The offsets of the string members of a class, in bytes (at most `max`).
+	u32 stringMembers(u32 cls, u32* offsets, u32 max) const;
+	void saveObject(const ScriptInstance* inst, const u32* strings, u32 stringCount, ByteSink& out) const;
+	bool loadObject(ScriptInstance* inst, const u32* strings, u32 stringCount, ByteSource& in);
 
 	const ScriptStats& stats() const { return _stats; }
 	// Instructions one call() may take, with everything it sets off, before

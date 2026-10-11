@@ -1052,22 +1052,44 @@ void InventoryPanel::drawDiary(const InventoryView& v) {
 	if (!v.topicCount) {
 		_canvas.paragraph(x0, y + 8, x1 - x0, tr("Записей пока нет. Их делают скрипты игры (Log_AddEntry) в разговорах и заданиях."), TEXT_DIM);
 	}
+	// The chapter the story is in.
+	if (v.chapter[0] || v.chapterNumber > 0) {
+		char head[64];
+		if (v.chapter[0]) snprintf(head, sizeof(head), "%s", v.chapter);
+		else snprintf(head, sizeof(head), tr("Глава %d"), int(v.chapterNumber));
+		_canvas.fill(x0 - 2, y, x1 + 2, y + 15, 0xFFFFFF18u);
+		_canvas.text(x0 + 2, y + 1, head, GOLD, ui::TEXT, ui::LEFT, x1 - x0 - 4, true);
+		if (v.chapterSub[0]) _canvas.text(x1 - 2, y + 1, v.chapterSub, TEXT_DIM, ui::TEXT, ui::RIGHT, (x1 - x0) / 2, true);
+		y += 20;
+	}
 	static const char* const kStatus[] = {"", "идёт", "выполнено", "провалено", "устарело"};
-	// The tasks first, then the notes.
-	for (int pass = 0; pass < 2; ++pass) {
+	// The tasks first (the current ones, the done, the failed), then the notes.
+	static const char* const kGroup[] = {"Текущие", "Завершённые", "Проваленные"};
+	for (int pass = 0; pass < 4; ++pass) {
+		const bool notes = pass == 3;
 		bool headed = false;
 		for (u32 t = 0; t < v.topicCount; ++t) {
 			const InventoryView::Topic& topic = v.topics[t];
-			if ((topic.section == 1) != (pass == 1)) continue;
+			if ((topic.section == 1) != notes) continue;
+			const int group = topic.status == 2 ? 1 : (topic.status == 3 || topic.status == 4) ? 2 : 0;
+			if (!notes && group != pass) continue;
 			if (!headed) {
 				headed = true;
-				_canvas.text(x0, y + 1, pass ? tr("Заметки") : tr("Задания"), TITLE, ui::TEXT, ui::LEFT, 0, true);
-				y += 16;
+				if (notes) {
+					_canvas.text(x0, y + 1, tr("Заметки"), TITLE, ui::TEXT, ui::LEFT, 0, true);
+					y += 16;
+				} else {
+					// (The first group carries the heading of all the tasks.)
+					_canvas.text(x0, y + 1, tr(kGroup[group]), group == 0 ? TITLE : TEXT_DIM, ui::TEXT, ui::LEFT, 0, true);
+					y += 16;
+				}
 			}
 			const bool openTopic = _topic == int(t);
 			_topicY[t] = y;
 			_canvas.fill(x0 - 2, y, x1 + 2, y + 15, openTopic ? TAB_ON : 0xFFFFFF10u);
-			_canvas.text(x0 + 2, y + 1, topic.name, openTopic ? TITLE : TEXT, ui::TEXT, ui::LEFT, x1 - x0 - 80, true);
+			if (topic.fresh) _canvas.text(x0 + 2, y + 1, "\xE2\x80\xA2", GOLD, ui::TEXT, ui::LEFT);
+			_canvas.text(x0 + (topic.fresh ? 10 : 2), y + 1, topic.name, openTopic ? TITLE : group == 0 ? TEXT : TEXT_DIM, ui::TEXT, ui::LEFT,
+			             x1 - x0 - 80, true);
 			_canvas.text(x1 - 2, y + 1, topic.status < 5 ? tr(kStatus[topic.status]) : "", topic.status == 2 ? GOLD : topic.status == 3 ? WARN : TEXT_DIM,
 			             ui::TEXT, ui::RIGHT);
 			y += 16;
@@ -1078,6 +1100,7 @@ void InventoryPanel::drawDiary(const InventoryView& v) {
 			}
 			y += 4;
 		}
+		if (headed) y += 4;
 	}
 	_canvas.unclip();
 }

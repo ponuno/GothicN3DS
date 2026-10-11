@@ -59,6 +59,10 @@ struct Settings {
 	u8 musicVolume = 6;      // 0 (mute) .. 10
 	// Version 6: voices.
 	u8 voiceVolume = 8;      // 0 (mute: the subtitles stay up as long as the line is) .. 10
+	// Version 7: the frame counter (for testing) and the flow of time.
+	u8 showFps = 0;          // the frames per second in the corner of the top screen
+	u8 barrier = 1;          // the Barrier over the sky outdoors (its glow, and its hum if the scripts have one)
+	u8 timeFlow = 2;         // how fast the game's clock runs: 0 stopped, 1 a day in 24 minutes, 2 in an hour, 3 in two hours
 
 	// Clamps every value into its range (after reading a file of another version).
 	void sanitize();
@@ -70,6 +74,8 @@ struct Settings {
 	float minDetail() const;
 	// Of the four thinning layers of the small objects, how many are drawn.
 	u8 smallLayers() const { return u8(4 - density); }
+	// Real seconds a game day takes (0: the clock stands).
+	float dayLengthSeconds() const { return timeFlow == 1 ? 1440.0f : timeFlow == 2 ? 3600.0f : timeFlow == 3 ? 7200.0f : 0.0f; }
 	float npcRangeCm() const { return npcDistance == 0 ? 2000.0f : npcDistance == 2 ? 4500.0f : 3000.0f; }
 	// The graphics page's values as they were at first.
 	void resetGraphics();

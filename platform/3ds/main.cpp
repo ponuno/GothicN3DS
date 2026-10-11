@@ -16,12 +16,14 @@
 //   Circle Pad    go where it points, as the camera sees it (a slight push: walk)
 //   C-Stick       turn the camera about the character; locked on: flick left or right
 //                 for the next target to that side
-//   B             jump            A  attack (with the Circle Pad left/right: a blow to the side);
+//   B             jump            A  attack (the D-Pad held left/right: a blow from that side);
 //                                    hold for a combo: press again as a blow ends
 //   Y             parry (held)    X  draw the last weapon / put it away
-//   ZL            melee weapon (fists without one)     ZR  fists
-//   D-Pad Up      lock on to the enemy in front / let go (drawing a weapon locks
+//   ZL            melee weapon (fists without one)
+//   ZR            lock on to the enemy in front / let go (drawing a weapon locks
 //                 on to a hostile one in front by itself: the menu's "Автозахват цели")
+//   D-Pad Left/Right  with a weapon in hand: the direction of a blow (held as A is pressed)
+//   D-Pad Up      with empty hands: the fists on / off
 //   D-Pad Down    sneak on / off
 //   L             quick magic (not yet)
 //   START         pause menu: continue, graphics, controls, faults, save, leave
@@ -375,8 +377,10 @@ int main(int, char**) {
 				in.parry = (gameHeld & KEY_Y) != 0;
 				in.drawWeapon = (gameDown & KEY_X) != 0;
 				in.meleeSlot = (gameDown & KEY_ZL) != 0;
-				in.fistSlot = (gameDown & KEY_ZR) != 0;
-				in.focus = (gameDown & dpad & KEY_DUP) != 0;
+				// ZR locks on to a target / lets go; the D-Pad gives a blow its direction.
+				in.focus = (gameDown & KEY_ZR) != 0;
+				in.blowDir = (gameHeld & KEY_DRIGHT) ? 1 : (gameHeld & KEY_DLEFT) ? -1 : 0;
+				in.dpadUp = (gameDown & dpad & KEY_DUP) != 0;
 				in.toggleSneak = (gameDown & dpad & KEY_DDOWN) != 0;
 				// Locked on: the C-Stick flicked aside picks the next target
 				// (either scheme: the character faces the target by itself then).

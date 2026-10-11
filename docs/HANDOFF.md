@@ -291,7 +291,7 @@ mkdir -p $S/pic && (cd picasso && g++ -O1 -w -std=gnu++11 -DPACKAGE_STRING='"pic
 P=/home/claude/gothic3ds; Z=-DFETCHCONTENT_SOURCE_DIR_ZENKIT=/home/claude/deps/ZenKit
 cmake -S $P -B $P/build -G Ninja $Z
 cmake -S $P -B $P/build-dbg -G Ninja -DCMAKE_BUILD_TYPE=Debug $Z \
-  -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined" \
+  -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-sanitize=vptr -fno-omit-frame-pointer -fno-sanitize-recover=undefined" \
   -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
 cmake -S $P -B $P/build-tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DG3DS_WITH_ZENKIT=OFF \
   -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" -DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer"
@@ -491,3 +491,39 @@ Run by Claude: `ctest` in the normal build (4/4) and the ZenKit build (6/6), `sc
 ### Round 12, later: voices stopped after the move to 16-bit
 Cause: `speech.pak` in PCM16 at 48 kHz was 2.02 GiB; `Pak` seeks with `long(offset)`, which is 32 bits on the console (checked: `sizeof(off_t)` is 4 in the console's newlib headers), so the table at the end of the file could not be reached, `Speech::init` failed and there was no sound and no message. IMA (~0.5 GB) never got near it. Fix: `bakeSpeechShards` begins a new archive at 1.875 GiB (`speech.pak`, `speech2.pak` ... up to 4; stale ones of an older bake are deleted), `Speech` opens all it finds beside the first, `Pak` refuses an offset above 2 GiB on a 32-bit `long` instead of seeking to a wrong place, and `sound.txt` says "speech.pak is there but cannot be opened ..." when the file exists and cannot be read. Re-bake needed for voices (data.pak is unchanged but the baker makes everything in one run). `music.pak` is far below the limit (the same applies to it if it ever passes 2 GiB). Tests: `speech` (shards, no room, broken file). Not run on the console.
 
+
+## Round 10 — ИИ жителей и зверей (11.10.2026)
+
+Тест `npcai` (`test_core . npcai`), остальные тесты проходят; `check_3ds.sh` и консоль не запускались.
+
+- **Случайные нападения.** Причина — «пустые» отношения читались как враждебные: гильдия вне таблицы (`Game::guildAttitude`), пустой `other` в `Npc_GetAttitude`/`Npc_GetPermAttitude`, неверный шаг таблицы в `Wld_ExchangeGuildAttitudes`, если она больше `GIL_MAX`. Теперь всё это `ATT_NEUTRAL`. Сверх того страж `NpcConfig::calmGuard` (`Npcs::attackJustified`): человек не начинает состояние с `ATTACK` в имени против того, к кому не враждебен (личное/временное/гильдийное отношение), кто его не бил и кто не стоит у него в цели; зверей это не касается. Отказы считаются (`attacksDenied`), последняя атака — строкой `+/- кто>кого состояние aN` на нижнем экране. Если законная драка пропала — смотреть эту строку.
+- **Разговор с идущим.** `talkTo` останавливает действие и очередь (`Npcs::abortActions`) до реакции на `PERC_ASSESSTALK`: раньше `AI_StartState` из `B_AssessTalk` вставал в очередь за ходьбой, и через 8 с разговор молча отменялся. Собеседник смотрит на героя; с врагом, в бою и в бегстве не заговорить (`canTalk`).
+- **Звери и жители замечают героя.** `Npcs::sees`: всесторонне (угол только у крадущегося героя), в пределах `NpcConfig::hearShare` (40%) радиуса чувств — без проверки стен, дальше — два луча (рост 160 и 80 см); `Npc_CanSeeNpc` из скриптов — тоже всесторонне для героя. Проверка восприятия: сразу при входе героя в радиус чувств, потом для зверей и враждебных каждые `noticeEvery` (0,25 с). Зверь, враждебный герою, бодрствующий, без обработчиков `ASSESSENEMY`/`ASSESSPLAYER` и ближе половины радиуса — нападает сам (`Npcs::provoke`).
+- **Удар по зверю.** Если скрипт не ответил на `ASSESSDAMAGE` (не включён в состоянии или ничего не сделал — состояние, очередь, бегство не изменились), `strike` вызывает `provoke`: цель — ударивший, состояние `ZS_MM_ATTACK`. Отключается `NpcConfig::beastsRetaliate`.
+- **Проверить на консоли:** зверь за спиной в 10 м; удар по спящему зверю; разговор с бегущим жителем; нет ли пропавших законных драк у людей (строка `+/-` внизу). Если зверь атакует «сквозь стены» — уменьшить `hearShare`.
+
+
+## Раунд 13 — предметы в руках и в мире (11.10.2026; только ПК, на консоли не проверялось)
+
+Первый пакет функций, перенесённых по образцу OpenGothic (`gamescript.cpp`, `AiQueue`, `Inventory::putState`), со сверкой по скриптам G1 (`g1cp`). Код OpenGothic не копировался.
+
+**Уровень `Game`** (`engine/game_items.cpp`, работает и без живого жителя, и в запекании):
+- Объекты `C_ITEM` для скриптов: `Game::itemObject(symbol, loot, amount)` — кэш на 24 объекта (по виду предмета; для лежащего в мире — по его номеру в `Loot`), вытесняется самый старый (ссылки на него обнуляет `ScriptVm::destroy`). `AMOUNT` ставится, если в классе есть такое поле. `itemObjectLoot` — какой лежащей вещи соответствует объект.
+- `Hlp_IsItem`, `Npc_GetEquippedMeleeWeapon/RangedWeapon/Armor`, `Npc_HasEquippedArmor`, `Npc_GetReadiedWeapon` (оружие ближнего боя, если в руках 1H/2H), `Npc_GetInvItem` (и в `ITEM`), `Npc_GetInvItemBySlot` (слоты с 1, как в OpenGothic; категории INV_* 1–8 → флаги `ITEM_KAT_*`; порядок — как вещи получены), `Npc_ClearInventory` (кроме надетого и `ITEM_MISSION`).
+- `AI_EquipArmor` (G1 передаёт предмет: объект или определение — новый `ScriptVm::popInstanceOf`; G2 — номер), `AI_EquipBestArmor` (наибольшая `value` среди доспехов, условия `COND_ATR` выполнены), `AI_UnequipArmor`, `AI_UnequipWeapons`. Выполняются сразу, как `AI_EquipBestMeleeWeapon`. **Вид жителя не меняется** (новый доспех = новый облик, которого может не быть в `meta/looks`), меняется защита. У героя доспех тоже пока не виден на модели.
+
+**Уровень жителей** (`engine/npc_items.cpp`, действия `NPC_ACT_USE_ITEM`, `NPC_ACT_TAKE_ITEM`):
+- `AI_UseItemToState(self, ItFoApple, 0)` — анимации схемы предмета: `T_FOOD_STAND_2_S0` → `S_FOOD_S0`; житель стоит в стойке `FOOD_S0` (`NpcActor::stance`), поэтому `AI_PlayAni("T_FOOD_RANDOM_1")` возвращается в держание, а уход (`AI_GotoWP`) сперва убирает предмет (`T_FOOD_S0_2_STAND` через обычный `AI_StandUp`). `-1` — убрать. Предмет рисуется в руке (`Loot::drawInHand`, узел `ZS_RIGHTHAND`). Тело — `BS_ITEMINTERACT`. Держание не тратит предмет (как в OpenGothic). Нет анимаций схемы — держит «невидимо». Достал оружие или упал — предмет пропадает из руки без анимации.
+- `AI_UseItem` — к лицу, минус один, функция `ON_STATE[0]` (зелье лечит), убрать.
+- `Wld_DetectItem(self, флаги)` — ближайшая лежащая вещь с такими `MAINFLAG` в пределах `senses_range` → `ITEM`. `Npc_CanSeeItem` (луч от глаз), `Npc_GetDistToItem`, `Npc_GetDistToNpc(self, item)` (так пишет `B_FetchWeapon`), `AI_GotoItem`, `AI_TakeItem` (подходит, наклон `C_STAND_2_IGET_1`/`T_STAND_2_IGET`, вещь в инвентарь, отмечена взятой в `Loot` и `state.bin`).
+- Счётчики: `NpcStats::itemsUsed/itemsHeld/itemsTaken/itemsMissing`.
+
+**Запекание:** для всех скелетов запрашиваются семейства `T_<СХЕМА>_*`, `S_<СХЕМА>_*` всех схем предметов скриптов и анимации подбора. Новая строка отчёта: `things in the hands: the scripts' items are used in N ways (FOOD, ...)`. У людей во встроенной сцене 61 → 67 анимаций (ожидания в `life` и `e2e.sh` обновлены). На настоящих данных G1 схем около 15 (`MAP, POTIONFAST, FOOD, POTION, JOINT, RICE, FOODHUGE, MEAT, MAPSEALED, LUTE, HORN, FIRESPIT, COOLAIR, BRUSH`): архив и память под анимации вырастут — смотреть строку `animations: ... baked per skeleton` и `clipsRefused`.
+
+**Что это включает в настоящей игре** (по скриптам G1): жители едят, пьют и курят на распорядке (`B_ChooseApple`/`B_ChooseJoint`… в `ZS_StandAround`, `ZS_Smoke`, `B_ClearItem`), лечатся зельями (`ZS_HealSelf`), подбирают оружие (`B_FetchWeapon`, `B_RegainDroppedWeapon`), обыскивают оглушённого героя (`B_Plunder` → `Npc_GetInvItemBySlot`; **теперь у героя действительно забирают руду**), девушки снимают/надевают одежду (`ZS_Babe_*`), диалоги надевают герою доспех (`AI_EquipBestArmor(hero)`).
+
+**Не сделано:** `Mob_HasItems` (в G1 не вызывается), `AI_DropItem`, смена облика при смене доспеха, события анимаций `DEF_INSERT_ITEM`/`DEF_REMOVE_ITEM` (предмет появляется и исчезает на границах анимаций, а не в кадре события).
+
+**Тест** `npc items` (`tests/test_core.cpp`): держать зелье (стойка, анимация, `BS_ITEMINTERACT`, отрисовка), убрать, выпить (−1, лечит), уйти с зельем в руке, доспехи (лучший, снять, конкретный; защита), слоты оружия, `Npc_GetInvItem`, снятое оружие, найти/увидеть/подобрать меч. Все 6 ctest проходят; `npc items`, `life`, `npcai`, `fight`, `inventory` — под ASan+UBSan; `check_3ds.sh` чисто; 32-битная проверка консоли чистая.
+
+**Что прислать с консоли:** строку отчёта запекания `things in the hands`, `animations: ... baked per skeleton` (сколько у humans), `life: the states call N engine functions, M of which...` (должно заметно вырасти); фото жителя с едой/бутылкой в руке у костра (предмет в руке — не висит ли в воздухе, правильная ли сторона); не стали ли чаще `clipsRefused` в строке `life`.

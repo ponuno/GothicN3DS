@@ -251,6 +251,8 @@ void App::setDrawDistance(float cm) {
 void App::shutdown() {
 	_music.shutdown();
 	_sound.shutdown();
+	_sfxVm.release();
+	_musicVm.release();
 	_ui.release();
 	_panel.release();
 	_loot.release();
@@ -1134,9 +1136,12 @@ bool App::soundLocate(void* user, ScriptInstance* who, Vec3& pos) {
 void App::startSound() {
 	if (!_audio || !_npcs.loaded()) return;
 	// A few megabytes of samples at hand: the footsteps, the doors, the blows.
-	if (!_sound.init(_pak, &_npcs.game().vm(), _audio, 3u * 1024u * 1024u, true)) return;
+	// The names of the sounds are instances of the game's sound script; an older archive has none of its own
+	// and they are looked for in the game's script.
+	ScriptVm* sfxDefs = _sfxVm.load(_pak, "script/sfx") ? &_sfxVm : &_npcs.game().vm();
+	if (!_sound.init(_pak, sfxDefs, _audio, 3u * 1024u * 1024u, true)) return;
 	_sound.setVolume(float(_settings.soundVolume) / 10.0f);
-	_sound.bindScript(&App::soundLocate, this);
+	_sound.bindScript(_npcs.game().vm(), &App::soundLocate, this);
 	_sound.enterWorld(_pak, worldName());
 	// Music: music.pak beside data.pak, if the player has made one.
 	{
@@ -1146,7 +1151,8 @@ void App::startSound() {
 		char* bslash = strrchr(path, '\\');
 		if (bslash > slash) slash = bslash;
 		snprintf(slash ? slash + 1 : path, sizeof(path) - (slash ? u32(slash + 1 - path) : 0), "music.pak");
-		if (_music.init(path, &_npcs.game().vm(), _audio, true)) {
+		ScriptVm* musicDefs = _musicVm.load(_pak, "script/music") ? &_musicVm : &_npcs.game().vm();
+		if (_music.init(path, musicDefs, _audio, true)) {
 			_music.setVolume(float(_settings.musicVolume) / 10.0f);
 			_music.enterWorld(_pak, worldName());
 		}

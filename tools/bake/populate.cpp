@@ -249,10 +249,32 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		line("fight AI: no tables of their own (FIGHT.DAT); the engine looks for them in the scripts");
 	}
 
+	// A script of its own (SFX.DAT, MUSIC.DAT): baked into the archive as `entry`, and a machine of its own
+	// to read its instances in here. False (with a line) if it cannot be had.
+	const auto sideScript = [&](const SrcScript* src, const char* entry, ScriptVm& vm) {
+		if (!src) return false;
+		try {
+			ScriptBakeResult sr;
+			const std::vector<u8> img = bakeScript(*src, sr);
+			pak.add(entry, ASSET_SCRIPT, img);
+			u8* blob = static_cast<u8*>(std::malloc(img.size()));
+			if (!blob) throw std::bad_alloc();
+			std::memcpy(blob, img.data(), img.size());
+			if (!vm.adopt(blob, u32(img.size()))) throw std::runtime_error("the machine refuses the image");
+			line(format("%s: %s, %zu bytes", entry, src->source.c_str(), img.size()));
+			return true;
+		} catch (const std::exception& ex) {
+			line(std::string("WARNING: ") + entry + " not baked (" + src->source + ": " + ex.what() + ")");
+			return false;
+		}
+	};
+
 	// ---- sounds: the samples the scripts' C_SFX instances name ----
+	ScriptVm sfxVm;
+	const bool haveSfx = sideScript(scripts.sfx, "script/sfx", sfxVm);
 	if (opt.soundRate > 0 && scripts.soundFile) {
 		try {
-			const SoundBakeResult sb = bakeSounds(game.vm(), scripts.soundFile, opt.soundRate, pak);
+			const SoundBakeResult sb = bakeSounds(haveSfx ? sfxVm : game.vm(), scripts.soundFile, opt.soundRate, pak);
 			std::string text = format("sounds: %u C_SFX instances name %u files; %u baked (%.1f MB at up to %u Hz)", sb.instances,
 			                          sb.files, sb.baked, double(sb.bytes) / 1048576.0, opt.soundRate);
 			if (!sb.missing.empty()) {
@@ -273,8 +295,10 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 
 	// ---- music: the renders in --music-dir, into music.pak ----
 	if (!opt.musicDir.empty() && scripts.musicPak) {
+		ScriptVm musicVm;
+		const bool haveMusic = sideScript(scripts.music, "script/music", musicVm);
 		try {
-			const MusicBakeResult mb = bakeMusic(game.vm(), opt.musicDir, opt.musicRate, *scripts.musicPak);
+			const MusicBakeResult mb = bakeMusic(haveMusic ? musicVm : game.vm(), opt.musicDir, opt.musicRate, *scripts.musicPak);
 			std::string text = format("music: %u C_MUSICTHEME instances name %u tracks; %u baked (%.1f MB at up to %u Hz)", mb.themes,
 			                          mb.files, mb.baked, double(mb.bytes) / 1048576.0, opt.musicRate);
 			if (!mb.missing.empty()) {

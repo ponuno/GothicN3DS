@@ -30,6 +30,9 @@ void buildSyntheticScript(SrcScript& script);
 // Its fight AI tables, a script of their own as the game's (FIGHT.DAT).
 const char* syntheticFightScriptSource();
 void buildSyntheticFightScript(SrcScript& script);
+// Its sounds (SFX.DAT: C_SFX) and music themes (MUSIC.DAT: C_MUSICTHEME), scripts of their own as the game's.
+void buildSyntheticSfxScript(SrcScript& script);
+void buildSyntheticMusicScript(SrcScript& script);
 
 // What the people of the synthetic worlds say (the lines their dialogues name).
 void buildSyntheticDialogue(SrcDialogue& dialogue);
@@ -103,6 +106,10 @@ bool importZenScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std
 // The fight AI tables' script (FIGHT.DAT: Gothic 1 compiles Fight.src into a
 // file of its own). Returns false, with a line in `notes`, if it cannot be read.
 bool importZenFightScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
+// The sounds (SFX.DAT, the C_SFX instances) and the music themes (MUSIC.DAT, C_MUSICTHEME): Gothic compiles
+// each into a file of its own, not into GOTHIC.DAT. False, with a line in `notes`, if one cannot be read.
+bool importZenSfxScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
+bool importZenMusicScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
 
 // The words people say (OU.BIN). Returns false, with a line in `notes`, if the
 // game has none.

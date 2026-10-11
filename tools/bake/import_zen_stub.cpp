@@ -28,6 +28,8 @@ std::function<bool(const std::string&, std::vector<u8>&)> zenSoundSource(std::sh
 LookSource zenLookSource(std::shared_ptr<const ZenGame>) { unavailable(); }
 bool importZenScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<u8>&, std::vector<std::string>&) { unavailable(); }
 bool importZenFightScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<std::string>&) { unavailable(); }
+bool importZenSfxScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<std::string>&) { unavailable(); }
+bool importZenMusicScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<std::string>&) { unavailable(); }
 bool importZenDialogue(std::shared_ptr<const ZenGame>, SrcDialogue&, std::vector<std::string>&) { unavailable(); }
 
 ScriptCheckResult checkScript(const std::vector<u8>&, const SrcScript&, const std::vector<u8>&, const ScriptCheckOptions&) {

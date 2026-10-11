@@ -51,7 +51,7 @@ public:
 	Sound(const Sound&) = delete;
 	Sound& operator=(const Sound&) = delete;
 
-	// `out` may be null (nothing to play on). `cacheBytes`: memory for samples.
+	// `vm` holds the C_SFX instances: the game's sound script (SFX.DAT, "script/sfx"). `out` may be null (nothing to play on). `cacheBytes`: memory for samples.
 	// The archive must stay open; the worker opens it a second time.
 	bool init(Pak& pak, ScriptVm* vm, AudioOut* out, u32 cacheBytes, bool threaded);
 	void shutdown();
@@ -89,7 +89,7 @@ public:
 	// Makes the scripts' Snd_Play and Snd_Play3D do something. `where` gives
 	// the place of the character a script hands over (false: unknown).
 	typedef bool (*Locator)(void* user, ScriptInstance* who, Vec3& pos);
-	void bindScript(Locator where, void* user);
+	void bindScript(ScriptVm& gameVm, Locator where, void* user);
 
 	// What walking on a surface sounds like: the name a ground event
 	// (*eventSFXGrnd) is extended with, "_EARTH" for the material group 4 ...

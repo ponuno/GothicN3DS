@@ -2468,6 +2468,16 @@ bool importZenFightScript(std::shared_ptr<const ZenGame> game, SrcScript& script
 	return importZenCompiled(game, "FIGHT.DAT", "fight AI", "the inhabitants fight without its tables", script, dat, notes);
 }
 
+bool importZenSfxScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes) {
+	std::vector<u8> dat;
+	return importZenCompiled(game, "SFX.DAT", "sounds", "the game is silent", script, dat, notes);
+}
+
+bool importZenMusicScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes) {
+	std::vector<u8> dat;
+	return importZenCompiled(game, "MUSIC.DAT", "music", "there is no music", script, dat, notes);
+}
+
 // The words people say: the game's output units, a cutscene library of its
 // own beside the compiled scripts (OU.BIN in Gothic 1; a translation may name
 // it otherwise or keep it in text form, which the same reader takes).

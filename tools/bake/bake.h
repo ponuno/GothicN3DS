@@ -75,6 +75,10 @@ struct BakeScripts {
 	// The fight AI tables' script (FIGHT.DAT), baked into "script/fight".
 	// Without it the engine looks for the tables in `script`.
 	const SrcScript* fight = nullptr;
+	// The sounds (SFX.DAT: C_SFX) and the music themes (MUSIC.DAT: C_MUSICTHEME) are scripts of their own in the
+	// game; baked into "script/sfx" and "script/music". Without them the engine looks in `script`.
+	const SrcScript* sfx = nullptr;
+	const SrcScript* music = nullptr;
 	// The bytes of a sound file of the game by name ("DOOR_OPEN.WAV"); without it no sound is baked.
 	std::function<bool(const std::string& file, std::vector<u8>& bytes)> soundFile;
 	PakWriter* musicPak = nullptr; // where the music goes (bakeMusic); null: none

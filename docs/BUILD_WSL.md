@@ -107,7 +107,7 @@ mkdir -p ~/out
 ```
 
 Good to know:
-- The converter runs for several minutes and prints a report. It should contain lines like `sounds: ... baked`, `ambient sounds: ...` and `music: ... baked`. If there is no `music:` line, check that `--music-dir` points to the folder with the WAVs from step 5.
+- The converter runs for several minutes and prints a report. It should contain lines like `script/sfx: SFX.DAT`, `sounds: N C_SFX instances ... M baked` (M must be well above zero), `ambient sounds: ...`, `script/music: MUSIC.DAT` and `music: N C_MUSICTHEME instances ... K baked` (K above zero). If a number is 0: the game's sounds and themes live in `SFX.DAT` and `MUSIC.DAT` in `_work\Data\Scripts\_compiled`; the report says `sounds: SFX.DAT not found` / `music: MUSIC.DAT not found` if they are missing. If there is no `music:` line at all, check that `--music-dir` points to the folder with the WAVs from step 5. Check quickly: `grep -E "script/(sfx|music)|sounds:|music:" ~/out/bake.log`.
 - `music.pak` appears next to `data.pak`: both files are needed.
 - Print the report again with `./build/g3ds-bake info ~/out/data.pak`.
 - The quality of the sound effects is set with `--sound-rate 22050`, of the music with `--music-rate 32000`.
@@ -309,7 +309,7 @@ mkdir -p ~/out
 ```
 
 Полезно знать:
-- Конвертер работает несколько минут и печатает отчёт. В нём должны быть строки `sounds: ... baked`, `ambient sounds: ...` и `music: ... baked`. Если строки `music:` нет, проверьте, что `--music-dir` указывает на папку с WAV из шага 5.
+- Конвертер работает несколько минут и печатает отчёт. В нём должны быть строки `script/sfx: SFX.DAT`, `sounds: N C_SFX instances ... M baked` (M заметно больше нуля), `ambient sounds: ...`, `script/music: MUSIC.DAT` и `music: N C_MUSICTHEME instances ... K baked` (K больше нуля). Если где-то стоит 0: звуки и темы игры лежат в `SFX.DAT` и `MUSIC.DAT` в `_work\Data\Scripts\_compiled`; если их нет, в отчёте будет `sounds: SFX.DAT not found` / `music: MUSIC.DAT not found`. Если строки `music:` нет совсем, проверьте, что `--music-dir` указывает на папку с WAV из шага 5. Быстрая проверка: `grep -E "script/(sfx|music)|sounds:|music:" ~/out/bake.log`.
 - Рядом с `data.pak` появится `music.pak`: нужны оба файла.
 - Папка `~/out` создаётся командой `mkdir -p ~/out`; без неё конвертер напишет ошибку.
 - Отчёт можно напечатать ещё раз: `./build/g3ds-bake info ~/out/data.pak`.

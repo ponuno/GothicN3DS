@@ -207,28 +207,6 @@ class C_GILVALUES {
 	var int fight_range_2ha[GIL_MAX];
 };
 
-class C_MUSICTHEME {
-	var string file;
-	var float  vol;
-	var int    loop;
-	var float  reverbMix;
-	var float  reverbTime;
-	var int    transType;
-	var int    transSubType;
-};
-
-class C_SFX {
-	var string file;
-	var int    pitchOff;
-	var int    pitchVar;
-	var int    vol;
-	var int    loop;
-	var int    loopStartOffset;
-	var int    loopEndOffset;
-	var float  reverbLevel;
-	var string pfxName;
-};
-
 instance self, other (C_NPC);
 instance victim (C_NPC);
 instance hero (C_NPC);
@@ -937,36 +915,6 @@ instance ItKe_CampChest (C_ITEM) {
 };
 
 // ---------------------------------------------------------------- fighting
-instance TEST_DAY_STD (C_MUSICTHEME) {
-	file = "TEST_DAY_STD.sgt";
-	loop = 1;
-};
-
-instance TEST_NGT_STD (C_MUSICTHEME) {
-	file = "TEST_NGT_STD.sgt";
-	loop = 1;
-};
-
-instance TEST_FIG (C_MUSICTHEME) {
-	file = "TEST_FIG.sgt";
-	loop = 1;
-};
-
-instance SFX_TEST_STEP (C_SFX) {
-	file = "STEP.WAV";
-	vol  = 100;
-};
-
-instance SFX_TEST_STEP_STONE (C_SFX) {
-	file = "STEP_STONE.WAV";
-	vol  = 127;
-};
-
-instance SFX_TEST_HUM (C_SFX) {
-	file = "HUM.WAV";
-	loop = 1;
-};
-
 func void SndTest() {
 	Snd_Play("SFX_TEST_STEP");
 };
@@ -1467,6 +1415,78 @@ void buildSyntheticDialogue(SrcDialogue& dialogue) {
 	    {"DIA_Digger_Camp_02_01", "Keep away from the guards' fire after dark and you will live here well enough."},
 	    {"DIA_Digger_Work_15_00", "How is work?"},
 	};
+}
+
+// The sounds, compiled on their own as the game's Sfx.src is (SFX.DAT), and the
+// music themes likewise (MUSIC.DAT).
+const char* syntheticSfxScriptSource() {
+	return R"DAEDALUS(
+class C_SFX {
+	var string file;
+	var int    pitchOff;
+	var int    pitchVar;
+	var int    vol;
+	var int    loop;
+	var int    loopStartOffset;
+	var int    loopEndOffset;
+	var float  reverbLevel;
+	var string pfxName;
+};
+instance SFX_TEST_STEP (C_SFX) {
+	file = "STEP.WAV";
+	vol  = 100;
+};
+
+instance SFX_TEST_STEP_STONE (C_SFX) {
+	file = "STEP_STONE.WAV";
+	vol  = 127;
+};
+
+instance SFX_TEST_HUM (C_SFX) {
+	file = "HUM.WAV";
+	loop = 1;
+};
+)DAEDALUS";
+}
+
+const char* syntheticMusicScriptSource() {
+	return R"DAEDALUS(
+class C_MUSICTHEME {
+	var string file;
+	var float  vol;
+	var int    loop;
+	var float  reverbMix;
+	var float  reverbTime;
+	var int    transType;
+	var int    transSubType;
+};
+instance TEST_DAY_STD (C_MUSICTHEME) {
+	file = "TEST_DAY_STD.sgt";
+	loop = 1;
+};
+
+instance TEST_NGT_STD (C_MUSICTHEME) {
+	file = "TEST_NGT_STD.sgt";
+	loop = 1;
+};
+
+instance TEST_FIG (C_MUSICTHEME) {
+	file = "TEST_FIG.sgt";
+	loop = 1;
+};
+)DAEDALUS";
+}
+
+void buildSyntheticSfxScript(SrcScript& script) {
+	script = SrcScript();
+	script.source = "the built-in sound script";
+	compileDaedalus(syntheticSfxScriptSource(), script);
+}
+
+void buildSyntheticMusicScript(SrcScript& script) {
+	script = SrcScript();
+	script.source = "the built-in music script";
+	compileDaedalus(syntheticMusicScriptSource(), script);
 }
 
 void buildSyntheticFightScript(SrcScript& script) {

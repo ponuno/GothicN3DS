@@ -194,7 +194,7 @@ int main(int argc, char** argv) {
 		std::vector<SrcModel> models;
 		CameraSet camera = defaultCameraSet();
 		bool haveCamera = false;
-		SrcScript script, fightScript;
+		SrcScript script, fightScript, sfxScript, musicScript;
 		SrcDialogue dialogue;
 		bool haveDialogue = false;
 		std::vector<u8> scriptDat;
@@ -203,6 +203,10 @@ int main(int argc, char** argv) {
 			if (withScripts) {
 				buildSyntheticScript(script);
 				buildSyntheticFightScript(fightScript);
+				buildSyntheticSfxScript(sfxScript);
+				buildSyntheticMusicScript(musicScript);
+				scripts.sfx = &sfxScript;
+				scripts.music = &musicScript;
 				scripts.script = &script;
 				scripts.fight = &fightScript;
 				scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
@@ -284,6 +288,9 @@ int main(int argc, char** argv) {
 				scripts.soundFile = zenSoundSource(game);
 				// Gothic 1 keeps how its people fight in a file of its own.
 				if (importZenFightScript(game, fightScript, worlds[0].scene.notes)) scripts.fight = &fightScript;
+				// ... and its sounds and music themes, likewise in files of their own.
+				if (importZenSfxScript(game, sfxScript, worlds[0].scene.notes)) scripts.sfx = &sfxScript;
+				if (!opt.musicDir.empty() && importZenMusicScript(game, musicScript, worlds[0].scene.notes)) scripts.music = &musicScript;
 				// ... and what they say.
 				haveDialogue = importZenDialogue(game, dialogue, worlds[0].scene.notes);
 			}

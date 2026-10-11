@@ -3908,6 +3908,11 @@ static void testMusic() {
 	scripts.script = &script;
 	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
 	scripts.soundFile = buildSyntheticSound;
+	SrcScript sfxScript, musicScript;
+	buildSyntheticSfxScript(sfxScript);
+	buildSyntheticMusicScript(musicScript);
+	scripts.sfx = &sfxScript;
+	scripts.music = &musicScript;
 	PakWriter musicPak;
 	scripts.musicPak = &musicPak;
 	BakeOptions bo;
@@ -4002,10 +4007,10 @@ static void testSound() {
 		CHECK(unchanged.samples == s.samples);
 		CHECK(!decodeWav({1, 2, 3}, s, why) && !why.empty());
 		// IMA ADPCM: a lossy copy of the tone.
-		std::vector<i16> longTone(2000);
+		std::vector<i16> longTone(2100); // (four 505-sample blocks and a remainder)
 		for (size_t i = 0; i < longTone.size(); ++i) longTone[i] = i16(std::lround(9000.0 * std::sin(double(i) * 0.03)));
 		SrcSound ima;
-		CHECK(decodeWav(imaWav(longTone, 22050), ima, why) && ima.rate == 22050 && ima.samples.size() >= 1900);
+		CHECK(decodeWav(imaWav(longTone, 22050), ima, why) && ima.rate == 22050 && ima.samples.size() >= 2000);
 		double err = 0;
 		for (size_t i = 0; i < ima.samples.size(); ++i) err = std::max(err, std::fabs(double(ima.samples[i]) - double(longTone[i])));
 		CHECK(err < 900.0);
@@ -4031,6 +4036,9 @@ static void testSound() {
 	scripts.script = &script;
 	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem};
 	scripts.soundFile = buildSyntheticSound;
+	SrcScript sfxScript;
+	buildSyntheticSfxScript(sfxScript);
+	scripts.sfx = &sfxScript;
 	BakeOptions bo;
 	bo.chunker.chunkSize = 3000.0f;
 	bo.tex.maxSize = 32;

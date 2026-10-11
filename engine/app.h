@@ -249,6 +249,7 @@ private:
 
 	Pak _pak;
 	AudioOut* _audio = nullptr;
+	ScriptVm _sfxVm, _musicVm; // the sounds (SFX.DAT) and music themes (MUSIC.DAT) of the game: scripts of their own
 	Sound _sound;
 	Music _music;
 	World _world;

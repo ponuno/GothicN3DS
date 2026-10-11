@@ -745,14 +745,14 @@ struct ScriptSide {
 ScriptSide gScript; // (one machine, one engine)
 } // namespace
 
-void Sound::bindScript(Locator where, void* user) {
+void Sound::bindScript(ScriptVm& gameVm, Locator where, void* user) {
 	if (!_vm) return;
 	gScript = {this, where, user};
-	_vm->bind("SND_PLAY", [](ScriptVm& vm, void*) {
+	gameVm.bind("SND_PLAY", [](ScriptVm& vm, void*) {
 		const char* name = vm.popString();
 		if (gScript.sound) gScript.sound->play(name, nullptr);
 	}, nullptr);
-	_vm->bind("SND_PLAY3D", [](ScriptVm& vm, void*) {
+	gameVm.bind("SND_PLAY3D", [](ScriptVm& vm, void*) {
 		const char* name = vm.popString();
 		ScriptInstance* who = vm.popInstance();
 		Vec3 pos;

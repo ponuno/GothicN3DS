@@ -682,6 +682,11 @@ void Npcs::startState(NpcActor& a, u32 fn, bool finalizeOld, const char* wp, boo
 	}
 	clearQueue(a);
 	clearState(a, finalizeOld);
+	// A new state begins with a clean slate of perceptions: its beginning switches on the ones
+	// it wants (as the original and OpenGothic have it). Otherwise those of the state before
+	// stay on - a guard in ZS_Attack still had his routine's PERC_ASSESSFIGHTER, which took him
+	// out of the fight into "put that weapon away" again and again.
+	for (u32& p : a.perc) p = 0;
 	if (wp && *wp) _game.setWayPoint(n, wp);
 	a.state = fn;
 	a.mobFailed = -1;

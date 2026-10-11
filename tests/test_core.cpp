@@ -6447,7 +6447,9 @@ static void testDialogs() {
 	// 4. The apple is brought: the quest ends with a reward and a new routine.
 	g.giveItems(hero, apple, 1);
 	const i32 potions = g.itemCount(hero, potion), apples = g.itemCount(hero, apple);
-	CHECK(until([&] { return app.talkTarget() == int(thorus); }, 3.0f));
+	// (Back in his routine first: the state of talking listens for nothing, as the original's.)
+	CHECK(until([&] { return app.talkTarget() == int(thorus) && npcs.canTalk(thorus); }, 8.0f));
+	run(1.5f);
 	app.update(a, dt);
 	CHECK(until([&] { return npcs.talkView().choosing; }, 40.0f));
 	const int done = itemWith("Here is your apple");

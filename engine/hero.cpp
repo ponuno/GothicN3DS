@@ -556,6 +556,13 @@ void Hero::fightTick(float prevTime, const Clip* prevClip) {
 			}
 			const float end = blowEnd(f, _blow.combo, fps);
 			if ((end >= 0.0f && t >= end) || _anim.finished()) {
+				// A swing that came to its end without the blow ever landing (its tag lies past
+				// the end the model script gives it, or is missing: a blow to one side whose
+				// frames were not read right) lands now, rather than hitting nothing at all.
+				if (_blow.landed <= _blow.combo) {
+					_blow.landed = u8(_blow.combo + 1);
+					_blowLanded = true;
+				}
 				// Not carried on: the attack stops where the blow ends.
 				_blow.reset();
 				_comboQueued = false;

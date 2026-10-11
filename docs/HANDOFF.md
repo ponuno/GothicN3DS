@@ -569,3 +569,7 @@ Cause: `speech.pak` in PCM16 at 48 kHz was 2.02 GiB; `Pak` seeks with `long(offs
 
 ### Раунд 16 — Npc_CanSeeNpc
 `Npc_CanSeeNpc` (скриптовый, `xCanSeeNpc`) для игрока всегда отвечал «вижу» (через `seenAllRound`), поэтому `ZS_MM_AssessEnemy_loop` (`if (!Npc_CanSeeNpc) AI_TurnToNpc`) не разворачивал пассивных зверей/стайных к игроку. Теперь это честный сектор ±100° (как `Npc::canSeeNpc` в OpenGothic). Замечание игрока всё равно идёт со всех сторон (`Npcs::sees`). Не проверено на консоли.
+
+### Раунд 16 — отставание погони и звук угрозы
+- `Npc_GetBodyState(hero)` всегда возвращал «стоит» (игрок не актёр) → `ZS_MM_Attack_Loop` каждый кадр делал `Npc_SetStateTime(0)` и звери не бросали погоню (`AIV_MM_FollowTime`, 10 с бега/прыжка; у людей `HAI_TIME_FOLLOW` в `ZS_Attack`). Теперь `Npcs::heroBodyState()` (BS_RUN/JUMP/SWIM/DEAD…) по `HeroLink::running/jumping/swimming`. Шаг/стоя сбрасывают таймер — как в оригинале.
+- Угроза: `T_WARN` у существа без звуковых событий в клипе пробует `<МОДЕЛЬ>_WARN|_GROWL|_THREAT|_AGGRO|_ANGRY|_ATTACK` (`playAni`). Имена угаданы; если ни одного нет в архиве, первое попадает в отчёт звуков (`Sound::writeReport`) — по нему можно найти настоящее имя. Если у T_WARN в модели есть `*eventSFX`, играет он.

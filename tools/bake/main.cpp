@@ -308,6 +308,10 @@ int main(int argc, char** argv) {
 			const std::string musicPath = (slash == std::string::npos ? std::string() : out.substr(0, slash + 1)) + "music.pak";
 			musicPak.write(musicPath);
 			std::printf("wrote %s: %zu tracks\n", musicPath.c_str(), musicPak.items().size());
+		} else if (!opt.musicDir.empty()) {
+			std::printf("WARNING: no music.pak written: no WAV in '%s' has the name of a theme file in the game's scripts "
+			            "(OC_DAY_STD.sgt wants OC_DAY_STD.wav). See the 'music:' line above.\n",
+			            opt.musicDir.c_str());
 		}
 		const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 		std::printf("wrote %s: %zu worlds, %zu entries in %.1f s\n", out.c_str(), worlds.size(), pak.items().size(), secs);

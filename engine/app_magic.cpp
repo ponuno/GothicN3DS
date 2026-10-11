@@ -334,7 +334,10 @@ void App::boltShoot(const GameSpell& sp, i32 spell, i32 level) {
 	b->pos[0] = from.x;
 	b->pos[1] = from.y;
 	b->pos[2] = from.z;
-	for (int i = 0; i < 3; ++i) b->dir[i] = dir[i];
+	for (int i = 0; i < 3; ++i) {
+		b->dir[i] = dir[i];
+		b->vel[i] = dir[i] * kBoltSpeed;
+	}
 	b->range = sp.collectRange > 0 ? min(float(sp.collectRange), kMaxRange) : kMaxRange;
 	if (b->range < 1500.0f) b->range = kMaxRange;
 	b->spell = i16(spell);
@@ -351,6 +354,33 @@ void App::boltImpact(Bolt& b, int victim, Vec3 at) {
 	Game& g = _npcs.game();
 	if (b.fx) _particles.stop(b.fx);
 	b.fx = 0;
+	if (b.arrow) {
+		// An arrow: it sticks where it lands (a moment), and hits by a roll.
+		b.stuck = 0.001f;
+		if (victim < 0 || hi < 0) return;
+		b.alive = false;
+		const float dist = b.travelled;
+		const float refRange = 2000.0f, maxRange = 4500.0f;
+		float chance = 0.0f;
+		if (dist < refRange) chance = 1.0f + (b.hitChance - 1.0f) * (dist / refRange);
+		else if (dist < maxRange) chance = b.hitChance * (1.0f - (dist - refRange) / (maxRange - refRange));
+		const float roll = float(g.dice(100)) / 100.0f;
+		if (dist > maxRange || chance <= roll) {
+			++_ranged.misses;
+			_ranged.lastDamage = 0;
+			return;
+		}
+		i32 dmg[8];
+		for (int i = 0; i < 8; ++i) dmg[i] = b.dmg[i];
+		if (long(100.0f * b.critChance + 0.5f) > i32(g.dice(100)))
+			for (i32& d : dmg) d *= g.constant("DAM_CRITICAL_MULTIPLIER", 2);
+		g.setArrowStrike(dmg);
+		const i32 dealt = _npcs.strike(u32(hi), u32(victim), false);
+		g.endArrowStrike();
+		++_ranged.hits;
+		_ranged.lastDamage = dealt;
+		return;
+	}
 	b.alive = false;
 	if (b.fxCollide) _particles.play(b.fxCollide, at, _hero.yaw(), 1.2f);
 	if (victim < 0 || hi < 0) return;
@@ -368,9 +398,19 @@ void App::boltUpdate(float dt) {
 	const int hi = heroIndex();
 	for (Bolt& b : _bolts) {
 		if (!b.alive) continue;
-		const float step = kBoltSpeed * dt;
+		if (b.arrow && b.stuck > 0.0f) {
+			// An arrow at rest: it stays a moment.
+			b.stuck += dt;
+			if (b.stuck > 4.0f) b.alive = false;
+			continue;
+		}
+		if (b.arrow) b.vel[1] -= 980.0f * dt; // (the original's 9.8 m/s^2)
+		const float sx = b.vel[0] * dt, sy = b.vel[1] * dt, sz = b.vel[2] * dt;
+		const float step = sqrtf(sx * sx + sy * sy + sz * sz);
+		if (step < 0.001f) continue;
+		for (int i = 0; i < 3; ++i) b.dir[i] = b.vel[i] * dt / step;
 		const Vec3 from = {b.pos[0], b.pos[1], b.pos[2]};
-		const Vec3 to = {from.x + b.dir[0] * step, from.y + b.dir[1] * step, from.z + b.dir[2] * step};
+		const Vec3 to = {from.x + sx, from.y + sy, from.z + sz};
 		// Whom it meets: the character nearest to the line of this step.
 		int hit = -1;
 		float best = kBoltRadius * kBoltRadius;

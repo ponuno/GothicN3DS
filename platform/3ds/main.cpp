@@ -27,6 +27,7 @@
 //   D-Pad Down    sneak on / off
 //   L             quick magic (not yet)
 //   START         pause menu: continue, graphics, controls, faults, save, leave
+//   (console: SELECT takes the bow; classic: L+SELECT the bow, SELECT the spell)
 //   SELECT        opens the inventory on the bottom screen (D-Pad choose, L / R
 //                 page, A use, X: into a quick slot, B or SELECT close); the
 //                 character stands while it is open
@@ -420,7 +421,8 @@ int main(int, char**) {
 				}
 				// The classic scheme has L for the step aside: the magic stance is SELECT's.
 				if ((gameDown & KEY_SELECT) && !rHeld && !(held & KEY_START) && !inventoryScreen) {
-					if (console) app.toast(g3::tr("Инвентарь — на нижнем экране (меню: Графика)"));
+					if (console) in.rangedSlot = true; // (the inventory is on the bottom screen)
+					else if (gameHeld & KEY_L) in.rangedSlot = true;
 					else in.magic = true;
 				}
 			} else {

@@ -118,6 +118,7 @@ struct GameItemInfo {
 	i32 material;         // C_ITEM.MATERIAL (MAT_WOOD 0, MAT_METAL 2 ...): what it sounds like
 	i32 spell;            // C_ITEM.SPELL (SPL_...) of a rune or scroll
 	i32 circle;           // C_ITEM.MAG_CIRCLE of a rune
+	i32 munition;         // C_ITEM.MUNITION of a bow: the arrows' instance (-1 for none)
 };
 
 // A stack of items a character carries (CreateInvItems).
@@ -420,7 +421,14 @@ public:
 		_strikeSpell = id;
 		_strikeLevel = level;
 	}
-	bool spellStriking() const { return _strikeSpell >= 0; }
+	// The same for an arrow: the damage it carries per damage type (already with the critical hit); the victim's
+	// protection is taken off (immune where it is below 0).
+	void setArrowStrike(const i32 damage[8]) {
+		for (int i = 0; i < 8; ++i) _strikeArrow[i] = damage[i];
+		_strikeIsArrow = true;
+	}
+	void endArrowStrike() { _strikeIsArrow = false; }
+	bool spellStriking() const { return _strikeSpell >= 0 || _strikeIsArrow; }
 	// The guilds' table of numbers (C_GILVALUES), an entry of it; `otherwise` if none.
 	i32 guildValue(const char* member, i32 guild, i32 otherwise);
 	// Equips a weapon item (EquipItem, the faults menu): melee or ranged by its kind.
@@ -639,6 +647,8 @@ private:
 	bool _spellsRead[64] = {};
 	u32 _spellNames = SCRIPT_NONE, _spellLetters = SCRIPT_NONE, _spellProcess = SCRIPT_NONE, _spellRelease = SCRIPT_NONE;
 	i32 _strikeSpell = -1, _strikeLevel = 0;
+	i32 _strikeArrow[8] = {};
+	bool _strikeIsArrow = false;
 	static void xActiveSpell(ScriptVm& vm, void* user);
 	static void xActiveSpellLevel(ScriptVm& vm, void* user);
 	static void xActiveSpellCat(ScriptVm& vm, void* user);

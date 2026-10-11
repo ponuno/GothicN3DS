@@ -192,6 +192,19 @@ void Loot::drawCarried(Pak& pak, Game& game, const Model& host, const Pose& pose
 	drawHeld(pak, game, melee, at, origin, light);
 }
 
+void Loot::drawRanged(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, float lean, const float* scale,
+                      u8 weapon, u32 ranged, Vec3 origin, const float light[3]) {
+	if (ranged == 0xFFFFFFFFu || !game.itemInfo(ranged)) return;
+	static const u32 hand = hashName("ZS_LEFTHAND"), back = hashName("ZS_BOW"), leftHand = hashName("BIP01 L HAND"),
+	                 spine = hashName("BIP01 SPINE1");
+	const bool inHand = weapon == 4 || weapon == 5; // WEAPON_BOW, WEAPON_CBOW
+	int node = host.findNode(inHand ? hand : back);
+	if (node < 0) node = host.findNode(inHand ? leftHand : spine);
+	Mat34 at;
+	if (!host.nodeMatrix(pose, node, yaw, lean, scale, at)) return;
+	drawHeld(pak, game, ranged, at, origin, light);
+}
+
 void Loot::drawInHand(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, const float* scale, u32 symbol, Vec3 origin,
                       const float light[3]) {
 	if (symbol == 0xFFFFFFFFu) return;

@@ -70,6 +70,9 @@ public:
 	// else on the belt (one hand) or the back (two).
 	void drawCarried(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, float lean, const float* scale,
 	                 u8 weapon, u32 melee, Vec3 origin, const float light[3]);
+	// A character's bow or crossbow `ranged`: in the left hand while one is drawn, else on the back.
+	void drawRanged(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, float lean, const float* scale,
+	                u8 weapon, u32 ranged, Vec3 origin, const float light[3]);
 	// A thing held in the right hand (an apple, a bottle: AI_UseItemToState).
 	void drawInHand(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, const float* scale, u32 symbol, Vec3 origin,
 	                const float light[3]);

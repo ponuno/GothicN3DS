@@ -131,6 +131,9 @@ public:
 	// release "T_MAGRUN_2_<L>SHOOT". The body stands meanwhile. Returns how many seconds the clip plays;
 	// 0 if the model has none (then nothing is played).
 	float castPlay(const char* letters, bool shoot);
+	// A bow or a crossbow in hand (WEAPON_BOW, WEAPON_CBOW): phase 0 aims ("S_<W>AIM", held at its end), 1 lets
+	// the arrow go ("S_<W>SHOOT"), 2 reloads ("T_<W>RELOAD"). Returns the seconds the clip plays; 0 if the model has none.
+	float rangedPlay(int phase);
 	// Back to the stance.
 	void castEnd();
 	// A casting animation is in play (still or held at its end).

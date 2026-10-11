@@ -2159,6 +2159,11 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 				wanted.push_back(name);
 				optional.insert(name);
 			}
+		for (const std::string& name : bowClipNames())
+			if (std::find(wanted.begin(), wanted.end(), name) == wanted.end()) {
+				wanted.push_back(name);
+				optional.insert(name);
+			}
 		for (const std::string& name : magicClipNames())
 			if (std::find(wanted.begin(), wanted.end(), name) == wanted.end()) {
 				wanted.push_back(name);

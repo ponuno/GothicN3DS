@@ -24,6 +24,8 @@ inline std::vector<std::string> fightStates() {
 	for (const std::string& w : fightWeapons())
 		for (const char* s : {"RUN", "RUNL", "WALK", "WALKL"}) out.push_back(w + s);
 	for (const char* s : {"MAGRUN", "MAGRUNL", "MAGWALK", "MAGWALKL"}) out.push_back(s); // (the player's character in the magic stance)
+	for (const char* w : {"BOW", "CBOW"})
+		for (const char* s : {"RUN", "RUNL", "WALK", "WALKL"}) out.push_back(std::string(w) + s); // (and with bow and crossbow)
 	return out;
 }
 
@@ -48,6 +50,24 @@ inline std::vector<std::string> magicClipNames() {
 			std::string name;
 			for (const char* c = f; *c; ++c) {
 				if (*c == '%') name += l;
+				else name += *c;
+			}
+			out.push_back(name);
+		}
+	return out;
+}
+
+// Bow and crossbow in the hands (word "BOW", "CBOW"): the stance, drawing, aiming, shooting, reloading.
+inline std::vector<std::string> bowClipNames() {
+	std::vector<std::string> out;
+	for (const char* w : {"BOW", "CBOW"})
+		for (const char* f : {"S_%RUN", "S_%RUNL", "S_%WALK", "S_%WALKL", "T_%RUN_2_%RUNL", "T_%RUNL_2_%RUN", "T_%WALK_2_%WALKL",
+		                      "T_%WALKL_2_%WALK", "T_%_2_%RUN", "T_%RUN_2_%", "T_RUN_2_%", "T_%_2_RUN", "T_MOVE_2_%MOVE", "T_%MOVE_2_MOVE",
+		                      "S_%AIM", "S_%SHOOT", "T_%RELOAD", "T_%RUNSTRAFEL", "T_%RUNSTRAFER", "T_%RUNTURNL", "T_%RUNTURNR",
+		                      "T_%WALKTURNL", "T_%WALKTURNR", "T_%JUMPB"}) {
+			std::string name;
+			for (const char* c = f; *c; ++c) {
+				if (*c == '%') name += w;
 				else name += *c;
 			}
 			out.push_back(name);

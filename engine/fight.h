@@ -21,8 +21,8 @@
 namespace g3 {
 
 // What a character holds in its hands, as the animations' names say it.
-enum WeaponMode : u8 { WEAPON_NONE, WEAPON_FIST, WEAPON_1H, WEAPON_2H, WEAPON_MAG, WEAPON_MODES };
-// "" "FIST" "1H" "2H" "MAG": the word in "S_%sRUN".
+enum WeaponMode : u8 { WEAPON_NONE, WEAPON_FIST, WEAPON_1H, WEAPON_2H, WEAPON_BOW, WEAPON_CBOW, WEAPON_MAG, WEAPON_MODES };
+// "" "FIST" "1H" "2H" "BOW" "CBOW" "MAG": the word in "S_%sRUN".
 const char* weaponWord(u8 mode);
 
 // Down and out (GameNpc::down).

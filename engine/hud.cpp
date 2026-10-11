@@ -52,6 +52,14 @@ void App::drawOverlay() {
 				if (_cast.stage == CAST_INVEST) _ui.text(W - 10, H - 15 - 2 * Ui::lineHeight(), tr("Заряд"), ui::GREY, ui::TEXT, ui::RIGHT);
 			}
 		}
+		if ((w == WEAPON_BOW || w == WEAPON_CBOW) && game) {
+			// The bow in hand, and how many arrows are left.
+			const GameNpc* h = heroNpc();
+			const GameItemInfo* it = h && h->ranged != SCRIPT_NONE ? _npcs.game().itemInfo(h->ranged) : nullptr;
+			const i32 n = it && it->munition >= 0 ? _npcs.game().itemCount(u32(heroIndex()), u32(it->munition)) : 0;
+			snprintf(weaponName, sizeof(weaponName), "%s  x%d", it && it->name ? game->text(it->name) : tr("Лук"), int(n));
+			held = weaponName;
+		}
 		if (items) {
 		} else if (held) _ui.text(W - 10, H - 6 - Ui::lineHeight(), held, ui::GOLD, ui::TEXT, ui::RIGHT);
 		else if (_hero.sneaking()) _ui.text(W - 10, H - 6 - Ui::lineHeight(), tr("Крадётся"), ui::GREY, ui::TEXT, ui::RIGHT);

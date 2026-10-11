@@ -466,6 +466,18 @@ float Hero::castPlay(const char* letters, bool shoot) {
 	return c->duration();
 }
 
+float Hero::rangedPlay(int phase) {
+	if (!loaded() || (_weapon != WEAPON_BOW && _weapon != WEAPON_CBOW) || _down || _body != GROUNDED) return 0.0f;
+	const Clip* c = weaponClip(phase == 0 ? "S_%sAIM" : phase == 1 ? "S_%sSHOOT" : "T_%sRELOAD", _weapon);
+	if (!c) return 0.0f;
+	_anim.play(c, 0.1f);
+	_blow.reset();
+	_castClip = c;
+	_castHold = true;
+	_roleNow = ATTACK;
+	return c->duration();
+}
+
 void Hero::castEnd() {
 	_castClip = nullptr;
 	_castHold = false;

@@ -587,6 +587,7 @@ void Game::xIsInFightMode(ScriptVm& vm, void* user) {
 	if (mode == g.constant("FMODE_NONE", 0)) in = n->weapon == WEAPON_NONE;
 	else if (mode == g.constant("FMODE_FIST", 1)) in = n->weapon == WEAPON_FIST;
 	else if (mode == g.constant("FMODE_MELEE", 2)) in = n->weapon == WEAPON_1H || n->weapon == WEAPON_2H;
+	else if (mode == g.constant("FMODE_FAR", 5)) in = n->weapon == WEAPON_BOW || n->weapon == WEAPON_CBOW;
 	else if (mode == g.constant("FMODE_MAGIC", 7)) in = n->weapon == WEAPON_MAG;
 	vm.pushInt(in); // (ranged weapons: not yet)
 }
@@ -604,9 +605,9 @@ void Game::xHasReadiedMelee(ScriptVm& vm, void* user) {
 }
 
 void Game::xHasReadiedRanged(ScriptVm& vm, void* user) {
-	(void)vm.popInstance();
-	(void)user;
-	vm.pushInt(0);
+	Game& g = *static_cast<Game*>(user);
+	const GameNpc* n = g.npcOf(vm.popInstance());
+	vm.pushInt(n && (n->weapon == WEAPON_BOW || n->weapon == WEAPON_CBOW));
 }
 
 void Game::xChangeAttribute(ScriptVm& vm, void* user) {

@@ -43,6 +43,7 @@ const int ITEM_KAT_RUNE    = 1 << 9;
 const int ITEM_KAT_MAGIC   = 1 << 31;
 const int ITEM_RING   = 1 << 11;
 const int ITEM_BOW    = 1 << 19;
+const int ITEM_CROSSBOW = 1 << 20;
 const int ITEM_MULTI  = 1 << 21;
 const int ITEM_AMULET = 1 << 22;
 const int PROT_EDGE = 2;
@@ -139,6 +140,7 @@ const int TARGET_COLLECT_ALL_FALLBACK_CASTER = 5;
 const int TARGET_COLLECT_FOCUS_FALLBACK_NONE = 6;
 const int TARGET_COLLECT_FOCUS_FALLBACK_CASTER = 7;
 const int DAM_EDGE = 4;
+const int DAM_POINT = 64;
 const int DAM_INDEX_BLUNT = 1;
 const int DAM_INDEX_EDGE = 2;
 const int DAM_CRITICAL_MULTIPLIER = 2;
@@ -975,23 +977,24 @@ instance ItMw_2H_Sword_Heavy (C_ITEM) {
 	description = name;
 };
 
-instance ItRw_Bow_Small (C_ITEM) {
-	name = "Short bow";
-	mainflag = ITEM_KAT_FF;
-	flags = ITEM_BOW;
-	damagetype = DAM_EDGE;
-	damagetotal = 20;
-	value = 80;
-	visual = "ItRw_Bow_Small_01.3DS";
-	description = name;
-};
-
 instance ItAmArrow (C_ITEM) {
 	name = "Arrow";
 	mainflag = ITEM_KAT_MUN;
 	flags = ITEM_MULTI;
 	value = 1;
 	visual = "ItAm_Arrow_01.3ds";
+	description = name;
+};
+
+instance ItRw_Bow_Small (C_ITEM) {
+	name = "Short bow";
+	mainflag = ITEM_KAT_FF;
+	flags = ITEM_BOW;
+	damagetype = DAM_POINT;
+	damagetotal = 20;
+	munition = ItAmArrow;
+	value = 80;
+	visual = "ItRw_Bow_Small_01.3DS";
 	description = name;
 };
 

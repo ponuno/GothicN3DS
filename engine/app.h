@@ -231,6 +231,13 @@ public:
 		i32 lastSpell = -1;
 	};
 	const MagicStats& magicStats() const { return _magic; }
+	// Bow and crossbow: the arrows shot, the ones that hit, and the last damage.
+	struct RangedStats {
+		u32 shot = 0, hits = 0, misses = 0, noAmmo = 0;
+		i32 lastDamage = -1;
+	};
+	const RangedStats& rangedStats() const { return _ranged; }
+	bool aiming() const { return _shot.stage == SHOT_AIM; }
 	// The things lying about in this world, and the one the character could
 	// pick up now (A, hands empty; -1 for none).
 	const Loot& loot() const { return _loot; }
@@ -283,14 +290,33 @@ private:
 	};
 	struct Bolt {
 		bool alive = false;
+		bool arrow = false;       // an arrow (gravity, a roll to hit), else a spell
 		float pos[3] = {0, 0, 0}, dir[3] = {0, 0, 1};
+		float vel[3] = {0, 0, 0}; // cm/s
+		i32 dmg[8] = {};          // an arrow: per damage type
+		u32 ammo = 0xFFFFFFFFu;   // an arrow: the item it is drawn as
+		float hitChance = 1.0f, critChance = 0.0f;
+		float stuck = 0;          // s since it came to rest (an arrow stays a moment)
 		float travelled = 0, range = 0;
 		i16 spell = -1;
 		u8 level = 0;
 		u32 fx = 0;
 		u32 fxCollide = 0;
 	};
-	static constexpr u32 MAX_BOLTS = 4;
+	static constexpr u32 MAX_BOLTS = 8;
+	// Bow and crossbow: A held aims, let go shoots (then reloads).
+	enum ShotStage : u8 { SHOT_NONE, SHOT_AIM, SHOT_SHOOT, SHOT_RELOAD };
+	struct Shot {
+		u8 stage = SHOT_NONE;
+		float time = 0, length = 0;
+		bool fired = false;
+	};
+	Shot _shot;
+	void rangedInput(const Input& in);
+	void rangedUpdate(float dt);
+	void arrowShoot();
+	u8 rangedMode();
+	void drawArrows(const float light[3]);
 	void magicInput(const Input& in);
 	void magicUpdate(float dt);
 	void castBegin();
@@ -307,6 +333,7 @@ private:
 	u32 _spellItem = 0xFFFFFFFFu;
 	bool _attackHeld = false;
 	MagicStats _magic;
+	RangedStats _ranged;
 	void checkPortals();
 	void soundEvent(const ClipSfxEvent& event, int npc);
 	void startSound();

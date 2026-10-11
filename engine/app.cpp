@@ -436,8 +436,9 @@ void App::update(const Input& in, float dt) {
 		const SkyColors sky = skyColors();
 		const float indoorLight[3] = {1, 1, 1};
 		_hero.follow(_player, _world, _world.indoor() ? indoorLight : sky.light, dt);
-		if (_hero.blowLanded() && _hero.weapon() != WEAPON_MAG) heroBlow();
+		if (_hero.blowLanded() && _hero.weapon() != WEAPON_MAG && _hero.weapon() != WEAPON_BOW && _hero.weapon() != WEAPON_CBOW) heroBlow();
 		magicUpdate(dt);
+		rangedUpdate(dt);
 		if (dt > 0.0f) {
 			const float dx = _player.feet.x - _heroLastFeet.x, dz = _player.feet.z - _heroLastFeet.z;
 			const float v = sqrtf(dx * dx + dz * dz) / dt;
@@ -692,10 +693,14 @@ void App::render() {
 	drawShowcase();
 	if (_heroVisible) {
 		_hero.draw();
+		drawArrows(_hero.light());
 		const GameNpc* hn = heroNpc();
 		if (hn && _hero.loaded())
 			_loot.drawCarried(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
 			                  hn->melee, _hero.feet(), _hero.light());
+		if (hn && _hero.loaded())
+			_loot.drawRanged(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
+			                 hn->ranged, _hero.feet(), _hero.light());
 	}
 	gfx::setPass(gfx::PASS_BLEND);
 	_world.drawBlended();
@@ -951,7 +956,9 @@ void App::fightInput(const Input& in, float dt) {
 		take(_hero.weapon() == WEAPON_FIST ? u8(WEAPON_NONE) : u8(WEAPON_FIST));
 	_attackHeld = in.attackHeld;
 	magicInput(in);
-	if (in.attack && _hero.weapon() != WEAPON_NONE && _hero.weapon() != WEAPON_MAG) {
+	rangedInput(in);
+	if (in.attack && _hero.weapon() != WEAPON_NONE && _hero.weapon() != WEAPON_MAG && _hero.weapon() != WEAPON_BOW &&
+	    _hero.weapon() != WEAPON_CBOW) {
 		// The direction of the blow is the D-Pad's, held as A is pressed (left: from the left,
 		// right: from the right, else ahead); the stick only moves.
 		_hero.attack(in.blowDir < 0 ? 1 : in.blowDir > 0 ? 2 : 0);

@@ -5775,6 +5775,112 @@ static void testFight() {
 
 // Magic: the spells as the scripts describe them, the casting loop (a point of mana at a time, the
 // scripts deciding), a projectile that hurts, a scroll used up, healing while charged.
+static void testRanged() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/ranged.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded()) return;
+	app.settings().scheme = CONTROLS_CONSOLE;
+	app.settings().immortal = 1;
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.applySettings();
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	const u32 hero = u32(g.hero() - &g.npc(0));
+	const float dt = 1.0f / 30.0f;
+	const u32 bow = g.vm().find("ITRW_BOW_SMALL"), arrow = g.vm().find("ITAMARROW");
+	CHECK(bow != SCRIPT_NONE && arrow != SCRIPT_NONE);
+	const GameItemInfo* bi = g.itemInfo(bow);
+	CHECK(bi && bi->munition == i32(arrow) && bi->damageType == 64 && bi->damageTotal == 20);
+	int scav = -1;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).placed && g.npc(i).world == g.currentWorld() && std::strcmp(g.nameOf(g.npc(i)), "Scavenger") == 0) scav = int(i);
+	CHECK(scav >= 0);
+	if (scav < 0) return;
+	const GameNpc& e = g.npc(u32(scav));
+	app.teleport({e.pos[0], e.pos[1] + 400.0f, e.pos[2] - 600.0f});
+	app.world().preload(app.camera().pos);
+	for (int i = 0; i < 30; ++i) app.update(Input {}, dt);
+	// 1. No bow: nothing is taken. Then the bow worn, the key takes it in hand.
+	{
+		Input in;
+		in.rangedSlot = true;
+		app.update(in, dt);
+		CHECK(app.hero().weapon() == WEAPON_NONE);
+	}
+	g.giveItems(hero, bow, 1);
+	g.giveItems(hero, arrow, 10);
+	g.setAttribute(g.npcMut(hero), 5, 100);
+	{
+		// The inventory: the bow has an action and a quick slot; used, it is worn and in hand; again, away; once more, in hand.
+		const ItemEntry* be = nullptr;
+		const InventoryView& v = app.inventory();
+		for (u32 i = 0; i < v.count; ++i)
+			if (v.items[i].symbol == bow) be = &v.items[i];
+		CHECK(be && (be->flags & ITEMF_ACTION) && (be->flags & ITEMF_QUICK));
+		app.setQuickSlot(1, bow);
+		CHECK(app.quickUse(1));
+		for (int i = 0; i < 60; ++i) app.update(Input {}, dt);
+		CHECK(g.npc(hero).ranged == bow && app.hero().weapon() == WEAPON_BOW);
+		CHECK(app.quickUse(1));
+		for (int i = 0; i < 60; ++i) app.update(Input {}, dt);
+		CHECK(app.hero().weapon() == WEAPON_NONE && g.npc(hero).ranged == bow);
+		CHECK(app.quickUse(1));
+		for (int i = 0; i < 60; ++i) app.update(Input {}, dt);
+		CHECK(app.hero().weapon() == WEAPON_BOW);
+	}
+	const i32 protPoint = g.npcInt(e, g.vm().findMember("C_NPC", "PROTECTION"), 6);
+	const i32 hpBefore = g.hitPoints(e);
+	for (int i = 0; i < 90 && !(app.targetLocked() && app.target() == scav); ++i) {
+		Input in;
+		const Vec3 feet = app.player().feet;
+		const float want = std::atan2(e.pos[0] - feet.x, e.pos[2] - feet.z) - app.camera().yaw;
+		in.moveX = 0.9f * std::sin(want);
+		in.moveZ = 0.9f * std::cos(want);
+		app.update(in, dt);
+	}
+	CHECK(app.target() == scav);
+	// 2. A held, then let go: one arrow, which finds the beast.
+	int frames = 0;
+	for (; frames < 30 * 6 && app.rangedStats().hits + app.rangedStats().misses == 0; ++frames) {
+		Input in;
+		if (frames == 2) in.attack = true;
+		in.attackHeld = frames >= 2 && frames < 2 + 12;
+		app.update(in, dt);
+		if (frames == 8) CHECK(app.aiming() && app.rangedStats().shot == 0);
+	}
+	std::printf("  an arrow: %d frames, %u shot, %u hits, %u misses, damage %d (protection %d), arrows left %d\n", frames, app.rangedStats().shot,
+	            app.rangedStats().hits, app.rangedStats().misses, int(app.rangedStats().lastDamage), int(protPoint), int(g.itemCount(hero, arrow)));
+	CHECK(app.rangedStats().shot == 1 && app.rangedStats().hits == 1 && app.rangedStats().misses == 0);
+	CHECK(g.itemCount(hero, arrow) == 9);
+	CHECK(app.rangedStats().lastDamage == std::max(20 - protPoint, i32(0)));
+	CHECK(g.hitPoints(e) == std::max(hpBefore - std::max(20 - protPoint, i32(0)), i32(0)));
+	for (int i = 0; i < 90; ++i) app.update(Input {}, dt);
+	// 3. Without arrows: a toast, no shot.
+	g.giveItems(hero, arrow, -g.itemCount(hero, arrow));
+	{
+		const u32 shot = app.rangedStats().shot;
+		Input in;
+		in.attack = in.attackHeld = true;
+		app.update(in, dt);
+		app.update(Input {}, dt);
+		CHECK(app.rangedStats().noAmmo == 1 && app.rangedStats().shot == shot && !app.aiming());
+	}
+	// 4. The key puts the bow away.
+	{
+		Input in;
+		in.rangedSlot = true;
+		app.update(in, dt);
+		for (int i = 0; i < 60; ++i) app.update(Input {}, dt);
+		CHECK(app.hero().weapon() == WEAPON_NONE);
+	}
+}
+
 static void testMagic() {
 	std::vector<BakeWorld> worlds;
 	const std::string path = gDir + "/magic.pak";
@@ -5839,7 +5945,16 @@ static void testMagic() {
 	const i32 protFire = g.npcInt(e, g.vm().findMember("C_NPC", "PROTECTION"), 3);
 	g.setAttribute(g.npcMut(hero), 3, 20);
 	g.setAttribute(g.npcMut(hero), 2, 10);
-	CHECK(app.selectSpell(rune) && app.spellItem() == rune);
+	{
+		// The inventory shows a rune with an action and lets it into a quick slot; the slot chooses the spell.
+		const ItemEntry* re = nullptr;
+		const InventoryView& v = app.inventory();
+		for (u32 i = 0; i < v.count; ++i)
+			if (v.items[i].symbol == rune) re = &v.items[i];
+		CHECK(re && (re->flags & ITEMF_ACTION) && (re->flags & ITEMF_QUICK));
+		app.setQuickSlot(2, rune);
+		CHECK(app.quickUse(2) && app.spellItem() == rune);
+	}
 	for (int i = 0; i < 60; ++i) app.update(Input {}, dt);
 	CHECK(app.hero().weapon() == WEAPON_MAG && g.npc(hero).weapon == WEAPON_MAG);
 	const i32 hpBefore = g.hitPoints(e);
@@ -7708,6 +7823,7 @@ int main(int argc, char** argv) {
 	             {"life", testLife},
 	             {"fight", testFight},
              {"magic", testMagic},
+             {"ranged", testRanged},
 	             {"inventory", testInventory},
              {"chests", testChests},
              {"particles", testParticles},

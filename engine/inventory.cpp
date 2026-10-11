@@ -257,7 +257,9 @@ bool App::itemAction(u32 symbol) {
 	case IK_AMULET:
 	case IK_RING: return equipItem(symbol, *it, kind);
 	case IK_RUNE:
-	case IK_SCROLL: return selectSpell(symbol);
+	case IK_SCROLL:
+		if (_hero.weapon() == WEAPON_MAG && _spellItem == symbol && !_hero.drawing()) return heroTake(WEAPON_NONE);
+		return selectSpell(symbol);
 	case IK_DOC: itemMessage(tr("Читать пока нельзя")); return false;
 	case IK_LIGHT: itemMessage(tr("Факелов пока нет")); return false;
 	case IK_AMMO: itemMessage(tr("Стрелы берутся с луком")); return false;
@@ -361,11 +363,24 @@ bool App::equipItem(u32 symbol, const GameItemInfo& it, u8 kind) {
 		snprintf(buf, sizeof(buf), tr("Оружие: %s"), name);
 		itemMessage(buf, false);
 		return true;
-	case IK_RANGED:
-		h.ranged = worn ? NONE : symbol;
-		snprintf(buf, sizeof(buf), worn ? tr("Снято: %s") : tr("%s (стрельбы пока нет)"), name);
+	case IK_RANGED: {
+		const bool inHand = _hero.weapon() == WEAPON_BOW || _hero.weapon() == WEAPON_CBOW;
+		if (worn) {
+			// Already the bow: in hand or away.
+			if (inHand) return heroTake(WEAPON_NONE);
+			if (!heroTake(rangedMode())) {
+				itemMessage(tr("Сейчас нельзя"));
+				return false;
+			}
+		} else {
+			h.ranged = symbol;
+			if (inHand) heroTake(WEAPON_NONE);
+			else if (_hero.weapon() == WEAPON_NONE && !_hero.drawing()) heroTake(rangedMode());
+		}
+		snprintf(buf, sizeof(buf), tr("Лук: %s"), name);
 		itemMessage(buf, false);
 		return true;
+	}
 	case IK_ARMOR:
 		g.setArmor(u32(hi), worn ? NONE : symbol);
 		snprintf(buf, sizeof(buf), worn ? tr("Снято: %s") : tr("Надето: %s"), name);
@@ -691,7 +706,15 @@ void App::fillEntry(ItemEntry& e, u32 symbol, i32 count, const GameNpc& h, bool 
 			action = it->onUse == NONE ? "" : e.icon == ICON_BOTTLE ? tr("Выпить") : tr("Съесть");
 			break;
 		case IK_MELEE: action = (e.flags & ITEMF_IN_HAND) ? tr("Убрать") : worn ? tr("Снять") : tr("Взять"); break;
-		case IK_RANGED: action = worn ? tr("Снять") : tr("Взять"); break;
+		case IK_RANGED:
+			action = (_hero.weapon() == WEAPON_BOW || _hero.weapon() == WEAPON_CBOW) && worn ? tr("Убрать") : worn ? tr("В руки") : tr("Взять");
+			if (worn && action == tr("Убрать")) e.flags |= ITEMF_IN_HAND;
+			break;
+		case IK_RUNE:
+		case IK_SCROLL:
+			action = _hero.weapon() == WEAPON_MAG && _spellItem == symbol ? tr("Убрать") : tr("Выбрать");
+			if (_hero.weapon() == WEAPON_MAG && _spellItem == symbol) e.flags |= ITEMF_IN_HAND;
+			break;
 		case IK_ARMOR:
 		case IK_AMULET:
 		case IK_RING: action = worn ? tr("Снять") : tr("Надеть"); break;
@@ -765,6 +788,7 @@ const InventoryView& App::inventory() {
 	stamp = mix(stamp, h.ranged);
 	stamp = mix(stamp, h.armorItem);
 	stamp = mix(stamp, _hero.weapon());
+	stamp = mix(stamp, _spellItem);
 	for (u32 q : _quick) stamp = mix(stamp, q);
 	for (int a = 0; a < 6; ++a) stamp = mix(stamp, u32(g.attributeOf(h, a)));
 	const bool combat = heroInCombat();

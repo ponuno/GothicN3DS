@@ -2120,6 +2120,7 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		// The event tags of a fight (ClipFight), in frames of the clip.
 		std::vector<int> hits, hitEnds, windows, parry;
 		int fightMode = -1;
+		int mdsFirst = -1, mdsLast = -1; // the frames of the file the animation is cut from
 		std::vector<SrcClip::Sfx> sfx; // the sound tags (*eventSFX, *eventSFXGrnd)
 	};
 	std::vector<Loaded> loadedClips;
@@ -2187,6 +2188,8 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		// of the one it names); they count from its first frame.
 		for (const zenkit::MdsAnimation& a : script.animations) {
 			if (upper(a.name) != file) continue;
+			lc.mdsFirst = int(a.first_frame);
+			lc.mdsLast = int(a.last_frame);
 			const int firstFrame = std::min(int(a.first_frame), int(a.last_frame));
 			const auto ownFrame = [&](int frame) { return std::max(frame - firstFrame, 0); };
 			for (const zenkit::MdsEventTag& ev : a.events) {
@@ -2280,12 +2283,21 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 			for (SrcClip::Sfx& e : lc.sfx) e.frame = flip(e.frame);
 			std::stable_sort(lc.sfx.begin(), lc.sfx.end(), [](const SrcClip::Sfx& x, const SrcClip::Sfx& y) { return x.frame < y.frame; });
 		}
-		// (For the report: the side blows and the drawing of a weapon, how they came out.)
-		if (name.find("ATTACKL") != std::string::npos || name.find("ATTACKR") != std::string::npos || name.find("RUN_2_1H") != std::string::npos ||
-		    name.find("RUN_2_2H") != std::string::npos || name.find("1H_2_1HRUN") != std::string::npos) {
-			char buf[200];
-			std::snprintf(buf, sizeof(buf), "clip %s: %u frames%s, %zu hits%s%s", name.c_str(), unsigned(lc.ani.frame_count),
-			              lc.reversed ? " (backwards)" : "", lc.hits.size(), file != name ? " from " : "", file != name ? file.c_str() : "");
+		// (For the report: every clip of a fight or of a weapon taken in hand, as it came out.)
+		if (name.find("ATTACK") != std::string::npos || name.find("PARADE") != std::string::npos || name.find("_2_1H") != std::string::npos ||
+		    name.find("_2_2H") != std::string::npos || name.find("1H_2_") != std::string::npos || name.find("2H_2_") != std::string::npos ||
+		    name.find("JUMPB") != std::string::npos) {
+			const auto list = [](const std::vector<int>& v) {
+				std::string t;
+				for (size_t i = 0; i < v.size(); ++i) t += (i ? "," : "") + std::to_string(v[i]);
+				return t.empty() ? std::string("-") : t;
+			};
+			char buf[400];
+			std::snprintf(buf, sizeof(buf),
+			              "fightclip %s: file %s%s, mds frames %d..%d, %u frames @ %.0f fps, %s; hits %s; hitEnds %s; windows %s; parry %s; fightMode %d; next %s",
+			              name.c_str(), file.c_str(), lc.reversed ? " BACKWARDS" : "", lc.mdsFirst, lc.mdsLast, unsigned(lc.ani.frame_count),
+			              double(lc.ani.fps), lc.moves ? "moves" : "in place", list(lc.hits).c_str(), list(lc.hitEnds).c_str(),
+			              list(lc.windows).c_str(), list(lc.parry).c_str(), lc.fightMode, lc.next.empty() ? "-" : lc.next.c_str());
 			model.notes.push_back(buf);
 		}
 		loadedClips.push_back(std::move(lc));

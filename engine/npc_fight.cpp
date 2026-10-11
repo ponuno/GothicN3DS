@@ -666,8 +666,29 @@ void Npcs::tickFight(NpcActor& a, float dt) {
 	const Clip* c = a.anim.current();
 	const float t = a.anim.time();
 	const bool sameClip = c == a.animClip;
+	const float stumbleBefore = a.stumble;
 	if (a.stumble > -1.0f) a.stumble = max(a.stumble - dt, -1.0f);
 	if (a.faiWait > 0.0f) a.faiWait -= dt;
+	if (stumbleBefore > 0.0f && a.stumble <= 0.0f && n.down == DOWN_NONE && !a.blow.clip && a.drawTo == 0xFF && n.weapon != WEAPON_NONE) {
+		// Done reeling: back on its feet in the fighting stance, not frozen in the last frame.
+		a.faiWait = 0;
+		fightIdle(a, 0.15f);
+	}
+	// Watchdog: a fight action that goes nowhere (nothing playing, nothing walking, no blow, no
+	// reeling, no wait) for a while is dropped, so that the state's loop picks the fight up again.
+	if (a.action.kind == NPC_ACT_ATTACK && a.phase != NpcActor::MOVING && !a.blow.clip && a.stumble <= 0.0f && a.faiWait <= 0.0f) {
+		if ((a.fightStall += dt) > 1.5f) {
+			a.fightStall = 0;
+			a.stepCount = a.stepAt = 0;
+			a.drawTo = 0xFF;
+			a.drawBack = false;
+			a.phase = NpcActor::IDLE;
+			a.action = NpcAction();
+			fightIdle(a, 0.1f);
+		}
+	} else {
+		a.fightStall = 0;
+	}
 	if (n.weapon != a.heardWeapon) {
 		if (n.down == DOWN_NONE) emitDraw(a.npc, a.heardWeapon, n.weapon, n.melee);
 		a.heardWeapon = n.weapon;
@@ -759,9 +780,15 @@ i32 Npcs::strike(u32 attacker, u32 victim, bool fromBehind) {
 	v.lastHit = int(attacker);
 	// The victim takes note first (and may begin a state of its own), then the others hear it.
 	const u32 stateBefore = a ? a->state : 0u;
-	const u8 queuedBefore = a ? a->queueCount : u8(0);
+	u8 queuedBefore = a ? a->queueCount : u8(0);
 	const bool listens = a && a->ready && _percDamage >= 0 && _percDamage < Game::PERC_TYPES && a->perc[_percDamage] && _cfg.alive;
 	const u32 unboundBefore = _unboundCount;
+	if (listens && !inFightState(*a) && !a->blow.clip) {
+		// Hit out of a quiet state: what it still had in its queue (a wait, a walk, a word) is
+		// forgotten, so the reaction - and the fight - begins at once, as in the original.
+		clearQueue(*a);
+		queuedBefore = 0;
+	}
 	if (listens) react(*a, a->perc[_percDamage], int(attacker), int(victim));
 	if (victim != heroIndex && attacker == heroIndex) {
 		// (For the debug line: did it hear the blow, what did it do about it.)

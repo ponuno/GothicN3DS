@@ -276,6 +276,7 @@ struct NpcActor {
 	float faiWait = 0;     // seconds before the next step
 	bool hitFlag = false;  // hit since the last move: the next comes from MY_W_STRAFE
 	BlowTracker blow;
+	float fightStall = 0;  // seconds a fight action has made no headway (the watchdog)
 	float stumble = -1;    // seconds of reeling from a blow (no steps meanwhile); below 0 the time since, down to -1
 	float animPrev = 0;    // where the animation was the frame before (for the frame a blow lands at)
 	const Clip* animClip = nullptr;

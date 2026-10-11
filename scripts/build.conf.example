@@ -1,0 +1,7 @@
+# Copy to scripts/build.conf (or ~/.gothic3ds.conf) and edit. Plain shell.
+GAME_DIR="/mnt/c/Program Files (x86)/Steam/steamapps/common/Gothic"
+OUT_DIR="$HOME/out"                 # data.pak, music.pak, speech.pak go here
+MUSIC_DIR="$HOME/music_wavs"        # rendered WAVs (leave empty for no music)
+SD_DIR=""                           # e.g. /mnt/c/gothic3ds_sd/3ds/gothic3ds ; empty = do not copy
+BAKE_EXTRA=""                       # extra g3ds-bake flags, e.g. "--mod Archolos"
+# DEVKITARM=/opt/devkitpro/devkitARM   # set it (or in the environment) to build gothic3ds.3dsx too

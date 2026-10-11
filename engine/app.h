@@ -225,6 +225,10 @@ public:
 	const Chests& chests() const { return _chests; }
 	Chests& chests() { return _chests; }
 	int chestTarget() const { return _chestTarget; }
+	// The dead the character could search now (A; a character's index, -1 for none), and the
+	// one being searched (-1 for none: the open container is a chest).
+	int corpseTarget() const { return _corpseTarget; }
+	int corpseOpen() const { return _chest.stage != CH_NONE ? _chest.corpse : -1; }
 	enum ChestStage : u8 { CH_NONE, CH_LOCK, CH_GLIDE, CH_OPEN, CH_CLOSING };
 	u8 chestStage() const { return _chest.stage; }
 	int chestIndex() const { return _chest.stage != CH_NONE ? int(_chest.index) : -1; }
@@ -387,6 +391,8 @@ private:
 	// The chests.
 	Chests _chests;
 	int _chestTarget = -1;
+	int _corpseTarget = -1;
+	bool _corpseBlocked = false; // a body in reach, but the weapon is drawn
 	struct ChestJob {
 		u8 stage = CH_NONE;
 		u32 index = 0;
@@ -394,6 +400,7 @@ private:
 		Vec3 from {0, 0, 0}, to {0, 0, 0};
 		float yawFrom = 0, yawTo = 0;
 		u8 progress = 0, picks = 0;
+		int corpse = -1;     // a dead character's index when it is a body that is searched (then `index` is unused)
 		bool shown = false;  // the chest page has been put up (closing it ends the use)
 		char news[64] = ""; // the lock page's line (a pick broke)
 	};
@@ -406,6 +413,13 @@ private:
 	void chestUpdate(Input& in, float dt);
 	void chestCommand(const PanelCommand& c);
 	void chestStart(u32 index);
+	void corpseStart(u32 npc);
+	// What a body has to give: its things (not the armour it wears), in the order it got them.
+	u32 corpseStackCount(u32 npc) const;
+	bool corpseStack(u32 npc, u32 k, u32& symbol, i32& count) const;
+	i32 corpseTake(u32 npc, u32 symbol, i32 amount);
+	int corpseNearest(bool any) const;
+	const char* corpseName(u32 npc, char* out, size_t size) const;
 	void chestBegin();         // walks to the chest and opens it
 	void chestEnd(bool hurried);
 	void chestMove(u32 symbol, i32 amount, bool toChest);

@@ -166,6 +166,8 @@ void Npcs::wake(NpcActor& a) {
 	a.stepCount = a.stepAt = 0;
 	a.flee = a.faiWait = 0;
 	a.stumble = -1.0f;
+	a.noLying = false;
+	a.slump = 0.0f;
 	if (a.npc < _game.npcCount() && _game.npc(a.npc).down == DOWN_DEAD) {
 		// Where it fell, as it fell.
 		const Clip* lying = clip(a, "S_DEADB");
@@ -178,6 +180,8 @@ void Npcs::wake(NpcActor& a) {
 			a.idle = lying;
 			a.anim.play(lying, 0.0f);
 		}
+		a.noLying = !lying;
+		a.slump = lying ? 0.0f : 1.0f;
 	}
 	// Everybody in a rhythm of his own.
 	a.anim.advance(float(a.npc % 97) * 0.37f);
@@ -198,6 +202,8 @@ void Npcs::wake(NpcActor& a) {
 
 // Back into what it stands (or sits) in.
 void Npcs::fallBack(NpcActor& a, float blend) {
+	// The dead stay as they fell: nothing gets them to their feet.
+	if (a.npc < _game.npcCount() && _game.npc(a.npc).down == DOWN_DEAD) return;
 	const Clip* c = nullptr;
 	if (a.stance[0]) {
 		char name[40];
@@ -1070,6 +1076,7 @@ bool Npcs::carryOn(NpcActor& a, const World& world, float dt) {
 // A frame of an actor's life.
 void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 	GameNpc& n = _game.npcMut(a.npc);
+	if (a.noLying && n.down == DOWN_DEAD && a.slump < 1.0f) a.slump = a.slump + dt * 2.5f < 1.0f ? a.slump + dt * 2.5f : 1.0f;
 	a.animPrev = a.anim.time();
 	a.animClip = a.anim.current();
 	a.anim.advance(dt);
@@ -1152,7 +1159,9 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 	if (a.heldItem != 0xFFFFFFFFu && (n.weapon != WEAPON_NONE || n.down != DOWN_NONE)) dropHeldItem(a);
 	checkHeldItem(a);
 	// A gesture that has run out leaves it standing (or sitting) as before.
-	if (a.anim.finished() && a.phase != NpcActor::MOVING && a.action.kind != NPC_ACT_PLAY_ANI && a.action.kind != NPC_ACT_USE_MOB &&
+	// (Not one that is down: the fall ends where it lies. A model whose T_DEAD has no S_DEAD to
+	// lead into used to get up again from here.)
+	if (n.down == DOWN_NONE && a.anim.finished() && a.phase != NpcActor::MOVING && a.action.kind != NPC_ACT_PLAY_ANI && a.action.kind != NPC_ACT_USE_MOB &&
 	    a.action.kind != NPC_ACT_USE_ITEM && a.action.kind != NPC_ACT_TAKE_ITEM)
 		fallBack(a, 0.2f);
 	// ... and on a bench so does one that has led on into standing: a look

@@ -860,6 +860,17 @@ void Npcs::goDown(u32 npc, int attacker, bool dead, bool fromBehind) {
 		snprintf(a->stance, sizeof(a->stance), "%s", in);
 		if (!c) c = clip(*a, held);
 		if (c) a->anim.play(c, 0.1f);
+		a->noLying = dead && !c;
+		a->slump = 0.0f;
+		if (!c) {
+			// No way of falling in the model: the blow, the run, the bite it was in
+			// ends; it stands still (and a dead one is tipped over, see npcs.cpp).
+			const Clip* calm = modeClip(*a, "S_%s", true);
+			if (calm) {
+				a->anim.play(calm, 0.1f);
+				a->idle = calm;
+			}
+		}
 		a->carried = false;
 		a->phase = NpcActor::IDLE;
 		a->bodyState = -1;

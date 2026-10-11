@@ -111,6 +111,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	_chests.leaveWorld();
 	_lootTarget = -1;
 	_chestTarget = -1;
+	_corpseTarget = -1;
 	_world.close();
 	gfx::releaseDestroyed();
 	if (!_world.open(&_pak, worldEntryHash)) {

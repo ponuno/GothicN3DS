@@ -7049,6 +7049,115 @@ func void Rtn_start_503() {
 // Things in the inhabitants' hands and in the world (npc_items.cpp, game_items.cpp): holding a potion
 // in the state of its scheme and putting it away, drinking one, armour and weapons as the scripts ask
 // about them, the inventory by slot, and a weapon found lying about and picked up.
+// The dead can be searched: A before a body that carries something opens the
+// chest page with its things; they only come out; the armour it wears stays.
+static void testCorpses() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/corpses.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.settings().immortal = 1;
+	app.applySettings();
+	const u32 hero = u32(g.hero() - &g.npc(0));
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	const auto cmd = [&](u8 type, u8 slot = 0, u32 sym = 0, i32 amount = 0) {
+		PanelCommand c;
+		c.type = type;
+		c.slot = slot;
+		c.symbol = sym;
+		c.amount = amount;
+		app.panelCommand(c);
+	};
+	const u32 nugget = g.vm().find("ITMINUGGET"), apple = g.vm().find("ITFOAPPLE");
+	CHECK(nugget != SCRIPT_NONE && apple != SCRIPT_NONE);
+	run(1.0f);
+
+	// A character of the camp (not the hero), put down for good with things on it.
+	int body = -1;
+	for (u32 i = 0; i < g.npcCount() && body < 0; ++i)
+		if (i != hero && g.npc(i).placed && g.npc(i).world == g.currentWorld() && g.npc(i).down == DOWN_NONE) body = int(i);
+	CHECK(body >= 0);
+	if (body < 0) return;
+	const u32 b = u32(body);
+	g.giveItems(b, nugget, 12);
+	g.giveItems(b, apple, 2);
+	npcs.goDown(b, int(hero), true, false);
+	run(2.0f);
+	CHECK(g.npc(b).down == DOWN_DEAD);
+
+	// Stands the character a pace from it and presses A.
+	const auto before = [&]() {
+		app.camera().yaw = 3.14159265f;
+		app.teleport({g.npc(b).pos[0], g.npc(b).pos[1] + 220.0f, g.npc(b).pos[2] + 90.0f});
+		run(1.5f);
+	};
+	before();
+	CHECK(app.corpseTarget() == body && app.chestStage() == App::CH_NONE);
+	{
+		Input in;
+		in.confirm = true;
+		app.update(in, dt);
+	}
+	run(3.0f);
+	CHECK(app.chestStage() == App::CH_OPEN && app.corpseOpen() == body && app.panel().page() == InventoryPanel::PAGE_CHEST);
+	{
+		const InventoryView& v = app.inventory();
+		CHECK(v.chest.open && v.chest.count >= 2 && v.chest.name[0]);
+	}
+	const i32 hn = g.itemCount(hero, nugget), ha = g.itemCount(hero, apple);
+	// Out only: nothing goes in.
+	cmd(PANEL_CHEST_MOVE, 1, apple, 1);
+	CHECK(g.itemCount(hero, apple) == ha && g.itemCount(b, apple) == 2);
+	cmd(PANEL_CHEST_MOVE, 0, nugget, 5);
+	CHECK(g.itemCount(hero, nugget) == hn + 5 && g.itemCount(b, nugget) == 7);
+	cmd(PANEL_CHEST_ALL);
+	CHECK(g.itemCount(hero, nugget) == hn + 12 && g.itemCount(hero, apple) == ha + 2 && g.itemCount(b, nugget) == 0);
+	cmd(PANEL_CHEST_CLOSE);
+	run(2.5f);
+	CHECK(app.chestStage() == App::CH_NONE && app.corpseOpen() < 0);
+	// Searched out: no more to ask for.
+	run(0.3f);
+	CHECK(app.corpseTarget() < 0);
+
+	// A creature goes down the same way: it lies in its dead pose, and carries its trophies.
+	int beast = -1;
+	for (u32 i = 0; i < g.npcCount() && beast < 0; ++i)
+		if (i != hero && g.isMonster(g.npc(i)) && g.npc(i).placed && g.npc(i).world == g.currentWorld() && g.npc(i).down == DOWN_NONE)
+			beast = int(i);
+	CHECK(beast >= 0);
+	if (beast >= 0) {
+		const u32 m = u32(beast);
+		app.teleport({g.npc(m).pos[0], g.npc(m).pos[1] + 220.0f, g.npc(m).pos[2] + 300.0f});
+		run(1.5f);
+		g.giveItems(m, apple, 3);
+		npcs.goDown(m, int(hero), true, false);
+		run(4.0f);
+		const NpcActor* a = npcs.actorOf(m);
+		CHECK(g.npc(m).down == DOWN_DEAD && a);
+		if (a) {
+			CHECK(std::strncmp(a->stance, "DEAD", 4) == 0);
+			CHECK(a->anim.current() != nullptr);
+			// (Without a way of falling the blow or the run it was in ends: it stands, tipped over.)
+			CHECK(a->noLying == !(a->rig && (a->rig->model.clip("T_DEAD") || a->rig->model.clip("T_DEADB") || a->rig->model.clip("S_DEAD") ||
+			                                 a->rig->model.clip("S_DEADB"))));
+			if (a->noLying) CHECK(a->anim.current() == a->idle && a->slump > 0.99f);
+		}
+		CHECK(g.itemCount(m, apple) == 3);
+	}
+}
+
 static void testNpcItems() {
 	std::string source = syntheticScriptSource();
 	const std::string hook = "func void STARTUP_SUB_CAMP() {";
@@ -7292,6 +7401,7 @@ int main(int argc, char** argv) {
              {"dialogs", testDialogs},
              {"npcai", testNpcAi},
              {"npc items", testNpcItems},
+             {"corpses", testCorpses},
 	             {"settings", testSettings},
 	             {"music", testMusic},
 	             {"speech", testSpeech},

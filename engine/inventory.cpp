@@ -778,6 +778,13 @@ const InventoryView& App::inventory() {
 	stamp = mix(stamp, _npcs.talkView().version);
 	stamp = mix(stamp, _chests.version());
 	stamp = mix(stamp, u32(_chest.stage));
+	stamp = mix(stamp, u32(_chest.corpse + 1));
+	stamp = mix(stamp, u32(_corpseTarget + 1));
+	if (_chest.corpse >= 0) {
+		u32 sym;
+		i32 cnt;
+		for (u32 k = 0; corpseStack(u32(_chest.corpse), k, sym, cnt); ++k) stamp = mix(mix(stamp, sym), u32(cnt));
+	}
 	stamp = mix(stamp, u32(_chest.progress));
 	stamp = mix(stamp, u32(_chest.picks));
 	stamp = mix(stamp, u32(_chest.news[0]));
@@ -1289,6 +1296,18 @@ void App::drawItemHud() {
 			snprintf(line, sizeof(line), _chests.locked(u32(_chestTarget)) ? tr("%s (заперт)") : "%s", chestName(u32(_chestTarget)));
 			tag({m.pos[0], m.pos[1] + 75.0f, m.pos[2]}, line);
 		}
+	}
+	if (_corpseBlocked && _lootTarget < 0 && _chestTarget < 0 && _chest.stage == CH_NONE) {
+		const int bi = corpseNearest(false);
+		if (bi >= 0) tag({_npcs.game().npc(u32(bi)).pos[0], _npcs.game().npc(u32(bi)).pos[1] + 60.0f, _npcs.game().npc(u32(bi)).pos[2]},
+		                 tr("Уберите оружие, чтобы обыскать"));
+	}
+	if (_corpseTarget >= 0 && _lootTarget < 0 && _chestTarget < 0 && _chest.stage == CH_NONE) {
+		const GameNpc& b = _npcs.game().npc(u32(_corpseTarget));
+		char name[40], line[96];
+		corpseName(u32(_corpseTarget), name, sizeof(name));
+		snprintf(line, sizeof(line), tr("Обыскать: %s"), name);
+		tag({b.pos[0], b.pos[1] + 60.0f, b.pos[2]}, line);
 	}
 	if (_lootTarget < 0 && _chestTarget < 0 && _talkTarget >= 0 && !_npcs.talkView().active) {
 		const GameNpc& t = _npcs.game().npc(u32(_talkTarget));

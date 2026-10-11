@@ -10,6 +10,11 @@
 //  * Things go both ways: a tap chooses, a second tap moves the stack over.
 //    What is worn does not go into a chest.
 //  * The world goes on while a chest is open, the character stands.
+//  * The dead are searched the same way (A before a body with something on
+//    it): the bottom screen shows what the body carries - the people's own
+//    things and the trophies the scripts' ZS_Dead gave the animals
+//    (B_GiveDeathInv) - and things go one way, out. The armour a body wears
+//    stays on it.
 #include "lang.h"
 #include "app.h"
 
@@ -30,6 +35,104 @@ float angleBetween(float from, float to, float t) {
 }
 
 } // namespace
+
+// ---- the dead ----
+
+// The things a body carries that can be taken, by place in the list: not the
+// armour it wears (its last one), which is on it.
+u32 App::corpseStackCount(u32 npc) const {
+	const Game& g = _npcs.game();
+	if (npc >= g.npcCount()) return 0;
+	const u32 armor = g.npc(npc).armorItem;
+	u32 n = 0;
+	for (u32 i = 0; i < g.itemStackCount(); ++i) {
+		const GameItem& s = g.itemStack(i);
+		if (s.npc != npc || s.count <= 0) continue;
+		if (s.count <= 1 && (s.symbol == armor || s.symbol == g.npc(npc).melee || s.symbol == g.npc(npc).ranged)) continue;
+		++n;
+	}
+	return n;
+}
+
+bool App::corpseStack(u32 npc, u32 k, u32& symbol, i32& count) const {
+	const Game& g = _npcs.game();
+	if (npc >= g.npcCount()) return false;
+	const u32 armor = g.npc(npc).armorItem;
+	u32 n = 0;
+	for (u32 i = 0; i < g.itemStackCount(); ++i) {
+		const GameItem& s = g.itemStack(i);
+		if (s.npc != npc || s.count <= 0) continue;
+		i32 c = s.count;
+		// (What it wears or holds stays on it, one of each.)
+		if (s.symbol == armor || s.symbol == g.npc(npc).melee || s.symbol == g.npc(npc).ranged) c -= 1;
+		if (c <= 0) continue;
+		if (n++ == k) {
+			symbol = s.symbol;
+			count = c;
+			return true;
+		}
+	}
+	return false;
+}
+
+// Takes `amount` of a thing off a body; how many came (they are the hero's to give).
+i32 App::corpseTake(u32 npc, u32 symbol, i32 amount) {
+	Game& g = _npcs.game();
+	i32 avail = 0;
+	u32 sym;
+	i32 c;
+	for (u32 k = 0; corpseStack(npc, k, sym, c); ++k)
+		if (sym == symbol) avail = c;
+	i32 n = amount < avail ? amount : avail;
+	if (n <= 0) return 0;
+	g.giveItems(npc, symbol, -n);
+	// A weapon taken off it is no longer in its hand or on its belt.
+	if (g.itemCount(npc, symbol) <= 0) {
+		GameNpc& b = g.npcMut(npc);
+		if (b.melee == symbol) b.melee = SCRIPT_NONE;
+		if (b.ranged == symbol) b.ranged = SCRIPT_NONE;
+	}
+	return n;
+}
+
+// The body in reach in front of the character that has something to take.
+int App::corpseNearest(bool any) const {
+	const Game& g = _npcs.game();
+	const int hi = heroIndex();
+	int best = -1;
+	float bestD = 230.0f * 230.0f;
+	for (u32 i = 0; i < g.npcCount(); ++i) {
+		const GameNpc& n = g.npc(i);
+		if (int(i) == hi || n.down == DOWN_NONE || !n.placed || n.world != g.currentWorld()) continue;
+		const float dx = n.pos[0] - _player.feet.x, dz = n.pos[2] - _player.feet.z;
+		const float d = dx * dx + dz * dz;
+		if (d >= bestD || fabsf(n.pos[1] - _player.feet.y) > 160.0f) continue;
+		float diff = atan2f(dx, dz) - _hero.yaw();
+		while (diff > 3.14159265f) diff -= 6.2831853f;
+		while (diff < -3.14159265f) diff += 6.2831853f;
+		// (Right at the feet it is in front whichever way one faces.)
+		if (d > 60.0f * 60.0f && fabsf(diff) > 1.2f) continue;
+		if (!any && !corpseStackCount(i)) continue;
+		best = int(i);
+		bestD = d;
+	}
+	return best;
+}
+
+const char* App::corpseName(u32 npc, char* out, size_t size) const {
+	const Game& g = _npcs.game();
+	out[0] = 0;
+	if (npc < g.npcCount()) scriptText(g.nameOf(g.npc(npc)), out, size);
+	if (!out[0]) snprintf(out, size, "%s", tr("Тело"));
+	return out;
+}
+
+void App::corpseStart(u32 npc) {
+	if (npc >= _npcs.game().npcCount()) return;
+	_chest = ChestJob();
+	_chest.corpse = int(npc);
+	chestBegin();
+}
 
 void App::chestEnd(bool hurried) {
 	if (_chest.stage == CH_NONE) return;
@@ -84,6 +187,16 @@ void App::chestStart(u32 index) {
 
 // Up to the chest, turned to it, and the lid.
 void App::chestBegin() {
+	if (_chest.corpse >= 0) {
+		// Turned to the body; the hero stays where he stands.
+		const GameNpc& b = _npcs.game().npc(u32(_chest.corpse));
+		_chest.stage = CH_GLIDE;
+		_chest.time = 0;
+		_chest.from = _chest.to = _player.feet;
+		_chest.yawFrom = _hero.yaw();
+		_chest.yawTo = atan2f(b.pos[0] - _player.feet.x, b.pos[2] - _player.feet.z);
+		return;
+	}
 	if (_chest.index >= _chests.count()) {
 		_chest = ChestJob();
 		return;
@@ -118,15 +231,28 @@ void App::chestBegin() {
 void App::chestUpdate(Input& in, float dt) {
 	const int hi = heroIndex();
 	_chestTarget = -1;
+	_corpseTarget = -1;
 	if (_chest.stage == CH_NONE) {
-		if (hi < 0 || !_chests.count() || !_hero.loaded() || _hero.down() || _hero.weapon() != WEAPON_NONE || _hero.drawing() ||
+		if (hi >= 0 && _hero.loaded() && !_hero.down() && _hero.weapon() != WEAPON_NONE && !_panel.open() && _job.stage == JOB_NONE &&
+		    _lootTarget < 0 && _player.grounded && !_player.swimming && !_player.climbing)
+			_corpseBlocked = corpseNearest(false) >= 0; // (a body to search, but the weapon is out)
+		else
+			_corpseBlocked = false;
+		if (hi < 0 || !_hero.loaded() || _hero.down() || _hero.weapon() != WEAPON_NONE || _hero.drawing() ||
 		    _job.stage != JOB_NONE || _panel.open() || _player.swimming || _player.climbing || _hero.mantling() || _lootTarget >= 0 ||
 		    !_player.grounded)
 			return;
-		_chestTarget = _chests.nearest(_npcs.mobs(), _player.feet, _hero.yaw(), 170.0f, 1.2f);
-		if (_chestTarget >= 0 && (in.confirm || in.attack)) {
+		if (_chests.count()) _chestTarget = _chests.nearest(_npcs.mobs(), _player.feet, _hero.yaw(), 170.0f, 1.2f);
+		// (A chest first; the body only when there is none in reach.)
+		if (_chestTarget < 0) _corpseTarget = corpseNearest(false);
+		if ((_chestTarget >= 0 || _corpseTarget >= 0) && (in.confirm || in.attack)) {
 			in.confirm = in.attack = false;
-			chestStart(u32(_chestTarget));
+			if (_chestTarget >= 0) chestStart(u32(_chestTarget));
+			else corpseStart(u32(_corpseTarget));
+		} else if (_chestTarget < 0 && _corpseTarget < 0 && in.confirm && corpseNearest(true) >= 0) {
+			// A body with nothing on it.
+			in.confirm = false;
+			itemMessage(tr("Нечего взять"));
 		}
 		return;
 	}
@@ -135,6 +261,15 @@ void App::chestUpdate(Input& in, float dt) {
 	if (hi < 0 || _hero.down() || !_hero.loaded()) {
 		chestEnd(true);
 		return;
+	}
+	if (_chest.corpse >= 0 && _chest.stage != CH_CLOSING) {
+		// (It went, or has nothing left: the search is over.)
+		const Game& cg = _npcs.game();
+		if (u32(_chest.corpse) >= cg.npcCount() || cg.npc(u32(_chest.corpse)).down == DOWN_NONE ||
+		    (_chest.stage == CH_GLIDE && !corpseStackCount(u32(_chest.corpse)))) {
+			chestEnd(true);
+			return;
+		}
 	}
 	_chest.time += dt;
 	switch (_chest.stage) {
@@ -153,8 +288,8 @@ void App::chestUpdate(Input& in, float dt) {
 		_hero.setYaw(angleBetween(_chest.yawFrom, _chest.yawTo, e));
 		if (t >= 1.0f) {
 			const Mobs& mobs = _npcs.mobs();
-			const u32 mob = _chests.mob(_chest.index);
-			const char* scheme = mob < mobs.count() ? mobs.scheme(mob) : "";
+			const u32 mob = _chest.corpse >= 0 ? 0xFFFFFFFFu : _chests.mob(_chest.index);
+			const char* scheme = _chest.corpse >= 0 ? "CORPSE" : mob < mobs.count() ? mobs.scheme(mob) : "";
 			if (_hero.openMob(scheme)) {
 				_chest.stage = CH_OPEN;
 				_chest.time = 0;
@@ -200,8 +335,12 @@ void App::chestMove(u32 symbol, i32 amount, bool toChest) {
 	char name[48], buf[96];
 	scriptText(g.text(it->description ? it->description : it->name), name, sizeof(name));
 	const GameNpc& h = g.npc(u32(hi));
+	if (_chest.corpse >= 0 && toChest) {
+		itemMessage(tr("Тело ничего не примет"));
+		return;
+	}
 	if (!toChest) {
-		const i32 taken = _chests.remove(_chest.index, symbol, amount);
+		const i32 taken = _chest.corpse >= 0 ? corpseTake(u32(_chest.corpse), symbol, amount) : _chests.remove(_chest.index, symbol, amount);
 		if (taken <= 0) return;
 		g.giveItems(u32(hi), symbol, taken);
 		if (taken > 1) snprintf(buf, sizeof(buf), tr("Взято: %s ×%ld"), name, static_cast<long>(taken));
@@ -237,6 +376,17 @@ void App::chestCommand(const PanelCommand& c) {
 	case PANEL_CHEST_MOVE: chestMove(c.symbol, c.amount, c.slot != 0); break;
 	case PANEL_CHEST_ALL:
 		if (_chest.stage != CH_OPEN) break;
+		if (_chest.corpse >= 0) {
+			u32 sym;
+			i32 cnt;
+			while (corpseStack(u32(_chest.corpse), 0, sym, cnt)) {
+				chestMove(sym, cnt, false);
+				u32 s2;
+				i32 c2;
+				if (corpseStack(u32(_chest.corpse), 0, s2, c2) && s2 == sym) break;
+			}
+			break;
+		}
 		// (Each stack in turn: what is taken leaves the list.)
 		while (_chests.stackCount(_chest.index) > 0) {
 			const Chests::Stack st = _chests.stack(_chest.index, 0);
@@ -309,6 +459,29 @@ void App::chestView(const GameNpc& hero) {
 	v.picks = _chest.picks;
 	snprintf(v.text, sizeof(v.text), "%s", _chest.stage == CH_LOCK && _chest.news[0] ? _chest.news : "");
 	v.name[0] = 0;
+	if (_chest.corpse >= 0 && _chest.stage != CH_NONE) {
+		const u32 body = u32(_chest.corpse);
+		corpseName(body, v.name, sizeof(v.name));
+		if (_chest.stage != CH_OPEN) return;
+		u32 sym;
+		i32 cnt;
+		for (u32 k = 0; k < InventoryView::CHEST_MAX && corpseStack(body, k, sym, cnt); ++k) {
+			fillEntry(v.items[v.count], sym, cnt, hero, false);
+			if (v.items[v.count].symbol == sym) ++v.count;
+		}
+		for (u32 i = 1; i < v.count; ++i) {
+			u32 k = i;
+			while (k > 0 && (v.items[i].kind < v.items[k - 1].kind ||
+			                 (v.items[i].kind == v.items[k - 1].kind && v.items[i].value > v.items[k - 1].value)))
+				--k;
+			if (k == i) continue;
+			ItemEntry tmp;
+			memcpy(&tmp, &v.items[i], sizeof(tmp));
+			memmove(&v.items[k + 1], &v.items[k], sizeof(ItemEntry) * (i - k));
+			memcpy(&v.items[k], &tmp, sizeof(tmp));
+		}
+		return;
+	}
 	if (_chest.stage == CH_NONE || _chest.index >= _chests.count()) return;
 	snprintf(v.name, sizeof(v.name), "%s", chestName(_chest.index));
 	v.length = u8(strlen(_chests.pick(_chest.index)));

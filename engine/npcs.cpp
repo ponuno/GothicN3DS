@@ -441,7 +441,7 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 				pose = &turned;
 			}
 		}
-		body.skinMatrices(*pose, n.yaw, 0.0f, scale, skin);
+		body.skinMatrices(*pose, n.yaw, a.noLying ? a.slump * 1.5f : 0.0f, scale, skin);
 		body.drawSkinned(skin, feet, light);
 		_stats.triangles += body.triangles();
 		_stats.drawCalls += body.partCount();

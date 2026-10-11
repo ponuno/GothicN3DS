@@ -288,6 +288,10 @@ struct NpcActor {
 	i8 itemState = -1;          // the state it holds it in, -1: none (standing)
 	u8 itemPhase = 0;           // where an AI_UseItem or AI_TakeItem is: 0 going there, 1 in the middle, 2 back
 	char heldScheme[16] = "";   // the item's scheme ("FOOD")
+	// A body whose model has no way of falling is tipped over onto its side
+	// instead (`slump` 0..1, drawn as a lean), so that it still lies.
+	bool noLying = false;
+	float slump = 0.0f;
 };
 
 class Npcs {

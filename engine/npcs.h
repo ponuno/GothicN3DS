@@ -59,6 +59,8 @@ struct NpcConfig {
 struct HeroLink {
 	bool prehit = false;   // a blow of the player's is on its way (the enemies' fight AI fends it off)
 	bool running = false;
+	bool jumping = false;  // in the air (a jump, a fall): BS_JUMP
+	bool swimming = false; // in the water: BS_SWIM
 	bool sneaking = false; // the character creeps: creatures then see it only in front of them
 	// An inhabitant's blow lands on the player's character.
 	void (*hit)(void* user, u32 attacker) = nullptr;
@@ -486,6 +488,8 @@ private:
 	NpcActor* actorFor(ScriptInstance* inst);
 	int npcFor(ScriptInstance* inst) const { return _game.indexOf(inst); }
 	i32 bodyStateOf(const NpcActor& a) const;
+	// The player's character's, as the scripts see it (BS_RUN, BS_JUMP, BS_SWIM ... for the pursuit that gives up).
+	i32 heroBodyState() const;
 	const Clip* mobClip(NpcActor& a, int from, int to, char* nameOut);
 	void releaseMob(NpcActor& a);
 	bool useMob(NpcActor& a, const World& world, float dt);

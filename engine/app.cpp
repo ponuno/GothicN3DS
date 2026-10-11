@@ -821,6 +821,8 @@ void App::syncHeroNpc() {
 	link.user = this;
 	link.prehit = _hero.prehit();
 	link.running = _hero.role() == Hero::RUN;
+	link.jumping = _hero.body() == Hero::AIRBORNE || _hero.body() == Hero::TAKEOFF;
+	link.swimming = _player.swimming;
 	link.sneaking = _hero.sneaking();
 	_npcs.setHeroLink(link);
 	// Finished off by somebody while it lay there.
@@ -1279,6 +1281,12 @@ void App::namedSound(const char* names, int npc, float gain) {
 		if (!end) break;
 		p = end + 1;
 	}
+	// None is there: asking for the first notes it in the sound report (what the archive lacks).
+	char first[48];
+	const char* bar = strchr(names, '|');
+	const size_t len = bar ? size_t(bar - names) : strlen(names);
+	snprintf(first, sizeof(first), "%.*s", int(len < sizeof(first) - 1 ? len : sizeof(first) - 1), names);
+	_sound.play(first, &at, gain, range);
 }
 
 // A footstep, a swish of the sword: an event of the model script's, at the

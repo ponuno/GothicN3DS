@@ -272,6 +272,17 @@ bool Npcs::playAni(NpcActor& a, const char* rawName, i32 bodyState) {
 	else
 		a.anim.play(c, -1.0f);
 	if (bodyState >= 0) a.bodyState = bodyState;
+	// A creature's threat: the growl is the model script's event on the clip. If the clip has none
+	// (or the archive lacks the sound it names), the creature's own sound of that name is tried.
+	if (strcmp(name, "T_WARN") == 0 && c->sfxCount() == 0) {
+		const GameNpc& n = _game.npc(a.npc);
+		if (_game.isMonster(n) && n.look.script) {
+			char base[24], names[160];
+			upperCopy(base, sizeof(base), _game.text(n.look.script));
+			snprintf(names, sizeof(names), "%s_WARN|%s_GROWL|%s_THREAT|%s_AGGRO|%s_ANGRY|%s_ATTACK", base, base, base, base, base, base);
+			emitSound(a.npc, names, 1.0f);
+		}
+	}
 	// What it is in from now on, as the animation's name says: "T_STAND_2_SIT"
 	// leads into sitting, "S_SIT" is sitting.
 	const char* to = nullptr;
@@ -379,6 +390,16 @@ i32 Npcs::bodyStateOf(const NpcActor& a) const {
 	if (a.phase == NpcActor::MOVING) return a.walkMode == NpcActor::WALK ? kBsWalk : kBsRun;
 	if (strcmp(a.stance, "SIT") == 0) return kBsSit;
 	if (startsWith(a.stance, "SLEEP")) return _bsLie;
+	return kBsStand;
+}
+
+i32 Npcs::heroBodyState() const {
+	const GameNpc* hero = _game.hero();
+	if (hero && hero->down == DOWN_DEAD) return _bsDead;
+	if (hero && hero->down == DOWN_UNCONSCIOUS) return _bsUnconscious;
+	if (_heroLink.swimming) return _game.constant("BS_SWIM", 5);
+	if (_heroLink.jumping) return _game.constant("BS_JUMP", 8);
+	if (_heroLink.running) return kBsRun;
 	return kBsStand;
 }
 
@@ -1531,7 +1552,15 @@ void Npcs::xSetStateTime(ScriptVm& vm, void* user) {
 
 void Npcs::xGetBodyState(ScriptVm& vm, void* user) {
 	Npcs& self = *static_cast<Npcs*>(user);
-	const NpcActor* a = self.actorFor(vm.popInstance());
+	ScriptInstance* inst = vm.popInstance();
+	const NpcActor* a = self.actorFor(inst);
+	if (!a) {
+		const GameNpc* hero = self._game.hero();
+		if (hero && hero->object == inst) {
+			vm.pushInt(self.heroBodyState());
+			return;
+		}
+	}
 	vm.pushInt(a ? self.bodyStateOf(*a) : kBsStand);
 }
 

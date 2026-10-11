@@ -41,6 +41,17 @@ struct NpcConfig {
 	bool alive = true;     // false: everybody just stands where his routine has him
 	bool perceive = true;  // false: nobody notices anybody (Npc_PercEnable is taken note of, nothing more)
 	bool fights = true;    // false: the states of attack are not begun, as before fighting
+	// A person does not fall on somebody with no cause: not hostile to it, not hit by it
+	// (see Npcs::attackJustified). Creatures are left to their scripts.
+	bool calmGuard = true;
+	// Whoever is within the reach of its senses notices the player's character at once, from
+	// every side, and looks again this often (seconds) while it is there.
+	float noticeEvery = 0.25f;
+	// ... and without a wall to look past within this share of the reach (heard, not seen).
+	float hearShare = 0.4f;
+	// A creature hurt that its scripts do not answer, or that sees an enemy they do not
+	// answer, attacks on its own (Npcs::provoke).
+	bool beastsRetaliate = true;
 };
 
 // What the inhabitants need of the player's character in a fight, and how
@@ -90,6 +101,10 @@ struct NpcStats {
 	u32 perceived = 0;    // reactions called since the start (the player seen, an enemy, a passive perception)
 	u32 fightsRefused = 0; // states of fighting the scripts asked for and did not get (fights switched off)
 	u32 looking = 0;      // actors looking at somebody right now
+	u32 attacksDenied = 0; // attacks of people on somebody they had no cause for, not begun (NpcConfig::calmGuard)
+	u32 provoked = 0;     // attacks the engine began for a creature its scripts left standing
+	u32 talksStopped = 0; // characters stopped in their tracks to be talked to
+	char lastAttack[56] = ""; // the last attack begun or refused: "who>whom state att" (for reports)
 	// Fighting.
 	u32 fighting = 0;     // actors with a weapon in hand right now
 	u32 blows = 0;        // blows that landed since the start ...
@@ -104,6 +119,11 @@ struct NpcStats {
 	u32 lines = 0;        // lines said (AI_Output)
 	u32 linesMissing = 0; // ... of which the archive has no words for
 	u32 talksAborted = 0; // talks cut short (the character was hurt, walked off ...)
+	// Things.
+	u32 itemsUsed = 0;    // things used up (AI_UseItem: a potion drunk)
+	u32 itemsHeld = 0;    // times somebody has taken a thing in hand to hold it (AI_UseItemToState)
+	u32 itemsTaken = 0;   // things picked up from the ground (AI_TakeItem)
+	u32 itemsMissing = 0; // things the scripts would have used that the character does not carry
 };
 
 // What an actor has been told to do.
@@ -138,6 +158,9 @@ enum NpcActionKind : u8 {
 	NPC_ACT_WHIRL,      // i: character to whirl round to
 	NPC_ACT_TURN_AWAY,  // i: character to turn the back on
 	NPC_ACT_EQUIP_BEST, // the best melee weapon it carries
+	// Things (npc_items.cpp).
+	NPC_ACT_USE_ITEM,   // i: the item; f: the state to take it to (-1: put it away, -2: use it up, AI_UseItem)
+	NPC_ACT_TAKE_ITEM,  // i: the thing in the world (Loot's index); fn: its item
 };
 
 struct NpcAction {
@@ -237,6 +260,7 @@ struct NpcActor {
 	// function that reacts, 0 for none; when it looks next.
 	u32 perc[Game::PERC_TYPES] = {};
 	float percWait = 0;
+	bool heroWasNear = false; // the player was within the reach of its senses a moment ago
 	// Who it looks at (AI_LookAtNpc), -1 for nobody; how far its head is
 	// turned right now, radians (left/right, down/up).
 	int lookAt = -1;
@@ -257,6 +281,13 @@ struct NpcActor {
 	float drawAt = -1.0f;  // seconds into the draw where it changes hands
 	bool drawBack = false; // the weapon is being put away: its drawing plays backwards
 	bool hitFromBehind = false;
+	// A thing in its hand (npc_items.cpp): AI_UseItemToState has it hold an
+	// apple, a bottle, a joint in a state of the item's scheme ("S_FOOD_S0"),
+	// which is then what it stands in (`stance` "FOOD_S0").
+	u32 heldItem = 0xFFFFFFFFu; // the item, SCRIPT_NONE for none
+	i8 itemState = -1;          // the state it holds it in, -1: none (standing)
+	u8 itemPhase = 0;           // where an AI_UseItem or AI_TakeItem is: 0 going there, 1 in the middle, 2 back
+	char heldScheme[16] = "";   // the item's scheme ("FOOD")
 };
 
 class Npcs {
@@ -403,6 +434,9 @@ private:
 	void tickState(NpcActor& a);
 	void startState(NpcActor& a, u32 fn, bool finalizeOld, const char* wp, bool byRoutine);
 	void clearState(NpcActor& a, bool finalize);
+	// Stops what it is doing at once (a walk, a wait, an animation of the queue) and drops
+	// what was to follow: it stands, ready for whatever comes next.
+	void abortActions(NpcActor& a);
 	i32 invoke(NpcActor& a, u32 fn, int victim = -1);
 	bool begin(NpcActor& a, const World& world);
 	bool carryOn(NpcActor& a, const World& world, float dt);
@@ -478,6 +512,27 @@ private:
 	i32 _percDamage = -1, _percOthersDamage = -1, _percFightSound = -1, _percDefeat = -1, _percMurder = -1, _percFighter = -1,
 	    _percBody = -1, _percDrawWeapon = -1, _percRemoveWeapon = -1, _percThreat = -1;
 
+	// ---- things in the hands and in the world (npc_items.cpp) ----
+	void bindItems();
+	bool beginItem(NpcActor& a, const World& world);
+	bool carryOnItem(NpcActor& a, const World& world, float dt);
+	bool itemStep(NpcActor& a);
+	bool takeStep(NpcActor& a, const World& world, float dt);
+	void dropHeldItem(NpcActor& a);
+	void checkHeldItem(NpcActor& a);
+	const Clip* itemClip(NpcActor& a, int from, int to);
+	bool lootPosition(const ScriptInstance* inst, float pos[3]) const;
+	int lootOf(const ScriptInstance* inst) const;
+	static void xUseItem(ScriptVm& vm, void* user);
+	static void xUseItemToState(ScriptVm& vm, void* user);
+	static void xTakeItem(ScriptVm& vm, void* user);
+	static void xGotoItem(ScriptVm& vm, void* user);
+	static void xDetectItem(ScriptVm& vm, void* user);
+	static void xCanSeeItem(ScriptVm& vm, void* user);
+	static void xDistToItem(ScriptVm& vm, void* user);
+	i32 _bsItem = 14 | (1 << 15); // BS_ITEMINTERACT
+	i32 _bsTakeItem = 17;         // BS_TAKEITEM
+
 	// ---- talks (npc_dialog.cpp) ----
 	void bindDialog();
 	void tickTalk(float dt);
@@ -538,7 +593,16 @@ private:
 	void react(NpcActor& a, u32 fn, int other, int victim);
 	bool sees(const NpcActor& a, u32 other, bool inFront) const;
 	bool seenAllRound(const GameNpc& n, const GameNpc& o) const;
+	bool heroNear(const GameNpc& n) const;
 	bool refusesState(u32 fn) const;
+	// Whether a person may begin an attack on `other`: it is hostile to it (temporarily too), or
+	// was hit by it, or has been told to by the scripts' setting a target of its own.
+	bool attackJustified(const NpcActor& a, int other) const;
+	void noteAttack(const NpcActor& a, int other, u32 fn, bool allowed);
+	// Sets a creature on `attacker` when its scripts did nothing about being hit / seeing an
+	// enemy. False if it is not one for that or cannot.
+	bool provoke(NpcActor& a, int attacker);
+	bool inFightState(const NpcActor& a) const { return a.state && refusesState(a.state); }
 	void turnHead(NpcActor& a, float dt);
 	static void xPercEnable(ScriptVm& vm, void* user);
 	static void xPercDisable(ScriptVm& vm, void* user);
@@ -551,6 +615,7 @@ private:
 	static void xCanSeeNpcFreeLos(ScriptVm& vm, void* user);
 	static void xQuickLook(ScriptVm& vm, void* user);
 	i32 _percPlayer = 1, _percEnemy = 2; // the scripts' numbers of the active perceptions
+	u32 _fnAttackBeast = SCRIPT_NONE, _fnAttackPerson = SCRIPT_NONE; // ZS_MM_Attack, ZS_Attack
 	enum { FIGHT_STATES = 16 };
 	u32 _fightStates[FIGHT_STATES] = {};
 	u32 _fightStateCount = 0;

@@ -769,8 +769,10 @@ i32 Npcs::strike(u32 attacker, u32 victim, bool fromBehind) {
 	}
 	v.lastHit = int(attacker);
 	// The victim takes note first (and may begin a state of its own), then the others hear it.
-	if (a && a->ready && _percDamage >= 0 && _percDamage < Game::PERC_TYPES && a->perc[_percDamage] && _cfg.alive)
-		react(*a, a->perc[_percDamage], int(attacker), int(victim));
+	const u32 stateBefore = a ? a->state : 0u;
+	const u8 queuedBefore = a ? a->queueCount : u8(0);
+	const bool listens = a && a->ready && _percDamage >= 0 && _percDamage < Game::PERC_TYPES && a->perc[_percDamage] && _cfg.alive;
+	if (listens) react(*a, a->perc[_percDamage], int(attacker), int(victim));
 	sendPerception(_percFightSound, victim, int(attacker), int(victim));
 	if (a) {
 		a->hitFlag = true;
@@ -813,6 +815,12 @@ i32 Npcs::strike(u32 attacker, u32 victim, bool fromBehind) {
 		sendPerception(_percOthersDamage, victim, int(attacker), int(victim));
 	}
 	if (a) a->hitFromBehind = fromBehind;
+	// A creature that was hit and whose scripts did nothing about it (they listen for no
+	// damage in the state it is in, or let it be) turns on whoever hit it.
+	if (a && a->ready && v.down == DOWN_NONE && _cfg.alive) {
+		const bool answered = listens && (a->state != stateBefore || a->queueCount != queuedBefore || inFightState(*a) || a->flee > 0.0f);
+		if (!answered) provoke(*a, int(attacker));
+	}
 	return dmg;
 }
 

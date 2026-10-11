@@ -192,6 +192,17 @@ void Loot::drawCarried(Pak& pak, Game& game, const Model& host, const Pose& pose
 	drawHeld(pak, game, melee, at, origin, light);
 }
 
+void Loot::drawInHand(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, const float* scale, u32 symbol, Vec3 origin,
+                      const float light[3]) {
+	if (symbol == 0xFFFFFFFFu) return;
+	static const u32 hand = hashName("ZS_RIGHTHAND"), rightHand = hashName("BIP01 R HAND");
+	int node = host.findNode(hand);
+	if (node < 0) node = host.findNode(rightHand);
+	Mat34 at;
+	if (node < 0 || !host.nodeMatrix(pose, node, yaw, 0.0f, scale, at)) return;
+	drawHeld(pak, game, symbol, at, origin, light);
+}
+
 int Loot::nearest(Vec3 feet, float yaw, float reach, float halfAngle) const {
 	int best = -1;
 	float bestScore = 1e30f;

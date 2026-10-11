@@ -619,6 +619,10 @@ int main(int, char**) {
 				     static_cast<unsigned long>(ns.looking), static_cast<unsigned long>(ns.fightsRefused), app.npcs().config().perceive ? "" : " OFF",
 				     near && near->said[0] ? near->said : "");
 				lastPerceived = ns.perceived;
+				// Who last began an attack on whom ("+" begun, "-" refused: no quarrel), and: refused,
+				// beasts set on by the engine, talks that stopped a walker.
+				reportLine("%-28.28s d%lu p%lu s%lu", ns.lastAttack[0] ? ns.lastAttack : "no attack yet", static_cast<unsigned long>(ns.attacksDenied),
+				     static_cast<unsigned long>(ns.provoked), static_cast<unsigned long>(ns.talksStopped));
 				// Fighting: what the character holds, its hit points, the target;
 				// blows landed and taken by it, and of everybody: blows, parried,
 				// knocked out, killed, moves of the fight AI.

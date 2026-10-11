@@ -447,6 +447,8 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 		_stats.drawCalls += body.partCount();
 		if (_heldLoot && _heldPak && n.down == DOWN_NONE)
 			_heldLoot->drawCarried(*_heldPak, _game, a.rig->model, *pose, n.yaw, 0.0f, scale, n.weapon, n.melee, feet, light);
+		if (_heldLoot && _heldPak && a.heldItem != 0xFFFFFFFFu && a.itemState >= 0)
+			_heldLoot->drawInHand(*_heldPak, _game, a.rig->model, *pose, n.yaw, scale, a.heldItem, feet, light);
 		if (a.head) {
 			a.head->model.drawSkinned(skin, feet, light);
 			_stats.triangles += a.head->model.triangles();

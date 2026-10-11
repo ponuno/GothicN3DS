@@ -62,6 +62,7 @@ void Game::release() {
 	_chapter = GameChapter();
 	_kapitel = SCRIPT_NONE;
 	_vm.release();
+	memset(_itemObjects, 0, sizeof(_itemObjects)); // (the machine's, gone with it)
 	free(_npcs);
 	free(_routines);
 	for (u32 i = 0; i < _textCount; ++i) free(_texts[i]);
@@ -265,6 +266,7 @@ bool Game::bindAll() {
 	             {"PRINTDEBUGCH", xNothing}};
 	for (const auto& e : table) _vm.bind(e.name, e.fn, this);
 	bindDialogues();
+	bindItems();
 
 	// The player's character exists before any world's start-up runs.
 	const u32 hero = _vm.find("PC_HERO");
@@ -282,12 +284,14 @@ bool Game::bindAll() {
 // ---- what the characters think of one another, what they carry ----
 
 i32 Game::guildAttitude(i32 g1, i32 g2) const {
-	if (g1 < 0 || g2 < 0 || u32(g1) >= _guildCount || u32(g2) >= _guildCount) return 0;
+	// A guild the table does not know says nothing: neutral, never "hostile" (that
+	// made inhabitants fall on whoever was of a guild past the table's end).
+	if (g1 < 0 || g2 < 0 || u32(g1) >= _guildCount || u32(g2) >= _guildCount || !_guildAtt) return constant("ATT_NEUTRAL", 2);
 	return _guildAtt[u32(g1) * _guildCount + u32(g2)];
 }
 
 i32 Game::attitude(u32 a, u32 b) const {
-	if (a >= _npcCount || b >= _npcCount) return 0;
+	if (a >= _npcCount || b >= _npcCount) return constant("ATT_NEUTRAL", 2);
 	const GameNpc& na = _npcs[a];
 	const GameNpc& nb = _npcs[b];
 	if (na.hero || nb.hero) {
@@ -449,11 +453,13 @@ void Game::xExchangeGuildAttitudes(ScriptVm& vm, void* user) {
 	Game& g = *static_cast<Game*>(user);
 	const u32 table = vm.find(vm.popString());
 	if (table == SCRIPT_NONE || vm.symbol(table).type != SCRIPT_INT) return;
+	// The table is a square of GIL_MAX guilds a side; its own width is the stride,
+	// whatever part of it fits ours.
 	u32 side = 0;
 	while ((side + 1) * (side + 1) <= vm.symbol(table).count) ++side;
-	side = min(side, g._guildCount);
-	for (u32 i = 0; i < side; ++i)
-		for (u32 k = 0; k < side; ++k) g._guildAtt[i * g._guildCount + k] = vm.getInt(table, i * side + k);
+	const u32 use = min(side, g._guildCount);
+	for (u32 i = 0; i < use; ++i)
+		for (u32 k = 0; k < use; ++k) g._guildAtt[i * g._guildCount + k] = vm.getInt(table, i * side + k);
 }
 
 void Game::xCreateInvItem(ScriptVm& vm, void* user) {
@@ -492,14 +498,15 @@ void Game::xHasItems(ScriptVm& vm, void* user) {
 void Game::xGetAttitude(ScriptVm& vm, void* user) {
 	Game& g = *static_cast<Game*>(user);
 	const int b = g.indexOf(vm.popInstance()), a = g.indexOf(vm.popInstance());
-	vm.pushInt(a >= 0 && b >= 0 ? g.attitude(u32(a), u32(b)) : 0);
+	// (Nobody there - OTHER not set, say - is not an enemy.)
+	vm.pushInt(a >= 0 && b >= 0 ? g.attitude(u32(a), u32(b)) : g.constant("ATT_NEUTRAL", 2));
 }
 
 void Game::xGetPermAttitude(ScriptVm& vm, void* user) {
 	Game& g = *static_cast<Game*>(user);
 	const int b = g.indexOf(vm.popInstance()), a = g.indexOf(vm.popInstance());
 	if (a < 0 || b < 0) {
-		vm.pushInt(0);
+		vm.pushInt(g.constant("ATT_NEUTRAL", 2));
 		return;
 	}
 	const GameNpc& na = g._npcs[a];
@@ -710,7 +717,10 @@ const char* const* Game::lifeFunctions(u32& count) {
 	    "NPC_GETNEXTTARGET", "NPC_ISNEXTTARGETAVAILABLE", "AI_POINTATNPC", "AI_STOPPOINTAT", "AI_EQUIPBESTRANGEDWEAPON",
 	    "AI_STOPAIM",
 	    // Talks (npc_dialog.cpp).
-	    "AI_OUTPUT",         "AI_PROCESSINFOS",    "AI_STOPPROCESSINFOS", "INFOMANAGER_HASFINISHED"};
+	    "AI_OUTPUT",         "AI_PROCESSINFOS",    "AI_STOPPROCESSINFOS", "INFOMANAGER_HASFINISHED",
+	    // Things in the hands and in the world (npc_items.cpp).
+	    "AI_USEITEM",        "AI_USEITEMTOSTATE",  "AI_TAKEITEM",       "AI_GOTOITEM",       "WLD_DETECTITEM",   "NPC_CANSEEITEM",
+	    "NPC_GETDISTTOITEM"};
 	count = u32(sizeof(names) / sizeof(names[0]));
 	return names;
 }

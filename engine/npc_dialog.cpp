@@ -189,8 +189,13 @@ void Npcs::bindDialog() {
 bool Npcs::canTalk(u32 npc) const {
 	if (!_cfg.alive || npc >= _game.npcCount() || npc == _game.heroIndex() || _game.npc(npc).down != DOWN_NONE) return false;
 	for (const NpcActor& a : _actors)
-		if (a.used && a.npc == npc)
-			return a.ready && ((_percTalk >= 0 && _percTalk < Game::PERC_TYPES && a.perc[_percTalk]) || _game.hasInfos(npc));
+		if (a.used && a.npc == npc) {
+			// (Not one in a fight: it has no ear for talk, nor does an enemy.)
+			if (!a.ready || inFightState(a) || a.flee > 0.0f || _game.npc(npc).weapon != WEAPON_NONE) return false;
+			const u32 hero = _game.heroIndex();
+			if (hero != SCRIPT_NONE && _game.attitude(npc, hero) == _game.constant("ATT_HOSTILE", 0) && _game.isMonster(_game.npc(npc))) return false;
+			return (_percTalk >= 0 && _percTalk < Game::PERC_TYPES && a.perc[_percTalk]) || _game.hasInfos(npc);
+		}
 	return false;
 }
 
@@ -201,6 +206,14 @@ bool Npcs::talkTo(u32 npc) {
 	const int hero = int(_game.heroIndex());
 	_talk = Talk();
 	_talk.requested = int(npc);
+	// Whoever is on his way somewhere, waiting or in the middle of a gesture is stopped on the
+	// spot: the state the talk begins would otherwise stand in the queue behind the walk (which
+	// can be a long one) and the player would run after him in vain. It looks at the player.
+	if (a->phase != NpcActor::IDLE || a->action.kind != NPC_ACT_NONE || a->queueCount) {
+		abortActions(*a);
+		++_stats.talksStopped;
+	}
+	a->lookAt = hero;
 	if (_percTalk >= 0 && _percTalk < Game::PERC_TYPES && a->perc[_percTalk] && a->state && a->started) {
 		react(*a, a->perc[_percTalk], hero, -1);
 	} else if (_fnTalk != SCRIPT_NONE) {

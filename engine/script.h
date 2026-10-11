@@ -120,6 +120,11 @@ public:
 	float popFloat();
 	const char* popString(); // valid until the machine runs again
 	ScriptInstance* popInstance();
+	// An instance argument that may name a definition nothing has been made of
+	// yet (AI_EquipArmor(self, GRD_ARMOR_L)) or come as its number: the object
+	// if there is one, and in `symbol` the definition it stands for
+	// (SCRIPT_NONE if none).
+	ScriptInstance* popInstanceOf(u32& symbol);
 
 	// ---- variables ----
 	i32 getInt(u32 symbol, u32 index = 0, const ScriptInstance* ctx = nullptr) const;

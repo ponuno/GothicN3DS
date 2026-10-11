@@ -4976,7 +4976,9 @@ func void Rtn_start_502() {
 		if (getenv("G3_TRACE")) std::puts(r.report.c_str());
 		// Of the animations the scripts name each skeleton got the ones it has.
 		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 8 families more; fighting 105 "
-		           "more; baked per skeleton: humans 61, scavenger 13, molerat 13"));
+		           "more; baked per skeleton: humans 67, scavenger 13, molerat 13"));
+		// ... and those of the things in the hands (drinking a potion; picking up: 3 + 3 of the 67).
+		CHECK(said("things in the hands: the scripts' items are used in 4 ways (FOOD, MEAT, POTION, POTIONFAST)"));
 		// The things of the camp, and which of them the scripts know.
 		CHECK(said("things to use: 8 of 6 kinds, with 10 places to stand at (0 have none: nobody can use those): CHESTSMALL x2, BEDHIGH x2"));
 		CHECK(said("things to use: the worlds have 6 kinds; the scripts name 4 of them: BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: CHESTBIG, CHESTSMALL"));
@@ -5372,7 +5374,7 @@ func void Rtn_start_502() {
 			const u32 heroIndex = u32(game.hero() - &game.npc(0));
 			// The guilds' table and the creatures' own lines, as the start-up set them.
 			CHECK(game.attitude(thorus, heroIndex) == 2 && game.attitude(heroIndex, thorus) == 2 && game.attitude(thorus, jackal) == 3);
-			CHECK(game.guildAttitude(20, 21) == 2 && game.guildAttitude(20, 0) == 0 && game.guildAttitude(99, 0) == 0);
+			CHECK(game.guildAttitude(20, 21) == 2 && game.guildAttitude(20, 0) == 0 && game.guildAttitude(99, 0) == 2);
 			// The creatures saw the player at the gate, an enemy, and would
 			// have gone for him: there is no fighting, they roam on.
 			CHECK(global("MM_ENEMY_SEEN") > 0 && npcs.stats().fightsRefused > 0);
@@ -6808,6 +6810,454 @@ static void testChests() {
 	}
 }
 
+
+// The inhabitants' wits: a walker stops to be talked to, creatures notice the player at once and
+// from every side and answer a blow, and a person does not fall on somebody with no quarrel.
+static void testNpcAi() {
+	std::string source = syntheticScriptSource();
+	// A talk that does not clear the queue first, as the game's own B_AssessTalk: the engine must stop the walker.
+	{
+		const std::string clear = "\tNpc_ClearAIQueue(self);\n\tAI_StartState(self, ZS_Talk, 1, \"\");";
+		CHECK(source.find(clear) != std::string::npos);
+		if (source.find(clear) != std::string::npos) source.replace(source.find(clear), clear.size(), "\tAI_StartState(self, ZS_Talk, 1, \"\");");
+	}
+	const std::string hook = "func void STARTUP_SUB_CAMP() {";
+	CHECK(source.find(hook) != std::string::npos);
+	source.replace(source.find(hook), hook.size(), hook + "\n\tWld_InsertNpc(VLK_503_Trouble, \"CAMP_SQUARE\");\n\tWld_InsertNpc(VLK_504_Wanderer, \"CAMP_FIRE\");");
+	source += R"(
+var int trouble_loops;
+func void ZS_Troublemaker() { Npc_SetPercTime(self, 1); AI_GotoWP(self, self.wp); };
+func int ZS_Troublemaker_Loop() {
+	trouble_loops += 1;
+	other = hero;
+	AI_StartState(self, ZS_Attack, 0, "");
+	AI_Wait(self, 1);
+	return LOOP_CONTINUE;
+};
+func void ZS_Troublemaker_End() {};
+func void ZS_Wanderer() {
+	Npc_SetPercTime(self, 1);
+	Npc_PercEnable(self, PERC_ASSESSTALK, B_AssessTalk);
+	AI_SetWalkmode(self, NPC_WALK);
+	AI_GotoWP(self, "ROAD_1");
+};
+func int ZS_Wanderer_Loop() {
+	if (Npc_GetDistToWP(self, "ROAD_1") < 300) { AI_GotoWP(self, "CAMP_FIRE"); } else { AI_GotoWP(self, "ROAD_1"); };
+	return LOOP_CONTINUE;
+};
+func void ZS_Wanderer_End() {};
+instance VLK_504_Wanderer (Npc_Default) {
+	name = "Wanderer"; guild = GIL_VLK; id = 504; senses_range = 3000;
+	Mdl_SetVisual(self, "HUMANS.MDS");
+	Mdl_SetVisualBody(self, "hum_body_Naked0", 3, 1, "Hum_Head_Pony", 9, 2, -1);
+	daily_routine = Rtn_start_504;
+};
+func void Rtn_start_504() {
+	TA_Min(self, 0, 0, 24, 0, ZS_Wanderer, "CAMP_FIRE");
+};
+instance VLK_503_Trouble (Npc_Default) {
+	name = "Trouble"; guild = GIL_VLK; id = 503; senses_range = 3000;
+	Mdl_SetVisual(self, "HUMANS.MDS");
+	Mdl_SetVisualBody(self, "hum_body_Naked0", 3, 1, "Hum_Head_Pony", 9, 2, -1);
+	daily_routine = Rtn_start_503;
+};
+func void Rtn_start_503() {
+	TA_Min(self, 0, 0, 24, 0, ZS_Troublemaker, "CAMP_SQUARE");
+};
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/npcai.pak";
+	bakeLifeWorlds(source, path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	npcs.config().range = 20000.0f;
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.settings().immortal = 1;
+	app.applySettings();
+	npcs.config().range = 20000.0f;
+	const u32 hero = u32(g.hero() - &g.npc(0));
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	const auto global = [&](const char* name) { return g.vm().getInt(g.vm().find(name)); };
+	const auto byName = [&](const char* name) {
+		for (u32 i = 0; i < g.npcCount(); ++i)
+			if (std::strcmp(g.nameOf(g.npc(i)), name) == 0) return int(i);
+		return -1;
+	};
+	const int thorus = byName("Wanderer"); // (whoever walks, and listens for talk)
+	const int trouble = byName("Trouble");
+	CHECK(thorus >= 0 && trouble >= 0);
+	if (thorus < 0 || trouble < 0) return;
+	g.npcMut(u32(trouble)).attitude = i8(g.constant("ATT_FRIENDLY", 3)); // (no quarrel with the player)
+	const auto dbg = [&](const char* what, u32 npc) {
+		if (!getenv("G3_TRACE")) return;
+		const NpcActor* a = npcs.actorOf(npc);
+		std::printf("   [%s] %s: %s phase %d state %s pos %.0f %.0f\n", what, g.nameOf(g.npc(npc)), a ? "actor" : "no actor", a ? int(a->phase) : -1,
+		            a ? npcs.stateName(a->state) : "-", double(g.npc(npc).pos[0]), double(g.npc(npc).pos[2]));
+	};
+	std::vector<u32> beasts;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.isMonster(g.npc(i))) beasts.push_back(i);
+	CHECK(beasts.size() >= 2);
+	if (beasts.size() < 2) return;
+	// The most solitary ones first: the others are busy with the guards.
+	const auto lonely = [&](u32 b) {
+		float best = 1e30f;
+		for (u32 i = 0; i < g.npcCount(); ++i)
+			if (!g.isMonster(g.npc(i)) && g.npc(i).placed && i != hero)
+				best = std::min(best, std::hypot(g.npc(i).pos[0] - g.npc(b).pos[0], g.npc(i).pos[2] - g.npc(b).pos[2]));
+		return best;
+	};
+	std::sort(beasts.begin(), beasts.end(), [&](u32 a, u32 b) { return lonely(a) > lonely(b); });
+	if (getenv("G3_TRACE"))
+		for (u32 b : beasts) std::printf("   beast %u at %.0f %.0f, %.0f cm from the nearest person\n", b, double(g.npc(b).pos[0]), double(g.npc(b).pos[2]), double(lonely(b)));
+	const auto stand = [&](const GameNpc& at, float behind, float yawOfHero) {
+		// The player `behind` cm behind a character (the way it faces), looking along `yawOfHero`.
+		app.teleport({at.pos[0] - std::sin(at.yaw) * behind, at.pos[1] + 10.0f, at.pos[2] - std::cos(at.yaw) * behind});
+		app.camera().yaw = yawOfHero;
+	};
+
+	// 1. Whoever is on his way is stopped to be talked to: the talk begins within a moment and he stands.
+	app.environment().timeOfDay = 12.0f;
+	run(2.0f);
+	for (int k = 0; k < 20 && !(npcs.actorOf(u32(thorus)) && npcs.actorOf(u32(thorus))->phase == NpcActor::MOVING); ++k) run(1.0f);
+	dbg("walker", u32(thorus));
+	{
+		const NpcActor* t = npcs.actorOf(u32(thorus));
+		CHECK(t && t->phase == NpcActor::MOVING);
+		const GameNpc& tn = g.npc(u32(thorus));
+		run(1.5f); // (he has turned on to his way)
+		// Ahead of him on his way (where he went in the last second), facing him, a few paces off.
+		const float x0 = tn.pos[0], z0 = tn.pos[2];
+		run(1.0f);
+		float dx = tn.pos[0] - x0, dz = tn.pos[2] - z0;
+		const float len = std::max(std::hypot(dx, dz), 1.0f);
+		dx /= len;
+		dz /= len;
+		app.teleport({tn.pos[0] + dx * 550.0f, tn.pos[1] + 10.0f, tn.pos[2] + dz * 550.0f});
+		app.camera().yaw = std::atan2(-dx, -dz);
+		bool targeted = false;
+		for (float tm = 0; tm < 6.0f && !targeted; tm += dt) {
+			app.update(Input {}, dt);
+			targeted = app.talkTarget() == thorus;
+			if (getenv("G3_TRACE") && int(tm / dt) % 15 == 0)
+				std::printf("   [t %.1f] hero %.0f %.0f yaw %.2f grounded %d | guard %.0f %.0f yaw %.2f can %d target %d\n", double(tm),
+				            double(app.player().feet.x), double(app.player().feet.z), double(app.hero().yaw()), int(app.player().grounded),
+				            double(g.npc(u32(thorus)).pos[0]), double(g.npc(u32(thorus)).pos[2]), double(g.npc(u32(thorus)).yaw),
+				            int(npcs.canTalk(u32(thorus))), app.talkTarget());
+		}
+		CHECK(targeted);
+		CHECK(npcs.actorOf(u32(thorus)) && npcs.actorOf(u32(thorus))->phase == NpcActor::MOVING);
+		Input a;
+		a.confirm = true;
+		const u32 talksBefore = npcs.stats().talks;
+		app.update(a, dt);
+		bool began = false;
+		for (float tm = 0; tm < 2.0f && !began; tm += dt) { // (he had a long way to go: it must not wait for that)
+			if (npcs.talkView().saying) npcs.talkSkip();
+			app.update(Input {}, dt);
+			began = npcs.stats().talks > talksBefore;
+			if (getenv("G3_TRACE") && int(tm / dt) % 6 == 0) {
+				const NpcActor* q = npcs.actorOf(u32(thorus));
+				std::printf("   [talk %.2f] requested %d active %d | guard phase %d action %d queue %d state %s\n", double(tm), int(npcs.talking()), int(began),
+				            q ? int(q->phase) : -1, q ? int(q->action.kind) : -1, q ? int(q->queueCount) : -1, q ? npcs.stateName(q->state) : "-");
+			}
+		}
+		CHECK(began);
+		CHECK(npcs.stats().talksStopped >= 1 && npcs.stats().talks >= 1);
+		npcs.talkAbort();
+		run(0.5f);
+	}
+
+	// 2. Beasts: asleep, with their scripts listening for nothing, a blow still brings one at the attacker.
+	app.settings().fights = 1;
+	app.settings().perception = 1;
+	app.applySettings();
+	npcs.config().range = 20000.0f;
+	app.environment().timeOfDay = 23.5f;
+	app.teleport({-7000.0f, 900.0f, -7000.0f});
+	run(14.0f); // (the player is far away: whatever was after him gives up, and they fall asleep)
+	{
+		const u32 b = beasts[0];
+		stand(g.npc(b), 250.0f, 0.0f);
+		run(1.0f);
+		dbg("sleeper", b);
+		const NpcActor* a = npcs.actorOf(b);
+		CHECK(a && a->state == g.vm().find("ZS_MM_RTN_SLEEP"));
+		const u32 before = npcs.stats().provoked;
+		npcs.strike(hero, b, false);
+		run(0.3f);
+		a = npcs.actorOf(b);
+		CHECK(npcs.stats().provoked == before + 1 || (a && a->state == g.vm().find("ZS_MM_ATTACK")));
+		CHECK(a && a->state == g.vm().find("ZS_MM_ATTACK") && g.npc(b).target == int(hero));
+	}
+
+	// (The people about are out of the way, so that the creatures have only the player to see.)
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (i != hero && i != u32(trouble) && !g.isMonster(g.npc(i))) {
+			g.setAttribute(g.npcMut(i), 0, 0);
+			g.npcMut(i).down = DOWN_DEAD;
+		}
+	// 3. By day the creatures roam; the player appears BEHIND one, a few paces away: it notices him within
+	// a moment, though he is nowhere in front of it.
+	app.environment().timeOfDay = 12.0f;
+	app.teleport({-7000.0f, 900.0f, -7000.0f});
+	run(1.0f);
+	run(10.0f);
+	{
+		const u32 b = beasts[1];
+		app.teleport({g.npc(b).pos[0] + 5000.0f, g.npc(b).pos[1] + 10.0f, g.npc(b).pos[2]});
+		run(3.0f); // (its models are read, its state has begun)
+		dbg("roamer", b);
+		const NpcActor* a = npcs.actorOf(b);
+		CHECK(a && a->ready && a->state == g.vm().find("ZS_MM_RTN_ROAM"));
+		const i32 seen = global("MM_ENEMY_SEEN");
+		stand(g.npc(b), 600.0f, 0.0f);
+		for (float tm = 0; tm < 0.7f; tm += dt) app.update(Input {}, dt);
+		CHECK(global("MM_ENEMY_SEEN") > seen);
+	}
+
+	// 4. A person does not fall on somebody with no quarrel with him (and does once there is one).
+	app.teleport({g.npc(u32(trouble)).pos[0] + 400.0f, g.npc(u32(trouble)).pos[1] + 10.0f, g.npc(u32(trouble)).pos[2]});
+	app.environment().timeOfDay = 12.0f;
+	dbg("trouble", u32(trouble));
+	run(6.0f);
+	{
+		const NpcActor* t = npcs.actorOf(u32(trouble));
+		CHECK(t && global("TROUBLE_LOOPS") > 0);
+		CHECK(npcs.stats().attacksDenied > 0);
+		CHECK(t && t->state == g.vm().find("ZS_TROUBLEMAKER"));
+		g.npcMut(u32(trouble)).tempAttitude = i8(g.constant("ATT_HOSTILE", 0));
+		run(4.0f);
+		t = npcs.actorOf(u32(trouble));
+		CHECK(t && t->state == g.vm().find("ZS_ATTACK"));
+	}
+	std::printf("       last attack: %s; denied %u, provoked %u, talks stopped %u\n", npcs.stats().lastAttack, npcs.stats().attacksDenied,
+	            npcs.stats().provoked, npcs.stats().talksStopped);
+}
+
+
+// Things in the inhabitants' hands and in the world (npc_items.cpp, game_items.cpp): holding a potion
+// in the state of its scheme and putting it away, drinking one, armour and weapons as the scripts ask
+// about them, the inventory by slot, and a weapon found lying about and picked up.
+static void testNpcItems() {
+	std::string source = syntheticScriptSource();
+	const std::string hook = "func void STARTUP_SUB_CAMP() {";
+	CHECK(source.find(hook) != std::string::npos);
+	source.replace(source.find(hook), hook.size(), hook + "\n\tWld_InsertNpc(VLK_505_Eater, \"CAMP_HUT_2\");");
+	source += R"(
+const int INV_WEAPON = 1;
+const int INV_ARMOR = 2;
+extern func void   AI_UseItem(var C_NPC n, var int item);
+extern func void   AI_UseItemToState(var C_NPC n, var int item, var int state);
+extern func void   AI_TakeItem(var C_NPC n, var C_ITEM item);
+extern func void   AI_GotoItem(var C_NPC n, var C_ITEM item);
+extern func int    Wld_DetectItem(var C_NPC n, var int flags);
+extern func int    Npc_CanSeeItem(var C_NPC n, var C_ITEM item);
+extern func int    Npc_GetDistToItem(var C_NPC n, var C_ITEM item);
+extern func int    Hlp_IsItem(var C_ITEM item, var int instance);
+extern func int    Hlp_IsValidItem(var C_ITEM item);
+extern func C_ITEM Npc_GetEquippedArmor(var C_NPC n);
+extern func C_ITEM Npc_GetEquippedMeleeWeapon(var C_NPC n);
+extern func C_ITEM Npc_GetReadiedWeapon(var C_NPC n);
+extern func int    Npc_HasEquippedArmor(var C_NPC n);
+extern func C_ITEM Npc_GetInvItem(var C_NPC n, var int item);
+extern func int    Npc_GetInvItemBySlot(var C_NPC n, var int category, var int slot);
+extern func void   AI_EquipArmor(var C_NPC n, var C_ITEM armor);
+extern func void   AI_EquipBestArmor(var C_NPC n);
+extern func void   AI_UnequipArmor(var C_NPC n);
+extern func void   AI_UnequipWeapons(var C_NPC n);
+func void ZS_Idle() { AI_GotoWP(self, self.wp); };
+func int ZS_Idle_Loop() { return LOOP_CONTINUE; };
+func void ZS_Idle_End() {};
+instance VLK_505_Eater (Npc_Default) {
+	name = "Eater"; guild = GIL_VLK; id = 505; senses_range = 3000;
+	Mdl_SetVisual(self, "HUMANS.MDS");
+	Mdl_SetVisualBody(self, "hum_body_Naked0", 3, 1, "Hum_Head_Pony", 9, 2, -1);
+	daily_routine = Rtn_start_505;
+};
+func void Rtn_start_505() { TA_Min(self, 0, 0, 24, 0, ZS_Idle, "CAMP_HUT_2"); };
+func void T_Hold() { CreateInvItems(self, ItFo_Potion_Health_01, 2); AI_UseItemToState(self, ItFo_Potion_Health_01, 0); };
+func void T_PutAway() { AI_UseItemToState(self, ItFo_Potion_Health_01, -1); };
+func void T_Drink() { AI_UseItem(self, ItFo_Potion_Health_01); };
+func void T_HoldAndGo() { AI_UseItemToState(self, ItFo_Potion_Health_01, 0); AI_GotoWP(self, "CAMP_SQUARE"); };
+var int armor_best; var int armor_has; var int armor_none; var int armor_vlk;
+func void T_Armor() {
+	CreateInvItem(self, VLK_ARMOR_L);
+	CreateInvItem(self, GRD_ARMOR_M);
+	AI_EquipBestArmor(self);
+	armor_best = Hlp_IsItem(Npc_GetEquippedArmor(self), GRD_ARMOR_M);
+	armor_has = Npc_HasEquippedArmor(self);
+	AI_UnequipArmor(self);
+	armor_none = !Npc_HasEquippedArmor(self);
+	AI_EquipArmor(self, VLK_ARMOR_L);
+	var C_ITEM worn;
+	worn = Npc_GetEquippedArmor(self);
+	armor_vlk = Hlp_IsItem(worn, VLK_ARMOR_L);
+};
+var int slot_count; var int slot_sword; var int slot_third; var int inv_club; var int melee_sword; var int readied_none; var int unequipped;
+func void T_Slots() {
+	CreateInvItem(self, ItMw_Club);
+	CreateInvItems(self, ItMw_Sword, 2);
+	slot_count = Npc_GetInvItemBySlot(self, INV_WEAPON, 2);
+	slot_sword = Hlp_IsItem(item, ItMw_Sword);
+	slot_third = Npc_GetInvItemBySlot(self, INV_WEAPON, 3);
+	var C_ITEM club;
+	club = Npc_GetInvItem(self, ItMw_Club);
+	inv_club = Hlp_IsItem(club, ItMw_Club) && Hlp_IsItem(item, ItMw_Club);
+	EquipItem(self, ItMw_Sword);
+	melee_sword = Hlp_IsItem(Npc_GetEquippedMeleeWeapon(self), ItMw_Sword);
+	readied_none = !Hlp_IsValidItem(Npc_GetReadiedWeapon(self));
+	AI_UnequipWeapons(self);
+	unequipped = !Npc_HasEquippedMeleeWeapon(self);
+};
+var int fetch_found; var int fetch_id; var int fetch_dist; var int fetch_dist2; var int fetch_see;
+func void T_Fetch() {
+	if (Wld_DetectItem(self, ITEM_KAT_NF)) {
+		fetch_found = 1;
+		fetch_id = Hlp_GetInstanceID(item);
+		fetch_dist = Npc_GetDistToItem(self, item);
+		fetch_dist2 = Npc_GetDistToNpc(self, item);
+		fetch_see = Npc_CanSeeItem(self, item);
+		AI_TakeItem(self, item);
+	};
+};
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/npcitems.pak";
+	bakeLifeWorlds(source, path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.settings().immortal = 1;
+	app.applySettings();
+	npcs.config().range = 20000.0f;
+	app.environment().timeOfDay = 12.0f;
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	const auto global = [&](const char* name) { return g.vm().getInt(g.vm().find(name)); };
+	int eater = -1;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (std::strcmp(g.nameOf(g.npc(i)), "Eater") == 0) eater = int(i);
+	CHECK(eater >= 0);
+	if (eater < 0) return;
+	const u32 e = u32(eater);
+	{
+		const GameNpc& n = g.npc(e);
+		app.teleport({n.pos[0] + 300.0f, n.pos[1] + 10.0f, n.pos[2]});
+	}
+	run(3.0f);
+	const NpcActor* a = npcs.actorOf(e);
+	CHECK(a && a->ready && a->state == g.vm().find("ZS_IDLE"));
+	if (!a) return;
+	const u32 potion = g.vm().find("ITFO_POTION_HEALTH_01");
+	const auto call = [&](const char* fn) { g.callAs(g.vm().find(fn), e, -1); };
+	const i32 itemInteract = g.constant("BS_ITEMINTERACT", 14 | (1 << 15));
+
+	// 1. Held: up to the mouth, then holding it (S_POTIONFAST_S0); nothing used up.
+	call("T_HOLD");
+	run(2.0f);
+	a = npcs.actorOf(e);
+	CHECK(a && a->heldItem == potion && a->itemState == 0);
+	CHECK(a && std::strcmp(a->stance, "POTIONFAST_S0") == 0);
+	CHECK(a && std::strcmp(npcs.animationName(*a), "S_POTIONFAST_S0") == 0);
+	CHECK(a && npcs.bodyState(*a) == itemInteract);
+	CHECK(g.itemCount(e, potion) == 2);
+	CHECK(npcs.stats().itemsHeld == 1);
+	{
+		// Drawn with the potion in its hand (looking at it from where the player stands).
+		app.camera().yaw = std::atan2(g.npc(e).pos[0] - app.player().feet.x, g.npc(e).pos[2] - app.player().feet.z);
+		const u32 shown = npcs.stats().shown;
+		app.update(Input {}, dt);
+		app.render();
+		CHECK(npcs.stats().shown >= 1 || shown >= 1);
+	}
+	// 2. ... and put away again.
+	call("T_PUTAWAY");
+	run(2.0f);
+	a = npcs.actorOf(e);
+	CHECK(a && a->heldItem == 0xFFFFFFFFu && a->itemState < 0 && a->stance[0] == 0);
+	CHECK(a && npcs.bodyState(*a) != itemInteract);
+	CHECK(g.itemCount(e, potion) == 2);
+	// 3. Drunk: one less, and it heals.
+	g.setAttribute(g.npcMut(e), 0, 10);
+	call("T_DRINK");
+	run(3.0f);
+	a = npcs.actorOf(e);
+	CHECK(g.itemCount(e, potion) == 1);
+	CHECK(g.attributeOf(g.npc(e), 0) == std::min(60, std::max(g.attributeOf(g.npc(e), 1), 1))); // (up to its maximum)
+	CHECK(g.attributeOf(g.npc(e), 0) > 10);
+	CHECK(npcs.stats().itemsUsed == 1);
+	CHECK(a && a->heldItem == 0xFFFFFFFFu && a->stance[0] == 0);
+	// 4. Walking off with it in hand: it is put away first.
+	{
+		const float x0 = g.npc(e).pos[0], z0 = g.npc(e).pos[2];
+		call("T_HOLDANDGO");
+		bool held = false;
+		for (float tm = 0; tm < 1.5f; tm += dt) {
+			app.update(Input {}, dt);
+			a = npcs.actorOf(e);
+			held = held || (a && a->heldItem == potion && a->itemState == 0);
+		}
+		CHECK(held);
+		run(5.0f);
+		a = npcs.actorOf(e);
+		CHECK(a && a->heldItem == 0xFFFFFFFFu && a->stance[0] == 0);
+		CHECK(std::hypot(g.npc(e).pos[0] - x0, g.npc(e).pos[2] - z0) > 200.0f);
+	}
+	// 5. Armour: the best one put on, taken off, a given one put on; its protection counts.
+	{
+		const u32 prot = g.vm().findMember("C_NPC", "PROTECTION");
+		const i32 before = g.npcInt(g.npc(e), prot, 1);
+		call("T_ARMOR");
+		CHECK(global("ARMOR_BEST") == 1 && global("ARMOR_HAS") == 1 && global("ARMOR_NONE") == 1 && global("ARMOR_VLK") == 1);
+		CHECK(g.npc(e).armorItem == g.vm().find("VLK_ARMOR_L"));
+		CHECK(g.npcInt(g.npc(e), prot, 1) == before + 10);
+	}
+	// 6. Weapons by slot, the one equipped, none in hand, all taken off.
+	call("T_SLOTS");
+	CHECK(global("SLOT_COUNT") == 2 && global("SLOT_SWORD") == 1 && global("SLOT_THIRD") == 0);
+	CHECK(global("INV_CLUB") == 1 && global("MELEE_SWORD") == 1 && global("READIED_NONE") == 1 && global("UNEQUIPPED") == 1);
+	// 7. A weapon lying about: found, seen, fetched.
+	{
+		const u32 takenBefore = app.loot().stats().taken;
+		call("T_FETCH");
+		CHECK(global("FETCH_FOUND") == 1);
+		const u32 id = u32(global("FETCH_ID"));
+		CHECK(id == g.vm().find("ITMW_SWORD") || id == g.vm().find("ITMW_CLUB"));
+		CHECK(global("FETCH_DIST") > 0 && global("FETCH_DIST") < 3000 && std::abs(global("FETCH_DIST") - global("FETCH_DIST2")) <= 1);
+		CHECK(global("FETCH_SEE") == 1);
+		const i32 had = g.itemCount(e, id);
+		run(10.0f);
+		CHECK(app.loot().stats().taken == takenBefore + 1);
+		CHECK(g.itemCount(e, id) == had + 1);
+		CHECK(npcs.stats().itemsTaken == 1);
+		// Gone from the ground: nothing more to find there for the next one.
+		a = npcs.actorOf(e);
+		CHECK(a && a->action.kind == NPC_ACT_NONE);
+	}
+	std::printf("       things: %u held, %u used, %u taken, %u missing\n", npcs.stats().itemsHeld, npcs.stats().itemsUsed,
+	            npcs.stats().itemsTaken, npcs.stats().itemsMissing);
+}
+
 int main(int argc, char** argv) {
 	gDir = argc > 1 ? argv[1] : ".";
 	const char* only = argc > 2 ? argv[2] : nullptr; // run the tests whose name contains this
@@ -6840,6 +7290,8 @@ int main(int argc, char** argv) {
 	             {"inventory", testInventory},
              {"chests", testChests},
              {"dialogs", testDialogs},
+             {"npcai", testNpcAi},
+             {"npc items", testNpcItems},
 	             {"settings", testSettings},
 	             {"music", testMusic},
 	             {"speech", testSpeech},

@@ -243,7 +243,7 @@ public:
 
 	// What one guild thinks of another, as the table the scripts fill in
 	// (Wld_SetGuildAttitude, Wld_ExchangeGuildAttitudes) says: ATT_HOSTILE (0)
-	// .. ATT_FRIENDLY (3); hostile for guilds out of range, as in the original.
+	// .. ATT_FRIENDLY (3); neutral for guilds out of range (a table the scripts left short must not make enemies).
 	i32 guildAttitude(i32 guild1, i32 guild2) const;
 	// What character `a` thinks of `b` (Npc_GetAttitude): towards the player
 	// its own attitude if it has one, else its guild's.
@@ -331,6 +331,28 @@ public:
 	// Runs a function of an item (ON_STATE, ON_EQUIP ...) as the original
 	// does: SELF is the character, ITEM the item. False if `fn` is no function.
 	bool callItemFunction(u32 npc, u32 itemSymbol, u32 fn);
+	// ---- items as the scripts see them (game_items.cpp) ----
+	// An object of the item `symbol` for the scripts to look at (what
+	// Npc_GetEquippedArmor returns, what Wld_DetectItem puts into ITEM): one
+	// per kind of item carried (`loot` -1), or per thing lying in the world
+	// (`loot`: its index in the world's table). Its AMOUNT is `amount`. The
+	// engine keeps a few and reuses them; one not asked for in a while is
+	// given up (variables that still refer to it then refer to nothing, as
+	// they would to a thing that is gone). Null if `symbol` is no item.
+	ScriptInstance* itemObject(u32 symbol, i32 loot = -1, i32 amount = 1);
+	// The thing in the world an object of itemObject() stands for: its index,
+	// -1 for an item carried, -2 if the object is none of them.
+	i32 itemObjectLoot(const ScriptInstance* inst) const;
+	// The scripts' global ITEM.
+	void setItemVar(ScriptInstance* inst) {
+		if (_itemVar != SCRIPT_NONE) _vm.setInstance(_itemVar, inst);
+	}
+	// The best armour a character carries and may wear (the highest value, as
+	// the original picks), SCRIPT_NONE for none.
+	u32 bestArmor(u32 npc);
+	// True if the character meets what the item asks of him (C_ITEM.COND_ATR).
+	bool meetsConditions(u32 npc, const GameItemInfo& it) const;
+
 	// How far a perception reaches (Perc_SetRange), cm; -1 if the scripts set none.
 	float perceptionRange(i32 perc) const { return perc >= 0 && perc < PERC_TYPES ? _percRange[perc] : -1.0f; }
 	enum { PERC_TYPES = 64 };
@@ -470,6 +492,31 @@ private:
 	static void xGetTrueGuild(ScriptVm& vm, void* user);
 	void addItems(ScriptInstance* npc, i32 symbol, i32 count);
 	void wear(GameNpc& n, u32 armorSymbol);
+	// Items (game_items.cpp).
+	void bindItems();
+	static void xIsItem(ScriptVm& vm, void* user);
+	static void xGetEquippedMelee(ScriptVm& vm, void* user);
+	static void xGetEquippedRanged(ScriptVm& vm, void* user);
+	static void xGetEquippedArmor(ScriptVm& vm, void* user);
+	static void xHasEquippedArmor(ScriptVm& vm, void* user);
+	static void xGetReadiedWeapon(ScriptVm& vm, void* user);
+	static void xGetInvItem(ScriptVm& vm, void* user);
+	static void xGetInvItemBySlot(ScriptVm& vm, void* user);
+	static void xClearInventory(ScriptVm& vm, void* user);
+	static void xEquipArmor(ScriptVm& vm, void* user);
+	static void xEquipBestArmor(ScriptVm& vm, void* user);
+	static void xUnequipArmor(ScriptVm& vm, void* user);
+	static void xUnequipWeapons(ScriptVm& vm, void* user);
+	struct ItemObject {
+		ScriptInstance* inst;
+		u32 symbol;
+		i32 loot;
+		u32 used; // when last asked for
+	};
+	enum { ITEM_OBJECTS = 24 };
+	ItemObject _itemObjects[ITEM_OBJECTS] = {};
+	u32 _itemObjectClock = 0;
+	u32 _iAmount = SCRIPT_NONE, _iMainFlag = SCRIPT_NONE;
 
 	GameItemInfo* _itemInfos = nullptr;
 	u32 _itemInfoCount = 0, _itemInfoCap = 0;

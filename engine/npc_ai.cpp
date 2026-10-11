@@ -189,6 +189,11 @@ void Npcs::wake(NpcActor& a) {
 	a.carried = false;
 	a.settle = 0;
 	releaseMob(a);
+	// (Nor does it hold anything.)
+	if (a.heldScheme[0] && strncmp(a.stance, a.heldScheme, strlen(a.heldScheme)) == 0) a.stance[0] = 0;
+	a.heldItem = 0xFFFFFFFFu;
+	a.itemState = -1;
+	a.heldScheme[0] = 0;
 }
 
 // Back into what it stands (or sits) in.
@@ -298,6 +303,9 @@ i32 Npcs::bodyStateOf(const NpcActor& a) const {
 	if (const Clip* c = a.anim.current())
 		if (c->fight() && c->fight()->parry[0] != CLIP_NO_FRAME) return _bsParade;
 	if (a.bodyState >= 0) return a.bodyState;
+	// A thing in hand, or being picked up.
+	if (a.action.kind == NPC_ACT_TAKE_ITEM && a.itemPhase >= 1) return _bsTakeItem;
+	if (a.heldItem != 0xFFFFFFFFu && a.itemState >= 0) return _bsItem;
 	if (a.mob >= 0 && a.mobStage >= NpcActor::MOB_ENTERING) {
 		// By the kind of thing, as the scripts' lists sort them.
 		const char* kind = _mobs.scheme(u32(a.mob));
@@ -576,6 +584,15 @@ void Npcs::clearState(NpcActor& a, bool finalize) {
 	a.loopFn = a.endFn = SCRIPT_NONE;
 }
 
+void Npcs::abortActions(NpcActor& a) {
+	// (clearQueue also ends a walk with the steps that stop it, drops the action in hand and
+	// lets go of a thing it was only on its way to.)
+	clearQueue(a);
+	a.wait = 0.0f;
+	a.stuck = 0.0f;
+	if (a.anim.finished() || (a.anim.current() && a.anim.current()->loops() && a.phase == NpcActor::PLAYING)) fallBack(a, 0.2f);
+}
+
 void Npcs::startState(NpcActor& a, u32 fn, bool finalizeOld, const char* wp, bool byRoutine) {
 	ScriptVm& vm = _game.vm();
 	if (!vm.isPlainFunction(fn) || vm.symbol(fn).count != 0) return;
@@ -784,6 +801,7 @@ bool Npcs::walkTo(NpcActor& a, const float target[3], float radius, float dt, bo
 // Starts the action that has just come off the queue. True if that is all
 // there is to it.
 bool Npcs::begin(NpcActor& a, const World& world) {
+	if (a.action.kind >= NPC_ACT_USE_ITEM) return beginItem(a, world);
 	if (a.action.kind >= NPC_ACT_ATTACK) return beginFight(a, world);
 	GameNpc& n = _game.npcMut(a.npc);
 	NpcAction& act = a.action;
@@ -921,6 +939,15 @@ bool Npcs::begin(NpcActor& a, const World& world) {
 	case NPC_ACT_START_STATE: {
 		const NpcAction copy = act; // (starting a state empties the queue and this action with it)
 		const int other = int(copy.f);
+		if (refusesState(copy.fn)) {
+			// An attack: not on somebody it has no quarrel with (NpcConfig::calmGuard).
+			const bool allowed = attackJustified(a, other);
+			noteAttack(a, other, copy.fn, allowed);
+			if (!allowed) {
+				++_stats.attacksDenied;
+				return true;
+			}
+		}
 		startState(a, copy.fn, copy.i != 0, copy.text, false);
 		a.other = other;
 		return true;
@@ -963,6 +990,7 @@ bool Npcs::begin(NpcActor& a, const World& world) {
 
 // Goes on with the action in hand. True once it is done.
 bool Npcs::carryOn(NpcActor& a, const World& world, float dt) {
+	if (a.action.kind >= NPC_ACT_USE_ITEM) return carryOnItem(a, world, dt);
 	if (a.action.kind >= NPC_ACT_ATTACK) return carryOnFight(a, world, dt);
 	GameNpc& n = _game.npcMut(a.npc);
 	NpcAction& act = a.action;
@@ -1111,12 +1139,21 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 			if (a.action.kind == NPC_ACT_NONE && !a.queueCount) break;
 		}
 		a.percWait -= dt;
+		// The player has just come within the reach of its senses: it looks at once.
+		const bool near = heroNear(n);
+		if (near && !a.heroWasNear) a.percWait = 0.0f;
+		a.heroWasNear = near;
 		if (_cfg.perceive && a.percWait <= 0.0f && n.down == DOWN_NONE) perceive(a, world);
 		turnHead(a, dt);
 	}
 	tickFight(a, dt);
+	// A thing in hand goes when the weapon comes out or the character goes down, or when
+	// something else has had it stand up.
+	if (a.heldItem != 0xFFFFFFFFu && (n.weapon != WEAPON_NONE || n.down != DOWN_NONE)) dropHeldItem(a);
+	checkHeldItem(a);
 	// A gesture that has run out leaves it standing (or sitting) as before.
-	if (a.anim.finished() && a.phase != NpcActor::MOVING && a.action.kind != NPC_ACT_PLAY_ANI && a.action.kind != NPC_ACT_USE_MOB)
+	if (a.anim.finished() && a.phase != NpcActor::MOVING && a.action.kind != NPC_ACT_PLAY_ANI && a.action.kind != NPC_ACT_USE_MOB &&
+	    a.action.kind != NPC_ACT_USE_ITEM && a.action.kind != NPC_ACT_TAKE_ITEM)
 		fallBack(a, 0.2f);
 	// ... and on a bench so does one that has led on into standing: a look
 	// around from a bench ends on the bench.
@@ -1313,7 +1350,14 @@ void Npcs::xDistToWp(ScriptVm& vm, void* user) {
 
 void Npcs::xDistToNpc(ScriptVm& vm, void* user) {
 	Npcs& self = *static_cast<Npcs*>(user);
-	const int b = self.npcFor(vm.popInstance()), a = self.npcFor(vm.popInstance());
+	ScriptInstance* const second = vm.popInstance();
+	const int b = self.npcFor(second), a = self.npcFor(vm.popInstance());
+	// (The scripts ask it of things lying about too: Npc_GetDistToNpc(self, item) in B_FetchWeapon.)
+	float itemPos[3];
+	if (b < 0 && a >= 0 && self.lootPosition(second, itemPos)) {
+		vm.pushInt(i32(distance(self._game.npc(u32(a)).pos, itemPos)));
+		return;
+	}
 	if (a < 0 || b < 0 || !self._game.npc(u32(a)).placed || !self._game.npc(u32(b)).placed ||
 	    self._game.npc(u32(a)).world != self._game.npc(u32(b)).world) {
 		vm.pushInt(INT_MAX);
@@ -1586,6 +1630,7 @@ void Npcs::bindAi() {
 	for (u32 i = 0; i < count && i < sizeof(table) / sizeof(table[0]); ++i) vm.bind(names[i], table[i], this);
 	bindPerception();
 	bindFight();
+	bindItems();
 }
 
 } // namespace g3

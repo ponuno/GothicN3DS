@@ -416,6 +416,32 @@ ScriptInstance* ScriptVm::popInstance() {
 	return nullptr;
 }
 
+ScriptInstance* ScriptVm::popInstanceOf(u32& symbol) {
+	symbol = SCRIPT_NONE;
+	if (_sp == 0) {
+		fail("an instance was expected on an empty stack");
+		return nullptr;
+	}
+	const Slot s = _stack[--_sp];
+	ScriptInstance* inst = nullptr;
+	if (s.kind == K_INST) {
+		inst = s.ctx;
+	} else if (s.kind == K_REF) {
+		inst = instanceOf(s.sym);
+		// (A definition of an instance with no object made of it: the definition itself.)
+		if (!inst && s.sym < _h.symbolCount && _symbols[s.sym].type == SCRIPT_INSTANCE && (_symbols[s.sym].flags & SCRIPTF_CONST))
+			symbol = s.sym;
+	} else if (s.kind == K_INT) {
+		if (s.i >= 0 && u32(s.i) < _h.symbolCount) symbol = u32(s.i);
+		return nullptr;
+	} else {
+		fail("an instance was expected");
+		return nullptr;
+	}
+	if (inst) symbol = inst->symbol;
+	return inst;
+}
+
 // ---- variables ----
 
 u8* ScriptVm::memberPtr(const ScriptSymbol& s, u32 index, const ScriptInstance* ctx, u32 bytes) const {

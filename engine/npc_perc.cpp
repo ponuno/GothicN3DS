@@ -42,6 +42,11 @@ void copyText(char* to, size_t size, const char* from) {
 // Whether `a` sees character `other`: within the reach of its senses, and
 // nothing solid between their eyes. `inFront`: and in front of it, more or
 // less (Npc_CanSeeNpc); without, all round (Npc_CanSeeNpcFreeLOS).
+//
+// The player's character is noticed from every side by everybody within the
+// reach of the senses (it is heard, felt, smelt: not only seen), and with no
+// wall to look past when it is near (NpcConfig::hearShare of the reach).
+// Only a creeping one is looked for in front.
 bool Npcs::sees(const NpcActor& a, u32 other, bool inFront) const {
 	if (other >= _game.npcCount() || other == a.npc) return false;
 	const GameNpc& n = _game.npc(a.npc);
@@ -49,17 +54,33 @@ bool Npcs::sees(const NpcActor& a, u32 other, bool inFront) const {
 	if (!n.placed || !o.placed || n.world != o.world) return false;
 	const float dx = o.pos[0] - n.pos[0], dz = o.pos[2] - n.pos[2], dy = o.pos[1] - n.pos[1];
 	const float range = _game.sensesRange(n);
-	if (dx * dx + dy * dy + dz * dz > range * range) return false;
+	const float d2 = dx * dx + dy * dy + dz * dz;
+	if (d2 > range * range) return false;
 	if (inFront && !seenAllRound(n, o) && dx * dx + dz * dz > 1.0f && fabsf(wrap(atan2f(dx, dz) - n.yaw)) >= 1.75f) return false;
-	// (A sphere of 12 cm stepped along: nothing a person could be hidden by slips through.)
-	return !_world || _world->lineFree({n.pos[0], n.pos[1] + 160.0f, n.pos[2]}, {o.pos[0], o.pos[1] + 160.0f, o.pos[2]}, 12.0f);
+	// Close by it is noticed through a wall.
+	if (o.hero && !_heroLink.sneaking && d2 <= range * range * _cfg.hearShare * _cfg.hearShare) return true;
+	if (!_world) return true;
+	// (A sphere of 12 cm stepped along: nothing a person could be hidden by slips through.
+	// Two heights: a creature's eyes are not a person's, and a bush at the knee is no wall.)
+	return _world->lineFree({n.pos[0], n.pos[1] + 160.0f, n.pos[2]}, {o.pos[0], o.pos[1] + 160.0f, o.pos[2]}, 12.0f) ||
+	       _world->lineFree({n.pos[0], n.pos[1] + 80.0f, n.pos[2]}, {o.pos[0], o.pos[1] + 100.0f, o.pos[2]}, 12.0f);
 }
 
-// Whether `n` sees `o` whichever way it faces: a creature does, unless the other
-// is the player's character creeping (the stealth mode of the original).
+// Whether `n` sees `o` whichever way it faces: everybody does the player's
+// character (within the reach of the senses), unless that creeps (the stealth
+// mode of the original); a creature sees any other from every side too.
 bool Npcs::seenAllRound(const GameNpc& n, const GameNpc& o) const {
-	if (!_game.isMonster(n)) return false;
-	return !(o.hero && _heroLink.sneaking);
+	if (o.hero) return !_heroLink.sneaking;
+	return _game.isMonster(n);
+}
+
+// Whether the player's character is within the reach of `n`'s senses (same world, on its feet).
+bool Npcs::heroNear(const GameNpc& n) const {
+	const GameNpc* hero = _game.hero();
+	if (!hero || !hero->placed || !n.placed || hero->world != n.world) return false;
+	const float range = _game.sensesRange(n);
+	const float dx = hero->pos[0] - n.pos[0], dy = hero->pos[1] - n.pos[1], dz = hero->pos[2] - n.pos[2];
+	return range > 0.0f && dx * dx + dy * dy + dz * dz <= range * range;
 }
 
 // The states of fighting: there is no fighting yet, so the engine does not
@@ -70,6 +91,48 @@ bool Npcs::refusesState(u32 fn) const {
 	for (u32 k = 0; k < _fightStateCount; ++k)
 		if (_fightStates[k] == fn) return true;
 	return false;
+}
+
+// Whether a person may begin an attack on `other`. A creature goes by its scripts. A person
+// does not fall on somebody it has no quarrel with: it is hostile to it (its own mood
+// towards the player, or its guild's towards the other's), or was hit by it, or has it
+// as the target the scripts set. Whoever is told to attack with none of these goes on
+// with what he was doing (NpcConfig::calmGuard).
+bool Npcs::attackJustified(const NpcActor& a, int other) const {
+	if (!_cfg.calmGuard || other < 0 || u32(other) >= _game.npcCount()) return true;
+	const GameNpc& n = _game.npc(a.npc);
+	if (_game.isMonster(n)) return true;
+	if (_game.attitude(a.npc, u32(other)) == _game.constant("ATT_HOSTILE", 0)) return true;
+	if (n.lastHit == other || n.target == other) return true;
+	return false;
+}
+
+void Npcs::noteAttack(const NpcActor& a, int other, u32 fn, bool allowed) {
+	const GameNpc& n = _game.npc(a.npc);
+	const char* state = stateName(fn);
+	if (strncmp(state, "ZS_", 3) == 0) state += 3;
+	char who[16], whom[16];
+	snprintf(who, sizeof(who), "%.15s", _game.nameOf(n));
+	snprintf(whom, sizeof(whom), "%.15s", other >= 0 && u32(other) < _game.npcCount() ? _game.nameOf(_game.npc(u32(other))) : "-");
+	snprintf(_stats.lastAttack, sizeof(_stats.lastAttack), "%c %s>%s %.12s a%d", allowed ? '+' : '-', who, whom, state,
+	         int(other >= 0 && u32(other) < _game.npcCount() ? _game.attitude(a.npc, u32(other)) : -1));
+}
+
+// A creature that is hit (or sees an enemy) and whose scripts do nothing about it: it goes for
+// the attacker, as every creature of the game does.
+bool Npcs::provoke(NpcActor& a, int attacker) {
+	if (!_cfg.beastsRetaliate || !_cfg.fights || !_cfg.alive || attacker < 0 || u32(attacker) >= _game.npcCount()) return false;
+	GameNpc& n = _game.npcMut(a.npc);
+	if (n.down != DOWN_NONE || !a.ready || !_game.isMonster(n) || _fnAttackBeast == SCRIPT_NONE) return false;
+	if (inFightState(a)) return false; // (already at it: its scripts choose whom)
+	n.target = attacker;
+	noteAttack(a, attacker, _fnAttackBeast, true);
+	clearQueue(a);
+	startState(a, _fnAttackBeast, false, "", false);
+	a.other = attacker;
+	a.percWait = 0.0f;
+	++_stats.provoked;
+	return true;
 }
 
 // Calls a reaction with OTHER (and VICTIM) as the perception has them.
@@ -86,13 +149,18 @@ void Npcs::react(NpcActor& a, u32 fn, int other, int victim) {
 void Npcs::perceive(NpcActor& a, const World& world) {
 	// (Everybody in a rhythm of his own, so that they do not all look round in one frame.)
 	a.percWait = (a.percTime > 0.0f ? a.percTime : 1.0f) * (0.9f + 0.2f * float(a.npc % 7) / 6.0f);
+	const GameNpc& n = _game.npc(a.npc);
+	const GameNpc* hero = _game.hero();
+	const u32 heroIndex = hero ? u32(hero - &_game.npc(0)) : 0xFFFFFFFFu;
+	// A creature, or anybody hostile to the player, with the player within the reach of its
+	// senses looks again and again: it must not wait for its slow rhythm to notice the player.
+	const bool heroInReach = heroNear(n);
+	if (heroInReach && (_game.isMonster(n) || _game.attitude(a.npc, heroIndex) == _game.constant("ATT_HOSTILE", 0)))
+		a.percWait = min(a.percWait, _cfg.noticeEvery);
 	// (Not before its state has begun: the reactions count on what it set up.)
 	if (!a.state || !a.started || !a.ready) return;
 	const World* before = _world;
 	_world = &world;
-	const GameNpc& n = _game.npc(a.npc);
-	const GameNpc* hero = _game.hero();
-	const u32 heroIndex = hero ? u32(hero - &_game.npc(0)) : 0xFFFFFFFFu;
 	// The player.
 	if (_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer] && hero && sees(a, heroIndex, _heroLink.sneaking))
 		react(a, a.perc[_percPlayer], int(heroIndex), -1);
@@ -128,6 +196,17 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 				react(a, enemyFn, int(who[k]), -1);
 				break;
 			}
+	}
+	// A creature that is hostile to the player, awake, with the player close and neither of its
+	// perceptions answered by its scripts (nothing enabled for the player or an enemy): it
+	// goes for the player on its own, rather than stand about until the player is under its nose.
+	if (a.state && _cfg.beastsRetaliate && hero && heroInReach && _game.isMonster(n) && n.down == DOWN_NONE && !enemyFn &&
+	    !(_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer]) && !inFightState(a) &&
+	    _game.hitPoints(*hero) > 0 && hero->down == DOWN_NONE && _game.attitude(a.npc, heroIndex) == _game.constant("ATT_HOSTILE", 0)) {
+		const float dx = hero->pos[0] - n.pos[0], dy = hero->pos[1] - n.pos[1], dz = hero->pos[2] - n.pos[2];
+		const float close = _game.sensesRange(n) * 0.5f;
+		const char* state = stateName(a.state);
+		if (dx * dx + dy * dy + dz * dz <= close * close && !strstr(state, "SLEEP") && sees(a, heroIndex, _heroLink.sneaking)) provoke(a, int(heroIndex));
 	}
 	// Somebody about with a weapon in hand (PERC_ASSESSFIGHTER); a body on
 	// the ground (PERC_ASSESSBODY). The nearest that is seen.
@@ -297,6 +376,8 @@ void Npcs::bindPerception() {
 	}
 	refuse("ZS_ATTACK");
 	refuse("ZS_MM_ATTACK");
+	_fnAttackPerson = _game.function("ZS_ATTACK");
+	_fnAttackBeast = _game.function("ZS_MM_ATTACK");
 	refuse("ZS_ORC_ATTACK");
 	const struct {
 		const char* name;

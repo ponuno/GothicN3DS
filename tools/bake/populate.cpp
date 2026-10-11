@@ -691,6 +691,29 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	std::set<std::string> rigNames = aniNames;
 	size_t fightNames = 0;
 	for (const std::string& name : fightClipNames(false)) fightNames += rigNames.insert(name).second;
+	// Things in the hands (AI_UseItem, AI_UseItemToState): the animations of
+	// every scheme the scripts' items have ("T_FOOD_STAND_2_S0", "S_FOOD_S0",
+	// "T_FOOD_RANDOM_1"), and picking a thing up from the ground (AI_TakeItem).
+	std::set<std::string> itemSchemes;
+	for (u32 sym = 0; sym < game.vm().symbolCount(); ++sym)
+		if (game.isItem(sym))
+			if (const GameItemInfo* info = game.itemInfo(sym)) {
+				const std::string scheme = upper(game.text(info->scheme));
+				if (!scheme.empty() && scheme.size() < 16 && scheme.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") == std::string::npos)
+					itemSchemes.insert(scheme);
+			}
+	size_t itemFamilies = 0;
+	for (const std::string& scheme : itemSchemes) {
+		itemFamilies += rigNames.insert("T_" + scheme + "_*").second;
+		rigNames.insert("S_" + scheme + "_*");
+	}
+	for (const char* name : {"T_STAND_2_IGET", "S_IGET", "T_IGET_2_STAND", "C_STAND_2_IGET_1", "C_IGET_1", "C_IGET_2_STAND_1"}) rigNames.insert(name);
+	if (!itemSchemes.empty()) {
+		std::string list;
+		for (const std::string& scheme : itemSchemes) list += (list.empty() ? "" : ", ") + scheme;
+		line(format("things in the hands: the scripts' items are used in %zu ways (%s); their animations are asked of every skeleton",
+		            itemFamilies, list.c_str()));
+	}
 	std::string rigNotes;
 	std::vector<std::string> mobClipNotes;
 	BakeOptions quiet = opt;

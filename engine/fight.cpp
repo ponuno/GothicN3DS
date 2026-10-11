@@ -274,9 +274,18 @@ i32 Game::meleeDamage(u32 a, u32 b) {
 	if (type == 0) type = constant("DAM_BLUNT", 2);
 	const i32 strength = attributeOf(na, constant("ATR_STRENGTH", 4));
 	const i32 critical = constant("DAM_CRITICAL_MULTIPLIER", 2);
-	// Gothic 1: the talent is the chance of a critical blow. Talents are not
-	// kept yet (Npc_SetTalentValue): no critical blows.
-	const bool crit = false;
+	// Gothic 1 (OpenGothic, DamageCalculator::swordDamage): a die of 100 against the talent of the
+	// weapon in hand (1H = 1, 2H = 2): when the talent is above the roll the blow is the
+	// multiplied one. Fists and beasts have no talent, so they never strike critically.
+	bool crit = false;
+	if (weapon) {
+		_seed ^= _seed << 13;
+		_seed ^= _seed >> 17;
+		_seed ^= _seed << 5;
+		const i32 roll = i32(_seed % 100u);
+		const i32 talent = na.talent[na.weapon == WEAPON_2H ? 2 : 1];
+		crit = !(talent <= roll);
+	}
 	i32 total = 0;
 	for (u32 i = 0; i < 8; ++i) {
 		if (!(type & (1 << i))) continue;

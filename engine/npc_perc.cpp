@@ -239,6 +239,34 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 	_world = before;
 }
 
+bool Npcs::debugNearest(char* out, size_t size) const {
+	const GameNpc* hero = _game.hero();
+	if (!hero || !size) return false;
+	const NpcActor* best = nullptr;
+	float bestD = 1500.0f * 1500.0f;
+	for (const NpcActor& a : _actors) {
+		if (!a.used) continue;
+		const GameNpc& n = _game.npc(a.npc);
+		if (&n == hero || n.world != hero->world) continue;
+		const float dx = n.pos[0] - hero->pos[0], dy = n.pos[1] - hero->pos[1], dz = n.pos[2] - hero->pos[2];
+		const float d = dx * dx + dy * dy + dz * dz;
+		if (d < bestD) {
+			bestD = d;
+			best = &a;
+		}
+	}
+	if (!best) return false;
+	const GameNpc& n = _game.npc(best->npc);
+	const u32 heroIndex = u32(hero - &_game.npc(0));
+	const bool enemy = _percEnemy >= 0 && _percEnemy < Game::PERC_TYPES && best->perc[_percEnemy];
+	const char* state = best->state ? stateName(best->state) : "-";
+	if (strncmp(state, "ZS_", 3) == 0) state += 3;
+	snprintf(out, size, "%.10s %.14s d%d a%d E%d rdy%d st%d w%d s%d %s", _game.nameOf(n), state, int(sqrtf(bestD) / 100.0f),
+	         int(_game.attitude(best->npc, heroIndex)), enemy ? 1 : 0, best->ready ? 1 : 0, best->started ? 1 : 0,
+	         int(best->percWait * 10.0f), int(_game.sensesRange(n) / 100.0f), _cfg.perceive ? "P" : "noP");
+	return true;
+}
+
 // Turns the head towards whoever it looks at, at a natural pace, as far as a
 // neck goes; and back again.
 void Npcs::turnHead(NpcActor& a, float dt) {

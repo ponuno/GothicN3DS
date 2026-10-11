@@ -77,6 +77,9 @@ void App::drawOverlay() {
 		char fps[16];
 		snprintf(fps, sizeof(fps), "%d FPS", int(_fps + 0.5f));
 		_ui.text(W - 6, 4, fps, ui::GOLD, ui::TEXT, ui::RIGHT);
+		// (The nearest character: what it is doing and whether it can notice the player.)
+		char who[96];
+		if (_npcs.loaded() && _npcs.debugNearest(who, sizeof(who))) _ui.text(W - 6, 4 + Ui::lineHeight(), who, ui::GREY, ui::TEXT, ui::RIGHT);
 	}
 	if (!menuOpen && _chapterTime > 0.0f) {
 		// The card of a chapter: it fades in, stays, fades out.

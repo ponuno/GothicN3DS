@@ -1584,11 +1584,12 @@ void Npcs::xCanSeeNpc(ScriptVm& vm, void* user) {
 		const GameNpc& o = self._game.npc(u32(b));
 		const float range = self._game.sensesRange(n);
 		if (n.placed && o.placed && n.world == o.world && distance(n.pos, o.pos) <= range) {
-			// In front of it, more or less (walls are not looked through yet: they are not looked at).
-			// As in the original, an animal sees all round; only a character that creeps
-			// is not seen from behind.
+			// In front of it, within +-100 degrees, for everybody (OpenGothic's canSeeNpc without free
+			// line of sight): a creature that "cannot see" the player turns its body to him
+			// (ZS_MM_AssessEnemy_loop), which is what makes it face him and warn. (Noticing the player
+			// at all is not this: that goes all round, see Npcs::sees.)
 			const float dx = o.pos[0] - n.pos[0], dz = o.pos[2] - n.pos[2];
-			sees = self.seenAllRound(n, o) || dx * dx + dz * dz < 1.0f || fabsf(wrapAngle(atan2f(dx, dz) - n.yaw)) < 1.75f;
+			sees = dx * dx + dz * dz < 1.0f || fabsf(wrapAngle(atan2f(dx, dz) - n.yaw)) < 1.75f;
 		}
 	}
 	vm.pushInt(sees);

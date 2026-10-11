@@ -387,6 +387,11 @@ public:
 	void sendPerception(const char* percName, u32 sender, int other, int victim);
 	// The same with the scripts' number.
 	void sendPerception(i32 perc, u32 sender, int other, int victim);
+	// One line about the nearest character to the player within 15 m (for the FPS counter's debug line):
+	// who, state, whether its enemy perception is on, its wait, attitude, distance. False if none.
+	bool debugNearest(char* out, size_t size) const;
+	// Everybody within the reach of its senses of `source` looks round at its next frame.
+	void noticeNow(u32 source);
 	// Somebody has gone down (HP, scripts' state ZS_Unconscious or ZS_Dead):
 	// called for the player's character too, to tell those about.
 	void goDown(u32 npc, int attacker, bool dead, bool fromBehind);

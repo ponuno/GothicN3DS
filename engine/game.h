@@ -52,6 +52,9 @@ struct GameNpc {
 	u16 world = 0;         // the world it lives in (Game::worldIndex)
 	bool hero = false;
 	bool knowsPlayer = false; // Npc_SetKnowsPlayer
+	// Npc_SetTalentValue: for the fighting talents (1H, 2H) the chance, in per cent, of NOT striking
+	// a critical blow (Gothic 1 reckoning, see Game::meleeDamage).
+	i16 talent[16] = {};
 	// Where it is now.
 	bool placed = false;   // false: the world has no such place
 	GameText want = 0;     // where its routine wants it
@@ -380,7 +383,7 @@ public:
 	// Damage of a blow from `attacker` to `victim` as Gothic 1 reckons it:
 	// per damage type of the weapon in hand (or of the bare hands), strength
 	// plus damage minus protection; doubled (DAM_CRITICAL_MULTIPLIER) when
-	// the attacker's talent wins the dice. Never below 0.
+	// the attacker's talent loses the dice (OpenGothic's swordDamage). Never below 0.
 	i32 meleeDamage(u32 attacker, u32 victim);
 	// How far a blow of `attacker` reaches `victim`, cm (the guilds' fight
 	// ranges and the weapon's).
@@ -554,6 +557,8 @@ private:
 	static void xPrintScreen(ScriptVm& vm, void* user);
 	static void xKnowsPlayer(ScriptVm& vm, void* user);
 	static void xSetKnowsPlayer(ScriptVm& vm, void* user);
+	static void xSetTalentValue(ScriptVm& vm, void* user);
+	static void xGetTalentValue(ScriptVm& vm, void* user);
 	GameInfo* _infos = nullptr;
 	u32 _infoCount = 0;
 	GameChoice* _choices = nullptr;

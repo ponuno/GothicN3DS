@@ -109,6 +109,7 @@ void Game::save(ByteSink& out) const {
 					r.u32v(_items[k].symbol);
 					r.i32v(_items[k].count);
 				}
+		for (i16 t : n.talent) r.u16v(u16(t));
 		out.block(r);
 	}
 
@@ -328,6 +329,9 @@ void Game::restoreNpc(u32 index, ByteSource& r) {
 		}
 		++_itemsVersion;
 	}
+	// (saves from before the talents end here.)
+	if (!r.bad && r.left() >= sizeof(n.talent) / sizeof(n.talent[0]) * 2)
+		for (i16& t : n.talent) t = i16(r.u16v());
 }
 
 // A character was just made (addNpc): if a saved one is waiting for it, it

@@ -973,6 +973,19 @@ void Npcs::sendPerception(i32 perc, u32 sender, int other, int victim) {
 	--depth;
 }
 
+void Npcs::noticeNow(u32 source) {
+	if (!_cfg.perceive || source >= _game.npcCount()) return;
+	const GameNpc& s = _game.npc(source);
+	for (NpcActor& a : _actors) {
+		if (!a.used || !a.ready || a.npc == source) continue;
+		const GameNpc& n = _game.npc(a.npc);
+		if (n.world != s.world || n.down != DOWN_NONE) continue;
+		const float r = _game.sensesRange(n);
+		const float dx = n.pos[0] - s.pos[0], dy = n.pos[1] - s.pos[1], dz = n.pos[2] - s.pos[2];
+		if (r > 0.0f && dx * dx + dy * dy + dz * dz <= r * r) a.percWait = 0.0f;
+	}
+}
+
 void Npcs::perceiveSingle(u32 receiver, const char* percName, int other) {
 	const i32 perc = _game.constant(percName, -1);
 	if (perc < 0 || perc >= Game::PERC_TYPES || !_cfg.perceive || !_cfg.alive || other < 0) return;

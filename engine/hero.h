@@ -95,6 +95,8 @@ public:
 	u8 weapon() const { return _weapon; }
 	// Taking a weapon in hand or putting it away right now.
 	bool drawing() const { return _drawTo != 0xFF; }
+	// The mode being taken in hand (the weapon once the hands change), else the one in hand.
+	u8 weaponIntent() const { return _drawTo != 0xFF && _drawTo != WEAPON_NONE ? _drawTo : _weapon; }
 	// Takes `mode` in hand (WEAPON_NONE: puts it away). False if that cannot
 	// be done now (in the air, in the water, down) or the model has no way of
 	// it (then the hands change at once).

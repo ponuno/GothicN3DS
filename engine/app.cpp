@@ -808,7 +808,8 @@ void App::syncHeroNpc() {
 	const int i = heroIndex();
 	if (i < 0) return;
 	GameNpc& h = _npcs.game().npcMut(u32(i));
-	h.weapon = _hero.weapon();
+	// (Others see the weapon the moment it is reached for, not when the hands change.)
+	h.weapon = _hero.weaponIntent();
 	if (_hero.weapon() != _heroWeaponHeard) {
 		// The hands have just changed: the sword's ring as it leaves the sheath.
 		if (!_hero.down()) _npcs.emitDraw(u32(i), _heroWeaponHeard, _hero.weapon(), h.melee);
@@ -949,7 +950,13 @@ bool App::heroTake(u8 mode) {
 	const bool drawing = _hero.drawing() ? true : mode != WEAPON_NONE;
 	const bool puttingAway = mode == WEAPON_NONE || (before != WEAPON_NONE && _hero.drawing() && before != mode);
 	if (drawing && !puttingAway && mode != WEAPON_NONE) _lastWeapon = mode;
-	if (hi >= 0) _npcs.sendPerception(puttingAway ? "PERC_ASSESSREMOVEWEAPON" : "PERC_DRAWWEAPON", u32(hi), hi, -1);
+	if (hi >= 0) {
+		// The scripts ask "is he in fight mode?" at once: the weapon is already reached for.
+		if (!puttingAway) _npcs.game().npcMut(u32(hi)).weapon = _hero.weaponIntent();
+		_npcs.sendPerception(puttingAway ? "PERC_ASSESSREMOVEWEAPON" : "PERC_DRAWWEAPON", u32(hi), hi, -1);
+		// Whoever is about looks round now, rather than at its next turn: creatures too.
+		if (!puttingAway) _npcs.noticeNow(u32(hi));
+	}
 	return true;
 }
 

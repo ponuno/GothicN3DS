@@ -6,7 +6,9 @@ namespace g3 {
 
 bool Audio3ds::open() {
 	if (_open) return true;
-	if (R_FAILED(ndspInit())) return false;
+	const Result rc = ndspInit();
+	_openResult = unsigned(rc);
+	if (R_FAILED(rc)) return false;
 	ndspSetOutputMode(NDSP_OUTPUT_STEREO);
 	ndspSetMasterVol(1.0f);
 	memset(_wave, 0, sizeof(_wave));

@@ -14,7 +14,7 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // (the "report" switch began again at "off"); the weapon back after a potion.
 // 4: language, density of small objects, range of the inhabitants, the free frame rate.
 // 5: the sound volume.
-constexpr u32 SETTINGS_VERSION = 5;
+constexpr u32 SETTINGS_VERSION = 6;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -53,6 +53,7 @@ void Settings::sanitize() {
 	if (npcDistance > 2) npcDistance = 1;
 	soundVolume = u8(clamp<int>(soundVolume, 0, 10));
 	musicVolume = u8(clamp<int>(musicVolume, 0, 10));
+	voiceVolume = u8(clamp<int>(voiceVolume, 0, 10));
 	cameraSpeed = u8(clamp<int>(cameraSpeed, 1, 10));
 	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack};
 	for (u8* f : flags) *f = *f ? 1 : 0;

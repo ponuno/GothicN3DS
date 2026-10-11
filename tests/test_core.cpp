@@ -3877,6 +3877,68 @@ static bool soundWait(Sound& sound, HostAudio& audio, u32 count) {
 	return false;
 }
 
+static void testSpeech() {
+	namespace fs = std::filesystem;
+	SrcDialogue dialogue;
+	buildSyntheticDialogue(dialogue);
+	std::vector<std::string> names;
+	for (const auto& l : dialogue.lines) names.push_back(l.first);
+	PakWriter pak;
+	const SpeechBakeResult r = bakeSpeech(names, buildSyntheticSound, 11025, 2, pak);
+	CHECK(r.lines == names.size() && r.baked == 2 && r.unusable.empty());
+	CHECK(pak.items().size() == 2);
+	// The encoder and the decoder: a tone comes back close to what went in.
+	{
+		SrcSound tone;
+		tone.rate = 11025;
+		for (int i = 0; i < 4000; ++i) tone.samples.push_back(i16(std::lround(9000.0 * std::sin(double(i) * 0.07))));
+		const std::vector<u8> blob = encodeSpeech(tone);
+		SoundHeader h;
+		std::memcpy(&h, blob.data(), sizeof(h));
+		CHECK(speechValid(h, u32(blob.size())) && blob.size() == sizeof(SoundHeader) + 4 + 2000);
+		std::vector<i16> back(tone.samples.size());
+		imaDecode(blob.data() + sizeof(h), h.frames, back.data());
+		double err = 0, sig = 0;
+		for (size_t i = 0; i < back.size(); ++i) {
+			err += double(back[i] - tone.samples[i]) * double(back[i] - tone.samples[i]);
+			sig += double(tone.samples[i]) * double(tone.samples[i]);
+		}
+		CHECK(err < sig * 0.02);
+	}
+	const std::string dir = gDir + "/speech_game";
+	fs::create_directories(dir);
+	pak.write(dir + "/speech.pak");
+
+	HostAudio audio;
+	Speech speech;
+	CHECK(!speech.init((dir + "/nothing.pak").c_str(), &audio));
+	CHECK(speech.init((dir + "/speech.pak").c_str(), &audio) && speech.ready());
+	speech.setVolume(0.5f);
+	const float hello = speech.play(hashName("DIA_Thorus_Hello_09_00"), 1.0f);
+	CHECK(hello > 1.95f && hello < 2.05f);
+	CHECK(audio.startedCount() == 1 && audio.last().channel == u32(Speech::CHANNEL) && !audio.last().loop);
+	CHECK(audio.last().rate == 11025 && audio.last().frames > 21900 && audio.last().frames < 22200);
+	CHECK(audio.leftOf(Speech::CHANNEL) > 0.49f && audio.leftOf(Speech::CHANNEL) < 0.51f);
+	int peak = 0;
+	for (u32 i = 0; i < audio.last().frames; ++i) peak = std::max(peak, std::abs(int(audio.last().samples[i])));
+	CHECK(peak > 6000);
+	CHECK(speech.playing());
+	audio.advance(1.0f);
+	CHECK(speech.playing());
+	speech.stop();
+	CHECK(!speech.playing());
+	// Another line replaces it; one without a recording is nothing; far away is muted but still has its length.
+	const float job = speech.play(hashName("DIA_Thorus_Job_15_00"), 0.5f);
+	CHECK(job > 0.55f && job < 0.65f && audio.startedCount() == 2);
+	CHECK(audio.leftOf(Speech::CHANNEL) > 0.24f && audio.leftOf(Speech::CHANNEL) < 0.26f);
+	CHECK(speech.play(hashName("DIA_Jackal_Hello_15_00"), 1.0f) == 0.0f && speech.missing() == 1);
+	const float quiet = speech.play(hashName("DIA_Thorus_Hello_09_00"), 0.0f);
+	CHECK(quiet > 1.95f && audio.startedCount() == 2 && !speech.playing());
+	CHECK(audio.liveBlocks() <= 2);
+	speech.shutdown();
+	CHECK(audio.liveBlocks() == 0 && !speech.ready());
+}
+
 static void testMusic() {
 	namespace fs = std::filesystem;
 	const std::string dir = gDir + "/music_wavs";
@@ -6567,6 +6629,7 @@ int main(int argc, char** argv) {
              {"dialogs", testDialogs},
 	             {"settings", testSettings},
 	             {"music", testMusic},
+	             {"speech", testSpeech},
              {"sound", testSound},
 	             {"sky", testSky}};
 	for (auto& t : tests) {

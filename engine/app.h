@@ -15,6 +15,7 @@
 #include "sky.h"
 #include "sound.h"
 #include "music.h"
+#include "speech.h"
 #include "ui.h"
 #include "world.h"
 
@@ -69,6 +70,8 @@ public:
 	void setAudio(AudioOut* out) { _audio = out; }
 	Music& music() { return _music; }
 	const Music& music() const { return _music; }
+	Speech& speech() { return _speech; }
+	const Speech& speech() const { return _speech; }
 	Sound& sound() { return _sound; }
 	const Sound& sound() const { return _sound; }
 	// While update() is not called (the pause menu): lets sounds that ran out go and keeps the volume current.
@@ -229,6 +232,10 @@ private:
 	void checkPortals();
 	void soundEvent(const ClipSfxEvent& event, int npc);
 	void startSound();
+	void startSpeech();
+	float speechBegin(u32 lineHash, int speaker, bool hero);
+	static float speechPlayThunk(void* user, u32 lineHash, int speaker, bool hero);
+	static void speechStopThunk(void* user);
 	static void soundEventThunk(void* user, const ClipSfxEvent& event, int npc);
 	static bool soundLocate(void* user, ScriptInstance* who, Vec3& pos);
 	void placeCamera(float dt);
@@ -252,6 +259,7 @@ private:
 	ScriptVm _sfxVm, _musicVm; // the sounds (SFX.DAT) and music themes (MUSIC.DAT) of the game: scripts of their own
 	Sound _sound;
 	Music _music;
+	Speech _speech;
 	World _world;
 	Player _player;
 	Hero _hero;

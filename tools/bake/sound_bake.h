@@ -64,6 +64,21 @@ MusicBakeResult bakeMusic(ScriptVm& vm, const std::string& dir, u32 maxRate, Pak
 // For the tests: a track of `seconds` seconds, with a loop.
 std::vector<u8> encodeMusic(const SrcSound& sound, u32 loopStart = 0, u32 loopEnd = 0);
 
+struct SpeechBakeResult {
+	u32 lines = 0;  // lines of the dialogue
+	u32 baked = 0;  // with a recording in speech.pak
+	u64 bytes = 0;
+	std::vector<std::string> unusable; // recordings that could not be used, with the reason
+};
+// For each line name ("DIA_Diego_Hallo_11_00") fetches "<NAME>.WAV", brings it to mono at up to `rate` Hz and adds
+// it as IMA ADPCM (g3ds/sound.h: speechEntryName) to `pak`: the archive "speech.pak". `fetch` is called by one thread
+// at a time; the rest of the work is shared among `threads`.
+SpeechBakeResult bakeSpeech(const std::vector<std::string>& lineNames,
+                            const std::function<bool(const std::string&, std::vector<u8>&)>& fetch, u32 rate, unsigned threads,
+                            PakWriter& pak);
+// The blob of one recording (SoundHeader + IMA ADPCM), for the tests too.
+std::vector<u8> encodeSpeech(const SrcSound& sound);
+
 // The music zones of a world: the blob of "world/<name>/music".
 struct SrcMusicZone;
 std::vector<u8> bakeMusicZones(const std::vector<SrcMusicZone>& zones);

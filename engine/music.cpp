@@ -416,7 +416,11 @@ void Music::statusLine(char* out, u32 size) const {
 }
 
 void Music::writeReport(FILE* f) const {
-	if (!f || !_ready) return;
+	if (!f) return;
+	if (!_ready) {
+		fprintf(f, "music: off\n");
+		return;
+	}
 	fprintf(f, "music: zones %u, theme names tried and not found:\n", _zoneCount);
 	for (u32 i = 0; i < _triedCount; ++i) fprintf(f, "  %s\n", _tried[i]);
 }

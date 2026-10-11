@@ -2252,7 +2252,8 @@ std::function<bool(const std::string&, std::vector<u8>&)> zenSoundSource(std::sh
 				rd = node->open_read();
 			} else {
 				const std::string name = lower(file);
-				fs::path loose = findNoCase(game->dir, {"_work", "data", "sound", "sfx", name.c_str()});
+				fs::path loose = findNoCase(game->dir, {"_work", "data", "sound", "speech", name.c_str()});
+				if (loose.empty()) loose = findNoCase(game->dir, {"_work", "data", "sound", "sfx", name.c_str()});
 				if (loose.empty()) loose = findNoCase(game->dir, {"_work", "data", "sound", name.c_str()});
 				if (loose.empty() || !fs::is_regular_file(loose)) return false;
 				rd = zenkit::Read::from(loose);

@@ -18,6 +18,7 @@ constexpr u32 SOUND_VERSION = 1;
 
 enum SoundFormat : u16 {
 	SOUND_PCM16 = 0, // signed 16-bit little-endian, one channel
+	SOUND_IMA4 = 1,  // speech only (see below): IMA ADPCM, 4 bits a sample
 };
 
 // "sfx/<name>": SoundHeader, then `frames` samples.
@@ -154,5 +155,82 @@ struct MusicZone {
 	char name[32]; // upper case, zero-terminated
 };
 static_assert(sizeof(MusicZone) == 64, "MusicZone layout");
+
+// ---- voices: "speech.pak" ----
+// What the characters say. One entry for each line of the game's dialogue that
+// has a recording, named "speech/<8 hex digits>": hashName() of the line's name
+// ("DIA_Diego_Hallo_11_00"), the one dialog/index has. The blob is a
+// SoundHeader (format SOUND_IMA4, mono) and the samples as IMA ADPCM: the first
+// sample whole (4 bytes: the predictor and the step index), then the other
+// frames-1 as 4-bit codes, the low nibble first. It is a quarter of the size of
+// 16-bit samples, which at a hundred hours of speech matters.
+constexpr u32 SPEECH_MAX_FRAMES = 22050u * 90u;
+
+inline u32 imaBytes(u32 frames) { return 4u + (frames > 0 ? (frames - 1u + 1u) / 2u : 0u); }
+
+inline bool speechValid(const SoundHeader& h, u32 blobSize) {
+	return h.magic == SOUND_MAGIC && h.version == SOUND_VERSION && h.format == SOUND_IMA4 && h.frames > 0 &&
+	       h.frames <= SPEECH_MAX_FRAMES && h.rate >= SOUND_MIN_RATE && h.rate <= SOUND_MAX_RATE &&
+	       blobSize == u32(sizeof(SoundHeader)) + imaBytes(h.frames);
+}
+
+inline u32 speechEntryHash(u32 lineHash) {
+	static const char digits[] = "0123456789abcdef";
+	char name[24] = "speech/";
+	for (u32 i = 0; i < 8; ++i) name[7 + i] = digits[(lineHash >> (28 - 4 * i)) & 15u];
+	name[15] = 0;
+	return hashName(name);
+}
+// The name the baker gives that entry.
+inline void speechEntryName(u32 lineHash, char (&out)[16]) {
+	static const char digits[] = "0123456789abcdef";
+	for (u32 i = 0; i < 7; ++i) out[i] = "speech/"[i];
+	for (u32 i = 0; i < 8; ++i) out[7 + i] = digits[(lineHash >> (28 - 4 * i)) & 15u];
+	out[15] = 0;
+}
+
+// The IMA ADPCM both sides share (the step tables of the format).
+constexpr i32 IMA_STEPS[89] = {7,     8,     9,     10,    11,    12,    13,    14,    16,    17,    19,    21,    23,    25,
+                               28,    31,    34,    37,    41,    45,    50,    55,    60,    66,    73,    80,    88,    97,
+                               107,   118,   130,   143,   157,   173,   190,   209,   230,   253,   279,   307,   337,   371,
+                               408,   449,   494,   544,   598,   658,   724,   796,   876,   963,   1060,  1166,  1282,  1411,
+                               1552,  1707,  1878,  2066,  2272,  2499,  2749,  3024,  3327,  3660,  4026,  4428,  4871,  5358,
+                               5894,  6484,  7132,  7845,  8630,  9493,  10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350,
+                               22385, 24623, 27086, 29794, 32767};
+constexpr i32 IMA_INDEX[16] = {-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8};
+
+struct ImaState {
+	i32 predictor = 0;
+	i32 index = 0;
+};
+// One code in, one sample out (the decoder and, to track it, the encoder use it).
+inline i16 imaStep(ImaState& st, u32 code) {
+	const i32 step = IMA_STEPS[st.index];
+	i32 diff = step >> 3;
+	if (code & 1) diff += step >> 2;
+	if (code & 2) diff += step >> 1;
+	if (code & 4) diff += step;
+	if (code & 8) diff = -diff;
+	st.predictor = st.predictor + diff;
+	if (st.predictor > 32767) st.predictor = 32767;
+	if (st.predictor < -32768) st.predictor = -32768;
+	st.index += IMA_INDEX[code & 15u];
+	if (st.index < 0) st.index = 0;
+	if (st.index > 88) st.index = 88;
+	return i16(st.predictor);
+}
+// Decodes `frames` samples from `payload` (imaBytes(frames) bytes) into `out`.
+inline void imaDecode(const u8* payload, u32 frames, i16* out) {
+	ImaState st;
+	st.predictor = i16(u16(payload[0] | (payload[1] << 8)));
+	st.index = payload[2] > 88 ? 88 : payload[2];
+	out[0] = i16(st.predictor);
+	const u8* nibbles = payload + 4;
+	for (u32 i = 1; i < frames; ++i) {
+		const u32 k = i - 1;
+		const u32 code = (nibbles[k >> 1] >> ((k & 1) * 4)) & 15u;
+		out[i] = imaStep(st, code);
+	}
+}
 
 } // namespace g3

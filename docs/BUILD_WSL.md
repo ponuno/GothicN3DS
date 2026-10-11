@@ -2,9 +2,11 @@
 
 *(Русская версия — ниже, после этого раздела. / The Russian version follows below.)*
 
-**Legal note.** The game's data (textures, models, sounds, music, scripts) is not distributed with this project and must not be distributed by you either. You need your own legal copy of Gothic 1. The files you produce (`data.pak`, `music.pak`, rendered WAVs) contain the game's content: keep them for yourself and never publish them. Only the source code, the tools, the compiled `gothic3ds.3dsx` (it contains no game data) and these instructions may be shared.
+**Legal note.** The game's data (textures, models, sounds, music, scripts) is not distributed with this project and must not be distributed by you either. You need your own legal copy of Gothic 1. The files you produce (`data.pak`, `music.pak`, `speech.pak`, rendered WAVs) contain the game's content: keep them for yourself and never publish them. Only the source code, the tools, the compiled `gothic3ds.3dsx` (it contains no game data) and these instructions may be shared.
 
-What you get at the end (step 7 is optional if you download a ready `.3dsx`): an SD card with `gothic3ds.3dsx`, `data.pak` (worlds and sounds) and `music.pak` (music).
+What you get at the end (step 7 is optional if you download a ready `.3dsx`): an SD card with `gothic3ds.3dsx`, `data.pak` (worlds and sounds), `music.pak` (music) and `speech.pak` (voices), plus the DSP firmware file `dspfirm.cdc` that every sound needs (see the box below).
+
+> **⚠ NO SOUND WITHOUT `dspfirm.cdc`.** The 3DS plays sound through its DSP chip, and the chip needs a firmware file that Nintendo's system keeps inside the console. Homebrew cannot use it until you dump it **once** into the SD card as `sdmc:/3ds/dspfirm.cdc` (the `3ds` folder itself, **not** `3ds/gothic3ds`). On the console: Homebrew Launcher → **DSP1** (also in the Homebrew App Store) → run it → it says the firmware was dumped. Check on the PC that `3ds/dspfirm.cdc` exists on the SD card. Without this file the game runs but is completely silent: no effects, no music, no voices, however correct your `.pak` files are. After you quit the game, `3ds/gothic3ds/sound.txt` shows it in its first line: `dsp: open` is good; `dsp: NOT open (ndspInit 0xD880A7FA ...)` means the file is missing.
 
 All commands below go into an **Ubuntu (WSL)** terminal unless stated otherwise. You can copy a whole command and paste it with the right mouse button. Lines starting with `#` are comments; do not type them.
 
@@ -16,7 +18,7 @@ All commands below go into an **Ubuntu (WSL)** terminal unless stated otherwise.
 
 - Windows 10 (2004+) or Windows 11.
 - Gothic 1 installed (Steam version); you need the path to its folder.
-- A **New Nintendo 3DS** with Homebrew Launcher.
+- A **New Nintendo 3DS** with Homebrew Launcher, and the DSP firmware dumped with **DSP1** to `sdmc:/3ds/dspfirm.cdc` (see the warning above; once per console).
 - About 15 GB of free disk space and an internet connection.
 
 ## Step 1. Install WSL and Ubuntu (once)
@@ -36,17 +38,33 @@ sudo apt update
 sudo apt install -y build-essential cmake ninja-build git zip unzip python3 wget gpg
 ```
 
-Check: `cmake --version` must show 3.16 or newer, `g++ --version` GCC 11 or newer (C++20 is required).
+Check all four; each must print a version and not "command not found":
+```
+cmake --version
+ninja --version
+g++ --version
+unzip -v | head -1
+```
+`cmake` must be 3.16 or newer, `g++` GCC 11 or newer (C++20 is required). **If `ninja` or `unzip` is missing, step 4 and step 3 will fail**: run the `apt install` line above again.
 
 ## Step 3. The project
 
 Keep the project **inside WSL** (your home folder `~`), not on the `C:` drive: everything is several times slower under `/mnt/c`.
 
-1. Put `gothic3ds-base.zip` somewhere in Windows, e.g. `C:\Users\YOUR_USER\Downloads`.
-2. Unpack it into the WSL home folder:
+1. Download the **newest** `gothic3ds-base.zip` and keep exactly one copy of it in Windows, e.g. in `C:\Users\YOUR_USER\Downloads` (delete old copies: browsers add `(1)`, `(2)` ... to the names and an old one is easy to unpack by mistake).
+2. Find it and check that it is the right one (replace `YOUR_USER` with your Windows user name, the folder name under `C:\Users`):
    ```
    cd ~
-   unzip -o /mnt/c/Users/YOUR_USER/Downloads/gothic3ds-base.zip
+   ZIP=$(ls -t /mnt/c/Users/YOUR_USER/Downloads/gothic3ds-base*.zip | head -1)
+   echo "$ZIP"
+   unzip -p "$ZIP" gothic3ds/tools/bake/import_zen.cpp | grep -c importZenSfxScript
+   ```
+   The last command must print `1` or more. If it prints `0`, this is an old archive: delete it and download the newest one.
+3. Unpack it into the WSL home folder, **into an empty place** (move the old project away first, so old and new files do not mix):
+   ```
+   cd ~
+   [ -d gothic3ds ] && mv gothic3ds gothic3ds_old_$(date +%s)
+   unzip -q "$ZIP"
    cd ~/gothic3ds
    ls
    ```
@@ -62,7 +80,10 @@ Run all further commands from `~/gothic3ds`. If you closed the window, return wi
 cd ~/gothic3ds
 cmake -S . -B build -G Ninja
 cmake --build build -j
+strings build/g3ds-bake | grep -c "script/sfx"
 ```
+
+The last line must print a number above 0: it proves that the converter you built is the new one. (If `ninja` is not installed, cmake stops at once with "unable to find a build program corresponding to Ninja": install it with `sudo apt install -y ninja-build`, delete the folder `build` and run the commands again.)
 
 The first run downloads the ZenKit library from GitHub and takes a few minutes. You get `build/g3ds-bake` (the converter) and `build/g3ds-host` (the PC runner).
 
@@ -96,7 +117,7 @@ The original Gothic music is in the DirectMusic format, which the 3DS cannot pla
 
 If the program prints `cannot load` for a theme, its `.sty` or `.dls` was not found; other themes are not affected.
 
-## Step 6. Bake the game's data (`data.pak`, `music.pak`)
+## Step 6. Bake the game's data (`data.pak`, `music.pak`, `speech.pak`)
 
 The converter reads the game's files and makes an archive for the 3DS. The game itself is not touched.
 
@@ -108,10 +129,11 @@ mkdir -p ~/out
 
 Good to know:
 - The converter runs for several minutes and prints a report. It should contain lines like `script/sfx: SFX.DAT`, `sounds: N C_SFX instances ... M baked` (M must be well above zero), `ambient sounds: ...`, `script/music: MUSIC.DAT` and `music: N C_MUSICTHEME instances ... K baked` (K above zero). If a number is 0: the game's sounds and themes live in `SFX.DAT` and `MUSIC.DAT` in `_work\Data\Scripts\_compiled`; the report says `sounds: SFX.DAT not found` / `music: MUSIC.DAT not found` if they are missing. If there is no `music:` line at all, check that `--music-dir` points to the folder with the WAVs from step 5. Check quickly: `grep -E "script/(sfx|music)|sounds:|music:" ~/out/bake.log`.
-- `music.pak` appears next to `data.pak`: both files are needed.
+- `music.pak` and `speech.pak` appear next to `data.pak`: all three are needed (`speech.pak` holds the spoken lines; without it the game shows subtitles only).
+- The voices come from the game's own `Speech.vdf`/`Sounds.vdf` (or loose files in `_work\Data\Sound\Speech`). The report has a line `voices: N lines of dialogue, M recordings baked (... MB ...)`; M should be in the thousands. `speech.pak` is large (hundreds of MB; it is IMA ADPCM at 11.025 kHz). Smaller and lower quality: `--voice-rate 8000`; skip the voices altogether: `--no-voices`. If M is 0 the game was installed without the speech archive (some localized versions keep it elsewhere) — send the `voices:` line to the developer.
 - Print the report again with `./build/g3ds-bake info ~/out/data.pak`.
-- The quality of the sound effects is set with `--sound-rate 22050`, of the music with `--music-rate 32000`.
-- **Never put the game's data into the project archive** and never publish `data.pak` or `music.pak`: they are the game's content.
+- The quality of the sound effects is set with `--sound-rate 22050`, of the music with `--music-rate 32000`, of the voices with `--voice-rate 11025`.
+- **Never put the game's data into the project archive** and never publish `data.pak`, `music.pak` or `speech.pak`: they are the game's content.
 - After every project update, bake `data.pak` again (`docs/HANDOFF.md` says in the section of the round whether that is needed).
 
 See the result on the PC without a console (optional):
@@ -156,7 +178,7 @@ Put the SD card into a card reader (it shows up in Windows as a drive, e.g. `E:`
 ```
 mkdir -p /mnt/c/gothic3ds_sd/3ds/gothic3ds
 cp ~/gothic3ds/gothic3ds.3dsx ~/gothic3ds/gothic3ds.smdh ~/out/data.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
-cp ~/out/music.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
+cp ~/out/music.pak ~/out/speech.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
 ```
 
 Then, in Windows, copy the folder `C:\gothic3ds_sd\3ds\gothic3ds` to `3ds\gothic3ds` on the SD card. The card then holds:
@@ -166,9 +188,11 @@ Then, in Windows, copy the folder `C:\gothic3ds_sd\3ds\gothic3ds` to `3ds\gothic
 /3ds/gothic3ds/gothic3ds.smdh
 /3ds/gothic3ds/data.pak
 /3ds/gothic3ds/music.pak
+/3ds/gothic3ds/speech.pak
+/3ds/dspfirm.cdc          <- NOT inside gothic3ds: directly in the 3ds folder
 ```
 
-**Sound also needs the DSP firmware:** the file `/3ds/dspfirm.cdc` on the SD card. You dump it from your own console with the DSP1 tool (Homebrew App Store → "DSP1"). Without it the game runs but is silent (a message is shown at start).
+**Do not forget `/3ds/dspfirm.cdc`** (the box at the top): the DSP firmware dumped with DSP1 on your console. Without it there is no sound at all. Sound menu in the game: **Volume** (effects), **Music**, **Voices**.
 
 Start: Homebrew Launcher → Gothic 3DS.
 
@@ -180,6 +204,10 @@ If something is wrong with the sound, after you quit the game the report `/3ds/g
 
 | What you see | Cause and fix |
 |---|---|
+| `unable to find a build program corresponding to "Ninja"` / `CMAKE_CXX_COMPILER not set` | `ninja` (or the compiler) is not installed: `sudo apt install -y ninja-build build-essential cmake`, then `rm -rf build` and repeat step 4 |
+| `unzip: command not found` | `sudo apt install -y unzip` |
+| `strings build/g3ds-bake \| grep -c "script/sfx"` prints 0, or the report says `0 C_SFX instances` | An old converter/archive: the project folder holds old files. Repeat step 3 with the newest archive (check it with the `unzip -p ... \| grep -c importZenSfxScript` command), then `rm -rf build` and step 4 |
+| `cannot find or open .../YOUR_USER/Downloads/...zip` | `YOUR_USER` must be replaced by your real Windows user name; list them with `ls /mnt/c/Users` |
 | `cmake: command not found` | Step 2 was not done: `sudo apt install -y build-essential cmake ninja-build git` |
 | `The source directory ".../tools/dmrender" does not exist` | You are not in the project folder (`cd ~/gothic3ds`) or it was unpacked elsewhere |
 | `Parse error in command line argument: DMUSIC_DIR` | The command was cut off: a path must follow `-DDMUSIC_DIR=`. Step 5 does not need this option at all |
@@ -189,14 +217,15 @@ If something is wrong with the sound, after you quit the game the report `/3ds/g
 | `No such file or directory` for the game path | Wrong path: check with `ls "/mnt/c/Program Files (x86)/Steam/steamapps/common/Gothic"`; drive letters like `C:` and `\` do not work |
 | `Please set DEVKITARM in your environment` | Item 3 of step 7 was not done; run `source ~/.bashrc` |
 | The converter cannot open / find `WORLD.ZEN` | That is not the game folder. It must contain `Data` and `_work` |
-| The game is silent on the 3DS | `/3ds/dspfirm.cdc` is missing on the SD card (step 8) |
+| The game is silent on the 3DS (no effects, no music, no voices) | `/3ds/dspfirm.cdc` is missing on the SD card: run DSP1 on the console. `sound.txt` then starts with `dsp: NOT open (ndspInit 0xD880A7FA ...)` |
+| Sound and music work, nobody speaks | `speech.pak` is not next to `data.pak`, the **Voices** slider is 0, or the bake had no recordings (`voices:` line of the report, `voices:` line of `sound.txt`) |
 | Sound works, no music | `music.pak` is not next to `data.pak`, or the theme names were not found in `sound.txt`; send the report |
 | `wsl: ... localhost proxy ...` warning | Harmless for the build |
 | Very slow | The project is on `/mnt/c`. Move it to `~` (step 3) |
 
 ## Updating the project
 
-When a new `gothic3ds-base.zip` arrives: unpack it over the old one (`cd ~ && unzip -o ...zip`), then repeat steps 4, 6, 7 and 8 (step 5 only if you want to render the music again). The folders `build`, `build-dmrender` and `~/out` can stay: they rebuild by themselves.
+When a new `gothic3ds-base.zip` arrives: repeat step 3 (find and check the newest archive, move the old project away, unpack), then steps 4, 6, 7 and 8. The project is rebuilt from scratch (a few minutes). The WAV files in `~/music_wavs` and the results in `~/out` are outside the project and stay, so step 5 is needed only if you want to render the music again.
 
 ---
 
@@ -204,9 +233,11 @@ When a new `gothic3ds-base.zip` arrives: unpack it over the old one (`cd ~ && un
 
 # Сборка проекта с нуля через WSL (инструкция для новичка) — русская версия
 
-**Юридическое замечание.** Данные игры (текстуры, модели, звуки, музыка, скрипты) в проект не входят, и вы тоже не должны их распространять. Нужна ваша собственная легальная копия Gothic 1. Файлы, которые вы получаете (`data.pak`, `music.pak`, WAV с музыкой), содержат материалы игры: оставьте их себе и нигде не публикуйте. Делиться можно только исходным кодом, инструментами, собранным `gothic3ds.3dsx` (в нём нет данных игры) и этими инструкциями.
+**Юридическое замечание.** Данные игры (текстуры, модели, звуки, музыка, скрипты) в проект не входят, и вы тоже не должны их распространять. Нужна ваша собственная легальная копия Gothic 1. Файлы, которые вы получаете (`data.pak`, `music.pak`, `speech.pak`, WAV с музыкой), содержат материалы игры: оставьте их себе и нигде не публикуйте. Делиться можно только исходным кодом, инструментами, собранным `gothic3ds.3dsx` (в нём нет данных игры) и этими инструкциями.
 
-Что получится в конце: на SD-карте 3DS лежат `gothic3ds.3dsx`, `data.pak` (мир и звуки) и `music.pak` (музыка).
+Что получится в конце: на SD-карте 3DS лежат `gothic3ds.3dsx`, `data.pak` (мир и звуки), `music.pak` (музыка) и `speech.pak` (голоса), а также файл прошивки DSP `dspfirm.cdc`, без которого не будет никакого звука (см. рамку ниже).
+
+> **⚠ БЕЗ `dspfirm.cdc` ЗВУКА НЕ БУДЕТ.** 3DS проигрывает звук через чип DSP, а ему нужна прошивка, которую система Nintendo прячет внутри консоли. Хоумбрю может ею пользоваться, только если вы **один раз** выгрузите её на SD-карту как `sdmc:/3ds/dspfirm.cdc` (прямо в папку `3ds`, **не** в `3ds/gothic3ds`). На консоли: Homebrew Launcher → **DSP1** (есть и в Homebrew App Store) → запустить → появится сообщение, что прошивка выгружена. Проверьте на ПК, что на SD-карте есть `3ds/dspfirm.cdc`. Без этого файла игра запускается, но полностью немая: ни эффектов, ни музыки, ни голосов, как бы правильно ни были собраны `.pak`. После выхода из игры файл `3ds/gothic3ds/sound.txt` показывает это в первой строке: `dsp: open` — хорошо; `dsp: NOT open (ndspInit 0xD880A7FA ...)` — файла нет.
 
 Все команды ниже вводятся в терминале **Ubuntu (WSL)**, если не сказано иное. Команду можно скопировать целиком и вставить правой кнопкой мыши. Строки, которые начинаются с `#`, — пояснения, их вводить не нужно.
 
@@ -218,7 +249,7 @@ When a new `gothic3ds-base.zip` arrives: unpack it over the old one (`cd ~ && un
 
 - Windows 10 (2004+) или Windows 11.
 - Установленная **Gothic 1** (Steam-версия) — для неё нужен путь к папке игры.
-- Консоль **New Nintendo 3DS** с Homebrew Launcher.
+- Консоль **New Nintendo 3DS** с Homebrew Launcher и выгруженная утилитой **DSP1** прошивка DSP в `sdmc:/3ds/dspfirm.cdc` (см. предупреждение выше; один раз на консоль).
 - Около 15 ГБ свободного места и интернет.
 
 ## Шаг 1. Установка WSL и Ubuntu (один раз)
@@ -238,17 +269,33 @@ sudo apt update
 sudo apt install -y build-essential cmake ninja-build git zip unzip python3 wget gpg
 ```
 
-Проверка: `cmake --version` должен показать версию 3.16 или выше, `g++ --version` — GCC 11 или новее (нужна поддержка C++20).
+Проверьте все четыре команды: каждая должна напечатать версию, а не «command not found»:
+```
+cmake --version
+ninja --version
+g++ --version
+unzip -v | head -1
+```
+`cmake` — 3.16 или выше, `g++` — GCC 11 или новее (нужна поддержка C++20). **Если нет `ninja` или `unzip`, шаги 3 и 4 не пройдут**: выполните строку `apt install` выше ещё раз.
 
 ## Шаг 3. Проект
 
 Проект надо держать **внутри WSL** (в домашней папке `~`), а не на диске `C:`: на `/mnt/c` всё работает в разы медленнее.
 
-1. Положите `gothic3ds-base.zip` куда удобно в Windows, например в `C:\Users\ВАШ_ПОЛЬЗОВАТЕЛЬ\Downloads`.
-2. Распакуйте в домашнюю папку WSL:
+1. Скачайте **самый свежий** `gothic3ds-base.zip` и оставьте в Windows ровно одну его копию, например в `C:\Users\ВАШ_ПОЛЬЗОВАТЕЛЬ\Downloads` (старые копии удалите: браузер добавляет к именам `(1)`, `(2)` ..., и старый архив легко распаковать по ошибке).
+2. Найдите его и проверьте, что он правильный (`ВАШ_ПОЛЬЗОВАТЕЛЬ` — имя вашего пользователя Windows, папка в `C:\Users`):
    ```
    cd ~
-   unzip -o /mnt/c/Users/ВАШ_ПОЛЬЗОВАТЕЛЬ/Downloads/gothic3ds-base.zip
+   ZIP=$(ls -t /mnt/c/Users/ВАШ_ПОЛЬЗОВАТЕЛЬ/Downloads/gothic3ds-base*.zip | head -1)
+   echo "$ZIP"
+   unzip -p "$ZIP" gothic3ds/tools/bake/import_zen.cpp | grep -c importZenSfxScript
+   ```
+   Последняя команда должна напечатать `1` или больше. Если `0`, это старый архив: удалите его и скачайте самый свежий.
+3. Распакуйте в домашнюю папку WSL **в пустое место** (сначала уберите старый проект, чтобы старые и новые файлы не смешались):
+   ```
+   cd ~
+   [ -d gothic3ds ] && mv gothic3ds gothic3ds_old_$(date +%s)
+   unzip -q "$ZIP"
    cd ~/gothic3ds
    ls
    ```
@@ -264,7 +311,10 @@ sudo apt install -y build-essential cmake ninja-build git zip unzip python3 wget
 cd ~/gothic3ds
 cmake -S . -B build -G Ninja
 cmake --build build -j
+strings build/g3ds-bake | grep -c "script/sfx"
 ```
+
+Последняя строка должна напечатать число больше 0: это доказывает, что собран именно новый конвертер. (Если `ninja` не установлен, cmake сразу остановится с «unable to find a build program corresponding to Ninja»: поставьте его `sudo apt install -y ninja-build`, удалите папку `build` и повторите команды.)
 
 Первый запуск скачивает библиотеку ZenKit с GitHub, это займёт несколько минут. Получатся программы `build/g3ds-bake` (конвертер) и `build/g3ds-host` (запуск на ПК).
 
@@ -298,7 +348,7 @@ ls -la /tmp/test.pak
 
 Если для какой-то темы программа пишет `cannot load`, значит, не нашёлся её `.sty` или `.dls`; остальные темы это не останавливает.
 
-## Шаг 6. Запекание данных игры (`data.pak`, `music.pak`)
+## Шаг 6. Запекание данных игры (`data.pak`, `music.pak`, `speech.pak`)
 
 Конвертер читает файлы игры и делает архив для 3DS. Сама игра остаётся нетронутой.
 
@@ -310,11 +360,12 @@ mkdir -p ~/out
 
 Полезно знать:
 - Конвертер работает несколько минут и печатает отчёт. В нём должны быть строки `script/sfx: SFX.DAT`, `sounds: N C_SFX instances ... M baked` (M заметно больше нуля), `ambient sounds: ...`, `script/music: MUSIC.DAT` и `music: N C_MUSICTHEME instances ... K baked` (K больше нуля). Если где-то стоит 0: звуки и темы игры лежат в `SFX.DAT` и `MUSIC.DAT` в `_work\Data\Scripts\_compiled`; если их нет, в отчёте будет `sounds: SFX.DAT not found` / `music: MUSIC.DAT not found`. Если строки `music:` нет совсем, проверьте, что `--music-dir` указывает на папку с WAV из шага 5. Быстрая проверка: `grep -E "script/(sfx|music)|sounds:|music:" ~/out/bake.log`.
-- Рядом с `data.pak` появится `music.pak`: нужны оба файла.
+- Рядом с `data.pak` появятся `music.pak` и `speech.pak`: нужны все три файла (в `speech.pak` озвучка реплик; без него игра покажет только субтитры).
+- Голоса берутся из `Speech.vdf`/`Sounds.vdf` игры (или из отдельных файлов в `_work\Data\Sound\Speech`). В отчёте будет строка `voices: N lines of dialogue, M recordings baked (... MB ...)`; M должно быть в тысячах. `speech.pak` большой (сотни МБ; это IMA ADPCM, 11,025 кГц). Меньше и хуже качеством: `--voice-rate 8000`; совсем без голосов: `--no-voices`. Если M равно 0 — в вашей копии игры нет архива озвучки (в некоторых локализациях он лежит в другом месте); пришлите строку `voices:` разработчику.
 - Папка `~/out` создаётся командой `mkdir -p ~/out`; без неё конвертер напишет ошибку.
 - Отчёт можно напечатать ещё раз: `./build/g3ds-bake info ~/out/data.pak`.
-- Качество звуков задаётся флагом `--sound-rate 22050`, качество музыки — `--music-rate 32000`.
-- **Данные игры в архив проекта не кладите** и никуда не выкладывайте `data.pak` и `music.pak`: это материалы игры.
+- Качество звуков задаётся флагом `--sound-rate 22050`, качество музыки — `--music-rate 32000`, качество голосов — `--voice-rate 11025`.
+- **Данные игры в архив проекта не кладите** и никуда не выкладывайте `data.pak`, `music.pak` и `speech.pak`: это материалы игры.
 - После каждого обновления проекта `data.pak` нужно запекать заново (в `docs/HANDOFF.md` в разделе нужного раунда указано, нужно ли это).
 
 Посмотреть результат на ПК без консоли (необязательно):
@@ -359,7 +410,7 @@ SD-карту вставьте в картридер ПК (она появитс
 ```
 mkdir -p /mnt/c/gothic3ds_sd/3ds/gothic3ds
 cp ~/gothic3ds/gothic3ds.3dsx ~/gothic3ds/gothic3ds.smdh ~/out/data.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
-cp ~/out/music.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
+cp ~/out/music.pak ~/out/speech.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
 ```
 
 Затем в Windows скопируйте папку `C:\gothic3ds_sd\3ds\gothic3ds` на SD-карту в `3ds\gothic3ds`. Итог на карте:
@@ -369,9 +420,11 @@ cp ~/out/music.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
 /3ds/gothic3ds/gothic3ds.smdh
 /3ds/gothic3ds/data.pak
 /3ds/gothic3ds/music.pak
+/3ds/gothic3ds/speech.pak
+/3ds/dspfirm.cdc          <- НЕ в gothic3ds, а прямо в папке 3ds
 ```
 
-**Для звука нужна ещё прошивка DSP:** файл `/3ds/dspfirm.cdc` на SD-карте. Его получают с самой консоли утилитой DSP1 (Homebrew App Store → «DSP1»). Без него игра работает, но молча (об этом будет сообщение при запуске).
+**Не забудьте `/3ds/dspfirm.cdc`** (рамка в начале): прошивка DSP, выгруженная утилитой DSP1 с вашей консоли. Без неё звука нет совсем. Меню звука в игре: **Громкость** (эффекты), **Музыка**, **Голоса**.
 
 Запуск: Homebrew Launcher → Gothic 3DS.
 
@@ -383,6 +436,10 @@ cp ~/out/music.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
 
 | Что видите | Причина и решение |
 |---|---|
+| `unable to find a build program corresponding to "Ninja"` / `CMAKE_CXX_COMPILER not set` | Не установлен `ninja` (или компилятор): `sudo apt install -y ninja-build build-essential cmake`, затем `rm -rf build` и повторите шаг 4 |
+| `unzip: command not found` | `sudo apt install -y unzip` |
+| `strings build/g3ds-bake \| grep -c "script/sfx"` печатает 0 или в отчёте `0 C_SFX instances` | Старый конвертер или архив: в папке проекта старые файлы. Повторите шаг 3 с самым свежим архивом (проверьте его командой `unzip -p ... \| grep -c importZenSfxScript`), затем `rm -rf build` и шаг 4 |
+| `cannot find or open .../ВАШ_ПОЛЬЗОВАТЕЛЬ/Downloads/...zip` | `ВАШ_ПОЛЬЗОВАТЕЛЬ` нужно заменить на настоящее имя пользователя Windows; посмотреть: `ls /mnt/c/Users` |
 | `cmake: command not found` | Не выполнен шаг 2: `sudo apt install -y build-essential cmake ninja-build git` |
 | `The source directory ".../tools/dmrender" does not exist` | Вы не в папке проекта (`cd ~/gothic3ds`) или проект распакован не туда |
 | `Parse error in command line argument: DMUSIC_DIR` | Команда оборвана: после `-DDMUSIC_DIR=` должен стоять путь. В шаге 5 этот параметр не нужен вовсе |
@@ -392,11 +449,12 @@ cp ~/out/music.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
 | `No such file or directory` для пути к игре | Путь неверен: проверьте `ls "/mnt/c/Program Files (x86)/Steam/steamapps/common/Gothic"`; буквы дисков `C:` и `\` не работают |
 | `Please set DEVKITARM in your environment` | Не выполнен пункт 3 шага 7; выполните `source ~/.bashrc` |
 | Конвертер пишет `cannot open` / не находит `WORLD.ZEN` | Указана не папка игры. В ней должны лежать `Data` и `_work` |
-| Игра на 3DS молчит | Нет `/3ds/dspfirm.cdc` на SD-карте (шаг 8) |
+| Игра на 3DS молчит (ни эффектов, ни музыки, ни голосов) | Нет `/3ds/dspfirm.cdc` на SD-карте: запустите DSP1 на консоли. `sound.txt` тогда начинается с `dsp: NOT open (ndspInit 0xD880A7FA ...)` |
+| Звуки и музыка есть, никто не говорит | `speech.pak` не лежит рядом с `data.pak`, ползунок **Голоса** на 0, или при запекании не нашлось записей (строка `voices:` отчёта и строка `voices:` в `sound.txt`) |
 | Звук есть, музыки нет | Нет `music.pak` рядом с `data.pak`, или имена тем в `sound.txt` не нашлись; пришлите отчёт |
 | `wsl: Конфигурация прокси-сервера localhost обнаружена...` | Предупреждение, на сборку не влияет |
 | Очень медленно | Проект лежит на `/mnt/c`. Перенесите в `~` (шаг 3) |
 
 ## Обновление проекта
 
-Когда пришёл новый `gothic3ds-base.zip`: распакуйте его поверх (`cd ~ && unzip -o ...zip`), затем повторите шаги 4, 6, 7 и 8 (шаг 5 — только если хотите заново отрендерить музыку). Папки `build`, `build-dmrender` и `~/out` можно оставить: они пересоберутся сами.
+Когда пришёл новый `gothic3ds-base.zip`: повторите шаг 3 (найдите и проверьте самый свежий архив, уберите старый проект, распакуйте), затем шаги 4, 6, 7 и 8. Проект пересобирается с нуля (несколько минут). WAV в `~/music_wavs` и результаты в `~/out` лежат вне проекта и остаются, поэтому шаг 5 нужен, только если хотите заново отрендерить музыку.

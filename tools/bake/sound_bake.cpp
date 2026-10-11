@@ -11,7 +11,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <atomic>
 #include <map>
+#include <set>
+#include <thread>
 #include <stdexcept>
 
 namespace g3 {
@@ -277,6 +280,14 @@ bool buildSyntheticSound(const std::string& file, std::vector<u8>& bytes) {
 		rate = 22050;
 		freq = 300.0;
 		seconds = 0.3;
+	} else if (name == "DIA_THORUS_HELLO_09_00.WAV") { // the synthetic game's two recorded lines
+		rate = 22050;
+		freq = 440.0;
+		seconds = 2.0;
+	} else if (name == "DIA_THORUS_JOB_15_00.WAV") {
+		rate = 44100;
+		freq = 330.0;
+		seconds = 0.6;
 	} else if (name == "HUM.WAV") {
 		rate = 22050;
 		freq = 110.0;
@@ -491,6 +502,120 @@ std::vector<u8> bakeAmbient(const std::vector<SrcAmbient>& sounds) {
 	h.count = count;
 	std::memcpy(blob.data(), &h, sizeof(h));
 	return blob;
+}
+
+} // namespace g3
+
+namespace g3 {
+
+std::vector<u8> encodeSpeech(const SrcSound& sound) {
+	const u32 frames = u32(sound.samples.size());
+	SoundHeader h {};
+	h.magic = SOUND_MAGIC;
+	h.version = SOUND_VERSION;
+	h.rate = sound.rate;
+	h.frames = frames;
+	h.format = SOUND_IMA4;
+	std::vector<u8> blob(sizeof(h) + imaBytes(frames), 0);
+	std::memcpy(blob.data(), &h, sizeof(h));
+	u8* p = blob.data() + sizeof(h);
+	ImaState st;
+	st.predictor = sound.samples[0];
+	// A starting step that suits the first differences.
+	if (frames > 1) {
+		const int d = std::abs(int(sound.samples[1]) - int(sound.samples[0]));
+		while (st.index < 88 && IMA_STEPS[st.index] < d / 2) ++st.index;
+	}
+	p[0] = u8(st.predictor & 0xFF);
+	p[1] = u8((st.predictor >> 8) & 0xFF);
+	p[2] = u8(st.index);
+	u8* nibbles = p + 4;
+	for (u32 i = 1; i < frames; ++i) {
+		// The code whose decoded sample lands nearest the real one.
+		u32 best = 0;
+		int bestErr = 1 << 30;
+		for (u32 code = 0; code < 16; ++code) {
+			ImaState t = st;
+			const int err = std::abs(int(imaStep(t, code)) - int(sound.samples[i]));
+			if (err < bestErr) {
+				bestErr = err;
+				best = code;
+			}
+		}
+		imaStep(st, best);
+		const u32 k = i - 1;
+		nibbles[k >> 1] = u8(nibbles[k >> 1] | (best << ((k & 1) * 4)));
+	}
+	return blob;
+}
+
+SpeechBakeResult bakeSpeech(const std::vector<std::string>& lineNames,
+                            const std::function<bool(const std::string&, std::vector<u8>&)>& fetch, u32 rate, unsigned threads,
+                            PakWriter& pak) {
+	SpeechBakeResult result;
+	result.lines = u32(lineNames.size());
+	if (rate == 0 || !fetch) return result;
+	if (rate < SOUND_MIN_RATE) rate = SOUND_MIN_RATE;
+	if (threads == 0) threads = 1;
+	struct Done {
+		bool ok = false;
+		std::string name; // entry name
+		std::vector<u8> blob;
+		std::string why;
+	};
+	std::set<u32> seen;
+	const size_t batch = 256;
+	for (size_t from = 0; from < lineNames.size(); from += batch) {
+		const size_t to = std::min(lineNames.size(), from + batch);
+		std::vector<std::vector<u8>> files(to - from);
+		std::vector<char> have(to - from, 0);
+		for (size_t i = from; i < to; ++i) {
+			const u32 hash = hashName(lineNames[i].c_str());
+			if (!seen.insert(hash).second) continue; // the same line twice
+			have[i - from] = fetch(lineNames[i] + ".WAV", files[i - from]) ? 1 : 0;
+		}
+		std::vector<Done> done(to - from);
+		std::atomic<size_t> next {0};
+		auto work = [&]() {
+			for (;;) {
+				const size_t k = next.fetch_add(1);
+				if (k >= to - from) return;
+				if (!have[k]) continue;
+				Done& d = done[k];
+				SrcSound sound;
+				std::string why;
+				if (!decodeWav(files[k], sound, why)) {
+					d.why = lineNames[from + k] + ": " + why;
+					continue;
+				}
+				resampleSound(sound, rate);
+				if (sound.samples.empty() || sound.samples.size() > SPEECH_MAX_FRAMES || sound.rate < SOUND_MIN_RATE) {
+					d.why = lineNames[from + k] + ": unusable length or rate";
+					continue;
+				}
+				d.blob = encodeSpeech(sound);
+				char name[16];
+				speechEntryName(hashName(lineNames[from + k].c_str()), name);
+				d.name = name;
+				d.ok = true;
+				std::vector<u8>().swap(files[k]);
+			}
+		};
+		std::vector<std::thread> pool;
+		for (unsigned t = 1; t < threads; ++t) pool.emplace_back(work);
+		work();
+		for (std::thread& t : pool) t.join();
+		for (Done& d : done) {
+			if (d.ok) {
+				pak.add(d.name, ASSET_SOUND, d.blob, false);
+				result.bytes += d.blob.size();
+				++result.baked;
+			} else if (!d.why.empty()) {
+				result.unusable.push_back(d.why);
+			}
+		}
+	}
+	return result;
 }
 
 } // namespace g3

@@ -160,6 +160,8 @@ int main(int argc, char** argv) {
 			else if (a == "--no-sound") opt.soundRate = 0;
 			else if (a == "--music-dir") opt.musicDir = value();
 			else if (a == "--music-rate") opt.musicRate = u32(std::stoul(value()));
+			else if (a == "--voice-rate") opt.voiceRate = u32(std::stoul(value()));
+			else if (a == "--no-voices") opt.voiceRate = 0;
 			else if (a == "--hero-script") actor.script = value();
 			else if (a == "--hero-body") actor.body = value();
 			else if (a == "--hero-head") actor.head = value();
@@ -310,6 +312,32 @@ int main(int argc, char** argv) {
 			pak.add("meta/camera", ASSET_META, std::vector<u8>(bytes, bytes + sizeof(camera)));
 		}
 		pak.write(out);
+		const size_t outSlash = out.find_last_of("/\\");
+		const std::string outDir = outSlash == std::string::npos ? std::string() : out.substr(0, outSlash + 1);
+		// The voices: a recording for each line of the dialogue, into speech.pak beside it.
+		if (haveDialogue && opt.voiceRate > 0 && scripts.soundFile) {
+			std::vector<std::string> names;
+			names.reserve(dialogue.lines.size());
+			for (const auto& l : dialogue.lines) names.push_back(l.first);
+			PakWriter speechPak;
+			const SpeechBakeResult sr = bakeSpeech(names, scripts.soundFile, opt.voiceRate, opt.threads, speechPak);
+			std::printf("voices: %u lines of dialogue, %u recordings baked (%.1f MB at up to %u Hz, IMA ADPCM)", sr.lines, sr.baked,
+			            double(sr.bytes) / 1048576.0, opt.voiceRate);
+			if (!sr.unusable.empty()) {
+				std::printf("; %zu could not be used:", sr.unusable.size());
+				for (size_t i = 0; i < sr.unusable.size() && i < 4; ++i) std::printf(" [%s]", sr.unusable[i].c_str());
+			}
+			std::printf("\n");
+			if (sr.baked > 0) {
+				const std::string speechPath = outDir + "speech.pak";
+				speechPak.write(speechPath);
+				std::printf("wrote %s: %zu voices\n", speechPath.c_str(), speechPak.items().size());
+			} else {
+				std::printf("WARNING: no speech.pak written: none of the %u lines has a WAV in the game's files (Speech.vdf, or "
+				            "_work/Data/Sound/Speech). The game then shows subtitles only; --no-voices hides this message.\n",
+				            sr.lines);
+			}
+		}
 		if (scripts.musicPak && !musicPak.items().empty()) {
 			const size_t slash = out.find_last_of("/\\");
 			const std::string musicPath = (slash == std::string::npos ? std::string() : out.substr(0, slash + 1)) + "music.pak";

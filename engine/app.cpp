@@ -60,6 +60,7 @@ bool App::init(const char* pakPath, const char* worldName) {
 	link.user = this;
 	_npcs.setHeroLink(link);
 	startSound();
+	startSpeech();
 	// The overlay (menus, the HUD): without it the game still runs.
 	_ui.init();
 	// The bottom screen's inventory (a picture of its own, drawn by the processor).
@@ -249,6 +250,7 @@ void App::setDrawDistance(float cm) {
 }
 
 void App::shutdown() {
+	_speech.shutdown();
 	_music.shutdown();
 	_sound.shutdown();
 	_sfxVm.release();
@@ -1015,6 +1017,7 @@ void App::applySettings() {
 	_scheme = ControlScheme(_settings.scheme);
 	_sound.setVolume(float(_settings.soundVolume) / 10.0f);
 	_music.setVolume(float(_settings.musicVolume) / 10.0f);
+	_speech.setVolume(float(_settings.voiceVolume) / 10.0f);
 	const bool third = !_settings.firstPerson;
 	if (third != _thirdPerson) {
 		_thirdPerson = third;
@@ -1190,6 +1193,44 @@ void App::soundEvent(const ClipSfxEvent& event, int npc) {
 	} else {
 		_sound.play(event.name, &at, 1.0f, range);
 	}
+}
+
+// Voices: speech.pak beside data.pak, if the player has made one.
+void App::startSpeech() {
+	if (!_audio) return;
+	char path[320];
+	snprintf(path, sizeof(path), "%s", _pak.path());
+	char* slash = strrchr(path, '/');
+	char* bslash = strrchr(path, '\\');
+	if (bslash > slash) slash = bslash;
+	snprintf(slash ? slash + 1 : path, sizeof(path) - (slash ? u32(slash + 1 - path) : 0), "speech.pak");
+	if (!_speech.init(path, _audio)) return;
+	_speech.setVolume(float(_settings.voiceVolume) / 10.0f);
+	Npcs::SpeechHook hook;
+	hook.play = &App::speechPlayThunk;
+	hook.stop = &App::speechStopThunk;
+	hook.user = this;
+	_npcs.setSpeechHook(hook);
+}
+
+float App::speechPlayThunk(void* user, u32 lineHash, int speaker, bool hero) {
+	return static_cast<App*>(user)->speechBegin(lineHash, speaker, hero);
+}
+
+void App::speechStopThunk(void* user) { static_cast<App*>(user)->_speech.stop(); }
+
+// A line begins. The player's character is heard in full; another by its distance
+// (a talk is close, a shout across the camp is not).
+float App::speechBegin(u32 lineHash, int speaker, bool hero) {
+	if (!_speech.ready()) return 0.0f;
+	float gain = 1.0f;
+	if (!hero && speaker >= 0 && _npcs.loaded()) {
+		const GameNpc& n = _npcs.game().npc(u32(speaker));
+		const float dx = n.pos[0] - _cam.pos.x, dy = n.pos[1] - _cam.pos.y, dz = n.pos[2] - _cam.pos.z;
+		const float d = sqrtf(dx * dx + dy * dy + dz * dz);
+		gain = d <= 1000.0f ? 1.0f : (d >= 3000.0f ? 0.0f : 1.0f - (d - 1000.0f) / 2000.0f);
+	}
+	return _speech.play(lineHash, gain);
 }
 
 void App::soundIdle(float dt) {

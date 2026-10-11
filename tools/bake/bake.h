@@ -22,6 +22,7 @@ struct BakeOptions {
 	bool quiet = false; // do not print the report while baking
 	std::string musicDir;  // folder of the WAV renders of the music themes (empty: no music)
 	u32 musicRate = 32000; // highest rate of the music (Hz)
+	u32 voiceRate = 11025; // highest rate of the spoken lines (Hz); 0: no speech.pak
 	u32 soundRate = 22050; // highest sample rate of the sounds (Hz); 0: no sound is baked
 };
 

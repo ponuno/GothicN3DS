@@ -106,6 +106,8 @@ const Entry kEntries[] = {
     {{"Звук", "Sound", "Dźwięk", "Ton"}},
     {{"Громкость", "Volume", "Głośność", "Lautstärke"}},
     {{"Музыка", "Music", "Muzyka", "Musik"}},
+    {{"Голоса", "Voices", "Głosy", "Stimmen"}},
+    {{"Нужен speech.pak рядом с data.pak", "Needs speech.pak next to data.pak", "Potrzebny speech.pak obok data.pak", "Braucht speech.pak neben data.pak"}},
     {{"Нужен music.pak рядом с data.pak", "Needs music.pak next to data.pak", "Potrzebny music.pak obok data.pak", "Braucht music.pak neben data.pak"}},
     {{"Шаги, бой, звуки мира; 0 — без звука", "Footsteps, combat, world sounds; 0 is silent", "Kroki, walka, dźwięki świata; 0 to cisza", "Schritte, Kampf, Weltgeräusche; 0 ist stumm"}},
     {{"Интерфейс в игре", "In-game display", "Interfejs w grze", "Anzeige im Spiel"}},

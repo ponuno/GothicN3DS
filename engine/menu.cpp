@@ -82,6 +82,7 @@ const Item kInterface[] = {
 const Item kSound[] = {
     {"Громкость", RANGE, &Settings::soundVolume, nullptr, 1, 0, 10, "", 0, "Шаги, бой, звуки мира; 0 — без звука", nullptr},
     {"Музыка", RANGE, &Settings::musicVolume, nullptr, 1, 0, 10, "", 0, "Нужен music.pak рядом с data.pak", nullptr},
+    {"Голоса", RANGE, &Settings::voiceVolume, nullptr, 1, 0, 10, "", 0, "Нужен speech.pak рядом с data.pak", nullptr},
 };
 const Item kDebug[] = {
     {"Восприятие жителей", TOGGLE, &Settings::perception, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr},

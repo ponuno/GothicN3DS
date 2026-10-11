@@ -672,8 +672,12 @@ int main(int, char**) {
 	aptUnhook(&gAptCookie);
 	exitStep("exit 2/4: closing the world");
 	if (FILE* sf = fopen(kSoundReportPath, "w")) {
+		fprintf(sf, "dsp: %s (ndspInit 0x%08X; 0xD880A7FA means sdmc:/3ds/dspfirm.cdc is missing)\n", gAudio.isOpen() ? "open" : "NOT open",
+		        gAudio.openResult());
+		fprintf(sf, "sound engine: %s; music: %s\n", app.sound().ready() ? "ready" : "OFF", app.music().ready() ? "ready" : "OFF (no music.pak or no DSP)");
 		app.sound().writeReport(sf);
 		app.music().writeReport(sf);
+		app.speech().writeReport(sf);
 		fclose(sf);
 	}
 	app.shutdown();

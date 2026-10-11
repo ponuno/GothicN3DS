@@ -14,6 +14,8 @@ public:
 	bool open();
 	void close();
 	bool isOpen() const { return _open; }
+	// What ndspInit answered (0: fine): 0xD880A7FA is "no DSP firmware at sdmc:/3ds/dspfirm.cdc".
+	unsigned openResult() const { return _openResult; }
 
 	u32 channels() const override { return _open ? CHANNELS : 0; }
 	void* allocSamples(u32 bytes) override;
@@ -33,6 +35,7 @@ public:
 	static constexpr int STREAM_CHANNEL = 20; // (the DSP has 24; the music has one of its own)
 
 private:
+	unsigned _openResult = 0xFFFFFFFFu;
 	bool _open = false;
 	ndspWaveBuf _wave[CHANNELS];
 	u32 _rate[CHANNELS] = {};

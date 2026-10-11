@@ -62,6 +62,7 @@ void Npcs::flushSpeech() {
 	_say.active = false;
 	_sayText[0] = 0;
 	_speechWait = 0;
+	if (_speechHook.stop) _speechHook.stop(_speechHook.user);
 }
 
 void Npcs::tickSpeech(float dt) {
@@ -110,6 +111,12 @@ void Npcs::tickSpeech(float dt) {
 			total = clamp(1.2f + 0.055f * float(utf8Length(_sayText)), 1.8f, 9.0f);
 		} else {
 			++_stats.linesMissing;
+		}
+		// With a recording the line lasts as long as it does (and a breath more).
+		if (_speechHook.play) {
+			const bool hero = s.speaker >= 0 && u32(s.speaker) < _game.npcCount() && _game.npc(u32(s.speaker)).hero;
+			const float voice = _speechHook.play(_speechHook.user, s.hash, s.speaker, hero);
+			if (voice > 0.0f) total = voice + 0.3f;
 		}
 		_say.active = true;
 		_say.id = s.id;
@@ -311,7 +318,10 @@ bool Npcs::talkChoose(u32 index) {
 }
 
 void Npcs::talkSkip() {
-	if (_say.active && _say.time > 0.25f) _say.time = _say.total;
+	if (_say.active && _say.time > 0.25f) {
+		_say.time = _say.total;
+		if (_speechHook.stop) _speechHook.stop(_speechHook.user);
+	}
 }
 
 bool Npcs::talkBack() {

@@ -57,6 +57,8 @@ struct Settings {
 	// Version 5: sound.
 	u8 soundVolume = 8;      // 0 (mute) .. 10
 	u8 musicVolume = 6;      // 0 (mute) .. 10
+	// Version 6: voices.
+	u8 voiceVolume = 8;      // 0 (mute: the subtitles stay up as long as the line is) .. 10
 
 	// Clamps every value into its range (after reading a file of another version).
 	void sanitize();

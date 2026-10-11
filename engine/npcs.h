@@ -314,6 +314,14 @@ public:
 	void setHeroLink(const HeroLink& link) { _heroLink = link; }
 	// Told of the sound events of the clips the characters play.
 	void setSoundHook(const SoundEventHook& hook) { _soundHook = hook; }
+	// The voices: `play` is told a line (hashName of its name) is begun by a character (-1: nobody known; `hero`:
+	// the player's) and returns how many seconds the recording lasts, 0 if it has none; `stop` ends it early.
+	struct SpeechHook {
+		float (*play)(void* user, u32 lineHash, int speaker, bool hero) = nullptr;
+		void (*stop)(void* user) = nullptr;
+		void* user = nullptr;
+	};
+	void setSpeechHook(const SpeechHook& hook) { _speechHook = hook; }
 	// Which way the player's character faces (the scripts and the fight AI look at it).
 	void setHeroYaw(float yaw) { _heroYaw = yaw; }
 	// A perception for one actor only (PERC_ASSESSTHREAT: the player aims at it).
@@ -377,6 +385,7 @@ public:
 
 private:
 	SoundEventHook _soundHook;
+	SpeechHook _speechHook;
 	enum { PIECES = 48, ACTORS = 16 }; // three models each
 	typedef NpcPiece Piece;
 

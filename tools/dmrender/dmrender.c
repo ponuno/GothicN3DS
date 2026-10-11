@@ -21,10 +21,43 @@
 
 static char gDir[1024];
 
+typedef struct {
+	char* name; // file name only
+	char* path; // full path
+} FileEntry;
+static FileEntry* gFiles;
+static size_t gFileCount, gFileCap;
+
 static int equalNoCase(const char* a, const char* b) {
 	for (; *a && *b; ++a, ++b)
 		if (tolower((unsigned char) *a) != tolower((unsigned char) *b)) return 0;
 	return *a == *b;
+}
+
+// Every file under `dir`, subfolders too: the game keeps its themes in several
+// (orchestra, dungeon, ...) and a theme may name a style or bank from another.
+static void scan(const char* dir, int depth) {
+	DIR* d = opendir(dir);
+	if (!d) return;
+	for (struct dirent* e; (e = readdir(d));) {
+		if (e->d_name[0] == '.') continue;
+		char path[2048];
+		snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
+		struct stat st;
+		if (stat(path, &st) != 0) continue;
+		if (S_ISDIR(st.st_mode)) {
+			if (depth < 8) scan(path, depth + 1);
+		} else if (S_ISREG(st.st_mode)) {
+			if (gFileCount == gFileCap) {
+				gFileCap = gFileCap ? gFileCap * 2 : 256;
+				gFiles = realloc(gFiles, gFileCap * sizeof(FileEntry));
+			}
+			gFiles[gFileCount].name = strdup(e->d_name);
+			gFiles[gFileCount].path = strdup(path);
+			++gFileCount;
+		}
+	}
+	closedir(d);
 }
 
 static void* resolve(void* ctx, char const* name, size_t* len) {
@@ -33,26 +66,19 @@ static void* resolve(void* ctx, char const* name, size_t* len) {
 	const char* base = name;
 	for (const char* p = name; *p; ++p)
 		if (*p == '/' || *p == '\\') base = p + 1;
-	DIR* d = opendir(gDir);
-	if (!d) return NULL;
-	void* bytes = NULL;
-	for (struct dirent* e; (e = readdir(d));) {
-		if (!equalNoCase(e->d_name, base)) continue;
-		char path[2048];
-		snprintf(path, sizeof(path), "%s/%s", gDir, e->d_name);
-		FILE* f = fopen(path, "rb");
-		if (!f) break;
+	for (size_t i = 0; i < gFileCount; ++i) {
+		if (!equalNoCase(gFiles[i].name, base)) continue;
+		FILE* f = fopen(gFiles[i].path, "rb");
+		if (!f) return NULL;
 		fseek(f, 0, SEEK_END);
 		long size = ftell(f);
 		fseek(f, 0, SEEK_SET);
-		if (size > 0 && (bytes = malloc((size_t) size))) {
-			*len = fread(bytes, 1, (size_t) size, f);
-		}
+		void* bytes = NULL;
+		if (size > 0 && (bytes = malloc((size_t) size))) *len = fread(bytes, 1, (size_t) size, f);
 		fclose(f);
-		break;
+		return bytes;
 	}
-	closedir(d);
-	return bytes;
+	return NULL;
 }
 
 static void put32(FILE* f, uint32_t v) {
@@ -147,6 +173,11 @@ int main(int argc, char** argv) {
 		else if (!strcmp(argv[i], "--tail") && i + 1 < argc) tail = atof(argv[++i]);
 		else if (count < 4096) names[count++] = argv[i];
 	}
+	scan(gDir, 0);
+	if (gFileCount == 0) {
+		fprintf(stderr, "no files in %s\n", gDir);
+		return 1;
+	}
 	mkdir(outDir, 0755);
 	Dm_setLoggerDefault(DmLogLevel_WARN);
 
@@ -156,21 +187,10 @@ int main(int argc, char** argv) {
 
 	int done = 0, failed = 0;
 	if (count == 0) {
-		DIR* d = opendir(gDir);
-		if (!d) {
-			fprintf(stderr, "cannot open %s\n", gDir);
-			return 1;
+		for (size_t i = 0; i < gFileCount && count < 4096; ++i) {
+			const size_t n = strlen(gFiles[i].name);
+			if (n > 4 && equalNoCase(gFiles[i].name + n - 4, ".sgt")) names[count++] = gFiles[i].name;
 		}
-		static char list[4096][256];
-		for (struct dirent* e; (e = readdir(d)) && count < 4096;) {
-			const size_t n = strlen(e->d_name);
-			if (n > 4 && n < 256 && equalNoCase(e->d_name + n - 4, ".sgt")) {
-				snprintf(list[count], 256, "%s", e->d_name);
-				names[count] = list[count];
-				++count;
-			}
-		}
-		closedir(d);
 		for (int i = 0; i < count; ++i) (renderOne(loader, names[i], outDir, rate, cycles, tail) ? ++done : ++failed);
 	} else {
 		for (int i = 0; i < count; ++i) (renderOne(loader, names[i], outDir, rate, cycles, tail) ? ++done : ++failed);

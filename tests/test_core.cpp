@@ -3955,10 +3955,10 @@ static void testSpeech() {
 			Speech sp4;
 			CHECK(!sp4.init((dir + "/shards/broken.pak").c_str(), &a4));
 			char report[512] = "";
-			FILE* r = fmemopen(report, sizeof(report) - 1, "w");
-			if (r) {
-				sp4.writeReport(r);
-				std::fclose(r);
+			FILE* rf = fmemopen(report, sizeof(report) - 1, "w");
+			if (rf) {
+				sp4.writeReport(rf);
+				std::fclose(rf);
 			}
 			CHECK(std::strstr(report, "cannot be opened") != nullptr);
 		}
@@ -5773,6 +5773,169 @@ static void testFight() {
 	gfx::shutdown();
 }
 
+// Magic: the spells as the scripts describe them, the casting loop (a point of mana at a time, the
+// scripts deciding), a projectile that hurts, a scroll used up, healing while charged.
+static void testMagic() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/magic.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded()) return;
+	app.settings().scheme = CONTROLS_CONSOLE;
+	app.settings().immortal = 1;
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.applySettings();
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	const u32 hero = u32(g.hero() - &g.npc(0));
+	const float dt = 1.0f / 30.0f;
+	const auto find = [&](const char* name) {
+		const u32 s = g.vm().find(name);
+		CHECK(s != SCRIPT_NONE && g.isItem(s));
+		return s;
+	};
+	// 1. What the scripts say a spell is.
+	{
+		const GameSpell* bolt = g.spellInfo(17);
+		CHECK(bolt && std::strcmp(bolt->tag, "Firebolt") == 0 && std::strcmp(bolt->letters, "FBT") == 0);
+		CHECK(bolt && bolt->timePerMana == 500.0f && bolt->damagePerLevel == 30 && bolt->damageType == 8 && bolt->shoots);
+		CHECK(bolt && bolt->fxFly != 0 && bolt->fxCast != 0 && bolt->fxCollide != 0);
+		const GameSpell* heal = g.spellInfo(4);
+		CHECK(heal && std::strcmp(heal->letters, "HEA") == 0 && !heal->shoots && heal->spellType == 0);
+		const GameSpell* ball = g.spellInfo(1);
+		CHECK(ball && ball->timePerMana == 750.0f);
+		CHECK(g.spellInfo(40) == nullptr && g.spellInfo(-1) == nullptr);
+		const GameItemInfo* rune = g.itemInfo(find("ITARRUNEFIREBOLT"));
+		CHECK(rune && rune->spell == 17 && rune->circle == 1);
+		// Spell_ProcessMana asked the way the engine does: the spell is the caster's.
+		g.npcMut(hero).spell = 17;
+		CHECK(g.processMana(hero, -1, 0, false) == 1 && g.processMana(hero, -1, 1, false) == 2 && g.processMana(hero, -1, 1, true) == 3);
+		g.npcMut(hero).spell = 1;
+		CHECK(g.processMana(hero, -1, 0, false) == 1 && g.processMana(hero, -1, 1, false) == 4 && g.processMana(hero, -1, 5, false) == 2);
+		CHECK(g.processMana(hero, -1, 2, true) == 2);
+		g.npcMut(hero).spell = -1;
+	}
+	// 2. A firebolt at a beast: the rune chosen, the stance taken, A held until the spell goes off.
+	const int scav = [&]() {
+		int best = -1;
+		for (u32 i = 0; i < g.npcCount(); ++i)
+			if (g.npc(i).placed && g.npc(i).world == g.currentWorld() && std::strcmp(g.nameOf(g.npc(i)), "Scavenger") == 0) best = int(i);
+		return best;
+	}();
+	CHECK(scav >= 0);
+	if (scav < 0) return;
+	const GameNpc& e = g.npc(u32(scav));
+	app.teleport({e.pos[0], e.pos[1] + 400.0f, e.pos[2] - 600.0f});
+	app.world().preload(app.camera().pos);
+	for (int i = 0; i < 30; ++i) app.update(Input {}, dt);
+	const u32 rune = find("ITARRUNEFIREBOLT"), scroll = find("ITARSCROLLFIREBOLT"), healRune = find("ITARRUNEHEAL");
+	g.giveItems(hero, rune, 1);
+	g.giveItems(hero, scroll, 1);
+	g.giveItems(hero, healRune, 1);
+	const i32 protFire = g.npcInt(e, g.vm().findMember("C_NPC", "PROTECTION"), 3);
+	g.setAttribute(g.npcMut(hero), 3, 20);
+	g.setAttribute(g.npcMut(hero), 2, 10);
+	CHECK(app.selectSpell(rune) && app.spellItem() == rune);
+	for (int i = 0; i < 60; ++i) app.update(Input {}, dt);
+	CHECK(app.hero().weapon() == WEAPON_MAG && g.npc(hero).weapon == WEAPON_MAG);
+	const i32 hpBefore = g.hitPoints(e);
+	// Turned to the beast first (the stick towards it, a step or two), then the key held.
+	for (int i = 0; i < 90 && !(app.targetLocked() && app.target() == scav); ++i) {
+		Input in;
+		const Vec3 feet = app.player().feet;
+		const float want = std::atan2(e.pos[0] - feet.x, e.pos[2] - feet.z) - app.camera().yaw;
+		in.moveX = 0.9f * std::sin(want);
+		in.moveZ = 0.9f * std::cos(want);
+		app.update(in, dt);
+	}
+	CHECK(app.target() == scav);
+	bool cast = false;
+	int frames = 0;
+	for (; frames < 30 * 8 && app.magicStats().hits == 0; ++frames) {
+		Input in;
+		if (frames == 3) in.attack = true;
+		in.attackHeld = frames >= 3 && !cast && frames < 3 + 90;
+		app.update(in, dt);
+		cast |= app.magicStats().bolts > 0;
+	}
+	std::printf("  a firebolt: %d frames, %u bolts, %u hits, damage %d (the beast's fire protection %d), mana %d\n", frames, app.magicStats().bolts,
+	            app.magicStats().hits, int(app.magicStats().lastDamage), int(protFire), int(g.attributeOf(g.npc(hero), 2)));
+	CHECK(app.magicStats().casts == 1 && app.magicStats().bolts == 1 && app.magicStats().hits == 1);
+	CHECK(app.magicStats().lastDamage == std::max(30 - protFire, i32(0)));
+	CHECK(g.hitPoints(e) == std::max(hpBefore - std::max(30 - protFire, i32(0)), i32(0)));
+	CHECK(g.attributeOf(g.npc(hero), 2) == 9); // (a point of mana, SPL_SENDCAST_FIREBOLT)
+	CHECK(g.npc(hero).spell == -1 && !app.spellCasting() && g.npc(u32(scav)).lastHitSpell == 17);
+	// 3. Letting go too early casts nothing, and costs nothing (Firebolt's release says stop).
+	{
+		const u32 bolts = app.magicStats().bolts;
+		const i32 mana = g.attributeOf(g.npc(hero), 2);
+		Input press;
+		press.attack = press.attackHeld = true;
+		app.update(press, dt);
+		CHECK(app.spellCasting());
+		Input let;
+		app.update(let, dt);
+		CHECK(!app.spellCasting() && app.magicStats().bolts == bolts && g.attributeOf(g.npc(hero), 2) == mana);
+	}
+	// 4. A scroll: used up by the cast, and the stance goes when it was the last of the spells chosen.
+	{
+		CHECK(app.selectSpell(scroll));
+		const u32 casts = app.magicStats().casts;
+		for (int i = 0; i < 90 && app.magicStats().casts == casts; ++i) {
+			Input in;
+			if (i == 2) in.attack = true;
+			in.attackHeld = i >= 2;
+			app.update(in, dt);
+		}
+		CHECK(app.magicStats().casts == casts + 1 && g.itemCount(hero, scroll) == 0);
+		for (int i = 0; i < 30; ++i) app.update(Input {}, dt);
+		CHECK(app.spellItem() != scroll);
+	}
+	// 5. Healing: charged, it gives its hit points one point of mana at a time, and stops when letting go.
+	{
+		CHECK(app.selectSpell(healRune));
+		g.setAttribute(g.npcMut(hero), 0, 5);
+		g.setAttribute(g.npcMut(hero), 2, 10);
+		for (int i = 0; i < 90; ++i) {
+			Input in;
+			if (i == 2) in.attack = true;
+			in.attackHeld = i >= 2 && i < 2 + 75; // (2.5 s: five points of mana)
+			app.update(in, dt);
+		}
+		const i32 hp = g.hitPoints(g.npc(hero)), mana = g.attributeOf(g.npc(hero), 2);
+		std::printf("  healing: %d hit points of 40, mana %d\n", int(hp), int(mana));
+		CHECK(hp >= 5 + 3 * 10 && hp <= 40);
+		CHECK(mana <= 7 && mana >= 4 && !app.spellCasting());
+	}
+	// 6. The inventory uses a rune as choosing it; the stance goes away with the key.
+	{
+		g.setAttribute(g.npcMut(hero), 2, 10);
+		CHECK(app.itemAction(rune) && app.spellItem() == rune);
+		Input key;
+		key.magic = true;
+		for (int i = 0; i < 90; ++i) app.update(i == 0 ? key : Input {}, dt);
+		CHECK(app.hero().weapon() == WEAPON_NONE);
+		app.update(key, dt);
+		for (int i = 0; i < 90; ++i) app.update(Input {}, dt);
+		CHECK(app.hero().weapon() == WEAPON_MAG);
+	}
+	// 7. The faults menu's test kit: every spell as a rune, the potions that raise attributes (as far as the
+	// scripts have them), mana to spend.
+	{
+		g.giveItems(hero, rune, -g.itemCount(hero, rune));
+		CHECK(app.menuAction(MENU_GIVE_TESTKIT, nullptr));
+		CHECK(g.itemCount(hero, rune) == 1 && g.itemCount(hero, find("ITARRUNEFIREBALL")) == 1 && g.itemCount(hero, find("ITARSCROLLFIREBOLT")) == 3);
+		CHECK(g.attributeOf(g.npc(hero), 3) >= 100 && g.attributeOf(g.npc(hero), 2) == g.attributeOf(g.npc(hero), 3));
+		CHECK(g.npc(hero).armorItem != SCRIPT_NONE && g.npc(hero).melee != SCRIPT_NONE);
+	}
+	app.shutdown();
+	gfx::shutdown();
+}
+
 // The inventory: using things takes the character's time, armour is not
 // changed in a fight, requirements hold, quick slots, state.bin, the panel.
 static void testInventory() {
@@ -6215,6 +6378,29 @@ static void testSettings() {
 		m.update(up, s); // (round to the last)
 		CHECK(m.selected() == m.itemCount(Menu::PAGE_MAIN) - 1 && m.update(ok, s) == MENU_EXIT);
 		CHECK(m.update(start, s) == MENU_CLOSED && !m.isOpen());
+		// The debug page leads to three pages of its own; B goes back one step at a time, and the kit is on one of them.
+		{
+			Menu d;
+			d.open();
+			MenuInput none, ok2, back2, dn;
+			ok2.confirm = true;
+			back2.back = true;
+			dn.down = true;
+			for (int i = 0; i < 6; ++i) d.update(dn, s);
+			CHECK(d.update(ok2, s) == MENU_NONE && d.page() == Menu::PAGE_DEBUG);
+			d.update(dn, s);
+			CHECK(d.update(ok2, s) == MENU_NONE && d.page() == Menu::PAGE_DEBUG_HERO);
+			bool kit = false;
+			for (int i = 0; i < d.itemCount(Menu::PAGE_DEBUG_HERO); ++i) {
+				if (i) d.update(dn, s);
+				kit = kit || d.update(ok2, s) == MENU_GIVE_TESTKIT;
+			}
+			CHECK(kit);
+			CHECK(d.update(back2, s) == MENU_NONE && d.page() == Menu::PAGE_DEBUG);
+			CHECK(d.update(back2, s) == MENU_NONE && d.page() == Menu::PAGE_MAIN);
+			for (int p = 0; p < Menu::PAGES; ++p) CHECK(d.itemCount(Menu::Page(p)) <= 10);
+			(void)none;
+		}
 		// Every line fits the panel (320 pixels, 8 of margin either side).
 		Ui ui;
 		int widest = 0;
@@ -7521,6 +7707,7 @@ int main(int argc, char** argv) {
 	             {"mobs", testMobs},
 	             {"life", testLife},
 	             {"fight", testFight},
+             {"magic", testMagic},
 	             {"inventory", testInventory},
              {"chests", testChests},
              {"particles", testParticles},

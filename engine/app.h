@@ -210,6 +210,27 @@ public:
 	// The faults menu's: a set of things of every kind the scripts define, to
 	// try the inventory with. Returns how many kinds were given.
 	u32 giveItemKit();
+	u32 giveTestKit();
+	// ---- magic (app_magic.cpp; the rules are the scripts', see game_magic.cpp) ----
+	// The rune or scroll chosen (an item symbol, SCRIPT_NONE for none): A casts it in the magic stance.
+	u32 spellItem() const { return _spellItem; }
+	// Chooses a rune or scroll and takes the magic stance. False (with a toast) if it cannot now.
+	bool selectSpell(u32 item);
+	// A spell is being charged or released.
+	bool spellCasting() const { return _cast.stage != CAST_NONE; }
+	// How a spell is going: the charge so far (mana put in) and its level.
+	i32 spellInvested() const { return _cast.invested; }
+	u8 spellLevel() const { return _cast.level; }
+	u32 boltCount() const;
+	struct MagicStats {
+		u32 casts = 0;     // spells let go
+		u32 bolts = 0;     // projectiles shot
+		u32 hits = 0;      // projectiles that struck somebody
+		u32 noMana = 0;    // casts refused for want of mana
+		i32 lastDamage = -1;
+		i32 lastSpell = -1;
+	};
+	const MagicStats& magicStats() const { return _magic; }
 	// The things lying about in this world, and the one the character could
 	// pick up now (A, hands empty; -1 for none).
 	const Loot& loot() const { return _loot; }
@@ -246,6 +267,46 @@ public:
 	const ItemStats& itemStats() const { return _itemStats; }
 
 private:
+	// Magic.
+	enum CastStage : u8 { CAST_NONE, CAST_INVEST, CAST_SHOOT };
+	struct Cast {
+		u8 stage = CAST_NONE;
+		i16 spell = -1;
+		u8 level = 0;
+		i32 invested = 0;
+		float tick = 0;   // ms since the last mana was put in
+		float timer = 0;  // s into the release
+		float length = 0; // s the release animation plays
+		int target = -1;
+		u32 fx = 0;       // the particle effect that follows the hands
+		u32 item = 0xFFFFFFFFu;
+	};
+	struct Bolt {
+		bool alive = false;
+		float pos[3] = {0, 0, 0}, dir[3] = {0, 0, 1};
+		float travelled = 0, range = 0;
+		i16 spell = -1;
+		u8 level = 0;
+		u32 fx = 0;
+		u32 fxCollide = 0;
+	};
+	static constexpr u32 MAX_BOLTS = 4;
+	void magicInput(const Input& in);
+	void magicUpdate(float dt);
+	void castBegin();
+	void castRelease(bool letGo);
+	void castCommit();
+	void castCancel();
+	void boltShoot(const GameSpell& sp, i32 spell, i32 level);
+	void boltUpdate(float dt);
+	void boltImpact(Bolt& b, int victim, Vec3 at);
+	Vec3 handPos() const;
+	u32 nextSpell(int dir) const;
+	Cast _cast;
+	Bolt _bolts[MAX_BOLTS];
+	u32 _spellItem = 0xFFFFFFFFu;
+	bool _attackHeld = false;
+	MagicStats _magic;
 	void checkPortals();
 	void soundEvent(const ClipSfxEvent& event, int npc);
 	void startSound();

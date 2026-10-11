@@ -386,6 +386,8 @@ void App::update(const Input& in, float dt) {
 		if (_panel.open()) {
 			// The inventory is open: the hands are in it, not on a weapon.
 			fightIn.attack = fightIn.parry = fightIn.drawWeapon = fightIn.meleeSlot = fightIn.fistSlot = false;
+			fightIn.magic = fightIn.attackHeld = false;
+			fightIn.spellStep = 0;
 			fightIn.focus = false;
 		}
 		chestUpdate(fightIn, dt);
@@ -434,7 +436,8 @@ void App::update(const Input& in, float dt) {
 		const SkyColors sky = skyColors();
 		const float indoorLight[3] = {1, 1, 1};
 		_hero.follow(_player, _world, _world.indoor() ? indoorLight : sky.light, dt);
-		if (_hero.blowLanded()) heroBlow();
+		if (_hero.blowLanded() && _hero.weapon() != WEAPON_MAG) heroBlow();
+		magicUpdate(dt);
 		if (dt > 0.0f) {
 			const float dx = _player.feet.x - _heroLastFeet.x, dz = _player.feet.z - _heroLastFeet.z;
 			const float v = sqrtf(dx * dx + dz * dz) / dt;
@@ -946,12 +949,14 @@ void App::fightInput(const Input& in, float dt) {
 	// (On the console D-Pad up takes the fists when the hands are empty; with a weapon it is the blow ahead.)
 	if (in.fistSlot || (in.dpadUp && (_hero.weapon() == WEAPON_NONE || _hero.weapon() == WEAPON_FIST)))
 		take(_hero.weapon() == WEAPON_FIST ? u8(WEAPON_NONE) : u8(WEAPON_FIST));
-	if (in.attack && _hero.weapon() != WEAPON_NONE) {
+	_attackHeld = in.attackHeld;
+	magicInput(in);
+	if (in.attack && _hero.weapon() != WEAPON_NONE && _hero.weapon() != WEAPON_MAG) {
 		// The direction of the blow is the D-Pad's, held as A is pressed (left: from the left,
 		// right: from the right, else ahead); the stick only moves.
 		_hero.attack(in.blowDir < 0 ? 1 : in.blowDir > 0 ? 2 : 0);
 	}
-	_hero.setParry(in.parry && _hero.weapon() != WEAPON_NONE);
+	_hero.setParry(in.parry && _hero.weapon() != WEAPON_NONE && _hero.weapon() != WEAPON_MAG);
 }
 
 // What the melee weapon on the belt is held as: one hand, two, or fists without one.
@@ -971,7 +976,7 @@ bool App::heroTake(u8 mode) {
 	const int hi = heroIndex();
 	const bool drawing = _hero.drawing() ? true : mode != WEAPON_NONE;
 	const bool puttingAway = mode == WEAPON_NONE || (before != WEAPON_NONE && _hero.drawing() && before != mode);
-	if (drawing && !puttingAway && mode != WEAPON_NONE) _lastWeapon = mode;
+	if (drawing && !puttingAway && mode != WEAPON_NONE && mode != WEAPON_MAG) _lastWeapon = mode;
 	if (hi >= 0) {
 		// The scripts ask "is he in fight mode?" at once: the weapon is already reached for.
 		if (!puttingAway) _npcs.game().npcMut(u32(hi)).weapon = _hero.weaponIntent();
@@ -1205,6 +1210,12 @@ bool App::menuAction(MenuAction action, const char* statePath) {
 	case MENU_GIVE_ITEMS: {
 		const u32 n = giveItemKit();
 		if (n) snprintf(_menuMessage, sizeof(_menuMessage), tr("Выдано: %lu видов"), static_cast<unsigned long>(n));
+		else snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Предметов в скриптах нет"));
+		return true;
+	}
+	case MENU_GIVE_TESTKIT: {
+		const u32 n = giveTestKit();
+		if (n) snprintf(_menuMessage, sizeof(_menuMessage), tr("Тест-набор: %lu видов"), static_cast<unsigned long>(n));
 		else snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Предметов в скриптах нет"));
 		return true;
 	}

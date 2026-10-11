@@ -38,6 +38,20 @@ void App::drawOverlay() {
 			snprintf(weaponName, sizeof(weaponName), "%s", it && it->name ? game->text(it->name) : tr("Оружие"));
 			held = weaponName;
 		}
+		if (w == WEAPON_MAG && game) {
+			// The spell in hand, and the mana (a bar as the hit points have, charged part brighter).
+			const GameItemInfo* it = _spellItem != SCRIPT_NONE ? _npcs.game().itemInfo(_spellItem) : nullptr;
+			snprintf(weaponName, sizeof(weaponName), "%s", it ? game->text(it->description ? it->description : it->name) : tr("Заклинание"));
+			held = weaponName;
+			const GameNpc* h = heroNpc();
+			const i32 mana = h ? game->attributeOf(*h, game->constant("ATR_MANA", 2)) : 0;
+			const i32 manaMax = h ? game->attributeOf(*h, game->constant("ATR_MANA_MAX", 3)) : 0;
+			if (manaMax > 0 && !items) {
+				_ui.bar(W - 110, H - 14, W - 10, H - 8, float(mana) / float(manaMax), 0x4678E0FFu);
+				_ui.frame(W - 111, H - 15, W - 9, H - 7, 0x00000090u);
+				if (_cast.stage == CAST_INVEST) _ui.text(W - 10, H - 15 - 2 * Ui::lineHeight(), tr("Заряд"), ui::GREY, ui::TEXT, ui::RIGHT);
+			}
+		}
 		if (items) {
 		} else if (held) _ui.text(W - 10, H - 6 - Ui::lineHeight(), held, ui::GOLD, ui::TEXT, ui::RIGHT);
 		else if (_hero.sneaking()) _ui.text(W - 10, H - 6 - Ui::lineHeight(), tr("Крадётся"), ui::GREY, ui::TEXT, ui::RIGHT);

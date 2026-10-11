@@ -397,6 +397,12 @@ int main(int, char**) {
 				in.dpadUp = (gameDown & dpad & KEY_DUP) != 0 && !(gameHeld & KEY_A); // (with A held it is a blow, not the fists)
 				in.toggleSneak = (gameDown & dpad & KEY_DDOWN) != 0;
 				in.dodge = in.toggleSneak; // (the application takes it as a dodge while a weapon is in hand)
+				// Magic: A held charges a spell; in the stance the D-Pad's left and right choose the spell.
+				in.attackHeld = (gameHeld & KEY_A) != 0;
+				if (app.hero().weapon() == g3::WEAPON_MAG && !(gameHeld & KEY_A) && !rHeld) {
+					if (gameDown & KEY_DLEFT) in.spellStep = -1;
+					else if (gameDown & KEY_DRIGHT) in.spellStep = 1;
+				}
 				// Locked on: the C-Stick flicked aside picks the next target
 				// (either scheme: the character faces the target by itself then).
 				if (app.targetLocked()) {
@@ -408,12 +414,15 @@ int main(int, char**) {
 					in.lookX = 0;
 				}
 				if (console) {
-					if ((gameDown & KEY_L) && !rHeld) app.toast(g3::tr("Быстрой магии пока нет"));
+					if ((gameDown & KEY_L) && !rHeld) in.magic = true;
 				} else {
 					in.strafe = (gameHeld & KEY_R ? 1.0f : 0.0f) - (gameHeld & KEY_L ? 1.0f : 0.0f);
 				}
-				if ((gameDown & KEY_SELECT) && !rHeld && !(held & KEY_START) && !inventoryScreen)
-					app.toast(g3::tr("Инвентарь — на нижнем экране (меню: Графика)"));
+				// The classic scheme has L for the step aside: the magic stance is SELECT's.
+				if ((gameDown & KEY_SELECT) && !rHeld && !(held & KEY_START) && !inventoryScreen) {
+					if (console) app.toast(g3::tr("Инвентарь — на нижнем экране (меню: Графика)"));
+					else in.magic = true;
+				}
 			} else {
 				// Flying (the menu's "Отладка"): a free camera.
 				if (held & KEY_A) in.lookX = 1.0f;

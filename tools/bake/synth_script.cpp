@@ -103,12 +103,41 @@ const int BS_PARADE = 27;
 const int FMODE_NONE = 0;
 const int FMODE_FIST = 1;
 const int FMODE_MELEE = 2;
+const int FMODE_MAGIC = 7;
 const int ITEM_KAT_NF = 1 << 1;
 const int ITEM_KAT_FF = 1 << 2;
 const int ITEM_SWD = 1 << 14;
 const int ITEM_2HD_SWD = 1 << 16;
 const int ITEM_2HD_AXE = 1 << 17;
 const int DAM_BLUNT = 2;
+const int DAM_FIRE = 8;
+// Magic (Spells_Params.d of the original, the spells the scene has).
+const int MAX_SPELL = 18;
+const int SPL_LIGHT = 0;
+const int SPL_FIREBALL = 1;
+const int SPL_HEAL = 4;
+const int SPL_FIREBOLT = 17;
+const int SPL_DONTINVEST = 0;
+const int SPL_RECEIVEINVEST = 1;
+const int SPL_SENDCAST = 2;
+const int SPL_SENDSTOP = 3;
+const int SPL_NEXTLEVEL = 4;
+const int SPL_SENDCAST_FIREBOLT = 1;
+const int SPL_SENDCAST_FIREBALL = 5;
+const int SPL_DAMAGE_FIREBOLT = 30;
+const int SPL_DAMAGE_FIREBALL = 30;
+const int SPL_HEALING_HP_PER_MP = 10;
+const int SPELL_GOOD = 0;
+const int SPELL_NEUTRAL = 1;
+const int SPELL_BAD = 2;
+const int TARGET_COLLECT_NONE = 0;
+const int TARGET_COLLECT_CASTER = 1;
+const int TARGET_COLLECT_FOCUS = 2;
+const int TARGET_COLLECT_ALL = 3;
+const int TARGET_COLLECT_ALL_FALLBACK_NONE = 4;
+const int TARGET_COLLECT_ALL_FALLBACK_CASTER = 5;
+const int TARGET_COLLECT_FOCUS_FALLBACK_NONE = 6;
+const int TARGET_COLLECT_FOCUS_FALLBACK_CASTER = 7;
 const int DAM_EDGE = 4;
 const int DAM_INDEX_BLUNT = 1;
 const int DAM_INDEX_EDGE = 2;
@@ -187,6 +216,32 @@ class C_ITEM {
 	var string description;
 	var string text[6];
 	var int    count[6];
+};
+
+class C_Spell {
+	var float time_per_mana;
+	var int   damage_per_level;
+	var int   damageType;
+	var int   spellType;
+	var int   canTurnDuringInvest;
+	var int   canChangeTargetDuringInvest;
+	var int   isMultiEffect;
+	var int   targetCollectAlgo;
+	var int   targetCollectType;
+	var int   targetCollectRange;
+	var int   targetCollectAzi;
+	var int   targetCollectElev;
+};
+
+class CFx_Base {
+	var string visName_S;
+	var string emTrjMode_S;
+	var float  emFXLifeSpan;
+};
+
+class C_ParticleFXEmitKey {
+	var string visName_S;
+	var float  visSizeScale;
 };
 
 class C_INFO {
@@ -974,8 +1029,112 @@ instance ItArScrollFirebolt (C_ITEM) {
 	flags = ITEM_MULTI;
 	value = 50;
 	visual = "ItAr_Scroll_01.3ds";
+	spell = SPL_FIREBOLT;
 	description = "Fire Bolt";
 };
+
+instance ItArRuneFirebolt (C_ITEM) {
+	name = "Rune";
+	mainflag = ITEM_KAT_RUNE;
+	value = 300;
+	visual = "ItAr_Rune_23.3ds";
+	spell = SPL_FIREBOLT;
+	mag_circle = 1;
+	description = "Fire Bolt";
+};
+
+instance ItArRuneFireball (C_ITEM) {
+	name = "Rune";
+	mainflag = ITEM_KAT_RUNE;
+	value = 600;
+	visual = "ItAr_Rune_24.3ds";
+	spell = SPL_FIREBALL;
+	mag_circle = 3;
+	description = "Fireball";
+};
+
+instance ItArRuneHeal (C_ITEM) {
+	name = "Rune";
+	mainflag = ITEM_KAT_RUNE;
+	value = 300;
+	visual = "ItAr_Rune_25.3ds";
+	spell = SPL_HEAL;
+	mag_circle = 1;
+	description = "Heal";
+};
+
+// Magic (Magic/*.d of the original): the arrays and instances of the spells, the functions the engine
+// asks how a spell goes (a point of mana at a time), the visual effects.
+extern func int Npc_GetActiveSpell(var C_NPC n);
+extern func int Npc_GetActiveSpellLevel(var C_NPC n);
+
+const string spellFXInstanceNames[MAX_SPELL] = {
+	"Light", "Fireball", "Transform", "Fear", "Heal", "Lightning", "Demon", "Skeleton", "Forget", "WindFist",
+	"Telekinesis", "Charm", "Sleep", "Pyrokinesis", "MassDeath", "Control", "DestroyUndead", "Firebolt"
+};
+const string spellFXAniLetters[MAX_SPELL] = {
+	"SLE", "FIB", "TRF", "FEA", "HEA", "XXX", "SUM", "SUM", "XXX", "WND",
+	"TEL", "SLE", "SLE", "PYR", "FEA", "CON", "FIB", "FBT"
+};
+
+instance Spell_Firebolt (C_Spell) {
+	time_per_mana = 500;
+	damage_per_level = SPL_DAMAGE_FIREBOLT;
+	spellType = SPELL_BAD;
+	damageType = DAM_FIRE;
+	targetCollectAlgo = TARGET_COLLECT_FOCUS_FALLBACK_NONE;
+	targetCollectType = 1;
+};
+instance Spell_Fireball (C_Spell) {
+	time_per_mana = 750;
+	damage_per_level = SPL_DAMAGE_FIREBALL;
+	spellType = SPELL_BAD;
+	damageType = DAM_FIRE;
+	targetCollectAlgo = TARGET_COLLECT_FOCUS_FALLBACK_NONE;
+	targetCollectType = 1;
+};
+instance Spell_Heal (C_Spell) {
+	time_per_mana = 500;
+	spellType = SPELL_GOOD;
+	targetCollectAlgo = TARGET_COLLECT_CASTER;
+};
+
+func int Spell_ProcessMana(var int manaInvested) {
+	if (Npc_GetActiveSpell(self) == SPL_FIREBOLT) {
+		if (manaInvested >= SPL_SENDCAST_FIREBOLT) { return SPL_SENDCAST; };
+		return SPL_RECEIVEINVEST;
+	};
+	if (Npc_GetActiveSpell(self) == SPL_FIREBALL) {
+		if ((manaInvested == (SPL_SENDCAST_FIREBALL * 3) / 10) || (manaInvested == (SPL_SENDCAST_FIREBALL * 5) / 10)) { return SPL_NEXTLEVEL; };
+		if (manaInvested >= SPL_SENDCAST_FIREBALL) { return SPL_SENDCAST; };
+		return SPL_RECEIVEINVEST;
+	};
+	if (Npc_GetActiveSpell(self) == SPL_HEAL) {
+		if (self.attribute[ATR_HITPOINTS] < self.attribute[ATR_HITPOINTS_MAX]) {
+			Npc_ChangeAttribute(self, ATR_HITPOINTS, SPL_HEALING_HP_PER_MP);
+			return SPL_NEXTLEVEL;
+		};
+		return SPL_SENDSTOP;
+	};
+	return SPL_SENDSTOP;
+};
+
+func int Spell_ProcessMana_Release(var int manaInvested) {
+	if (Npc_GetActiveSpell(self) == SPL_FIREBALL) { return SPL_SENDCAST; };
+	return SPL_SENDSTOP;
+};
+
+instance spellFX_Firebolt (CFx_Base) {
+	visName_S = "SYNTH_FIRE";
+	emTrjMode_S = "TARGET";
+};
+instance spellFX_Firebolt_KEY_CAST (C_ParticleFXEmitKey) { visName_S = "SYNTH_SMOKE"; };
+instance spellFX_Firebolt_KEY_COLLIDE (C_ParticleFXEmitKey) { visName_S = "SYNTH_SMOKE"; };
+instance spellFX_Fireball (CFx_Base) {
+	visName_S = "SYNTH_FIRE";
+	emTrjMode_S = "TARGET";
+};
+instance spellFX_Fireball_KEY_COLLIDE (C_ParticleFXEmitKey) { visName_S = "SYNTH_SMOKE"; };
 
 instance ItWr_Letter (C_ITEM) {
 	name = "Letter";

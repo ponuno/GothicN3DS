@@ -89,13 +89,23 @@ const Item kSound[] = {
     {"Голоса", RANGE, &Settings::voiceVolume, nullptr, 1, 0, 10, "", 0, "Нужен speech.pak рядом с data.pak", nullptr},
 };
 const Item kDebug[] = {
+    {"Жители", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG_NPC, "Восприятие, жизнь, драки", nullptr},
+    {"Герой и вещи", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG_HERO, "Здоровье, оружие, тест-набор", nullptr},
+    {"Мир и время", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG_WORLD, "Полёт, мир, время", nullptr},
+};
+const Item kDebugNpc[] = {
     {"Восприятие жителей", TOGGLE, &Settings::perception, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr},
     {"Жизнь жителей", TOGGLE, &Settings::life, nullptr, 0, 0, 0, nullptr, 0, "Выкл: стоят на местах распорядка", nullptr},
     {"Драки жителей", TOGGLE, &Settings::fights, nullptr, 0, 0, 0, nullptr, 0, "Выкл: состояния атаки не начинаются", nullptr},
+};
+const Item kDebugHero[] = {
     {"Бессмертие", TOGGLE, &Settings::immortal, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr},
     {"Вылечить", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_HEAL, nullptr, nullptr},
+    {"Тест-набор", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_GIVE_TESTKIT, "Магия, зелья роста, оружие, лук, броня", nullptr},
     {"Дать лучшее оружие", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_GIVE_WEAPON, "Из оружия, что есть в скриптах", nullptr},
     {"Дать набор предметов", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_GIVE_ITEMS, "Зелья, еда, оружие, броня, кольца", nullptr},
+};
+const Item kDebugWorld[] = {
     {"Полёт вкл/выкл", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_FLY, "Свободная камера без столкновений", nullptr},
     {"Следующий мир", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_NEXT_WORLD, nullptr, nullptr},
     {"Время +1 час", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_HOUR, nullptr, nullptr},
@@ -111,11 +121,16 @@ struct PageDef {
 const PageDef kPages[Menu::PAGES] = {
     PAGE_OF("Пауза", kMain),         PAGE_OF("Графика", kGraphics),   PAGE_OF("Игра", kGame),
     PAGE_OF("Управление", kControls), PAGE_OF("Интерфейс", kInterface), PAGE_OF("Звук", kSound),
-    PAGE_OF("Отладка", kDebug),
+    PAGE_OF("Отладка", kDebug),      PAGE_OF("Жители", kDebugNpc),    PAGE_OF("Герой и вещи", kDebugHero),
+    PAGE_OF("Мир и время", kDebugWorld),
 };
 #undef PAGE_OF
 
 } // namespace
+
+Menu::Page Menu::parentOf(Page page) {
+	return page == PAGE_DEBUG_NPC || page == PAGE_DEBUG_HERO || page == PAGE_DEBUG_WORLD ? PAGE_DEBUG : PAGE_MAIN;
+}
 
 void Menu::open() {
 	_open = true;
@@ -176,7 +191,7 @@ MenuAction Menu::update(const MenuInput& in, Settings& s) {
 			_open = false;
 			return MENU_CLOSED;
 		}
-		_page = PAGE_MAIN;
+		_page = parentOf(_page);
 		return MENU_NONE;
 	}
 	if (in.up) sel = (sel + page.count - 1) % page.count;
@@ -233,7 +248,16 @@ void Menu::draw(Ui& ui, const Settings& s, const char* status, const char* messa
 	y += 4;
 	const int sel = clamp(_sel[_page], 0, page.count - 1);
 	char buf[48];
-	for (int i = 0; i < page.count; ++i, y += line) {
+	// The rows that fit between the title and the notes at the bottom; the list scrolls to keep the selection in view.
+	const int foot0 = bottom - 6 - Ui::lineHeight(ui::TEXT);
+	const int listBottom = foot0 - Ui::lineHeight(ui::TEXT) - 4;
+	const int visible = max((listBottom - y) / line, 3);
+	int first = 0;
+	if (page.count > visible) first = clamp(sel - visible / 2, 0, page.count - visible);
+	const int last = min(page.count, first + visible);
+	if (first > 0) ui.text(x1 - 14, y - line + 6, "\xE2\x96\xB2", ui::DARK, ui::TEXT, ui::RIGHT);
+	if (last < page.count) ui.text(x1 - 14, listBottom - 2, "\xE2\x96\xBC", ui::DARK, ui::TEXT, ui::RIGHT);
+	for (int i = first; i < last; ++i, y += line) {
 		const Item& it = page.items[i];
 		const bool on = i == sel;
 		if (on) ui.rect(x0 + 6, y - 1, x1 - 6, y + line - 2, 0x6E5A2E90u);
@@ -255,7 +279,7 @@ void Menu::draw(Ui& ui, const Settings& s, const char* status, const char* messa
 		}
 	}
 	const Item& cur = page.items[sel];
-	const int foot = bottom - 6 - Ui::lineHeight(ui::TEXT);
+	const int foot = foot0;
 	if (message && *message)
 		ui.text(gfx::SCREEN_W / 2, foot - Ui::lineHeight(ui::TEXT), message, ui::GREEN, ui::TEXT, ui::CENTER);
 	else if (*noteOf(cur, &s))

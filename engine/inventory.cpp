@@ -257,7 +257,7 @@ bool App::itemAction(u32 symbol) {
 	case IK_AMULET:
 	case IK_RING: return equipItem(symbol, *it, kind);
 	case IK_RUNE:
-	case IK_SCROLL: itemMessage(tr("Магии пока нет")); return false;
+	case IK_SCROLL: return selectSpell(symbol);
 	case IK_DOC: itemMessage(tr("Читать пока нельзя")); return false;
 	case IK_LIGHT: itemMessage(tr("Факелов пока нет")); return false;
 	case IK_AMMO: itemMessage(tr("Стрелы берутся с луком")); return false;
@@ -1032,6 +1032,64 @@ u32 App::giveItemKit() {
 		_quick[3] = firstOf[IK_FOOD][1];
 		_quick[4] = best != NONE ? best : firstOf[IK_MELEE][0];
 	}
+	_invStamp = 0;
+	return kinds;
+}
+
+// The test kit: every spell as a rune and some as scrolls, the potions that raise the
+// attributes, one weapon, one bow with arrows, one armour. Names are the ones of the
+// original scripts; whatever a mod's scripts lack is skipped, and a bow or an armour falls
+// back to the first of its kind.
+u32 App::giveTestKit() {
+	const int hi = heroIndex();
+	if (hi < 0) return 0;
+	Game& g = _npcs.game();
+	u32 kinds = 0;
+	const auto give = [&](const char* name, i32 n) -> u32 {
+		const u32 s = g.vm().find(name);
+		if (s == NONE || !g.isItem(s)) return NONE;
+		g.giveItems(u32(hi), s, n);
+		++kinds;
+		return s;
+	};
+	static const char* const kRunes[] = {
+	    "ItArRuneLight",     "ItArRuneFirebolt",    "ItArRuneFireball",  "ItArRuneFirestorm", "ItArRuneFireRain",   "ItArRuneThunderbolt",
+	    "ItArRuneThunderball", "ItArRuneChainLightning", "ItArRuneIceCube", "ItArRuneIceWave",  "ItArRuneWindfist",   "ItArRuneStormfist",
+	    "ItArRuneHeal",      "ItArRuneSleep",       "ItArRunePyrokinesis", "ItArRuneBreathOfDeath", "ItArRuneDestroyUndead",
+	    "ItArRuneTelekinesis", "ItArRuneCharm",     "ItArRuneControl",   "ItArRuneTeleport1"};
+	static const char* const kScrolls[] = {"ItArScrollLight",      "ItArScrollFirebolt", "ItArScrollFireball", "ItArScrollThunderbolt",
+	                                       "ItArScrollIceCube",    "ItArScrollWindfist", "ItArScrollHeal",     "ItArScrollSleep"};
+	static const char* const kPotions[] = {
+	    "ItFo_Potion_Strength_01", "ItFo_Potion_Strength_02", "ItFo_Potion_Strength_03", "ItFo_Potion_Dex_01",  "ItFo_Potion_Dex_02",
+	    "ItFo_Potion_Dex_03",      "ItFo_Potion_Health_Perma_01", "ItFo_Potion_Health_Perma_02", "ItFo_Potion_Health_Perma_03",
+	    "ItFo_Potion_Mana_Perma_01", "ItFo_Potion_Mana_Perma_02", "ItFo_Potion_Mana_Perma_03", "ItFo_Potion_Master_01",
+	    "ItFo_Potion_Master_02",   "ItFo_Potion_Health_03",   "ItFo_Potion_Mana_03"};
+	for (const char* n : kRunes) give(n, 1);
+	for (const char* n : kScrolls) give(n, 3);
+	for (const char* n : kPotions) give(n, 2);
+	GameNpc& h = g.npcMut(u32(hi));
+	// One weapon (put on the belt), the best of the scripts if the usual one is not there.
+	u32 sword = give("ItMw_1H_Sword_Long_01", 1);
+	if (sword == NONE) sword = g.bestMeleeOfAll();
+	if (sword != NONE) {
+		if (g.itemCount(u32(hi), sword) <= 0) g.giveItems(u32(hi), sword, 1);
+		if (h.melee == NONE) h.melee = sword;
+	}
+	// One bow, arrows for it.
+	u32 bow = give("ItRw_Bow_Long_01", 1);
+	if (bow == NONE) bow = give("ItRw_Bow_Small_01", 1);
+	if (bow != NONE && h.ranged == NONE) h.ranged = bow;
+	give("ItAmArrow", 50);
+	// One armour, put on.
+	u32 armor = give("GRD_ARMOR_M", 1);
+	if (armor == NONE) armor = give("VLK_ARMOR_M", 1);
+	if (armor != NONE) g.setArmor(u32(hi), armor);
+	// Mana to spend on the spells (ATR_MANA_MAX, ATR_MANA).
+	GameNpc& hero = g.npcMut(u32(hi));
+	const i32 manaMax = max(g.attributeOf(hero, 3), i32(100));
+	g.setAttribute(hero, 3, manaMax);
+	g.setAttribute(hero, 2, manaMax);
+	++_equipVersion;
 	_invStamp = 0;
 	return kinds;
 }

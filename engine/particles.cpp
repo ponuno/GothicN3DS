@@ -297,9 +297,9 @@ void Particles::emit(const Def& d, u16 defIndex, const float pos[3], float yaw, 
 	}
 }
 
-bool Particles::play(u32 effect, Vec3 pos, float yaw, float seconds) {
+Particles::Dynamic* Particles::emplace(u32 effect, Vec3 pos, float yaw, float seconds) {
 	const int di = defFor(effect);
-	if (di < 0) return false;
+	if (di < 0) return nullptr;
 	// A new one in place of the oldest when the list is full.
 	Dynamic* slot = nullptr;
 	if (_dynamicCount < MAX_DYNAMIC) {
@@ -316,7 +316,34 @@ bool Particles::play(u32 effect, Vec3 pos, float yaw, float seconds) {
 	slot->yaw = yaw;
 	slot->ttl = max(seconds, 0.05f);
 	slot->src = Source();
-	return true;
+	slot->id = 0;
+	return slot;
+}
+
+bool Particles::play(u32 effect, Vec3 pos, float yaw, float seconds) { return emplace(effect, pos, yaw, seconds) != nullptr; }
+
+u32 Particles::start(u32 effect, Vec3 pos, float yaw, float seconds) {
+	Dynamic* slot = emplace(effect, pos, yaw, seconds);
+	if (!slot) return 0;
+	slot->id = _nextId++;
+	if (_nextId == 0) _nextId = 1;
+	return slot->id;
+}
+
+void Particles::move(u32 handle, Vec3 pos) {
+	if (!handle) return;
+	for (u32 i = 0; i < _dynamicCount; ++i)
+		if (_dynamic[i].id == handle) {
+			_dynamic[i].pos[0] = pos.x;
+			_dynamic[i].pos[1] = pos.y;
+			_dynamic[i].pos[2] = pos.z;
+		}
+}
+
+void Particles::stop(u32 handle) {
+	if (!handle) return;
+	for (u32 i = 0; i < _dynamicCount; ++i)
+		if (_dynamic[i].id == handle) _dynamic[i].ttl = min(_dynamic[i].ttl, 0.02f);
 }
 
 void Particles::update(float dt, Vec3 eye) {

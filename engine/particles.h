@@ -50,6 +50,11 @@ public:
 	// Starts the effect (hash of its instance name) at `pos` for `seconds`
 	// (0: one puff, a short burst). False if the scripts lack the effect.
 	bool play(u32 effect, Vec3 pos, float yaw, float seconds);
+	// The same, but the effect can be followed: the handle (never 0) moves it (a spell in flight) or ends it;
+	// 0 if the scripts lack the effect. A handle of an effect that has run its time does nothing.
+	u32 start(u32 effect, Vec3 pos, float yaw, float seconds);
+	void move(u32 handle, Vec3 pos);
+	void stop(u32 handle);
 
 	const ParticleStats& stats() const { return _stats; }
 
@@ -94,8 +99,10 @@ private:
 		u16 def;
 		float pos[3], yaw;
 		float ttl; // s left
+		u32 id;    // handle of start() (0: none)
 		Source src;
 	};
+	Dynamic* emplace(u32 effect, Vec3 pos, float yaw, float seconds);
 
 	int defFor(u32 effect);
 	void loadDef(Def& d, u32 effect);
@@ -122,6 +129,7 @@ private:
 	Particle _particles[MAX_PARTICLES];
 	u32 _count = 0;
 	u32 _seed = 12345;
+	u32 _nextId = 1;
 	ParticleStats _stats;
 
 	static constexpr u32 MESHES = 3;

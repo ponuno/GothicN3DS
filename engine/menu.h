@@ -29,17 +29,20 @@ enum MenuAction : u8 {
 	MENU_GIVE_WEAPON,
 	MENU_GIVE_ITEMS,
 	MENU_RESET_GRAPHICS, // the graphics page's values back to the defaults
+	MENU_GIVE_TESTKIT,   // the test kit: spells, stat potions, a weapon, a bow, an armour
 };
 
 class Menu {
 public:
-	enum Page : u8 { PAGE_MAIN, PAGE_GRAPHICS, PAGE_GAME, PAGE_CONTROLS, PAGE_INTERFACE, PAGE_SOUND, PAGE_DEBUG, PAGES };
+	enum Page : u8 { PAGE_MAIN, PAGE_GRAPHICS, PAGE_GAME, PAGE_CONTROLS, PAGE_INTERFACE, PAGE_SOUND, PAGE_DEBUG, PAGE_DEBUG_NPC, PAGE_DEBUG_HERO, PAGE_DEBUG_WORLD, PAGES };
 
 	void open();
 	void close() { _open = false; }
 	bool isOpen() const { return _open; }
 	Page page() const { return _page; }
 	int selected() const { return _sel[_page]; }
+	// The page B goes back to (the main one for most; the debug pages' parent is the debug page).
+	static Page parentOf(Page page);
 
 	MenuAction update(const MenuInput& in, Settings& s);
 	// `status`: a line under the title (the world, the time), may be null.

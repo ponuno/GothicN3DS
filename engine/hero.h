@@ -125,6 +125,19 @@ public:
 	// The blow in play, for the HUD and the tests: which of the combo, and how many landed.
 	u8 combo() const { return _blow.combo; }
 
+	// ---- casting (WEAPON_MAG in hand) ----
+	// Plays a spell's casting animation, `letters` being the spell's ("FBT", the scripts'
+	// spellFXAniLetters): the charging "T_MAGRUN_2_<L>CAST" (it is held at its end) or, with `shoot`, the
+	// release "T_MAGRUN_2_<L>SHOOT". The body stands meanwhile. Returns how many seconds the clip plays;
+	// 0 if the model has none (then nothing is played).
+	float castPlay(const char* letters, bool shoot);
+	// Back to the stance.
+	void castEnd();
+	// A casting animation is in play (still or held at its end).
+	bool casting() const { return _castHold; }
+	// Seconds the casting animation has played.
+	float castTime() const { return _castHold && _anim.current() == _castClip ? _anim.time() : 0.0f; }
+
 	// ---- using an item (a potion, food) ----
 	// As the model script has it for the item's scheme ("POTIONFAST"): the
 	// item to the mouth ("T_<SCHEME>_STAND_2_S0"), a moment there
@@ -243,6 +256,8 @@ private:
 	const Clip* _drawClip = nullptr;
 	bool _drawBack = false; // the weapon is being put away: the clip plays backwards
 	BlowTracker _blow;
+	const Clip* _castClip = nullptr;
+	bool _castHold = false; // a casting animation has the body
 	bool _comboQueued = false; // pressed just before the window of the next blow opened
 	bool goOn(const ClipFight* f, float fps, float t);
 	bool _comboBroken = false; // pressed outside the window: no more blows of this attack

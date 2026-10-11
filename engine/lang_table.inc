@@ -1,6 +1,22 @@
 // Generated once from the texts of the code and kept by hand: Russian (the key), English, Polish, German.
 // A translation keeps the key's %-conversions in their order (the test "language" checks).
 const Entry kEntries[] = {
+    {{"Это не заклинание", "Not a spell", "To nie jest czar", "Das ist kein Zauber"}},
+    {{"Нет такого заклинания", "No such spell", "Brak takiego czaru", "Kein solcher Zauber"}},
+    {{"Заклинаний нет", "No spells", "Brak czarów", "Keine Zauber"}},
+    {{"Заклинание выбрано другое", "Another spell chosen", "Wybrano inny czar", "Anderer Zauber gewählt"}},
+    {{"Нет маны", "No mana", "Brak many", "Kein Mana"}},
+    {{"Заклинание", "Spell", "Czar", "Zauber"}},
+    {{"Заряд", "Charge", "Ładowanie", "Aufladung"}},
+    {{"Жители", "Inhabitants", "Mieszkańcy", "Bewohner"}},
+    {{"Герой и вещи", "Hero and items", "Bohater i przedmioty", "Held und Dinge"}},
+    {{"Мир и время", "World and time", "Świat i czas", "Welt und Zeit"}},
+    {{"Тест-набор", "Test kit", "Zestaw testowy", "Testset"}},
+    {{"Магия, зелья роста, оружие, лук, броня", "Magic, growth potions, weapon, bow, armour", "Magia, eliksiry, broń, łuk, zbroja", "Magie, Tränke, Waffe, Bogen, Rüstung"}},
+    {{"Тест-набор: %lu видов", "Test kit: %lu kinds", "Zestaw testowy: %lu rodzajów", "Testset: %lu Arten"}},
+    {{"Восприятие, жизнь, драки", "Perception, life, fights", "Percepcja, życie, walki", "Wahrnehmung, Leben, Kämpfe"}},
+    {{"Здоровье, оружие, тест-набор", "Health, weapons, test kit", "Zdrowie, broń, zestaw testowy", "Gesundheit, Waffen, Testset"}},
+    {{"Полёт, мир, время", "Flight, world, time", "Lot, świat, czas", "Flug, Welt, Zeit"}},
     {{"%s (заперт)", "%s (locked)", "%s (zamknięta)", "%s (verschlossen)"}},
     {{"%s (стрельбы пока нет)", "%s (no shooting yet)", "%s (strzelanie jeszcze niedostępne)", "%s (Schießen noch nicht möglich)"}},
     {{"%s: этим не воспользоваться", "%s: cannot be used", "%s: nie da się tego użyć", "%s: lässt sich nicht benutzen"}},

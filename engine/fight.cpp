@@ -38,6 +38,7 @@ const char* weaponWord(u8 mode) {
 	case WEAPON_FIST: return "FIST";
 	case WEAPON_1H: return "1H";
 	case WEAPON_2H: return "2H";
+	case WEAPON_MAG: return "MAG";
 	default: return "";
 	}
 }
@@ -159,6 +160,8 @@ const GameItemInfo* Game::itemInfo(u32 symbol) {
 	}
 	info.value = get(_iValue, 0);
 	info.material = get(_vm.findMember("C_ITEM", "MATERIAL"), 0);
+	info.spell = get(_vm.findMember("C_ITEM", "SPELL"), 0);
+	info.circle = get(_vm.findMember("C_ITEM", "MAG_CIRCLE"), 0);
 	_vm.destroy(item);
 	_itemInfos[_itemInfoCount] = info;
 	return &_itemInfos[_itemInfoCount++];
@@ -263,6 +266,20 @@ float Game::approachRange(u32 a, u32 b) {
 
 i32 Game::meleeDamage(u32 a, u32 b) {
 	if (a >= _npcCount || b >= _npcCount) return 0;
+	if (_strikeSpell >= 0) {
+		// A spell strikes: its damage per level, per type, less the victim's protection (OpenGothic: DamageCalculator).
+		const GameSpell* sp = spellInfo(_strikeSpell);
+		if (!sp) return 0;
+		i32 total = 0;
+		for (u32 i = 0; i < 8; ++i) {
+			if (!(sp->damageType & (1 << i))) continue;
+			const i32 prot = npcInt(_npcs[b], _mProtection, i);
+			if (prot < 0) continue; // immune
+			const i32 v = sp->damagePerLevel * max(_strikeLevel, i32(1)) - prot;
+			total += v > 0 ? v : 0;
+		}
+		return total;
+	}
 	const GameNpc& na = _npcs[a];
 	const GameNpc& nb = _npcs[b];
 	const GameItemInfo* weapon = (na.weapon == WEAPON_1H || na.weapon == WEAPON_2H) && na.melee != SCRIPT_NONE ? itemInfo(na.melee) : nullptr;

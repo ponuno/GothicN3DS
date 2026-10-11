@@ -1001,7 +1001,8 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 			{
 				const zenkit::Vec3* c = vob->rotation.columns;
 				const float yaw = std::atan2(c[2].x, c[2].z);
-				const std::vector<ObjectStats::TreeEmitter>& tree = fireTree(vfs, version, stats, fire ? upper(fire->vob_tree) : std::string());
+				const std::string treeName = fire ? upper(fire->vob_tree) : std::string();
+				const std::vector<ObjectStats::TreeEmitter>& tree = fireTree(vfs, version, stats, treeName);
 				for (const ObjectStats::TreeEmitter& te : tree) {
 					SrcEmitter e;
 					e.effect = te.effect;
@@ -2154,6 +2155,11 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 	if (standardSet) {
 		wanted.assign(std::begin(kHeroClips), std::end(kHeroClips));
 		for (const std::string& name : fightClipNames(true))
+			if (std::find(wanted.begin(), wanted.end(), name) == wanted.end()) {
+				wanted.push_back(name);
+				optional.insert(name);
+			}
+		for (const std::string& name : magicClipNames())
 			if (std::find(wanted.begin(), wanted.end(), name) == wanted.end()) {
 				wanted.push_back(name);
 				optional.insert(name);

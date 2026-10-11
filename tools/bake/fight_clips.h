@@ -23,6 +23,35 @@ inline std::vector<std::string> fightStates() {
 	std::vector<std::string> out;
 	for (const std::string& w : fightWeapons())
 		for (const char* s : {"RUN", "RUNL", "WALK", "WALKL"}) out.push_back(w + s);
+	for (const char* s : {"MAGRUN", "MAGRUNL", "MAGWALK", "MAGWALKL"}) out.push_back(s); // (the player's character in the magic stance)
+	return out;
+}
+
+// The letters of the spells' animations (the scripts' spellFXAniLetters): "T_MAGRUN_2_FIBCAST".
+inline const std::vector<std::string>& spellAniLetters() {
+	static const std::vector<std::string> l = {"SLE", "FIB", "TRF", "FEA", "HEA", "SUM", "WND", "TEL", "PYR", "CON", "FBT", "LIN", "FRZ", "NE2", "NE3", "NE4", "NE5"};
+	return l;
+}
+
+// Magic in the hands: the stance (word "MAG": "S_MAGRUN"), taking it in hand and away, and the casting of
+// every kind of spell. The player's character only.
+inline std::vector<std::string> magicClipNames() {
+	std::vector<std::string> out;
+	for (const char* name : {"S_MAGRUN", "S_MAGRUNL", "S_MAGWALK", "S_MAGWALKL", "T_MAGRUN_2_MAGRUNL", "T_MAGRUNL_2_MAGRUN", "T_MAGWALK_2_MAGWALKL",
+	                         "T_MAGWALKL_2_MAGWALK", "T_MAG_2_MAGRUN", "T_MAGRUN_2_MAG", "T_RUN_2_MAG", "T_MAG_2_RUN", "T_MOVE_2_MAGMOVE",
+	                         "T_MAGMOVE_2_MOVE", "T_MAGRUN_2_MAGRUN", "T_CASTFAIL", "T_MAGRUNSTRAFEL", "T_MAGRUNSTRAFER", "T_MAGRUNTURNL",
+	                         "T_MAGRUNTURNR", "T_MAGWALKTURNL", "T_MAGWALKTURNR", "T_MAGJUMPB"})
+		out.push_back(name);
+	for (const std::string& l : spellAniLetters())
+		for (const char* f : {"T_MAGRUN_2_%CAST", "T_MAGRUN_2_%SHOOT", "T_MAGMOVE_2_%CAST", "T_MAGMOVE_2_%SHOOT", "S_%CAST", "S_%SHOOT",
+		                      "T_%CAST_2_SHOOT", "T_%SHOOT_2_STAND", "T_STAND_2_%CAST", "T_%CAST_2_STAND"}) {
+			std::string name;
+			for (const char* c = f; *c; ++c) {
+				if (*c == '%') name += l;
+				else name += *c;
+			}
+			out.push_back(name);
+		}
 	return out;
 }
 

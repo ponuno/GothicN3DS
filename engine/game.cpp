@@ -85,6 +85,9 @@ void Game::release() {
 	_dropCount = _dropCap = 0;
 	free(_itemInfos);
 	_itemInfos = nullptr;
+	memset(_spellsRead, 0, sizeof(_spellsRead));
+	_spellNames = SCRIPT_NONE;
+	_strikeSpell = -1;
 	free(_infos);
 	_infos = nullptr;
 	_infoCount = 0;
@@ -258,7 +261,11 @@ bool Game::bindAll() {
 	             {"NPC_CHANGEATTRIBUTE", xChangeAttribute},
 	             {"NPC_SETTOFISTMODE", xSetToFistMode},
 	             {"NPC_SETTOFIGHTMODE", xSetToFightMode},
-	             {"NPC_GETACTIVESPELL", xReturnMinusOne},
+	             {"NPC_GETACTIVESPELL", xActiveSpell},
+	             {"NPC_GETACTIVESPELLLEVEL", xActiveSpellLevel},
+	             {"NPC_GETACTIVESPELLCAT", xActiveSpellCat},
+	             {"NPC_GETLASTHITSPELLID", xLastHitSpellId},
+	             {"NPC_GETLASTHITSPELLCAT", xLastHitSpellCat},
 	             {"NPC_GETTRUEGUILD", xGetTrueGuild},
 	             // Lines for the developers' log: there is nobody to read them.
 	             {"PRINTDEBUG", xNothing},
@@ -580,13 +587,14 @@ void Game::xIsInFightMode(ScriptVm& vm, void* user) {
 	if (mode == g.constant("FMODE_NONE", 0)) in = n->weapon == WEAPON_NONE;
 	else if (mode == g.constant("FMODE_FIST", 1)) in = n->weapon == WEAPON_FIST;
 	else if (mode == g.constant("FMODE_MELEE", 2)) in = n->weapon == WEAPON_1H || n->weapon == WEAPON_2H;
-	vm.pushInt(in); // (ranged weapons and magic: not yet)
+	else if (mode == g.constant("FMODE_MAGIC", 7)) in = n->weapon == WEAPON_MAG;
+	vm.pushInt(in); // (ranged weapons: not yet)
 }
 
 void Game::xHasReadiedWeapon(ScriptVm& vm, void* user) {
 	Game& g = *static_cast<Game*>(user);
 	const GameNpc* n = g.npcOf(vm.popInstance());
-	vm.pushInt(n && n->weapon != WEAPON_NONE && n->weapon != WEAPON_FIST);
+	vm.pushInt(n && n->weapon != WEAPON_NONE && n->weapon != WEAPON_FIST && n->weapon != WEAPON_MAG);
 }
 
 void Game::xHasReadiedMelee(ScriptVm& vm, void* user) {

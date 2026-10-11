@@ -943,11 +943,11 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				table.push_back({hashName(e.effect.c_str()), {e.pos[0], e.pos[1], e.pos[2]}, e.yaw});
 			}
 			if (table.empty()) continue;
-			std::vector<u8> blob(emittersBlobSize(u32(table.size())));
+			std::vector<u8> emBlob(emittersBlobSize(u32(table.size())));
 			const EmittersHeader h {EMITTERS_MAGIC, EMITTERS_VERSION, u32(table.size()), 0};
-			std::memcpy(blob.data(), &h, sizeof(h));
-			std::memcpy(blob.data() + sizeof(h), table.data(), table.size() * sizeof(WorldEmitter));
-			pak.add("world/" + worlds[w].name + "/emitters", ASSET_META, blob);
+			std::memcpy(emBlob.data(), &h, sizeof(h));
+			std::memcpy(emBlob.data() + sizeof(h), table.data(), table.size() * sizeof(WorldEmitter));
+			pak.add("world/" + worlds[w].name + "/emitters", ASSET_META, emBlob);
 			emitters += table.size();
 		}
 		if (instances || emitters || unknownEffects)

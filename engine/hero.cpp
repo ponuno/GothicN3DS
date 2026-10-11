@@ -446,6 +446,31 @@ bool Hero::attack(int kind) {
 	return true;
 }
 
+float Hero::castPlay(const char* letters, bool shoot) {
+	if (!loaded() || _weapon != WEAPON_MAG || _down || _body != GROUNDED || !letters || !*letters) return 0.0f;
+	char name[48];
+	const Clip* c = nullptr;
+	const char* what = shoot ? "SHOOT" : "CAST";
+	snprintf(name, sizeof(name), "T_MAGRUN_2_%s%s", letters, what);
+	c = _model.clip(name);
+	if (!c) {
+		snprintf(name, sizeof(name), "S_%s%s", letters, what);
+		c = _model.clip(name);
+	}
+	if (!c) return 0.0f;
+	_anim.play(c, 0.1f);
+	_blow.reset();
+	_castClip = c;
+	_castHold = true;
+	_roleNow = ATTACK;
+	return c->duration();
+}
+
+void Hero::castEnd() {
+	_castClip = nullptr;
+	_castHold = false;
+}
+
 bool Hero::prehit() const {
 	const Clip* c = _anim.current();
 	if (!_blow.clip || c != _blow.clip) return false;
@@ -468,6 +493,7 @@ bool Hero::dodging() const {
 
 void Hero::hit(bool fromBehind) {
 	if (!loaded() || _down) return;
+	castEnd();
 	const Clip* c = _model.clip(fromBehind ? "T_STUMBLE" : "T_STUMBLEB");
 	if (!c) c = _model.clip("T_GOTHIT");
 	if (_drawTo != 0xFF) {
@@ -490,6 +516,7 @@ void Hero::fall(bool dead, bool fromBehind) {
 	if (!c) c = _model.clip(dead ? "S_DEAD" : "S_WOUNDED");
 	_down = true;
 	cancelUse();
+	castEnd();
 	_weapon = WEAPON_NONE;
 	_drawTo = 0xFF;
 	_blow.reset();
@@ -871,7 +898,7 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 	if (_body == MANTLE) {
 		// Climbing onto a ledge: the climb has the body.
 		_roleNow = CLIMB;
-	} else if (_down || _reel || drawing() || (_blow.clip && cur == _blow.clip) || usingItem()) {
+	} else if (_down || _reel || drawing() || (_blow.clip && cur == _blow.clip) || usingItem() || _castHold) {
 		// Down, reeling, taking a weapon in hand, swinging a blow, using an
 		// item: the animation has the body until it is through.
 		if (_down) _roleNow = DOWN;

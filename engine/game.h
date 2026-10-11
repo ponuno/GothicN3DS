@@ -79,6 +79,22 @@ struct GameNpc {
 	u8 weapon = 0;
 	u8 down = 0;      // DOWN_ (fight.h)
 	int lastHit = -1; // who hit it last, -1 for nobody
+	// Magic (magic.h): the spell it is casting (a SPL_ number, -1 for none) and how far it is charged,
+	// what struck it last.
+	i16 spell = -1, lastHitSpell = -1;
+	u8 spellLevel = 0;
+};
+
+// A spell as the scripts' C_Spell instance and spellFX arrays describe it (made once per kind).
+struct GameSpell {
+	bool known = false;     // the scripts have the arrays at all
+	char tag[24] = {};      // "Firebolt" (spellFXInstanceNames)
+	char letters[4] = {};   // "FBT" (spellFXAniLetters): the casting animations' name
+	float timePerMana = 500.0f; // ms
+	i32 damagePerLevel = 1, damageType = 0, spellType = 1, collectAlgo = 0, collectType = 0, collectRange = 0;
+	bool shoots = false;    // flies at its target (the original decides by the collect algorithm)
+	// The particle effects of the spell's visual effect (hashName of the instance names; 0 for none).
+	u32 fxInit = 0, fxCast = 0, fxFly = 0, fxCollide = 0;
 };
 
 // What the engine reads off an item (the scripts' C_ITEM), made once per kind.
@@ -100,6 +116,8 @@ struct GameItemInfo {
 	i32 condAtr[3], condValue[3]; // what it takes: attribute >= value (value 0: nothing)
 	i32 value;            // ore
 	i32 material;         // C_ITEM.MATERIAL (MAT_WOOD 0, MAT_METAL 2 ...): what it sounds like
+	i32 spell;            // C_ITEM.SPELL (SPL_...) of a rune or scroll
+	i32 circle;           // C_ITEM.MAG_CIRCLE of a rune
 };
 
 // A stack of items a character carries (CreateInvItems).
@@ -390,6 +408,19 @@ public:
 	float meleeRange(u32 attacker, u32 victim);
 	// The "G" range: within it a fighter closes in rather than runs.
 	float approachRange(u32 attacker, u32 victim);
+	// ---- magic (game_magic.cpp) ----
+	// The spell with that SPL_ number, or null if the scripts have no such thing.
+	const GameSpell* spellInfo(i32 id);
+	// Spell_ProcessMana (or _Release) for `caster` with `invested` mana put in so far, and the target if any
+	// (-1: none): SPL_DONTINVEST .. SPL_NEXTLEVEL. The spell is the caster's `spell`.
+	i32 processMana(u32 caster, int target, i32 invested, bool release);
+	// While set, the next blow dealt (Npcs::strike) is this spell's: `perLevel` damage times `level`, of
+	// the types of `type`, less the victim's protection. `id` -1 ends it.
+	void setSpellStrike(i32 id, i32 level) {
+		_strikeSpell = id;
+		_strikeLevel = level;
+	}
+	bool spellStriking() const { return _strikeSpell >= 0; }
 	// The guilds' table of numbers (C_GILVALUES), an entry of it; `otherwise` if none.
 	i32 guildValue(const char* member, i32 guild, i32 otherwise);
 	// Equips a weapon item (EquipItem, the faults menu): melee or ranged by its kind.
@@ -604,6 +635,15 @@ private:
 	float _hours = 8.0f;
 	i32 _humanGuilds = 0; // GIL_SEPERATOR_HUM (0: not known)
 	GameStats _stats;
+	GameSpell _spells[64];
+	bool _spellsRead[64] = {};
+	u32 _spellNames = SCRIPT_NONE, _spellLetters = SCRIPT_NONE, _spellProcess = SCRIPT_NONE, _spellRelease = SCRIPT_NONE;
+	i32 _strikeSpell = -1, _strikeLevel = 0;
+	static void xActiveSpell(ScriptVm& vm, void* user);
+	static void xActiveSpellLevel(ScriptVm& vm, void* user);
+	static void xActiveSpellCat(ScriptVm& vm, void* user);
+	static void xLastHitSpellId(ScriptVm& vm, void* user);
+	static void xLastHitSpellCat(ScriptVm& vm, void* user);
 	// Symbols of the scripts this code reads.
 	u32 _clsNpc = SCRIPT_NONE, _clsItem = SCRIPT_NONE;
 	u32 _mRoutine = SCRIPT_NONE, _mName = SCRIPT_NONE, _mVisualChange = SCRIPT_NONE, _mVisualSkin = SCRIPT_NONE,

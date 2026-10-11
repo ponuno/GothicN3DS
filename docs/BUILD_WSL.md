@@ -2,6 +2,8 @@
 
 *(Русская версия — ниже, после этого раздела. / The Russian version follows below.)*
 
+> **Easier for baking only:** `windows/` has a native Windows baker (`g3ds-bake.exe` + `bake.bat`, no WSL). See `windows/README.txt`. / **Проще, если нужно только запечь data.pak:** папка `windows/` (без WSL), см. `windows/README.txt`.
+
 **Legal note.** The game's data (textures, models, sounds, music, scripts) is not distributed with this project and must not be distributed by you either. You need your own legal copy of Gothic 1. The files you produce (`data.pak`, `music.pak`, `speech.pak`, rendered WAVs) contain the game's content: keep them for yourself and never publish them. Only the source code, the tools, the compiled `gothic3ds.3dsx` (it contains no game data) and these instructions may be shared.
 
 What you get at the end (step 7 is optional if you download a ready `.3dsx`): an SD card with `gothic3ds.3dsx`, `data.pak` (worlds and sounds), `music.pak` (music) and `speech.pak` (voices), plus the DSP firmware file `dspfirm.cdc` that every sound needs (see the box below).

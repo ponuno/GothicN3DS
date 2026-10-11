@@ -2,7 +2,9 @@
 
 > **Данные игры не распространяются / Game data is not distributed.** Проект не содержит ничего из Gothic и не должен: нужна легальная копия игры, а `data.pak`, `music.pak`, `speech.pak` и WAV с музыкой, которые вы запекаете из неё, нельзя публиковать. This project contains nothing from Gothic; you need your own legal copy, and the `data.pak`, `music.pak`, `speech.pak` and music WAVs you bake from it must not be published.
 >
-> Инструкция по сборке с нуля (English first, then Russian): [`docs/BUILD_WSL.md`](docs/BUILD_WSL.md). / Step-by-step build guide for Windows + WSL: [`docs/BUILD_WSL.md`](docs/BUILD_WSL.md).
+> Запечь `data.pak` на Windows без WSL: `windows/README.txt` (`bake.bat`, `build_baker.bat`).
+
+Инструкция по сборке с нуля (English first, then Russian): [`docs/BUILD_WSL.md`](docs/BUILD_WSL.md). / Step-by-step build guide for Windows + WSL: [`docs/BUILD_WSL.md`](docs/BUILD_WSL.md).
 
 
 Основа для запуска мира Gothic 1 на New Nintendo 3DS: конвертер ресурсов на ПК, формат данных под PICA200 и рантайм, в котором по мирам игры можно ходить, плавать и переходить из одного в другой. Это этапы 0–2 плана и начало этапов 3 и 4: у игрока есть персонаж — скелетная модель героя с анимациями из файлов игры, управление и камера по схеме оригинала, — а мир населён и живёт: скрипты самой игры исполняются своей виртуальной машиной Daedalus, расставляют персонажей и существ по местам их распорядка дня и ведут их через день — жители ходят по сети путей, встают на посты, садятся у костра и на скамьи, работают у наковальни, ложатся в кровати. Звук (шаги, бой, звуки мира) и музыка есть (см. «Звук и музыка» ниже).

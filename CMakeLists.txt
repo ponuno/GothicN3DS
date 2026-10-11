@@ -12,7 +12,12 @@ if (NOT CMAKE_BUILD_TYPE)
 endif ()
 
 option(G3DS_WITH_ZENKIT "Build the ZenGin importer (fetches ZenKit)" ON)
-option(G3DS_BUILD_TESTS "Build the tests" ON)
+option(G3DS_BAKER_ONLY "Build only g3ds-bake (no runtime, no tests): for Windows, see windows/README.txt" OFF)
+if (G3DS_BAKER_ONLY)
+    set(G3DS_BUILD_TESTS OFF)
+else ()
+    option(G3DS_BUILD_TESTS "Build the tests" ON)
+endif ()
 
 set(G3DS_WARNINGS -Wall -Wextra -Wshadow)
 find_package(Threads REQUIRED)
@@ -34,11 +39,13 @@ target_include_directories(g3core PUBLIC core/include)
 target_link_libraries(g3core PUBLIC lz4)
 target_compile_options(g3core PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
 
+if (NOT G3DS_BAKER_ONLY)
 # Threads, locks and the clock for this platform (the 3DS has platform/3ds/sys_3ds.cpp).
 add_library(g3sys STATIC platform/host/sys_host.cpp)
 target_include_directories(g3sys PUBLIC engine core/include)
 target_link_libraries(g3sys PUBLIC Threads::Threads)
 target_compile_options(g3sys PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
+endif ()
 
 # The script machine and the game's rules. The baker runs them too: it has to
 # know what the scripts put into the world to bake what that needs.
@@ -47,6 +54,7 @@ target_include_directories(g3script PUBLIC engine)
 target_link_libraries(g3script PUBLIC g3core)
 target_compile_options(g3script PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
 
+if (NOT G3DS_BAKER_ONLY)
 add_library(g3engine STATIC engine/world.cpp engine/app.cpp engine/collision.cpp engine/player.cpp engine/sky.cpp
             engine/loader.cpp engine/pacer.cpp engine/model.cpp engine/hero.cpp engine/npcs.cpp engine/waynet.cpp engine/mobs.cpp engine/npc_ai.cpp engine/npc_perc.cpp engine/npc_dialog.cpp engine/dialog_text.cpp engine/app_talk.cpp engine/app_magic.cpp engine/app_ranged.cpp engine/recorder.cpp
             engine/npc_fight.cpp engine/npc_items.cpp engine/ui.cpp engine/menu.cpp engine/settings.cpp engine/hud.cpp engine/inventory.cpp engine/panel.cpp engine/loot.cpp engine/particles.cpp engine/chests.cpp engine/containers.cpp engine/lang.cpp engine/sound.cpp engine/music.cpp engine/speech.cpp)
@@ -62,6 +70,7 @@ target_compile_options(g3soft PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti
 add_executable(g3ds-host platform/host/main.cpp)
 target_include_directories(g3ds-host PRIVATE third_party/stb)
 target_link_libraries(g3ds-host PRIVATE g3soft)
+endif ()
 
 # ---- tools ----
 set(G3DS_BAKE_SOURCES
@@ -118,6 +127,10 @@ endif ()
 add_executable(g3ds-bake tools/bake/main.cpp)
 target_link_libraries(g3ds-bake PRIVATE g3tools)
 target_compile_options(g3ds-bake PRIVATE ${G3DS_WARNINGS})
+if (WIN32)
+    # One .exe that needs no DLLs next to it.
+    target_link_options(g3ds-bake PRIVATE -static)
+endif ()
 
 if (G3DS_BUILD_TESTS)
     enable_testing()

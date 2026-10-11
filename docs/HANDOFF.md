@@ -644,3 +644,8 @@ Cause: `speech.pak` in PCM16 at 48 kHz was 2.02 GiB; `Pak` seeks with `long(offs
 - Бейкер: `bowClipNames()` (hero-only, optional) и состояния BOW/CBOW в `fightStates()` — **нужен перебейк data.pak**. Синтетический скрипт: `ItRw_Bow_Small` с `munition = ItAmArrow`, `DAM_POINT`.
 - Риски: ось модели стрелы принята за +X (если летит боком — поправить в `drawArrows`); имена клипов лука взяты из OpenGothic, не проверены на реальных данных.
 - Тест `ranged` (прицел, расход стрелы, урон, «нет стрел», убрать лук).
+
+## Раунд 19 — пекарь для Windows без WSL
+- CMake: `-DG3DS_BAKER_ONLY=ON` собирает только `g3ds-bake` (без g3sys/g3engine/g3soft/host/tests; проверено на Linux). На Windows (MinGW) статическая линковка.
+- `windows/`: `build_baker.bat` (ставит MSYS2 через winget, собирает `g3ds-bake.exe`), `bake.bat` (перетащить папку Gothic → `out\data.pak`, `--no-script-check`, музыка из `windows\music_wavs`), `README.txt`. `.github/workflows/windows-baker.yml` собирает exe в CI (артефакт `g3ds-bake-windows`).
+- **Не проверено на Windows**: в этой среде нет MinGW/сети для кросс-сборки. `script_check.cpp` уже под `#ifdef G3_CAN_FORK`. Возможные проблемы: пути/регистр в `import_zen.cpp`, кодировка консоли.

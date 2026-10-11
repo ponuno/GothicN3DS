@@ -1,0 +1,34 @@
+name: windows-baker
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+      - name: Build g3ds-bake.exe
+        run: |
+          cmake -S . -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release -DG3DS_BAKER_ONLY=ON
+          cmake --build build-win --target g3ds-bake
+          cp build-win/g3ds-bake.exe windows/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: g3ds-bake-windows
+          path: |
+            windows/g3ds-bake.exe
+            windows/bake.bat
+            windows/README.txt

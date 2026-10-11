@@ -40,10 +40,12 @@
 #include <cstring>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <map>
 #include <memory>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -1297,6 +1299,7 @@ void describeWater(SrcScene& scene) {
 struct ZenGame {
 	zenkit::Vfs vfs;
 	fs::path dir; // the installation: compiled scripts lie there as loose files
+	ZenModInfo mod; // the modification mounted over the game, if any
 	// Which side of a character mesh's triangles is the front: +1 as stored,
 	// -1 the other, 0 not known yet. All of a game's character meshes come out
 	// of the same exporter, so what has been found for one whole body holds
@@ -1304,7 +1307,128 @@ struct ZenGame {
 	mutable int actorWinding = 0;
 };
 
-std::shared_ptr<ZenGame> openZenGame(const std::string& gameDir, std::vector<std::string>& notes) {
+namespace {
+
+fs::path findNoCase(fs::path root, std::initializer_list<const char*> parts) {
+	for (const char* part : parts) {
+		fs::path next;
+		std::error_code ec;
+		for (const auto& e : fs::directory_iterator(root, ec))
+			if (lower(e.path().filename().string()) == part) next = e.path();
+		if (next.empty()) return {};
+		root = next;
+	}
+	return root;
+}
+
+// A file of the game's scripts: loose under _work/Data/<dirs>/ in the installation, or in an archive. A mod's
+// files are meant to lie over the game's, so with a mod mounted the archives are asked first.
+struct GameFile {
+	std::unique_ptr<zenkit::Read> rd;
+	fs::path loose; // set if it came from a loose file
+};
+
+GameFile openGameFile(const ZenGame& game, const std::vector<std::string>& dirs, const std::string& file) {
+	GameFile out;
+	auto fromArchive = [&] {
+		if (const zenkit::VfsNode* node = game.vfs.find(file)) out.rd = node->open_read();
+	};
+	auto fromDisk = [&] {
+		fs::path p = game.dir;
+		for (const std::string& part : dirs) {
+			p = findNoCase(p, {part.c_str()});
+			if (p.empty()) return;
+		}
+		const std::string lowerFile = lower(file);
+		p = findNoCase(p, {lowerFile.c_str()});
+		if (!p.empty() && fs::is_regular_file(p)) {
+			out.rd = zenkit::Read::from(p);
+			out.loose = p;
+		}
+	};
+	if (game.mod.active) {
+		fromArchive();
+		if (!out.rd) fromDisk();
+	} else {
+		fromDisk();
+		if (!out.rd) fromArchive();
+	}
+	return out;
+}
+
+std::string trimmed(const std::string& s) {
+	size_t a = 0, b = s.size();
+	while (a < b && std::isspace(static_cast<unsigned char>(s[a]))) ++a;
+	while (b > a && std::isspace(static_cast<unsigned char>(s[b - 1]))) --b;
+	return s.substr(a, b - a);
+}
+
+// The .ini of a mod: [SECTION] KEY=value, names without regard to case.
+struct IniFile {
+	std::map<std::string, std::string> values; // "SECTION/KEY"
+	bool load(const fs::path& path) {
+		std::ifstream in(path, std::ios::binary);
+		if (!in) return false;
+		std::string line, section;
+		bool first = true;
+		while (std::getline(in, line)) {
+			if (first && line.size() >= 3 && line.compare(0, 3, "\xEF\xBB\xBF") == 0) line.erase(0, 3);
+			first = false;
+			line = trimmed(line);
+			if (line.empty() || line[0] == ';' || line.compare(0, 2, "//") == 0) continue;
+			if (line[0] == '[') {
+				const size_t end = line.find(']');
+				if (end != std::string::npos) section = upper(trimmed(line.substr(1, end - 1)));
+				continue;
+			}
+			const size_t eq = line.find('=');
+			if (eq == std::string::npos) continue;
+			values[section + "/" + upper(trimmed(line.substr(0, eq)))] = trimmed(line.substr(eq + 1));
+		}
+		return true;
+	}
+	bool has(const char* section, const char* key) const { return values.count(std::string(section) + "/" + key) != 0; }
+	std::string get(const char* section, const char* key) const {
+		const auto it = values.find(std::string(section) + "/" + key);
+		return it == values.end() ? std::string() : it->second;
+	}
+};
+
+// "NewWorld\\Archolos.zen" -> "ARCHOLOS.ZEN"
+std::string baseNameUpper(std::string s) {
+	const size_t slash = s.find_last_of("/\\");
+	if (slash != std::string::npos) s = s.substr(slash + 1);
+	return upper(s);
+}
+
+bool endsWithNoCase(const std::string& s, const std::string& suffix) {
+	return s.size() >= suffix.size() && lower(s.substr(s.size() - suffix.size())) == lower(suffix);
+}
+
+// Every regular file with the extension `ext` (".vdf", ".mod") under `root`, sorted by path.
+std::vector<fs::path> filesWithExtension(const fs::path& root, const std::string& ext) {
+	std::vector<fs::path> found;
+	std::error_code ec;
+	for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
+		std::error_code fe;
+		if (it->is_regular_file(fe) && lower(it->path().extension().string()) == ext && fs::file_size(it->path(), fe) > 0)
+			found.push_back(it->path());
+	}
+	std::sort(found.begin(), found.end());
+	return found;
+}
+
+void collectWorlds(const zenkit::VfsNode& node, std::set<std::string>& out) {
+	if (node.type() == zenkit::VfsNodeType::FILE) {
+		if (endsWithNoCase(node.name(), ".zen")) out.insert(upper(node.name()));
+		return;
+	}
+	for (const zenkit::VfsNode& child : node.children()) collectWorlds(child, out);
+}
+
+} // namespace
+
+std::shared_ptr<ZenGame> openZenGame(const std::string& gameDir, std::vector<std::string>& notes, const ZenModOptions& mod) {
 	fs::path dataDir;
 	if (!fs::is_directory(gameDir)) throw std::runtime_error("'" + gameDir + "' is not a directory");
 	for (const auto& e : fs::directory_iterator(gameDir)) {
@@ -1312,6 +1436,7 @@ std::shared_ptr<ZenGame> openZenGame(const std::string& gameDir, std::vector<std
 	}
 	if (dataDir.empty()) throw std::runtime_error("no Data directory in '" + gameDir + "'; is this a Gothic install?");
 
+	// The game's own archives: a mod's lie in the same folders, but go over them (below).
 	std::vector<fs::path> disks;
 	for (const auto& e : fs::directory_iterator(dataDir)) {
 		if (e.is_regular_file() && lower(e.path().extension().string()) == ".vdf") disks.push_back(e.path());
@@ -1327,10 +1452,205 @@ std::shared_ptr<ZenGame> openZenGame(const std::string& gameDir, std::vector<std
 			notes.push_back("skipped " + d.filename().string() + ": " + ex.what());
 		}
 	}
+	// A game of its own (Chronicles of Myrtana: Archolos, on Steam) ships its worlds, scripts and music as .mod
+	// archives in Data/ and has no .ini to say so: those are mounted over the .vdf ones all the same.
+	ZenModOptions opts = mod;
+	const bool automatic = !opts.active();
+	if (automatic) opts.all = true;
+
+	// ---- a modification ----------------------------------------------------
+	ZenModInfo& info = game->mod;
+	info.active = true;
+	info.gameDat = "GOTHIC.DAT";
+	bool listed = false; // the .ini names the archives it wants
+	std::vector<std::string> listedNames;
+	if (!opts.ini.empty()) {
+		fs::path iniPath = opts.ini;
+		std::error_code ec;
+		if (!fs::is_regular_file(iniPath, ec)) {
+			iniPath.clear();
+			const fs::path systemDir = findNoCase(gameDir, {"system"});
+			if (!systemDir.empty()) {
+				for (const std::string& name : {opts.ini, opts.ini + ".ini"})
+					for (const auto& e : fs::directory_iterator(systemDir, ec))
+						if (e.is_regular_file() && lower(e.path().filename().string()) == lower(name)) iniPath = e.path();
+			}
+		}
+		if (iniPath.empty()) {
+			std::string have;
+			const fs::path systemDir = findNoCase(gameDir, {"system"});
+			std::error_code ec2;
+			if (!systemDir.empty())
+				for (const auto& e : fs::directory_iterator(systemDir, ec2))
+					if (lower(e.path().extension().string()) == ".ini") have += (have.empty() ? "" : ", ") + e.path().filename().string();
+			throw std::runtime_error("mod .ini '" + opts.ini + "' not found (not a file, and not in the game's System folder" +
+			                         (have.empty() ? ")" : "; there: " + have + ")"));
+		}
+		IniFile ini;
+		if (!ini.load(iniPath)) throw std::runtime_error("cannot read '" + iniPath.string() + "'");
+		info.title = ini.get("INFO", "TITLE");
+		const std::string world = ini.get("SETTINGS", "WORLD");
+		if (!world.empty()) info.world = baseNameUpper(world);
+		const std::string dat = ini.get("FILES", "GAME");
+		if (!dat.empty()) info.gameDat = endsWithNoCase(dat, ".dat") ? baseNameUpper(dat) : baseNameUpper(dat) + ".DAT";
+		const std::string ou = ini.get("FILES", "OUTPUTUNITS");
+		if (!ou.empty()) {
+			info.outputUnits = baseNameUpper(ou);
+			for (const char* ext : {".BIN", ".DAT"})
+				if (endsWithNoCase(info.outputUnits, ext)) info.outputUnits.resize(info.outputUnits.size() - 4);
+		}
+		listed = ini.has("FILES", "VDF") && !trimmed(ini.get("FILES", "VDF")).empty();
+		if (listed) {
+			std::istringstream words(ini.get("FILES", "VDF"));
+			for (std::string w; words >> w;) listedNames.push_back(baseNameUpper(w));
+		}
+		notes.push_back("mod: " + iniPath.filename().string() + (info.title.empty() ? "" : " (" + info.title + ")"));
+	}
+
+	// Which archives: those the .ini lists (all the .mod ones if it lists none, or on request), then the named ones.
+	std::vector<fs::path> mounts;
+	auto add = [&](const fs::path& p) {
+		for (const fs::path& m : mounts)
+			if (lower(m.string()) == lower(p.string())) return;
+		mounts.push_back(p);
+	};
+	if (!opts.ini.empty() || opts.all) {
+		for (const fs::path& m : filesWithExtension(dataDir, ".mod")) {
+			bool wanted = opts.all || !listed;
+			if (!wanted)
+				for (const std::string& n : listedNames)
+					if (upper(m.filename().string()) == n) wanted = true;
+			if (wanted) add(m);
+		}
+		if (listed)
+			for (const std::string& n : listedNames) {
+				bool found = false;
+				for (const fs::path& m : mounts)
+					if (upper(m.filename().string()) == n) found = true;
+				if (!found) {
+					// A .vdf of the game itself, listed too, is mounted already; anything else is missing.
+					bool ours = false;
+					for (const fs::path& d : disks)
+						if (upper(d.filename().string()) == n) ours = true;
+					if (!ours) notes.push_back("mod: the .ini lists " + n + ", which is not in Data/; skipped");
+				}
+			}
+	}
+	for (const std::string& a : opts.archives) {
+		fs::path p = a;
+		std::error_code ec;
+		if (!fs::is_regular_file(p, ec)) {
+			p.clear();
+			for (const char* ext : {".mod", ".vdf"})
+				for (const fs::path& m : filesWithExtension(dataDir, ext))
+					if (p.empty() && (lower(m.filename().string()) == lower(a) || lower(m.filename().string()) == lower(a) + ext)) p = m;
+		}
+		if (p.empty()) throw std::runtime_error("mod archive '" + a + "' not found (not a file, and not under " + dataDir.string() + ")");
+		add(p);
+	}
+	if (automatic && mounts.empty()) {
+		game->mod = ZenModInfo();
+		return game;
+	}
+	if (mounts.empty())
+		notes.push_back("WARNING: mod: no .mod archives found under " + dataDir.string() + "; only the .ini and loose files count");
+
+	// What the game has before the mod comes, to tell what the mod brings.
+	std::set<std::string> before, after;
+	collectWorlds(game->vfs.root(), before);
+	for (const fs::path& m : mounts) {
+		try {
+			game->vfs.mount_disk(m, zenkit::VfsOverwriteBehavior::ALL); // the mod wins, whatever the dates say
+			info.mounted.push_back(m.filename().string());
+		} catch (const std::exception& ex) {
+			notes.push_back("mod: skipped " + m.filename().string() + ": " + ex.what());
+		}
+	}
+	collectWorlds(game->vfs.root(), after);
+	for (const std::string& w : after)
+		if (!before.count(w)) info.worlds.push_back(w);
+	{
+		std::string list;
+		for (const std::string& m : info.mounted) list += (list.empty() ? "" : ", ") + m;
+		notes.push_back("mod: archives over the game: " + (list.empty() ? std::string("none") : list));
+	}
 	return game;
 }
 
+const ZenModInfo& zenGameMod(const ZenGame& game) { return game.mod; }
+
+namespace {
+void extractNode(const zenkit::VfsNode& node, const std::vector<std::string>& exts, const fs::path& outDir,
+                 std::set<std::string>& done, std::vector<std::string>& notes) {
+	if (node.type() == zenkit::VfsNodeType::DIRECTORY) {
+		for (const zenkit::VfsNode& child : node.children()) extractNode(child, exts, outDir, done, notes);
+		return;
+	}
+	const std::string name = node.name();
+	bool wanted = false;
+	for (const std::string& e : exts) wanted = wanted || endsWithNoCase(name, e);
+	if (!wanted || !done.insert(lower(name)).second) return;
+	try {
+		auto rd = node.open_read();
+		rd->seek(0, zenkit::Whence::END);
+		std::vector<char> bytes(size_t(rd->tell()));
+		rd->seek(0, zenkit::Whence::BEG);
+		if (!bytes.empty()) rd->read(bytes.data(), bytes.size());
+		std::ofstream out(outDir / name, std::ios::binary);
+		out.write(bytes.data(), std::streamsize(bytes.size()));
+		if (!out) throw std::runtime_error("cannot write");
+	} catch (const std::exception& ex) {
+		done.erase(lower(name));
+		notes.push_back("extract: " + name + ": " + ex.what());
+	}
+}
+} // namespace
+
+size_t zenExtractFiles(const ZenGame& game, const std::vector<std::string>& exts, const std::string& outDir,
+                       std::vector<std::string>& notes) {
+	std::error_code ec;
+	fs::create_directories(outDir, ec);
+	if (ec) throw std::runtime_error("cannot create '" + outDir + "': " + ec.message());
+	std::set<std::string> done;
+	extractNode(game.vfs.root(), exts, outDir, done, notes);
+	// Loose files of the installation fill in what the archives do not have (the archives rank first, as in the game).
+	const fs::path music = findNoCase(game.dir, {"_work", "data", "music"});
+	if (!music.empty()) {
+		for (fs::recursive_directory_iterator it(music, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
+			std::error_code fe;
+			if (!it->is_regular_file(fe)) continue;
+			const std::string name = it->path().filename().string();
+			bool wanted = false;
+			for (const std::string& e : exts) wanted = wanted || endsWithNoCase(name, e);
+			if (!wanted || !done.insert(lower(name)).second) continue;
+			fs::copy_file(it->path(), fs::path(outDir) / name, fs::copy_options::overwrite_existing, fe);
+			if (fe) {
+				done.erase(lower(name));
+				notes.push_back("extract: " + name + ": " + fe.message());
+			}
+		}
+	}
+	return done.size();
+}
+
 bool zenGameHasFile(const ZenGame& game, const std::string& name) { return game.vfs.find(name) != nullptr; }
+
+std::vector<std::pair<std::string, size_t>> zenGameWorlds(const ZenGame& game) {
+	std::set<std::string> names;
+	collectWorlds(game.vfs.root(), names);
+	std::vector<std::pair<std::string, size_t>> out;
+	for (const std::string& n : names) out.emplace_back(n, zenGameFileSize(game, n));
+	std::stable_sort(out.begin(), out.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+	return out;
+}
+
+size_t zenGameFileSize(const ZenGame& game, const std::string& name) {
+	const zenkit::VfsNode* node = game.vfs.find(name);
+	if (!node || node->type() != zenkit::VfsNodeType::FILE) return 0;
+	auto rd = node->open_read();
+	rd->seek(0, zenkit::Whence::END);
+	return size_t(rd->tell());
+}
 
 
 std::function<bool(const std::string&, SrcImage&)> textureLoader(std::shared_ptr<const ZenGame> game) {
@@ -2229,17 +2549,6 @@ LookSource zenLookSource(std::shared_ptr<const ZenGame> game) {
 namespace {
 
 // A path below `root` given in any letter case (the game is a Windows program).
-fs::path findNoCase(fs::path root, std::initializer_list<const char*> parts) {
-	for (const char* part : parts) {
-		fs::path next;
-		std::error_code ec;
-		for (const auto& e : fs::directory_iterator(root, ec))
-			if (lower(e.path().filename().string()) == part) next = e.path();
-		if (next.empty()) return {};
-		root = next;
-	}
-	return root;
-}
 
 
 } // namespace
@@ -2275,14 +2584,10 @@ std::function<bool(const std::string&, std::vector<u8>&)> zenSoundSource(std::sh
 
 bool importZenCamera(std::shared_ptr<const ZenGame> game, CameraSet& set, std::vector<std::string>& notes) {
 	set = defaultCameraSet();
-	std::unique_ptr<zenkit::Read> rd;
 	// Compiled scripts are loose files of the installation; a mod may carry them in an archive.
-	const fs::path loose = findNoCase(game->dir, {"_work", "data", "scripts", "_compiled", "camera.dat"});
-	if (!loose.empty() && fs::is_regular_file(loose)) {
-		rd = zenkit::Read::from(loose);
-	} else if (const zenkit::VfsNode* node = game->vfs.find("CAMERA.DAT")) {
-		rd = node->open_read();
-	} else {
+	GameFile found = openGameFile(*game, {"_work", "data", "scripts", "_compiled"}, "CAMERA.DAT");
+	std::unique_ptr<zenkit::Read> rd = std::move(found.rd);
+	if (!rd) {
 		notes.push_back("camera: CAMERA.DAT not found (_work/Data/Scripts/_compiled); this project's own set-up is used");
 		return false;
 	}
@@ -2363,15 +2668,10 @@ bool importZenCompiled(std::shared_ptr<const ZenGame> game, const std::string& f
 	script = SrcScript();
 	dat.clear();
 	// Compiled scripts are loose files of the installation; a mod may carry them in an archive.
-	const std::string lowerFile = lower(file);
-	const fs::path loose = findNoCase(game->dir, {"_work", "data", "scripts", "_compiled", lowerFile.c_str()});
-	std::unique_ptr<zenkit::Read> rd;
-	if (!loose.empty() && fs::is_regular_file(loose)) {
-		rd = zenkit::Read::from(loose);
-		script.source = file;
-	} else if (const zenkit::VfsNode* node = game->vfs.find(file)) {
-		rd = node->open_read();
-		script.source = file + " (from an archive)";
+	GameFile found = openGameFile(*game, {"_work", "data", "scripts", "_compiled"}, file);
+	std::unique_ptr<zenkit::Read> rd = std::move(found.rd);
+	if (rd) {
+		script.source = found.loose.empty() ? file + " (from an archive)" : file;
 	} else {
 		notes.push_back(std::string(topic) + ": " + file + " not found (_work/Data/Scripts/_compiled); " + without);
 		return false;
@@ -2463,7 +2763,7 @@ bool importZenCompiled(std::shared_ptr<const ZenGame> game, const std::string& f
 
 bool importZenScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<u8>& dat,
                      std::vector<std::string>& notes) {
-	return importZenCompiled(game, "GOTHIC.DAT", "scripts", "the world stays empty", script, dat, notes);
+	return importZenCompiled(game, game->mod.gameDat.empty() ? "GOTHIC.DAT" : game->mod.gameDat, "scripts", "the world stays empty", script, dat, notes);
 }
 
 bool importZenFightScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes) {
@@ -2539,18 +2839,15 @@ bool importZenFonts(std::shared_ptr<const ZenGame> game, SrcFonts& fonts, std::v
 // it otherwise or keep it in text form, which the same reader takes).
 bool importZenDialogue(std::shared_ptr<const ZenGame> game, SrcDialogue& dialogue, std::vector<std::string>& notes) {
 	dialogue = SrcDialogue();
-	for (const char* file : {"ou.bin", "ou.dat", "ou.csl", "ou.lsc"}) {
-		std::unique_ptr<zenkit::Read> rd;
-		const fs::path loose = findNoCase(game->dir, {"_work", "data", "scripts", "content", "cutscene", file});
-		if (!loose.empty() && fs::is_regular_file(loose)) {
-			rd = zenkit::Read::from(loose);
-			dialogue.source = loose.filename().string();
-		} else if (const zenkit::VfsNode* node = game->vfs.find(file)) {
-			rd = node->open_read();
-			dialogue.source = lower(file) + " (from an archive)";
-		} else {
-			continue;
-		}
+	// A mod may name its own library (OUTPUTUNITS in its .ini); the usual names follow.
+	std::vector<std::string> files = {"ou.bin", "ou.dat", "ou.csl", "ou.lsc"};
+	if (!game->mod.outputUnits.empty())
+		files.insert(files.begin(), {lower(game->mod.outputUnits) + ".bin", lower(game->mod.outputUnits) + ".dat"});
+	for (const std::string& file : files) {
+		GameFile found = openGameFile(*game, {"_work", "data", "scripts", "content", "cutscene"}, file);
+		std::unique_ptr<zenkit::Read> rd = std::move(found.rd);
+		if (!rd) continue;
+		dialogue.source = found.loose.empty() ? lower(file) + " (from an archive)" : found.loose.filename().string();
 		for (zenkit::GameVersion version : {zenkit::GameVersion::GOTHIC_1, zenkit::GameVersion::GOTHIC_2}) {
 			try {
 				rd->seek(0, zenkit::Whence::BEG);

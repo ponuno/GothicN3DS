@@ -69,9 +69,18 @@ void usage() {
 	std::puts("g3ds-bake - asset baker for the Gothic 3DS runtime\n"
 	          "\n"
 	          "  g3ds-bake world --game DIR [--zen NAME.ZEN ...] [options]   bake the worlds of a Gothic install\n"
+	          "  g3ds-bake extract --game DIR [--mod ...] [--ext sgt,sty,dls] -o DIR   copy music files out of the archives\n"
 	          "  g3ds-bake mesh --msh FILE [--textures DIR] [options]        bake a loose .MSH (development)\n"
 	          "  g3ds-bake synth [--cells N] [options]                       bake the built-in test scene\n"
 	          "  g3ds-bake info FILE                                         describe a data.pak\n"
+	          "\n"
+	          "mod (Gothic 2 modifications, e.g. Chronicles of Myrtana: Archolos):\n"
+	          "  --mod NAME|FILE    the mod's .ini (a path, or a name in <game>/System: \"Archolos\"): it names the\n"
+	          "                     world, the compiled scripts and the .mod archives; those in Data/ are mounted over\n"
+	          "                     the game's .vdf archives (all of them if the .ini lists none)\n"
+	          "  --mod-archive X    also mount this .mod/.vdf (path, or a name under Data/); can be repeated; without\n"
+	          "                     --mod the world is the one the archive brings, or named with --zen\n"
+	          "  --mod-all          with --mod: mount every .mod under Data/, whatever the .ini lists\n"
 	          "\n"
 	          "world: the first --zen is the world the game starts in (default: WORLD.ZEN, or\n"
 	          "NEWWORLD.ZEN for Gothic 2). Worlds reached through its level-change triggers\n"
@@ -93,6 +102,7 @@ void usage() {
 	          "  --quality 0|1|2    ETC1 effort (default: 1)\n"
 	          "  --flip             reverse the triangle winding (if the winding check complains)\n"
 	          "  --no-hero          do not bake the player's character (the game stays first-person)\n"
+	          "  --no-script-check  skip the comparison with the reference interpreter (minutes on a big game)\n"
 	          "  --no-scripts       do not bake the game's scripts (the worlds stay empty)\n"
 	          "  --sound-rate HZ    highest sample rate of the sound effects (default: 22050)\n"
 	          "  --no-sound         bake no sound effects and no ambient sounds\n"
@@ -125,7 +135,7 @@ int main(int argc, char** argv) {
 			}
 			return info(argv[2]);
 		}
-		if (cmd != "world" && cmd != "mesh" && cmd != "synth") {
+		if (cmd != "world" && cmd != "mesh" && cmd != "synth" && cmd != "extract") {
 			usage();
 			return 2;
 		}
@@ -137,7 +147,9 @@ int main(int argc, char** argv) {
 		SynthOptions synth;
 		std::string out = "data.pak", firstName, gameDir;
 		std::vector<std::string> levels;
-		bool follow = true, hero = true, withScripts = true, withFont = true;
+		ZenModOptions modOpt;
+		std::string extList = "sgt,sty,dls";
+		bool scriptCheck = true, follow = true, hero = true, withScripts = true, withFont = true;
 		int fontCodePage = 0;
 		for (int i = 2; i < argc; ++i) {
 			const std::string a = argv[i];
@@ -157,9 +169,14 @@ int main(int argc, char** argv) {
 			else if (a == "--threads") opt.threads = unsigned(std::max(1, std::stoi(value())));
 			else if (a == "--game") gameDir = value();
 			else if (a == "--zen") levels.push_back(levelFile(value()));
+			else if (a == "--ext") extList = value();
+			else if (a == "--mod") modOpt.ini = value();
+			else if (a == "--mod-archive") modOpt.archives.push_back(value());
+			else if (a == "--mod-all") modOpt.all = true;
 			else if (a == "--no-follow") follow = false;
 			else if (a == "--no-hero") hero = false;
 			else if (a == "--no-scripts") withScripts = false;
+			else if (a == "--no-script-check") scriptCheck = false;
 			else if (a == "--no-font") withFont = false;
 			else if (a == "--font-cp") fontCodePage = std::stoi(value());
 			else if (a == "--sound-rate") opt.soundRate = u32(std::stoul(value()));
@@ -201,6 +218,23 @@ int main(int argc, char** argv) {
 		if (!(opt.chunker.sealTolerance >= 0.0f && opt.chunker.sealTolerance <= 5.0f))
 			throw std::runtime_error("--seal must be between 0 and 5 (cm)");
 		if (synth.cells < 8 || synth.cells > 1024) throw std::runtime_error("--cells must be between 8 and 1024");
+
+		if (cmd == "extract") {
+			// The game's music (or whatever --ext names) out of its archives, into the folder dmrender reads.
+			if (gameDir.empty()) throw std::runtime_error("extract: --game DIR is required");
+			std::vector<std::string> exts, notes;
+			for (size_t a = 0; a <= extList.size();) {
+				size_t b = extList.find(',', a);
+				if (b == std::string::npos) b = extList.size();
+				if (b > a) exts.push_back("." + extList.substr(a, b - a));
+				a = b + 1;
+			}
+			const std::shared_ptr<ZenGame> game = openZenGame(gameDir, notes, modOpt);
+			const size_t n = zenExtractFiles(*game, exts, out == "data.pak" ? "music_src" : out, notes);
+			for (const std::string& note : notes) std::printf("%s\n", note.c_str());
+			std::printf("extracted %zu files (%s) into %s\n", n, extList.c_str(), (out == "data.pak" ? "music_src" : out).c_str());
+			return n ? 0 : 1;
+		}
 
 		const auto t0 = std::chrono::steady_clock::now();
 		std::vector<BakeWorld> worlds;
@@ -248,11 +282,41 @@ int main(int argc, char** argv) {
 		} else {
 			if (gameDir.empty()) throw std::runtime_error("world: --game DIR is required");
 			std::vector<std::string> notes;
-			const std::shared_ptr<ZenGame> game = openZenGame(gameDir, notes);
+			const std::shared_ptr<ZenGame> game = openZenGame(gameDir, notes, modOpt);
+			const ZenModInfo& mod = zenGameMod(*game);
+			if (levels.empty() && mod.active) {
+				// The world the mod starts in: its .ini says; else the one world its archives bring.
+				if (!mod.world.empty() && zenGameHasFile(*game, mod.world)) {
+					levels.push_back(mod.world);
+				} else if (mod.world.empty() && mod.worlds.size() == 1) {
+					levels.push_back(mod.worlds[0]);
+					notes.push_back("mod: no World= in the .ini; the only world its archives bring is " + mod.worlds[0]);
+				} else if (!mod.world.empty()) {
+					std::string list;
+					for (const std::string& w : mod.worlds) list += (list.empty() ? "" : ", ") + w;
+					throw std::runtime_error("the mod's world " + mod.world + " is in none of the archives; name one with --zen" +
+					                         (list.empty() ? std::string() : " (new in the mod's archives: " + list + ")"));
+				} // else: no world named: the usual names, then a list to choose from (below)
+			}
 			if (levels.empty()) {
 				for (const char* candidate : {"WORLD.ZEN", "NEWWORLD.ZEN"})
 					if (levels.empty() && zenGameHasFile(*game, candidate)) levels.push_back(candidate);
-				if (levels.empty()) throw std::runtime_error("no WORLD.ZEN or NEWWORLD.ZEN in the archives; name one with --zen");
+				if (levels.empty()) {
+					// A game of its own (Chronicles of Myrtana: Archolos) names its world otherwise.
+					const auto found = zenGameWorlds(*game);
+					if (found.size() == 1) {
+						levels.push_back(found[0].first);
+						notes.push_back("no WORLD.ZEN or NEWWORLD.ZEN; the only world in the archives is " + found[0].first);
+					} else {
+						std::string list;
+						for (size_t i = 0; i < found.size() && i < 40; ++i)
+							list += "\n    " + found[i].first + "  (" + std::to_string(found[i].second >> 20) + " MB)";
+						throw std::runtime_error(
+						    std::string("no WORLD.ZEN or NEWWORLD.ZEN in the archives; name the world with --zen NAME.ZEN") +
+						    (found.empty() ? " (there is no .ZEN at all in the archives: wrong folder, or the .vdf/.mod are not in Data/?)"
+						                   : ". The worlds found, biggest first (the main world is usually the biggest):" + list));
+					}
+				}
 			}
 			// Bake the named worlds, then whatever their portals lead to.
 			for (size_t i = 0; i < levels.size() && i < 32; ++i) {
@@ -298,7 +362,7 @@ int main(int argc, char** argv) {
 			// The game's scripts, and through them the people of its worlds.
 			if (withScripts && !worlds.empty() && importZenScript(game, script, scriptDat, worlds[0].scene.notes)) {
 				scripts.script = &script;
-				scripts.dat = &scriptDat;
+				if (scriptCheck) scripts.dat = &scriptDat; // (the check against the reference interpreter takes minutes on a big game)
 				scripts.looks = zenLookSource(game);
 				scripts.soundFile = zenSoundSource(game);
 				// Gothic 1 keeps how its people fight in a file of its own.
@@ -343,6 +407,8 @@ int main(int argc, char** argv) {
 			pak.add("meta/camera", ASSET_META, std::vector<u8>(bytes, bytes + sizeof(camera)));
 		}
 		pak.write(out);
+		std::printf("%s written (%zu entries); the rest (voices, music) follows\n", out.c_str(), pak.items().size());
+		std::fflush(stdout);
 		const size_t outSlash = out.find_last_of("/\\");
 		const std::string outDir = outSlash == std::string::npos ? std::string() : out.substr(0, outSlash + 1);
 		// The voices: a recording for each line of the dialogue, into speech.pak beside it.
@@ -352,6 +418,8 @@ int main(int argc, char** argv) {
 			for (const auto& l : dialogue.lines) names.push_back(l.first);
 			// (The console cannot seek past 2 GiB of one file: the recordings go into archives of less than that.)
 			std::vector<std::unique_ptr<PakWriter>> speechPaks;
+			std::printf("voices: baking the recordings of %zu lines of dialogue (many minutes on a big game; --no-voices skips) ...\n", names.size());
+			std::fflush(stdout);
 			const SpeechBakeResult sr = bakeSpeechShards(names, scripts.soundFile, opt.voiceRate, opt.threads, speechPaks, opt.voiceIma);
 			std::printf("voices: %u lines of dialogue, %u recordings baked (%.1f MB at up to %u Hz, %s)", sr.lines, sr.baked,
 			            double(sr.bytes) / 1048576.0, opt.voiceRate, opt.voiceIma ? "IMA ADPCM" : "16-bit, full quality");

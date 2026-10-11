@@ -218,6 +218,9 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			co.functions.push_back("INIT_" + worldScriptName(worlds[w]));
 		}
 		try {
+			// (It can take minutes on a big game: say so, or it looks like a hang.)
+			std::printf("scripts: checking against the reference interpreter (at most %d s; --no-script-check skips it) ...\n", co.timeoutSeconds);
+			std::fflush(stdout);
 			const ScriptCheckResult cr = checkScript(*scripts.dat, script, image, co);
 			lines(cr.report);
 			result.scriptChecked = cr.ran;

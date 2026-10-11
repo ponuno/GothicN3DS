@@ -19,8 +19,12 @@ namespace {
 }
 } // namespace
 
-std::shared_ptr<ZenGame> openZenGame(const std::string&, std::vector<std::string>&) { unavailable(); }
+std::shared_ptr<ZenGame> openZenGame(const std::string&, std::vector<std::string>&, const ZenModOptions&) { unavailable(); }
+const ZenModInfo& zenGameMod(const ZenGame&) { unavailable(); }
 bool zenGameHasFile(const ZenGame&, const std::string&) { return false; }
+size_t zenExtractFiles(const ZenGame&, const std::vector<std::string>&, const std::string&, std::vector<std::string>&) { unavailable(); }
+std::vector<std::pair<std::string, size_t>> zenGameWorlds(const ZenGame&) { return {}; }
+size_t zenGameFileSize(const ZenGame&, const std::string&) { return 0; }
 void importZenWorld(std::shared_ptr<const ZenGame>, const ZenImportOptions&, SrcScene&) { unavailable(); }
 void importZenMesh(const ZenImportOptions&, SrcScene&) { unavailable(); }
 bool importZenActor(std::shared_ptr<const ZenGame>, const ZenActorOptions&, SrcModel&) { unavailable(); }

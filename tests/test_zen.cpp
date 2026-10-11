@@ -2181,6 +2181,129 @@ int main(int argc, char** argv) {
 		}
 	}
 
+	// ---- a modification (Gothic 2: Chronicles of Myrtana: Archolos, ...) over the game ----
+	if (game) {
+		std::printf("[ RUN ] mod over the game\n");
+		try {
+			const fs::path mg = dir / "modgame";
+			fs::create_directories(mg / "Data" / "ModVDF");
+			fs::create_directories(mg / "System");
+			fs::create_directories(mg / "_work" / "Data" / "Scripts" / "_compiled");
+			fs::copy_file(dir / "game" / "DATA" / "fixture.VDF", mg / "Data" / "fixture.VDF");
+			auto readNode = [&](const char* name) {
+				std::vector<std::byte> bytes;
+				zenkit::Vfs base;
+				base.mount_disk(dir / "game" / "DATA" / "fixture.VDF");
+				const zenkit::VfsNode* node = base.find(name);
+				if (!node) return bytes;
+				auto rd = node->open_read();
+				rd->seek(0, zenkit::Whence::END);
+				bytes.resize(size_t(rd->tell()));
+				rd->seek(0, zenkit::Whence::BEG);
+				rd->read(bytes.data(), bytes.size());
+				return bytes;
+			};
+			const std::vector<std::byte> zen = readNode("FIXTURE.ZEN"), zen2 = readNode("FIXTURE2.ZEN");
+			CHECK(!zen.empty() && !zen2.empty() && zen.size() != zen2.size());
+			SrcScript compiled;
+			compileDaedalus(kFixtureScript, compiled);
+			const std::vector<u8> datBytes = writeScriptDat(compiled);
+			const std::vector<std::byte> dat(reinterpret_cast<const std::byte*>(datBytes.data()),
+			                                 reinterpret_cast<const std::byte*>(datBytes.data()) + datBytes.size());
+			{
+				zenkit::Vfs mv;
+				addToVfs(mv.mkdir("_WORK/DATA/WORLDS/ARCH"), "ARCH.ZEN", zen);
+				addToVfs(mv.mkdir("_WORK/DATA/WORLDS"), "FIXTURE2.ZEN", zen); // over the game's own
+				addToVfs(mv.mkdir("_WORK/DATA/SCRIPTS/_COMPILED"), "ARCH.DAT", dat);
+				auto out = zenkit::Write::to(mg / "Data" / "ModVDF" / "Arch.mod");
+				mv.save(out.get(), zenkit::GameVersion::GOTHIC_1);
+				zenkit::Vfs ov;
+				addToVfs(ov.mkdir("_WORK/DATA/WORLDS/OTHER"), "OTHER.ZEN", zen);
+				auto out2 = zenkit::Write::to(mg / "Data" / "ModVDF" / "Other.mod");
+				ov.save(out2.get(), zenkit::GameVersion::GOTHIC_1);
+			}
+			// The mod's compiled scripts must beat a loose file of the game.
+			writeFile(mg / "_work" / "Data" / "Scripts" / "_compiled" / "ARCH.DAT", std::vector<std::byte>(40, std::byte {1}));
+			{
+				const char text[] = "; a comment\r\n[INFO]\r\nTitle=Test mod\r\n[SETTINGS]\r\nWorld=NewWorld\\Arch.zen\r\nPlayer=PC_HERO\r\n"
+				                    "[FILES]\r\nGame=Arch\r\nOutputUnits=OU_ARCH\r\nVDF=Arch.mod\r\n";
+				writeFile(mg / "System" / "Arch.ini",
+				          std::vector<std::byte>(reinterpret_cast<const std::byte*>(text), reinterpret_cast<const std::byte*>(text) + sizeof(text) - 1));
+			}
+			// a) by the .ini's name (case, extension and folder of no matter)
+			{
+				std::vector<std::string> notes;
+				ZenModOptions mod;
+				mod.ini = "arch";
+				auto mg1 = openZenGame(mg.string(), notes, mod);
+				const ZenModInfo& info = zenGameMod(*mg1);
+				CHECK(info.active && info.title == "Test mod" && info.world == "ARCH.ZEN");
+				CHECK(info.gameDat == "ARCH.DAT" && info.outputUnits == "OU_ARCH");
+				CHECK(info.mounted.size() == 1 && info.mounted[0] == "Arch.mod"); // Other.mod is not listed
+				CHECK(info.worlds.size() == 1 && info.worlds[0] == "ARCH.ZEN");
+				CHECK(zenGameHasFile(*mg1, "ARCH.ZEN") && !zenGameHasFile(*mg1, "OTHER.ZEN"));
+				// the mod's file lies over the game's
+				CHECK(zenGameFileSize(*mg1, "FIXTURE2.ZEN") == zen.size());
+				SrcScene scene;
+				ZenImportOptions opt;
+				opt.zenName = info.world;
+				importZenWorld(mg1, opt, scene);
+				CHECK(!scene.points.empty() || scene.hasSpawn || scene.notes.size() > 0);
+				// its scripts, from its archive and not from the loose file of the same name
+				SrcScript script;
+				std::vector<u8> bytes;
+				std::vector<std::string> scriptNotes;
+				CHECK(importZenScript(mg1, script, bytes, scriptNotes));
+				CHECK(bytes == datBytes && script.source.find("ARCH.DAT") != std::string::npos);
+			}
+			// b) every .mod on request
+			{
+				std::vector<std::string> notes;
+				ZenModOptions mod;
+				mod.ini = (mg / "System" / "Arch.ini").string();
+				mod.all = true;
+				auto mg2 = openZenGame(mg.string(), notes, mod);
+				CHECK(zenGameMod(*mg2).mounted.size() == 2 && zenGameHasFile(*mg2, "OTHER.ZEN"));
+			}
+			// c) archives only, no .ini: nothing is said about the world, the archive's worlds are told
+			{
+				std::vector<std::string> notes;
+				ZenModOptions mod;
+				mod.archives.push_back("other");
+				auto mg3 = openZenGame(mg.string(), notes, mod);
+				const ZenModInfo& info = zenGameMod(*mg3);
+				CHECK(info.active && info.world.empty() && info.gameDat == "GOTHIC.DAT");
+				CHECK(info.worlds.size() == 1 && info.worlds[0] == "OTHER.ZEN" && info.mounted.size() == 1);
+			}
+			// d) things that are not there are said
+			for (int what = 0; what < 2; ++what) {
+				bool threw = false;
+				try {
+					std::vector<std::string> notes;
+					ZenModOptions mod;
+					if (what == 0) mod.ini = "nosuchmod"; else mod.archives.push_back("nosuchmod");
+					openZenGame(mg.string(), notes, mod);
+				} catch (const std::exception&) {
+					threw = true;
+				}
+				CHECK(threw);
+			}
+			// e) no mod named: the .mod archives in Data/ are mounted all the same (a game of its own, like
+			// Chronicles of Myrtana on Steam, ships its worlds so); a game without any changes nothing
+			{
+				std::vector<std::string> notes;
+				auto automatic = openZenGame(mg.string(), notes);
+				CHECK(zenGameMod(*automatic).active && zenGameHasFile(*automatic, "ARCH.ZEN") && zenGameHasFile(*automatic, "OTHER.ZEN"));
+				CHECK(zenGameMod(*automatic).world.empty() && zenGameMod(*automatic).worlds.size() == 2);
+				auto plain = openZenGame((dir / "game").string(), notes);
+				CHECK(!zenGameMod(*plain).active && !zenGameHasFile(*plain, "ARCH.ZEN"));
+			}
+		} catch (const std::exception& ex) {
+			std::printf("FAIL mod test threw: %s\n", ex.what());
+			++gFailures;
+		}
+	}
+
 	// ---- 3. error reporting ----
 	{
 		std::vector<std::string> notes;

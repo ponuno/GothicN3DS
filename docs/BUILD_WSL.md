@@ -113,6 +113,12 @@ The original Gothic music is in the DirectMusic format, which the 3DS cannot pla
    build-dmrender/dmrender "/mnt/c/Program Files (x86)/Steam/steamapps/common/Gothic/_work/DATA/Music" ~/music_wavs
    ```
    To try one theme, add its name at the end: `... ~/music_wavs OC_DAY_STD.sgt`. The result is `~/music_wavs/*.wav`.
+   **Music inside archives (Gothic 2, Chronicles of Myrtana).** The `.sty` styles and `.dls` sound banks are often inside the game's `.vdf`/`.mod` archives, not loose in `_work/Data/Music`; then `dmrender` prints `cannot load` for many themes. Extract everything it needs into one folder first and render from there:
+   ```
+   ./build/g3ds-bake extract --game "/mnt/c/Program Files (x86)/Steam/steamapps/common/TheChroniclesOfMyrtana" -o ~/music_src
+   build-dmrender/dmrender ~/music_src ~/music_wavs
+   ```
+   (The `.mod` archives in `Data/`, such as `KM_Music.mod`, are included automatically.)
 3. Listen to a file or two in Windows: `\\wsl$\Ubuntu\home\YOUR_NAME\music_wavs`.
 
 If the program prints `cannot load` for a theme, its `.sty` or `.dls` was not found; other themes are not affected.
@@ -140,6 +146,14 @@ See the result on the PC without a console (optional):
 ```
 ./build/g3ds-host --pak ~/out/data.pak --still --shots 1 --out ~/out/world
 ```
+
+**Mods for Gothic 2 (Chronicles of Myrtana: Archolos).** Install the mod into your Gothic II folder as its installer says, then add `--mod` with the name of its `.ini` from the `System` folder:
+
+```sh
+./build/g3ds-bake world --game "/mnt/c/GOG Games/Gothic II" --mod Archolos -o ~/out/data.pak
+```
+
+The baker mounts the mod's `.mod` archives over the game, starts in the world the `.ini` names and uses the mod's own scripts. If it says it cannot tell the world, run it with `--zen NAME.ZEN` using one of the names it lists.
 
 ## Step 7. The 3DS program (`gothic3ds.3dsx`) — OPTIONAL
 
@@ -344,6 +358,12 @@ ls -la /tmp/test.pak
    build-dmrender/dmrender "/mnt/c/Program Files (x86)/Steam/steamapps/common/Gothic/_work/DATA/Music" ~/music_wavs
    ```
    Для пробы одной темы добавьте в конец её имя: `... ~/music_wavs OC_DAY_STD.sgt`. Результат — файлы `~/music_wavs/*.wav`.
+   **Музыка внутри архивов (Gothic 2, Chronicles of Myrtana).** Стили `.sty` и банки `.dls` часто лежат в `.vdf`/`.mod` игры, а не в `_work/Data/Music`; тогда `dmrender` пишет `cannot load` для многих тем. Сначала вынимайте всё нужное в одну папку и рендерите из неё:
+   ```
+   ./build/g3ds-bake extract --game "/mnt/c/Program Files (x86)/Steam/steamapps/common/TheChroniclesOfMyrtana" -o ~/music_src
+   build-dmrender/dmrender ~/music_src ~/music_wavs
+   ```
+   (Архивы `.mod` из `Data/`, например `KM_Music.mod`, подключаются сами.)
 3. Послушайте один-два файла в Windows: папка `\\wsl$\Ubuntu\home\ВАШЕ_ИМЯ\music_wavs`.
 
 Если для какой-то темы программа пишет `cannot load`, значит, не нашёлся её `.sty` или `.dls`; остальные темы это не останавливает.
@@ -372,6 +392,14 @@ mkdir -p ~/out
 ```
 ./build/g3ds-host --pak ~/out/data.pak --still --shots 1 --out ~/out/world
 ```
+
+**Моды для Gothic 2 (Chronicles of Myrtana: Archolos).** Установите мод в папку Gothic II, как велит его установщик, и добавьте `--mod` с именем его `.ini` из папки `System`:
+
+```sh
+./build/g3ds-bake world --game "/mnt/c/GOG Games/Gothic II" --mod Archolos -o ~/out/data.pak
+```
+
+Конвертер подключает `.mod` мода поверх игры, начинает с мира из `.ini` и берёт скрипты мода. Если он пишет, что не может определить мир, запустите с `--zen ИМЯ.ZEN`, взяв одно из имён, которые он перечислит.
 
 ## Шаг 7. Программа для 3DS (`gothic3ds.3dsx`) — НЕ ОБЯЗАТЕЛЬНО
 

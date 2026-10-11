@@ -52,9 +52,46 @@ struct ZenImportOptions {
 // A mounted Gothic installation (its Data/*.vdf archives).
 struct ZenGame;
 
+// A Gothic 2 modification (Chronicles of Myrtana: Archolos, ...): an .ini of the
+// System folder naming its world, its compiled scripts and its archives, and
+// the .mod archives in Data/ that lie over the game's own .vdf archives.
+struct ZenModOptions {
+	// The mod's .ini: a path, or a name looked up in <game>/System ("Archolos" or
+	// "Archolos.ini"). Empty: no .ini; then only `archives` (or, with `all`, every .mod) count.
+	std::string ini;
+	// Archives to mount over the game: paths, or names looked up under <game>/Data.
+	std::vector<std::string> archives;
+	// Mount every .mod under Data/, whatever the .ini lists (what OpenGothic does for a mod
+	// whose .ini has no VDF line, as Archolos' has not).
+	bool all = false;
+	bool active() const { return !ini.empty() || !archives.empty() || all; }
+};
+
+// What the mod says about itself (empty fields: it does not say).
+struct ZenModInfo {
+	bool active = false;
+	std::string title;
+	std::string world;        // file name of the world the mod starts in ("ARCHOLOS.ZEN")
+	std::string gameDat;      // its compiled scripts ("ARCHOLOS.DAT"); GOTHIC.DAT if the .ini does not name them
+	std::string outputUnits;  // its dialogue library without extension ("OU")
+	std::vector<std::string> mounted;    // the archives mounted over the game, in order
+	std::vector<std::string> worlds;     // .ZEN files the mod's archives bring, which the game does not have
+};
+
 // All of these throw std::runtime_error with a readable message on failure.
-std::shared_ptr<ZenGame> openZenGame(const std::string& gameDir, std::vector<std::string>& notes);
+std::shared_ptr<ZenGame> openZenGame(const std::string& gameDir, std::vector<std::string>& notes, const ZenModOptions& mod = {});
+// The mod of an opened game (`active` is false for a game without one).
+const ZenModInfo& zenGameMod(const ZenGame& game);
 bool zenGameHasFile(const ZenGame& game, const std::string& name);
+// Writes the files whose extensions are in `exts` (".sgt", lower case) - those of the mounted archives
+// and the loose ones of _work/Data/Music - flat into `outDir`, the way tools that read a folder want
+// them (dmrender). Returns how many files were written; `notes` gets what went wrong.
+size_t zenExtractFiles(const ZenGame& game, const std::vector<std::string>& exts, const std::string& outDir,
+                       std::vector<std::string>& notes);
+// Every .ZEN file of the mounted archives with its size, the biggest first.
+std::vector<std::pair<std::string, size_t>> zenGameWorlds(const ZenGame& game);
+// Its size in bytes (the file the mounted archives show), 0 if there is none.
+size_t zenGameFileSize(const ZenGame& game, const std::string& name);
 void importZenWorld(std::shared_ptr<const ZenGame> game, const ZenImportOptions& opt, SrcScene& scene);
 // Development path: a loose mesh plus a directory of compiled textures.
 void importZenMesh(const ZenImportOptions& opt, SrcScene& scene);

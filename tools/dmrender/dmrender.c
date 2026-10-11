@@ -2,7 +2,7 @@
 // and DLS banks) to WAV files, for the baker's --music-dir (music.pak).
 // Uses GothicKit's dmusic (https://github.com/GothicKit/dmusic).
 //
-//   dmrender MUSIC_DIR OUT_DIR [--rate 44100] [--cycles 1] [--tail 2.0] [THEME.sgt ...]
+//   dmrender MUSIC_DIR OUT_DIR [--rate 44100] [--cycles 1] [--tail 2.0] [--verbose] [THEME.sgt ...]
 //
 // MUSIC_DIR holds the game's music files (extracted from Music.vdf, or
 // _work/Data/Music loose): .sgt, .sty, .dls, in any letter case. Without
@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 
 static char gDir[1024];
+static int gVerbose;
 
 typedef struct {
 	char* name; // file name only
@@ -62,6 +63,7 @@ static void scan(const char* dir, int depth) {
 
 static void* resolve(void* ctx, char const* name, size_t* len) {
 	(void) ctx;
+	if (gVerbose) fprintf(stderr, "dmrender: asked for '%s'\n", name ? name : "(null)");
 	// (The names may carry a folder: only the file name counts.)
 	const char* base = name;
 	for (const char* p = name; *p; ++p)
@@ -116,8 +118,13 @@ static int writeWav(const char* path, const float* pcm, size_t frames, uint32_t 
 
 static int renderOne(DmLoader* loader, const char* theme, const char* outDir, uint32_t rate, double cycles, double tail) {
 	DmSegment* segment = NULL;
-	if (DmLoader_getSegment(loader, theme, &segment) != DmResult_SUCCESS) {
-		fprintf(stderr, "%s: cannot load (the segment, its style or its DLS bank is missing?)\n", theme);
+	const DmResult loaded = DmLoader_getSegment(loader, theme, &segment);
+	if (loaded != DmResult_SUCCESS) {
+		const char* why = loaded == DmResult_NOT_FOUND       ? "NOT_FOUND: the segment, or a style it names, is not in the folder"
+		                  : loaded == DmResult_FILE_CORRUPT  ? "FILE_CORRUPT: a file could not be parsed"
+		                  : loaded == DmResult_MEMORY_EXHAUSTED ? "MEMORY_EXHAUSTED"
+		                                                        : "other error";
+		fprintf(stderr, "%s: cannot load (%s; code %d). Run with --verbose for the names it looked for\n", theme, why, (int) loaded);
 		return 0;
 	}
 	DmPerformance* perf = NULL;
@@ -167,9 +174,11 @@ int main(int argc, char** argv) {
 	double cycles = 1.0, tail = 2.0;
 	const char* names[4096];
 	int count = 0;
+	int verbose = 0;
 	for (int i = 3; i < argc; ++i) {
 		if (!strcmp(argv[i], "--rate") && i + 1 < argc) rate = (uint32_t) strtoul(argv[++i], NULL, 10);
 		else if (!strcmp(argv[i], "--cycles") && i + 1 < argc) cycles = atof(argv[++i]);
+		else if (!strcmp(argv[i], "--verbose")) verbose = gVerbose = 1;
 		else if (!strcmp(argv[i], "--tail") && i + 1 < argc) tail = atof(argv[++i]);
 		else if (count < 4096) names[count++] = argv[i];
 	}
@@ -179,7 +188,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 	mkdir(outDir, 0755);
-	Dm_setLoggerDefault(DmLogLevel_WARN);
+	Dm_setLoggerDefault(verbose ? DmLogLevel_DEBUG : DmLogLevel_WARN);
 
 	DmLoader* loader = NULL;
 	if (DmLoader_create(&loader, DmLoader_DEFAULT | DmLoader_DOWNLOAD) != DmResult_SUCCESS) return 1;

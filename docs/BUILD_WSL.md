@@ -4,7 +4,7 @@
 
 **Legal note.** The game's data (textures, models, sounds, music, scripts) is not distributed with this project and must not be distributed by you either. You need your own legal copy of Gothic 1. The files you produce (`data.pak`, `music.pak`, rendered WAVs) contain the game's content: keep them for yourself and never publish them. Only the source code, the tools, the compiled `gothic3ds.3dsx` (it contains no game data) and these instructions may be shared.
 
-What you get at the end (step 7 is optional if you download a ready `.3dsx`): an SD card with `gothic3ds.3dsx`, `data.pak` (worlds and sounds) and, optionally, `music.pak`.
+What you get at the end (step 7 is optional if you download a ready `.3dsx`): an SD card with `gothic3ds.3dsx`, `data.pak` (worlds and sounds) and `music.pak` (music).
 
 All commands below go into an **Ubuntu (WSL)** terminal unless stated otherwise. You can copy a whole command and paste it with the right mouse button. Lines starting with `#` are comments; do not type them.
 
@@ -75,7 +75,7 @@ ls -la /tmp/test.pak
 
 Tests (optional, slow): `ctest --test-dir build --output-on-failure`.
 
-## Step 5. The game's music as WAV (optional; skip if you do not want music)
+## Step 5. The game's music as WAV
 
 The original Gothic music is in the DirectMusic format, which the 3DS cannot play. So it is rendered once to WAV by a separate program, `dmrender`.
 
@@ -100,24 +100,17 @@ If the program prints `cannot load` for a theme, its `.sty` or `.dls` was not fo
 
 The converter reads the game's files and makes an archive for the 3DS. The game itself is not touched.
 
-Without music:
 ```
 cd ~/gothic3ds
-mkdir -p ~/out
-./build/g3ds-bake world --game "/mnt/c/Program Files (x86)/Steam/steamapps/common/Gothic" -o ~/out/data.pak
-```
-
-With music (after step 5):
-```
 mkdir -p ~/out
 ./build/g3ds-bake world --game "/mnt/c/Program Files (x86)/Steam/steamapps/common/Gothic" -o ~/out/data.pak --music-dir ~/music_wavs
 ```
 
 Good to know:
-- The converter runs for several minutes and prints a report. It should contain lines like `sounds: ... baked`, `ambient sounds: ...` and, with music, `music: ... baked`.
-- `music.pak` appears next to `data.pak` (only if `--music-dir` is given).
+- The converter runs for several minutes and prints a report. It should contain lines like `sounds: ... baked`, `ambient sounds: ...` and `music: ... baked`. If there is no `music:` line, check that `--music-dir` points to the folder with the WAVs from step 5.
+- `music.pak` appears next to `data.pak`: both files are needed.
 - Print the report again with `./build/g3ds-bake info ~/out/data.pak`.
-- Sound can be switched off with `--no-sound`; its quality is set with `--sound-rate 22050`; for music there is `--music-rate 32000`.
+- The quality of the sound effects is set with `--sound-rate 22050`, of the music with `--music-rate 32000`.
 - **Never put the game's data into the project archive** and never publish `data.pak` or `music.pak`: they are the game's content.
 - After every project update, bake `data.pak` again (`docs/HANDOFF.md` says in the section of the round whether that is needed).
 
@@ -163,7 +156,7 @@ Put the SD card into a card reader (it shows up in Windows as a drive, e.g. `E:`
 ```
 mkdir -p /mnt/c/gothic3ds_sd/3ds/gothic3ds
 cp ~/gothic3ds/gothic3ds.3dsx ~/gothic3ds/gothic3ds.smdh ~/out/data.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
-cp ~/out/music.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/        # only if you made music
+cp ~/out/music.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
 ```
 
 Then, in Windows, copy the folder `C:\gothic3ds_sd\3ds\gothic3ds` to `3ds\gothic3ds` on the SD card. The card then holds:
@@ -172,7 +165,7 @@ Then, in Windows, copy the folder `C:\gothic3ds_sd\3ds\gothic3ds` to `3ds\gothic
 /3ds/gothic3ds/gothic3ds.3dsx
 /3ds/gothic3ds/gothic3ds.smdh
 /3ds/gothic3ds/data.pak
-/3ds/gothic3ds/music.pak          (if you have music)
+/3ds/gothic3ds/music.pak
 ```
 
 **Sound also needs the DSP firmware:** the file `/3ds/dspfirm.cdc` on the SD card. You dump it from your own console with the DSP1 tool (Homebrew App Store → "DSP1"). Without it the game runs but is silent (a message is shown at start).
@@ -203,7 +196,7 @@ If something is wrong with the sound, after you quit the game the report `/3ds/g
 
 ## Updating the project
 
-When a new `gothic3ds-base.zip` arrives: unpack it over the old one (`cd ~ && unzip -o ...zip`), then repeat steps 4, 6, 7 and 8 (step 5 only if the music changed). The folders `build`, `build-dmrender` and `~/out` can stay: they rebuild by themselves.
+When a new `gothic3ds-base.zip` arrives: unpack it over the old one (`cd ~ && unzip -o ...zip`), then repeat steps 4, 6, 7 and 8 (step 5 only if you want to render the music again). The folders `build`, `build-dmrender` and `~/out` can stay: they rebuild by themselves.
 
 ---
 
@@ -213,7 +206,7 @@ When a new `gothic3ds-base.zip` arrives: unpack it over the old one (`cd ~ && un
 
 **Юридическое замечание.** Данные игры (текстуры, модели, звуки, музыка, скрипты) в проект не входят, и вы тоже не должны их распространять. Нужна ваша собственная легальная копия Gothic 1. Файлы, которые вы получаете (`data.pak`, `music.pak`, WAV с музыкой), содержат материалы игры: оставьте их себе и нигде не публикуйте. Делиться можно только исходным кодом, инструментами, собранным `gothic3ds.3dsx` (в нём нет данных игры) и этими инструкциями.
 
-Что получится в конце: на SD-карте 3DS лежат `gothic3ds.3dsx`, `data.pak` (мир и звуки) и, если хотите музыку, `music.pak`.
+Что получится в конце: на SD-карте 3DS лежат `gothic3ds.3dsx`, `data.pak` (мир и звуки) и `music.pak` (музыка).
 
 Все команды ниже вводятся в терминале **Ubuntu (WSL)**, если не сказано иное. Команду можно скопировать целиком и вставить правой кнопкой мыши. Строки, которые начинаются с `#`, — пояснения, их вводить не нужно.
 
@@ -284,7 +277,7 @@ ls -la /tmp/test.pak
 
 Тесты (необязательно, долго): `ctest --test-dir build --output-on-failure`.
 
-## Шаг 5. Музыка игры в WAV (необязательно, если музыка не нужна)
+## Шаг 5. Музыка игры в WAV
 
 Оригинальная музыка Gothic — формат DirectMusic, 3DS её читать не умеет. Поэтому её один раз превращают в WAV отдельной программой `dmrender`.
 
@@ -309,25 +302,18 @@ ls -la /tmp/test.pak
 
 Конвертер читает файлы игры и делает архив для 3DS. Сама игра остаётся нетронутой.
 
-Без музыки:
 ```
 cd ~/gothic3ds
-mkdir -p ~/out
-./build/g3ds-bake world --game "/mnt/c/Program Files (x86)/Steam/steamapps/common/Gothic" -o ~/out/data.pak
-```
-
-С музыкой (после шага 5):
-```
 mkdir -p ~/out
 ./build/g3ds-bake world --game "/mnt/c/Program Files (x86)/Steam/steamapps/common/Gothic" -o ~/out/data.pak --music-dir ~/music_wavs
 ```
 
 Полезно знать:
-- Конвертер работает несколько минут и печатает отчёт. В нём должны быть строки `sounds: ... baked`, `ambient sounds: ...` и, при музыке, `music: ... baked`.
-- Рядом с `data.pak` появится `music.pak` (если задан `--music-dir`).
+- Конвертер работает несколько минут и печатает отчёт. В нём должны быть строки `sounds: ... baked`, `ambient sounds: ...` и `music: ... baked`. Если строки `music:` нет, проверьте, что `--music-dir` указывает на папку с WAV из шага 5.
+- Рядом с `data.pak` появится `music.pak`: нужны оба файла.
 - Папка `~/out` создаётся командой `mkdir -p ~/out`; без неё конвертер напишет ошибку.
 - Отчёт можно напечатать ещё раз: `./build/g3ds-bake info ~/out/data.pak`.
-- Звук можно отключить флагом `--no-sound`, а его качество поменять `--sound-rate 22050`; для музыки есть `--music-rate 32000`.
+- Качество звуков задаётся флагом `--sound-rate 22050`, качество музыки — `--music-rate 32000`.
 - **Данные игры в архив проекта не кладите** и никуда не выкладывайте `data.pak` и `music.pak`: это материалы игры.
 - После каждого обновления проекта `data.pak` нужно запекать заново (в `docs/HANDOFF.md` в разделе нужного раунда указано, нужно ли это).
 
@@ -373,7 +359,7 @@ SD-карту вставьте в картридер ПК (она появитс
 ```
 mkdir -p /mnt/c/gothic3ds_sd/3ds/gothic3ds
 cp ~/gothic3ds/gothic3ds.3dsx ~/gothic3ds/gothic3ds.smdh ~/out/data.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
-cp ~/out/music.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/        # только если делали музыку
+cp ~/out/music.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
 ```
 
 Затем в Windows скопируйте папку `C:\gothic3ds_sd\3ds\gothic3ds` на SD-карту в `3ds\gothic3ds`. Итог на карте:
@@ -382,7 +368,7 @@ cp ~/out/music.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/        # только ес
 /3ds/gothic3ds/gothic3ds.3dsx
 /3ds/gothic3ds/gothic3ds.smdh
 /3ds/gothic3ds/data.pak
-/3ds/gothic3ds/music.pak          (если есть музыка)
+/3ds/gothic3ds/music.pak
 ```
 
 **Для звука нужна ещё прошивка DSP:** файл `/3ds/dspfirm.cdc` на SD-карте. Его получают с самой консоли утилитой DSP1 (Homebrew App Store → «DSP1»). Без него игра работает, но молча (об этом будет сообщение при запуске).
@@ -413,4 +399,4 @@ cp ~/out/music.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/        # только ес
 
 ## Обновление проекта
 
-Когда пришёл новый `gothic3ds-base.zip`: распакуйте его поверх (`cd ~ && unzip -o ...zip`), затем повторите шаги 4, 6, 7 и 8 (шаг 5 — только если менялась музыка). Папки `build`, `build-dmrender` и `~/out` можно оставить: они пересоберутся сами.
+Когда пришёл новый `gothic3ds-base.zip`: распакуйте его поверх (`cd ~ && unzip -o ...zip`), затем повторите шаги 4, 6, 7 и 8 (шаг 5 — только если хотите заново отрендерить музыку). Папки `build`, `build-dmrender` и `~/out` можно оставить: они пересоберутся сами.

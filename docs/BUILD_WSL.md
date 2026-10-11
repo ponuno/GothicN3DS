@@ -132,7 +132,7 @@ Good to know:
 - `music.pak` and `speech.pak` appear next to `data.pak`: all three are needed (`speech.pak` holds the spoken lines; without it the game shows subtitles only).
 - The voices come from the game's own `Speech.vdf`/`Sounds.vdf` (or loose files in `_work\Data\Sound\Speech`). The report has a line `voices: N lines of dialogue, M recordings baked (... MB ...)`; M should be in the thousands. The voices are baked in **full quality** (16-bit, the recordings' own sample rate): `speech.pak` is large, probably 1–2 GB, and the converter needs that much free RAM while it works. That is fine for a 64–128 GB card. Smaller and lower quality, if you ever need it: `--voice-codec ima` (a quarter of the size) and/or `--voice-rate 11025`; skip the voices altogether: `--no-voices`. If M is 0 the game was installed without the speech archive (some localized versions keep it elsewhere) — send the `voices:` line to the developer.
 - Print the report again with `./build/g3ds-bake info ~/out/data.pak`.
-- The quality of the sound effects is set with `--sound-rate 22050`, of the music with `--music-rate 32000`, of the voices with `--voice-rate` (default: as recorded) and `--voice-codec pcm|ima`.
+- The quality of the sound effects is set with `--sound-rate 22050`, of the music with `--music-rate 44100`, of the voices with `--voice-rate` (default: as recorded) and `--voice-codec pcm|ima`.
 - **Never put the game's data into the project archive** and never publish `data.pak`, `music.pak` or `speech.pak`: they are the game's content.
 - After every project update, bake `data.pak` again (`docs/HANDOFF.md` says in the section of the round whether that is needed).
 
@@ -364,7 +364,7 @@ mkdir -p ~/out
 - Голоса берутся из `Speech.vdf`/`Sounds.vdf` игры (или из отдельных файлов в `_work\Data\Sound\Speech`). В отчёте будет строка `voices: N lines of dialogue, M recordings baked (... MB ...)`; M должно быть в тысячах. Голоса запекаются в **полном качестве** (16 бит, родная частота записей): `speech.pak` большой, вероятно 1–2 ГБ, и пока работает конвертер, ему нужно столько же свободной оперативной памяти. Для карты на 64–128 ГБ это не проблема. Если когда-нибудь понадобится меньше и хуже: `--voice-codec ima` (в 4 раза меньше) и/или `--voice-rate 11025`; совсем без голосов: `--no-voices`. Если M равно 0 — в вашей копии игры нет архива озвучки (в некоторых локализациях он лежит в другом месте); пришлите строку `voices:` разработчику.
 - Папка `~/out` создаётся командой `mkdir -p ~/out`; без неё конвертер напишет ошибку.
 - Отчёт можно напечатать ещё раз: `./build/g3ds-bake info ~/out/data.pak`.
-- Качество звуков задаётся флагом `--sound-rate 22050`, качество музыки — `--music-rate 32000`, качество голосов — `--voice-rate` (по умолчанию как в записи) и `--voice-codec pcm|ima`.
+- Качество звуков задаётся флагом `--sound-rate 22050`, качество музыки — `--music-rate 44100`, качество голосов — `--voice-rate` (по умолчанию как в записи) и `--voice-codec pcm|ima`.
 - **Данные игры в архив проекта не кладите** и никуда не выкладывайте `data.pak`, `music.pak` и `speech.pak`: это материалы игры.
 - После каждого обновления проекта `data.pak` нужно запекать заново (в `docs/HANDOFF.md` в разделе нужного раунда указано, нужно ли это).
 

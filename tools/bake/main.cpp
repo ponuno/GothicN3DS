@@ -97,7 +97,7 @@ void usage() {
 	          "  --sound-rate HZ    highest sample rate of the sound effects (default: 22050)\n"
 	          "  --no-sound         bake no sound effects and no ambient sounds\n"
 	          "  --music-dir DIR    folder of WAV renders of the music themes; makes music.pak beside the output\n"
-	          "  --music-rate HZ    highest sample rate of the music (default: 32000)\n"
+	          "  --music-rate HZ    highest sample rate of the music (default: 44100)\n"
 	          "  --hero-script NAME world: the character's model script (default: HUMANS.MDS)\n"
 	          "  --hero-body NAME   world: its body mesh (default: HUM_BODY_NAKED0)\n"
 	          "  --hero-head NAME   world: its head mesh (default: HUM_HEAD_PONY; \"\" for none)\n"

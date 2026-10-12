@@ -100,6 +100,8 @@ struct Settings {
 	u8 reproject = 0;
 	// Version 15: the cache that reads models, textures, animations and chunks ahead (readahead.h): 0 off, 1 on.
 	u8 readAhead = 1;
+	// Version 16: stereo 3D (the scene drawn for each eye, by the console's 3D slider; after a restart): 0 off, 1 on.
+	u8 stereo = 0;
 	float lodDistanceCm() const;
 
 	// Clamps every value into its range (after reading a file of another version).

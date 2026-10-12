@@ -52,6 +52,11 @@ struct Mesh {
 namespace {
 
 C3D_RenderTarget* gTarget = nullptr;
+// Stereo 3D (two renders): the right eye's own target, made at start when asked for (c3dSetStereo), and whether the
+// frames are being drawn twice now (gfx::stereoSet).
+C3D_RenderTarget* gTargetR = nullptr;
+bool gStereoWanted = false, gStereoOn = false, gStereoFrame = false;
+u32 gUiEyeBase = 0; // the quads of the eyes before this one in the frame
 bool gSuper = false;       // supersampling in use: the target is 480x800 and the display transfer averages 2x2
 bool gSuperWanted = false; // asked for before init()
 DVLB_s* gDvlb = nullptr;
@@ -85,7 +90,9 @@ Pass gPass = PASS_WORLD;
 const size_t kCommandBufferBytes = 0x100000;
 // Overlapped frames: the CPU writes one command buffer while the GPU reads
 // the other. A frame of the real game needs 80-140 KB.
-const u32 kOwnBufferWords = 0x80000 / 4;
+const u32 kOwnBufferWordsMono = 0x80000 / 4;
+u32 kOwnBufferWords = kOwnBufferWordsMono; // twice that when the frame is drawn twice
+u32 gUiCapacity = UI_MAX_QUADS;
 u32* gOwnBuffer[2] = {nullptr, nullptr};
 int gOwnIndex = 0;
 bool gClassic = false;
@@ -363,6 +370,12 @@ static bool makeTarget(bool super) {
 	if (!gTarget) gTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 	if (!gTarget) return false;
 	C3D_RenderTargetSetOutput(gTarget, GFX_TOP, GFX_LEFT, gSuper ? (DISPLAY_TRANSFER_FLAGS | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_XY)) : DISPLAY_TRANSFER_FLAGS);
+	// The right eye: the screen's own size too (not together with the smoothing: that does not fit into VRAM twice).
+	gTargetR = nullptr;
+	if (gStereoWanted && !gSuper) {
+		gTargetR = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
+		if (gTargetR) C3D_RenderTargetSetOutput(gTargetR, GFX_TOP, GFX_RIGHT, DISPLAY_TRANSFER_FLAGS);
+	}
 	return true;
 }
 
@@ -372,7 +385,13 @@ bool init() {
 	gSyncStarted = false;
 	gOwnIndex = 0;
 	// With overlapped frames citro3d's own buffer only ever holds empty frames.
-	if (!C3D_Init(gClassic ? kCommandBufferBytes : size_t(C3D_DEFAULT_CMDBUF_SIZE))) return false;
+	// (Stereo: the frame is written down twice, so the buffers and the overlay's quads are twice as big. Made even if
+	// the right-eye target is not, which only costs the memory; not with the smoothing, which rules stereo out.)
+	const bool twice = gStereoWanted && !gSuperWanted;
+	kOwnBufferWords = kOwnBufferWordsMono * (twice ? 2u : 1u);
+	gUiCapacity = UI_MAX_QUADS * (twice ? 2u : 1u);
+	gStereoOn = gStereoFrame = false;
+	if (!C3D_Init(gClassic ? kCommandBufferBytes * (twice ? 2u : 1u) : size_t(C3D_DEFAULT_CMDBUF_SIZE))) return false;
 	gReady = true;
 	if (!gClassic) {
 		for (u32*& b : gOwnBuffer) b = static_cast<u32*>(linearAlloc(kOwnBufferWords * 4));
@@ -465,14 +484,14 @@ bool init() {
 	C3D_AlphaTest(false, GPU_GREATER, 127);
 	gAlphaTestOn = false;
 
-	for (WorldVertex*& v : gUiVertices) v = static_cast<WorldVertex*>(linearAlloc(UI_MAX_QUADS * 4 * sizeof(WorldVertex)));
-	gUiIndices = static_cast<u16*>(linearAlloc(UI_MAX_QUADS * 6 * sizeof(u16)));
+	for (WorldVertex*& v : gUiVertices) v = static_cast<WorldVertex*>(linearAlloc(gUiCapacity * 4 * sizeof(WorldVertex)));
+	gUiIndices = static_cast<u16*>(linearAlloc(gUiCapacity * 6 * sizeof(u16)));
 	if (!gUiVertices[0] || !gUiVertices[1] || !gUiIndices) return false;
-	for (u32 q = 0; q < UI_MAX_QUADS; ++q) {
+	for (u32 q = 0; q < gUiCapacity; ++q) {
 		static const u16 corners[6] = {0, 1, 2, 2, 1, 3};
 		for (int k = 0; k < 6; ++k) gUiIndices[q * 6 + k] = u16(q * 4 + corners[k]);
 	}
-	GSPGPU_FlushDataCache(gUiIndices, UI_MAX_QUADS * 6 * sizeof(u16));
+	GSPGPU_FlushDataCache(gUiIndices, gUiCapacity * 6 * sizeof(u16));
 	gUiBuffer = 0;
 	return true;
 }
@@ -485,6 +504,7 @@ void shutdown() {
 		// through, and only then are its buffers safe to free. (No waiting
 		// for the display here - leaving must not depend on anything that
 		// might not come.)
+		if (gTargetR) C3D_RenderTargetDelete(gTargetR);
 		if (gTarget) C3D_RenderTargetDelete(gTarget);
 		reap();
 		// The command writer still points into one of the buffers freed next.
@@ -518,6 +538,9 @@ void shutdown() {
 	gMvpShader = gOnFast = false;
 	gDvlb = nullptr;
 	gTarget = nullptr;
+	gTargetR = nullptr;
+	if (gStereoOn) gfxSet3D(false);
+	gStereoOn = gStereoFrame = false;
 	gSuper = false;
 	gReady = false;
 }
@@ -655,6 +678,8 @@ static void markSync() {
 	}
 }
 
+static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target);
+
 void frameBegin(const FrameDesc& f) {
 	gFrame = f;
 	gClearColor = (u32(f.clearColor[0]) << 24) | (u32(f.clearColor[1]) << 16) | (u32(f.clearColor[2]) << 8) | 0xFFu;
@@ -676,12 +701,22 @@ void frameBegin(const FrameDesc& f) {
 		C3D_SetViewport(0, 0, gTarget->frameBuf.width, gTarget->frameBuf.height);
 	}
 	osTickCounterStart(&gCpuClock);
+	gStereoFrame = gStereoOn && gTargetR != nullptr;
+	gUiEyeBase = 0;
+	gProgramSwitches = 0;
+	gDropped = 0;
+	gUiUsed = 0;
+	beginPassState(f, gTarget);
+}
+
+// Everything a pass (one eye of a frame) starts from: the state is set down in the command list afresh, as the
+// first draw of the frame would find it.
+static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target) {
 	// The picture squeezed into half the screen: the same triangles and draws, half the pixels. (A scissor did not do
 	// this: the GPU still worked on what it cut away.)
-	if (gFillTest) C3D_SetViewport(0, 0, gTarget->frameBuf.width, gTarget->frameBuf.height / 2);
+	if (gFillTest) C3D_SetViewport(0, 0, target->frameBuf.width, target->frameBuf.height / 2);
 	C3D_BindProgram(&gProgram);
 	gOnFast = false;
-	gProgramSwitches = 0;
 
 	// Mtx_PerspTilt handles the sideways screen and PICA's -1..0 depth range.
 	C3D_Mtx proj;
@@ -730,9 +765,33 @@ void frameBegin(const FrameDesc& f) {
 	C3D_TexBind(0, nullptr); // nothing bound until the first textured material
 	gBoundTexture = nullptr;
 	gBoundMesh = nullptr;
-	gDropped = 0;
-	gUiUsed = 0;
 	gUiPass = false;
+}
+
+// The second eye of a stereo frame: the same again, drawn from the other side into the right target.
+void eyeBegin(const FrameDesc& f) {
+	if (!gInFrame || !gStereoFrame || !gTargetR) return;
+	gFrame = f;
+	gUiEyeBase = gUiUsed;
+	if (gClassic) {
+		C3D_RenderTargetClear(gTargetR, C3D_CLEAR_ALL, gClearColor, 0);
+		C3D_FrameDrawOn(gTargetR);
+	} else {
+		C3D_SetFrameBuf(&gTargetR->frameBuf);
+		C3D_SetViewport(0, 0, gTargetR->frameBuf.width, gTargetR->frameBuf.height);
+	}
+	beginPassState(f, gTargetR);
+}
+
+bool stereoAvailable() { return gReady && gTargetR != nullptr; }
+bool stereoActive() { return gStereoOn && gTargetR != nullptr; }
+
+// The top screen to 3D mode and back; between frames only.
+void stereoSet(bool on) {
+	if (!gReady || gInFrame || on == gStereoOn) return;
+	if (on && !gTargetR) return;
+	gStereoOn = on;
+	gfxSet3D(on);
 }
 
 void setPass(Pass pass) {
@@ -963,7 +1022,7 @@ void uiDraw(Texture* t, const UiQuad* quads, u32 count) {
 		++gDropped;
 		return;
 	}
-	count = min(count, UI_MAX_QUADS - gUiUsed);
+	count = min(count, UI_MAX_QUADS - (gUiUsed - gUiEyeBase));
 	if (count == 0) return;
 	beginUi(t);
 	if (gBoundTexture != t) {
@@ -1026,6 +1085,7 @@ void frameEnd() {
 		// cache here. Measured on a New 3DS that costs next to nothing (the
 		// frame time equalled CPU + GPU time to a quarter of a millisecond),
 		// so the safe default stays.
+		gStereoFrame = false;
 		C3D_FrameEnd(0);
 		gFrameStats.commandBufferUse = C3D_GetCmdBufUsage();
 		gFrameStats.gpuMs = C3D_GetDrawingTime(); // of the frame before
@@ -1045,11 +1105,20 @@ void frameEnd() {
 	reap();
 	C3D_RenderTargetClear(gTarget, C3D_CLEAR_ALL, gClearColor, 0);
 	gTarget->used = true; // C3D_FrameEnd copies used targets to the screen
+	if (gStereoFrame && gTargetR) {
+		C3D_RenderTargetClear(gTargetR, C3D_CLEAR_ALL, gClearColor, 0);
+		gTargetR->used = true;
+	}
+	gStereoFrame = false;
 	// C3D_FrameBegin pointed the command writer at citro3d's own (empty)
 	// buffer; point it back at the end of what was recorded.
 	GPUCMD_SetBuffer(gOwnBuffer[gOwnIndex], kOwnBufferWords, recorded);
 	C3D_FrameEnd(0);
 	gOwnIndex ^= 1; // the GPU reads this buffer now; the next frame is written into the other
+}
+
+void c3dSetStereo(bool on) {
+	if (!gReady) gStereoWanted = on; // (only before init(): the target and the buffers are made there)
 }
 
 void c3dSetClassicFrames(bool classic) {

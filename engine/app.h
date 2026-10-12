@@ -131,6 +131,8 @@ public:
 	Pak& pak() { return _pak; }
 	// Reading ahead (readahead.h): bytes of cache, 0 for none. Before init(). The menu's switch turns it on and off.
 	void setReadAheadBudget(u32 bytes) { _aheadBudget = bytes; }
+	// Stereo 3D: the console's 3D slider, 0..1 (0 or a backend without a second eye: drawn once, as usual).
+	void setStereo(float strength) { _stereo = strength; }
 	ReadAhead& readAhead() { return _ahead; }
 	SkyColors skyColors() const { return skyColorsAt(_env.timeOfDay); }
 	const char* error() const { return _error; }
@@ -383,6 +385,7 @@ private:
 
 	ReadAhead _ahead; // (before the archive and the world, which ask it: it is the last to go)
 	u32 _aheadBudget = 0;
+	float _stereo = 0.0f;
 	Pak _pak;
 	AudioOut* _audio = nullptr;
 	ScriptVm _sfxVm, _musicVm; // the sounds (SFX.DAT) and music themes (MUSIC.DAT) of the game: scripts of their own

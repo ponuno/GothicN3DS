@@ -267,6 +267,7 @@ int main(int, char**) {
 	gfx::c3dSetFillTest(halfPicture); // hold ZR at start: half the pixels, the same triangles
 	gfx::c3dSetFadeShader(dissolve);
 	gfx::c3dSetSupersample(settings.antialias != 0); // (a change in the menu counts after a restart)
+	gfx::c3dSetStereo(settings.stereo != 0 && settings.antialias == 0); // (the same; not together with the smoothing)
 
 	App& app = gApp;
 	// Chunks are read, unpacked and given their collision grids on a worker
@@ -382,6 +383,12 @@ int main(int, char**) {
 
 	while (aptMainLoop()) {
 		hidScanInput();
+		// Stereo 3D: the 3D slider decides, between frames (0: one picture as usual).
+		{
+			const float slider = app.settings().stereo ? osGet3DSliderState() : 0.0f;
+			gfx::stereoSet(slider > 0.02f && gfx::stereoAvailable());
+			app.setStereo(gfx::stereoActive() ? slider : 0.0f);
+		}
 		const u32 down = hidKeysDown(), held = hidKeysHeld(), repeat = hidKeysDownRepeat();
 		g3::Menu& menu = app.menu();
 		if (gSuspended) {
@@ -605,7 +612,7 @@ int main(int, char**) {
 		} // (not in the menu)
 
 		// The re-projection's side: the picture just handed to the GPU was drawn for this view.
-		g3::reproject::enable(reprojectOk && app.settings().reproject != 0);
+		g3::reproject::enable(reprojectOk && app.settings().reproject != 0 && !gfx::stereoActive()); // (not in 3D: the display is told its own way there)
 		g3::reproject::submit(app.camera().yaw, app.camera().fovY);
 
 		// What the frame cost decides how much detail the next one gets, and
@@ -781,10 +788,10 @@ int main(int, char**) {
 				// strength, wind setting and its draw calls, shadow setting and shadows laid. '-' after a value:
 				// not in data.pak (bake with --ao / --wind); R: given way to the frame rate (the pacer).
 				const g3::Settings& st = app.settings();
-				reportLine("cmd%3.0f%% x%lu g+ao%3d%c w%d%c%2lu sh%d/%lu%s%s", double(fs.commandBufferUse * 100.0f),
+				reportLine("cmd%3.0f%% x%lu g+ao%3d%c w%d%c%2lu sh%d/%lu%s%s%s", double(fs.commandBufferUse * 100.0f),
 				     static_cast<unsigned long>(fs.drawsDropped), int(st.occlusion), app.world().hasOcclusion() ? ' ' : '-', int(st.wind),
 				     app.world().hasWind() ? ' ' : '-', static_cast<unsigned long>(ws.windyDrawCalls), int(st.shadows),
-				     static_cast<unsigned long>(app.shadows().stats().drawn), app.gfxRelief() ? " R" : "", gfx::c3dSupersample() ? " AA" : "");
+				     static_cast<unsigned long>(app.shadows().stats().drawn), app.gfxRelief() ? " R" : "", gfx::c3dSupersample() ? " AA" : "", gfx::stereoActive() ? " 3D" : "");
 			}
 			// (Chunks in memory: the world's own + those of medium and small objects, of all; wanted and not there: the same.)
 			// (RP: the re-projection, when asked for: columns of the last move and refreshes that showed the old picture

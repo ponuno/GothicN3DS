@@ -17,6 +17,13 @@ struct SoftStats {
 	u32 skinnedPixels;      // ... and the fragments of theirs that passed the depth test
 };
 
+// Stereo test aid: how many times eyeBegin was called, and the view of the left eye (frameBegin) and of the right (eyeBegin) last time.
+struct SoftEyes {
+	u32 count;
+	Mat4 left, right;
+};
+SoftEyes softEyes();
+
 // RGBA8, SCREEN_W x SCREEN_H, row 0 at the top.
 const u8* softFramebuffer();
 SoftStats softStats();

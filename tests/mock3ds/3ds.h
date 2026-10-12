@@ -28,6 +28,9 @@ static inline void GPUCMD_SetBuffer(u32* adr, u32 size, u32 offset) {
 	gpuCmdBufOffset = offset;
 }
 
+void gfxSet3D(bool enable);
+bool gfxIs3D(void);
+
 void* linearAlloc(size_t size);
 void linearFree(void* mem);
 u32 linearSpaceFree(void);

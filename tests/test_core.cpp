@@ -19,6 +19,7 @@
 #include "waynet.h"
 #include "model_bake.h"
 #include "pacer.h"
+#include "stereo.h"
 #include "readahead.h"
 #include "reproject.h"
 #include "pak_writer.h"
@@ -1952,6 +1953,44 @@ static void testPacerDistance() {
 	CHECK(h.interval() == 2);
 	for (int i = 0; i < 200; ++i) h.update(1.1f);
 	CHECK(h.distanceScale() > 0.99f);
+}
+
+// ---- stereo 3D: where the eyes stand ----
+
+static Vec3 viewPoint(const Mat4& v, Vec3 p) {
+	return {v.at(0, 0) * p.x + v.at(0, 1) * p.y + v.at(0, 2) * p.z + v.at(0, 3), v.at(1, 0) * p.x + v.at(1, 1) * p.y + v.at(1, 2) * p.z + v.at(1, 3),
+	        v.at(2, 0) * p.x + v.at(2, 1) * p.y + v.at(2, 2) * p.z + v.at(2, 3)};
+}
+
+static void testStereoEyes() {
+	const Vec3 pos = {100.0f, 50.0f, 200.0f};
+	for (int k = 0; k < 4; ++k) {
+		const float yaw = 0.7f + 1.3f * float(k);
+		StereoEye l, r;
+		stereoEyes(pos, yaw, 1.0f, l, r);
+		const Vec3 d = r.pos - l.pos;
+		const Vec3 fwd = {sinf(yaw), 0.0f, cosf(yaw)};
+		CHECK(std::fabs(length(d) - STEREO_MAX_SEPARATION) < 1e-3f);
+		CHECK(std::fabs(dot(d, fwd)) < 1e-3f); // (across the way the view looks)
+		CHECK(length((l.pos + r.pos) * 0.5f - pos) < 1e-3f && l.yaw > yaw && r.yaw < yaw);
+		// What lies at the convergence distance straight ahead falls in the middle of both views.
+		const Vec3 mark = pos + fwd * STEREO_CONVERGENCE;
+		for (const StereoEye* e : {&l, &r}) {
+			const Mat4 v = viewLH(e->pos, e->yaw, 0.0f);
+			const Vec3 p = viewPoint(v, mark);
+			CHECK(std::fabs(p.x) < 0.01f && p.z > 300.0f);
+		}
+		// Something nearer shows to the left eye more to the right (crossed), farther more to the left.
+		const Vec3 nearMark = pos + fwd * 150.0f, farMark = pos + fwd * 3000.0f;
+		const Mat4 vl = viewLH(l.pos, l.yaw, 0.0f), vr = viewLH(r.pos, r.yaw, 0.0f);
+		CHECK(viewPoint(vl, nearMark).x / viewPoint(vl, nearMark).z > viewPoint(vr, nearMark).x / viewPoint(vr, nearMark).z);
+		CHECK(viewPoint(vl, farMark).x / viewPoint(vl, farMark).z < viewPoint(vr, farMark).x / viewPoint(vr, farMark).z);
+	}
+	StereoEye l, r;
+	stereoEyes(pos, 1.0f, 0.0f, l, r);
+	CHECK(length(l.pos - pos) == 0.0f && length(r.pos - pos) == 0.0f && l.yaw == 1.0f && r.yaw == 1.0f);
+	stereoEyes(pos, 1.0f, 5.0f, l, r); // (beyond the slider's top it is held there)
+	CHECK(std::fabs(length(r.pos - l.pos) - STEREO_MAX_SEPARATION) < 1e-3f);
 }
 
 // A scene far over the time there is: the distance starts to shorten with the objects, and comes back quickly.
@@ -9419,6 +9458,7 @@ int main(int argc, char** argv) {
 	             {"pacer", testPacer},
 	             {"pacer distance", testPacerDistance},
              {"pacer heavy", testPacerHeavy},
+             {"stereo", testStereoEyes},
 	             {"detail fade", testDetailFade},
              {"thinning", testThinning},
 	             {"collision", testCollision},

@@ -39,6 +39,9 @@ u32 gCtxWords = 0;
 bool gInFrame = false;
 bool gClearedSinceSubmit = false;
 C3D_RenderTarget* gLinked = nullptr;
+C3D_RenderTarget* gLinkedR = nullptr;
+C3D_RenderTarget* gDrawingOn = nullptr; // the target the last C3D_SetFrameBuf / C3D_FrameDrawOn chose
+bool g3D = false;
 C3D_Tex* gBoundTex = nullptr;
 C3D_BufInfo gBufInfo {};
 C3D_AttrInfo gAttrInfo {};
@@ -421,6 +424,9 @@ unsigned violations() {
 void reset() {
 	gBoundEntry = 0;
 	gCount = Counters {};
+	gDrawingOn = nullptr;
+	gLinkedR = nullptr;
+	g3D = false;
 	gBuffersSeen.clear();
 }
 double nowMs() { return gNow; }
@@ -677,6 +683,7 @@ bool C3D_FrameBegin(u8 flags) {
 
 bool C3D_FrameDrawOn(C3D_RenderTarget* target) {
 	if (!gInFrame) return false;
+	gDrawingOn = target;
 	target->used = true;
 	return true;
 }
@@ -705,6 +712,10 @@ void C3D_FrameEnd(u8) {
 		gLinked->used = false;
 		++gCount.framesShown;
 	}
+	if (gLinkedR && gLinkedR->used) {
+		gLinkedR->used = false;
+		++gCount.framesShownRight;
+	}
 	gInFrame = false;
 	GPUCMD_SetBuffer(nullptr, 0, 0);
 }
@@ -719,9 +730,15 @@ C3D_RenderTarget* C3D_RenderTargetCreate(int width, int height, GPU_COLORBUF, in
 void C3D_RenderTargetDelete(C3D_RenderTarget* target) {
 	gExecuting = List {}; // waits for the GPU
 	if (gLinked == target) gLinked = nullptr;
+	if (gLinkedR == target) gLinkedR = nullptr;
 	free(target);
 }
-void C3D_RenderTargetSetOutput(C3D_RenderTarget* target, gfxScreen_t, gfx3dSide_t, u32 flags) {
+void C3D_RenderTargetSetOutput(C3D_RenderTarget* target, gfxScreen_t, gfx3dSide_t side, u32 flags) {
+	if (side == GFX_RIGHT) {
+		gLinkedR = target;
+		if (target) target->linked = true;
+		return;
+	}
 	gCount.outputWidth = target ? target->frameBuf.width : 0;
 	gCount.outputScaling = (flags >> 24) & 3;
 	gLinked = target;
@@ -731,7 +748,12 @@ void C3D_FrameBufClear(C3D_FrameBuf*, C3D_ClearBits, u32, u32) {
 	if (gpuBusy()) ++gCount.clearedBusy;
 	gClearedSinceSubmit = true;
 }
-void C3D_SetFrameBuf(C3D_FrameBuf*) {}
+void C3D_SetFrameBuf(C3D_FrameBuf* fb) { gDrawingOn = gLinkedR && fb == &gLinkedR->frameBuf ? gLinkedR : gLinked; }
+void gfxSet3D(bool enable) {
+	if (g3D != enable) ++gCount.switches3D;
+	g3D = enable;
+}
+bool gfxIs3D(void) { return g3D; }
 void C3D_SetViewport(u32, u32, u32, u32) {}
 void C3D_SetScissor(GPU_SCISSORMODE, u32, u32, u32, u32) {}
 
@@ -767,6 +789,7 @@ C3D_TexEnv* C3D_GetTexEnv(int id) { return &gTexEnv[id]; }
 
 void C3D_DrawElements(GPU_Primitive_t, int count, int, const void* indices) {
 	++gCount.draws;
+	if (gLinkedR && gDrawingOn == gLinkedR) ++gCount.rightDraws;
 	if (!gpuCmdBuf) {
 		++gCount.drawOutsideFrame;
 		return;

@@ -78,6 +78,14 @@ void meshDestroy(Mesh* m);
 void meshUpdate(Mesh* m, const WorldVertex* vertices, u32 vertexCount);
 
 void frameBegin(const FrameDesc& f);
+// Stereo 3D, two renders: with stereoActive() the frame is drawn twice. frameBegin starts the left eye; when its
+// draw calls (the scene and the overlay) are done, eyeBegin starts the right one, which is drawn in the same way and
+// ended by the one frameEnd. Where a backend has no second eye, stereoAvailable() is false and the rest does nothing.
+bool stereoAvailable();
+bool stereoActive();
+// From the next frame on; between frames.
+void stereoSet(bool on);
+void eyeBegin(const FrameDesc& f);
 // Starts in PASS_WORLD after frameBegin.
 void setPass(Pass pass);
 // "Graphics+" of world geometry, from what the vertices' w carries

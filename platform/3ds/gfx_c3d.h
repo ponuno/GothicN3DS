@@ -22,6 +22,10 @@ void c3dSetFillTest(bool on);
 // the picture stays as it was (c3dSupersample() says which).
 void c3dSetSupersample(bool on);
 bool c3dSupersample();
+// Stereo 3D: the scene is drawn twice a frame, once for each eye (gfx::stereoSet switches it on and off while the
+// game runs, with the 3D slider). Call before init(): the right eye's target and bigger command buffers are made there.
+// Not together with the smoothing (gfx::stereoAvailable() says whether it is there).
+void c3dSetStereo(bool on);
 // Wait only for the top screen's refresh (the bottom one stays at 60 Hz, and citro3d's own sync waits for both:
 // a top screen set faster than 60 Hz would be held to 60 frames).
 void c3dSyncTopOnly(bool on);

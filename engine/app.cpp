@@ -1,5 +1,6 @@
 #include "lang.h"
 #include "app.h"
+#include "stereo.h"
 #include "bytes.h"
 
 #include "sys.h"
@@ -708,42 +709,60 @@ void App::render() {
 	}
 
 	const Mat4 proj = perspectiveLH(_cam.fovY, float(gfx::SCREEN_W) / float(gfx::SCREEN_H), _cam.zNear, _cam.zFar);
-	gfx::frameBegin(fd);
-	if (!indoor) {
-		gfx::setPass(gfx::PASS_SKY);
-		_sky.draw(_cam.pos, _cam.zFar * 0.5f, sky, _settings.barrier ? 1.0f : 0.0f, float(_clock));
+	// Stereo 3D: the scene drawn once for each eye (the culling and the level of detail go by the middle view for both).
+	const bool stereo = _stereo > 0.0f && gfx::stereoActive();
+	gfx::FrameDesc eyeDesc[2] = {fd, fd};
+	if (stereo) {
+		StereoEye l, r;
+		stereoEyes(_cam.pos, _cam.yaw, _stereo, l, r);
+		eyeDesc[0].eye = l.pos;
+		eyeDesc[0].view = viewLH(l.pos, l.yaw, _cam.pitch);
+		eyeDesc[1].eye = r.pos;
+		eyeDesc[1].view = viewLH(r.pos, r.yaw, _cam.pitch);
 	}
-	gfx::setPass(gfx::PASS_WORLD);
-	const Mat4 viewProj = mul(proj, fd.view);
-	_viewProj = viewProj;
-	_world.draw(viewProj, _cam.pos, u32(u64(_clock * 1000.0)));
-	const float indoorLight[3] = {1, 1, 1};
-	_npcs.draw(viewProj, indoor ? indoorLight : sky.light);
-	_loot.draw(_cam.pos, indoor ? indoorLight : sky.light);
-	drawShowcase();
-	if (_heroVisible) {
-		_hero.draw();
-		drawArrows(_hero.light());
-		const GameNpc* hn = heroNpc();
-		if (hn && _hero.loaded())
-			_loot.drawCarried(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
-			                  hn->melee, _hero.feet(), _hero.light());
-		if (hn && _hero.loaded())
-			_loot.drawRanged(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
-			                 hn->ranged, _hero.feet(), _hero.light());
+	const auto drawEye = [&](const gfx::FrameDesc& d) {
+		if (!indoor) {
+			gfx::setPass(gfx::PASS_SKY);
+			_sky.draw(_cam.pos, _cam.zFar * 0.5f, sky, _settings.barrier ? 1.0f : 0.0f, float(_clock));
+		}
+		gfx::setPass(gfx::PASS_WORLD);
+		const Mat4 viewProj = mul(proj, fd.view);
+		_viewProj = viewProj;
+		_world.draw(viewProj, _cam.pos, u32(u64(_clock * 1000.0)));
+		const float indoorLight[3] = {1, 1, 1};
+		_npcs.draw(viewProj, indoor ? indoorLight : sky.light);
+		_loot.draw(_cam.pos, indoor ? indoorLight : sky.light);
+		drawShowcase();
+		if (_heroVisible) {
+			_hero.draw();
+			drawArrows(_hero.light());
+			const GameNpc* hn = heroNpc();
+			if (hn && _hero.loaded())
+				_loot.drawCarried(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
+				                  hn->melee, _hero.feet(), _hero.light());
+			if (hn && _hero.loaded())
+				_loot.drawRanged(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
+				                 hn->ranged, _hero.feet(), _hero.light());
+		}
+		gfx::setPass(gfx::PASS_BLEND);
+		// Graphics+: shadows on the ground, before the water (which then covers those under it).
+		_shadows.begin();
+		if (_settings.shadows != SHADOWS_OFF) {
+			if (_heroVisible && _hero.loaded()) _shadows.add(_hero.feet(), 48.0f);
+			if (_settings.shadows == SHADOWS_ALL && !_gfxRelief)
+				for (u32 i = 0; i < _npcs.drawnCount(); ++i) _shadows.add(_npcs.drawnFeet(i), _npcs.drawnRadius(i));
+			_shadows.draw(_world, _cam.pos, indoor ? 0.7f : 0.6f);
+		}
+		_world.drawBlended();
+		_particles.draw(d.view, _cam.pos, indoor ? indoorLight : sky.light);
+		drawOverlay();
+	};
+	gfx::frameBegin(eyeDesc[0]);
+	drawEye(eyeDesc[0]);
+	if (stereo) {
+		gfx::eyeBegin(eyeDesc[1]);
+		drawEye(eyeDesc[1]);
 	}
-	gfx::setPass(gfx::PASS_BLEND);
-	// Graphics+: shadows on the ground, before the water (which then covers those under it).
-	_shadows.begin();
-	if (_settings.shadows != SHADOWS_OFF) {
-		if (_heroVisible && _hero.loaded()) _shadows.add(_hero.feet(), 48.0f);
-		if (_settings.shadows == SHADOWS_ALL && !_gfxRelief)
-			for (u32 i = 0; i < _npcs.drawnCount(); ++i) _shadows.add(_npcs.drawnFeet(i), _npcs.drawnRadius(i));
-		_shadows.draw(_world, _cam.pos, indoor ? 0.7f : 0.6f);
-	}
-	_world.drawBlended();
-	_particles.draw(fd.view, _cam.pos, indoor ? indoorLight : sky.light);
-	drawOverlay();
 	gfx::frameEnd();
 }
 

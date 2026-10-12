@@ -602,6 +602,69 @@ static void testSupersample(const std::string& pak) {
 	gfx::c3dSetSupersample(false);
 }
 
+// Stereo 3D by two renders: the left and the right target, both copied to the screen every frame, the right one drawn into
+// with its own draw calls; one frame list, in both frame orders; and nothing of it while the slider is down.
+static void testStereo(const std::string& pak) {
+	for (int classic = 0; classic < 2; ++classic) {
+		mock3ds::reset();
+		gfx::c3dSetClassicFrames(classic != 0);
+		gfx::c3dSetStereo(true);
+		CHECK(gfx::init() && gfx::stereoAvailable() && !gfx::stereoActive());
+		App app;
+		CHECK(app.init(pak.c_str(), nullptr));
+		app.skipChapters();
+		app.setDrawDistance(6000.0f);
+		app.world().preload(app.camera().pos);
+		// Slider down: one picture, the right target untouched.
+		for (int f = 0; f < 4; ++f) {
+			app.update(Input {}, 1.0f / 30.0f);
+			app.render();
+		}
+		CHECK(mock3ds::counters().framesShownRight == 0 && mock3ds::counters().rightDraws == 0 && !gfx::stereoActive());
+		const unsigned monoDraws = mock3ds::counters().draws;
+		const unsigned monoFrames = mock3ds::counters().framesShown;
+		// Slider up.
+		gfx::stereoSet(true);
+		app.setStereo(0.8f);
+		CHECK(gfx::stereoActive() && mock3ds::counters().switches3D == 1);
+		for (int f = 0; f < 6; ++f) {
+			app.update(Input {}, 1.0f / 30.0f);
+			app.render();
+		}
+		const mock3ds::Counters& c = mock3ds::counters();
+		std::printf("  stereo (%s): %u draws in %u frames mono, then %u (%u for the right eye) in 6 stereo\n", classic ? "classic" : "overlapped",
+		            monoDraws, monoFrames, c.draws - monoDraws, c.rightDraws);
+		CHECK(c.framesShownRight == 6 && c.framesShown == monoFrames + 6);
+		CHECK(c.rightDraws > 0 && c.draws - monoDraws > c.rightDraws);
+		CHECK(c.rightDraws * 10 > (c.draws - monoDraws) * 4); // (the right eye gets about half of them)
+		CHECK(mock3ds::violations() == 0);
+		// Slider down again.
+		gfx::stereoSet(false);
+		app.setStereo(0.0f);
+		const unsigned rightBefore = c.framesShownRight;
+		for (int f = 0; f < 3; ++f) {
+			app.update(Input {}, 1.0f / 30.0f);
+			app.render();
+		}
+		CHECK(c.framesShownRight == rightBefore && mock3ds::counters().switches3D == 2 && mock3ds::violations() == 0);
+		app.shutdown();
+		gfx::shutdown();
+		CHECK(mock3ds::counters().linearBlocks == 0);
+	}
+	// Not together with the smoothing: no second eye, and nothing breaks.
+	mock3ds::reset();
+	gfx::c3dSetStereo(true);
+	gfx::c3dSetSupersample(true);
+	CHECK(gfx::init() && !gfx::stereoAvailable());
+	gfx::stereoSet(true);
+	CHECK(!gfx::stereoActive());
+	gfx::shutdown();
+	gfx::c3dSetStereo(false);
+	gfx::c3dSetSupersample(false);
+	gfx::c3dSetClassicFrames(false);
+	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
+}
+
 static void testClassicShader(const std::string& pak) {
 	mock3ds::reset();
 	gfx::c3dSetClassicFrames(false);
@@ -1104,6 +1167,7 @@ int main(int argc, char** argv) {
 	testDefaultShader(pak);
 	testClassicShader(pak);
 	testSupersample(pak);
+	testStereo(pak);
 	std::printf("[ RUN ] the fallback shader without characters\n");
 	testPlainShader(pak);
 	std::printf("[ RUN ] the overlay\n");

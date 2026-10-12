@@ -364,7 +364,10 @@ void meshDestroy(Mesh* m) {
 	free(m);
 }
 
+static Mat4 gEyeView[2]; // (stereo test aid: the views of the left and the right eye)
+
 void frameBegin(const FrameDesc& f) {
+	gEyeView[0] = f.view;
 	gFrame = f;
 	gTwoSided = false;
 	gProj = perspectiveLH(f.fovY, float(SCREEN_W) / float(SCREEN_H), f.zNear, f.zFar);
@@ -550,6 +553,18 @@ void uiDraw(Texture* t, const UiQuad* quads, u32 count) {
 }
 
 void frameEnd() {}
+
+// Stereo: no second picture here, but the calls are counted so the engine's two-eye drawing can be tested.
+static bool gStereo = false;
+static u32 gEyes = 0;
+bool stereoAvailable() { return true; }
+bool stereoActive() { return gStereo; }
+void stereoSet(bool on) { gStereo = on; }
+void eyeBegin(const FrameDesc& f) {
+	++gEyes;
+	gEyeView[1] = f.view;
+}
+SoftEyes softEyes() { return SoftEyes {gEyes, gEyeView[0], gEyeView[1]}; }
 
 void releaseDestroyed() {} // nothing is deferred here
 

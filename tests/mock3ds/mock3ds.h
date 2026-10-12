@@ -32,6 +32,9 @@ struct Counters {
 	unsigned drawsWhileBusy;
 	unsigned texUnit1Binds;       // C3D_TexBind on unit 1 (only the dissolve uses it)
 	unsigned programSwitches;     // C3D_BindProgram that changed the entry point
+	unsigned framesShownRight;    // right-eye target copied to the screen
+	unsigned switches3D;          // gfxSet3D calls that changed the mode
+	unsigned rightDraws;          // draw calls recorded while the right target was the one drawn into
 };
 
 Counters& counters();

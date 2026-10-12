@@ -324,6 +324,8 @@ const Entry kEntries[] = {
     {{"Модели и чанки читаются с карты заранее", "Models and chunks are read from the card early", "Modele i fragmenty czytane z karty wcześniej", "Modelle und Teile werden früh gelesen"}},
     {{"Доворот кадра", "Frame turn", "Obrót klatki", "Bilddrehung"}},
     {{"Старый кадр довёрнут, пока ждём новый", "Old frame turned while the new one is late", "Stara klatka obrócona, gdy nowa się spóźnia", "Alter Frame gedreht, bis der neue kommt"}},
+    {{"3D-режим", "3D mode", "Tryb 3D", "3D-Modus"}},
+    {{"Ползунок 3D; две отрисовки; после перезапуска", "3D slider; drawn twice; after a restart", "Suwak 3D; po ponownym uruchomieniu", "3D-Regler; zweimal gezeichnet; nach Neustart"}},
     {{"Сглаживание", "Smoothing", "Wygładzanie", "Kantenglättung"}},
     {{"Края без лесенки; после перезапуска", "No jagged edges; after a restart", "Bez schodków; po ponownym uruchomieniu", "Keine Treppen; nach Neustart"}},
     {{"Дальняя геометрия", "Far geometry", "Dalsza geometria", "Ferne Geometrie"}},

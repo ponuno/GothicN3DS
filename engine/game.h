@@ -95,6 +95,8 @@ struct GameSpell {
 	bool shoots = false;    // flies at its target (the original decides by the collect algorithm)
 	// The particle effects of the spell's visual effect (hashName of the instance names; 0 for none).
 	u32 fxInit = 0, fxCast = 0, fxFly = 0, fxCollide = 0;
+	u32 fxArea = 0; // area spells (fire rain): the effect the cast key creates around the caster
+	bool area = false; // hits everything near the caster (TARGET_COLLECT_ALL_FALLBACK_NONE with a range)
 };
 
 // What the engine reads off an item (the scripts' C_ITEM), made once per kind.
@@ -387,6 +389,8 @@ public:
 	// points and 0 for the rest if the scripts lack the member.
 	i32 attributeOf(const GameNpc& n, i32 index) const;
 	void setAttribute(GameNpc& n, i32 index, i32 value);
+	// The talk flag (AIV_INVINCIBLE) off: fighters wait (AI_Wait in ZS_Attack) for as long as the player 'is talking'.
+	void clearTalkFlag(u32 npc);
 	// Members of a character by name ("FIGHT_TACTIC", "PROTECTION" index 2), 0 if none.
 	i32 npcInt(const GameNpc& n, u32 member, u32 index = 0) const;
 	// A constant of the scripts by name, or `otherwise`.

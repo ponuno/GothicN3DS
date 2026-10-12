@@ -1,0 +1,645 @@
+extracted 37 files (sgt,sty,dls) into C:\GOTHIC~1\windows\_MUSIC~1
+[90m2026-10-12 00:28:16 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:18 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:18 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:18 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:18 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:20 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:21 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:21 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:22 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:22 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:22 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:22 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:23 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:24 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:25 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:25 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-12 00:28:25 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+BAN_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/BAN_Day_Std.wav (228.8 s)
+CAM_Day_Fgt.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/CAM_Day_Fgt.wav (55.3 s)
+CAM_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/CAM_Day_Std.wav (80.9 s)
+CAM_Day_Thr.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/CAM_Day_Thr.wav (11.9 s)
+CAM_Ngt_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/CAM_Ngt_Std.wav (11.9 s)
+Default.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/Default.wav (34.0 s)
+FOC_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/FOC_Day_Std.wav (18.0 s)
+Menu.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/Menu.wav (90.2 s)
+NCI_Day_Fgt.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/NCI_Day_Fgt.wav (26.7 s)
+NCI_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/NCI_Day_Std.wav (106.0 s)
+OC_Day_Fgt.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OC_Day_Fgt.wav (27.3 s)
+OC_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OC_Day_Std.wav (133.5 s)
+OGY_Day_Fgt.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OGY_Day_Fgt.wav (21.2 s)
+OGY_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OGY_Day_Std.wav (122.0 s)
+OLM_Day_Fgt.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OLM_Day_Fgt.wav (21.2 s)
+OLM_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OLM_Day_Std.wav (98.0 s)
+OLM_Day_Thr.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OLM_Day_Thr.wav (11.6 s)
+ORC_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/ORC_Day_Std.wav (82.0 s)
+OW_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OW_Day_Std.wav (199.3 s)
+PSI_Day_Fgt.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/PSI_Day_Fgt.wav (38.0 s)
+PSI_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/PSI_Day_Std.wav (8.6 s)
+PSI_Day_Thr.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/PSI_Day_Thr.wav (8.6 s)
+PSI_Ngt_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/PSI_Ngt_Std.wav (54.6 s)
+dmrender: 23 rendered, 0 failed
+== world 'world' (WORLD.ZEN) ==
+source: WORLD.ZEN (Gothic 1)
+world mesh: 106722 triangles, 2263 materials, 2126 lightmaps
+average baked vertex light: 99 / 255
+lightmaps: 13612 triangles, 13612 lit from their lightmap (100% of the corners inside the lightmap rectangle)
+places to stand at, the first thing of each kind:
+  BABEBED BABEBED_1.ASC: ZS_POS0 at -166 106 -2 facing +1, 106 cm above the ground
+  BARRELO BARRELO_OC.ASC: ZS_POS0_DIST at -0 100 -69 facing -0, 113 cm above the ground
+  BATHTUB BATHTUB_WOODEN.ASC: ZS_POS0 at 0 96 -100 facing -0, 97 cm above the ground
+  BED BED_1_OC.ASC: ZS_POS0_FRONT at 0 97 78 facing +0, 100 cm above the ground; ZS_POS0_BACK at 0 97 -78 facing +0, -5 cm above the ground; ZS_POS0_FRONT at 0 97 78 facing +0, 97 cm above the ground
+  BEDHIGH BEDHIGH_2_OC.ASC: ZS_POS0_FRONT at 0 97 100 facing +0, 94 cm above the ground; ZS_POS0_BACK at 0 97 -100 facing +0, no ground of the world below; ZS_POS0_FRONT at 0 97 100 facing +0, 93 cm above the ground
+  BEDLOW BEDLOW_OC.ASC: ZS_POS0_BACK at 0 98 -93 facing +0, 39 cm above the ground; ZS_POS0_FRONT at 0 98 93 facing +0, 89 cm above the ground; ZS_POS0_BACK at 0 98 -93 facing +0, 88 cm above the ground
+  BENCH BENCH_1_NC.ASC: ZS_POS1 at -37 97 75 facing +26, 98 cm above the ground; ZS_POS0 at 44 97 75 facing -30, 87 cm above the ground; ZS_POS2 at 44 97 -91 facing +26, 68 cm above the ground
+  BOOK BOOK_BLUE.MDS: ZS_POS0 at 0 97 -2 facing -0, 93 cm above the ground; ZS_POS0 at 0 97 -2 facing -0, 87 cm above the ground; ZS_POS0 at 0 97 -2 facing -0, 97 cm above the ground
+  BSANVIL BSANVIL_OC.MDS: ZS_POS0 at 0 98 -68 facing -0, 92 cm above the ground; ZS_POS1 at 38 98 67 facing -30, 92 cm above the ground; ZS_POS0 at 0 98 -68 facing -0, 93 cm above the ground
+  BSCOOL BSCOOL_OC.MDS: ZS_POS0_DIST at 8 98 -75 facing +6, 93 cm above the ground; ZS_POS0_DIST at 8 98 -75 facing +6, 94 cm above the ground; ZS_POS0_DIST at 8 98 -75 facing +6, 94 cm above the ground
+  BSFIRE BSFIRE_OC.MDS: ZS_POS0 at -25 98 -168 facing -8, 96 cm above the ground; ZS_POS0 at -25 98 -168 facing -8, 90 cm above the ground; ZS_POS0 at -25 98 -168 facing -8, 94 cm above the ground
+  BSSHARP BSSHARP_OC.MDS: ZS_POS0 at 0 98 -68 facing +0, 93 cm above the ground; ZS_POS0 at 0 98 -68 facing +0, 97 cm above the ground; ZS_POS0 at 0 98 -68 facing +0, 91 cm above the ground
+  CAULDRON CAULDRON_OC.ASC: ZS_POS0_DIST at 0 97 -63 facing -0, 95 cm above the ground; ZS_POS0_DIST at 0 97 -63 facing -0, 85 cm above the ground; ZS_POS0_DIST at 0 97 -63 facing -0, 34 cm above the ground
+  CHAIR CHAIR_1_NC.ASC: ZS_POS0_DIST at 0 97 -75 facing +0, 97 cm above the ground; ZS_POS0_DIST at 0 97 -75 facing +0, 98 cm above the ground; ZS_POS0_DIST at 0 97 -75 facing +0, 97 cm above the ground
+  CHESTBIG CHESTBIG_OCCHESTLARGE.MDS: ZS_POS0 at 0 98 94 facing -0, 100 cm above the ground; ZS_POS0 at 0 98 94 facing -0, 96 cm above the ground; ZS_POS0 at 0 98 94 facing -0, 98 cm above the ground
+  CHESTSMALL CHESTSMALL_OCCRATESMALL.MDS: ZS_POS0 at 0 98 84 facing -0, 98 cm above the ground; ZS_POS0 at 0 98 84 facing -0, 98 cm above the ground; ZS_POS0 at 0 98 84 facing -0, 95 cm above the ground
+  DOOR DOOR_WOODEN.MDS: ZS_POS0_BACK at -51 97 65 facing +38, 102 cm above the ground; ZS_POS0_FRONT at -51 97 -35 facing -56, 98 cm above the ground; ZS_POS0_BACK at -51 97 65 facing +38, 109 cm above the ground
+  FIREPLACE FIREPLACE_HIGH2.ASC: ZS_POS0_DIST at -0 98 100 facing +0, 88 cm above the ground; ZS_POS0_DIST at -0 98 100 facing +0, 72 cm above the ground; ZS_POS0_DIST at -0 98 100 facing +0, 337 cm above the ground
+  HERB HERB_PSI.MDS: ZS_POS0 at 81 98 -72 facing +48, 95 cm above the ground; ZS_POS0 at 81 98 -72 facing +48, 98 cm above the ground; ZS_POS0 at 81 98 -72 facing +48, 97 cm above the ground
+  LAB LAB_PSI.MDS: ZS_POS0 at -65 98 -52 facing -51, 98 cm above the ground; ZS_POS0 at -65 98 -52 facing -51, 98 cm above the ground; ZS_POS0 at -65 98 -52 facing -51, 98 cm above the ground
+  LEVER LEVER_1_OC.MDS: ZS_POS0 at 0 -27 -75 facing +0, 98 cm above the ground; ZS_POS0 at 0 -27 -75 facing +0, 115 cm above the ground; ZS_POS0 at 0 -27 -75 facing +0, 98 cm above the ground
+  MCELLO MCELLO_IE.ASC: ZS_POS0 at 0 97 1 facing +180, 103 cm above the ground
+  MDRUMSCHEIT MDRUMSCHEIT_IE.ASC: ZS_POS0 at 0 97 1 facing +180, 132 cm above the ground
+  MHARP MHARP_IE.ASC: ZS_POS0 at 0 97 1 facing +180, 114 cm above the ground
+  MLUTE MLUTE_IE.ASC: ZS_POS0 at 0 97 1 facing +180, 105 cm above the ground
+  MPIPE MPIPE_IE.ASC: ZS_POS0 at 0 97 1 facing +180, 106 cm above the ground; ZS_POS0 at 0 97 1 facing +180, 93 cm above the ground; ZS_POS0 at 0 97 1 facing +180, 105 cm above the ground
+  ORCDRUM ORCDRUM_1.ASC: ZS_POS0 at 0 100 -139 facing +0, 70 cm above the ground; ZS_POS0 at 0 100 -139 facing +0, 75 cm above the ground; ZS_POS0 at 0 100 -139 facing +0, 80 cm above the ground
+  ORE ORE_GROUND.ASC: ZS_POS0_DIST at -1 0 -100 facing -1, 72 cm above the ground; ZS_POS0_DIST at -1 0 -100 facing -1, 196 cm above the ground; ZS_POS0_DIST at -1 0 -100 facing -1, 106 cm above the ground
+  PAN PAN_OC.MDS: ZS_POS0 at -0 98 -72 facing +0, 90 cm above the ground; ZS_POS0 at -0 98 -72 facing +0, 97 cm above the ground; ZS_POS0 at -0 98 -72 facing +0, 97 cm above the ground
+  PAUKE PAUKE_IE.ASC: ZS_POS0_DIST at -5 -4 -55 facing -5, 99 cm above the ground
+  PILLAR PILLAR_7M.MDS: ZS_POS0 at 0 98 -43 facing -0, 98 cm above the ground
+  REPAIR REPAIR_PLANK.ASC: ZS_POS0 at 0 97 -0 facing +0, 65 cm above the ground; ZS_POS0 at 0 97 -0 facing +0, 95 cm above the ground; ZS_POS0 at 0 97 -0 facing +0, 50 cm above the ground
+  SMOKE SMOKE_WATERPIPE.MDS: ZS_POS0 at 0 98 -73 facing -0, 101 cm above the ground; ZS_POS0 at 0 98 -73 facing -0, 102 cm above the ground; ZS_POS0 at 0 98 -73 facing -0, 128 cm above the ground
+  STOMPER STOMPER_OM.MDS: ZS_POS0 at -187 98 -217 facing -41, 106 cm above the ground
+  THRONE THRONE_BIG.ASC: ZS_POS0 at -0 97 -91 facing -0, 146 cm above the ground; ZS_POS0 at -0 97 -91 facing -0, 147 cm above the ground
+  TOUCHPLATE TOUCHPLATE_STONE.MDS: ZS_POS0 at 0 98 -43 facing -0, no ground of the world below; ZS_POS0 at 0 98 -43 facing -0, 96 cm above the ground; ZS_POS0 at 0 98 -43 facing -0, 97 cm above the ground
+  VWHEEL VWHEEL_1_OC.MDS: ZS_POS0 at -8 98 -133 facing -3, 97 cm above the ground; ZS_POS1 at 8 98 133 facing -3, 84 cm above the ground; ZS_POS0 at -8 98 -133 facing -3, 88 cm above the ground
+objects: 9185 placed from 351 meshes, 909081 triangles, 3193 without collision; winding kept (score 20.480070)
+objects by kind: 7214 meshes, 1421 models in rest pose, 164 morph meshes, 386 decals
+models: 4 skinned parts; rest pose within 0.0 cm of the stored mesh, worst BSFIRE_OC.MDS
+objects by size: 2054 large, 2681 medium, 4450 small
+particle effects: 450 placed by the world, 193 from fire places' trees (193 fire places without a readable tree: a plain FIRE)
+objects skipped (not supported yet): 20 camera-facing sprites, 77 other
+objects: 57 have no ground below them, lit with the world average
+fire places: 193 objects of 8 kinds (their flames are not drawn yet):
+  FIREPLACE_GROUND.ASC x8, fire FIRETREE_LARGE.ZEN at BIP01 FIRE <- FIREPLACE_GROUND.MDL: node ZM_FIREPLACE 150 tris MOSTSTONES02.TGA NCODFLGREY01.TGA MOWOWOODS01.TGA
+  FIREPLACE_GROUND2.ASC x13, fire FIRETREE_LARGE.ZEN at BIP01 FIRE <- FIREPLACE_GROUND2.MDL [script: tree FIREPLACE_GROUND2]: node ZM_FIREPLACE 105 tris MOMEKETTLE01.TGA
+  FIREPLACE_HIGH.ASC x11, fire FIRETREE_MEDIUM.ZEN at BIP01 FIRE <- FIREPLACE_HIGH.MDL: node ZM_LIGHTER 258 tris MOMEMETALS03.TGA MOMEMETALS02.TGA MOWOWOODS01.TGA MOSTSTONES02.TGA
+  FIREPLACE_HIGH2.ASC x112, fire FIRETREE_MEDIUM.ZEN at BIP01 FIRE <- FIREPLACE_HIGH2.MDL [script: tree FIREPLACE_GROUND2]: node ZM_OCLIGHTER 188 tris MOMEMETALS03.TGA MOSTSTONES02.TGA MOWOWOODS02.TGA
+  FIREPLACE_MIDDLE.ASC x4, fire FIRETREE_SMALL.ZEN at BIP01 FIRE <- FIREPLACE_MIDDLE.MDL: node ZM_TORCHHOLDER 55 tris MOMEMETALS03.TGA MOWOPLANKS05.TGA MOWOWOODS01.TGA MOSTSTONES02.TGA
+  FIREPLACE_NCSTONE.ASC x3, fire FIRETREE_SMALL.ZEN at BIP01 FIRE <- FIREPLACE_NCSTONE.MDL: node ZM_NCLIGHT 43 tris NCODWAPUTZ02.TGA NCODWAPUTZ09.TGA NCODFLGREY01.TGA
+  FIREPLACE_PCHIGH2.ASC x6, fire FIRETREE_MEDIUM.ZEN at BIP01 FIRE <- FIREPLACE_PCHIGH2.MDL: node ZM_PCHIGH2 168 tris MOMEKETTLE01.TGA MOMEMETALS02.TGA MOWOBARK05.TGA MOMEMETALS03.TGA
+  PC_CRYSTALLIGHT_02.3DS x36, fire FIRETREE_PSI_MEDIUM.ZEN at BIP01 FIRE <- : 
+other objects named like lights: BSFIRE_OC.MDS x4 <- BSFIRE_OC.MDM + BSFIRE_OC.MDH [script: tree BSFIRE_OC]; DT_FIREPLACE_V1.3DS x4; DT_FIREPLACE_V2.3DS x1; DT_LIGHTER_PENTAGRAMM.3DS x2; DT_TORCH_V1.3DS x5; FIRE.PFX x60 (not drawn); FIRE_MEDIUM.PFX x32 (not drawn); FIRE_SMOKE.PFX x79 (not drawn); NC_LOB_LIGHTER.3DS x67; OC_BIGLIGHTER_01.3DS x7; OC_FIREPLACE_V1.3DS x19; OC_FIREPLACE_V2.3DS x18; OC_FIREPLACE_V3.3DS x12; OC_FIREPLACE_V5.3DS x17; OC_FIREWOOD_V1.3DS x24; OC_FIREWOOD_V2.3DS x29; OC_FIREWOOD_V3.3DS x19; OC_LOB_FIREPLACE_HUGE.3DS x3; OC_LOB_LIGHTER_HUGE3.3DS x22; OC_LOB_TORCHHOLDER_FILLED.3DS x6; ORC_FIREPLACE_V3.3DS x6; ORC_STANDING_LAMP.3DS x15; ORC_WALL_FIRE_01.3DS x4; ORE_HIGHLIGHT.PFX x1 (not drawn); PC_FIREPLACE.3DS x15; PC_LOB_FIREBOWL.3DS x1; TORCH.PFX x235 (not drawn)
+WARNING: object visual WASH_SLOT.ASC could not be read: no triangles
+water: 14 materials, opacity 150..240 of 255
+camera: from the game's CAMERA.DAT: CAMMODNORMAL range 2.50 m (2.00..6.00), elevation 25, azimuth 0, view offset 20 0, pace 30; CAMMODSWIM range 3.00 m (2.90..3.10), elevation 20, azimuth 0, view offset 15 0, pace 30; CAMMODFALL range 2.00 m (1.50..2.50), elevation 60, azimuth 0, view offset -10 0, pace 30
+ambient sounds: 700 placed in world 'world'
+music zones: 40 in world 'world'
+world 'world': 1809 x 3878 x 1273 m, grid 45 x 32 cells of 40 m
+geometry: 1015803 triangles in, 1024559 out (16185 degenerate dropped), 1791600 vertices (1.75 per triangle)
+vertex sharing: 640675 distinct positions, 1479167 with UVs, 1791600 with UVs and light
+winding check: 65% of the horizontal front-facing area looks up
+chunks: 1112 (1 cells split), largest 46779 triangles / 65533 vertices / 995 batches
+position step: 809 at 0.125 cm, 293 at 0.25 cm, 10 at 0.5 cm
+seams: 1228 vertices welded to a neighbour within 0.25 cm, 13594 T-junctions closed within 0.50 cm (+24941 triangles)
+draw distance classes: 373039 triangles always drawn, 277776 medium, 373744 small; 50561 batches (45.5 per chunk)
+clusters: the chunks are cut into 18893 boxes of 10 m (75 at most in one): 54 triangles and 2.7 batches in a box on average
+materials: 529 world materials from 1653 source materials, 527 textures; 21 blended (14 water), 19 animated, 4 scrolling
+untextured: 13 materials drawn in their own colour: 'S:PSIT01_ABODEN' (no texture, 3 triangles, colour 108 111 77), 'SUMPFWAASER' (no texture, 1 triangles, colour 0 0 0), 'BRETT2' (no texture, 4 triangles, colour 55 37 26), 'KEINE' (no texture, 8 triangles, colour 190 103 39), 'BRETT1' (no texture, 1 triangles, colour 132 88 62), 'DEFAULT' (no texture, 12 triangles, colour 0 21 210), 'KEINETEXTUREN' (no texture, 1 triangles, colour 136 136 136), 'KNOCHEN' (no texture, 240 triangles, colour 183 183 162), 'NASE' (no texture, 52 triangles, colour 15 15 15), 'ZAHN' (no texture, 18 triangles, colour 182 174 88), '' (no texture, 7 triangles, colour 177 25 88), 'FLUEGELMUSKELN' (no texture, 7 triangles, colour 90 73 73), 'OC_O_WOOD_2' (no texture, 28 triangles, colour 79 60 40)
+places: 4973 named (way points and markers), 4881 set on the ground (41 cm down on average), 92 with no ground within 5 m below left where they are
+way net: 2784 points, 3486 connections (34.9 km of paths), 20 points without any; 1603 free points
+things to use: 1201 of 40 kinds, with 1646 places to stand at (48 have none: nobody can use those): CHAIR x203, CHESTBIG x194, FIREPLACE x157, BEDLOW x115, BED x98, BENCH x71, CHESTSMALL x55, DOOR x42, PC x36, BEDHIGH x32, REPAIR x29, ORE x17, BOOK x16, SMOKE x14, CAULDRON x14, VWHEEL x12, BSCOOL x10, BARBQ x10, ORCDRUM x9, LAB x9, PAN x8, HERB x8, BSSHARP x8, TOUCHPLATE x5, ...
+containers: 249 (193 locked), with 1085 stacks of things inside
+ladders: 65
+portals: 4 of 6 lead to a baked world: orctempel at ENTRANCE_ORCTEMPLE_SURFACE; oldmine at ENTRANCE_OLDMINE_SURFACE; ABANDONEDMINE.ZEN (not baked); orcgraveyard at ENTRANCE_ORCGRAVEYARD_SURFACE; ORCCITY.ZEN (not baked); freemine at its start point ('ENTRANCE_FREEMINE_FREEMINECAMP' not found)
+note: 8163 triangles needed a private UV origin (wide texture spans)
+WARNING: 434 triangles span more than 32 texture repeats and were clamped
+== world 'orctempel' (ORCTEMPEL.ZEN) ==
+source: ORCTEMPEL.ZEN (Gothic 1)
+world mesh: 37661 triangles, 120 materials, 4607 lightmaps
+average baked vertex light: 30 / 255
+lightmaps: 35249 triangles, 35249 lit from their lightmap (100% of the corners inside the lightmap rectangle)
+places to stand at, the first thing of each kind:
+  BENCH BENCH_1_NC.MDS: ZS_POS1 at -37 97 75 facing +26, 86 cm above the ground; ZS_POS0 at 44 97 75 facing -30, 86 cm above the ground; ZS_POS2 at 44 97 -91 facing +26, 88 cm above the ground
+  CHESTBIG CHESTBIG_OCCHESTLARGELOCKED.MDS: ZS_POS0 at 0 98 94 facing -0, 97 cm above the ground; ZS_POS0 at 0 98 94 facing -0, 97 cm above the ground; ZS_POS0 at -0 33 -82 facing -0, 89 cm above the ground
+  EXCALIBUR EXCALIBUR_1.ASC: ZS_POS0 at 0 83 -55 facing +0, 97 cm above the ground; ZS_POS0 at 0 83 -55 facing +0, 97 cm above the ground; ZS_POS0 at 0 83 -55 facing +0, 98 cm above the ground
+  PRIESTGRAVE PRIESTGRAVE_OT.MDS: ZS_POS0 at 0 98 -89 facing -0, 97 cm above the ground
+  SPORTAL SPORTAL_SLEEPER.MDS: ZS_POS0 at 0 98 -175 facing -0, 98 cm above the ground; ZS_POS0 at 0 98 -175 facing -0, 103 cm above the ground; ZS_POS0 at 0 98 -175 facing -0, 99 cm above the ground
+  TOUCHPLATE TOUCHPLATE_STONE.MDS: ZS_POS0 at 0 98 -43 facing -0, 49 cm above the ground; ZS_POS0 at 0 98 -43 facing -0, 101 cm above the ground; ZS_POS0 at 0 98 -43 facing -0, 100 cm above the ground
+  TURNSWITCH TURNSWITCH_BLOCK.MDS: ZS_POS0 at 0 98 -55 facing -0, 97 cm above the ground; ZS_POS0 at 0 98 -55 facing -0, 12 cm above the ground; ZS_POS0 at 0 98 -55 facing -0, 14 cm above the ground
+objects: 1365 placed from 71 meshes, 168309 triangles, 821 without collision; winding kept (score 7.457652)
+objects by kind: 689 meshes, 59 models in rest pose, 0 morph meshes, 617 decals
+objects by size: 277 large, 647 medium, 441 small
+particle effects: 71 placed by the world, 0 from fire places' trees
+objects: 31 have no ground below them, lit with the world average
+other objects named like lights: FIRE.PFX x1 (not drawn); FIRE_SMOKE.PFX x34 (not drawn); ORC_FIREPLACE_V1.3DS x17; ORC_FIREPLACE_V2.3DS x130; ORC_FIREPLACE_V3.3DS x21; ORC_FIREPLACE_V4.3DS x10; ORC_FIREPLACE_V6.3DS x14; TPL_EVT_PLATEFIRE_01.3DS x1; TPL_LIGHTER_V1.3DS x19; TPL_LIGHTER_V2.3DS x1
+water: 1 materials, opacity 230..230 of 255
+ambient sounds: 54 placed in world 'orctempel'
+music zones: 3 in world 'orctempel'
+world 'orctempel': 441 x 384 x 651 m, grid 12 x 17 cells of 40 m
+geometry: 205970 triangles in, 216291 out (281 degenerate dropped), 314728 vertices (1.46 per triangle)
+vertex sharing: 123465 distinct positions, 247551 with UVs, 314728 with UVs and light
+winding check: 50% of the horizontal front-facing area looks up (says nothing here: an indoor world has as much ceiling as floor)
+chunks: 116 (0 cells split), largest 21214 triangles / 32850 vertices / 278 batches
+position step: 93 at 0.125 cm, 1 at 0.25 cm, 14 at 0.5 cm, 8 at 1 cm
+seams: 580 vertices welded to a neighbour within 0.25 cm, 5164 T-junctions closed within 0.50 cm (+10602 triangles)
+draw distance classes: 57761 triangles always drawn, 25961 medium, 132569 small; 8449 batches (72.8 per chunk)
+clusters: the chunks are cut into 3411 boxes of 10 m (93 at most in one): 63 triangles and 2.5 batches in a box on average
+materials: 197 world materials from 216 source materials, 194 textures; 4 blended (1 water), 2 animated, 0 scrolling
+untextured: 6 materials drawn in their own colour: 'STEIN4' (no texture, 2 triangles, colour 57 56 51), 'STEIN24' (no texture, 1 triangles, colour 117 114 79), 'BODEN2' (no texture, 1 triangles, colour 106 88 77), 'STEIN3' (no texture, 22 triangles, colour 56 56 56), 'FELS 1' (no texture, 2 triangles, colour 96 96 96), 'STEIN21' (no texture, 5 triangles, colour 117 114 79)
+indoor world: no sky, background colour 128 128 64
+places: 756 named (way points and markers), 694 set on the ground (72 cm down on average), 62 with no ground within 5 m below left where they are
+way net: 391 points, 509 connections (5.0 km of paths), 0 points without any; 95 free points
+things to use: 59 of 7 kinds, with 62 places to stand at (0 have none: nobody can use those): CHESTBIG x20, TURNSWITCH x17, TOUCHPLATE x8, EXCALIBUR x7, SPORTAL x5, PRIESTGRAVE x1, BENCH x1
+containers: 20 (0 locked), with 60 stacks of things inside
+portals: 1 of 1 lead to a baked world: world at ENTRANCE_SURFACE_ORCTEMPLE
+note: 184 triangles needed a private UV origin (wide texture spans)
+WARNING: 63 triangles span more than 32 texture repeats and were clamped
+== world 'oldmine' (OLDMINE.ZEN) ==
+source: OLDMINE.ZEN (Gothic 1)
+world mesh: 9914 triangles, 51 materials, 790 lightmaps
+average baked vertex light: 31 / 255
+lightmaps: 9138 triangles, 9138 lit from their lightmap (100% of the corners inside the lightmap rectangle)
+places to stand at, the first thing of each kind:
+  BARRELO BARRELO_OC.ASC: ZS_POS0_DIST at -0 100 -69 facing -0, 90 cm above the ground; ZS_POS0_DIST at -0 100 -69 facing -0, 101 cm above the ground; ZS_POS0_DIST at -0 100 -69 facing -0, 50 cm above the ground
+  BELLOW BELLOW_MINE.MDS: ZS_POS0 at 0 97 -100 facing -0, 91 cm above the ground
+  BENCH BENCH_1_NC.ASC: ZS_POS1 at -37 97 75 facing +26, no ground of the world below; ZS_POS0 at 44 97 75 facing -30, no ground of the world below; ZS_POS2 at 44 97 -91 facing +26, 102 cm above the ground
+  CAULDRON CAULDRON_OC.ASC: ZS_POS0_DIST at 0 97 -63 facing -0, 89 cm above the ground; ZS_POS0_DIST at 0 97 -63 facing -0, 93 cm above the ground
+  CHAIR CHAIR_2_NC.ASC: ZS_POS0_DIST at 0 97 -75 facing +0, 90 cm above the ground; ZS_POS0_DIST at 0 97 -75 facing +0, 87 cm above the ground; ZS_POS0_DIST at 0 97 -75 facing +0, 96 cm above the ground
+  CHESTBIG CHESTBIG_OCCRATELARGELOCKED.MDS: ZS_POS0 at 0 98 94 facing -0, 233 cm above the ground; ZS_POS0 at 0 98 94 facing -0, 97 cm above the ground; ZS_POS0 at 0 98 94 facing -0, 96 cm above the ground
+  FIREPLACE FIREPLACE_HIGH2.ASC: ZS_POS0_DIST at -0 98 100 facing +0, 113 cm above the ground; ZS_POS0_DIST at -0 98 100 facing +0, 49 cm above the ground; ZS_POS0_DIST at -0 98 100 facing +0, -18 cm above the ground
+  ORE ORE_GROUND.ASC: ZS_POS0_DIST at -1 0 -100 facing -1, 110 cm above the ground; ZS_POS0_DIST at -1 0 -100 facing -1, 113 cm above the ground; ZS_POS0_DIST at -1 0 -100 facing -1, 83 cm above the ground
+  STOMPER STOMPER_OM.MDS: ZS_POS0 at -187 98 -217 facing -41, 91 cm above the ground; ZS_POS0 at -187 98 -217 facing -41, 68 cm above the ground
+  STONEMILL STONEMILL_OM.MDS: ZS_POS0 at 392 149 314 facing +129, 130 cm above the ground
+  VWHEEL VWHEEL_1_OC.MDS: ZS_POS0 at -8 98 -133 facing -3, 106 cm above the ground; ZS_POS1 at 8 98 133 facing -3, no ground of the world below
+objects: 1370 placed from 81 meshes, 135592 triangles, 613 without collision; winding kept (score 5.751085)
+objects by kind: 837 meshes, 192 models in rest pose, 0 morph meshes, 341 decals
+models: 1 skinned parts; rest pose within 0.0 cm of the stored mesh, worst BELLOW_MINE.MDS
+objects by size: 581 large, 399 medium, 390 small
+particle effects: 26 placed by the world, 43 from fire places' trees (43 fire places without a readable tree: a plain FIRE)
+objects: 26 have no ground below them, lit with the world average
+fire places: 43 objects of 2 kinds (their flames are not drawn yet):
+  FIREPLACE_GROUND2.MDS x1, fire FIRETREE_MEDIUM_DUNGEONS.ZEN at BIP01 FIRE <- FIREPLACE_GROUND2.MDM + FIREPLACE_GROUND2.MDH [script: tree FIREPLACE_GROUND2]: node ZM_FIREPLACE 105 tris MOMEKETTLE01.TGA
+  FIREPLACE_HIGH2.ASC x42, fire FIRETREE_MEDIUM_DUNGEONS.ZEN at BIP01 FIRE <- FIREPLACE_HIGH2.MDL [script: tree FIREPLACE_GROUND2]: node ZM_OCLIGHTER 188 tris MOMEMETALS03.TGA MOSTSTONES02.TGA MOWOWOODS02.TGA
+other objects named like lights: FIRE.PFX x11 (not drawn); FIRE_MEDIUM.PFX x4 (not drawn); FIRE_SMOKE.PFX x7 (not drawn); OC_FIREPLACEBIG_V01.3DS x1; OC_FIREWOOD_V1.3DS x11; OC_FIREWOOD_V2.3DS x1; OC_FIREWOOD_V3.3DS x5
+ambient sounds: 32 placed in world 'oldmine'
+music zones: 1 in world 'oldmine'
+world 'oldmine': 171 x 113 x 158 m, grid 6 x 5 cells of 40 m
+geometry: 145506 triangles in, 149821 out (74 degenerate dropped), 256602 vertices (1.71 per triangle)
+vertex sharing: 95821 distinct positions, 210129 with UVs, 256602 with UVs and light
+winding check: 49% of the horizontal front-facing area looks up (says nothing here: an indoor world has as much ceiling as floor)
+chunks: 28 (0 cells split), largest 26128 triangles / 43672 vertices / 524 batches
+position step: 27 at 0.125 cm, 1 at 0.25 cm
+seams: 274 vertices welded to a neighbour within 0.25 cm, 2269 T-junctions closed within 0.50 cm (+4389 triangles)
+draw distance classes: 42272 triangles always drawn, 50526 medium, 57023 small; 3434 batches (122.6 per chunk)
+clusters: the chunks are cut into 802 boxes of 10 m (114 at most in one): 187 triangles and 4.3 batches in a box on average
+materials: 125 world materials from 135 source materials, 106 textures; 3 blended (0 water), 1 animated, 0 scrolling
+untextured: 1 materials drawn in their own colour: 'KEINE' (no texture, 44 triangles, colour 130 130 130)
+indoor world: no sky, background colour 0 98 177
+places: 384 named (way points and markers), 376 set on the ground (45 cm down on average), 8 with no ground within 5 m below left where they are
+way net: 254 points, 312 connections (2.2 km of paths), 0 points without any; 76 free points
+things to use: 176 of 12 kinds, with 188 places to stand at (1 have none: nobody can use those): ORE x103, FIREPLACE x43, CHESTBIG x11, BENCH x4, BARRELO x4, CHAIR x3, STOMPER x2, CAULDRON x2, VWHEEL x1, STONEMILL x1, BELLOW x1, BARBQ x1
+containers: 11 (10 locked), with 26 stacks of things inside
+ladders: 16
+portals: 1 of 1 lead to a baked world: world at ENTRANCE_SURFACE_OLDMINE
+note: 86 triangles needed a private UV origin (wide texture spans)
+WARNING: 2 triangles span more than 32 texture repeats and were clamped
+== world 'orcgraveyard' (ORCGRAVEYARD.ZEN) ==
+source: ORCGRAVEYARD.ZEN (Gothic 1)
+world mesh: 12685 triangles, 32 materials, 1370 lightmaps
+average baked vertex light: 18 / 255
+lightmaps: 12004 triangles, 12004 lit from their lightmap (100% of the corners inside the lightmap rectangle)
+places to stand at, the first thing of each kind:
+  CHESTBIG CHESTBIG_ORCMUMMY.ASC: ZS_POS0 at -0 33 -82 facing -0, 66 cm above the ground; ZS_POS0 at -0 33 -82 facing -0, 58 cm above the ground; ZS_POS0 at -0 33 -82 facing -0, 49 cm above the ground
+  TOUCHPLATE TOUCHPLATE_STONE.MDS: ZS_POS0 at 0 98 -43 facing -0, 77 cm above the ground; ZS_POS0 at 0 98 -43 facing -0, 89 cm above the ground; ZS_POS0 at 0 98 -43 facing -0, 100 cm above the ground
+  VWHEEL VWHEEL_1_OC.MDS: ZS_POS0 at -8 98 -133 facing -3, 97 cm above the ground; ZS_POS1 at 8 98 133 facing -3, no ground of the world below
+objects: 384 placed from 21 meshes, 60410 triangles, 325 without collision; winding kept (score 0.983366)
+objects by kind: 179 meshes, 51 models in rest pose, 0 morph meshes, 154 decals
+objects by size: 67 large, 236 medium, 81 small
+particle effects: 82 placed by the world, 0 from fire places' trees
+objects: 13 have no ground below them, lit with the world average
+other objects named like lights: FIREPLACE_ORCSTAND.ASC x9 <- FIREPLACE_ORCSTAND.MDL; FIRE_MEDIUM.PFX x33 (not drawn); FIRE_SMOKE.PFX x49 (not drawn); ORC_STANDING_LAMP_LARGE.3DS x4; ORC_WALL_FIRE_01.3DS x31
+ambient sounds: 18 placed in world 'orcgraveyard'
+music zones: 1 in world 'orcgraveyard'
+world 'orcgraveyard': 122 x 41 x 148 m, grid 4 x 5 cells of 40 m
+geometry: 73095 triangles in, 73977 out (42 degenerate dropped), 127824 vertices (1.73 per triangle)
+vertex sharing: 45222 distinct positions, 112602 with UVs, 127824 with UVs and light
+winding check: 43% of the horizontal front-facing area looks up (says nothing here: an indoor world has as much ceiling as floor)
+chunks: 15 (0 cells split), largest 15782 triangles / 28765 vertices / 231 batches
+position step: 15 at 0.125 cm
+seams: 28 vertices welded to a neighbour within 0.25 cm, 505 T-junctions closed within 0.50 cm (+924 triangles)
+draw distance classes: 17699 triangles always drawn, 28279 medium, 27999 small; 1593 batches (106.2 per chunk)
+clusters: the chunks are cut into 271 boxes of 10 m (37 at most in one): 273 triangles and 5.9 batches in a box on average
+materials: 57 world materials from 62 source materials, 49 textures; 2 blended (0 water), 0 animated, 0 scrolling
+indoor world: no sky, background colour 0 98 81
+places: 132 named (way points and markers), 127 set on the ground (55 cm down on average), 5 with no ground within 5 m below left where they are
+way net: 95 points, 118 connections (1.0 km of paths), 0 points without any; 1 free points
+things to use: 42 of 3 kinds, with 43 places to stand at (0 have none: nobody can use those): CHESTBIG x36, TOUCHPLATE x5, VWHEEL x1
+containers: 36 (0 locked), with 43 stacks of things inside
+portals: 1 of 1 lead to a baked world: world at ENTRANCE_SURFACE_ORCGRAVEYARD
+== world 'freemine' (FREEMINE.ZEN) ==
+source: FREEMINE.ZEN (Gothic 1)
+world mesh: 4141 triangles, 29 materials, 385 lightmaps
+average baked vertex light: 22 / 255
+lightmaps: 4086 triangles, 4086 lit from their lightmap (100% of the corners inside the lightmap rectangle)
+places to stand at, the first thing of each kind:
+  BELLOW BELLOW_MINE.MDS: ZS_POS0 at 0 97 -100 facing -0, 89 cm above the ground
+  CHAIR CHAIR_2_NC.ASC: ZS_POS0_DIST at 0 97 -75 facing +0, 97 cm above the ground; ZS_POS0_DIST at 0 97 -75 facing +0, 103 cm above the ground; ZS_POS0_DIST at 0 97 -75 facing +0, 113 cm above the ground
+  FIREPLACE FIREPLACE_HIGH2.ASC: ZS_POS0_DIST at -0 98 100 facing +0, 124 cm above the ground; ZS_POS0_DIST at -0 98 100 facing +0, no ground of the world below; ZS_POS0_DIST at -0 98 100 facing +0, 95 cm above the ground
+  ORE ORE_GROUND.ASC: ZS_POS0_DIST at -1 0 -100 facing -1, no ground of the world below; ZS_POS0_DIST at -1 0 -100 facing -1, no ground of the world below; ZS_POS0_DIST at -1 0 -100 facing -1, no ground of the world below
+  STOMPER STOMPER_OM.MDS: ZS_POS0 at -187 98 -217 facing -41, 94 cm above the ground
+objects: 702 placed from 50 meshes, 62119 triangles, 427 without collision; winding kept (score 3.157033)
+objects by kind: 451 meshes, 81 models in rest pose, 0 morph meshes, 170 decals
+models: 1 skinned parts; rest pose within 0.0 cm of the stored mesh, worst BELLOW_MINE.MDS
+objects by size: 270 large, 260 medium, 172 small
+particle effects: 78 placed by the world, 44 from fire places' trees (44 fire places without a readable tree: a plain FIRE)
+objects: 19 have no ground below them, lit with the world average
+fire places: 44 objects of 1 kinds (their flames are not drawn yet):
+  FIREPLACE_HIGH2.ASC x44, fire FIRETREE_MEDIUM_DUNGEONS.ZEN at BIP01 FIRE <- FIREPLACE_HIGH2.MDL [script: tree FIREPLACE_GROUND2]: node ZM_OCLIGHTER 188 tris MOMEMETALS03.TGA MOSTSTONES02.TGA MOWOWOODS02.TGA
+other objects named like lights: FIRE_MEDIUM.PFX x33 (not drawn); FIRE_SMOKE.PFX x45 (not drawn); OC_FIREWOOD_V1.3DS x3; OC_FIREWOOD_V2.3DS x2; OC_FIREWOOD_V3.3DS x2
+ambient sounds: 11 placed in world 'freemine'
+music zones: 1 in world 'freemine'
+world 'freemine': 98 x 66 x 143 m, grid 3 x 4 cells of 40 m
+geometry: 66260 triangles in, 67699 out (36 degenerate dropped), 117528 vertices (1.74 per triangle)
+vertex sharing: 45191 distinct positions, 104676 with UVs, 117528 with UVs and light
+winding check: 48% of the horizontal front-facing area looks up (says nothing here: an indoor world has as much ceiling as floor)
+chunks: 11 (0 cells split), largest 14455 triangles / 24870 vertices / 387 batches
+position step: 11 at 0.125 cm
+seams: 30 vertices welded to a neighbour within 0.25 cm, 901 T-junctions closed within 0.50 cm (+1475 triangles)
+draw distance classes: 17561 triangles always drawn, 32162 medium, 17976 small; 1597 batches (145.2 per chunk)
+clusters: the chunks are cut into 306 boxes of 10 m (67 at most in one): 221 triangles and 5.2 batches in a box on average
+materials: 82 world materials from 83 source materials, 72 textures; 3 blended (0 water), 0 animated, 0 scrolling
+untextured: 1 materials drawn in their own colour: 'BODEN2' (no texture, 1 triangles, colour 210 210 210)
+indoor world: no sky, background colour 74 85 102
+places: 208 named (way points and markers), 201 set on the ground (45 cm down on average), 7 with no ground within 5 m below left where they are
+way net: 119 points, 177 connections (1.0 km of paths), 0 points without any; 39 free points
+things to use: 67 of 6 kinds, with 66 places to stand at (1 have none: nobody can use those): FIREPLACE x44, ORE x13, CHAIR x7, STOMPER x1, BELLOW x1, BARBQ x1
+ladders: 14
+portals: 1 of 1 lead to a baked world: world at ENTRANCE_FREEMINECAMP_FREEMINE
+note: 90 triangles needed a private UV origin (wide texture spans)
+WARNING: 2 triangles span more than 32 texture repeats and were clamped
+== all worlds ==
+textures: 676 baked (90 cut-out), max edge 128, 27.0% of the source texels kept, 0 missing
+size: chunks 50.11 MB (32.39 MB packed), textures 7.33 MB (6.25 MB packed)
+== model 'hero' ==
+character: HUMANS, skeleton HUMANS.MDH (34 nodes), body HUM_BODY_NAKED0; head HUM_HEAD_PONY; rest pose within 0.0 cm of the stored mesh; 33 of 296 skin vertices hang on more than two bones (the two strongest are kept)
+character mesh: 862 triangles, winding kept (score 0.044)
+character skin: HUM_BODY_NAKED_V4_C1.TGA, HUM_HEAD_V9_C1.TGA
+character: animations of reaching in the model script (ledges, picking up, chests): T_STAND_2_JUMPUPLOW, S_JUMPUPLOW, T_JUMPUPLOW_2_STAND, T_STAND_2_JUMPUPMID, S_JUMPUPMID, T_JUMPUPMID_2_STAND, T_JUMP_2_HANG, T_STAND_2_JUMPUP, S_JUMPUP, S_HANG, T_HANG_2_STAND, T_SWIM_2_HANG, C_STAND_2_IGET_1, C_STAND_2_IGET_2, C_STAND_2_IGET_3, C_IGET_1, C_IGET_2, C_IGET_3, C_IGET_2_STAND_1, C_IGET_2_STAND_2, C_IGET_2_STAND_3, T_CANNOTTAKE, T_CHESTSMALL_STAND_2_S0, S_CHESTSMALL_S0, T_CHESTSMALL_S0_2_S1, S_CHESTSMALL_S1, T_CHESTSMALL_S1_2_S0, T_CHESTSMALL_S0_UNLOCK, T_CHESTSMALL_S0_TRY, T_CHESTSMALL_S0_PICKLEFT, T_CHESTBIG_STAND_2_S0, S_CHESTBIG_S0, T_CHESTBIG_S0_2_S1, S_CHESTBIG_S1, T_CHESTBIG_S1_2_S0, T_CHESTBIG_S0_UNLOCK, T_CHESTBIG_S0_TRY, T_CHESTBIG_S0_PICKLEFT, T_LGUARD_CHANGELEG, T_IGETYOU, T_PLUNDER, T_RUNL_2_JUMPUPLOW, T_RUNR_2_JUMPUPLOW, T_RUNL_2_JUMPUPMID, T_RUNR_2_JUMPUPMID, T_FALLDN_2_HANG, T_STAND_2_HANG, T_CHESTSMALL_S0_2_STAND, T_CHESTSMALL_S0_LOCK, T_CHESTSMALL_S0_PICKRIGHT, T_CHESTBIG_S0_2_STAND, T_CHESTBIG_S0_LOCK, T_CHESTBIG_S0_PICKRIGHT,
+fightclip T_JUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_RUN
+fightclip T_FISTJUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_FISTRUN
+fightclip T_FISTPARADEJUMPB: file T_FISTPARADEJUMPB, mds frames 1..12, 12 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next -
+fightclip S_FISTATTACK: file S_FISTATTACK, mds frames 1..29, 29 frames @ 25 fps, moves; hits 8,23; hitEnds 15,29; windows 9,15,24,29; parry -; fightMode -1; next S_FISTATTACK
+fightclip T_FISTATTACKMOVE: file T_FISTATTACKMOVE, mds frames 1..29, 29 frames @ 25 fps, moves; hits 18; hitEnds -; windows -; parry -; fightMode -1; next -
+fightclip T_FISTPARADE_O: file T_FISTPARADE_O, mds frames 1..12, 12 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next -
+fightclip T_1HJUMPB: file T_1HJUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_1HRUN
+fightclip T_1HPARADEJUMPB: file T_1HPARADEJUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next -
+fightclip S_1HATTACK: file S_1HATTACK, mds frames 1..20, 20 frames @ 25 fps, moves; hits 4; hitEnds 37; windows 18,19; parry -; fightMode -1; next S_1HATTACK
+fightclip T_1HATTACKL: file T_1HATTACKL, mds frames 1..30, 30 frames @ 25 fps, moves; hits 4; hitEnds 29; windows 15,29; parry -; fightMode -1; next -
+fightclip T_1HATTACKR: file T_1HATTACKR, mds frames 31..60, 30 frames @ 25 fps, moves; hits 5; hitEnds 29; windows 15,29; parry -; fightMode -1; next -
+fightclip T_1HATTACKMOVE: file T_1HATTACKMOVE, mds frames 1..29, 29 frames @ 25 fps, moves; hits 15; hitEnds -; windows -; parry -; fightMode -1; next -
+fightclip T_1HPARADE_O: file T_1HPARADE_O, mds frames 1..29, 29 frames @ 25 fps, moves; hits -; hitEnds -; windows 1,27; parry -; fightMode -1; next -
+fightclip T_RUN_2_1H: file T_RUN_2_1H, mds frames 1..3, 3 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_1H
+fightclip T_1H_2_1HRUN: file T_1H_2_1HRUN, mds frames 5..24, 20 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode 0; next S_1HRUN
+fightclip T_1HRUN_2_1H: file T_1HRUN_2_1H BACKWARDS, mds frames 5..24, 20 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode 19; next S_1H
+fightclip T_1H_2_RUN: file T_RUN_2_1H BACKWARDS, mds frames 1..3, 3 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next -
+fightclip T_MOVE_2_1HMOVE: file T_MOVE_2_1HMOVE, mds frames 1..24, 24 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode 5; next -
+fightclip T_2HJUMPB: file T_2HJUMPB, mds frames 1..24, 24 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HRUN
+fightclip T_2HPARADEJUMPB: file T_2HPARADEJUMPB, mds frames 1..29, 29 frames @ 25 fps, moves; hits -; hitEnds -; windows 1,27; parry -; fightMode -1; next -
+fightclip S_2HATTACK: file S_2HATTACK, mds frames 1..41, 41 frames @ 25 fps, moves; hits 7; hitEnds 21; windows 21,40; parry -; fightMode -1; next S_2HATTACK
+fightclip T_2HATTACKL: file T_2HATTACKL, mds frames 1..36, 36 frames @ 25 fps, moves; hits 5; hitEnds 35; windows 18,35; parry -; fightMode -1; next -
+fightclip T_2HATTACKR: file T_2HATTACKR, mds frames 37..72, 36 frames @ 25 fps, moves; hits 6; hitEnds 29; windows 18,35; parry -; fightMode -1; next -
+fightclip T_2HPARADE_O: file T_2HPARADE_O, mds frames 1..29, 29 frames @ 25 fps, moves; hits -; hitEnds -; windows 1,27; parry -; fightMode -1; next -
+fightclip T_RUN_2_2H: file T_RUN_2_2H, mds frames 1..3, 3 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2H
+fightclip T_2H_2_2HRUN: file T_2H_2_2HRUN, mds frames 5..24, 20 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode 2; next S_2HRUN
+fightclip T_2HRUN_2_2H: file T_2HRUN_2_2H BACKWARDS, mds frames 5..24, 20 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode 17; next S_2H
+fightclip T_2H_2_RUN: file T_RUN_2_2H BACKWARDS, mds frames 1..3, 3 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_RUN
+fightclip T_MOVE_2_2HMOVE: file T_MOVE_2_2HMOVE, mds frames 1..24, 24 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode 6; next -
+fightclip T_BOWJUMPB: file T_BOWJUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_BOWRUN
+fightclip T_CBOWJUMPB: file T_CBOWJUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_CBOWRUN
+fightclip T_MAGJUMPB: file T_MAGJUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_MAGRUN
+fightclip T_1HRUN_2_1HRUNL: file T_1HRUN_2_1HRUNL, mds frames 1..11, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_1HRUNL
+fightclip T_1HRUNL_2_1HRUN: file T_1HRUNL_2_1HRUN, mds frames 32..38, 7 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_1HRUN
+fightclip T_1HWALK_2_1HWALKL: file T_1HWALK_2_1HWALKL, mds frames 4..18, 15 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_1HWALKL
+fightclip T_1HWALKL_2_1HWALK: file T_1HWALKL_2_1HWALK, mds frames 39..49, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_1HWALK
+fightclip T_2HRUN_2_2HRUNL: file T_2HRUN_2_2HRUNL, mds frames 1..11, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HRUNL
+fightclip T_2HRUNL_2_2HRUN: file T_2HRUNL_2_2HRUN, mds frames 32..38, 7 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HRUN
+fightclip T_2HWALK_2_2HWALKL: file T_2HWALK_2_2HWALKL, mds frames 1..18, 18 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALKL
+fightclip T_2HWALKL_2_2HWALK: file T_2HWALKL_2_2HWALK, mds frames 39..49, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALK
+animations: rotations read conjugated (mean distance from the rest pose 21 degrees; the other way 70); bone offsets within 1.3 cm of the skeleton's on average
+character faces +Z (S_RUNL carries it 263 cm along +Z)
+animations: hips 99.9 cm above the ground at rest, 97.7 cm in S_RUN
+skeleton: 34 nodes; mesh: 862 triangles, 607 vertices (30% follow two bones), 4 draw calls, largest palette 20 of 26 bones
+size: 69 x 188 x 36 cm, feet at y = -1.8, position step 0.0078 cm
+clips: 341 (2187 KB): S_RUN 2.00s loop, S_RUNL 0.80s loop 345cm/s, S_WALK 2.00s loop, S_WALKL 0.96s loop 143cm/s, S_WALKBL 0.96s loop 143cm/s, S_WALKWL 1.50s loop 153cm/s, S_JUMP 0.04s loop, S_FALLDN 0.04s loop, S_FALL 1.20s loop, S_SWIM 2.00s loop, S_SWIMF 1.20s loop 233cm/s, S_SWIMB 1.12s loop 106cm/s, T_JUMPB 0.52s 173cm/s, T_RUNSTRAFEL 1.00s 139cm/s, T_RUNSTRAFER 1.00s 160cm/s, T_WALKSTRAFEL 0.68s 112cm/s, T_WALKSTRAFER 0.68s 112cm/s, T_RUNTURNL 0.84s loop, T_RUNTURNR 0.80s loop, T_WALKTURNL 0.84s loop, T_WALKTURNR 0.80s loop, T_SWIMTURNL 0.96s loop, T_SWIMTURNR 0.96s loop, S_FISTRUN 2.00s loop, S_FISTRUNL 0.80s loop 346cm/s, S_FISTWALK 2.00s loop, S_FISTWALKL 0.92s loop 142cm/s, T_FISTRUNSTRAFEL 0.76s loop 368cm/s, T_FISTRUNSTRAFER 0.76s loop 368cm/s, T_FISTRUNTURNL 0.84s loop, T_FISTRUNTURNR 0.80s loop, T_FISTWALKTURNL 0.84s loop, T_FISTWALKTURNR 0.84s loop, T_FISTJUMPB 0.52s 173cm/s, T_FISTPARADEJUMPB 0.44s 204cm/s, S_FISTATTACK 1.16s loop 50cm/s 2 blows, T_FISTATTACKMOVE 1.12s 195cm/s up 49cm 1 blow, T_FISTPARADE_O 0.44s 211cm/s, T_RUN_2_FIST 0.08s, T_FIST_2_FISTRUN 0.08s 102cm/s, T_FISTRUN_2_FIST 0.08s 102cm/s, T_FIST_2_RUN 0.08s, T_MOVE_2_FISTMOVE 0.52s, T_FISTMOVE_2_MOVE 0.52s, S_1HRUN 2.00s loop, S_1HRUNL 0.80s loop 345cm/s, S_1HWALK 2.00s loop, S_1HWALKL 0.80s loop 195cm/s, T_1HRUNSTRAFEL 0.76s loop 368cm/s, T_1HRUNSTRAFER 0.76s loop 368cm/s, T_1HRUNTURNL 1.00s loop 7cm/s, T_1HRUNTURNR 1.00s loop 6cm/s, T_1HWALKTURNL 1.00s loop 7cm/s, T_1HWALKTURNR 1.00s loop 6cm/s, T_1HJUMPB 0.52s 244cm/s, T_1HPARADEJUMPB 0.52s 244cm/s, S_1HATTACK 0.80s loop 160cm/s 1 blow, T_1HATTACKL 1.16s 1 blow, T_1HATTACKR 1.16s 1 blow, T_1HATTACKMOVE 1.12s 1 blow, T_1HPARADE_O 1.12s, T_1HSFINISH 5.50s, T_RUN_2_1H 0.08s, T_1H_2_1HRUN 0.76s 42cm/s, T_1HRUN_2_1H 0.76s 42cm/s, T_1H_2_RUN 0.08s, T_MOVE_2_1HMOVE 0.92s, T_1HMOVE_2_MOVE 0.92s, S_2HRUN 2.40s loop, S_2HRUNL 0.80s loop 343cm/s, S_2HWALK 2.40s loop, S_2HWALKL 0.80s loop 195cm/s, T_2HRUNSTRAFEL 0.76s loop 368cm/s, T_2HRUNSTRAFER 0.76s loop 368cm/s, T_2HRUNTURNL 1.00s loop, T_2HRUNTURNR 1.00s loop, T_2HWALKTURNL 1.00s loop, T_2HWALKTURNR 1.00s loop, T_2HJUMPB 0.92s 194cm/s, T_2HPARADEJUMPB 1.12s, S_2HATTACK 1.64s loop 35cm/s 1 blow, T_2HATTACKL 1.40s 6cm/s 1 blow, T_2HATTACKR 1.40s 4cm/s 1 blow, T_2HPARADE_O 1.12s, T_2HSFINISH 5.50s, T_RUN_2_2H 0.08s, T_2H_2_2HRUN 0.76s 20cm/s, T_2HRUN_2_2H 0.76s 20cm/s, T_2H_2_RUN 0.08s, T_MOVE_2_2HMOVE 0.92s, T_2HMOVE_2_MOVE 0.92s, T_STUMBLE 0.32s 93cm/s, T_STUMBLEB 0.32s 135cm/s, T_GOTHIT 0.32s, T_DEAD 2.50s 38cm/s, T_DEADB 0.84s 183cm/s, S_DEAD 0.04s loop, S_DEADB 0.04s loop, T_STAND_2_WOUNDED 1.90s 42cm/s, S_WOUNDED 2.00s loop, T_WOUNDED_2_STAND 3.30s 24cm/s up 73cm, T_STAND_2_WOUNDEDB 1.30s 44cm/s, S_WOUNDEDB 1.60s loop, T_WOUNDEDB_2_STAND 3.90s 15cm/s up 83cm, T_WOUNDED_TRY 1.90s, T_WOUNDED_2_DEAD 5.50s 5cm/s, T_WOUNDEDB_2_DEADB 5.50s, T_SURPRISE_CW 0.60s 15cm/s, T_SURPRISE_CCW 0.60s 15cm/s, S_SNEAK 2.10s loop, S_SNEAKL 1.64s loop 77cm/s, S_SNEAKBL 1.64s loop 77cm/s, T_SNEAK_2_SNEAKL 0.40s 82cm/s, T_SNEAKL_2_SNEAK 0.40s 126cm/s, T_SNEAKTURNL 1.00s loop, T_SNEAKTURNR 1.00s loop, T_SNEAKSTRAFEL 0.96s 88cm/s, T_SNEAKSTRAFER 0.96s 88cm/s, T_SNEAKBL_2_SNEAK 0.40s 82cm/s, T_SNEAK_2_SNEAKBL 0.40s 126cm/s, S_BOWRUN 2.40s loop, S_BOWRUNL 0.80s loop 345cm/s, S_BOWWALK 2.40s loop, S_BOWWALKL 0.80s loop 195cm/s, T_BOWRUN_2_BOWRUNL 0.40s 328cm/s, T_BOWRUNL_2_BOWRUN 0.24s 49cm/s, T_BOWWALK_2_BOWWALKL 0.68s 115cm/s, T_BOWWALKL_2_BOWWALK 0.40s 149cm/s, T_BOW_2_BOWRUN 0.48s 51cm/s, T_BOWRUN_2_BOW 0.48s 51cm/s, T_RUN_2_BOW 0.16s, T_BOW_2_RUN 0.16s, T_MOVE_2_BOWMOVE 0.72s, T_BOWMOVE_2_MOVE 0.72s, S_BOWSHOOT 0.04s loop, T_BOWRELOAD 1.12s, T_BOWRUNSTRAFEL 0.76s loop 368cm/s, T_BOWRUNSTRAFER 0.76s loop 368cm/s, T_BOWRUNTURNL 1.00s loop, T_BOWRUNTURNR 1.00s loop, T_BOWWALKTURNL 1.00s loop, T_BOWWALKTURNR 1.00s loop, T_BOWJUMPB 0.52s 180cm/s, S_CBOWRUN 2.00s loop, S_CBOWRUNL 0.80s loop 346cm/s, S_CBOWWALK 2.00s loop, S_CBOWWALKL 0.80s loop 195cm/s, T_CBOWRUN_2_CBOWRUNL 0.40s 281cm/s, T_CBOWRUNL_2_CBOWRUN 0.24s 22cm/s, T_CBOWWALK_2_CBOWWALKL 0.68s 125cm/s, T_CBOWWALKL_2_CBOWWALK 0.40s 176cm/s, T_CBOW_2_CBOWRUN 1.32s 10cm/s, T_CBOWRUN_2_CBOW 1.32s 10cm/s, T_RUN_2_CBOW 0.12s, T_CBOW_2_RUN 0.12s, T_MOVE_2_CBOWMOVE 1.52s, T_CBOWMOVE_2_MOVE 1.52s, S_CBOWSHOOT 0.04s loop, T_CBOWRELOAD 1.28s, T_CBOWRUNSTRAFEL 0.76s loop 368cm/s, T_CBOWRUNSTRAFER 0.76s loop 368cm/s, T_CBOWRUNTURNL 1.00s loop, T_CBOWRUNTURNR 1.00s loop, T_CBOWWALKTURNL 1.00s loop, T_CBOWWALKTURNR 1.00s loop, T_CBOWJUMPB 0.52s 268cm/s, S_MAGRUN 2.00s loop, S_MAGRUNL 0.80s loop 346cm/s, S_MAGWALK 2.00s loop, S_MAGWALKL 0.96s loop 142cm/s, T_MAGRUN_2_MAGRUNL 0.40s 290cm/s, T_MAGRUNL_2_MAGRUN 0.20s 28cm/s, T_MAGWALK_2_MAGWALKL 0.32s 136cm/s, T_MAGWALKL_2_MAGWALK 0.20s 38cm/s, T_MAG_2_MAGRUN 0.32s, T_MAGRUN_2_MAG 0.32s, T_RUN_2_MAG 0.32s, T_MAG_2_RUN 0.32s, T_MOVE_2_MAGMOVE 0.72s, T_MAGMOVE_2_MOVE 0.72s, T_CASTFAIL 1.32s, T_MAGRUNSTRAFEL 0.96s loop 160cm/s, T_MAGRUNSTRAFER 0.96s loop 159cm/s, T_MAGRUNTURNL 1.00s loop, T_MAGRUNTURNR 1.00s loop, T_MAGWALKTURNL 1.00s loop, T_MAGWALKTURNR 1.00s loop, T_MAGJUMPB 0.52s 156cm/s, T_MAGRUN_2_SLESHOOT 1.50s 5cm/s, S_SLESHOOT 0.04s loop, T_SLESHOOT_2_STAND 0.72s 10cm/s, T_MAGRUN_2_FIBCAST 0.12s, S_FIBCAST 2.10s loop, S_FIBSHOOT 0.04s loop, T_FIBSHOOT_2_STAND 0.60s 12cm/s, T_MAGRUN_2_TRFSHOOT 1.52s, S_TRFSHOOT 1.44s loop, T_TRFSHOOT_2_STAND 3.20s 8cm/s up 45cm, T_MAGRUN_2_FEASHOOT 1.52s 11cm/s, S_FEASHOOT 0.80s loop, T_FEASHOOT_2_STAND 0.56s 35cm/s, T_MAGRUN_2_HEASHOOT 1.40s 9cm/s up 20cm, S_HEASHOOT 10.60s loop, T_HEASHOOT_2_STAND 1.50s 10cm/s, T_MAGRUN_2_SUMSHOOT 1.12s, S_SUMSHOOT 1.00s loop, T_SUMSHOOT_2_STAND 1.70s, T_MAGRUN_2_WNDCAST 0.12s, S_WNDCAST 1.20s loop, S_WNDSHOOT 0.04s loop, T_WNDSHOOT_2_STAND 0.16s 82cm/s, T_MAGRUN_2_TELSHOOT 2.90s, S_TELSHOOT 0.04s loop, T_TELSHOOT_2_STAND 1.70s, T_MAGRUN_2_PYRSHOOT 0.80s, S_PYRSHOOT 0.44s loop, T_PYRSHOOT_2_STAND 0.24s, T_MAGRUN_2_CONSHOOT 0.72s 19cm/s, S_CONSHOOT 1.60s loop, T_CONSHOOT_2_STAND 0.32s 40cm/s, T_MAGRUN_2_FBTSHOOT 0.28s, S_FBTSHOOT 0.04s loop, T_FBTSHOOT_2_STAND 0.60s 12cm/s, T_MAGRUN_2_LINSHOOT 0.20s 116cm/s, S_LINSHOOT 2.90s loop, T_LINSHOOT_2_STAND 0.36s 63cm/s, T_MAGRUN_2_FRZSHOOT 1.00s 6cm/s, S_FRZSHOOT 3.00s loop, T_FRZSHOOT_2_STAND 0.88s 8cm/s, T_POTION_STAND_2_S0 1.70s 4cm/s, S_POTION_S0 0.04s loop, T_POTION_S0_2_STAND 5.10s, T_POTIONFAST_STAND_2_S0 0.16s, S_POTIONFAST_S0 0.04s loop, T_POTIONFAST_S0_2_STAND 1.28s, T_FOOD_STAND_2_S0 0.32s, S_FOOD_S0 0.04s loop, T_FOOD_S0_2_STAND 0.72s, T_FOODHUGE_STAND_2_S0 0.32s, S_FOODHUGE_S0 0.04s loop, T_FOODHUGE_S0_2_STAND 1.16s, T_MEAT_STAND_2_S0 0.32s, S_MEAT_S0 0.04s loop, T_MEAT_S0_2_STAND 1.12s, T_RICE_STAND_2_S0 0.32s, S_RICE_S0 0.04s loop, T_RICE_S0_2_STAND 1.92s, T_JOINT_STAND_2_S0 1.56s, S_JOINT_S0 0.04s loop, T_JOINT_S0_2_STAND 6.30s, C_STAND_2_IGET_1 0.32s 32cm/s, C_IGET_1 0.04s, C_IGET_2_STAND_1 0.32s 34cm/s up 34cm, T_CHESTBIG_STAND_2_S0 0.52s, S_CHESTBIG_S0 0.04s loop, T_CHESTBIG_S0_2_S1 1.16s, S_CHESTBIG_S1 0.04s loop, T_CHESTBIG_S1_2_S0 0.52s, T_CHESTBIG_S0_2_STAND 0.52s up 46cm, T_CHESTSMALL_STAND_2_S0 0.52s, S_CHESTSMALL_S0 0.04s loop, T_CHESTSMALL_S0_2_S1 1.16s, S_CHESTSMALL_S1 0.04s loop, T_CHESTSMALL_S1_2_S0 0.52s, T_CHESTSMALL_S0_2_STAND 0.52s up 46cm, T_STAND_2_JUMPUPLOW 0.12s 46cm/s, T_STAND_2_JUMPUPMID 0.32s, T_STAND_2_JUMPUP 0.36s 27cm/s, T_JUMP_2_HANG 0.68s 36cm/s up 112cm, T_STAND_2_HANG 1.00s 38cm/s, S_HANG 0.04s loop, T_HANG_2_STAND 1.00s 38cm/s up 168cm, T_JUMPUPLOW_2_STAND 0.32s 149cm/s up 26cm, T_JUMPUPMID_2_STAND 0.80s 72cm/s up 91cm, S_JUMPUPLOW 0.20s 100cm/s up 56cm, S_JUMPUPMID 0.12s 92cm/s up 37cm, S_JUMPUP 0.04s loop, T_SWIM_2_HANG 0.64s, C_STAND_2_IGET_2 0.32s, C_STAND_2_IGET_3 0.32s, C_IGET_2 0.04s, C_IGET_3 0.04s, C_IGET_2_STAND_2 0.32s, C_IGET_2_STAND_3 0.32s, T_CANNOTTAKE 1.20s, T_CHESTSMALL_S0_UNLOCK 1.16s, T_CHESTSMALL_S0_TRY 1.12s up 51cm, T_CHESTSMALL_S0_PICKLEFT 0.32s, T_CHESTBIG_S0_UNLOCK 1.16s, T_CHESTBIG_S0_TRY 1.12s up 59cm, T_CHESTBIG_S0_PICKLEFT 0.32s, T_LGUARD_CHANGELEG 1.90s, T_IGETYOU 2.30s, T_PLUNDER 2.90s, T_RUNL_2_JUMPUPLOW 0.20s 100cm/s up 56cm, T_RUNR_2_JUMPUPLOW 0.20s 100cm/s up 56cm, T_RUNL_2_JUMPUPMID 0.12s 92cm/s up 37cm, T_RUNR_2_JUMPUPMID 0.12s 92cm/s up 37cm, T_FALLDN_2_HANG 0.68s 36cm/s up 112cm, T_CHESTSMALL_S0_LOCK 1.16s, T_CHESTSMALL_S0_PICKRIGHT 0.32s, T_CHESTBIG_S0_LOCK 1.16s, T_CHESTBIG_S0_PICKRIGHT 0.32s, T_RUN_2_RUNL 0.44s 256cm/s, T_RUNL_2_RUN 0.24s 45cm/s, T_WALK_2_WALKL 0.32s 83cm/s, T_WALKL_2_WALK 0.20s 107cm/s, T_WALKBL_2_WALK 0.28s 147cm/s, T_RUN_2_SNEAK 0.40s 35cm/s, T_STAND_2_JUMP 0.92s 289cm/s up 44cm, T_JUMP_2_STAND 0.20s 136cm/s, T_RUNL_2_JUMP 0.72s 556cm/s up 36cm, T_FALLDN_2_STAND 0.40s 13cm/s, T_WALK_2_WALKWL 0.48s 116cm/s, T_WALKWL_2_WALK 0.40s 97cm/s, T_FISTRUN_2_FISTRUNL 0.40s 273cm/s, T_FISTRUNL_2_FISTRUN 0.24s 60cm/s, T_FISTWALK_2_FISTWALKL 0.32s 121cm/s, T_FISTWALKL_2_FISTWALK 0.24s 51cm/s, T_1HRUN_2_1HRUNL 0.40s 343cm/s, T_1HRUNL_2_1HRUN 0.24s 49cm/s, T_1HWALK_2_1HWALKL 0.56s 137cm/s, T_1HWALKL_2_1HWALK 0.40s 153cm/s, T_2HRUN_2_2HRUNL 0.40s 270cm/s, T_2HRUNL_2_2HRUN 0.24s 70cm/s, T_2HWALK_2_2HWALKL 0.68s 118cm/s, T_2HWALKL_2_2HWALK 0.40s 188cm/s, T_WALK_2_WALKBL 0.20s 107cm/s, T_SNEAK_2_RUN 0.40s 35cm/s up 20cm, T_FISTRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_MAGRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_1HRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_2HRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_BOWRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_CBOWRUNL_2_JUMP 0.72s 556cm/s up 36cm, S_FIST 0.04s loop, S_1H 0.04s loop, S_2H 0.04s loop, S_BOW 0.04s loop, S_CBOW 0.04s loop, S_MAG 0.04s loop
+blends: 56: T_RUN_2_WALK 0.20s, T_WALK_2_RUN 0.20s, T_WALK_2_SNEAK 0.20s, T_SNEAK_2_WALK 0.20s, T_RUNL_2_WALKL 0.20s, T_WALKL_2_RUNL 0.20s, T_SNEAKL_2_RUNL 0.20s, T_RUNL_2_SNEAKL 0.20s, T_WALKL_2_SNEAKL 0.20s, T_SNEAKL_2_WALKL 0.20s, T_JUMP_2_RUNL 0.20s, T_JUMP_2_FALLDN 0.20s, T_FALLDN_2_RUNL 0.20s, T_FALLDN_2_FALL 0.50s, T_SNEAKL_2_WALKWL 0.20s, T_WALKWL_2_SNEAKL 0.20s, T_WALKL_2_WALKWL 0.20s, T_WALKWL_2_WALKL 0.20s, T_RUNL_2_WALKWL 0.20s, T_WALKWL_2_RUNL 0.20s, T_WALKWL_2_SWIMF 0.20s, T_SWIMF_2_WALKWL 0.40s, T_SWIM_2_SWIMF 0.30s, T_SWIMF_2_SWIM 0.50s, T_SWIM_2_SWIMB 0.30s, T_SWIMB_2_SWIM 0.30s, T_FISTRUN_2_FISTWALK 0.10s, T_FISTWALK_2_FISTRUN 0.10s, T_FISTRUNL_2_FISTWALKL 0.20s, T_FISTWALKL_2_FISTRUNL 0.20s, T_JUMP_2_FISTRUNL 0.20s, T_MAGRUN_2_MAGWALK 0.10s, T_MAGWALK_2_MAGRUN 0.10s, T_MAGRUNL_2_MAGWALKL 0.20s, T_MAGWALKL_2_MAGRUNL 0.20s, T_JUMP_2_MAGRUNL 0.20s, T_1HRUN_2_1HWALK 0.20s, T_1HWALK_2_1HRUN 0.20s, T_1HRUNL_2_1HWALKL 0.20s, T_1HWALKL_2_1HRUNL 0.20s, T_JUMP_2_1HRUNL 0.20s, T_2HRUN_2_2HWALK 0.20s, T_2HWALK_2_2HRUN 0.20s, T_2HRUNL_2_2HWALKL 0.20s, T_2HWALKL_2_2HRUNL 0.20s, T_JUMP_2_2HRUNL 0.20s, T_BOWRUN_2_BOWWALK 0.20s, T_BOWWALK_2_BOWRUN 0.20s, T_BOWRUNL_2_BOWWALKL 0.20s, T_BOWWALKL_2_BOWRUNL 0.20s, T_JUMP_2_BOWRUNL 0.20s, T_CBOWRUN_2_CBOWWALK 0.00s, T_CBOWWALK_2_CBOWRUN 0.00s, T_CBOWRUNL_2_CBOWWALKL 0.20s, T_CBOWWALKL_2_CBOWRUNL 0.20s, T_JUMP_2_CBOWRUNL 0.20s
+== scripts ==
+scripts: GOTHIC.DAT: 36106 symbols, 8899 functions and instances (2830 instances), 291 externals, 180 states, 9 classes with 291 members, 1086 KB of code, 409 KB of text; image 2.32 MB
+scripts: 66 of 291 class members are laid out differently than the file says (harmless)
+fight AI: 333 tables for 29 of 30 tactics (FIGHT.DAT)
+script/sfx: SFX.DAT, 113424 bytes
+sounds: 1208 C_SFX instances name 873 files; 744 baked (66.1 MB at up to 22050 Hz); 127 are not in the game's files: ambientscream_03_dark.wav bird_10.wav bird_11.wav bird_11b.wav bird_11c.wav bird_12.wav; 2 could not be used: [CS_Inextremo.wav: too long for an effect (180 s)] [murmor_loop.wav: too long for an effect (137 s)]
+barrier: sound instances named like it: MFX_BARRIERE_AMBIENT, ROPEWAY_BARRIER
+script/music: MUSIC.DAT, 10780 bytes
+music: 113 C_MUSICTHEME instances name 23 tracks; 22 baked (244.9 MB at up to 44100 Hz); 1 have no WAV in the folder: cam_ngt_thr.sgt
+the player's character: humans, body hum_body_naked0 (texture 4, skin 1), head hum_head_pony (texture 9)
+world 'world': STARTUP_WORLD puts 1030 characters into it (394 with a daily routine, 636 without), 11 items
+WARNING: 2 of them stand at places the world does not have (not drawn): OW_MONSTER_NAVIGATE02
+world 'orctempel': STARTUP_ORCTEMPEL puts 87 characters into it (32 with a daily routine, 55 without), 0 items
+world 'oldmine': STARTUP_OLDMINE puts 95 characters into it (63 with a daily routine, 32 without), 0 items
+world 'orcgraveyard': STARTUP_ORCGRAVEYARD puts 24 characters into it (5 with a daily routine, 19 without), 0 items
+world 'freemine': STARTUP_FREEMINE puts 39 characters into it (28 with a daily routine, 11 without), 0 items
+start-up ran 406555 instructions; 0 complaints, 0 calls given up, 14 uses of members of no object
+where: a member was used without an object in PRINTDEBUGNPC x7; a member was used without an object in CONCATSTRINGS x7
+engine functions the start-up called that do nothing yet: 7, called 1815 times: WLD_SETOBJECTROUTINE x792, NPC_SETTALENTSKILL x670, WLD_ASSIGNROOMTOGUILD x324, WLD_SETMOBROUTINE x21, NPC_PERCENABLE x6, SND_PLAY x1, PLAYVIDEO x1
+life: the scripts have 180 states; the people of these worlds are put into 63: ZS_MM_ALLSCHEDULER x682, ZS_SLEEP x194, ZS_SMALLTALK x97, ZS_GUARD x93, ZS_STANDAROUND x65, ZS_SITAROUND x63, ZS_SITCAMPFIRE x52, ZS_PICKORE x47, ZS_GUARDPALISADE x33, ZS_GUARDPASSAGE x27, ZS_PICKRICE x25, ZS_BOSS x24, ZS_STAND x15, ZS_WASHSELF x14, ZS_HOSTILEGUARD x13, ZS_PRACTICESWORD x12, ZS_SMOKE x11, ZS_OTMEDITATE x11, ZS_ORC_EATANDDRINK x10, ZS_ROASTSCAVENGER x10, ...
+life: the states call 146 engine functions, 119 of which the engine carries out; the others do nothing yet, by the number of states that call them: AI_UNREADYSPELL x14, NPC_HASSPELL x10, AI_READYSPELL x10, NPC_HASRANGEDWEAPONWITHAMMO x8, NPC_HASNEWS x8, NPC_OWNEDBYNPC x6, NPC_HASBODYFLAG x6, NPC_ISWAYBLOCKED x5, MDL_APPLYRANDOMANIFREQ x4, MDL_APPLYRANDOMANI x4, SND_PLAY x4, AI_WAITMS x4, WLD_GETPLAYERPORTALGUILD x2, WLD_DETECTNPCEX x2, NPC_GETNEWSVICTIM x2, NPC_MEMORYENTRY x2, WLD_PLAYEFFECT x1, MDL_STARTFACEANI x1, MDL_REMOVEOVERLAYMDS x1, AI_SHOOTAT x1, AI_AIMAT x1, AI_LOOKAT x1, NPC_PLAYANI x1, NPC_SETTRUEGUILD x1, NPC_GETGUILDATTITUDE x1, NPC_DELETENEWS x1, NPC_GETNEWSOFFENDER x1
+dialogue: 1538 infos of 200 characters (275 important, 732 permanent); the 3979 functions they run call 163 engine functions, 126 of which the engine carries out; the others do nothing yet: PLAYVIDEO, NPC_MEMORYENTRY, NPC_HASNEWS, NPC_GETNEWSOFFENDER, NPC_GETNEWSVICTIM, NPC_DELETENEWS, NPC_ISINROUTINE, AI_WAITMS, AI_WAITTILLEND, NPC_HASRANGEDWEAPONWITHAMMO, NPC_SETTRUEGUILD, NPC_HASBODYFLAG, NPC_ISDETECTEDMOBOWNEDBYNPC, NPC_ISDETECTEDMOBOWNEDBYGUILD, NPC_GETTALENTSKILL, NPC_SETTALENTSKILL, AI_POINTAT, AI_READYSPELL, AI_UNREADYSPELL, NPC_HASSPELL, NPC_REFUSETALK, NPC_SETREFUSETALK, SND_PLAY, SND_ISSOURCENPC, NPC_CANSEESOURCE, MDL_APPLYRANDOMANI, MDL_APPLYRANDOMANIFREQ, MDL_STARTFACEANI, WLD_GETDAY, WLD_SETOBJECTROUTINE, WLD_SENDTRIGGER, WLD_SENDUNTRIGGER, NPC_OWNEDBYNPC, TA_BEGINOVERLAY, TA_ENDOVERLAY, WLD_GETPLAYERPORTALGUILD, WLD_GETFORMERPLAYERPORTALGUILD
+things to use: the worlds have 46 kinds; the scripts name 35 of them: BABEBED x1, BARBQ x12, BATHTUB x1, BED x98, BEDHIGH x32, BEDLOW x115, BELLOW x2, BENCH x76, BOOK x16, BSANVIL x5, BSCOOL x10, BSFIRE x4, BSSHARP x8, CAULDRON x16, CHAIR x213, DOOR x42, FIREPLACE x244, HERB x8, LAB x9, LEVER x3, MCELLO x1, MDRUMSCHEIT x1, MHARP x1, MLUTE x1, MPIPE x3, ORE x133, PAN x8, PAUKE x1, REPAIR x29, SMOKE x14, STOMPER x4, STONEMILL x1, THRONE x2, VWHEEL x14, WASH x2; not named: BARRELO, CHESTBIG, CHESTSMALL, EXCALIBUR, ORCDRUM, PC, PILLAR, PRIESTGRAVE, SPORTAL, TOUCHPLATE, TURNSWITCH
+things in the hands: the scripts' items are used in 14 ways (BRUSH, COOLAIR, FIRESPIT, FOOD, FOODHUGE, HORN, JOINT, LUTE, MAP, MAPSEALED, MEAT, POTION, POTIONFAST, RICE); their animations are asked of every skeleton
+inhabitants: 1276 characters with 354 different looks; models for 354 of them (1275 characters): 22 skeletons with 1468 animations, 136 bodies, 288 heads; 175694 triangles, 268 textures, 4.32 MB of models, 15.26 MB of animations and 1.85 MB of textures
+animations: the scripts name or imply 154, and using the things they name takes 70 families more; fighting 101 more; baked per skeleton: humans 522, babe 83, waran 43, zombie 34, scavenger 49, lurker 48, wolf 50, meatbug 25, orc 183, crawler 40, golem 40, swampshark 28, shadow 52, snapper 48, gobbo 47, bloodfly 30, molerat 46, harpie 23, troll 36, demon 28, crwqueen 8, sleeper 5
+things to use: what humans has for 30 kinds of them:
+  BARBQ: T_BARBQ_STAND_2_S0 0.12s ->S_BARBQ_S0 root +0 +0 +0 M (carries), S_BARBQ_S0 0.03s loop root held at -0 98 9 M, T_BARBQ_S0_2_S1 0.36s ->S_BARBQ_S1 root +0 +0 +13 M (carries), S_BARBQ_S1 5.40s loop root held at -0 98 23 M, T_BARBQ_S0_2_STAND 0.12s root +0 +0 -0 M (carries), T_BARBQ_S1_2_S0 0.36s ->S_BARBQ_S0 root +0 +0 -13 M (carries)
+  BED: T_BED_FRONT_STAND_2_S0 0.20s ->S_BED_FRONT_S0 root +4 -0 +3 turns -16 M (carries), S_BED_FRONT_S0 0.04s loop root held at 7 96 -71 M, T_BED_FRONT_S0_2_S1 2.10s ->S_BED_FRONT_S1 root -8 -29 +67 M (carries), S_BED_FRONT_S1 1.56s loop no root (keeps the step's before), T_BED_BACK_STAND_2_S0 0.20s ->S_BED_BACK_S0 root -4 -0 +3 turns +16 M (carries), S_BED_BACK_S0 0.04s loop root held at -7 96 7 M, T_BED_BACK_S0_2_S1 2.08s ->S_BED_BACK_S1 root +8 -27 +67 M (carries), S_BED_BACK_S1 1.56s loop no root (keeps the step's before), T_BED_FRONT_S0_2_STAND 0.20s root -4 +0 -3 turns +16 M (carries), T_BED_FRONT_S1_2_S0 2.10s ->S_BED_FRONT_S0 root +8 +29 -67 M (carries), T_BED_BACK_S0_2_STAND 0.20s root +4 +0 -3 turns -16 M (carries), T_BED_BACK_S1_2_S0 2.08s ->S_BED_BACK_S0 root -8 +27 -67 M (carries)
+  BEDHIGH: T_BEDHIGH_FRONT_STAND_2_S0 0.20s ->S_BEDHIGH_FRONT_S0 root +4 -0 +3 turns -16 M (carries), S_BEDHIGH_FRONT_S0 0.04s loop root held at 7 96 -71 M, T_BEDHIGH_FRONT_S0_2_S1 2.10s ->S_BEDHIGH_FRONT_S1 root -8 -29 +67 M (carries), S_BEDHIGH_FRONT_S1 1.56s loop no root (keeps the step's before), T_BEDHIGH_BACK_STAND_2_S0 0.20s ->S_BEDHIGH_BACK_S0 root +4 -0 +3 turns -16 M (carries), S_BEDHIGH_BACK_S0 0.04s loop root held at 7 96 -71 M, T_BEDHIGH_BACK_S0_2_S1 2.10s ->S_BEDHIGH_BACK_S1 root -8 -29 +67 M (carries), S_BEDHIGH_BACK_S1 1.56s loop no root (keeps the step's before), T_BEDHIGH_FRONT_S0_2_STAND 0.20s root -4 +0 -3 turns +16 M (carries), T_BEDHIGH_FRONT_S1_2_S0 2.10s ->S_BEDHIGH_FRONT_S0 root +8 +29 -67 M (carries), T_BEDHIGH_BACK_S0_2_STAND 0.20s root -4 +0 -3 turns +16 M (carries), T_BEDHIGH_BACK_S1_2_S0 2.10s ->S_BEDHIGH_BACK_S0 root +8 +29 -67 M (carries)
+  BEDLOW: T_BEDLOW_FRONT_STAND_2_S0 0.08s ->S_BEDLOW_FRONT_S0 root +1 +1 +3 M (carries), S_BEDLOW_FRONT_S0 0.04s loop root held at 4 99 -85 M, T_BEDLOW_FRONT_S0_2_S1 3.10s ->S_BEDLOW_FRONT_S1 root -7 -68 +66 M (carries), S_BEDLOW_FRONT_S1 1.56s loop root held at -2 32 -16 M, T_BEDLOW_FRONT_S1_2_S0 2.50s ->S_BEDLOW_FRONT_S0 root +2 +66 +38 M (carries), T_BEDLOW_BACK_STAND_2_S0 0.08s ->S_BEDLOW_BACK_S0 root +1 +1 +3 M (carries), S_BEDLOW_BACK_S0 0.04s loop root held at 4 99 -85 M, T_BEDLOW_BACK_S0_2_S1 3.10s ->S_BEDLOW_BACK_S1 root -7 -68 +66 M (carries), S_BEDLOW_BACK_S1 1.56s loop root held at -2 32 -16 M, T_BEDLOW_BACK_S1_2_S0 2.50s ->S_BEDLOW_BACK_S0 root +2 +66 +38 M (carries), T_BEDLOW_FRONT_S0_2_STAND 0.08s root -1 -1 -3 M (carries), T_BEDLOW_BACK_S0_2_STAND 0.08s root -1 -1 -3 M (carries)
+  BELLOW: T_BELLOW_STAND_2_S0 0.60s ->S_BELLOW_S0 root +1 -5 -7 turns -5 M (carries), S_BELLOW_S0 0.04s loop root held at -50 91 -107 M, T_BELLOW_S0_2_S1 2.60s ->S_BELLOW_S1 root +0 +2 -2 M (carries), S_BELLOW_S1 0.04s loop root held at -50 91 -107 M, T_BELLOW_S0_2_STAND 0.60s root -1 +5 +7 turns +5 M (carries), T_BELLOW_S1_2_S0 2.60s ->S_BELLOW_S0 root +0 +2 -2 M (carries), T_BELLOW_STAND_2_S1 0.60s ->S_BELLOW_S1 root +1 -5 -7 turns -5 M (carries), T_BELLOW_S1_2_STAND 0.60s root -1 +5 +7 turns +5 M (carries)
+  BENCH: R_BENCH_RANDOM_1 1.80s no root (keeps the step's before), R_BENCH_RANDOM_2 2.20s no root (keeps the step's before), R_BENCH_RANDOM_3 3.00s no root (keeps the step's before), R_BENCH_RANDOM_4 2.00s no root (keeps the step's before), T_BENCH_STAND_2_S0 0.20s ->S_BENCH_S0 root -0 +0 -1 M (carries), S_BENCH_S0 0.04s loop root held at -0 97 -75 M, T_BENCH_S0_2_S1 1.36s ->S_BENCH_S1 root -2 -33 +72 turns -173 M (carries), S_BENCH_S1 1.60s loop no root (keeps the step's before), T_BENCH_S0_2_STAND 0.20s root +0 -0 +1 M (carries), T_BENCH_S1_2_S0 1.36s ->S_BENCH_S0 root +2 +33 -72 turns +173 M (carries)
+  BOOK: T_BOOK_STAND_2_S0 0.44s ->S_BOOK_S0 root +0 -1 +4 M (carries), S_BOOK_S0 0.04s loop root held at -0 96 3 M, T_BOOK_S0_2_S1 2.00s ->S_BOOK_S1 root +0 +0 -0 M (carries), S_BOOK_S1 7.40s loop root held at -0 96 3 M, T_BOOK_S0_2_STAND 0.44s root +0 +1 -4 M (carries), T_BOOK_S1_2_S0 2.00s ->S_BOOK_S0 root -0 +0 +0 M (carries)
+  BSANVIL: T_BSANVIL_STAND_2_S0 0.12s ->S_BSANVIL_S0 root +0 +0 +0 M (carries), S_BSANVIL_S0 0.04s loop root held at -0 98 7 M, T_BSANVIL_S0_2_STAND 0.12s root +0 -0 +0 M (carries), T_BSANVIL_S0_2_S1 0.24s ->S_BSANVIL_S1 root +0 -4 -5 turns +22 M (carries), S_BSANVIL_S1 1.52s loop root held at 0 93 0 M, T_BSANVIL_S1_2_S0 0.24s ->S_BSANVIL_S0 root -0 +4 +5 turns -22 M (carries)
+  BSCOOL: T_BSCOOL_STAND_2_S0 0.12s ->S_BSCOOL_S0 root +0 +0 +1 M (carries), S_BSCOOL_S0 0.04s loop root held at -0 98 7 M, T_BSCOOL_S0_2_STAND 0.12s root +0 +0 +1 M (carries), T_BSCOOL_S0_2_S1 0.24s ->S_BSCOOL_S1 root -5 -8 -9 turns +8 M (carries), S_BSCOOL_S1 1.64s loop root held at -6 88 -4 M, T_BSCOOL_S1_2_S0 0.24s ->S_BSCOOL_S0 root +5 +8 +9 turns -8 M (carries)
+  BSFIRE: T_BSFIRE_STAND_2_S0 0.12s ->S_BSFIRE_S0 root -0 -0 -1 M (carries), S_BSFIRE_S0 0.04s loop root held at -0 98 7 M, T_BSFIRE_S0_2_STAND 0.12s root +0 +0 +1 M (carries), T_BSFIRE_S0_2_S1 1.36s ->S_BSFIRE_S1 root -4 +1 +45 turns +6 M (carries), S_BSFIRE_S1 2.48s loop root held at -4 99 54 M, T_BSFIRE_S1_2_S0 1.36s ->S_BSFIRE_S0 root +4 -1 -45 turns -6 M (carries)
+  BSSHARP: T_BSSHARP_STAND_2_S0 0.12s ->S_BSSHARP_S0 root -0 +0 +0 M (carries), S_BSSHARP_S0 0.04s loop root held at -0 98 7 M, T_BSSHARP_S0_2_STAND 0.12s root +0 -0 +0 M (carries), T_BSSHARP_S0_2_S1 0.44s ->S_BSSHARP_S1 root +11 -4 +0 turns -16 M (carries), S_BSSHARP_S1 2.64s loop root held at 12 93 7 M, T_BSSHARP_S1_2_S0 0.44s ->S_BSSHARP_S0 root -11 +4 +0 turns +16 M (carries)
+  CAULDRON: T_CAULDRON_STAND_2_S0 1.20s ->S_CAULDRON_S0 root +0 -3 -0 M (carries), S_CAULDRON_S0 0.04s loop root held at -0 94 -0 M, T_CAULDRON_S0_2_STAND 1.20s root +0 +3 +0 M (carries), T_CAULDRON_S0_2_S1 2.10s ->S_CAULDRON_S1 root -0 +0 -3 M (carries), S_CAULDRON_S1 1.60s loop root held at -0 94 -0 M, T_CAULDRON_S1_2_S0 1.60s ->S_CAULDRON_S0 root +0 +0 +1 M (carries)
+  CHAIR: R_CHAIR_RANDOM_1 1.80s no root (keeps the step's before), R_CHAIR_RANDOM_2 2.20s no root (keeps the step's before), R_CHAIR_RANDOM_3 3.00s no root (keeps the step's before), R_CHAIR_RANDOM_4 2.00s no root (keeps the step's before), T_CHAIR_STAND_2_S0 0.20s ->S_CHAIR_S0 root +1 +0 +0 M (carries), S_CHAIR_S0 0.04s loop root held at -0 97 -75 M, T_CHAIR_S0_2_S1 1.40s ->S_CHAIR_S1 root -2 -33 +80 turns +5 M (carries), S_CHAIR_S1 1.60s loop root held at -3 63 1 M, T_CHAIR_S0_2_STAND 0.20s root -1 -0 -0 M (carries), T_CHAIR_S1_2_S0 1.40s ->S_CHAIR_S0 root +2 +33 -80 turns -5 M (carries)
+  DOOR: T_DOOR_FRONT_STAND_2_S0 0.16s ->S_DOOR_FRONT_S0 root +3 +0 +0 M (carries), S_DOOR_FRONT_S0 0.04s loop root held at 4 98 7 M, T_DOOR_FRONT_S0_2_S1 0.96s ->S_DOOR_FRONT_S1 root -2 -0 +1 M (carries), S_DOOR_FRONT_S1 0.04s loop root held at -0 98 7 M, T_DOOR_FRONT_S1_2_S0 1.16s ->S_DOOR_FRONT_S0 root +5 -3 -1 M (carries), T_DOOR_FRONT_S1_2_STAND 0.12s root +2 -1 +2 turns -6 M (carries), T_DOOR_FRONT_S0_UNLOCK 0.20s ->S_DOOR_FRONT_S0 root -15 -2 +0 turns +16 M (carries), T_DOOR_FRONT_S0_TRY 0.20s root +4 +0 +0 M (carries), T_DOOR_FRONT_S0_PICKLEFT 0.20s ->S_DOOR_FRONT_S0 root +3 -0 +0 M (carries), T_DOOR_FRONT_S0_PICKRIGHT 0.20s ->S_DOOR_FRONT_S0 root -3 +0 +0 M (carries), T_DOOR_BACK_STAND_2_S0 0.16s ->S_DOOR_BACK_S0 root -2 +0 -0 M (carries), S_DOOR_BACK_S0 0.04s loop root held at -4 98 7 M, T_DOOR_BACK_S0_2_S1 0.96s ->S_DOOR_BACK_S1 root +7 +1 -4 M (carries), S_DOOR_BACK_S1 0.04s loop root held at -0 98 7 M, T_DOOR_BACK_S1_2_S0 1.16s ->S_DOOR_BACK_S0 root +8 +4 -7 turns +9 M (carries), T_DOOR_BACK_S1_2_STAND 0.12s root +18 +9 -18 turns +15 M (carries), T_DOOR_BACK_S0_UNLOCK 0.20s ->S_DOOR_BACK_S0 root +0 -0 +2 turns -6 M (carries), T_DOOR_BACK_S0_TRY 0.20s root +3 -0 +0 M (carries), T_DOOR_BACK_S0_PICKLEFT 0.20s ->S_DOOR_BACK_S0 root -2 -0 +0 M (carries), T_DOOR_BACK_S0_PICKRIGHT 0.20s ->S_DOOR_BACK_S0 root +2 +0 -0 M (carries), T_DOOR_FRONT_S0_2_STAND 0.16s root -3 -0 +0 M (carries), T_DOOR_FRONT_STAND_2_S1 0.12s ->S_DOOR_FRONT_S1 root -2 +1 -2 turns +6 M (carries), T_DOOR_FRONT_S0_LOCK 0.20s ->S_DOOR_FRONT_S0 root -15 -2 +0 turns +16 M (carries), T_DOOR_BACK_S0_2_STAND 0.16s root +2 -0 +0 M (carries), T_DOOR_BACK_STAND_2_S1 0.12s ->S_DOOR_BACK_S1 root -18 -9 +18 turns -15 M (carries), T_DOOR_BACK_S0_LOCK 0.20s ->S_DOOR_BACK_S0 root +0 -0 +2 turns -6 M (carries)
+  HERB: T_HERB_STAND_2_S0 2.40s ->S_HERB_S0 root -42 -40 +93 turns -55 M (carries), S_HERB_S0 0.04s loop root held at -42 59 100 M, T_HERB_S0_2_STAND 2.40s root +42 +40 -93 turns +55 M (carries), T_HERB_S0_2_S1 2.90s ->S_HERB_S1 root -2 +0 +1 M (carries), S_HERB_S1 1.30s loop root held at -45 59 101 M, T_HERB_S1_2_S0 2.40s ->S_HERB_S0 root +3 -0 -2 M (carries)
+  LAB: T_LAB_STAND_2_S0 0.12s ->S_LAB_S0 root -1 -1 +0 M (carries), S_LAB_S0 0.04s loop root held at 32 96 328 M, T_LAB_S0_2_STAND 0.12s root +1 +1 -0 M (carries), T_LAB_S0_2_S1 0.16s ->S_LAB_S1 root +2 +2 -0 M (carries), T_LAB_S1_2_S0 0.12s ->S_LAB_S0 root -1 -1 +0 M (carries), S_LAB_S1 14.80s loop root held at 34 97 328 M
+  LEVER: T_LEVER_STAND_2_S0 0.36s ->S_LEVER_S0 root +0 -0 -2 M (carries), S_LEVER_S0 0.04s loop root held at -0 97 -3 M, S_LEVER_S1 0.04s loop root held at -0 97 -3 M, T_LEVER_S1_2_STAND 0.36s root +0 -0 +3 M (carries), T_LEVER_S0_2_S1 1.16s ->S_LEVER_S1 root +0 -0 +0 M (carries), T_LEVER_S0_2_STAND 0.36s root -0 +0 +2 M (carries), T_LEVER_STAND_2_S1 0.36s ->S_LEVER_S1 root +0 +0 -3 M (carries), T_LEVER_S1_2_S0 1.16s ->S_LEVER_S0 root +0 +0 -0 M (carries)
+  MCELLO: T_MCELLO_STAND_2_S0 0.52s ->S_MCELLO_S0 root +31 -55 -66 turns +43 M (carries), S_MCELLO_S0 0.04s loop root held at 31 42 -66 M, T_MCELLO_S0_2_STAND 0.52s root -31 +55 +66 turns -43 M (carries), T_MCELLO_S0_2_S1 0.16s ->S_MCELLO_S1 root -1 -0 +2 M (carries), S_MCELLO_S1 0.04s loop root held at 31 42 -66 M, T_MCELLO_S1_2_S0 0.16s ->S_MCELLO_S0 root +1 +0 -2 M (carries), T_MCELLO_S1_2_S2 4.60s ->S_MCELLO_S2 root +1 -1 -2 M (carries), S_MCELLO_S2 0.04s loop root held at 31 42 -66 M, T_MCELLO_S2_2_S3 2.24s ->S_MCELLO_S3 root +0 -0 +0 M (carries), S_MCELLO_S3 0.04s loop root held at 31 42 -66 M, T_MCELLO_S2_2_S1 4.60s ->S_MCELLO_S1 root +1 -1 -2 M (carries), T_MCELLO_S3_2_S2 2.24s ->S_MCELLO_S2 root +0 -0 +0 M (carries)
+  MDRUMSCHEIT: T_MDRUMSCHEIT_STAND_2_S0 0.52s ->S_MDRUMSCHEIT_S0 root +14 -2 -8 turns +29 M (carries), S_MDRUMSCHEIT_S0 0.04s loop root held at 14 95 -8 M, T_MDRUMSCHEIT_S0_2_STAND 0.52s root -14 +2 +8 turns -29 M (carries), T_MDRUMSCHEIT_S0_2_S1 0.16s ->S_MDRUMSCHEIT_S1 root +4 -2 +2 M (carries), S_MDRUMSCHEIT_S1 0.04s loop root held at 14 95 -8 M, T_MDRUMSCHEIT_S1_2_S0 0.16s ->S_MDRUMSCHEIT_S0 root -4 +2 -2 M (carries), T_MDRUMSCHEIT_S1_2_S2 4.60s ->S_MDRUMSCHEIT_S2 root +1 -0 -2 M (carries), S_MDRUMSCHEIT_S2 0.04s loop root held at 14 95 -8 M, T_MDRUMSCHEIT_S2_2_S3 4.60s ->S_MDRUMSCHEIT_S3 root +0 -0 -2 M (carries), S_MDRUMSCHEIT_S3 0.04s loop root held at 14 95 -8 M, T_MDRUMSCHEIT_S2_2_S1 4.60s ->S_MDRUMSCHEIT_S1 root +1 -0 -2 M (carries), T_MDRUMSCHEIT_S3_2_S2 4.60s ->S_MDRUMSCHEIT_S2 root +0 -0 -2 M (carries)
+  MHARP: T_MHARP_STAND_2_S0 0.52s ->S_MHARP_S0 root +3 -10 +45 turns +14 M (carries), S_MHARP_S0 0.04s loop root held at 3 87 52 M, T_MHARP_S0_2_STAND 0.60s root -3 +10 -45 turns -14 M (carries), T_MHARP_S0_2_S1 0.16s ->S_MHARP_S1 root +4 +2 +3 M (carries), S_MHARP_S1 0.04s loop root held at 3 87 52 M, T_MHARP_S1_2_S0 0.16s ->S_MHARP_S0 root -4 -2 -3 M (carries), T_MHARP_S1_2_S2 9.10s ->S_MHARP_S2 root -0 -0 +2 M (carries), S_MHARP_S2 0.04s loop root held at 3 88 52 M, T_MHARP_S2_2_S3 6.80s ->S_MHARP_S3 root -2 +1 +1 M (carries), S_MHARP_S3 0.04s loop root held at -2 87 50 M, T_MHARP_S3_2_S4 9.10s ->S_MHARP_S4 root +2 -2 -0 M (carries), S_MHARP_S4 0.04s loop root held at 20 87 71 M, T_MHARP_S4_2_S5 6.80s ->S_MHARP_S5 root +1 +1 -5 turns -14 M (carries), S_MHARP_S5 0.04s loop root held at 30 81 75 M, T_MHARP_S2_2_S1 9.10s ->S_MHARP_S1 root -0 -0 +2 M (carries), T_MHARP_S3_2_S2 6.80s ->S_MHARP_S2 root -2 +1 +1 M (carries), T_MHARP_S4_2_S3 9.10s ->S_MHARP_S3 root +2 -2 -0 M (carries), T_MHARP_S5_2_S4 6.80s ->S_MHARP_S4 root +1 +1 -5 turns -14 M (carries)
+  MLUTE: T_MLUTE_STAND_2_S0 0.60s ->S_MLUTE_S0 root -3 -7 +52 M (carries), S_MLUTE_S0 0.04s loop root held at -3 91 60 M, T_MLUTE_S0_2_STAND 0.60s root +3 +7 -52 M (carries), T_MLUTE_S0_2_S1 0.16s ->S_MLUTE_S1 root +2 -0 +3 M (carries), S_MLUTE_S1 0.04s loop root held at -3 91 60 M, T_MLUTE_S1_2_S0 0.16s ->S_MLUTE_S0 root -2 +0 -3 M (carries), T_MLUTE_S1_2_S2 4.60s ->S_MLUTE_S2 root -1 +0 +1 M (carries), S_MLUTE_S2 0.04s loop root held at -3 91 60 M, T_MLUTE_S2_2_S3 9.10s ->S_MLUTE_S3 root +0 +1 -0 M (carries), S_MLUTE_S3 0.04s loop root held at -12 92 42 M, T_MLUTE_S2_2_S1 4.60s ->S_MLUTE_S1 root -1 +0 +1 M (carries), T_MLUTE_S3_2_S2 9.10s ->S_MLUTE_S2 root +0 +1 -0 M (carries)
+  MPIPE: T_MPIPE_STAND_2_S0 0.52s ->S_MPIPE_S0 root +16 -4 +37 turns +9 M (carries), S_MPIPE_S0 0.04s loop root held at 35 92 31 M, T_MPIPE_S0_2_STAND 0.52s root -16 +4 -37 turns -9 M (carries), T_MPIPE_S0_2_S1 0.16s ->S_MPIPE_S1 root +6 +1 -4 M (carries), S_MPIPE_S1 0.04s loop root held at 35 92 31 M, T_MPIPE_S1_2_S0 0.16s ->S_MPIPE_S0 root -6 -1 +4 M (carries), T_MPIPE_S1_2_S2 9.10s ->S_MPIPE_S2 root -18 +2 +14 M (carries), S_MPIPE_S2 0.04s loop root held at 16 94 44 M, T_MPIPE_S2_2_S3 9.10s ->S_MPIPE_S3 root -1 +1 +1 M (carries), S_MPIPE_S3 0.04s loop root held at 22 90 40 M, T_MPIPE_S3_2_S4 2.24s ->S_MPIPE_S4 root -1 -1 +1 M (carries), S_MPIPE_S4 0.04s loop root held at -8 79 23 M, T_MPIPE_S4_2_S5 4.60s ->S_MPIPE_S5 root -0 -0 -1 M (carries), S_MPIPE_S5 0.04s loop root held at 25 95 40 M, T_MPIPE_S5_2_S6 4.60s ->S_MPIPE_S6 root -26 +2 +23 M (carries), S_MPIPE_S6 0.04s loop root held at -0 96 63 M, T_MPIPE_S6_2_S7 2.30s ->S_MPIPE_S7 root -1 +2 +1 M (carries), S_MPIPE_S7 0.04s loop root held at -7 96 64 M, T_MPIPE_S7_2_S8 4.60s ->S_MPIPE_S8 root +22 +0 +9 M (carries), S_MPIPE_S8 0.04s loop root held at 35 95 29 M, T_MPIPE_S2_2_S1 9.10s ->S_MPIPE_S1 root +18 -2 -14 M (carries), T_MPIPE_S3_2_S2 9.10s ->S_MPIPE_S2 root -1 +1 +1 M (carries), T_MPIPE_S4_2_S3 2.24s ->S_MPIPE_S3 root +1 +1 -1 M (carries), T_MPIPE_S5_2_S4 4.60s ->S_MPIPE_S4 root +0 +0 +1 M (carries), T_MPIPE_S6_2_S5 4.60s ->S_MPIPE_S5 root +26 -2 -23 M (carries), T_MPIPE_S7_2_S6 2.30s ->S_MPIPE_S6 root +1 -2 -1 M (carries), T_MPIPE_S8_2_S7 4.60s ->S_MPIPE_S7 root -22 -0 -9 M (carries)
+  ORE: T_ORE_STAND_2_S0 0.20s ->S_ORE_S0 root +0 +0 +7 turns -16 M (carries), S_ORE_S0 0.04s loop root held at -0 97 16 M, T_ORE_S0_2_STAND 0.20s root +0 +0 +7 turns -16 M (carries)
+  PAN: T_PAN_STAND_2_S0 1.00s ->S_PAN_S0 root +0 -58 +16 M (carries), S_PAN_S0 0.04s loop root held at 0 39 23 M, T_PAN_S0_2_S1 0.36s ->S_PAN_S1 root -0 +0 -0 M (carries), S_PAN_S1 2.00s loop root held at 0 39 23 M, T_PAN_S1_2_S0 0.36s ->S_PAN_S0 root +0 -0 +0 M (carries), T_PAN_S0_2_STAND 1.00s root -0 +58 -16 M (carries)
+  PAUKE: T_PAUKE_STAND_2_S0 0.16s ->S_PAUKE_S0 root -0 -0 +0 M (carries), S_PAUKE_S0 0.04s loop root held at 7 99 15 M, T_PAUKE_S0_2_STAND 0.16s root +0 +0 -0 M (carries), T_PAUKE_S0_2_S1 2.28s ->S_PAUKE_S1 root -0 +1 -0 M (carries), S_PAUKE_S1 0.04s loop root held at 7 99 15 M, T_PAUKE_S1_2_S0 2.28s ->S_PAUKE_S0 root -0 +1 -0 M (carries), T_PAUKE_S1_2_S2 2.28s ->S_PAUKE_S2 root +0 +0 +0 M (carries), S_PAUKE_S2 0.04s loop root held at 6 99 16 M, T_PAUKE_S2_2_S1 2.28s ->S_PAUKE_S1 root +0 +0 +0 M (carries)
+  REPAIR: T_REPAIR_RANDOM_1 2.40s root -0 -1 -0 M (carries), T_REPAIR_STAND_2_S0 0.76s ->S_REPAIR_S0 root -6 -6 +18 turns +20 M (carries), S_REPAIR_S0 0.04s loop root held at -6 91 21 M, T_REPAIR_S0_2_STAND 0.76s root +6 +6 -18 turns -20 M (carries), T_REPAIR_S0_2_S1 0.40s ->S_REPAIR_S1 root +5 +1 -3 M (carries), S_REPAIR_S1 1.44s loop root held at -1 92 17 M, T_REPAIR_S1_2_S0 0.40s ->S_REPAIR_S0 root -5 -1 +3 M (carries)
+  SMOKE: T_SMOKE_STAND_2_S0 0.16s ->S_SMOKE_S0 root -1 -1 -2 M (carries), S_SMOKE_S0 0.04s loop root held at -1 96 6 M, T_SMOKE_S0_2_S1 1.60s ->S_SMOKE_S1 root +1 -76 -7 M (carries), S_SMOKE_S1 5.90s loop root held at -0 17 -1 M, T_SMOKE_S0_2_STAND 0.16s root +1 +1 +2 M (carries), T_SMOKE_S1_2_S0 1.60s ->S_SMOKE_S0 root -1 +76 +7 M (carries)
+  THRONE: T_THRONE_STAND_2_S0 0.20s ->S_THRONE_S0 root -0 +0 -1 M (carries), S_THRONE_S0 0.04s loop no root (keeps the step's before), T_THRONE_S0_2_STAND 0.20s no root (keeps the step's before), T_THRONE_S0_2_S1 1.36s ->S_THRONE_S1 root -2 -33 +74 turns -172 M (carries), S_THRONE_S1 1.60s loop no root (keeps the step's before), T_THRONE_S1_2_S0 1.12s ->S_THRONE_S0 root +3 +34 -72 M (carries)
+  VWHEEL: T_VWHEEL_STAND_2_S0 0.40s ->S_VWHEEL_S0 root -5 -19 -3 M (carries), S_VWHEEL_S0 0.04s loop root held at -6 74 -2 M, T_VWHEEL_S0_2_S1 0.96s ->S_VWHEEL_S1 root +41 -3 -0 turns -23 M (carries), S_VWHEEL_S1 0.04s loop root held at 35 68 -2 M, T_VWHEEL_S1_2_STAND 0.40s root -34 +26 +2 turns +24 M (carries), T_VWHEEL_S0_2_STAND 0.40s root +5 +19 +3 M (carries), T_VWHEEL_STAND_2_S1 0.40s ->S_VWHEEL_S1 root +34 -26 -2 turns -24 M (carries), T_VWHEEL_S1_2_S0 0.96s ->S_VWHEEL_S0 root -41 +3 +0 turns +23 M (carries)
+  WASH: T_WASH_2_STAND 3.50s root -3 +10 +20 M (carries); missing: T_WASH_STAND_2_S0, S_WASH_S0, T_WASH_S0_2_STAND
+things to use: what babe has for 5 kinds of them:
+  BABEBED: T_BABEBED_STAND_2_S0 0.24s ->S_BABEBED_S0 root -1 -0 +1 M (carries), S_BABEBED_S0 0.04s loop root held at -2 96 -72 M, T_BABEBED_S0_2_S1 6.08s ->S_BABEBED_S1 root +13 -32 +103 turns +105 M (carries), S_BABEBED_S1 4.00s loop root held at 10 64 33 M, T_BABEBED_S0_2_STAND 0.24s root +1 +0 -1 M (carries), T_BABEBED_S1_2_S0 6.08s ->S_BABEBED_S0 root -13 +32 -103 turns -105 M (carries)
+  BATHTUB: S_BATHTUB_S1 4.20s loop root held at -20 16 1 M, T_BATHTUB_RANDOM1 12.08s ->S_BATHTUB_S1 root +0 +0 +0 M (carries), T_BATHTUB_RANDOM2 17.68s ->S_BATHTUB_S1 root +0 +0 +0 M (carries), T_BATHTUB_S1_2_STAND 2.64s root +19 +80 +59 turns -90 M (carries), T_BATHTUB_STAND_2_S0 0.12s ->S_BATHTUB_S0 root -3 -2 -4 M (carries), S_BATHTUB_S0 0.04s loop root held at -3 94 -104 M, T_BATHTUB_S0_2_S1 4.40s ->S_BATHTUB_S1 root -17 -78 +105 turns +92 M (carries), T_BATHTUB_S0_2_STAND 0.12s root +3 +2 +4 M (carries), T_BATHTUB_STAND_2_S1 4.40s ->S_BATHTUB_S1 root -17 -78 +105 turns +92 M (carries); missing: T_BATHTUB_S1_2_S0
+  BENCH: T_BENCH_STAND_2_S0 0.20s ->S_BENCH_S0 root -7 -2 +7 M (carries), S_BENCH_S0 0.04s loop root held at -8 94 -66 M, T_BENCH_S0_2_S1 3.28s ->S_BENCH_S1 root +3 -39 +68 turns +175 M (carries), S_BENCH_S1 0.04s loop root held at -7 55 4 M, T_BENCH_S0_2_STAND 0.20s root +7 +2 -7 M (carries), T_BENCH_S1_2_S0 3.28s ->S_BENCH_S0 root -3 +39 -68 turns -175 M (carries)
+  CHAIR: T_CHAIR_STAND_2_S0 0.20s ->S_CHAIR_S0 root -7 -2 +7 M (carries), S_CHAIR_S0 0.04s loop root held at -8 94 -66 M, T_CHAIR_S0_2_STAND 0.20s root +7 +2 -7 M (carries), T_CHAIR_S0_2_S1 3.28s ->S_CHAIR_S1 root +3 -39 +68 turns +175 M (carries), S_CHAIR_S1 0.04s loop root held at -7 55 4 M, T_CHAIR_S1_2_S0 3.28s ->S_CHAIR_S0 root -3 +39 -68 turns -175 M (carries)
+  DOOR: T_DOOR_FRONT_STAND_2_S0 0.20s ->S_DOOR_FRONT_S0 root +1 -2 -4 turns -11 M (carries), S_DOOR_FRONT_S0 0.04s loop root held at 0 93 -4 M, T_DOOR_FRONT_S0_2_S1 1.64s ->S_DOOR_FRONT_S1 root +1 +3 +5 turns +15 M (carries), S_DOOR_FRONT_S1 0.04s loop root held at -0 96 -0 M, T_DOOR_FRONT_S1_2_S0 2.04s ->S_DOOR_FRONT_S0 root -0 -2 -1 M (carries), T_DOOR_FRONT_S1_2_STAND 0.20s root -1 +0 +0 M (carries), T_DOOR_BACK_STAND_2_S0 0.20s ->S_DOOR_BACK_S0 root +0 -1 -1 M (carries), S_DOOR_BACK_S0 0.04s loop root held at -0 95 -1 M, T_DOOR_BACK_S0_2_S1 1.64s ->S_DOOR_BACK_S1 root -1 +1 +2 M (carries), S_DOOR_BACK_S1 0.04s loop root held at -1 96 -0 M, T_DOOR_BACK_S1_2_S0 2.04s ->S_DOOR_BACK_S0 root +3 -1 -6 M (carries), T_DOOR_BACK_S1_2_STAND 0.20s root +1 +0 +0 M (carries), T_DOOR_FRONT_S0_2_STAND 0.20s root -1 +2 +4 turns +11 M (carries), T_DOOR_FRONT_STAND_2_S1 0.20s ->S_DOOR_FRONT_S1 root +1 -0 -0 M (carries), T_DOOR_BACK_S0_2_STAND 0.20s root +0 +1 +1 M (carries), T_DOOR_BACK_STAND_2_S1 0.20s ->S_DOOR_BACK_S1 root -1 -0 -0 M (carries)
+things to use: what orc has for 6 kinds of them:
+  BEDLOW: T_BEDLOW_FRONT_STAND_2_S0 0.80s ->S_BEDLOW_FRONT_S0 root -2 -5 +103 M (carries), S_BEDLOW_FRONT_S0 0.04s loop root held at -0 92 15 M, T_BEDLOW_FRONT_S0_2_S1 2.36s ->S_BEDLOW_FRONT_S1 root +0 -51 -21 M (carries), S_BEDLOW_FRONT_S1 2.00s loop root held at 0 38 -5 M, T_BEDLOW_BACK_STAND_2_S0 0.80s ->S_BEDLOW_BACK_S0 root -2 -5 +103 M (carries), S_BEDLOW_BACK_S0 0.04s loop root held at -0 92 15 M, T_BEDLOW_BACK_S0_2_S1 2.36s ->S_BEDLOW_BACK_S1 root +0 -51 -21 M (carries), S_BEDLOW_BACK_S1 2.00s loop root held at 0 38 -5 M, T_BEDLOW_FRONT_S0_2_STAND 0.80s root +2 +5 -103 M (carries), T_BEDLOW_FRONT_S1_2_S0 2.36s ->S_BEDLOW_FRONT_S0 root -0 +51 +21 M (carries), T_BEDLOW_BACK_S0_2_STAND 0.80s root +2 +5 -103 M (carries), T_BEDLOW_BACK_S1_2_S0 2.36s ->S_BEDLOW_BACK_S0 root -0 +51 +21 M (carries)
+  CHAIR: T_CHAIR_STAND_2_S0 0.20s ->S_CHAIR_S0 root -0 +6 +14 M (carries), S_CHAIR_S0 0.04s loop root held at -0 100 -66 M, T_CHAIR_S0_2_S1 2.20s ->S_CHAIR_S1 root -0 -46 +88 M (carries), S_CHAIR_S1 0.04s loop root held at -0 53 22 M, T_CHAIR_S0_2_STAND 0.20s root +0 -6 -14 M (carries), T_CHAIR_S1_2_S0 2.20s ->S_CHAIR_S0 root +0 +46 -88 M (carries)
+  LEVER: T_LEVER_STAND_2_S0 0.36s ->S_LEVER_S0 root -0 +5 -10 M (carries), S_LEVER_S0 0.04s loop root held at -0 99 -12 M, S_LEVER_S1 0.04s loop root held at -0 103 1 M, T_LEVER_S1_2_STAND 0.36s root +0 -9 -1 M (carries), T_LEVER_S0_2_S1 1.16s ->S_LEVER_S1 root +0 +4 +12 M (carries), T_LEVER_S0_2_STAND 0.36s root +0 -5 +10 M (carries), T_LEVER_STAND_2_S1 0.36s ->S_LEVER_S1 root -0 +9 +1 M (carries), T_LEVER_S1_2_S0 1.16s ->S_LEVER_S0 root -0 -4 -12 M (carries)
+  STOMPER: T_STOMPER_STAND_2_S0 0.40s ->S_STOMPER_S0 root +8 +0 +17 turns +19 M (carries), S_STOMPER_S0 0.04s loop root held at -467 98 504 M, T_STOMPER_S0_2_S1 1.20s ->S_STOMPER_S1 root +0 -3 +36 M (carries), S_STOMPER_S1 0.04s loop root held at -476 96 572 M, T_STOMPER_S1_2_S0 3.56s ->S_STOMPER_S0 root +8 +3 -60 turns -11 M (carries), T_STOMPER_S0_2_STAND 0.40s root -8 +0 -17 turns -19 M (carries)
+  STONEMILL: T_STONEMILL_STAND_2_S0 0.76s ->S_STONEMILL_S0 root -10 -24 -28 M (carries), S_STONEMILL_S0 0.04s loop root held at 380 75 -108 M, T_STONEMILL_S0_2_S1 9.64s ->S_STONEMILL_S1 root -751 +2 +200 turns -169 M (carries), S_STONEMILL_S1 0.04s loop root held at -370 77 92 M, T_STONEMILL_S1_2_S0 9.64s ->S_STONEMILL_S0 root +752 +0 -210 turns +169 M (carries), T_STONEMILL_S0_2_STAND 0.76s root +10 +24 +28 M (carries)
+  VWHEEL: T_VWHEEL_STAND_2_S0 0.68s ->S_VWHEEL_S0 root +18 -26 -19 M (carries), S_VWHEEL_S0 0.04s loop root held at 20 72 -20 M, T_VWHEEL_S0_2_S1 1.56s ->S_VWHEEL_S1 root -2 +0 -1 M (carries), S_VWHEEL_S1 0.04s loop root held at 20 72 -20 M, T_VWHEEL_S0_2_STAND 0.68s root -18 +26 +19 M (carries), T_VWHEEL_STAND_2_S1 0.68s ->S_VWHEEL_S1 root +18 -26 -19 M (carries), T_VWHEEL_S1_2_S0 1.56s ->S_VWHEEL_S0 root +2 -0 +1 M (carries), T_VWHEEL_S1_2_STAND 0.68s root -18 +26 +19 M (carries)
+WARNING: 2 textures of the inhabitants not found (drawn untextured): HUM_HEAD_VLK_V02_C1.TGA, HUM_SLD_TL.TGA
+script/particlefx: PARTICLEFX.DAT, 212096 bytes
+script/visualfx: VISUALFX.DAT, 49884 bytes
+particles: 280 effects in the scripts (144 pictures baked, 5 of the names have none), 987 emitters in the worlds
+  pictures not found: bloodkai, mfx_spell_star, water_dripping, water_dripping_ground, waveofinsanity_a0
+things lying about: 1086 (1075 from the world files, 11 from the start-up scripts) of 114 kinds of look; looks of all things of the scripts: 344, 336 models baked (23428 triangles, 0.74 MB), 336 pictures for the inventory (2.96 MB)
+WARNING: 8 looks of things not baked (they lie there unseen): ITFOFLASKHEALTH: no mesh; ITLSTORCHBURNING: no mesh; ITMIJOINT: no mesh; ITMW1HSWORD01: no mesh; ITMW1HSWORDOLD01: no mesh; ITMW2HSWORD01: no mesh; ITWRBOOK: no mesh; ITWRMAP: no mesh
+dialogue: 7354 lines (377 KB of text) from OU.BIN, in 16 blocks, 6 names given twice (the first kept)
+font: FONT_OLD_10_WHITE (17 px) and FONT_OLD_20_WHITE (36 px), code page 1252, 218 glyphs, atlas 256x336, 87 KB
+C:\GOTHIC~1\windows\data.pak written (6160 entries); the rest (voices, music) follows
+hero: fightclip T_JUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_RUN
+hero: fightclip T_FISTJUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_FISTRUN
+hero: fightclip T_FISTPARADEJUMPB: file T_FISTPARADEJUMPB, mds frames 1..12, 12 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next -
+hero: fightclip S_FISTATTACK: file S_FISTATTACK, mds frames 1..29, 29 frames @ 25 fps, moves; hits 8,23; hitEnds 15,29; windows 9,15,24,29; parry -; fightMode -1; next S_FISTATTACK
+hero: fightclip T_FISTATTACKMOVE: file T_FISTATTACKMOVE, mds frames 1..29, 29 frames @ 25 fps, moves; hits 18; hitEnds -; windows -; parry -; fightMode -1; next -
+hero: fightclip T_FISTPARADE_O: file T_FISTPARADE_O, mds frames 1..12, 12 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next -
+hero: fightclip T_1HJUMPB: file T_1HJUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_1HRUN
+hero: fightclip T_1HPARADEJUMPB: file T_1HPARADEJUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next -
+hero: fightclip S_1HATTACK: file S_1HATTACK, mds frames 1..20, 20 frames @ 25 fps, moves; hits 4; hitEnds 37; windows 18,19; parry -; fightMode -1; next S_1HATTACK
+hero: fightclip T_1HATTACKL: file T_1HATTACKL, mds frames 1..30, 30 frames @ 25 fps, moves; hits 4; hitEnds 29; windows 15,29; parry -; fightMode -1; next -
+hero: fightclip T_1HATTACKR: file T_1HATTACKR, mds frames 31..60, 30 frames @ 25 fps, moves; hits 5; hitEnds 29; windows 15,29; parry -; fightMode -1; next -
+hero: fightclip T_1HATTACKMOVE: file T_1HATTACKMOVE, mds frames 1..29, 29 frames @ 25 fps, moves; hits 15; hitEnds -; windows -; parry -; fightMode -1; next -
+hero: fightclip T_1HPARADE_O: file T_1HPARADE_O, mds frames 1..29, 29 frames @ 25 fps, moves; hits -; hitEnds -; windows 1,27; parry -; fightMode -1; next -
+hero: fightclip T_RUN_2_1H: file T_RUN_2_1H, mds frames 1..3, 3 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_1H
+hero: fightclip T_1H_2_1HRUN: file T_1H_2_1HRUN, mds frames 5..24, 20 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode 0; next S_1HRUN
+hero: fightclip T_1HRUN_2_1H: file T_1HRUN_2_1H BACKWARDS, mds frames 5..24, 20 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode 19; next S_1H
+hero: fightclip T_1H_2_RUN: file T_RUN_2_1H BACKWARDS, mds frames 1..3, 3 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next -
+hero: fightclip T_MOVE_2_1HMOVE: file T_MOVE_2_1HMOVE, mds frames 1..24, 24 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode 5; next -
+hero: fightclip T_2HJUMPB: file T_2HJUMPB, mds frames 1..24, 24 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HRUN
+hero: fightclip T_2HPARADEJUMPB: file T_2HPARADEJUMPB, mds frames 1..29, 29 frames @ 25 fps, moves; hits -; hitEnds -; windows 1,27; parry -; fightMode -1; next -
+hero: fightclip S_2HATTACK: file S_2HATTACK, mds frames 1..41, 41 frames @ 25 fps, moves; hits 7; hitEnds 21; windows 21,40; parry -; fightMode -1; next S_2HATTACK
+hero: fightclip T_2HATTACKL: file T_2HATTACKL, mds frames 1..36, 36 frames @ 25 fps, moves; hits 5; hitEnds 35; windows 18,35; parry -; fightMode -1; next -
+hero: fightclip T_2HATTACKR: file T_2HATTACKR, mds frames 37..72, 36 frames @ 25 fps, moves; hits 6; hitEnds 29; windows 18,35; parry -; fightMode -1; next -
+hero: fightclip T_2HPARADE_O: file T_2HPARADE_O, mds frames 1..29, 29 frames @ 25 fps, moves; hits -; hitEnds -; windows 1,27; parry -; fightMode -1; next -
+hero: fightclip T_RUN_2_2H: file T_RUN_2_2H, mds frames 1..3, 3 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2H
+hero: fightclip T_2H_2_2HRUN: file T_2H_2_2HRUN, mds frames 5..24, 20 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode 2; next S_2HRUN
+hero: fightclip T_2HRUN_2_2H: file T_2HRUN_2_2H BACKWARDS, mds frames 5..24, 20 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode 17; next S_2H
+hero: fightclip T_2H_2_RUN: file T_RUN_2_2H BACKWARDS, mds frames 1..3, 3 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_RUN
+hero: fightclip T_MOVE_2_2HMOVE: file T_MOVE_2_2HMOVE, mds frames 1..24, 24 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode 6; next -
+hero: fightclip T_BOWJUMPB: file T_BOWJUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_BOWRUN
+hero: fightclip T_CBOWJUMPB: file T_CBOWJUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_CBOWRUN
+hero: fightclip T_MAGJUMPB: file T_MAGJUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_MAGRUN
+hero: fightclip T_1HRUN_2_1HRUNL: file T_1HRUN_2_1HRUNL, mds frames 1..11, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_1HRUNL
+hero: fightclip T_1HRUNL_2_1HRUN: file T_1HRUNL_2_1HRUN, mds frames 32..38, 7 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_1HRUN
+hero: fightclip T_1HWALK_2_1HWALKL: file T_1HWALK_2_1HWALKL, mds frames 4..18, 15 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_1HWALKL
+hero: fightclip T_1HWALKL_2_1HWALK: file T_1HWALKL_2_1HWALK, mds frames 39..49, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_1HWALK
+hero: fightclip T_2HRUN_2_2HRUNL: file T_2HRUN_2_2HRUNL, mds frames 1..11, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HRUNL
+hero: fightclip T_2HRUNL_2_2HRUN: file T_2HRUNL_2_2HRUN, mds frames 32..38, 7 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HRUN
+hero: fightclip T_2HWALK_2_2HWALKL: file T_2HWALK_2_2HWALKL, mds frames 1..18, 18 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALKL
+hero: fightclip T_2HWALKL_2_2HWALK: file T_2HWALKL_2_2HWALK, mds frames 39..49, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALK
+voices: baking the recordings of 7360 lines of dialogue (many minutes on a big game; --no-voices skips) ...
+voices: 7360 lines of dialogue, 7343 recordings baked (2070.3 MB at up to 48000 Hz, 16-bit, full quality); 1 could not be used: [Tpl_1436_Templer_CRAWLER_Info_13_02: no samples]
+wrote C:\GOTHIC~1\windows\speech.pak: 6777 voices
+wrote C:\GOTHIC~1\windows\speech2.pak: 566 voices
+wrote C:\GOTHIC~1\windows\music.pak: 22 tracks
+wrote C:\GOTHIC~1\windows\data.pak: 5 worlds, 6160 entries in 40.4 s

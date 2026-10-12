@@ -140,10 +140,8 @@ void Particles::loadDef(Def& d, u32 effect) {
 		d.lifeAvg = 380;
 		d.lifeVar = 60;
 		d.additive = true;
-		d.colorStart[0] = 1.0f;
-		d.colorStart[1] = 0.93f;
-		d.colorStart[2] = 0.75f;
-		d.colorEnd[0] = d.colorEnd[1] = d.colorEnd[2] = 0.5f;
+		d.colorStart[0] = d.colorStart[1] = d.colorStart[2] = 1.0f; // (white, as in the original)
+		d.colorEnd[0] = d.colorEnd[1] = d.colorEnd[2] = 0.85f;
 		d.sizeStart[0] = d.sizeStart[1] = 5;
 		d.sizeEndScale = 1.5f;
 		d.alphaStart = 1.0f;

@@ -14,5 +14,6 @@ done
 which g++ cmake ninja
 rm -rf build-win
 cmake -S . -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DG3DS_BAKER_ONLY=ON
-cmake --build build-win --target g3ds-bake -j"$(nproc)"
-cp build-win/g3ds-bake.exe windows/g3ds-bake.exe
+cmake --build build-win --target g3ds-bake Gothic3DS-Baker dmrender -j"$(nproc)"
+cp build-win/g3ds-bake.exe build-win/Gothic3DS-Baker.exe windows/
+cp build-win/tools/dmrender/dmrender.exe windows/ 2>/dev/null || cp "$(find build-win -name dmrender.exe | head -1)" windows/

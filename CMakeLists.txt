@@ -2,6 +2,10 @@
 # The 3DS binary is built with the devkitARM Makefile in this directory.
 cmake_minimum_required(VERSION 3.16)
 project(gothic3ds LANGUAGES C CXX)
+if (MINGW)
+    # printf with %zu, %lld and friends as the standard has them (MinGW's own check otherwise warns on every one).
+    add_compile_definitions(__USE_MINGW_ANSI_STDIO=1)
+endif ()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,7 +16,7 @@ if (NOT CMAKE_BUILD_TYPE)
 endif ()
 
 option(G3DS_WITH_ZENKIT "Build the ZenGin importer (fetches ZenKit)" ON)
-option(G3DS_BAKER_ONLY "Build only g3ds-bake (no runtime, no tests): for Windows, see windows/README.txt" OFF)
+option(G3DS_BAKER_ONLY "Build only g3ds-bake (no runtime, no tests): for Windows, see windows/README.md" OFF)
 if (G3DS_BAKER_ONLY)
     set(G3DS_BUILD_TESTS OFF)
 else ()
@@ -130,6 +134,16 @@ target_compile_options(g3ds-bake PRIVATE ${G3DS_WARNINGS})
 if (WIN32)
     # One .exe that needs no DLLs next to it.
     target_link_options(g3ds-bake PRIVATE -static)
+endif ()
+
+if (WIN32 AND G3DS_BAKER_ONLY)
+    # The window the player uses (windows/launcher.cpp) and the music renderer it calls.
+    add_executable(Gothic3DS-Baker WIN32 windows/launcher.cpp)
+    set_target_properties(Gothic3DS-Baker PROPERTIES CXX_STANDARD 17)
+    target_link_options(Gothic3DS-Baker PRIVATE -municode -static)
+    target_link_libraries(Gothic3DS-Baker PRIVATE comctl32 ole32 shell32 uuid)
+    add_subdirectory(tools/dmrender)
+    target_link_options(dmrender PRIVATE -static)
 endif ()
 
 if (G3DS_BUILD_TESTS)

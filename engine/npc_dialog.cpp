@@ -242,6 +242,10 @@ void Npcs::openTalk(NpcActor& a) {
 }
 
 void Npcs::finishTalk() {
+	// (ZS_Talk_Loop clears the flag itself, but a talk cut short never gets there: and with it left set every
+	// fighter only waits - AI_Wait in ZS_Attack - while the player is hit.)
+	if (_game.heroIndex() != SCRIPT_NONE) _game.clearTalkFlag(_game.heroIndex());
+	if (_talk.npc >= 0) _game.clearTalkFlag(u32(_talk.npc));
 	_talk = Talk();
 	_game.clearAllChoices();
 	_menuDirty = true;

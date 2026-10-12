@@ -357,6 +357,18 @@ void Npcs::xSendPassivePerc(ScriptVm& vm, void* user) {
 	self.sendPerception(perc, u32(sender), other, self.npcFor(victimInst));
 }
 
+// Npc_SendSinglePerc(sender, receiver, perception): only the receiver reacts, with the sender as OTHER.
+void Npcs::xSendSinglePerc(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const i32 perc = vm.popInt();
+	const int receiver = self.npcFor(vm.popInstance());
+	const int sender = self.npcFor(vm.popInstance());
+	if (receiver < 0 || sender < 0 || perc < 0 || perc >= Game::PERC_TYPES || !self._cfg.perceive || !self._cfg.alive) return;
+	for (NpcActor& a : self._actors)
+		if (a.used && a.ready && int(a.npc) == receiver && a.perc[perc] && !(a.state && !a.started) && self._game.npc(a.npc).down == DOWN_NONE)
+			self.react(a, a.perc[perc], sender, -1);
+}
+
 void Npcs::xLookAtNpc(ScriptVm& vm, void* user) {
 	Npcs& self = *static_cast<Npcs*>(user);
 	NpcAction act;
@@ -435,6 +447,7 @@ void Npcs::bindPerception() {
 		ScriptVm::External fn;
 	} table[] = {{"NPC_PERCENABLE", xPercEnable},       {"NPC_PERCDISABLE", xPercDisable},
 	             {"NPC_PERCEIVEALL", xPerceiveAll},     {"NPC_SENDPASSIVEPERC", xSendPassivePerc},
+	             {"NPC_SENDSINGLEPERC", xSendSinglePerc},
 	             {"AI_LOOKATNPC", xLookAtNpc},          {"AI_STOPLOOKAT", xStopLookAt},
 	             {"AI_OUTPUTSVM", xOutputSvm},          {"AI_OUTPUTSVM_OVERLAY", xOutputSvmOverlay},
 	             {"NPC_CANSEENPCFREELOS", xCanSeeNpcFreeLos}, {"AI_QUICKLOOK", xQuickLook}};

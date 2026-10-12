@@ -23,12 +23,15 @@ jobs:
       - name: Build g3ds-bake.exe
         run: |
           cmake -S . -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release -DG3DS_BAKER_ONLY=ON
-          cmake --build build-win --target g3ds-bake
-          cp build-win/g3ds-bake.exe windows/
+          cmake --build build-win --target g3ds-bake Gothic3DS-Baker dmrender
+          cp build-win/g3ds-bake.exe build-win/Gothic3DS-Baker.exe windows/
+          cp "$(find build-win -name dmrender.exe | head -1)" windows/
       - uses: actions/upload-artifact@v4
         with:
           name: g3ds-bake-windows
           path: |
+            windows/Gothic3DS-Baker.exe
             windows/g3ds-bake.exe
+            windows/dmrender.exe
             windows/bake.bat
-            windows/README.txt
+            windows/README.md

@@ -632,6 +632,14 @@ void Game::xChangeAttribute(ScriptVm& vm, void* user) {
 	g.setAttribute(*n, index, v);
 }
 
+void Game::clearTalkFlag(u32 npc) {
+	if (npc >= _npcCount || !_npcs[npc].object) return;
+	const u32 member = _vm.findMember("C_NPC", "AIVAR");
+	const i32 index = constant("AIV_INVINCIBLE", -1);
+	if (member == SCRIPT_NONE || index < 0 || u32(index) >= _vm.symbol(member).count) return;
+	_vm.setInt(member, u32(index), _npcs[npc].object, 0);
+}
+
 void Game::xSetToFistMode(ScriptVm& vm, void* user) {
 	Game& g = *static_cast<Game*>(user);
 	if (GameNpc* n = g.npcOf(vm.popInstance())) n->weapon = WEAPON_FIST;

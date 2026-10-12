@@ -83,6 +83,20 @@ const GameSpell* Game::spellInfo(i32 id) {
 		sp.fxCast = visOf(key, "C_PARTICLEFXEMITKEY");
 		snprintf(key, sizeof(key), "SPELLFX_%s_KEY_COLLIDE", sp.tag);
 		sp.fxCollide = visOf(key, "C_PARTICLEFXEMITKEY");
+		sp.area = sp.collectAlgo == allNone && sp.collectRange > 0 && sp.damageType != 0;
+		if (sp.area) {
+			// The cast key creates the rain (emCreateFXID): its picture is the effect.
+			snprintf(key, sizeof(key), "SPELLFX_%s_KEY_CAST", sp.tag);
+			const u32 ks = vfx.find(key), km = vfx.findMember("C_PARTICLEFXEMITKEY", "EMCREATEFXID");
+			if (ks != SCRIPT_NONE && km != SCRIPT_NONE && vfx.symbol(ks).type == SCRIPT_INSTANCE) {
+				if (ScriptInstance* o = vfx.create(ks)) {
+					char made[80];
+					snprintf(made, sizeof(made), "%s", vfx.getString(km, 0, o));
+					vfx.destroy(o);
+					sp.fxArea = visOf(made, "CFX_BASE");
+				}
+			}
+		}
 	}
 	return &sp;
 }

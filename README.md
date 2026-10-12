@@ -2,7 +2,7 @@
 
 > **Данные игры не распространяются / Game data is not distributed.** Проект не содержит ничего из Gothic и не должен: нужна легальная копия игры, а `data.pak`, `music.pak`, `speech.pak` и WAV с музыкой, которые вы запекаете из неё, нельзя публиковать. This project contains nothing from Gothic; you need your own legal copy, and the `data.pak`, `music.pak`, `speech.pak` and music WAVs you bake from it must not be published.
 >
-> Запечь `data.pak` на Windows без WSL: `windows/README.txt` (`bake.bat`, `build_baker.bat`).
+> Запечь `data.pak` на Windows без WSL: [`windows/README.md`](windows/README.md): три `.exe` из Releases, запустить `Gothic3DS-Baker.exe`.
 
 Инструкция по сборке с нуля (English first, then Russian): [`docs/BUILD_WSL.md`](docs/BUILD_WSL.md). / Step-by-step build guide for Windows + WSL: [`docs/BUILD_WSL.md`](docs/BUILD_WSL.md).
 

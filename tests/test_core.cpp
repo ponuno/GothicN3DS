@@ -5999,17 +5999,16 @@ static void testMagic() {
 	CHECK(g.hitPoints(e) == std::max(hpBefore - std::max(30 - protFire, i32(0)), i32(0)));
 	CHECK(g.attributeOf(g.npc(hero), 2) == 9); // (a point of mana, SPL_SENDCAST_FIREBOLT)
 	CHECK(g.npc(hero).spell == -1 && !app.spellCasting() && g.npc(u32(scav)).lastHitSpell == 17);
-	// 3. Letting go too early casts nothing, and costs nothing (Firebolt's release says stop).
+	// 3. Firebolt goes off with the press (its mana is put in at once), whether the key is held or not.
 	{
 		const u32 bolts = app.magicStats().bolts;
 		const i32 mana = g.attributeOf(g.npc(hero), 2);
 		Input press;
 		press.attack = press.attackHeld = true;
 		app.update(press, dt);
-		CHECK(app.spellCasting());
 		Input let;
-		app.update(let, dt);
-		CHECK(!app.spellCasting() && app.magicStats().bolts == bolts && g.attributeOf(g.npc(hero), 2) == mana);
+		for (int i = 0; i < 60; ++i) app.update(let, dt);
+		CHECK(!app.spellCasting() && app.magicStats().bolts == bolts + 1 && g.attributeOf(g.npc(hero), 2) == mana - 1);
 	}
 	// 4. A scroll: used up by the cast, and the stance goes when it was the last of the spells chosen.
 	{

@@ -2,7 +2,7 @@
 
 *(Русская версия — ниже, после этого раздела. / The Russian version follows below.)*
 
-> **Easier for baking only:** `windows/` has a native Windows baker (`g3ds-bake.exe` + `bake.bat`, no WSL). See `windows/README.txt`. / **Проще, если нужно только запечь data.pak:** папка `windows/` (без WSL), см. `windows/README.txt`.
+> **Easier for baking only (no WSL):** download `Gothic3DS-Baker.exe`, `g3ds-bake.exe` and `dmrender.exe` from the Releases page into one folder and run the window. See [`windows/README.md`](../windows/README.md). / **Проще, если нужно только запечь данные (без WSL):** скачайте три `.exe` из Releases в одну папку и запустите `Gothic3DS-Baker.exe`, см. [`windows/README.md`](../windows/README.md).
 
 **Legal note.** The game's data (textures, models, sounds, music, scripts) is not distributed with this project and must not be distributed by you either. You need your own legal copy of Gothic 1. The files you produce (`data.pak`, `music.pak`, `speech.pak`, rendered WAVs) contain the game's content: keep them for yourself and never publish them. Only the source code, the tools, the compiled `gothic3ds.3dsx` (it contains no game data) and these instructions may be shared.
 

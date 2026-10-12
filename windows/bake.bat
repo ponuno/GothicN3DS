@@ -1,5 +1,5 @@
 @echo off
-rem Bakes data.pak from your Gothic folder.
+rem Command-line alternative to Gothic3DS-Baker.exe (no music): bakes data.pak from your Gothic folder.
 rem Drag the Gothic folder onto this file, or run it and type the path.
 setlocal
 chcp 65001 >nul

@@ -45,6 +45,7 @@ bool Npcs::load(Pak& pak) {
 	loadFightAi(pak);
 	_texts.load(pak); // (an archive baked without words simply has none: the lines are silent)
 	_stats.total = _game.npcCount();
+	if (_game.heroIndex() != SCRIPT_NONE) _game.clearTalkFlag(_game.heroIndex()); // (no talk is going on yet)
 	return true;
 }
 
@@ -132,6 +133,7 @@ void Npcs::retire(NpcActor& a) {
 
 void Npcs::leaveWorld() {
 	talkAbort();
+	if (_game.heroIndex() != SCRIPT_NONE) _game.clearTalkFlag(_game.heroIndex());
 	flushSpeech();
 	for (NpcActor& a : _actors) retire(a);
 	_net.dropAll();

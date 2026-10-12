@@ -378,6 +378,8 @@ struct FlatMesh {
 	// Models only: the nodes that say where somebody using the thing stands
 	// ("ZS_POS0", "ZS_POS1_FRONT"), in the model's rest pose.
 	std::vector<std::pair<std::string, M34>> slots;
+	// Models only: every node of the rest pose by name (a fire place's flames hang on one: BIP01 FIRE...).
+	std::map<std::string, M34> nodes;
 
 	void finish() {
 		float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
@@ -498,6 +500,7 @@ void appendModel(FlatMesh& out, const zenkit::ModelHierarchy* hierarchy, const z
 		for (size_t i = 0; i < hierarchy->nodes.size(); ++i) {
 			const std::string name = upper(hierarchy->nodes[i].name);
 			if (name.compare(0, 6, "ZS_POS") == 0) out.slots.emplace_back(name, pose[i]);
+			out.nodes[name] = pose[i];
 		}
 	// Rigid parts hang on the node of the same name.
 	for (const auto& kv : mesh.attachments) {
@@ -806,6 +809,14 @@ struct ObjectStats {
 		float pos[3];
 	};
 	std::map<std::string, std::vector<TreeEmitter>> trees;
+	// Flames to be moved to their fire place's slot once the models are read.
+	struct PendingFire {
+		size_t emitter;
+		float local[3];
+		const zenkit::VirtualObject* vob;
+		std::string visual, slot;
+	};
+	std::vector<PendingFire> pendingFires;
 	u32 emitters = 0, fireEmitters = 0, fireWithoutTree = 0;
 	std::map<std::string, u32> lights;
 	// The things people use, with the mesh each is drawn with (null: none).
@@ -1010,6 +1021,12 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 					e.pos[0] = vob->position.x + c[0].x * te.pos[0] + c[1].x * te.pos[1] + c[2].x * te.pos[2];
 					e.pos[1] = vob->position.y + c[0].y * te.pos[0] + c[1].y * te.pos[1] + c[2].y * te.pos[2];
 					e.pos[2] = vob->position.z + c[0].z * te.pos[0] + c[1].z * te.pos[1] + c[2].z * te.pos[2];
+					if (!fire || fire->slot.empty() || !vob->visual || vob->visual->name.empty()) {
+						// (no slot to hang on: at the object's origin)
+					} else {
+						stats.pendingFires.push_back({scene.emitters.size(), {te.pos[0], te.pos[1], te.pos[2]}, vob.get(),
+						                              upper(vob->visual->name), upper(fire->slot)});
+					}
 					scene.emitters.push_back(e);
 					++stats.fireEmitters;
 				}
@@ -1093,6 +1110,22 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 	std::vector<ObjectInstance> instances;
 	ObjectStats stats;
 	collectObjects(world.world_vobs, vfs, version, cache, instances, stats, scene);
+
+	// Flames hang on the slot node of the fire place's model (the game: `mapBone(slot)` for the fire tree), not
+	// on the object's origin: a torch burns at its tip.
+	for (const ObjectStats::PendingFire& pf : stats.pendingFires) {
+		const auto mesh = cache.find(pf.visual);
+		if (mesh == cache.end() || !mesh->second) continue;
+		const auto node = mesh->second->nodes.find(pf.slot);
+		if (node == mesh->second->nodes.end()) continue;
+		float inNode[3];
+		node->second.point(pf.local, inNode);
+		const zenkit::Vec3* c = pf.vob->rotation.columns;
+		SrcEmitter& e = scene.emitters[pf.emitter];
+		e.pos[0] = pf.vob->position.x + c[0].x * inNode[0] + c[1].x * inNode[1] + c[2].x * inNode[2];
+		e.pos[1] = pf.vob->position.y + c[0].y * inNode[0] + c[1].y * inNode[1] + c[2].y * inNode[2];
+		e.pos[2] = pf.vob->position.z + c[0].z * inNode[0] + c[1].z * inNode[1] + c[2].z * inNode[2];
+	}
 
 	// All object meshes come from the same exporter, so decide the winding once
 	// for the whole set: closed shapes must have their faces pointing outwards.

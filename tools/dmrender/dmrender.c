@@ -18,6 +18,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
+#define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
+#endif
+#endif
 
 static char gDir[1024];
 static int gVerbose;
@@ -187,7 +194,11 @@ int main(int argc, char** argv) {
 		fprintf(stderr, "no files in %s\n", gDir);
 		return 1;
 	}
+#ifdef _WIN32
+	mkdir(outDir);
+#else
 	mkdir(outDir, 0755);
+#endif
 	Dm_setLoggerDefault(verbose ? DmLogLevel_DEBUG : DmLogLevel_WARN);
 
 	DmLoader* loader = NULL;

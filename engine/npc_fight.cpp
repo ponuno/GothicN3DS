@@ -1035,6 +1035,21 @@ void Npcs::perceiveSingle(u32 receiver, const char* percName, int other) {
 
 // ---- the player's targets ----
 
+u32 Npcs::areaTargets(const float pos[3], float range, float elev, u32* out, u32 max) const {
+	const u32 hero = _game.heroIndex();
+	u32 n = 0;
+	for (const NpcActor& a : _actors) {
+		if (!a.used || !a.ready || a.npc == hero || n >= max) continue;
+		const GameNpc& g = _game.npc(a.npc);
+		if (g.down != DOWN_NONE || !g.placed) continue;
+		if (hero != SCRIPT_NONE && _game.attitude(a.npc, hero) == _game.constant("ATT_FRIENDLY", 3)) continue;
+		const float dx = g.pos[0] - pos[0], dy = g.pos[1] - pos[1], dz = g.pos[2] - pos[2];
+		if (sqrtf(dx * dx + dz * dz) > range || fabsf(dy) > elev) continue;
+		out[n++] = a.npc;
+	}
+	return n;
+}
+
 int Npcs::pickTarget(const float pos[3], float yaw, float range, float halfAngle, int except, int side, bool hostileOnly) const {
 	const GameNpc* hero = _game.hero();
 	const u32 heroIndex = hero ? u32(hero - &_game.npc(0)) : 0xFFFFFFFFu;

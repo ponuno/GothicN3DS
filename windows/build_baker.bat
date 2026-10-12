@@ -36,5 +36,8 @@ if errorlevel 1 (
   exit /b 1
 )
 echo.
-echo Done: windows\g3ds-bake.exe
-if not "%1"=="nopause" pause
+echo Done. Start windows\Gothic3DS-Baker.exe
+if not "%1"=="nopause" (
+  if exist "%HERE%Gothic3DS-Baker.exe" start "" "%HERE%Gothic3DS-Baker.exe"
+  pause
+)

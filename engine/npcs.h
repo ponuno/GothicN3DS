@@ -412,6 +412,8 @@ public:
 	// fits (near, in the middle of the view), not down; `except`: skip that
 	// one; `side` +1/-1: only those to the right/left of `from`'s direction.
 	int pickTarget(const float pos[3], float yaw, float range, float halfAngle, int except = -1, int side = 0, bool hostileOnly = false) const;
+	// The living about a point that an area spell hits (all but the player's friends).
+	u32 areaTargets(const float pos[3], float range, float elev, u32* out, u32 max) const;
 
 	// ---- talks (npc_dialog.cpp) ----
 	// The player talks to a character (A): it hears it as a perception
@@ -655,6 +657,7 @@ private:
 	static void xPercEnable(ScriptVm& vm, void* user);
 	static void xPercDisable(ScriptVm& vm, void* user);
 	static void xPerceiveAll(ScriptVm& vm, void* user);
+	static void xSendSinglePerc(ScriptVm& vm, void* user);
 	static void xSendPassivePerc(ScriptVm& vm, void* user);
 	static void xLookAtNpc(ScriptVm& vm, void* user);
 	static void xStopLookAt(ScriptVm& vm, void* user);

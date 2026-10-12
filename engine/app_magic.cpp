@@ -173,6 +173,41 @@ void App::castBegin() {
 		castRelease(false);
 		return;
 	}
+	// Spells that are lost when the key is let go early (firebolt, fire rain, ice, summons...) have nothing to
+	// charge by hand: the mana the scripts ask for is put in at once and the spell goes off with the press.
+	// (Charge spells - fireball, storm, wind fist - and held ones - heal, telekinesis - keep their way.)
+	{
+		const char* heldNames[] = {"SPL_HEAL", "SPL_TELEKINESIS", "SPL_CHAINLIGHTNING", "SPL_PYROKINESIS"};
+		bool held = false;
+		for (const char* nm : heldNames)
+			if (g.constant(nm, -77) == _cast.spell) held = true;
+		if (!held && g.processMana(u32(hi), _cast.target, _cast.invested, true) == sendStop) {
+			bool ok = false;
+			for (int guard = 0; guard < 60; ++guard) {
+				if (g.attributeOf(h, 2) <= 0) break;
+				const i32 c = g.processMana(u32(hi), _cast.target, _cast.invested, false);
+				g.setAttribute(h, 2, max(g.attributeOf(h, 2) - 1, i32(0)));
+				if (c == sendCast) {
+					ok = true;
+					break;
+				}
+				if (c == sendStop || c == dontInvest) break;
+				if (c == g.constant("SPL_NEXTLEVEL", 4) && _cast.level < kMaxLevel) {
+					++_cast.level;
+					h.spellLevel = _cast.level;
+				}
+				++_cast.invested;
+			}
+			if (!ok) {
+				++_magic.noMana;
+				toast(tr("Нет маны"));
+				castCancel();
+				return;
+			}
+			castRelease(false);
+			return;
+		}
+	}
 	_cast.stage = CAST_INVEST;
 	_cast.tick = 0;
 	_hero.castPlay(sp->letters, false);
@@ -224,6 +259,23 @@ void App::castCommit() {
 		_magic.lastSpell = _cast.spell;
 		if (sp->shoots) {
 			boltShoot(*sp, _cast.spell, level);
+		} else if (sp->area) {
+			// Fire rain: it comes down on everything about the caster (10 m), the picture over him.
+			const GameNpc& hn = g.npc(u32(hi));
+			const float at[3] = {hn.pos[0], hn.pos[1], hn.pos[2]};
+			if (sp->fxArea) _particles.play(sp->fxArea, Vec3 {at[0], at[1] + 250.0f, at[2]}, _hero.yaw(), 5.0f);
+			else if (sp->fxCast) _particles.play(sp->fxCast, handPos(), _hero.yaw(), 1.5f);
+			u32 hit[16];
+			const u32 count = _npcs.areaTargets(at, float(sp->collectRange), 600.0f, hit, 16);
+			for (u32 i = 0; i < count; ++i) {
+				g.setSpellStrike(_cast.spell, level);
+				const i32 dmg = _npcs.strike(u32(hi), hit[i], false);
+				g.setSpellStrike(-1, 0);
+				g.npcMut(hit[i]).lastHitSpell = _cast.spell;
+				++_magic.hits;
+				_magic.lastDamage = dmg;
+				if (g.npc(hit[i]).down == DOWN_NONE) _npcs.perceiveSingle(hit[i], "PERC_ASSESSMAGIC", hi);
+			}
 		} else {
 			if (sp->fxCast) _particles.play(sp->fxCast, handPos(), _hero.yaw(), 1.5f);
 			if (_cast.target >= 0 && sp->collectAlgo != g.constant("TARGET_COLLECT_CASTER", 1)) {

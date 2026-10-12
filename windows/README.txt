@@ -1,25 +1,23 @@
 Windows: baking data.pak without WSL
 ====================================
-You need only your own copy of Gothic. No WSL, no Linux.
+Needs only your own copy of Gothic.
 
-0. Simplest: just run bake.bat. If g3ds-bake.exe is missing, it builds it itself (MSYS2 via winget, once).
-1. Take g3ds-bake.exe (from the release / CI artifact "g3ds-bake-windows") and put it next to bake.bat.
-   No .exe? Run build_baker.bat once: it installs MSYS2 (via winget) and builds it itself.
-2. Drag your Gothic folder (the one with Data\ and _work\) onto bake.bat.
-3. Take out\data.pak (and music.pak / speech.pak if made) and copy to the SD card: 3ds\gothic3ds\
+1. Run Gothic3DS-Baker.exe (it needs g3ds-bake.exe and dmrender.exe beside it).
+   If you have no .exe files yet: run build_baker.bat once (it installs MSYS2 via winget and builds them, 10-15 minutes, needs internet).
+2. In the window pick the Gothic folder (the one with Data\ and _work\) and press "Запечь" (Bake).
+   Tick the music box to bake the music too (10-30 minutes more).
+3. data.pak, music.pak and speech.pak appear beside the .exe (and bake.log). Copy them to the SD card: 3ds\gothic3ds\
+   Also needed on the console: dspfirm.cdc in 3ds\ (see docs/BUILD_WSL.md).
 
-Music: render the WAVs once (docs/BUILD_WSL.md, "Music") and put them in windows\music_wavs\ - bake.bat uses them.
-Gothic II / mods: bake.bat "C:\path\to\Gothic II" "--mod Archolos"
-The reference-interpreter script check is skipped on Windows (it needs fork); it is a developer's check, not needed for play.
-The .3dsx is built by the developer (it comes in the zip); to build it yourself you still need devkitPro (docs/BUILD_WSL.md).
+Command line (no window): bake.bat "C:\path\to\Gothic" ["--mod Archolos"]
+Reference-interpreter script check is skipped on Windows (a developer's check, not needed for play).
 
 Windows: запекание data.pak без WSL
 ====================================
 Нужна только своя копия Gothic.
-1. Положите g3ds-bake.exe (из релиза / артефакта CI "g3ds-bake-windows") рядом с bake.bat.
-   Нет .exe? Один раз запустите build_baker.bat: он сам поставит MSYS2 (через winget) и соберёт пекаря.
-2. Перетащите папку Gothic (где Data\ и _work\) на bake.bat.
-3. Скопируйте out\data.pak (и music.pak / speech.pak) на SD-карту: 3ds\gothic3ds\
-Музыка: WAV рендерятся один раз (docs/BUILD_WSL.md), положите их в windows\music_wavs\ - bake.bat подхватит.
-Мод/Gothic II: bake.bat "C:\путь\Gothic II" "--mod Archolos"
-Сверка скриптов с эталонным интерпретатором на Windows пропускается (нужен fork) - это проверка разработчика, для игры не нужна.
+1. Запустите Gothic3DS-Baker.exe (рядом должны лежать g3ds-bake.exe и dmrender.exe).
+   Нет .exe? Один раз запустите build_baker.bat: он сам поставит MSYS2 (через winget) и соберёт их (10-15 минут, нужен интернет).
+2. В окне выберите папку Gothic (где Data\ и _work\) и нажмите «Запечь». Галочка «музыка» — запечь и музыку (ещё 10-30 минут).
+3. data.pak, music.pak и speech.pak появятся рядом с .exe (и bake.log). Скопируйте их на SD-карту: 3ds\gothic3ds\
+   На консоли нужен ещё dspfirm.cdc в папке 3ds\ (см. docs/BUILD_WSL.md).
+Без окна: bake.bat "C:\путь\Gothic" ["--mod Archolos"]

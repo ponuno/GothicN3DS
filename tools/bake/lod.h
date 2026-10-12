@@ -47,6 +47,10 @@ struct SimplifyOptions {
 	bool enabled = false;
 	float ratio = 0.6f;       // triangles to keep, of what is simplified
 	float maxError = 3.0f;    // cm: how far (mean, over the planes around a vertex) a collapse may move the surface
+	// The large objects (the detail class that is always drawn) get a second, harder pass: ratioLarge of their triangles
+	// kept (0: no second pass, as before), a collapse allowed to move the surface up to maxErrorLarge cm.
+	float ratioLarge = 0.0f;
+	float maxErrorLarge = 8.0f;
 	u32 minTriangles = 24;    // a chunk with fewer simplifiable triangles is left alone
 	unsigned threads = 1;
 };

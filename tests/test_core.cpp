@@ -7311,6 +7311,36 @@ static void testSimplifyWorld() {
 		CHECK(cc.triangleCount > 0 && cc.triangleCount < originalCollision[ci]);
 		cc.release();
 	}
+	// The harder pass over the large objects: they lose more, the medium ones lose what they lost before, the borders stay.
+	{
+		auto countClass = [](const std::vector<BakedChunk>& cs, u8 cls) {
+			u64 n = 0;
+			for (const BakedChunk& k : cs)
+				for (const ChunkBatch& b : k.batches)
+					if ((b.detail & 3u) == cls) n += b.indexCount / 3;
+			return n;
+		};
+		std::vector<BakedChunk> hard = original;
+		SimplifyOptions ho = so;
+		ho.ratioLarge = 0.25f;
+		ho.maxErrorLarge = 30.0f;
+		SimplifyStats hs;
+		buildSimplified(hard, materials, ho, hs);
+		const u64 largePlain = countClass(chunks, DETAIL_ALWAYS), largeHard = countClass(hard, DETAIL_ALWAYS);
+		const u64 mediumPlain = countClass(chunks, DETAIL_MEDIUM), mediumHard = countClass(hard, DETAIL_MEDIUM);
+		std::printf("  simplify large: class A %llu -> %llu (first pass only: %llu), medium %llu -> %llu\n",
+		            static_cast<unsigned long long>(countClass(original, DETAIL_ALWAYS)), static_cast<unsigned long long>(largeHard),
+		            static_cast<unsigned long long>(largePlain), static_cast<unsigned long long>(mediumPlain),
+		            static_cast<unsigned long long>(mediumHard));
+		CHECK(largeHard < largePlain);
+		CHECK(mediumHard == mediumPlain);
+		for (size_t ci = 0; ci < hard.size(); ++ci) {
+			const BakedChunk& c = hard[ci];
+			CHECK(c.header.indexCount == c.indices.size());
+			for (const ChunkBatch& b : c.batches)
+				for (u32 i = 0; i < b.indexCount; ++i) CHECK(c.indices[b.firstIndex + i] < c.vertices.size());
+		}
+	}
 	// Water, glass and cut-out leaves are left as they are.
 	{
 		std::vector<BakedChunk> kept = original;

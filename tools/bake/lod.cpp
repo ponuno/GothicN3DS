@@ -149,6 +149,32 @@ public:
 		}
 	}
 
+	// A second pass over one detail group alone (the large objects, which --simplify-ratio-large takes further): the
+	// collapses of the group's own places, with the error allowed raised to `maxErrorCm`, until `target` of its
+	// triangles are left or nothing may go. (Places shared with another group stay, as in the first pass.)
+	void runGroup(u8 group, u32 target, float maxErrorCm) {
+		_maxErr2 = double(maxErrorCm) * double(maxErrorCm);
+		u32 groupAlive = 0;
+		for (const Tri& t : _tris) groupAlive += t.alive && t.group == group;
+		std::priority_queue<Candidate> heap;
+		for (u32 p = 0; p < _inc.size(); ++p)
+			if (!_inc[p].empty() && _tris[_inc[p][0]].group == group) push(heap, p);
+		while (groupAlive > target && !heap.empty()) {
+			const Candidate c = heap.top();
+			heap.pop();
+			if (_inc[c.from].empty() || _inc[c.to].empty() || _tris[_inc[c.from][0]].group != group) continue;
+			const double now = cost(c.from, c.to);
+			if (now > c.cost * 1.000001 + 1e-9) {
+				if (now <= _maxErr2) heap.push({now, c.from, c.to});
+				continue;
+			}
+			if (!legal(c.from, c.to)) continue;
+			const u32 before = _alive;
+			collapse(c.from, c.to, heap);
+			groupAlive -= before - _alive;
+		}
+	}
+
 	const std::vector<Tri>& tris() const { return _tris; }
 	// Vertices made for the stand-in (to be appended to the chunk's, from index vertexCount()).
 	const std::vector<WorldVertex>& added() const { return _added; }
@@ -506,8 +532,18 @@ InPlace simplifyInPlace(BakedChunk& c, const std::vector<WorldMaterial>& materia
 		for (u32 i = 0; i < cb.indexCount; ++i) usedOutside[c.indices[cb.firstIndex + i]] = true;
 	}
 	const u32 initial = u32(tris.size());
+	u32 largeStart = 0;
+	for (const Tri& t : tris) largeStart += t.group == DETAIL_ALWAYS;
 	Simplifier simp(c, std::move(tris), usedOutside, opt.maxError, /*lockClusters=*/false);
 	simp.run(u32(double(initial) * double(opt.ratio)));
+	if (opt.ratioLarge > 0.0f) {
+		// The large objects (the detail class that is always drawn) go further, with a larger error allowed: they
+		// are where the heaviest scenes get their triangles.
+		u32 large = 0;
+		for (const Tri& t : simp.tris()) large += t.alive && t.group == DETAIL_ALWAYS;
+		const u32 target = u32(double(largeStart) * double(opt.ratioLarge));
+		if (large > target) simp.runGroup(DETAIL_ALWAYS, target, std::max(opt.maxErrorLarge, opt.maxError));
+	}
 	if (simp.alive() > u32(double(initial) * 0.97)) return InPlace::TooLittle;
 
 	c.vertices.insert(c.vertices.end(), simp.added().begin(), simp.added().end());

@@ -133,6 +133,9 @@ void usage() {
 	          "                     bones and the texture mapping are kept). Smaller archive, faster drawing; the look changes a little\n"
 	          "  --simplify-ratio R triangles kept of what is simplified (default 0.6); --simplify-error CM: how far a collapse\n"
 	          "                     may move the surface (default 3); --simplify-no-characters: the world only\n"
+	          "  --simplify-ratio-large R   a second, harder pass over the large objects (the class that is always drawn, the\n"
+	          "                     heaviest in the busiest scenes): R of their triangles kept (try 0.4; off by default);\n"
+	          "                     --simplify-error-large CM: the error allowed in that pass (default 8)\n"
 	          "  --lod              Graphics+: a simplified stand-in for the world meshes of far chunks (about half the\n"
 	          "                     triangles, same vertices; menu: Graphics+ -> Far geometry; adds ~10 %% to the chunks)\n"
 	          "  --lod-ratio R      triangles kept of what is simplified (default 0.45); --lod-error CM: how far a\n"
@@ -257,6 +260,8 @@ int main(int argc, char** argv) {
 				opt.simplify.ratio = std::clamp(std::stof(value()), 0.2f, 0.95f);
 				opt.simplifyModels.ratio = std::max(opt.simplify.ratio, 0.4f);
 			}
+			else if (a == "--simplify-ratio-large") opt.simplify.ratioLarge = std::clamp(std::stof(value()), 0.1f, 0.95f);
+			else if (a == "--simplify-error-large") opt.simplify.maxErrorLarge = std::clamp(std::stof(value()), 0.5f, 50.0f);
 			else if (a == "--simplify-error") opt.simplify.maxError = std::clamp(std::stof(value()), 0.5f, 50.0f);
 			else if (a == "--simplify-no-characters") opt.simplifyModels.enabled = false;
 			else if (a == "--lod") opt.lod.enabled = true;

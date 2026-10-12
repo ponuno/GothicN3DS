@@ -263,6 +263,8 @@ int main(int, char**) {
 	int reportLines = 0;
 	u32 lastStateCalls = 0;
 	g3::UpdateTimes partSum;               // where update() spent its time, summed over a report
+	g3::UpdateTimes partWorst;             // ... and the worst frame of each part
+	float npcClockWorst = 0.0f, npcSelectWorst = 0.0f, npcTickWorst = 0.0f; // of the inhabitants' part: clock / choosing / steps
 	u32 collQueries = 0, collTests = 0;    // and what its collision queries looked at
 	u32 slopeWrites = 0;                   // L+R+SELECT: records written (a failed write counts as none)
 	float lastYaw = app.camera().yaw;      // how fast the view turns: the pacer gives no objects back meanwhile
@@ -466,6 +468,14 @@ int main(int, char**) {
 				partSum.script += ut.script;
 				partSum.player += ut.player;
 				partSum.camera += ut.camera;
+				npcClockWorst = max(npcClockWorst, app.npcs().stats().clockMs);
+				npcSelectWorst = max(npcSelectWorst, app.npcs().stats().selectMs);
+				npcTickWorst = max(npcTickWorst, app.npcs().stats().tickMs);
+				partWorst.stream = max(partWorst.stream, ut.stream);
+				partWorst.npcs = max(partWorst.npcs, ut.npcs);
+				partWorst.script = max(partWorst.script, ut.script);
+				partWorst.player = max(partWorst.player, ut.player);
+				partWorst.camera = max(partWorst.camera, ut.camera);
 				collQueries += g3::collisionStats().queries;
 				collTests += g3::collisionStats().tests;
 			}
@@ -543,8 +553,12 @@ int main(int, char**) {
 			// update() by its parts: chunks, inhabitants (of which scripts),
 			// the player's character, the camera - and the collision queries
 			// of a frame with the triangles they looked at.
-			reportLine("upd w%3.1f n%3.1f s%3.1f p%3.1f c%3.1f", double(partSum.stream / 30.0f), double(partSum.npcs / 30.0f),
-			     double(partSum.script / 30.0f), double(partSum.player / 30.0f), double(partSum.camera / 30.0f));
+			// (average/worst frame of each: a stall shows in the worst, not in the average)
+			reportLine("upd w%.1f/%.0f n%.1f/%.0f s%.1f/%.0f p%.1f/%.0f c%.1f/%.0f",
+			     double(partSum.stream / 30.0f), double(partWorst.stream), double(partSum.npcs / 30.0f),
+			     double(partWorst.npcs), double(partSum.script / 30.0f), double(partWorst.script),
+			     double(partSum.player / 30.0f), double(partWorst.player), double(partSum.camera / 30.0f),
+			     double(partWorst.camera));
 			reportLine("collide %3lu queries %5lu tris", static_cast<unsigned long>(collQueries / 30),
 			     static_cast<unsigned long>(collTests / 30));
 			reportLine("loader %-6s job %5.1f ms  fly %lu",
@@ -614,13 +628,8 @@ int main(int, char**) {
 			reportLine("pos %7.0f %6.0f %7.0f u%lu/%lu sd%lu%s", double(eye.x), double(eye.y), double(eye.z),
 			     static_cast<unsigned long>(pl.popUps), static_cast<unsigned long>(pl.unstuck), static_cast<unsigned long>(slopeWrites),
 			     slopeFailed ? "!" : "");
-			{
-				// Jumps at walls: probes made, ledges found, why the last found none
-				// (Player::LedgeStats), the candidate's height above the feet.
-				const g3::Player::LedgeStats& lg = pl.ledgeStats();
-				reportLine("ledge probes %lu found %lu why %d h %.0f", static_cast<unsigned long>(lg.probes), static_cast<unsigned long>(lg.found),
-				     int(lg.why), double(lg.height));
-			}
+			// The inhabitants' part, worst frame: clock (routines) / choosing and making actors / their steps.
+			reportLine("npc worst clk %.0f sel %.0f tick %.0f ms", double(npcClockWorst), double(npcSelectWorst), double(npcTickWorst));
 			const g3::Hero& hero = app.hero();
 			if (plainShader) {
 				reportLine("hero off: plain shader (R at start)");
@@ -721,6 +730,8 @@ int main(int, char**) {
 			updateAccum = 0.0f;
 			updateWorst = 0.0f;
 			partSum = g3::UpdateTimes();
+			partWorst = g3::UpdateTimes();
+			npcClockWorst = npcSelectWorst = npcTickWorst = 0.0f;
 			collQueries = collTests = 0;
 			lateFrames = 0;
 			fadingSum = 0;

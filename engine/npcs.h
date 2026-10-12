@@ -100,6 +100,9 @@ struct NpcStats {
 	u32 mobsInUse = 0;    // things in use right now
 	u32 mobsFailed = 0;   // times somebody stood at a thing and had no animation for using it
 	float scriptMs = 0;   // milliseconds the last update() spent inside the scripts' functions
+	float clockMs = 0;    // ... setting the world's clock on (the routines of everybody)
+	float selectMs = 0;   // ... choosing and making the actors (models, grounding)
+	float tickMs = 0;     // ... in the actors' own steps
 	// Perception.
 	u32 perceived = 0;    // reactions called since the start (the player seen, an enemy, a passive perception)
 	u32 fightsRefused = 0; // states of fighting the scripts asked for and did not get (fights switched off)

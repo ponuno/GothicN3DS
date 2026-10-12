@@ -368,6 +368,7 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	_clock += dt;
 	++_frame;
 	_stats.scriptMs = 0;
+	const double tStart = sys::timeMs();
 	// No further than the world is drawn, and under load no further than the
 	// small things of the world: they go first, then come back.
 	const StreamConfig& sc = world.config();
@@ -381,9 +382,11 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 		_game.setTime(hours, findPoint, this);
 		_hours = hours;
 	}
+	const double tClock = sys::timeMs();
 	const float feet[3] = {eye.x, eye.y - 170.0f, eye.z};
 	_game.setHeroPlace(feet, _heroYaw);
 	select(pak, world, eye, _cfg.loadsPerFrame);
+	const double tSelect = sys::timeMs();
 	u32 actors = 0, walking = 0, looking = 0, fighting = 0;
 	for (NpcActor& a : _actors) {
 		if (!a.used || !a.ready) continue;
@@ -394,6 +397,9 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 		fighting += _game.npc(a.npc).weapon != WEAPON_NONE;
 	}
 	tickTalk(dt);
+	_stats.clockMs = float(tClock - tStart);
+	_stats.selectMs = float(tSelect - tClock);
+	_stats.tickMs = float(sys::timeMs() - tSelect);
 	_stats.looking = looking;
 	_stats.fighting = fighting;
 	u32 inUse = 0;

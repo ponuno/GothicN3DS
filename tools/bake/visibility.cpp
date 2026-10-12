@@ -96,7 +96,14 @@ void viewingPlaces(const Shared& sh, int cx, int cz, std::vector<V3>& out) {
 
 // Whether the segment from `s` to the point `p` meets something solid before it gets there (a few cm short:
 // the surface the point is on does not count).
-bool blockedTo(const Shared& sh, V3 s, V3 p) {
+// What last blocked the rays from one place: the next ray from there to a neighbouring point is mostly
+// stopped by the same wall, which is found without looking through the hierarchy.
+struct Occluders {
+	const Tri* tri[4] = {};
+	int next = 0;
+};
+
+bool blockedTo(const Shared& sh, V3 s, V3 p, Occluders& oc) {
 	const V3 d = p - s;
 	const float len = length(d);
 	if (len < 1.0f) return false;
@@ -104,10 +111,16 @@ bool blockedTo(const Shared& sh, V3 s, V3 p) {
 	if (tMax <= 1e-4f) return false;
 	float t = 0;
 	sh.rays.fetch_add(1, std::memory_order_relaxed);
-	return sh.bvh->nearest(s, d, 1e-4f, tMax, t, nullptr, true) > 0.0f;
+	for (const Tri* c : oc.tri)
+		if (c && Bvh::meets(*c, s, d, 1e-4f, tMax)) return true;
+	const Tri* hit = nullptr;
+	if (sh.bvh->nearest(s, d, 1e-4f, tMax, t, &hit, true) <= 0.0f || !hit) return false;
+	oc.tri[oc.next] = hit;
+	oc.next = (oc.next + 1) & 3;
+	return true;
 }
 
-bool visibleFrom(const Shared& sh, const std::vector<V3>& places, u32 box, int cx, int cz) {
+bool visibleFrom(const Shared& sh, const std::vector<V3>& places, std::vector<Occluders>& cache, u32 box, int cx, int cz) {
 	const Box& b = (*sh.boxes)[box];
 	if (b.empty()) return true;
 	// Whatever is near the cell - not near one of its few places: the camera can be anywhere in it - is visible.
@@ -118,9 +131,9 @@ bool visibleFrom(const Shared& sh, const std::vector<V3>& places, u32 box, int c
 	}
 	const u32 first = (*sh.pointStart)[box], last = (*sh.pointStart)[box + 1];
 	if (first == last) return true; // (nothing to aim at: say nothing)
-	for (const V3& s : places)
+	for (size_t pi = 0; pi < places.size(); ++pi)
 		for (u32 k = first; k < last; ++k)
-			if (!blockedTo(sh, s, (*sh.points)[k])) return true;
+			if (!blockedTo(sh, places[pi], (*sh.points)[k], cache[pi])) return true;
 	return false;
 }
 
@@ -271,6 +284,7 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 			row.x = cells[r].second;
 			viewingPlaces(sh, row.x, row.z, places);
 			row.samples = places.size();
+			std::vector<Occluders> cache(places.size());
 			std::vector<u8> bitsOut;
 			for (int dz = -reach; dz <= reach; ++dz)
 				for (int dx = -reach; dx <= reach; ++dx) {
@@ -282,7 +296,7 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 						const ChunkVis& c = cv[order[k]];
 						for (u32 cl = 0; cl < c.clusters; ++cl) {
 							// A row with no places (no ground in the cell) shows everything.
-							const bool vis = places.empty() || visibleFrom(sh, places, c.firstBox + cl, row.x, row.z);
+							const bool vis = places.empty() || visibleFrom(sh, places, cache, c.firstBox + cl, row.x, row.z);
 							bitsOut.push_back(vis ? 1 : 0);
 							row.hidden += !vis;
 						}

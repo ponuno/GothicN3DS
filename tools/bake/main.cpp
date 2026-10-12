@@ -137,6 +137,7 @@ void usage() {
 	          "  --far-cell M       its finest grid, metres (default 4; coarser if needed to fit)\n"
 	          "  --far-tris N       its most triangles, thousands (default 80)\n"
 	          "  --plant-words A,B  more words that name a tree in object/material/texture names (a mod's own)\n"
+	          "  --pack-level N     LZ4HC effort 3..12 (default 9; 12 is about 0.2 % smaller and a quarter slower to bake)\n"
 	          "  --threads N        worker threads");
 }
 
@@ -189,6 +190,7 @@ int main(int argc, char** argv) {
 			else if (a == "--no-seal") opt.chunker.seal = false;
 			else if (a == "--max-tex") opt.tex.maxSize = std::stoi(value());
 			else if (a == "--quality") opt.tex.quality = std::stoi(value());
+			else if (a == "--pack-level") PakWriter::setLevel(std::stoi(value()));
 			else if (a == "--threads") opt.threads = unsigned(std::max(1, std::stoi(value())));
 			else if (a == "--game") gameDir = value();
 			else if (a == "--zen") levels.push_back(levelFile(value()));

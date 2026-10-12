@@ -11,6 +11,9 @@
 
 namespace g3 {
 
+static int gLevel = 9; // (12 packs ~0.2 % smaller for a quarter more baking time)
+void PakWriter::setLevel(int level) { gLevel = level < 3 ? 3 : level > LZ4HC_CLEVEL_MAX ? LZ4HC_CLEVEL_MAX : level; }
+
 void PakWriter::add(const std::string& name, AssetType type, const std::vector<u8>& data, bool compress) {
 	Item it;
 	it.name = name;
@@ -26,7 +29,7 @@ void PakWriter::add(const std::string& name, AssetType type, const std::vector<u
 	if (compress && data.size() > 64 && data.size() < size_t(LZ4_MAX_INPUT_SIZE)) {
 		std::vector<u8> out(size_t(LZ4_compressBound(int(data.size()))));
 		int n = LZ4_compress_HC(reinterpret_cast<const char*>(data.data()), reinterpret_cast<char*>(out.data()),
-		                        int(data.size()), int(out.size()), LZ4HC_CLEVEL_MAX);
+		                        int(data.size()), int(out.size()), gLevel);
 		// Only keep the compressed form if it actually pays for the decode.
 		if (n > 0 && size_t(n) < data.size() - data.size() / 16) {
 			out.resize(size_t(n));

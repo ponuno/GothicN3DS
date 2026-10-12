@@ -1,7 +1,8 @@
 // PICA200 backend (libctru + citro3d).
 //
 // Fixed pipeline for world geometry:
-//   vertex shader  world.v.pica (dequantise, transform, per-vertex linear fog)
+//   vertex shader  world.v.pica (dequantise, transform, per-vertex linear fog;
+//                  Graphics+: baked ambient occlusion and swaying plants, see ChunkFx)
 //   TexEnv 0       texture * baked vertex light, alpha = texture alpha * opacity
 //   TexEnv 1       lerp towards the fog colour by the fog factor (vertex alpha)
 //   TexEnv 2, 3    only while dissolving (setFade): alpha - noise + share - 0.5,
@@ -56,7 +57,12 @@ bool gProgramReady = false;
 bool gReady = false; // C3D_Init succeeded
 int gLocProjection = -1, gLocModelView = -1, gLocChunk = -1, gLocParams = -1, gLocDayDelta = -1, gLocTexOffset = -1;
 int gLocSkinLight = -1, gLocBones = -1, gLocSkinned = -1, gLocFading = -1;
+int gLocFx = -1, gLocWindy = -1; // Graphics+ (not in the plain shader)
 bool gSkinned = false; // last value of the shader's `skinned` switch
+// Graphics+: the last `fx` uniform sent, and the `windy` switch - on for a
+// material with MATF_WIND while the chunk's wind is not zero.
+float gFx[4] = {0, 0, 0, 0};
+bool gWindy = false, gMaterialWind = false, gChunkWind = false;
 bool gPlainShader = false; // the world-only shader of earlier versions: no characters
 bool gFadeShader = false;  // the shader with the dissolve, and the noise on unit 1
 Pass gPass = PASS_WORLD;
@@ -218,6 +224,24 @@ void setTexOffset(float u, float v) {
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocTexOffset, u, v, 0.0f, 0.0f);
 }
 
+// Graphics+: the `fx` uniform, and the `windy` switch that follows from it,
+// the material and whether a character is drawn.
+void setFxUniform(float x, float y, float z, float w) {
+	if (gLocFx < 0 || (x == gFx[0] && y == gFx[1] && z == gFx[2] && w == gFx[3])) return;
+	gFx[0] = x;
+	gFx[1] = y;
+	gFx[2] = z;
+	gFx[3] = w;
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocFx, x, y, z, w);
+}
+
+void updateWindy() {
+	const bool on = gLocWindy >= 0 && gMaterialWind && gChunkWind && !gSkinned;
+	if (on == gWindy) return;
+	gWindy = on;
+	C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWindy, on);
+}
+
 // The GPU executes a frame's command list after C3D_FrameEnd returns, so
 // memory a draw call referenced must outlive that frame. Destroyed resources
 // are parked here and released once C3D_FrameBegin has waited for the GPU.
@@ -298,6 +322,9 @@ bool init() {
 		gLocBones = shaderInstanceGetUniformLocation(gProgram.vertexShader, "bones");
 		gLocSkinned = shaderInstanceGetUniformLocation(gProgram.vertexShader, "skinned");
 		if (gLocSkinLight < 0 || gLocBones < 0 || gLocSkinned < 0) return false;
+		gLocFx = shaderInstanceGetUniformLocation(gProgram.vertexShader, "fx");
+		gLocWindy = shaderInstanceGetUniformLocation(gProgram.vertexShader, "windy");
+		if (gLocFx < 0 || gLocWindy < 0) return false;
 		if (gFadeShader) {
 			gLocFading = shaderInstanceGetUniformLocation(gProgram.vertexShader, "fading");
 			if (gLocFading < 0) return false;
@@ -351,7 +378,7 @@ void shutdown() {
 		C3D_Fini();
 		if (gNoiseReady) C3D_TexDelete(&gNoise);
 		gNoiseReady = false;
-		gLocFading = -1;
+		gLocFading = gLocFx = gLocWindy = -1;
 		if (gProgramReady) shaderProgramFree(&gProgram);
 		if (gDvlb) DVLB_Free(gDvlb);
 	}
@@ -530,6 +557,13 @@ void frameBegin(const FrameDesc& f) {
 	gParams[0] = gParams[1] = gParams[2] = gParams[3] = -1.0f; // unknown: the first chunk sends them
 	if (!gPlainShader) C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocSkinned, false);
 	gSkinned = false;
+	// No Graphics+ until a chunk asks for it.
+	if (gLocFx >= 0) {
+		gFx[0] = gFx[1] = gFx[2] = gFx[3] = 0.0f;
+		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocFx, 0.0f, 0.0f, 0.0f, 0.0f);
+		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWindy, false);
+	}
+	gWindy = gMaterialWind = gChunkWind = false;
 
 	// Start every frame from a known state; from here on only changes are sent.
 	setStage0(true, 255);
@@ -601,14 +635,21 @@ static void setSkinned(bool on) {
 	if (on == gSkinned || gPlainShader) return;
 	gSkinned = on;
 	C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocSkinned, on);
+	updateWindy(); // (a character never sways)
 }
 
-void setChunkTransform(const float origin[3], float posScale, float uvScale) {
+void setChunkTransform(const float origin[3], float posScale, float uvScale, const ChunkFx* fx) {
 	if (!gInFrame) return;
 	// Lattice positions minus a lattice point: exact, here and in the shader.
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, origin[0] - gAnchor[0], origin[1] - gAnchor[1], origin[2] - gAnchor[2],
 	              posScale);
 	setParams(uvScale);
+	// The shader's wave peaks at 1/4: four times the sway reaches it.
+	const ChunkFx none;
+	const ChunkFx& f = fx ? *fx : none;
+	setFxUniform(f.windX * 4.0f, f.windZ * 4.0f, f.windPhase, f.occlusion);
+	gChunkWind = f.windX != 0.0f || f.windZ != 0.0f;
+	updateWindy();
 }
 
 void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, float uvOffsetV) {
@@ -628,6 +669,8 @@ void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, 
 	if (blended) setBlend(additive ? BLEND_ADD : BLEND_ALPHA);
 	if (additive != gFogToBlack) setFogStage(additive);
 	setTexOffset(uvOffsetU, uvOffsetV);
+	gMaterialWind = (materialFlags & MATF_WIND) != 0;
+	updateWindy();
 }
 
 bool fadeSupported() { return gNoiseReady; }
@@ -690,7 +733,7 @@ void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin) 
 	C3D_DrawElements(GPU_TRIANGLES, int(indexCount), C3D_UNSIGNED_SHORT, m->indices + firstIndex);
 }
 
-Texture* uiTextureCreate(u16 w, u16 h, const u8* coverage) {
+Texture* uiTextureCreate(u16 w, u16 h, const u8* coverage, bool smooth) {
 	const auto pot = [](u32 v) { return v >= 8 && v <= 1024 && (v & (v - 1)) == 0; };
 	if (!coverage || !pot(w) || !pot(h)) return nullptr;
 	Texture* t = static_cast<Texture*>(calloc(1, sizeof(Texture)));
@@ -716,8 +759,13 @@ Texture* uiTextureCreate(u16 w, u16 h, const u8* coverage) {
 		}
 	}
 	C3D_TexFlush(&t->tex);
-	C3D_TexSetFilter(&t->tex, GPU_NEAREST, GPU_NEAREST);
-	C3D_TexSetWrap(&t->tex, GPU_REPEAT, GPU_REPEAT);
+	if (smooth) {
+		C3D_TexSetFilter(&t->tex, GPU_LINEAR, GPU_LINEAR);
+		C3D_TexSetWrap(&t->tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+	} else {
+		C3D_TexSetFilter(&t->tex, GPU_NEAREST, GPU_NEAREST);
+		C3D_TexSetWrap(&t->tex, GPU_REPEAT, GPU_REPEAT);
+	}
 	t->bytes = 0; // (MemStats are the world's and the characters')
 	return t;
 }
@@ -738,6 +786,9 @@ static void beginUi(Texture* t) {
 	if (gFogToBlack) setFogStage(false);
 	setSkinned(false);
 	setTexOffset(0.0f, 0.0f);
+	setFxUniform(0.0f, 0.0f, 0.0f, 0.0f);
+	gMaterialWind = gChunkWind = false;
+	updateWindy();
 	C3D_Mtx proj, identity;
 	Mtx_OrthoTilt(&proj, 0.0f, float(SCREEN_W), float(SCREEN_H), 0.0f, -1.0f, 1.0f, true);
 	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocProjection, &proj);
@@ -779,7 +830,7 @@ void uiDraw(Texture* t, const UiQuad* quads, u32 count) {
 			o.x = xs[c & 1];
 			o.y = ys[c >> 1];
 			o.z = 0;
-			o.w = 1;
+			o.w = 0; // (no occlusion, no sway)
 			o.u = i16(us[c & 1] * 16);
 			o.v = i16(float(vs[c >> 1]) * 16.0f * vScale);
 			o.r = in.rgba[0];

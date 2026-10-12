@@ -41,6 +41,9 @@ struct ChunkerOptions {
 	// every material gets a batch per box: the runtime draws the boxes that are
 	// in view instead of the whole chunk. 0: one batch per material, as before.
 	float clusterSize = 1000.0f; // cm
+	// The vertices' w carries SrcVertex::occlusion and ::wind (WORLDF_AO,
+	// WORLDF_WIND); otherwise it is 1, as it always was.
+	bool vertexFx = false;
 };
 
 struct ChunkerStats {

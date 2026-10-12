@@ -106,6 +106,9 @@ void usage() {
 	          "  --no-scripts       do not bake the game's scripts (the worlds stay empty)\n"
 	          "  --sound-rate HZ    highest sample rate of the sound effects (default: 22050)\n"
 	          "  --no-sound         bake no sound effects and no ambient sounds\n"
+	          "  --debug            write bake_debug.txt beside the output: what the scripts did while the worlds were\n"
+	          "                     populated, in order, with the engine functions and Ikarus/LeGo/Union code involved\n"
+	          "  --debug-report F   the same into the file F\n"
 	          "  --music-dir DIR    folder of WAV renders of the music themes; makes music.pak beside the output\n"
 	          "  --music-rate HZ    highest sample rate of the music (default: 44100)\n"
 	          "  --hero-script NAME world: the character's model script (default: HUMANS.MDS)\n"
@@ -116,6 +119,12 @@ void usage() {
 	          "  --no-font          world: keep the overlay's own font, do not take the game's\n"
 	          "  --no-objects       world mesh only, skip trees, bridges and other world objects\n"
 	          "  --no-lightmaps     keep the vertex light on lightmapped (indoor) polygons\n"
+	          "  --ao off|low|high  Graphics+: bake ambient occlusion into the vertices - corners, the foot of walls\n"
+	          "                     and the ground under eaves darker (low: 16 rays of 2.5 m, high: 40 of 4 m; default: off)\n"
+	          "  --ao-rays N        rays per corner instead of the level's\n"
+	          "  --ao-radius CM     how far a ray looks instead of the level's\n"
+	          "  --wind             Graphics+: trees, bushes and grass sway (marked by their names; see the report)\n"
+	          "  --plant-words A,B  more words that name a tree in object/material/texture names (a mod's own)\n"
 	          "  --threads N        worker threads");
 }
 
@@ -185,6 +194,8 @@ int main(int argc, char** argv) {
 			else if (a == "--music-rate") opt.musicRate = u32(std::stoul(value()));
 			else if (a == "--voice-rate") opt.voiceRate = u32(std::stoul(value()));
 			else if (a == "--no-voices") opt.voiceRate = 0;
+			else if (a == "--debug") opt.debugFile = "?";
+			else if (a == "--debug-report") opt.debugFile = value();
 			else if (a == "--voice-codec") {
 				const std::string v = value();
 				if (v != "pcm" && v != "ima") throw std::runtime_error("--voice-codec wants pcm or ima");
@@ -205,7 +216,33 @@ int main(int argc, char** argv) {
 			else if (a == "--flip") zen.flipWinding = true;
 			else if (a == "--no-flip") zen.flipWinding = false; // the default; kept for old command lines
 			else if (a == "--cells") synth.cells = std::stoi(value());
+			else if (a == "--ao") {
+				const std::string v = value();
+				if (v == "off") opt.ao.level = AO_OFF;
+				else if (v == "low") opt.ao.level = AO_LOW;
+				else if (v == "high") opt.ao.level = AO_HIGH;
+				else throw std::runtime_error("--ao wants off, low or high");
+			}
+			else if (a == "--ao-rays") opt.ao.rays = u32(std::clamp(std::stoi(value()), 1, 256));
+			else if (a == "--ao-radius") opt.ao.radius = std::clamp(std::stof(value()), 10.0f, 5000.0f);
+			else if (a == "--wind") opt.wind = true;
+			else if (a == "--plant-words") {
+				const std::string v = value();
+				for (size_t p = 0; p <= v.size();) {
+					size_t e = v.find(',', p);
+					if (e == std::string::npos) e = v.size();
+					std::string word = v.substr(p, e - p);
+					for (char& c : word) c = char(std::toupper(static_cast<unsigned char>(c)));
+					if (!word.empty()) zen.plantWords.push_back(word);
+					p = e + 1;
+				}
+			}
 			else throw std::runtime_error("unknown option " + a);
+		}
+		opt.ao.threads = opt.threads;
+		if (opt.debugFile == "?") {
+			const size_t slash = out.find_last_of("/\\");
+			opt.debugFile = (slash == std::string::npos ? std::string() : out.substr(0, slash + 1)) + "bake_debug.txt";
 		}
 		const int mt = opt.tex.maxSize;
 		if (mt < int(TEX_MIN_SIZE) || mt > int(TEX_MAX_SIZE) || (mt & (mt - 1)))
@@ -307,6 +344,14 @@ int main(int argc, char** argv) {
 					if (found.size() == 1) {
 						levels.push_back(found[0].first);
 						notes.push_back("no WORLD.ZEN or NEWWORLD.ZEN; the only world in the archives is " + found[0].first);
+					} else if (found.size() >= 2 && found[0].second >= 2 * found[1].second && found[0].second >= (1u << 20)) {
+						// (Listed biggest first.) One far bigger than the rest is the main world: the window of the
+						// Windows baker has no field for --zen, and Archolos has ARCHOLOS_MAINLAND.ZEN (186 MB) beside
+						// ENDGAME (33 MB) and a few 0 MB files.
+						levels.push_back(found[0].first);
+						notes.push_back("no WORLD.ZEN or NEWWORLD.ZEN; took the biggest world, " + found[0].first + " (" +
+						                std::to_string(found[0].second >> 20) + " MB, the next is " + std::to_string(found[1].second >> 20) +
+						                " MB). Name another with --zen NAME.ZEN");
 					} else {
 						std::string list;
 						for (size_t i = 0; i < found.size() && i < 40; ++i)

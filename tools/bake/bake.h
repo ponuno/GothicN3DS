@@ -7,6 +7,7 @@
 #include "scene.h"
 #include "script_src.h"
 #include "texture_bake.h"
+#include "vertex_fx.h"
 
 #include <functional>
 #include <set>
@@ -25,6 +26,11 @@ struct BakeOptions {
 	u32 voiceRate = 48000; // highest rate of the spoken lines (Hz): the recordings' own, unless lowered; 0: no speech.pak
 	bool voiceIma = false; // the voices as IMA ADPCM (a quarter the size) instead of 16-bit samples
 	u32 soundRate = 22050; // highest sample rate of the sounds (Hz); 0: no sound is baked
+	std::string debugFile; // where the detailed diagnostic report goes (empty: none; "?": bake_debug.txt beside the output)
+	// "Graphics+": ambient occlusion in the vertices (--ao) and the plants'
+	// sway (--wind; the importer marks them, without it the marks are dropped).
+	AoOptions ao;
+	bool wind = false;
 };
 
 struct BakeWorld {

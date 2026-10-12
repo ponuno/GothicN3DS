@@ -217,8 +217,12 @@ int main(int, char**) {
 	}
 
 	// The linear heap, where meshes and textures live, is 32 MB; the command
-	// buffer and the frame buffers are in it too.
-	app.world().config().memoryBudget = 20u << 20;
+	// buffers, the characters, the particles and the sound are in it too. The
+	// world takes what is free there, less a reserve for those (World::budget),
+	// up to 28 MB - before, a fixed 20 MB, whatever was free.
+	app.world().config().memoryBudget = 28u << 20;
+	app.world().config().memoryReserve = 6u << 20;
+	app.world().config().freeMemory = []() -> g3::u32 { return g3::u32(linearSpaceFree()); };
 	// Continue where the last session ended, unless L is held at start.
 	const bool hadState = !(startKeys & KEY_L) && app.loadState(kStatePath);
 	// The settings: the draw distance of an older state.bin counts once, for
@@ -500,6 +504,10 @@ int main(int, char**) {
 		if (pacing && updateMs < 50.0f && !record) {
 			pacer.update(load, turning);
 			app.world().config().detailScale = pacer.detailScale();
+			// Graphics+ gives way first: once the pacer takes objects away, the plants
+			// stand still and only the hero keeps a shadow, until all objects are back.
+			const bool heavy = app.gfxRelief() ? pacer.detailScale() < 0.999f || pacer.interval() == 2 : pacer.detailScale() < 0.95f;
+			if (heavy != app.gfxRelief()) app.setGfxRelief(heavy);
 			if (pacer.interval() != interval) {
 				interval = pacer.interval();
 				C3D_FrameRate(interval == 2 ? 30.0f : 60.0f);
@@ -552,15 +560,26 @@ int main(int, char**) {
 			     static_cast<unsigned long>(ws.chunksDrawn), wholeChunks ? " ZL" : "");
 			reportLine("blend %3lu cull %4lu merged %4lu", static_cast<unsigned long>(ws.blendedDrawCalls),
 			     static_cast<unsigned long>(ws.batchesCulled), static_cast<unsigned long>(ws.batchesMerged));
-			reportLine("cmdbuf %3.0f%%  dropped draws %lu", double(fs.commandBufferUse * 100.0f),
-			     static_cast<unsigned long>(fs.drawsDropped));
+			{
+				// The command buffer's use and the draws dropped for want of room; then Graphics+: occlusion
+				// strength, wind setting and its draw calls, shadow setting and shadows laid. '-' after a value:
+				// not in data.pak (bake with --ao / --wind); R: given way to the frame rate (the pacer).
+				const g3::Settings& st = app.settings();
+				reportLine("cmd%3.0f%% x%lu g+ao%3d%c w%d%c%2lu sh%d/%lu%s", double(fs.commandBufferUse * 100.0f),
+				     static_cast<unsigned long>(fs.drawsDropped), int(st.occlusion), app.world().hasOcclusion() ? ' ' : '-', int(st.wind),
+				     app.world().hasWind() ? ' ' : '-', static_cast<unsigned long>(ws.windyDrawCalls), int(st.shadows),
+				     static_cast<unsigned long>(app.shadows().stats().drawn), app.gfxRelief() ? " R" : "");
+			}
 			reportLine("resident %3lu/%lu  pending %3lu", static_cast<unsigned long>(ws.chunksLoaded),
 			     static_cast<unsigned long>(ws.chunksTotal), static_cast<unsigned long>(ws.chunksPending));
 			// (Meshes, textures and collision of the world; free linear memory; chunks refused for the budget, failed.)
 			reportLine("mesh %5.2f tex %5.2f MB col %5.0fK", double(mem.meshBytes) / 1048576.0, double(mem.textureBytes) / 1048576.0,
 			     double(ws.collisionBytes) / 1024.0);
-			reportLine("lin free %4.1fMB rej %lu ev %lu fail %lu", double(linearSpaceFree()) / 1048576.0,
-			     static_cast<unsigned long>(ws.budgetRejects), static_cast<unsigned long>(ws.evictions), static_cast<unsigned long>(ws.loadFailures));
+			// (Free linear memory and the world's budget from it; chunks refused for the budget, evicted, failed.)
+			reportLine("lin %4.1f bud %4.1fMB rej %lu ev %lu f%lu", double(linearSpaceFree()) / 1048576.0,
+			     double(ws.budgetBytes) / 1048576.0, static_cast<unsigned long>(ws.budgetRejects), static_cast<unsigned long>(ws.evictions),
+			     static_cast<unsigned long>(ws.loadFailures));
+
 			reportLine("draw distance %3.0f m  time %02d:%02d", double(app.drawDistance() / 100.0f), int(app.environment().timeOfDay),
 			     int(app.environment().timeOfDay * 60.0f) % 60);
 			reportLine("%-22.22s %-16.16s", state, app.worldName());

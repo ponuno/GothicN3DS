@@ -79,9 +79,32 @@ void meshUpdate(Mesh* m, const WorldVertex* vertices, u32 vertexCount);
 void frameBegin(const FrameDesc& f);
 // Starts in PASS_WORLD after frameBegin.
 void setPass(Pass pass);
+// "Graphics+" of world geometry, from what the vertices' w carries
+// (g3ds/world.h: WORLDF_AO, WORLDF_WIND). All zero: nothing of it, as for
+// everything that is not the world (the sky, particles, the overlay).
+struct ChunkFx {
+	float occlusion = 0.0f; // 0..1: how much of the baked ambient occlusion darkens the light
+	// Sideways movement, cm, of a corner of sway 1 (one step, WORLD_WIND_UNIT)
+	// at the crest of the wave. Only materials with MATF_WIND move.
+	float windX = 0.0f, windZ = 0.0f;
+	float windPhase = 0.0f; // 0..1: the wave's phase at the chunk's origin (see windPhaseAt)
+};
+// The wave travels along x + z: one wave per this many cm.
+constexpr float WIND_WAVE_CM = 800.0f;
+// The wave's phase at `origin` at time `seconds` with `wavesPerSecond`
+// passing: worked out in double, so it stays exact far from the world's
+// middle and long into the game, and the wave runs on unbroken from chunk
+// to chunk (the shader adds the corner's offset from the origin).
+inline float windPhaseAt(const float origin[3], double seconds, float wavesPerSecond) {
+	double t = seconds * double(wavesPerSecond) + (double(origin[0]) + double(origin[2])) / double(WIND_WAVE_CM);
+	t -= floor(t);
+	return float(t);
+}
+
 // Sets the dequantisation transform for the following draws:
-// world = origin + position * posScale.
-void setChunkTransform(const float origin[3], float posScale, float uvScale);
+// world = origin + position * posScale. `fx` (may be null: none) applies
+// until the next call.
+void setChunkTransform(const float origin[3], float posScale, float uvScale, const ChunkFx* fx = nullptr);
 // materialFlags: MaterialFlags from world.h. A null texture draws white.
 // opacity scales the alpha of blended materials; uvOffset is added to the
 // texture coordinates (scrolling water).
@@ -124,7 +147,9 @@ struct UiQuad {
 	u8 rgba[4];
 };
 // `coverage`: w * h bytes, rows from the top, 0..255. Freed with textureDestroy.
-Texture* uiTextureCreate(u16 w, u16 h, const u8* coverage);
+// `smooth`: filtered and clamped at the edges (a soft shape drawn in the
+// world, like the shadows under the characters) instead of texel-exact.
+Texture* uiTextureCreate(u16 w, u16 h, const u8* coverage, bool smooth = false);
 // After the frame's 3D passes, before frameEnd. Quads of one alpha are one
 // draw call: keep them together.
 void uiDraw(Texture* t, const UiQuad* quads, u32 count);

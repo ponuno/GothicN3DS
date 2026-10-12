@@ -21,6 +21,17 @@ enum FrameRateMode : u8 {
 	FRAME_MODES
 };
 
+// "Graphics+": the shadows under the characters (G3).
+enum ShadowMode : u8 {
+	SHADOWS_OFF,
+	SHADOWS_HERO, // under the player's character only
+	SHADOWS_ALL,  // and under everybody near (as far as the inhabitants are drawn, up to 25 m)
+	SHADOW_MODES
+};
+
+// Sets of the Graphics+ page's values (Settings::gfxPlus).
+enum GfxPreset : u8 { GFX_PLUS_OFF, GFX_PLUS_BALANCED, GFX_PLUS_MAX, GFX_PLUS_OWN, GFX_PRESETS };
+
 enum ControlScheme : u8 {
 	CONTROLS_CONSOLE, // the stick moves the character the way it points as the camera sees it; the C-stick turns the camera
 	CONTROLS_CLASSIC, // as the PC original: forward/back along the character, left/right turn it; the camera behind it
@@ -63,6 +74,11 @@ struct Settings {
 	u8 showFps = 0;          // the frames per second in the corner of the top screen
 	u8 barrier = 1;          // the Barrier over the sky outdoors (its glow, and its hum if the scripts have one)
 	u8 timeFlow = 2;         // how fast the game's clock runs: 0 stopped, 1 a day in 24 minutes, 2 in an hour, 3 in two hours
+	// Version 8: "Graphics+" (all off at first; what the data lacks does nothing).
+	u8 gfxPlus = GFX_PLUS_OFF; // the set the values below came from (GFX_PLUS_OWN: changed one by one)
+	u8 occlusion = 0;        // 0..100 %: the baked ambient occlusion's strength (data baked with --ao)
+	u8 wind = 0;             // the plants sway: 0 still, 1 gently, 2 normal, 3 strongly (data baked with --wind)
+	u8 shadows = SHADOWS_OFF; // round shadows under the characters
 
 	// Clamps every value into its range (after reading a file of another version).
 	void sanitize();
@@ -79,6 +95,12 @@ struct Settings {
 	float npcRangeCm() const { return npcDistance == 0 ? 2000.0f : npcDistance == 2 ? 4500.0f : 3000.0f; }
 	// The graphics page's values as they were at first.
 	void resetGraphics();
+	// Graphics+: the values of a set (GFX_PLUS_OWN changes nothing), and which
+	// set the present values are (GFX_PLUS_OWN if none).
+	void applyGfxPreset(u8 preset);
+	u8 gfxPresetOf() const;
+	float occlusionStrength() const { return float(occlusion) * 0.01f; }
+	float windStrength() const { return wind == 1 ? 0.5f : wind == 2 ? 1.0f : wind == 3 ? 1.7f : 0.0f; }
 
 	// settings.bin. load() leaves the defaults and returns false if the file
 	// is missing or damaged.

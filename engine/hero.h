@@ -217,6 +217,7 @@ private:
 	Vec3 _feet {0, 0, 0};
 	float _yaw = 0, _speed = 0, _airTime = 0, _turnLag = 0, _lean = 0;
 	float _restY = 100.0f, _hipMix = 0;
+	float _exitCarry = 0, _exitTime = 1.0f; // (the climb's height left in the pose the next one fades from)
 	float _light[3] = {1, 1, 1};
 	float _jumpCool = 0.0f;
 	bool _placed = false, _walkMode = false, _slow = false, _jumpHeld = false, _jumping = false, _leftGround = false;

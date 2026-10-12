@@ -328,6 +328,18 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		std::map<std::string, int> flatIndex; // flat texture name -> table index
 		std::vector<std::string> untextured;  // for the report
 		u32 blended = 0, animated = 0, scrolling = 0, water = 0;
+		// "Graphics+": which materials sway, and what each does for the occlusion.
+		std::vector<bool> windy(scene.materials.size(), false);
+		u64 swayingCorners = 0;
+		for (SrcTriangle& t : bw.scene.triangles)
+			for (SrcVertex& v : t.v) {
+				if (!opt.wind) v.wind = 0;
+				if (!v.wind || t.material >= windy.size()) continue;
+				windy[t.material] = true;
+				++swayingCorners;
+			}
+		std::vector<AoMaterial> aoMaterials(scene.materials.size(), AoMaterial {0.0f, false});
+		u32 windyMaterials = 0;
 		for (size_t i = 0; i < scene.materials.size(); ++i) {
 			if (!used[w][i]) continue;
 			const SrcMaterial& sm = scene.materials[i];
@@ -371,6 +383,12 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			}
 			if (wm.flags & MATF_TRANSLUCENT) wm.opacity = sm.opacity;
 			if (sm.noCollision) wm.flags |= MATF_NO_COLLISION;
+			if (windy[i]) wm.flags |= MATF_WIND;
+			// Glass, water and glow let the sky through and are not shaded; a
+			// cut-out (leaves, fences) stops about half of what passes it.
+			aoMaterials[i] = (wm.flags & MATF_TRANSLUCENT) ? AoMaterial {0.0f, false}
+			                 : (wm.flags & MATF_ALPHA_TEST)  ? AoMaterial {0.5f, true}
+			                                                 : AoMaterial {1.0f, true};
 			if (wm.frameCount > 1) {
 				const float ms = sm.animFps > 0 ? 1000.0f / sm.animFps : 1000.0f / float(wm.frameCount);
 				wm.frameMs = u16(std::clamp(ms, 16.0f, 60000.0f));
@@ -387,6 +405,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				water += (wm.flags & MATF_WATER) != 0;
 				animated += wm.frameCount > 1;
 				scrolling += wm.scroll[0] != 0 || wm.scroll[1] != 0;
+				windyMaterials += (wm.flags & MATF_WIND) != 0;
 			}
 			remap[i] = ins.first->second;
 		}
@@ -410,8 +429,13 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		if (scene.indoor)
 			for (SrcTriangle& t : bw.scene.triangles)
 				for (SrcVertex& v : t.v) v.rgba[3] = 0;
+		AoStats ao;
+		if (opt.ao.level != AO_OFF) bakeOcclusion(bw.scene, aoMaterials, opt.ao, ao);
+		const bool hasWind = opt.wind && windyMaterials > 0;
+		ChunkerOptions chunkerOpt = opt.chunker;
+		chunkerOpt.vertexFx = opt.ao.level != AO_OFF || hasWind;
 		ChunkerStats cs;
-		std::vector<BakedChunk> chunks = buildChunks(scene, remap, materialOrder, opt.chunker, cs);
+		std::vector<BakedChunk> chunks = buildChunks(scene, remap, materialOrder, chunkerOpt, cs);
 		if (chunks.empty()) throw std::runtime_error("world '" + bw.name + "' has no drawable triangles");
 
 		// ---- portals ----
@@ -465,6 +489,8 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		wh.portalCount = u32(portals.size());
 		wh.ladderCount = u32(ladders.size());
 		if (scene.indoor) wh.flags |= WORLDF_INDOOR;
+		if (opt.ao.level != AO_OFF) wh.flags |= WORLDF_AO;
+		if (hasWind) wh.flags |= WORLDF_WIND;
 		std::memcpy(wh.fogColor, scene.fogColor, sizeof(wh.fogColor));
 		wh.triangleCount = u32(cs.outputTriangles);
 		for (int a = 0; a < 3; ++a) {
@@ -778,6 +804,20 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			            static_cast<unsigned long long>(cs.clusters), double(opt.chunker.clusterSize) / 100.0, cs.maxChunkClusters,
 			            cs.coarsenedChunks ? format("; %u chunks needed bigger boxes", cs.coarsenedChunks).c_str() : "",
 			            double(cs.outputTriangles) / double(cs.clusters), double(cs.batches) / double(cs.clusters)));
+		if (opt.ao.level != AO_OFF)
+			line(format("ambient occlusion (--ao %s): %llu corners from %llu places, %u rays of %.1f m each against %llu "
+			            "triangles (%.1f M rays, %.1f s); %.0f%% shut in on average, %llu corners more than half",
+			            opt.ao.level == AO_HIGH ? "high" : "low", static_cast<unsigned long long>(ao.corners),
+			            static_cast<unsigned long long>(ao.unique), ao.rayCount, double(ao.radius) / 100.0,
+			            static_cast<unsigned long long>(ao.occluders), double(ao.rays) / 1e6, ao.seconds, double(ao.mean) * 100.0,
+			            static_cast<unsigned long long>(ao.darkCorners)));
+		else
+			line("ambient occlusion: not baked (--ao low|high)");
+		if (opt.wind)
+			line(format("wind: %llu corners sway, %u world materials marked", static_cast<unsigned long long>(swayingCorners),
+			            windyMaterials));
+		else
+			line("wind: not baked (--wind)");
 		line(format("materials: %zu world materials from %zu source materials, %zu textures; %u blended (%u water), "
 		            "%u animated, %u scrolling",
 		            worldMaterials.size(), size_t(std::count(used[w].begin(), used[w].end(), 1)), textureTable.size(),

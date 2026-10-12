@@ -24,6 +24,9 @@ constexpr u32 CHUNK_MAGIC = fourcc('G', '3', 'C', 'H');
 //    detail classes, portals between worlds, ladders, indoor worlds.
 // 4: chunk-local positions are signed (the origin is the middle of the
 //    chunk), on a lattice of 1/8 cm. Same layout as 3.
+//    Later, same version and layout: WORLDF_AO / WORLDF_WIND and MATF_WIND
+//    (what the vertex's w carries then); a runtime that knows nothing of
+//    them draws such a world as before.
 constexpr u32 WORLD_VERSION = 4;
 
 constexpr u32 CHUNK_MAX_VERTICES = 65535; // 16-bit indices
@@ -37,6 +40,7 @@ enum MaterialFlags : u16 {
 	MATF_NO_COLLISION = 1 << 3, // drawn, but the player walks through it (leaves, water, ...)
 	MATF_ADD = 1 << 4,          // drawn in the blended pass: colour * alpha + dst (light shafts, glow)
 	MATF_WATER = 1 << 5,        // a water surface: the player wades and swims below it
+	MATF_WIND = 1 << 6,         // some of its vertices sway in the wind (WorldVertex::w, high byte)
 };
 constexpr u16 MATF_TRANSLUCENT = MATF_BLEND | MATF_ADD;
 
@@ -74,6 +78,12 @@ enum WorldFlags : u32 {
 	// A world without sky (a mine, a temple): nothing is tinted by the time of
 	// day and the background is WorldHeader::fogColor.
 	WORLDF_INDOOR = 1 << 0,
+	// The vertices carry baked ambient occlusion in the low byte of
+	// WorldVertex::w (g3ds-bake --ao). Without it w is 1 and means nothing.
+	WORLDF_AO = 1 << 1,
+	// Plants carry how far they sway in the high byte of WorldVertex::w
+	// (g3ds-bake --wind); their materials have MATF_WIND.
+	WORLDF_WIND = 1 << 2,
 };
 
 struct WorldMaterial {
@@ -151,12 +161,24 @@ struct ChunkBatch {
 static_assert(sizeof(ChunkBatch) == 24, "ChunkBatch layout");
 
 struct WorldVertex {
-	i16 x, y, z, w; // w is padding (always 1); the shader forces w = 1.0
+	i16 x, y, z;
+	// World vertices of an archive baked with --ao or --wind (WORLDF_AO,
+	// WORLDF_WIND): bits 0-7 how much of the sky the corner does not see
+	// (ambient occlusion, 0 = open, 255 = shut in), bits 8-14 how far it sways
+	// in the wind, in quarters of a centimetre (0 = it stands still).
+	// Otherwise 1, meaning nothing. The shader forces the position's w to 1.0.
+	i16 w;
 	i16 u, v;
 	u8 r, g, b; // baked static light
 	u8 a;       // how much the time of day tints that light: 255 outdoors, 0 under a lightmap
 };
 static_assert(sizeof(WorldVertex) == 16, "WorldVertex layout");
+
+// WorldVertex::w of a world with WORLDF_AO / WORLDF_WIND.
+constexpr float WORLD_WIND_UNIT = 0.25f; // cm of sway per step of the wind byte
+inline i16 packVertexFx(u8 occlusion, u8 wind) { return i16(u16(occlusion) | (u16(wind > 127 ? 127 : wind) << 8)); }
+inline u8 vertexOcclusion(i16 w) { return u8(u16(w) & 0xFFu); }
+inline u8 vertexWind(i16 w) { return u8((u16(w) >> 8) & 0x7Fu); }
 
 inline u32 chunkBlobSize(u32 batches, u32 vertices, u32 indices) {
 	return u32(sizeof(ChunkHeader)) + batches * u32(sizeof(ChunkBatch)) + vertices * u32(sizeof(WorldVertex)) +

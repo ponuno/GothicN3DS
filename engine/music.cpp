@@ -421,7 +421,7 @@ void Music::writeReport(FILE* f) const {
 		fprintf(f, "music: off\n");
 		return;
 	}
-	fprintf(f, "music: zones %u, theme names tried and not found:\n", _zoneCount);
+	fprintf(f, "music: zones %u, theme names tried and not found:\n", unsigned(_zoneCount));
 	for (u32 i = 0; i < _triedCount; ++i) fprintf(f, "  %s\n", _tried[i]);
 }
 

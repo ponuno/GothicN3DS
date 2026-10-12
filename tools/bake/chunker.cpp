@@ -227,6 +227,8 @@ struct Sealer {
 			for (int k = 0; k < 2; ++k) sp.v.uv[k] = a.uv[k] + (b.uv[k] - a.uv[k]) * f;
 			for (int k = 0; k < 4; ++k)
 				sp.v.rgba[k] = u8(std::lround(float(a.rgba[k]) + (float(b.rgba[k]) - float(a.rgba[k])) * f));
+			sp.v.occlusion = u8(std::lround(float(a.occlusion) + (float(b.occlusion) - float(a.occlusion)) * f));
+			sp.v.wind = u8(std::lround(float(a.wind) + (float(b.wind) - float(a.wind)) * f));
 			points.push_back(sp);
 		}
 	}
@@ -518,7 +520,7 @@ struct CellBuilder {
 				q[k].x = quant(0);
 				q[k].y = quant(1);
 				q[k].z = quant(2);
-				q[k].w = 1;
+				q[k].w = opt.vertexFx ? packVertexFx(v.occlusion, v.wind) : i16(1);
 				su[k] = quantUv(0);
 				sv[k] = quantUv(1);
 				q[k].u = q[k].v = 0;

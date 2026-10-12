@@ -171,6 +171,11 @@ struct ShaderCheck {
 	// The same world vertices with the dissolve switched on (b1, see gfx::setFade):
 	// nothing else may change, and texture coordinate 1 is the place on the screen.
 	bool checkFade = false; // (only the dissolve's shader has it)
+	// Graphics+: the bool register of `windy` in the shader in use (b2 in the
+	// dissolve's, b1 in the default one), and what was seen of it.
+	u16 windyBit = 4;
+	unsigned occludedVertices = 0, swayedVertices = 0, windyDraws = 0;
+	double worstSway = 0; // cm: the farthest a corner was moved
 	unsigned fadedVertices = 0;
 	double fadeChanged = 0, worstNoise = 0;
 	double worstWorldPx = 0, worstSkinPx = 0, worstDepth = 0, worstColor = 0, worstTex = 0;
@@ -219,8 +224,11 @@ struct ShaderCheck {
 
 static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 	ShaderCheck& sc = *static_cast<ShaderCheck*>(user);
-	const int locChunk = 8, locParams = 9, locDayDelta = 10, locTexOffset = 11, locBones = 13; // checked in testShader
+	const int locChunk = 8, locParams = 9, locDayDelta = 10, locTexOffset = 11, locBones = 13, locFx = 91; // checked in testShader
 	const bool skinned = call.bools & 1;
+	const bool windy = (call.bools & sc.windyBit) != 0;
+	const float* fx = call.uniforms[locFx];
+	if (windy) ++sc.windyDraws;
 	const float* chunk = call.uniforms[locChunk];
 	const float* params = call.uniforms[locParams];
 	const bool sky = params[2] == 1.0f && params[3] == 0.0f; // never fogged
@@ -328,9 +336,24 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 		} else {
 			const double q[3] = {double(v.x), double(v.y), double(v.z)};
 			const u8 rgb[3] = {v.r, v.g, v.b};
+			double p[3] = {double(chunk[3]) * q[0], double(chunk[3]) * q[1], double(chunk[3]) * q[2]};
+			// Graphics+ (g3ds/world.h, gfx::ChunkFx): w's high byte sways along the
+			// wind by the wave x (1 - |x|), its low byte darkens the light.
+			const double sway = double(vertexWind(v.w)), occlusion = double(vertexOcclusion(v.w)) / 256.0;
+			if (windy && sway > 0) {
+				double t = double(fx[2]) + (p[0] + p[2]) / double(gfx::WIND_WAVE_CM);
+				t -= std::floor(t);
+				const double x = 2.0 * t - 1.0, wave = x * (1.0 - std::fabs(x)) * sway;
+				p[0] += double(fx[0]) * wave;
+				p[2] += double(fx[1]) * wave;
+				sc.worstSway = std::max(sc.worstSway, std::hypot(double(fx[0]) * wave, double(fx[1]) * wave));
+				++sc.swayedVertices;
+			}
+			const double shade = 1.0 - occlusion * double(fx[3]);
+			sc.occludedVertices += occlusion > 0 && fx[3] > 0;
 			for (int k = 0; k < 3; ++k) {
-				world[k] = double(sc.anchor[k]) + double(chunk[k]) + double(chunk[3]) * q[k];
-				wantColor[k] = double(rgb[k]) / 255.0 * (1.0 + double(v.a) / 255.0 * double(call.uniforms[locDayDelta][k]));
+				world[k] = double(sc.anchor[k]) + double(chunk[k]) + p[k];
+				wantColor[k] = double(rgb[k]) / 255.0 * (1.0 + double(v.a) / 255.0 * double(call.uniforms[locDayDelta][k])) * shade;
 			}
 			++sc.worldVertices;
 		}
@@ -346,8 +369,9 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 		const double wantV = double(v.v) * double(params[0]) + double(call.uniforms[locTexOffset][1]);
 		sc.worstTex = std::max({sc.worstTex, std::fabs(double(got.texcoord[0]) - wantU), std::fabs(double(got.texcoord[1]) - wantV)});
 
-		// One point of the world, one point on the GPU.
-		if (!skinned && !sky) {
+		// One point of the world, one point on the GPU. (A swaying corner is
+		// moved after its chunk is known: it is left out.)
+		if (!skinned && !sky && !(windy && vertexWind(v.w) > 0)) {
 			const ShaderCheck::Key key = {i32(std::lround(world[0] * 64.0)), i32(std::lround(world[1] * 64.0)), i32(std::lround(world[2] * 64.0))};
 			auto it = sc.points.find(key);
 			if (it == sc.points.end()) {
@@ -400,8 +424,8 @@ static void testShader(const std::string& pak) {
 	std::printf("  shader: %u instructions, %u of 96 float registers%s%s\n", mock3ds::shaderInstructions(),
 	            mock3ds::shaderFloatRegisters(), *mock3ds::shaderProblem() ? "; PROBLEM: " : "", mock3ds::shaderProblem());
 	CHECK(!*mock3ds::shaderProblem());
-	// (projection, modelView, five vectors, the palette; two constants)
-	CHECK(mock3ds::shaderFloatRegisters() == 4 + 4 + 5 + MODEL_PALETTE * 3 + 2 && mock3ds::shaderFloatRegisters() <= 96);
+	// (projection, modelView, five vectors, the palette, Graphics+; two constants)
+	CHECK(mock3ds::shaderFloatRegisters() == 4 + 4 + 5 + MODEL_PALETTE * 3 + 1 + 2 && mock3ds::shaderFloatRegisters() <= 96);
 	shaderProgram_s probe;
 	shaderProgramInit(&probe);
 	shaderProgramSetVsh(&probe, nullptr);
@@ -412,10 +436,13 @@ static void testShader(const std::string& pak) {
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "bones") == 13);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "skinned") == 0x68);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fading") == 0x69);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fx") == 91);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "windy") == 0x6A);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "nonsense") < 0);
 
 	ShaderCheck sc;
 	sc.checkFade = true;
+	sc.windyBit = 4;
 	// 1. The game as it runs: the world around a walking, turning character,
 	// in the evening (the time of day tints the light).
 	{
@@ -424,6 +451,10 @@ static void testShader(const std::string& pak) {
 		app.skipChapters();
 		app.setDrawDistance(6000.0f);
 		app.environment().timeOfDay = 19.5f;
+		// Graphics+ at full: the archive is baked with occlusion and wind.
+		CHECK(app.world().hasOcclusion() && app.world().hasWind());
+		app.world().config().occlusion = 1.0f;
+		app.world().config().wind = 2.0f;
 		app.world().preload(app.camera().pos);
 		CHECK(app.hero().loaded() && app.thirdPerson() && app.npcs().loaded());
 		u32 inhabitants = 0;
@@ -472,6 +503,9 @@ static void testShader(const std::string& pak) {
 		std::printf("  dissolve: %u world vertices shaded with it on: the same otherwise (within %.1e), the noise at the screen position "
 		            "(within %.1e)\n", sc.fadedVertices, sc.fadeChanged, sc.worstNoise);
 		CHECK(sc.fadedVertices > 5000 && sc.fadeChanged == 0.0 && sc.worstNoise < 1e-4);
+		std::printf("  Graphics+: %u world vertices darkened by their occlusion, %u swayed in %u draw calls (at most %.1f cm)\n",
+		            sc.occludedVertices, sc.swayedVertices, sc.windyDraws, sc.worstSway);
+		CHECK(sc.occludedVertices > 1000 && sc.swayedVertices > 50 && sc.windyDraws > 0 && sc.worstSway > 0.5 && sc.worstSway < 40.0);
 		app.shutdown();
 	}
 
@@ -536,14 +570,17 @@ static void testDefaultShader(const std::string& pak) {
 	CHECK(gfx::init() && !gfx::fadeSupported());
 	std::printf("  default shader: %u instructions, %u of 96 float registers%s%s\n", mock3ds::shaderInstructions(),
 	            mock3ds::shaderFloatRegisters(), *mock3ds::shaderProblem() ? "; PROBLEM: " : "", mock3ds::shaderProblem());
-	CHECK(!*mock3ds::shaderProblem() && mock3ds::shaderFloatRegisters() == 4 + 4 + 5 + MODEL_PALETTE * 3 + 1);
+	CHECK(!*mock3ds::shaderProblem() && mock3ds::shaderFloatRegisters() == 4 + 4 + 5 + MODEL_PALETTE * 3 + 1 + 1);
 	shaderProgram_s probe;
 	shaderProgramInit(&probe);
 	shaderProgramSetVsh(&probe, nullptr);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "skinned") == 0x68);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fading") < 0);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fx") == 91);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "windy") == 0x69);
 	{
 		ShaderCheck sc;
+		sc.windyBit = 2;
 		App app;
 		CHECK(app.init(pak.c_str(), nullptr));
 		app.skipChapters();
@@ -895,6 +932,8 @@ int main(int argc, char** argv) {
 	bo.tex.quality = 0;
 	bo.threads = 2;
 	bo.quiet = true;
+	bo.ao.level = AO_LOW; // Graphics+ in the data: the shaders' occlusion and wind are checked
+	bo.wind = true;
 	std::vector<SrcModel> models(2);
 	buildSyntheticActor(models[0]);
 	buildChainModel(models[1], 60);

@@ -5,6 +5,9 @@
 
 namespace g3 {
 
+// Graphics+: how many waves of the wind go by a plant in a second (G2).
+static const float kWindWavesPerSecond = 0.35f;
+
 bool World::open(Pak* pak, const char* name) {
 	char path[96];
 	snprintf(path, sizeof(path), "world/%s", name);
@@ -375,6 +378,7 @@ void World::update(Vec3 camera) {
 		updateImmediate(pending, camera);
 	_stats.chunksInFlight = _chunksInFlight;
 	_stats.texturesWaiting = _texturesWaiting;
+	_stats.budgetBytes = budget();
 }
 
 // Everything on the spot: read, unpack, upload. Simple and predictable, and
@@ -382,8 +386,18 @@ void World::update(Vec3 camera) {
 // What is loaded is not kept for the chunk's own sake: a nearer chunk that does not fit takes the room of the
 // farthest ones (before, the memory stayed with whatever came first - the place the player started in - and
 // every place reached later stayed empty, though the chunks that held the room were out of sight).
+u32 World::budget() const {
+	u32 b = _cfg.memoryBudget;
+	if (_cfg.freeMemory) {
+		const u32 free = _cfg.freeMemory();
+		const u32 spare = free > _cfg.memoryReserve ? free - _cfg.memoryReserve : 0u;
+		b = min(b, _stats.residentBytes + spare);
+	}
+	return b;
+}
+
 bool World::makeRoom(Vec3 camera, float forDistance, u32 need, u32 reserved) {
-	const u32 limit = max(_cfg.memoryBudget, need);
+	const u32 limit = max(budget(), need);
 	while (_stats.residentBytes + reserved + need > limit) {
 		int victim = -1;
 		float far = forDistance + 300.0f; // (a chunk about as far is not worth a swap)
@@ -409,7 +423,7 @@ void World::updateImmediate(u32 pending, Vec3 camera) {
 	for (u32 n = 0; n < loads; ++n) {
 		sortNearest(n, pending);
 		const u32 index = _order[n];
-		if (_stats.residentBytes + meshBytes(_chunks[index]) > _cfg.memoryBudget && !makeRoom(camera, _orderKey[n], meshBytes(_chunks[index]), 0)) {
+		if (_stats.residentBytes + meshBytes(_chunks[index]) > budget() && !makeRoom(camera, _orderKey[n], meshBytes(_chunks[index]), 0)) {
 			++_stats.budgetRejects;
 			break; // everything else is farther away; try again next frame
 		}
@@ -490,7 +504,7 @@ void World::updateBackground(u32 pending, Vec3 camera) {
 		Loaded& l = _loaded[index];
 		if (l.mesh || l.requested || l.failed || _frame < l.retryAt) continue;
 		const u32 need = meshBytes(_chunks[index]);
-		if (_stats.residentBytes + _inFlightBytes + need > _cfg.memoryBudget && !makeRoom(camera, _orderKey[n], need, _inFlightBytes)) {
+		if (_stats.residentBytes + _inFlightBytes + need > budget() && !makeRoom(camera, _orderKey[n], need, _inFlightBytes)) {
 			++_stats.budgetRejects;
 			break; // everything else is farther away
 		}
@@ -695,10 +709,18 @@ void World::drawBatches(Loaded& l, bool blended) {
 		gap = 0;
 		if (!runCount) return;
 		if (!transformSet) {
-			gfx::setChunkTransform(l.origin, l.posScale, l.uvScale);
+			gfx::ChunkFx fx;
+			fx.occlusion = _fxOcclusion;
+			if (_windX != 0.0f || _windZ != 0.0f) {
+				fx.windX = _windX;
+				fx.windZ = _windZ;
+				fx.windPhase = gfx::windPhaseAt(l.origin, _windSeconds, kWindWavesPerSecond);
+			}
+			gfx::setChunkTransform(l.origin, l.posScale, l.uvScale, &fx);
 			transformSet = true;
 		}
 		const WorldMaterial& m = _materials[runMaterial];
+		_stats.windyDrawCalls += (m.flags & MATF_WIND) != 0 && (_windX != 0.0f || _windZ != 0.0f);
 		const u32 frame = (m.frameCount > 1 && m.frameMs) ? (ms / m.frameMs) % m.frameCount : 0;
 		float offset[2] = {0, 0};
 		for (int a = 0; a < 2; ++a) {
@@ -791,6 +813,7 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_stats.chunksDrawn = 0;
 	_stats.drawCalls = 0;
 	_stats.blendedDrawCalls = 0;
+	_stats.windyDrawCalls = 0;
 	_stats.batchesCulled = 0;
 	_stats.batchesMerged = 0;
 	_stats.batchesFading = 0;
@@ -830,6 +853,18 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_lastDrawMs = timeMs;
 	++_drawFrame;
 	_timeMs = timeMs;
+	// Graphics+: as strong as asked, where the world has it. The wind comes
+	// in gusts: two slow waves of different length make it uneven.
+	_fxOcclusion = hasOcclusion() ? clamp(_cfg.occlusion, 0.0f, 1.0f) : 0.0f;
+	_windX = _windZ = 0.0f;
+	_windSeconds = double(timeMs) * 0.001;
+	if (hasWind() && _cfg.wind > 0.0f) {
+		const double t = _windSeconds;
+		const float gust = 0.75f + 0.25f * float(sin(t * 0.31) * sin(t * 0.17 + 1.3));
+		const float push = clamp(_cfg.wind, 0.0f, 2.0f) * WORLD_WIND_UNIT * gust;
+		_windX = push * 0.8f;
+		_windZ = push * 0.6f;
+	}
 	u32 n = 0;
 	for (u32 r = 0; r < _stats.chunksLoaded; ++r) {
 		const u32 i = _resident[r];

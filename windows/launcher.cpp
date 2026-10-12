@@ -19,12 +19,12 @@
 
 namespace {
 
-enum { ID_PATH = 1, ID_BROWSE, ID_MUSIC, ID_START, ID_PROGRESS, ID_LOG, ID_STATUS };
+enum { ID_PATH = 1, ID_BROWSE, ID_MUSIC, ID_GFXPLUS, ID_START, ID_PROGRESS, ID_LOG, ID_STATUS, ID_VOICES, ID_DEBUG };
 const UINT WM_LOGLINE = WM_APP + 1; // lParam: new std::wstring*
 const UINT WM_STATUS = WM_APP + 2;  // lParam: new std::wstring*
 const UINT WM_FINISHED = WM_APP + 3; // wParam: 1 ok
 
-HWND gWnd, gPath, gBrowse, gMusic, gStart, gProgress, gLog, gStatus;
+HWND gWnd, gPath, gBrowse, gMusic, gGfxPlus, gVoices, gDebug, gStart, gProgress, gLog, gStatus;
 std::wstring gExeDir; // with a trailing backslash
 std::atomic<HANDLE> gChild(nullptr);
 std::atomic<bool> gRunning(false), gAbort(false);
@@ -135,7 +135,7 @@ bool run(const std::wstring& cmd) {
 	return code == 0;
 }
 
-void pipeline(std::wstring game, bool music) {
+void pipeline(std::wstring game, bool music, bool gfxPlus, bool voices, bool debug) {
 	const std::wstring bake = L"\"" + gExeDir + L"g3ds-bake.exe\"";
 	const std::wstring render = L"\"" + gExeDir + L"dmrender.exe\"";
 	const std::wstring out = gExeDir; // everything lands beside the program
@@ -163,6 +163,10 @@ void pipeline(std::wstring game, bool music) {
 		status(L"Baking the game data (data.pak)... a few minutes, the window may look idle.");
 		std::wstring cmd = bake + L" world --game \"" + gameShort + L"\" -o \"" + outShort + L"data.pak\" --no-script-check";
 		if (haveMusic) cmd += L" --music-dir \"" + shortPath(wavs) + L"\"";
+		// Graphics+ in the data: corner shading and swaying plants (switched on in the game's menu, Graphics -> Graphics+).
+		if (gfxPlus) cmd += L" --ao low --wind";
+		if (!voices) cmd += L" --no-voices";
+		if (debug) cmd += L" --debug-report \"" + outShort + L"bake_debug.txt\"";
 		ok = run(cmd);
 	}
 	// (The temporary music files are big and useless afterwards.)
@@ -174,7 +178,7 @@ void pipeline(std::wstring game, bool music) {
 	}
 	if (ok) {
 		std::wstring made;
-		for (const wchar_t* f : {L"data.pak", L"music.pak", L"speech.pak"})
+		for (const wchar_t* f : {L"data.pak", L"music.pak", L"speech.pak", L"bake_debug.txt"})
 			if (exists(out + f)) made += std::wstring(L"\r\n  ") + f;
 		say(L"Done. Created:" + made);
 		status(L"Done! The files are next to this program. Copy them to the SD card, folder 3ds\\gothic3ds\\");
@@ -236,6 +240,9 @@ void startPressed() {
 		return;
 	}
 	const bool music = SendMessageW(gMusic, BM_GETCHECK, 0, 0) == BST_CHECKED;
+	const bool gfxPlus = SendMessageW(gGfxPlus, BM_GETCHECK, 0, 0) == BST_CHECKED;
+	const bool voices = SendMessageW(gVoices, BM_GETCHECK, 0, 0) == BST_CHECKED;
+	const bool debug = SendMessageW(gDebug, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	if (gWorker.joinable()) gWorker.join();
 	if (gLogFile != INVALID_HANDLE_VALUE) CloseHandle(gLogFile);
 	gLogFile = CreateFileW((gExeDir + L"bake.log").c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -246,8 +253,11 @@ void startPressed() {
 	EnableWindow(gBrowse, FALSE);
 	EnableWindow(gPath, FALSE);
 	EnableWindow(gMusic, FALSE);
+	EnableWindow(gGfxPlus, FALSE);
+	EnableWindow(gVoices, FALSE);
+	EnableWindow(gDebug, FALSE);
 	SendMessageW(gProgress, PBM_SETMARQUEE, TRUE, 40);
-	gWorker = std::thread(pipeline, game, music);
+	gWorker = std::thread(pipeline, game, music, gfxPlus, voices, debug);
 }
 
 LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
@@ -279,6 +289,9 @@ LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
 		EnableWindow(gBrowse, TRUE);
 		EnableWindow(gPath, TRUE);
 		EnableWindow(gMusic, TRUE);
+		EnableWindow(gGfxPlus, TRUE);
+		EnableWindow(gVoices, TRUE);
+		EnableWindow(gDebug, TRUE);
 		if (w) MessageBoxW(h, L"Done! data.pak (and music.pak, speech.pak) are next to this program.\r\nCopy them to the SD card, folder 3ds\\gothic3ds\\", L"Gothic 3DS", MB_OK | MB_ICONINFORMATION);
 		return 0;
 	case WM_CLOSE:
@@ -323,12 +336,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
 	make(L"STATIC", L"Gothic game folder (the one with Data and _work):", 0, 12, 10, 680, 18, 0);
 	gPath = make(L"EDIT", guessGame().c_str(), ES_AUTOHSCROLL, 12, 30, 590, 24, ID_PATH, WS_EX_CLIENTEDGE);
 	gBrowse = make(L"BUTTON", L"Browse...", BS_PUSHBUTTON, 610, 29, 90, 26, ID_BROWSE);
-	gMusic = make(L"BUTTON", L"Also bake the music (takes 10-30 minutes more)", BS_AUTOCHECKBOX, 12, 62, 400, 22, ID_MUSIC);
+	gMusic = make(L"BUTTON", L"Also bake the music (10-30 minutes more)", BS_AUTOCHECKBOX, 12, 62, 290, 22, ID_MUSIC);
 	SendMessageW(gMusic, BM_SETCHECK, BST_CHECKED, 0);
+	gGfxPlus = make(L"BUTTON", L"Graphics+: shaded corners, swaying plants", BS_AUTOCHECKBOX, 306, 62, 296, 22, ID_GFXPLUS);
+	gVoices = make(L"BUTTON", L"Bake the voices (speech.pak)", BS_AUTOCHECKBOX, 12, 84, 290, 22, ID_VOICES);
+	SendMessageW(gVoices, BM_SETCHECK, BST_CHECKED, 0);
+	gDebug = make(L"BUTTON", L"Debug report (bake_debug.txt)", BS_AUTOCHECKBOX, 306, 84, 296, 22, ID_DEBUG);
 	gStart = make(L"BUTTON", L"Bake", BS_DEFPUSHBUTTON, 610, 60, 90, 28, ID_START);
-	gProgress = make(PROGRESS_CLASSW, L"", PBS_MARQUEE, 12, 96, 688, 14, ID_PROGRESS);
-	gStatus = make(L"STATIC", L"Select the folder and press \"Bake\". The files will appear next to this program.", 0, 12, 116, 688, 18, ID_STATUS);
-	gLog = make(L"EDIT", L"", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL, 12, 140, 688, 332, ID_LOG, WS_EX_CLIENTEDGE);
+	gProgress = make(PROGRESS_CLASSW, L"", PBS_MARQUEE, 12, 118, 688, 14, ID_PROGRESS);
+	gStatus = make(L"STATIC", L"Select the folder and press \"Bake\". The files will appear next to this program.", 0, 12, 138, 688, 18, ID_STATUS);
+	gLog = make(L"EDIT", L"", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL, 12, 162, 688, 310, ID_LOG, WS_EX_CLIENTEDGE);
 	SendMessageW(gLog, EM_SETLIMITTEXT, 0x7FFFFFF, 0);
 
 	ShowWindow(gWnd, show);

@@ -277,7 +277,7 @@ bool Npcs::playAni(NpcActor& a, const char* rawName, i32 bodyState) {
 	if (strcmp(name, "T_WARN") == 0 && c->sfxCount() == 0) {
 		const GameNpc& n = _game.npc(a.npc);
 		if (_game.isMonster(n) && n.look.script) {
-			char base[24], names[160];
+			char base[24], names[192];
 			upperCopy(base, sizeof(base), _game.text(n.look.script));
 			snprintf(names, sizeof(names), "%s_WARN|%s_GROWL|%s_THREAT|%s_AGGRO|%s_ANGRY|%s_ATTACK", base, base, base, base, base, base);
 			emitSound(a.npc, names, 1.0f);

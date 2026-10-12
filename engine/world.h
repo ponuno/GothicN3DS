@@ -34,7 +34,14 @@ struct StreamConfig {
 	float fadeMs = 400.0f;
 	u32 maxLoadsPerFrame = 2;      // chunks handed to the GPU per frame: bounds the upload hitch
 	u32 maxTextureLoadsPerFrame = 4; // same for textures, background streaming only
-	u32 memoryBudget = 24u << 20;  // bytes of mesh + texture memory for the world
+	u32 memoryBudget = 24u << 20;  // bytes of mesh + texture memory for the world (at most)
+	// Where the platform can say how much memory for meshes and textures is
+	// free right now (the 3DS: the linear heap), the world takes no more than
+	// what it holds plus that, less `memoryReserve` for everything else that
+	// lives there (characters, particles, sound, the overlay). Null: only
+	// memoryBudget counts. See World::budget().
+	u32 (*freeMemory)() = nullptr;
+	u32 memoryReserve = 6u << 20;
 	// Background streaming: reading, unpacking and collision building happen
 	// off the frame, and textures arrive a few per frame after their chunk.
 	// Set both before open(). Without `worker` the same pipeline runs on the
@@ -45,6 +52,12 @@ struct StreamConfig {
 	// end are drawn. Off: the whole chunk, as before there were clusters (for
 	// comparing).
 	bool clusterCulling = true;
+	// Graphics+ (gfx::ChunkFx): how much the baked ambient occlusion darkens
+	// the light (0..1) and how strongly the plants sway (0 still, 1 as baked,
+	// up to 2). Nothing of either in a world baked without it (WORLDF_AO,
+	// WORLDF_WIND): hasOcclusion(), hasWind().
+	float occlusion = 0.0f;
+	float wind = 0.0f;
 };
 
 struct WorldStats {
@@ -57,6 +70,7 @@ struct WorldStats {
 	u32 texturesLoaded;
 	u32 drawCalls;       // both passes
 	u32 blendedDrawCalls;
+	u32 windyDrawCalls;  // of them: plants swaying (the vertex shader does more there)
 	u32 batchesCulled;   // batches of visible chunks skipped: out of view or too far for their size
 	u32 batchesMerged;   // batches that went out in the draw call of the one before them
 	u32 batchesFading;   // batches drawn dissolving in or out (each a draw call of its own)
@@ -70,6 +84,7 @@ struct WorldStats {
 	u32 loadFailures;    // corrupt or missing data (cumulative)
 	u32 residentBytes;   // mesh + texture bytes owned by the world
 	u32 peakResidentBytes;
+	u32 budgetBytes;     // the budget of the last update (World::budget())
 	u32 collisionBytes;  // CPU-side collision data of the resident chunks
 };
 
@@ -134,6 +149,9 @@ public:
 	// The ladder whose climbing box contains `p`, or null.
 	const WorldLadder* ladderAt(Vec3 p) const;
 	bool indoor() const { return (_hdr.flags & WORLDF_INDOOR) != 0; }
+	// Whether the world was baked with Graphics+ data (g3ds-bake --ao, --wind).
+	bool hasOcclusion() const { return (_hdr.flags & WORLDF_AO) != 0; }
+	bool hasWind() const { return (_hdr.flags & WORLDF_WIND) != 0; }
 
 private:
 	struct Batch {
@@ -190,6 +208,9 @@ private:
 	void updateImmediate(u32 pending, Vec3 camera);
 	// Frees the farthest loaded chunks (farther than `forDistance`) until `need` more bytes fit the budget; false: they do not.
 	bool makeRoom(Vec3 camera, float forDistance, u32 need, u32 reserved);
+	// Bytes of mesh and texture memory the world may hold now: memoryBudget,
+	// or less where the platform's free memory says so (StreamConfig::freeMemory).
+	u32 budget() const;
 	void updateBackground(u32 pending, Vec3 camera);
 	static u32 meshBytes(const ChunkInfo& ci) {
 		return u32(ci.vertexCount) * u32(sizeof(WorldVertex)) + ci.indexCount * u32(sizeof(u16));
@@ -235,6 +256,10 @@ private:
 	u32 _drawFrame = 1;     // draw() counter
 	u32 _lastDrawMs = 0;
 	int _fadeStep = 255;    // how much of a dissolve one frame does (255: all of it)
+	// Graphics+ of this frame (draw()): the occlusion's strength, the wind's
+	// push along x and z (gusts included), and the time the wave goes by.
+	float _fxOcclusion = 0.0f, _windX = 0.0f, _windZ = 0.0f;
+	double _windSeconds = 0.0;
 	StreamConfig _cfg;
 	WorldStats _stats {};
 };

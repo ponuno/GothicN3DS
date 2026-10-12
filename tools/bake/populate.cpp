@@ -1,4 +1,6 @@
 #include "populate.h"
+
+#include <fstream>
 #include "sound_bake.h"
 #include "fight_ai.h"
 #include "fight_clips.h"
@@ -173,6 +175,27 @@ std::string worldScriptName(const BakeWorld& world) {
 	return upper(s);
 }
 
+namespace {
+
+// Which library of the mods' scripts a function belongs to, by its name (the libraries add Daedalus code
+// that reads and writes the game's memory: this VM has no such memory, so what they do is not the original's).
+const char* libraryOf(const std::string& name) {
+	static const char* const ikarus[] = {"MEM_", "MEMINT_", "ASM_", "ASMINT_", "CALL_", "CALLINT_", "IKARUS"};
+	static const char* const lego[] = {"FF_", "_FF_", "HOOK", "LEGO", "BUFFER_", "LOCALS", "CURSOR_", "VIEW_", "BAR_", "PERM_", "HT_", "LIST_",
+	                                    "TIMER_", "TEXT_", "GAMESTATE_", "EVENTHANDLER", "BIN_", "ANIMATION_", "TRIGGERFIX", "DIALOGGESTURES",
+	                                    "CONSOLE_", "SAVEGAME_"};
+	static const char* const unionLib[] = {"UNION_", "SP_", "SYSTEMPACK", "NINJA", "ZUNION"};
+	for (const char* p : ikarus)
+		if (name.compare(0, std::strlen(p), p) == 0) return "Ikarus";
+	for (const char* p : lego)
+		if (name.compare(0, std::strlen(p), p) == 0) return "LeGo";
+	for (const char* p : unionLib)
+		if (name.compare(0, std::strlen(p), p) == 0) return "Union/Systempack";
+	return "the game / the mod";
+}
+
+} // namespace
+
 void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, const BakeOptions& opt, PakWriter& pak,
                     const std::function<void(const std::string&)>& line, BakeResult& result) {
 	if (!scripts.script) return;
@@ -335,12 +358,21 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	struct Faults {
 		const SrcScript* script;
 		std::map<std::string, u32> kinds;
-	} faults {&script, {}};
+		std::vector<std::string> order; // the kinds in the order they first happened (the first is where it began)
+	} faults {&script, {}, {}};
+	std::string dbg; // the detailed report (--debug)
+	const bool debugging = !opt.debugFile.empty();
+	const auto dbgLine = [&](const std::string& text) {
+		if (debugging) dbg += text + "\n";
+	};
 	game.vm().onError(
 	    [](const char* what, u32 function, u32, void* user) {
 		    Faults& f = *static_cast<Faults*>(user);
 		    const std::string where = function < f.script->symbols.size() ? f.script->symbols[function].name : std::string("?");
-		    if (f.kinds.size() < 4096) ++f.kinds[std::string(what) + " in " + where];
+		    const std::string key = std::string(what) + " in " + where;
+		    if (f.kinds.size() < 4096) {
+			    if (++f.kinds[key] == 1 && f.order.size() < 400) f.order.push_back(key);
+		    }
 	    },
 	    &faults);
 	std::map<u32, u32> unboundCalls; // calls of engine functions nobody implements, by symbol
@@ -357,11 +389,21 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	for (size_t w = 0; w < worlds.size(); ++w) {
 		const std::string name = worldScriptName(worlds[w]);
 		const GameStats before = game.stats();
+		const ScriptStats vmBefore = game.vm().stats();
 		const u32 npcsBefore = game.npcCount();
 		const bool hasStartup = script.find("STARTUP_" + name) >= 0;
 		game.enterWorld(name.c_str(), 8.0f, findPoint, &worlds[w].scene);
 		gameWorld[w] = game.currentWorld();
 		const GameStats& now = game.stats();
+		{
+			const ScriptStats& vmNow = game.vm().stats();
+			dbgLine(format("world '%s' (STARTUP_%s%s): %llu instructions, %u complaints, %u calls given up, %u calls of engine functions nobody carries out, "
+			         "%u uses of members of no object; %u characters",
+			         worlds[w].name.c_str(), name.c_str(), hasStartup ? "" : " is missing",
+			         static_cast<unsigned long long>(vmNow.instructions - vmBefore.instructions), vmNow.errors - vmBefore.errors,
+			         vmNow.aborted - vmBefore.aborted, vmNow.stubCalls - vmBefore.stubCalls, vmNow.nullAccess - vmBefore.nullAccess,
+			         now.npcs - before.npcs));
+		}
 		if (!hasStartup) {
 			line("world '" + worlds[w].name + "': the scripts have no STARTUP_" + name + "; nobody lives there");
 			continue;
@@ -413,6 +455,37 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			for (size_t i = 0; i < faultsByCount.size() && i < 8; ++i)
 				where += (i ? "; " : "") + faultsByCount[i].second + " x" + std::to_string(faultsByCount[i].first);
 			line("where: " + where + (faultsByCount.size() > 8 ? "; ..." : ""));
+		}
+		if (debugging) {
+			dbgLine("");
+			dbgLine(format("== the start-up scripts, all worlds: %llu instructions, %u complaints, %u calls given up, %u uses of members of no object ==",
+			         static_cast<unsigned long long>(vs.instructions), vs.errors, vs.aborted, vs.nullAccess));
+			dbgLine(format("script image %.2f MB; objects of the characters and items made by the start-up: %u, %.2f MB; strings made %.2f MB",
+			         double(game.vm().imageBytes()) / 1048576.0, vs.instances, double(vs.instanceBytes) / 1048576.0,
+			         double(vs.stringBytes) / 1048576.0));
+			dbgLine("");
+			dbgLine("-- complaints in the order they FIRST happened (the first is where things began to go wrong; later ones may follow from it) --");
+			for (size_t i = 0; i < faults.order.size() && i < 60; ++i)
+				dbgLine(format("%3zu. %s  (x%u, library: %s)", i + 1, faults.order[i].c_str(), faults.kinds[faults.order[i]],
+				         libraryOf(faults.order[i].substr(faults.order[i].rfind(" in ") == std::string::npos ? 0 : faults.order[i].rfind(" in ") + 4))));
+			dbgLine("");
+			dbgLine("-- complaints by how often (all, up to 400 kinds) --");
+			{
+				std::vector<std::pair<u32, std::string>> all;
+				std::map<std::string, u32> perLibrary;
+				for (const auto& [what, n] : faults.kinds) {
+					all.push_back({n, what});
+					const size_t at = what.rfind(" in ");
+					perLibrary[libraryOf(at == std::string::npos ? what : what.substr(at + 4))] += n;
+				}
+				std::sort(all.rbegin(), all.rend());
+				for (size_t i = 0; i < all.size() && i < 400; ++i) dbgLine(format("%8u  %s", all[i].first, all[i].second.c_str()));
+				dbgLine("-- complaints by library (by the function's name) --");
+				for (const auto& [lib, n] : perLibrary) dbgLine(format("%8u  %s", n, lib.c_str()));
+			}
+			dbgLine("");
+			dbgLine("-- engine functions the start-up called that this engine does not carry out (every one: they return 0 / an empty string) --");
+			for (const auto& [count, symbol] : byCount) dbgLine(format("%8u  %s", count, script.symbols[symbol].name.c_str()));
 		}
 		if (!byCount.empty())
 			line(format("engine functions the start-up called that do nothing yet: %zu, called %llu times: ", byCount.size(),
@@ -529,6 +602,20 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		list.clear();
 		for (size_t i = 0; i < byUse.size() && i < 40; ++i)
 			list += format("%s%s x%u", i ? ", " : "", script.symbols[byUse[i].second].name.c_str(), byUse[i].first);
+		if (debugging) {
+			dbgLine("");
+			dbgLine("== the states of the characters (ZS_*): what they call ==");
+			dbgLine(format("%zu states; %zu functions are reached from them; %zu engine functions called, %zu carried out", states.size(), scanned.size(),
+			         called.size(), called.size() - missing.size()));
+			std::map<std::string, u32> reachedBy;
+			for (const auto& [fn, calls] : scanned) ++reachedBy[libraryOf(script.symbols[fn].name)];
+			for (const auto& [lib, n] : reachedBy) dbgLine(format("  functions reached from the states, in %s: %u", lib.c_str(), n));
+			dbgLine("-- engine functions the states call that this engine does not carry out, by the number of states that call them --");
+			std::vector<std::pair<u32, u32>> all;
+			for (const auto& [external, count] : missing) all.push_back({count, external});
+			std::sort(all.rbegin(), all.rend());
+			for (const auto& [count, external] : all) dbgLine(format("%8u  %s", count, script.symbols[external].name.c_str()));
+		}
 		line(format("life: the states call %zu engine functions, %zu of which the engine carries out; the others do nothing yet, by "
 		            "the number of states that call them: ",
 		            called.size(), called.size() - missing.size()) +
@@ -591,6 +678,16 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				carried += ok;
 				if (!ok) pending.push_back(external);
 			}
+			if (debugging) {
+				dbgLine("");
+				dbgLine(format("== the talks: %u infos; the %zu functions they run call %zu engine functions, %zu carried out ==", game.infoCount(),
+				         runs.size(), externals.size(), carried));
+				std::map<std::string, u32> runsBy;
+				for (u32 fn : runs) ++runsBy[libraryOf(script.symbols[fn].name)];
+				for (const auto& [lib, n] : runsBy) dbgLine(format("  functions run by the talks, in %s: %u", lib.c_str(), n));
+				dbgLine("-- engine functions the talks call that this engine does not carry out --");
+				for (u32 external : pending) dbgLine("  " + script.symbols[external].name);
+			}
 			std::string names;
 			for (size_t i = 0; i < pending.size() && i < 40; ++i)
 				names += format("%s%s", i ? ", " : "", script.symbols[pending[i]].name.c_str());
@@ -601,6 +698,31 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		}
 	} catch (const std::exception& ex) {
 		line(std::string("life: the states could not be looked through: ") + ex.what());
+	}
+
+	if (debugging) {
+		dbgLine("");
+		dbgLine("== the scripts by library (functions by the name's start) ==");
+		std::map<std::string, u32> perLibrary;
+		std::map<std::string, std::string> example;
+		for (const SrcSymbol& sym : script.symbols) {
+			if (sym.type != SCRIPT_FUNC || !sym.isConst || sym.external || sym.member || sym.name.empty()) continue;
+			const std::string lib = libraryOf(sym.name);
+			if (++perLibrary[lib] == 1) example[lib] = sym.name;
+		}
+		for (const auto& [lib, n] : perLibrary) dbgLine(format("%8u  %s (e.g. %s)", n, lib.c_str(), example[lib].c_str()));
+		u32 external = 0;
+		for (const SrcSymbol& sym : script.symbols) external += sym.external;
+		dbgLine(format("%u engine functions are named by the script (the engine has no code for those it lacks: they return 0 / an empty string)", external));
+		dbgLine("Where the Ikarus/LeGo/Union libraries read or write the game's memory (MEM_*, ASM_*, CALL_*), this machine has no such memory:");
+		dbgLine("the complaints above are that. What depends on them (hooks, FF_* timers, LeGo's screen) does not work; the plain game script does.");
+		std::ofstream file(opt.debugFile, std::ios::binary);
+		if (file) {
+			file << "Gothic 3DS: bake_debug.txt (--debug)\n" << "script: " << script.source << "\n\n" << dbg;
+			line("debug report written to " + opt.debugFile + " (" + std::to_string(dbg.size() / 1024) + " KB)");
+		} else {
+			line("WARNING: the debug report could not be written to " + opt.debugFile);
+		}
 	}
 
 	// ---- what they look like ----

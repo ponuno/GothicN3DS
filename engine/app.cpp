@@ -308,6 +308,7 @@ void App::shutdown() {
 	_panel.release();
 	_loot.release();
 	_particles.release();
+	_shadows.release();
 	_chests.release();
 	_pictures.release();
 	_showModel.release();
@@ -703,6 +704,14 @@ void App::render() {
 			                 hn->ranged, _hero.feet(), _hero.light());
 	}
 	gfx::setPass(gfx::PASS_BLEND);
+	// Graphics+: shadows on the ground, before the water (which then covers those under it).
+	_shadows.begin();
+	if (_settings.shadows != SHADOWS_OFF) {
+		if (_heroVisible && _hero.loaded()) _shadows.add(_hero.feet(), 48.0f);
+		if (_settings.shadows == SHADOWS_ALL && !_gfxRelief)
+			for (u32 i = 0; i < _npcs.drawnCount(); ++i) _shadows.add(_npcs.drawnFeet(i), _npcs.drawnRadius(i));
+		_shadows.draw(_world, _cam.pos, indoor ? 0.7f : 0.6f);
+	}
 	_world.drawBlended();
 	_particles.draw(fd.view, _cam.pos, indoor ? indoorLight : sky.light);
 	drawOverlay();
@@ -1102,6 +1111,9 @@ void App::applySettings() {
 	cfg.detailDistance[DETAIL_MEDIUM] = _settings.mediumObjectsCm();
 	cfg.detailDistance[DETAIL_SMALL] = _settings.smallObjectsCm();
 	cfg.smallLayers = _settings.smallLayers();
+	cfg.occlusion = _settings.occlusionStrength();
+	_windWanted = _settings.windStrength();
+	cfg.wind = _gfxRelief ? 0.0f : _windWanted;
 	setLanguage(_settings.language);
 	_env.dayLength = _settings.dayLengthSeconds();
 	NpcConfig& nc = _npcs.config();
@@ -1119,6 +1131,11 @@ void App::applySettings() {
 		_camPlaced = false;
 		_eyePitch = 0;
 	}
+}
+
+void App::setGfxRelief(bool heavy) {
+	_gfxRelief = heavy;
+	_world.config().wind = heavy ? 0.0f : _windWanted;
 }
 
 // The names the Barrier's sound could have in the scripts (the first the sound script knows is used).

@@ -118,8 +118,8 @@ void Speech::writeReport(FILE* f) const {
 	}
 	u32 recordings = 0;
 	for (u32 k = 0; k < _pakCount; ++k) recordings += _paks[k].count();
-	fprintf(f, "voices: %u recordings in %u archive(s); played %u, lines without a recording %u, damaged %u\n", recordings, _pakCount,
-	        _played, _missing, _broken);
+	fprintf(f, "voices: %u recordings in %u archive(s); played %u, lines without a recording %u, damaged %u\n", unsigned(recordings),
+	        unsigned(_pakCount), unsigned(_played), unsigned(_missing), unsigned(_broken));
 }
 
 } // namespace g3

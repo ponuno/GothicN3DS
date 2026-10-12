@@ -25,6 +25,9 @@
    - `music.pak` - music (only if the music box was ticked)
    - `speech.pak` - voices
    - `bake.log` - the full log (send it if something goes wrong)
+   - `bake_debug.txt` - only with the "Debug report" box ticked: what the game's scripts did while the worlds were populated, which engine functions and Ikarus/LeGo/Union code are missing (send it with `bake.log` for a modded game)
+
+The window has two more boxes: **Bake the voices** (untick to skip `speech.pak`: faster, smaller; the game then shows subtitles only) and **Debug report**.
 
 ## Put it on the 3DS
 
@@ -38,7 +41,7 @@ SD:/3ds/gothic3ds/speech.pak
 SD:/3ds/dspfirm.cdc          <- once, dumped from your console with DSP1 (needed for any sound)
 ```
 
-Start the game from the Homebrew Launcher. More detail (including the DSP firmware dump): [docs/BUILD_WSL.md](../docs/BUILD_WSL.md), step 8.
+Start the game from the Homebrew Launcher. More detail (including the DSP firmware dump): [README.md](../README.md), step 8.
 
 ## Troubleshooting
 

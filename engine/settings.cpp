@@ -15,7 +15,8 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 4: language, density of small objects, range of the inhabitants, the free frame rate.
 // 5: the sound volume.
 // 7: the frame counter, the flow of time.
-constexpr u32 SETTINGS_VERSION = 7;
+// 8: Graphics+ (ambient occlusion, wind, shadows).
+constexpr u32 SETTINGS_VERSION = 8;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -42,6 +43,38 @@ void Settings::resetGraphics() {
 	frameRate = d.frameRate;
 	density = d.density;
 	npcDistance = d.npcDistance;
+	applyGfxPreset(GFX_PLUS_OFF);
+}
+
+void Settings::applyGfxPreset(u8 preset) {
+	switch (preset) {
+	case GFX_PLUS_OFF:
+		occlusion = 0;
+		wind = 0;
+		shadows = SHADOWS_OFF;
+		break;
+	case GFX_PLUS_BALANCED:
+		occlusion = 60;
+		wind = 2;
+		shadows = SHADOWS_HERO;
+		break;
+	case GFX_PLUS_MAX:
+		occlusion = 100;
+		wind = 2;
+		shadows = SHADOWS_ALL;
+		break;
+	default: return;
+	}
+	gfxPlus = preset;
+}
+
+u8 Settings::gfxPresetOf() const {
+	for (u8 p = 0; p < GFX_PLUS_OWN; ++p) {
+		Settings t = *this;
+		t.applyGfxPreset(p);
+		if (t.occlusion == occlusion && t.wind == wind && t.shadows == shadows) return p;
+	}
+	return GFX_PLUS_OWN;
 }
 
 void Settings::sanitize() {
@@ -57,6 +90,10 @@ void Settings::sanitize() {
 	voiceVolume = u8(clamp<int>(voiceVolume, 0, 10));
 	cameraSpeed = u8(clamp<int>(cameraSpeed, 1, 10));
 	if (timeFlow > 3) timeFlow = 2;
+	occlusion = u8(clamp<int>(occlusion, 0, 100) / 10 * 10);
+	if (wind > 3) wind = 0;
+	if (shadows >= SHADOW_MODES) shadows = SHADOWS_OFF;
+	gfxPlus = gfxPresetOf();
 	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier};
 	for (u8* f : flags) *f = *f ? 1 : 0;
 }

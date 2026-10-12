@@ -2,7 +2,8 @@
 ; world_fade.v.pica is this plus the dissolve (see there).
 ;
 ; Input is the 16-byte vertex exactly as it sits in data.pak:
-;   v0  short4  quantised position (w is padding)
+;   v0  short4  quantised position; w: world vertices of a world baked with
+;               --ao / --wind carry occlusion (bits 0-7) and sway (bits 8-14), see g3ds/world.h
 ;   v1  short2  fixed-point texture coordinate
 ;   v2  ubyte4  world:     rgb = baked light, a = daylight weight (255 outdoors, 0 indoors)
 ;               character: r, g = palette offsets of the two bones (slot * 3),
@@ -26,6 +27,16 @@
 ; Fog:    linear, per vertex: factor = clamp(fogA - viewZ * fogB, 0, 1), 1 = clear.
 ;         The factor travels in the colour alpha and is applied by the second
 ;         TexEnv stage (see gfx_c3d.cpp). The sky pass sets fogA = 1, fogB = 0.
+;
+; Graphics+ (world geometry only; fx is zero for everything else):
+;   Ambient occlusion: light * (1 - occlusion * fx.w), the occlusion being the
+;   low byte of w as a fraction of 256.
+;   Wind (windy = true, the backend sets it for MATF_WIND materials): the corner
+;   moves sideways along fx.xy by its sway (the high byte of w) times a wave,
+;   x (1 - |x|) with x = 2 fract(fx.z + k (px + pz)) - 1 - a sine-like curve
+;   in -1/4..1/4, smooth at the joins. fx.z is the wave's phase at this chunk's
+;   origin (worked out on the CPU, so the wave runs on unbroken across chunks);
+;   k = consts.w is one wave per 8 m. The trunk's foot has sway 0 and stays put.
 
 .fvec projection[4], modelView[4]
 .fvec chunk         ; xyz = origin relative to the eye's lattice point, w = position step
@@ -34,9 +45,11 @@
 .fvec texOffset     ; xy = texture scroll offset (zw must be 0)
 .fvec skinLight     ; xyz = light on the character
 .fvec bones[78]     ; 26 bones, three rows of a 3x4 matrix each
+.fvec fx            ; Graphics+: xy = wind (cm per step of sway, times 4), z = wave phase, w = occlusion strength
 .bool skinned
+.bool windy
 
-.constf consts(0.0, 1.0, 0.0, 0.0)
+.constf consts(0.0, 1.0, 0.00390625, 0.00125) ; 0, 1, 1/256, k = 1/800 cm (gfx.h WIND_WAVE_PER_CM)
 .alias zero consts.xxxx
 .alias one  consts.yyyy
 
@@ -67,6 +80,28 @@
 		mul r8.x,   params.y, inclr.z
 		mul r7.xyz, r7.xyz, r8.xxx
 		add r0.xyz, r6.xyz, r7.xyz
+	.end
+
+	ifu windy
+		; r9.y = the sway of this corner (the high byte of w)
+		mul r9.x, consts.z, inpos.w
+		flr r9.y, r9.x
+		; r10.x = 2 fract(phase + k (x + z)) - 1
+		add r10.x, r0.x, r0.z
+		mul r10.x, consts.w, r10.x
+		add r10.x, fx.z, r10.x
+		flr r10.y, r10.x
+		add r10.x, r10.x, -r10.y
+		add r10.x, r10.x, r10.x
+		add r10.x, -consts.y, r10.x
+		; r10.x = x (1 - |x|) * sway
+		max r10.y, r10.x, -r10.x
+		add r10.y, consts.y, -r10.y
+		mul r10.x, r10.x, r10.y
+		mul r10.x, r10.x, r9.y
+		mul r11.xy, fx.xy, r10.xx
+		add r0.x, r0.x, r11.x
+		add r0.z, r0.z, r11.y
 	.end
 
 	; relative to the eye's lattice point
@@ -104,6 +139,13 @@
 		mul r5.xyz, dayDelta, r4.www
 		add r5.xyz, one, r5.xyz
 		mul r4.xyz, r4.xyz, r5.xyz
+		; ambient occlusion: * (1 - fract(w / 256) * strength)
+		mul r9.x, consts.z, inpos.w
+		flr r9.y, r9.x
+		add r9.x, r9.x, -r9.y
+		mul r9.x, fx.w, r9.x
+		add r9.x, consts.y, -r9.x
+		mul r4.xyz, r4.xyz, r9.xxx
 	.end
 
 	mov r4.w, r3.x

@@ -338,6 +338,11 @@ public:
 	// The actor a character is right now, or null.
 	const NpcActor* actorOf(u32 npcIndex) const;
 	u32 actorCount() const { return ACTORS; }
+	// The characters drawn in the last frame that stand on their feet (for
+	// their shadows, Graphics+): where they stand and how wide they are, cm.
+	u32 drawnCount() const { return _drawnCount; }
+	Vec3 drawnFeet(u32 i) const { return _drawnFeet[i]; }
+	float drawnRadius(u32 i) const { return _drawnRadius[i]; }
 	const NpcActor& actor(u32 i) const { return _actors[i]; }
 	// What an actor is doing, in a word (for reports).
 	const char* doing(const NpcActor& a) const;
@@ -728,6 +733,9 @@ private:
 	TexturePool _pool;
 	Piece _pieces[PIECES];
 	NpcActor _actors[ACTORS];
+	Vec3 _drawnFeet[ACTORS] = {};
+	float _drawnRadius[ACTORS] = {};
+	u32 _drawnCount = 0;
 	class Loot* _heldLoot = nullptr;
 	Pak* _heldPak = nullptr;
 	Pak* _pak = nullptr; // the archive of the world entered (animations are read from it at any time)

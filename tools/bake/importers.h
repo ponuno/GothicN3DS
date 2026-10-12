@@ -47,6 +47,9 @@ struct ZenImportOptions {
 	bool flipWinding = false;
 	bool objects = true;   // bake world objects (trees, bridges, chests, decals, ...) into the world
 	bool lightmaps = true; // bake indoor lightmaps into the vertex light
+	// More words that name a tree in object, material or texture names
+	// (upper case; vertex_fx.h plantKindOf), for mods with names of their own.
+	std::vector<std::string> plantWords;
 };
 
 // A mounted Gothic installation (its Data/*.vdf archives).

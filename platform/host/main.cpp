@@ -48,6 +48,7 @@ static void usage() {
 	     "                      a potion chosen and drunk, a ring put on, food held into a quick slot and used;\n"
 	     "                      the bottom screen is saved next to each shot (PREFIX_bottom_NN.png)\n"
 	     "  --pickup            the character walks to the things lying about and picks them up (A)\n"
+	     "  --gfx-plus A,W,S    Graphics+: occlusion 0..100 %, wind 0..3, shadows 0 off / 1 hero / 2 all near\n"
 	     "  --stats FILE        write a JSON summary");
 }
 
@@ -159,6 +160,7 @@ int main(int argc, char** argv) {
 	bool standing = false, who = false, wholeChunks = false;
 	bool console = false, fight = false, sword = false, inventory = false, pickup = false;
 	int menuPage = -1;
+	const char* gfxPlusSpec = nullptr;
 	float budgetMb = 24.0f, drawDistance = 12000.0f;
 
 	for (int i = 1; i < argc; ++i) {
@@ -180,6 +182,7 @@ int main(int argc, char** argv) {
 		else if (arg("--probe-fps")) probeFps = atoi(argv[++i]);
 		else if (arg("--probe-grid")) probeGrid = atoi(argv[++i]);
 		else if (arg("--menu")) menuPage = atoi(argv[++i]);
+		else if (arg("--gfx-plus")) gfxPlusSpec = argv[++i];
 		else if (strcmp(argv[i], "--console") == 0) console = true;
 		else if (strcmp(argv[i], "--fight") == 0) fight = true;
 		else if (strcmp(argv[i], "--sword") == 0) sword = true;
@@ -213,6 +216,21 @@ int main(int argc, char** argv) {
 	if (!app.init(pakPath, worldName)) {
 		fprintf(stderr, "error: %s\n", app.error());
 		return 1;
+	}
+	if (gfxPlusSpec) {
+		int ao = 0, wind = 0, shadows = 0;
+		if (sscanf(gfxPlusSpec, "%d,%d,%d", &ao, &wind, &shadows) != 3) {
+			usage();
+			return 2;
+		}
+		Settings& st = app.settings();
+		st.occlusion = u8(clamp(ao, 0, 100));
+		st.wind = u8(clamp(wind, 0, 3));
+		st.shadows = u8(clamp(shadows, 0, 2));
+		app.applySettings();
+		printf("Graphics+: occlusion %d%% (%s), wind %d (%s), shadows %d\n", int(st.occlusion),
+		       app.world().hasOcclusion() ? "in the data" : "NOT in the data", int(st.wind),
+		       app.world().hasWind() ? "in the data" : "NOT in the data", int(st.shadows));
 	}
 	StreamConfig& cfg = app.world().config();
 	cfg.memoryBudget = u32(budgetMb * 1024.0f * 1024.0f);
@@ -656,6 +674,14 @@ int main(int argc, char** argv) {
 		if (ps.emitters || ps.effects)
 			printf("particles         %u emitters in this world, %u running, %u effects read, %u particles alive, %u draw calls in the last frame\n",
 			       ps.emitters, ps.running, ps.effects, ps.particles, ps.drawCalls);
+	}
+	if (gfxPlusSpec) {
+		const ShadowStats& ss = app.shadows().stats();
+		const WorldStats& ws = app.world().stats();
+		printf("graphics+         occlusion %s, wind %s (%u swaying draw calls in the last frame); shadows: %u characters, %u laid on "
+		       "the ground, %u draw calls\n",
+		       app.world().hasOcclusion() ? "baked" : "not baked", app.world().hasWind() ? "baked" : "not baked", ws.windyDrawCalls,
+		       ss.asked, ss.drawn, ss.drawCalls);
 	}
 	if (pickup || inventory) {
 		const LootStats& ls = app.loot().stats();

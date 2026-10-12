@@ -1164,6 +1164,7 @@ void Hero::updatePose(float dt) {
 					dy += (edge - soleY) * (1.0f - w);
 				}
 				_drawn.pos[0].y += clamp(dy, -300.0f, 300.0f);
+				_exitCarry = raw - clamp(dy, -300.0f, 300.0f);
 			}
 		} else if (!c) {
 			_drawn.pos[0].y = _restY;
@@ -1175,6 +1176,13 @@ void Hero::updatePose(float dt) {
 		// before the leap is still the pose's to show.
 		_drawn.pos[0].y -= max(_takeoff->motion(_anim.time()).y, 0.0f);
 		return;
+	}
+	if (_exitTime < 0.2f) {
+		// The body stands on the ledge already; the pose it fades from has the root where the climb's
+		// clip left it (up to 1.5 m higher). Take that out as the fade goes, or the hero rises and drops.
+		_exitTime += max(dt, 0.0f);
+		const float x = clamp(_exitTime / 0.2f, 0.0f, 1.0f);
+		_drawn.pos[0].y -= _exitCarry * (1.0f - x * x * (3.0f - 2.0f * x));
 	}
 	_drawn.pos[0].y += (_restY - _drawn.pos[0].y) * _hipMix;
 	if (_stoop > 0.01f) {
@@ -1214,6 +1222,7 @@ bool Hero::wantsJumpUp(const Player& player) const {
 bool Hero::beginMantle(const Ledge& ledge, const Player& player, bool fromGround) {
 	if (!ledge.found || (fromGround ? !wantsJumpUp(player) : !wantsLedge(player))) return false;
 	if (!fromGround && ledge.top.y - _groundY > 330.0f) return false; // (too high for a jump, whatever the feet have risen to)
+	_exitTime = 1.0f;
 	_mantle = Mantle();
 	_mantle.start = player.feet;
 	_mantle.top = ledge.top;
@@ -1338,6 +1347,7 @@ void Hero::mantleDrive(Drive& drive, float dt) {
 		_jumping = false;
 		_forceNext = true;
 		_anim.play(stateClip(_walkMode ? ST_WALK : ST_RUN), 0.2f);
+		_exitTime = 0.0f; // (the fade starts from the climb's last pose, whose root is still as high as the clip put it)
 		_mantle.n = 0;
 		return;
 	}

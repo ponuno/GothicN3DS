@@ -15,6 +15,8 @@ struct SrcVertex {
 	float pos[3];
 	float uv[2]; // v = 0 is the top of the image (Direct3D convention)
 	u8 rgba[4];  // rgb: baked static light; a: daylight weight (255 outdoors, 0 indoors)
+	u8 occlusion = 0; // ambient occlusion, 0 open .. 255 shut in (vertex_fx.h; baked with --ao)
+	u8 wind = 0;      // how far it sways, WORLD_WIND_UNIT steps (0..127; the importer marks plants, kept with --wind)
 };
 
 struct SrcTriangle {

@@ -41,6 +41,12 @@ const char* const kSchemeNotes[] = {"Стик ведёт туда, куда ук
 const char* const kBottom[] = {"Инвентарь", "Отчёт"};
 const char* const kTimeFlow[] = {"Стоит", "Сутки за 24 мин", "Сутки за 1 ч", "Сутки за 2 ч"};
 const char* const kLanguages[] = {"Русский", "English", "Polski", "Deutsch"};
+const char* const kGfxPresets[] = {"Выкл", "Баланс", "Максимум", "Свой"};
+const char* const kGfxPresetNotes[] = {"Всё выключено, как раньше", "Умеренно: затенение, листва, тень героя", "Всё на полную",
+                                       "Значения изменены вручную"};
+const char* const kWind[] = {"Нет", "Слабое", "Обычное", "Сильное"};
+const char* const kShadows[] = {"Выкл", "Герой", "Все рядом"};
+const char* const kShadowNotes[] = {"Без теней под ногами", "Круглая тень под героем", "Под героем и жителями до 25 м"};
 
 #define NONE nullptr, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr
 const Item kMain[] = {
@@ -63,6 +69,7 @@ const Item kGraphics[] = {
     {"Купол Барьера", TOGGLE, &Settings::barrier, nullptr, 0, 0, 0, nullptr, 0, "Сияние неба и гул, если есть в данных", nullptr},
     {"Плавное появление", TOGGLE, &Settings::dissolve, nullptr, 0, 0, 0, nullptr, 0, "Вступит в силу после перезапуска", nullptr},
     {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 3, 0, 0, nullptr, 0, nullptr, kFrameNotes},
+    {"Графика+", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GFX_PLUS, "Затенение углов, листва, тени", nullptr},
     {"Сбросить графику", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_RESET_GRAPHICS, "Вернуть значения по умолчанию", nullptr},
 };
 const Item kGame[] = {
@@ -87,6 +94,12 @@ const Item kSound[] = {
     {"Громкость", RANGE, &Settings::soundVolume, nullptr, 1, 0, 10, "", 0, "Шаги, бой, звуки мира; 0 — без звука", nullptr},
     {"Музыка", RANGE, &Settings::musicVolume, nullptr, 1, 0, 10, "", 0, "Нужен music.pak рядом с data.pak", nullptr},
     {"Голоса", RANGE, &Settings::voiceVolume, nullptr, 1, 0, 10, "", 0, "Нужен speech.pak рядом с data.pak", nullptr},
+};
+const Item kGfxPlus[] = {
+    {"Набор", CHOICE, &Settings::gfxPlus, kGfxPresets, 4, 0, 0, nullptr, 0, nullptr, kGfxPresetNotes},
+    {"Затенение углов", RANGE, &Settings::occlusion, nullptr, 10, 0, 100, "%", 0, "Нужен data.pak, запечённый с --ao", nullptr},
+    {"Колыхание листвы", CHOICE, &Settings::wind, kWind, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --wind", nullptr},
+    {"Тени персонажей", CHOICE, &Settings::shadows, kShadows, 3, 0, 0, nullptr, 0, nullptr, kShadowNotes},
 };
 const Item kDebug[] = {
     {"Жители", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG_NPC, "Восприятие, жизнь, драки", nullptr},
@@ -122,13 +135,14 @@ const PageDef kPages[Menu::PAGES] = {
     PAGE_OF("Пауза", kMain),         PAGE_OF("Графика", kGraphics),   PAGE_OF("Игра", kGame),
     PAGE_OF("Управление", kControls), PAGE_OF("Интерфейс", kInterface), PAGE_OF("Звук", kSound),
     PAGE_OF("Отладка", kDebug),      PAGE_OF("Жители", kDebugNpc),    PAGE_OF("Герой и вещи", kDebugHero),
-    PAGE_OF("Мир и время", kDebugWorld),
+    PAGE_OF("Мир и время", kDebugWorld), PAGE_OF("Графика+", kGfxPlus),
 };
 #undef PAGE_OF
 
 } // namespace
 
 Menu::Page Menu::parentOf(Page page) {
+	if (page == PAGE_GFX_PLUS) return PAGE_GRAPHICS;
 	return page == PAGE_DEBUG_NPC || page == PAGE_DEBUG_HERO || page == PAGE_DEBUG_WORLD ? PAGE_DEBUG : PAGE_MAIN;
 }
 
@@ -217,6 +231,13 @@ MenuAction Menu::update(const MenuInput& in, Settings& s) {
 		const int step = dir ? dir : in.confirm ? 1 : 0;
 		if (!step) return MENU_NONE;
 		s.*it.field = u8((s.*it.field + it.count + step) % it.count);
+		if (it.field == &Settings::gfxPlus) {
+			// A set: its values follow. ("Own" is only shown, never chosen.)
+			if (s.gfxPlus == GFX_PLUS_OWN) s.gfxPlus = u8((s.gfxPlus + it.count + step) % it.count);
+			s.applyGfxPreset(s.gfxPlus);
+		} else if (_page == PAGE_GFX_PLUS) {
+			s.gfxPlus = s.gfxPresetOf();
+		}
 		return MENU_CHANGED;
 	}
 	case RANGE: {
@@ -224,6 +245,7 @@ MenuAction Menu::update(const MenuInput& in, Settings& s) {
 		const int v = clamp(int(s.*it.field) + dir * int(it.count), int(it.lo), int(it.hi));
 		if (v == int(s.*it.field)) return MENU_NONE;
 		s.*it.field = u8(v);
+		if (_page == PAGE_GFX_PLUS) s.gfxPlus = s.gfxPresetOf();
 		return MENU_CHANGED;
 	}
 	}

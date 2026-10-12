@@ -9,6 +9,7 @@
 
 #include "g3ds/world.h"
 #include "ground.h"
+#include "vertex_fx.h"
 
 #include <zenkit/CutsceneLibrary.hh>
 #include <zenkit/DaedalusVm.hh>
@@ -1109,7 +1110,8 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 	}
 }
 
-void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::GameVersion version, SrcScene& scene) {
+void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::GameVersion version, const ZenImportOptions& opt,
+                   SrcScene& scene) {
 	std::map<std::string, FlatPtr> cache;
 	std::vector<ObjectInstance> instances;
 	ObjectStats stats;
@@ -1239,8 +1241,15 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 	std::map<std::string, u32> materialIndex; // everything that affects drawing -> scene material
 	u32 unlit = 0;
 	u64 detailCount[DETAIL_COUNT] = {0, 0, 0};
+	// Plants (vertex_fx.h): by the object's name, else by a part's material or texture.
+	std::map<std::string, u32> plantsByName, plantsByPart;
+	u32 plantKinds[4] = {0, 0, 0, 0};
 	for (const ObjectInstance& inst : instances) {
 		const zenkit::VirtualObject& vob = *inst.vob;
+		const size_t firstTriangle = scene.triangles.size();
+		const std::string visualName = vob.visual ? upper(vob.visual->name) : std::string();
+		const PlantKind objectKind = inst.mesh->kind == VisualKind::Decal ? PlantKind::None : plantKindOf(visualName, opt.plantWords);
+		std::vector<std::pair<size_t, PlantKind>> partKinds; // (first triangle, kind) of each part
 		const zenkit::Vec3* col = vob.rotation.columns; // object -> world: p' = R * p + position
 		const bool decal = inst.mesh->kind == VisualKind::Decal;
 
@@ -1278,6 +1287,12 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 			}
 			// Glow and light shafts are light themselves; everything else is lit.
 			const bool selfLit = sm.blend == SrcBlend::Add;
+			PlantKind partKind = objectKind;
+			if (partKind == PlantKind::None && !decal && !sm.water && sm.blend == SrcBlend::Opaque) {
+				partKind = plantKindOf(sm.name, opt.plantWords);
+				if (partKind == PlantKind::None) partKind = plantKindOf(sm.texture, opt.plantWords);
+			}
+			partKinds.emplace_back(scene.triangles.size(), partKind);
 
 			for (size_t t = 0; t + 2 < sub.verts.size(); t += 3) {
 				SrcTriangle tri;
@@ -1309,6 +1324,44 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 			}
 		}
 		++stats.placed[size_t(inst.mesh->kind)];
+
+		// Swaying: measured over the whole object, so that a tree's leaves near
+		// the top move most even if only they are named as leaves.
+		bool anyPlant = false;
+		for (const auto& pk : partKinds) anyPlant = anyPlant || pk.second != PlantKind::None;
+		if (anyPlant && scene.triangles.size() > firstTriangle) {
+			float footY = 1e30f, topY = -1e30f;
+			for (size_t t = firstTriangle; t < scene.triangles.size(); ++t)
+				for (const SrcVertex& v : scene.triangles[t].v) {
+					footY = std::min(footY, v.pos[1]);
+					topY = std::max(topY, v.pos[1]);
+				}
+			PlantKind shown = objectKind;
+			for (size_t p = 0; p < partKinds.size(); ++p) {
+				if (partKinds[p].second == PlantKind::None) continue;
+				const size_t end = p + 1 < partKinds.size() ? partKinds[p + 1].first : scene.triangles.size();
+				markSway(scene.triangles.data() + partKinds[p].first, end - partKinds[p].first, partKinds[p].second, footY, topY,
+				         plantSway(partKinds[p].second, topY - footY));
+				if (shown == PlantKind::None) shown = partKinds[p].second;
+			}
+			++plantKinds[size_t(shown)];
+			++(objectKind != PlantKind::None ? plantsByName : plantsByPart)[visualName.empty() ? std::string("?") : visualName];
+		}
+	}
+	if (!plantsByName.empty() || !plantsByPart.empty()) {
+		auto top = [](const std::map<std::string, u32>& m) {
+			std::vector<std::pair<u32, std::string>> v;
+			for (const auto& kv : m) v.emplace_back(kv.second, kv.first);
+			std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.first != b.first ? a.first > b.first : a.second < b.second; });
+			std::string out;
+			for (size_t i = 0; i < v.size() && i < 12; ++i) out += (i ? ", " : "") + v[i].second + " x" + std::to_string(v[i].first);
+			if (v.size() > 12) out += ", ... (" + std::to_string(v.size()) + " kinds)";
+			return out;
+		};
+		scene.notes.push_back("plants that sway (kept with --wind): " + std::to_string(plantKinds[1]) + " trees, " +
+		                      std::to_string(plantKinds[2]) + " bushes, " + std::to_string(plantKinds[3]) + " grasses" +
+		                      (plantsByName.empty() ? "" : "\n  by the object's name: " + top(plantsByName)) +
+		                      (plantsByPart.empty() ? "" : "\n  by a part's material or texture: " + top(plantsByPart)));
 	}
 
 	size_t loaded = 0;
@@ -3103,7 +3156,7 @@ void importZenWorld(std::shared_ptr<const ZenGame> game, const ZenImportOptions&
 		}
 	}
 	if (opt.objects) {
-		appendObjects(world, game->vfs, version, scene);
+		appendObjects(world, game->vfs, version, opt, scene);
 	} else {
 		// Portals and arrival points are still wanted.
 		std::map<std::string, FlatPtr> cache;

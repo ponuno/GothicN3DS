@@ -239,7 +239,7 @@ void Particles::loadDef(Def& d, u32 effect) {
 	for (u32 k = 0; k < MAX_FRAMES; ++k) {
 		char name[128];
 		if (k == 0 || !anim) snprintf(name, sizeof(name), "tex/%s", base);
-		else snprintf(name, sizeof(name), "tex/%.*s_a%u%s", int(anim - base), base, k, anim + 3);
+		else snprintf(name, sizeof(name), "tex/%.*s_a%u%s", int(anim - base), base, unsigned(k), anim + 3);
 		if (k > 0 && !anim) break;
 		const u32 hash = hashName(name);
 		gfx::Texture* t = _textures.acquire(*_pak, hash);

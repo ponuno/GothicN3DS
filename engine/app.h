@@ -7,6 +7,7 @@
 #include "inventory.h"
 #include "loot.h"
 #include "particles.h"
+#include "shadows.h"
 #include "menu.h"
 #include "npcs.h"
 #include "panel.h"
@@ -115,6 +116,12 @@ public:
 	// True if the character is drawn this frame (not while flying, and not
 	// when a wall has pushed the camera into its head).
 	bool heroVisible() const { return _heroVisible; }
+	// Graphics+ under load (the platform's frame pacer): the plants stand
+	// still and only the player's character keeps a shadow, until there is
+	// room again. The occlusion costs nothing in the frame and stays.
+	void setGfxRelief(bool heavy);
+	bool gfxRelief() const { return _gfxRelief; }
+	const Shadows& shadows() const { return _shadows; }
 	World& world() { return _world; }
 	const World& world() const { return _world; }
 	Pak& pak() { return _pak; }
@@ -391,6 +398,8 @@ private:
 	bool _underwater = false;
 	bool _thirdPerson = true; // wanted; see thirdPerson()
 	bool _heroVisible = false;
+	bool _gfxRelief = false;
+	float _windWanted = 0.0f; // Graphics+ wind as set (StreamConfig::wind is 0 while relieved)
 	CameraSet _cams = defaultCameraSet();
 	Vec3 _camTarget {0, 0, 0}, _camOrigin {0, 0, 0}; // the looked-after point and the camera, both trailing
 	bool _camPlaced = false;   // false: the next frame puts the camera where it belongs at once
@@ -487,6 +496,7 @@ private:
 	InventoryPanel _panel;
 	Loot _loot;
 	Particles _particles;
+	Shadows _shadows;
 	int _lootTarget = -1;
 	// The chests.
 	Chests _chests;

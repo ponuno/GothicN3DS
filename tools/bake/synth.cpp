@@ -5,6 +5,7 @@
 // on the Colony so the bake report says something useful about budgets.
 #include "g3ds/world.h"
 #include "importers.h"
+#include "vertex_fx.h"
 
 #include <algorithm>
 #include <cctype>
@@ -415,6 +416,7 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 			continue;
 		++placed;
 		float hgt = 700.0f + 500.0f * rnd(i, 2, 101), wid = hgt * 0.42f, rot = rnd(i, 3, 101) * 3.14159f;
+		const size_t firstTriangle = scene.triangles.size();
 		for (int q = 0; q < 2; ++q) {
 			float a = rot + float(q) * 1.5708f;
 			V3 dir {std::cos(a) * wid, 0, std::sin(a) * wid}, nn {-std::sin(a), 0.35f, std::cos(a)};
@@ -423,6 +425,10 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 			       b.vert({x + dir.x, y + hgt, z + dir.z}, 1, 0, {0, 1, 0}), b.vert({x - dir.x, y + hgt, z - dir.z}, 0, 0, {0, 1, 0}),
 			       nn, TREE, true);
 		}
+		// They sway in the wind like the game's (vertex_fx.h; kept with --wind).
+		const PlantKind kind = plantKindOf("SYN_TREE");
+		markSway(scene.triangles.data() + firstTriangle, scene.triangles.size() - firstTriangle, kind, y - 15.0f, y + hgt,
+		         plantSway(kind, hgt + 15.0f));
 	}
 
 	// ---- small and medium objects: only drawn near the camera ----

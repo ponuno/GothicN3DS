@@ -407,6 +407,7 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 
 void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 	_stats.shown = _stats.culled = _stats.triangles = _stats.drawCalls = 0;
+	_drawnCount = 0;
 	if (!loaded()) return;
 	const Frustum frustum = frustumFromViewProj(viewProj);
 	for (NpcActor& a : _actors) {
@@ -461,6 +462,11 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 			_stats.drawCalls += a.head->model.partCount();
 		}
 		++_stats.shown;
+		if (n.down == DOWN_NONE && _drawnCount < ACTORS) {
+			_drawnFeet[_drawnCount] = feet;
+			_drawnRadius[_drawnCount] = clamp((reach - 40.0f) * 0.9f, 38.0f, 160.0f);
+			++_drawnCount;
+		}
 	}
 }
 

@@ -796,15 +796,17 @@ void Sound::statusLine(char* out, u32 size) const {
 		snprintf(out, size, "snd off");
 		return;
 	}
-	snprintf(out, size, "snd %u/%u c%.1f/%.0fM a%u/%u u%u m%u", _stats.voices, u32(VOICES), double(_stats.cacheBytes) / 1048576.0,
-	         double(_stats.cacheLimit) / 1048576.0, _stats.ambientOn, _stats.ambient, _stats.unknown, _stats.absent);
+	snprintf(out, size, "snd %u/%u c%.1f/%.0fM a%u/%u u%u m%u", unsigned(_stats.voices), unsigned(VOICES),
+	         double(_stats.cacheBytes) / 1048576.0, double(_stats.cacheLimit) / 1048576.0, unsigned(_stats.ambientOn), unsigned(_stats.ambient),
+	         unsigned(_stats.unknown), unsigned(_stats.absent));
 }
 
 void Sound::writeReport(FILE* f) const {
 	fprintf(f, "sound: played %u, unknown names %u, samples missing %u, late %u, culled %u, stolen %u, loads %u, evicted %u\n",
-	        _stats.played, _stats.unknown, _stats.absent, _stats.late, _stats.culled, _stats.stolen, _stats.loads, _stats.evicted);
+	        unsigned(_stats.played), unsigned(_stats.unknown), unsigned(_stats.absent), unsigned(_stats.late), unsigned(_stats.culled),
+	        unsigned(_stats.stolen), unsigned(_stats.loads), unsigned(_stats.evicted));
 	for (u32 i = 0; i < _logCount; ++i)
-		fprintf(f, "  %s x%u %s\n", _log[i].name, _log[i].count, _log[i].absent ? "(no sample)" : "(no such sound)");
+		fprintf(f, "  %s x%u %s\n", _log[i].name, unsigned(_log[i].count), _log[i].absent ? "(no sample)" : "(no such sound)");
 }
 
 } // namespace g3

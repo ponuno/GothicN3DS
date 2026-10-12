@@ -22,6 +22,7 @@
 #include "rg_etc1.h"
 #include "test_models.h"
 #include "texture_bake.h"
+#include "vertex_fx.h"
 
 #include <algorithm>
 #include <array>
@@ -1659,6 +1660,15 @@ static void testLoader() {
 // The world streamed in the background must end up exactly like the world
 // loaded on the spot - same chunks, same memory, same picture - without ever
 // doing more per frame than it is allowed to.
+
+// A platform's free memory for the world (World::budget): a pool, less what meshes and textures hold.
+static u32 gFakePool = 0;
+static u32 fakeFree() {
+	const gfx::MemStats m = gfx::memStats();
+	const u32 used = m.meshBytes + m.textureBytes;
+	return used < gFakePool ? gFakePool - used : 0u;
+}
+
 static void testStreaming() {
 	const std::string path = gDir + "/loader.pak"; // baked by testLoader
 	SrcScene scene;
@@ -1824,6 +1834,29 @@ static void testStreaming() {
 			CHECK(w.stats().evictions > evicted && peak2 <= shot.bytes / 2 + 256 * 1024 && w.stats().loadFailures == 0);
 		}
 		w.config().memoryBudget = 24u << 20;
+		// 5c. Where the platform tells how much memory is free (the 3DS's linear heap), the world takes no more
+		// than that less a reserve, however big its own budget (StreamConfig::freeMemory).
+		{
+			app.teleport({1e6f, 0, 1e6f});
+			CHECK(settle(200000, false));
+			const gfx::MemStats base = gfx::memStats(); // (the characters' models stay)
+			gFakePool = base.meshBytes + base.textureBytes + shot.bytes * 3 / 5 + 64 * 1024;
+			w.config().freeMemory = fakeFree;
+			w.config().memoryReserve = 64 * 1024;
+			app.teleport(spawn);
+			u32 peak3 = 0;
+			for (int f = 0; f < 300; ++f) {
+				app.update(Input {}, dt);
+				peak3 = std::max(peak3, w.stats().residentBytes);
+				if (threaded) usleep(100);
+			}
+			std::printf("  free memory (%s): %u chunks, peak %.2f MB, budget %.2f MB of %.2f\n", names[mode], w.stats().chunksLoaded,
+			            double(peak3) / 1048576.0, double(w.stats().budgetBytes) / 1048576.0, double(shot.bytes) / 1048576.0);
+			CHECK(w.stats().chunksLoaded > 0 && w.stats().chunksLoaded < near && peak3 <= shot.bytes * 3 / 5 + 256 * 1024);
+			CHECK(w.stats().budgetBytes < (24u << 20) && w.stats().loadFailures == 0);
+			w.config().freeMemory = nullptr;
+			w.config().memoryReserve = StreamConfig().memoryReserve;
+		}
 
 		// 6. Closed with work under way.
 		app.teleport({1e6f, 0, 1e6f});
@@ -6462,6 +6495,187 @@ static void testThinning() {
 	CHECK(all == none + 16 && three == none + 12 && two == none + 8);
 }
 
+// Graphics+ (G1-G3): the baker's ambient occlusion and plant marks, what the chunker writes into the vertices,
+// and the shadows under the characters with the way they give way under load.
+static void testGfxPlus() {
+	// 1. Plants by their names: words of the name, not letters inside other words.
+	CHECK(plantKindOf("OW_LOB_TREE_V1.3DS") == PlantKind::Tree && plantKindOf("BIGTREES") == PlantKind::Tree);
+	CHECK(plantKindOf("nw_nature_bush_01") == PlantKind::Bush && plantKindOf("GRASS_A0.TGA") == PlantKind::Grass);
+	CHECK(plantKindOf("OW_STREET_LAMP.3DS") == PlantKind::None && plantKindOf("OW_TREESTUMP_01.3DS") == PlantKind::None);
+	CHECK(plantKindOf("OW_FIREPLACE") == PlantKind::None && plantKindOf("XX_EICHENHAIN") == PlantKind::None);
+	CHECK(plantKindOf("XX_EICHENHAIN", {"EICHENHAIN"}) == PlantKind::Tree);
+	CHECK(plantSway(PlantKind::Tree, 1000.0f) > plantSway(PlantKind::Grass, 50.0f) && plantSway(PlantKind::None, 500.0f) == 0.0f);
+	{
+		// The foot stands still, the top sways the most; a tree bends near its top.
+		SrcTriangle t;
+		const float ys[3] = {0.0f, 500.0f, 1000.0f};
+		for (int k = 0; k < 3; ++k) t.v[k].pos[0] = t.v[k].pos[2] = 0.0f, t.v[k].pos[1] = ys[k];
+		markSway(&t, 1, PlantKind::Tree, 0.0f, 1000.0f, 12.0f);
+		CHECK(t.v[0].wind == 0 && t.v[2].wind == 48 && t.v[1].wind == 12);
+	}
+
+	// 2. Occlusion: a floor of 6 x 6 m in metre squares with a wall 3 m high along one side.
+	SrcScene scene;
+	scene.materials.resize(2);
+	scene.materials[0].name = "STONE";
+	scene.materials[1].name = "GLASS";
+	auto vert = [](float x, float y, float z) {
+		SrcVertex v {};
+		v.pos[0] = x;
+		v.pos[1] = y;
+		v.pos[2] = z;
+		v.rgba[0] = v.rgba[1] = v.rgba[2] = 200;
+		v.rgba[3] = 255;
+		return v;
+	};
+	auto tri = [&](SrcVertex a, SrcVertex b, SrcVertex c, u32 material) {
+		SrcTriangle t;
+		t.v[0] = a;
+		t.v[1] = b;
+		t.v[2] = c;
+		t.material = material;
+		scene.triangles.push_back(t);
+	};
+	for (int i = 0; i < 6; ++i)
+		for (int j = 0; j < 6; ++j) {
+			const float x0 = float(i) * 100.0f, x1 = x0 + 100.0f, z0 = float(j) * 100.0f, z1 = z0 + 100.0f;
+			// (front faces up: counter-clockwise from above, see bake.cpp's winding check)
+			tri(vert(x0, 0, z0), vert(x1, 0, z0), vert(x0, 0, z1), 0);
+			tri(vert(x1, 0, z0), vert(x1, 0, z1), vert(x0, 0, z1), 0);
+			// The wall at x = 0, facing the floor, in squares too.
+			if (i < 3) {
+				const float y0 = float(i) * 100.0f, y1 = y0 + 100.0f;
+				tri(vert(0, y0, z0), vert(0, y0, z1), vert(0, y1, z0), 0);
+				tri(vert(0, y0, z1), vert(0, y1, z1), vert(0, y1, z0), 0);
+			}
+		}
+	// A pane of glass in the open: it neither blocks nor is shaded.
+	tri(vert(500, 50, 300), vert(500, 50, 400), vert(500, 150, 300), 1);
+	std::vector<AoMaterial> mats = {AoMaterial {1.0f, true}, AoMaterial {0.0f, false}};
+	AoOptions ao;
+	ao.level = AO_LOW;
+	ao.threads = 2;
+	AoStats st;
+	bakeOcclusion(scene, mats, ao, st);
+	// The occlusion of a floor (normal up) or wall (normal +x) corner at a place.
+	auto occlusionAt = [&](float x, float y, float z, bool wall) {
+		int best = -1;
+		for (const SrcTriangle& t : scene.triangles) {
+			if (t.material != 0) continue;
+			const bool isWall = t.v[0].pos[0] == 0.0f && t.v[1].pos[0] == 0.0f && t.v[2].pos[0] == 0.0f;
+			if (isWall != wall) continue;
+			for (const SrcVertex& v : t.v)
+				if (v.pos[0] == x && v.pos[1] == y && v.pos[2] == z) best = std::max(best, int(v.occlusion));
+		}
+		return best;
+	};
+	const int foot = occlusionAt(0, 0, 300, false), open = occlusionAt(600, 0, 300, false), mid = occlusionAt(200, 0, 300, false);
+	const int wallFoot = occlusionAt(0, 0, 300, true), wallTop = occlusionAt(0, 300, 300, true);
+	std::printf("  occlusion: floor at the wall %d, 2 m off %d, 6 m off %d; wall foot %d, top %d (of 255); %llu corners from %llu places, "
+	            "%.0f%% on average\n", foot, mid, open, wallFoot, wallTop, static_cast<unsigned long long>(st.corners),
+	            static_cast<unsigned long long>(st.unique), double(st.mean) * 100.0);
+	CHECK(foot > 60 && mid >= 0 && mid < foot && open >= 0 && open < 12 && wallFoot > wallTop && wallTop >= 0 && wallTop < 40);
+	CHECK(scene.triangles.back().v[0].occlusion == 0 && st.occluders == scene.triangles.size() - 1);
+	// One place and one smooth surface: one answer (so the chunker still merges the corners).
+	CHECK(st.unique < st.corners);
+
+	// 3. The chunker writes occlusion and sway into w with vertexFx, and 1 without.
+	scene.triangles[0].v[0].wind = 9;
+	{
+		ChunkerOptions co;
+		co.vertexFx = true;
+		ChunkerStats cs;
+		const std::vector<BakedChunk> chunks = buildChunks(scene, {0, 0}, {0, 0}, co, cs);
+		u32 shaded = 0, swaying = 0, plain = 0;
+		for (const BakedChunk& c : chunks)
+			for (const WorldVertex& v : c.vertices) {
+				shaded += vertexOcclusion(v.w) > 0;
+				swaying += vertexWind(v.w) == 9;
+				plain += v.w == 1;
+			}
+		CHECK(shaded > 10 && swaying >= 1);
+		co.vertexFx = false;
+		ChunkerStats cs2;
+		const std::vector<BakedChunk> old = buildChunks(scene, {0, 0}, {0, 0}, co, cs2);
+		bool allOne = !old.empty();
+		for (const BakedChunk& c : old)
+			for (const WorldVertex& v : c.vertices) allOne = allOne && v.w == 1;
+		CHECK(allOne);
+		(void)plain;
+	}
+	CHECK(packVertexFx(200, 77) == i16(200 | (77 << 8)) && vertexOcclusion(packVertexFx(200, 77)) == 200 &&
+	      vertexWind(packVertexFx(200, 200)) == 127);
+
+	// 4. Shadows: on the ground under the characters, only darkening; under load only the hero keeps one.
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/gfxplus.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	app.npcs().game().setQuiet(true);
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.settings().immortal = 1;
+	app.applySettings();
+	for (int i = 0; i < 45; ++i) app.update(Input {}, 1.0f / 30.0f);
+	CHECK(app.heroVisible());
+	app.settings().shadows = SHADOWS_OFF;
+	app.applySettings();
+	app.render();
+	const std::vector<u8> without(gfx::softFramebuffer(), gfx::softFramebuffer() + gfx::SCREEN_W * gfx::SCREEN_H * 4);
+	CHECK(app.shadows().stats().drawn == 0);
+	app.settings().shadows = SHADOWS_ALL;
+	app.applySettings();
+	app.render();
+	const u32 all = app.shadows().stats().drawn, asked = app.shadows().stats().asked;
+	const u8* with = gfx::softFramebuffer();
+	u32 darker = 0, lighter = 0;
+	for (u32 i = 0; i < u32(gfx::SCREEN_W * gfx::SCREEN_H); ++i)
+		for (int c = 0; c < 3; ++c) {
+			const int d = int(with[i * 4 + u32(c)]) - int(without[i * 4 + u32(c)]);
+			darker += d < -2;
+			lighter += d > 1;
+		}
+	app.setGfxRelief(true);
+	app.render();
+	const u32 relieved = app.shadows().stats().drawn;
+	app.setGfxRelief(false);
+	std::printf("  shadows: %u characters, %u laid (%u under load); %u channel values darker, %u lighter\n", asked, all, relieved, darker,
+	            lighter);
+	CHECK(all >= 1 && asked >= all && darker > 30 && lighter == 0 && relieved == 1);
+	// The menu: the page is under Graphics, its set puts the values, a change by hand makes it "own".
+	{
+		Menu m;
+		Settings s;
+		m.open();
+		MenuInput down, ok, right, back;
+		down.down = true;
+		ok.confirm = true;
+		right.right = true;
+		back.back = true;
+		m.update(down, s);
+		m.update(ok, s);
+		CHECK(m.page() == Menu::PAGE_GRAPHICS);
+		for (int i = 0; i < m.itemCount(Menu::PAGE_GRAPHICS) && std::strcmp(m.label(Menu::PAGE_GRAPHICS, m.selected()), "Графика+") != 0; ++i)
+			m.update(down, s);
+		CHECK(m.update(ok, s) == MENU_NONE && m.page() == Menu::PAGE_GFX_PLUS);
+		CHECK(m.update(right, s) == MENU_CHANGED && s.gfxPlus == GFX_PLUS_BALANCED && s.occlusion == 60 && s.wind == 2 &&
+		      s.shadows == SHADOWS_HERO);
+		CHECK(m.update(right, s) == MENU_CHANGED && s.gfxPlus == GFX_PLUS_MAX && s.shadows == SHADOWS_ALL);
+		CHECK(m.update(right, s) == MENU_CHANGED && s.gfxPlus == GFX_PLUS_OFF && s.occlusion == 0); // ("own" is skipped)
+		m.update(down, s);
+		CHECK(m.update(right, s) == MENU_CHANGED && s.occlusion == 10 && s.gfxPlus == GFX_PLUS_OWN);
+		s.sanitize();
+		CHECK(s.gfxPlus == GFX_PLUS_OWN && s.gfxPresetOf() == GFX_PLUS_OWN);
+		CHECK(m.update(back, s) == MENU_NONE && m.page() == Menu::PAGE_GRAPHICS);
+	}
+	app.shutdown();
+	CHECK(gfx::memStats().meshCount == 0);
+}
+
 // Settings (settings.bin) and the pause menu.
 static void testSettings() {
 	const std::string path = gDir + "/settings.bin";
@@ -7875,6 +8089,7 @@ int main(int argc, char** argv) {
              {"npc items", testNpcItems},
              {"corpses", testCorpses},
 	             {"settings", testSettings},
+	             {"graphics+", testGfxPlus},
 	             {"music", testMusic},
 	             {"speech", testSpeech},
              {"sound", testSound},

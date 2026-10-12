@@ -703,6 +703,7 @@ void C3D_FrameBufClear(C3D_FrameBuf*, C3D_ClearBits, u32, u32) {
 }
 void C3D_SetFrameBuf(C3D_FrameBuf*) {}
 void C3D_SetViewport(u32, u32, u32, u32) {}
+void C3D_SetScissor(GPU_SCISSORMODE, u32, u32, u32, u32) {}
 
 void C3D_SetBufInfo(C3D_BufInfo* info) { gBufInfo = *info; }
 C3D_AttrInfo* C3D_GetAttrInfo(void) { return &gAttrInfo; }

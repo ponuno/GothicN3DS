@@ -71,6 +71,7 @@ static inline void C3D_RenderTargetClear(C3D_RenderTarget* target, C3D_ClearBits
 }
 void C3D_SetFrameBuf(C3D_FrameBuf* fb);
 void C3D_SetViewport(u32 x, u32 y, u32 w, u32 h);
+void C3D_SetScissor(GPU_SCISSORMODE mode, u32 left, u32 top, u32 right, u32 bottom);
 
 struct C3D_BufInfo {
 	const void* base;

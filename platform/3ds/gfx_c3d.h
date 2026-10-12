@@ -17,6 +17,8 @@ void c3dSetClassicFrames(bool classic);
 void c3dSetPlainShader(bool plain);
 // Draws only the left half of the picture (for finding out whether the GPU is limited by the pixels).
 void c3dSetFillTest(bool on);
+// Issues every world draw twice, with nothing changed between (for finding out what a draw call costs the GPU).
+void c3dSetDoubleDraws(bool on);
 bool c3dPlainShader();
 // `fade` = true: the shader with the dissolve (world_fade.v.pica) and the
 // noise texture on unit 1, so that gfx::setFade works. Off by default: the

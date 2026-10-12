@@ -64,6 +64,7 @@ bool gSkinned = false; // last value of the shader's `skinned` switch
 float gFx[4] = {0, 0, 0, 0};
 bool gWindy = false, gMaterialWind = false, gChunkWind = false;
 bool gFillTest = false;    // draw only the left half of the picture (hold ZR at start): does the GPU time follow the pixels?
+bool gDoubleDraws = false; // every world draw is issued twice (hold START at start): what does one more draw call cost with no state change?
 bool gPlainShader = false; // the world-only shader of earlier versions: no characters
 bool gFadeShader = false;  // the shader with the dissolve, and the noise on unit 1
 Pass gPass = PASS_WORLD;
@@ -712,6 +713,8 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 		gBoundMesh = m;
 	}
 	C3D_DrawElements(GPU_TRIANGLES, int(indexCount), C3D_UNSIGNED_SHORT, m->indices + firstIndex);
+	if (gDoubleDraws && gpuCmdBufOffset + kDrawReserveWords <= gpuCmdBufSize)
+		C3D_DrawElements(GPU_TRIANGLES, int(indexCount), C3D_UNSIGNED_SHORT, m->indices + firstIndex);
 }
 
 void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin) {
@@ -911,6 +914,7 @@ void c3dSetClassicFrames(bool classic) {
 }
 
 void c3dSetFillTest(bool on) { gFillTest = on; }
+void c3dSetDoubleDraws(bool on) { gDoubleDraws = on; }
 
 void c3dSetPlainShader(bool plain) {
 	if (!gReady) gPlainShader = plain;

@@ -198,6 +198,8 @@ int main(int, char**) {
 	gfx::c3dSetDoubleDraws((startKeys & KEY_START) != 0); // hold START at start: every draw twice
 	gfx::c3dSetFillTest(halfPicture); // hold ZR at start: half the pixels, the same triangles
 	gfx::c3dSetFadeShader(dissolve);
+	bool antialiasSet = settings.antialias != 0; // (changed in the menu: the targets are rebuilt between frames)
+	gfx::c3dSetSupersample(antialiasSet);
 
 	App& app = gApp;
 	// Chunks are read, unpacked and given their collision grids on a worker
@@ -380,6 +382,10 @@ int main(int, char**) {
 				}
 			}
 			app.soundIdle(dt);
+			if ((app.settings().antialias != 0) != antialiasSet) {
+				antialiasSet = app.settings().antialias != 0;
+				gfx::c3dSetSupersample(antialiasSet);
+			}
 			app.render();
 		} else {
 			Input in;
@@ -507,6 +513,10 @@ int main(int, char**) {
 				slopeFailed = !written;
 			}
 
+			if ((app.settings().antialias != 0) != antialiasSet) {
+				antialiasSet = app.settings().antialias != 0;
+				gfx::c3dSetSupersample(antialiasSet);
+			}
 			app.render();
 		} // (not in the menu)
 

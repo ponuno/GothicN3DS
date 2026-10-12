@@ -703,12 +703,15 @@ void C3D_FrameEnd(u8) {
 	GPUCMD_SetBuffer(nullptr, 0, 0);
 }
 
-C3D_RenderTarget* C3D_RenderTargetCreate(int width, int height, GPU_COLORBUF, GPU_DEPTHBUF) {
+C3D_RenderTarget* C3D_RenderTargetCreate(int width, int height, GPU_COLORBUF, int) {
 	C3D_RenderTarget* t = static_cast<C3D_RenderTarget*>(calloc(1, sizeof(C3D_RenderTarget)));
 	if (!t) return nullptr;
 	t->frameBuf.width = u16(width);
 	t->frameBuf.height = u16(height);
 	return t;
+}
+void C3D_SyncDisplayTransfer(u32*, u32 indim, u32*, u32 outdim, u32) {
+	if (indim == ((800u << 16) | 480u) && outdim == ((400u << 16) | 240u)) ++gCount.shrinks;
 }
 void C3D_RenderTargetDelete(C3D_RenderTarget* target) {
 	gExecuting = List {}; // waits for the GPU

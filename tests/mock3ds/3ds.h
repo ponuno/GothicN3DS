@@ -41,7 +41,8 @@ void osTickCounterUpdate(TickCounter* c);
 double osTickCounterRead(const TickCounter* c);
 
 enum { GX_CMDLIST_FLUSH = BIT(1) };
-enum { GX_TRANSFER_FMT_RGBA8 = 0, GX_TRANSFER_FMT_RGB8 = 1, GX_TRANSFER_SCALE_NO = 0 };
+enum { GX_TRANSFER_FMT_RGBA8 = 0, GX_TRANSFER_FMT_RGB8 = 1, GX_TRANSFER_SCALE_NO = 0, GX_TRANSFER_SCALE_XY = 2 };
+#define GX_BUFFER_DIM(w, h) (((h) << 16) | ((w) & 0xFFFF))
 #define GX_TRANSFER_FLIP_VERT(x) ((x) << 0)
 #define GX_TRANSFER_OUT_TILED(x) ((x) << 1)
 #define GX_TRANSFER_RAW_COPY(x) ((x) << 3)

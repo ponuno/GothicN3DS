@@ -576,6 +576,36 @@ static void testShader(const std::string& pak) {
 // The classic shader (ZL+ZR at start): the one of the version before the dissolve (world.v.pica), projection and
 // view apart, nothing on texture unit 1 - the GPU state that is known to work on the console. (The first build
 // with the dissolve always on gave a black screen.) It was the default before the fast one.
+// Smoothing of edges: the big target is shrunk into the screen's once a frame, in both frame orders, switched on and off
+// between frames, and nothing touches a buffer the GPU is using.
+static void testSupersample(const std::string& pak) {
+	for (int classic = 0; classic < 2; ++classic) {
+		mock3ds::reset();
+		gfx::c3dSetClassicFrames(classic != 0);
+		gfx::c3dSetSupersample(true);
+		CHECK(gfx::init() && gfx::c3dSupersample());
+		App app;
+		CHECK(app.init(pak.c_str(), nullptr));
+		app.skipChapters();
+		app.setDrawDistance(6000.0f);
+		app.world().preload(app.camera().pos);
+		unsigned shrunk = 0;
+		for (int f = 0; f < 12; ++f) {
+			if (f == 4) gfx::c3dSetSupersample(false);
+			if (f == 8) gfx::c3dSetSupersample(true);
+			app.update(Input {}, 1.0f / 30.0f);
+			app.render();
+			shrunk += gfx::c3dSupersample() ? 1 : 0;
+		}
+		CHECK(shrunk == 8 && mock3ds::counters().shrinks == shrunk);
+		CHECK(mock3ds::violations() == 0);
+		app.shutdown();
+		gfx::shutdown();
+	}
+	gfx::c3dSetClassicFrames(false);
+	gfx::c3dSetSupersample(false);
+}
+
 static void testClassicShader(const std::string& pak) {
 	mock3ds::reset();
 	gfx::c3dSetClassicFrames(false);
@@ -1077,6 +1107,7 @@ int main(int argc, char** argv) {
 	std::printf("[ RUN ] the default shader, without the dissolve\n");
 	testDefaultShader(pak);
 	testClassicShader(pak);
+	testSupersample(pak);
 	std::printf("[ RUN ] the fallback shader without characters\n");
 	testPlainShader(pak);
 	std::printf("[ RUN ] the overlay\n");

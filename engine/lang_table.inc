@@ -311,6 +311,8 @@ const Entry kEntries[] = {
     {{"Тени персонажей", "Character shadows", "Cienie postaci", "Figurenschatten"}},
     {{"%", "%", "%", "%"}},
     {{"Дальний план", "Far view", "Dalszy plan", "Fernsicht"}},
+    {{"Сглаживание", "Smoothing", "Wygładzanie", "Kantenglättung"}},
+    {{"Края без лесенки; нагружает видеочип", "No jagged edges; loads the GPU", "Bez schodków; obciąża GPU", "Keine Treppen; belastet die GPU"}},
     {{"Дальняя геометрия", "Far geometry", "Dalsza geometria", "Ferne Geometrie"}},
     {{"Упрощённые дальние чанки (мир с --lod)", "Simplified far chunks (world baked --lod)", "Uproszczone dalekie części (świat z --lod)", "Vereinfachte ferne Teile (Welt mit --lod)"}},
     {{"25 м", "25 m", "25 m", "25 m"}},

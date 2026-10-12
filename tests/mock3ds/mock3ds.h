@@ -12,6 +12,7 @@ struct Counters {
 	unsigned freedInUse;          // memory freed while a submitted, unfinished frame referred to it
 	unsigned submittedFreed;      // a frame was submitted that refers to memory already freed
 	unsigned submittedBusy;       // a frame was submitted while the GPU was still executing one
+	unsigned shrinks;             // supersampled pictures shrunk into the screen target
 	unsigned clearedBusy;         // the render target was cleared while the GPU was drawing into it
 	unsigned badFree;             // linearFree of something that is not allocated
 	unsigned drawOutsideFrame;    // a draw call with no command buffer set

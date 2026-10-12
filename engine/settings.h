@@ -85,6 +85,8 @@ struct Settings {
 	u8 visibility = 0;
 	// Version 11: simplified far geometry (data baked with --lod): 0 off, then from 25 / 40 / 60 m a chunk lies in view.
 	u8 farGeometry = 2;
+	// Version 12: smoothing of edges (supersampling: the picture drawn at twice the size each way and shrunk): 0 off, 1 on.
+	u8 antialias = 0;
 	float lodDistanceCm() const;
 
 	// Clamps every value into its range (after reading a file of another version).

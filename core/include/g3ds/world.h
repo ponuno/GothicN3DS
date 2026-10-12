@@ -88,6 +88,14 @@ enum WorldFlags : u32 {
 	// Plants carry how far they sway in the high byte of WorldVertex::w
 	// (g3ds-bake --wind); their materials have MATF_WIND.
 	WORLDF_WIND = 1 << 2,
+	// The chunks are cut by detail class (g3ds-bake, on by default): after the
+	// chunk table follows one byte per chunk, its tier (the lowest DetailClass
+	// of what it holds). Tier 0 is the world itself and the big things; a chunk
+	// of tier 1 or 2 holds only medium and small objects, is loaded only when
+	// the camera comes within their reach, and is freed again when it leaves.
+	// Without the flag every chunk is tier 0 and holds everything. A runtime
+	// that does not know the flag sees a blob of the wrong size and refuses it.
+	WORLDF_TIERS = 1 << 3,
 };
 
 struct WorldMaterial {
@@ -252,7 +260,7 @@ inline u32 chunkBlobSize(u32 batches, u32 vertices, u32 indices) {
 inline u32 worldBlobSize(const WorldHeader& h) {
 	return u32(sizeof(WorldHeader)) + h.materialCount * u32(sizeof(WorldMaterial)) + h.textureCount * u32(sizeof(u32)) +
 	       h.portalCount * u32(sizeof(WorldPortal)) + h.ladderCount * u32(sizeof(WorldLadder)) +
-	       h.chunkCount * u32(sizeof(ChunkInfo));
+	       h.chunkCount * u32(sizeof(ChunkInfo)) + ((h.flags & WORLDF_TIERS) ? h.chunkCount : 0u);
 }
 
 } // namespace g3

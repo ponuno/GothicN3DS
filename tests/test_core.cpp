@@ -1009,7 +1009,7 @@ static void testRuntime() {
 		gfx::softSetMemoryLimit(gfx::memStats().meshBytes + 40 * 1024);
 		w.preload(app.camera().pos);
 		const u32 starved = w.stats().chunksLoaded;
-		CHECK(starved > 0 && starved < near && w.stats().budgetRejects > 0 && w.stats().loadFailures == 0);
+		CHECK(starved > 0 && starved < near && w.stats().allocRejects > 0 && w.stats().loadFailures == 0);
 		CHECK(w.stats().chunksPending == near - starved);
 		app.render(); // whatever is there can be drawn, textured or not
 		gfx::softSetMemoryLimit(0);
@@ -1549,7 +1549,7 @@ static void testLoader() {
 	std::vector<u32> textures(wh.textureCount);
 	std::memcpy(textures.data(), index.data() + sizeof(wh) + materials.size() * sizeof(WorldMaterial), textures.size() * 4);
 	std::vector<ChunkInfo> chunks(wh.chunkCount);
-	std::memcpy(chunks.data(), index.data() + worldBlobSize(wh) - chunks.size() * sizeof(ChunkInfo),
+	std::memcpy(chunks.data(), index.data() + worldBlobSize(wh) - chunks.size() * sizeof(ChunkInfo) - ((wh.flags & WORLDF_TIERS) ? wh.chunkCount : 0u),
 	            chunks.size() * sizeof(ChunkInfo));
 
 	std::vector<LoadJob> jobs;
@@ -1796,7 +1796,7 @@ static void testStreaming() {
 			if (threaded) usleep(100);
 		}
 		const u32 starved = w.stats().chunksLoaded;
-		CHECK(starved > 0 && starved < near && w.stats().budgetRejects > 0 && w.stats().loadFailures == 0);
+		CHECK(starved > 0 && starved < near && w.stats().allocRejects > 0 && w.stats().loadFailures == 0);
 		app.render(); // whatever is there can be drawn
 		gfx::softSetMemoryLimit(0);
 		CHECK(settle(200000, false));
@@ -6679,6 +6679,217 @@ static void testGfxPlus() {
 // The far layer (G10): what the baker makes of a world (within its budget, every cell
 // naming its chunks), and what the runtime draws with it - beyond the draw distance and
 // in place of chunks not drawn, without the sky showing through where the two meet.
+// ---- chunks cut by detail class (WORLDF_TIERS) and the streaming around them ----
+
+// A flat square of `size` cm facing up at (x, y, z), of a detail class.
+static void addPatch(SrcScene& scene, float x, float y, float z, float size, u32 material, u8 detail) {
+	const float p[4][3] = {{x, y, z}, {x + size, y, z}, {x + size, y, z + size}, {x, y, z + size}};
+	const size_t first = scene.triangles.size();
+	addQuad(scene, p[3], p[2], p[1], p[0], material);
+	for (size_t t = first; t < scene.triangles.size(); ++t) scene.triangles[t].detail = detail;
+}
+
+// 10 x 10 cells of 40 m: a floor, 400 medium and 400 small objects in each, and a sea under it all.
+static SrcScene tieredScene() {
+	SrcScene scene;
+	scene.materials.resize(3);
+	const char* names[3] = {"floor", "stuff", "sea"};
+	for (int m = 0; m < 3; ++m) {
+		scene.materials[size_t(m)].name = names[m];
+		scene.materials[size_t(m)].hasColor = true;
+		scene.materials[size_t(m)].color[0] = u8(60 + m * 80);
+	}
+	u32 seed = 12345;
+	auto rnd = [&]() {
+		seed = seed * 1664525u + 1013904223u;
+		return float((seed >> 8) & 0xFFFF) / 65536.0f;
+	};
+	for (int cz = 0; cz < 10; ++cz)
+		for (int cx = 0; cx < 10; ++cx) {
+			const float x0 = float(cx) * 4000.0f, z0 = float(cz) * 4000.0f;
+			addPatch(scene, x0 + 20.0f, 0.0f, z0 + 20.0f, 3960.0f, 0, DETAIL_ALWAYS);
+			for (int n = 0; n < 200; ++n) {
+				addPatch(scene, x0 + 100.0f + rnd() * 3700.0f, 5.0f + rnd(), z0 + 100.0f + rnd() * 3700.0f, 40.0f, 1, DETAIL_MEDIUM);
+				addPatch(scene, x0 + 100.0f + rnd() * 3700.0f, 5.0f + rnd(), z0 + 100.0f + rnd() * 3700.0f, 30.0f, 1, DETAIL_SMALL);
+			}
+		}
+	addPatch(scene, -60000.0f, -50.0f, -60000.0f, 160000.0f, 2, DETAIL_ALWAYS); // (reaches into every cell: a chunk for the "big" list)
+	scene.spawnPos[0] = scene.spawnPos[2] = 20000.0f;
+	scene.spawnPos[1] = 150.0f;
+	scene.hasSpawn = true;
+	return scene;
+}
+
+static float boxDistance(const ChunkInfo& ci, Vec3 c) {
+	const float dx = std::max({ci.bbMin[0] - c.x, c.x - ci.bbMax[0], 0.0f});
+	const float dy = std::max({ci.bbMin[1] - c.y, c.y - ci.bbMax[1], 0.0f});
+	const float dz = std::max({ci.bbMin[2] - c.z, c.z - ci.bbMax[2], 0.0f});
+	return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+static void testChunkTiers() {
+	const SrcScene scene = tieredScene();
+	const std::string split = gDir + "/tiers.pak", plain = gDir + "/tiers_plain.pak";
+	ChunkerOptions co;
+	co.chunkSize = 4000.0f;
+	co.splitDetail = true;
+	bakeScenePak(scene, split, "t", co);
+	co.splitDetail = false;
+	bakeScenePak(scene, plain, "t", co);
+	gfx::init();
+
+	// 1. The baked tables: three kinds of chunk per cell, each holding what it says.
+	Pak pakSplit, pakPlain;
+	CHECK(pakSplit.open(split.c_str()) && pakPlain.open(plain.c_str()));
+	World a, b;
+	CHECK(a.open(&pakSplit, "t") && b.open(&pakPlain, "t"));
+	CHECK(a.hasTiers() && !b.hasTiers());
+	u32 tierCount[3] = {0, 0, 0};
+	for (u32 i = 0; i < a.header().chunkCount; ++i) ++tierCount[a.chunkTier(i)];
+	CHECK(tierCount[0] >= 100 && tierCount[1] == 100 && tierCount[2] == 100);
+	CHECK(b.header().chunkCount == tierCount[0]); // (the plain archive: every cell, and the sea, one chunk)
+	for (u32 i = 0; i < b.header().chunkCount; ++i) CHECK(b.chunkTier(i) == 0);
+	// The medium and small objects are a good half of what a cell holds.
+	u64 bytes[3] = {0, 0, 0};
+	for (u32 i = 0; i < a.header().chunkCount; ++i) {
+		const ChunkInfo& ci = a.chunkInfo(i);
+		bytes[a.chunkTier(i)] += u64(ci.vertexCount) * sizeof(WorldVertex) + u64(ci.indexCount) * 2;
+	}
+	CHECK(bytes[0] * 3 < bytes[0] + bytes[1] + bytes[2]);
+
+	// 2. What is wanted around the camera, found through the grid, is what a look at every chunk finds -
+	// at several places, the sea (in the list of big chunks) included.
+	{
+		World w;
+		w.config().maxLoadsPerFrame = 0; // nothing is loaded: only what is wanted is counted
+		w.config().drawDistance = 6000.0f;
+		w.config().loadRadius = 8000.0f;
+		w.config().unloadRadius = 12000.0f;
+		w.config().detailDistance[DETAIL_MEDIUM] = 3000.0f;
+		w.config().detailDistance[DETAIL_SMALL] = 1500.0f;
+		CHECK(w.open(&pakSplit, "t"));
+		const Vec3 places[] = {{20000, 100, 20000}, {2000, 100, 2000}, {39000, 100, 100}, {-3000, 100, 21000}, {20000, 100, 20000}, {200000, 0, 0}};
+		// (The menu changes how far the objects are drawn: what is wanted follows, without a restart.)
+		for (float medium : {3000.0f, 6000.0f, 1500.0f}) {
+			w.config().detailDistance[DETAIL_MEDIUM] = medium;
+			u32 wantedMost = 0;
+			for (const Vec3& at : places) {
+				w.update(at);
+				u32 expect = 0;
+				for (u32 i = 0; i < w.header().chunkCount; ++i) {
+					const u32 t = w.chunkTier(i);
+					const float reach = t == 0 ? 8000.0f : std::min(w.config().detailDistance[t] * w.config().detailHysteresis + w.config().detailLead, 8000.0f);
+					expect += boxDistance(w.chunkInfo(i), at) < reach;
+				}
+				CHECK(w.stats().chunksPending == expect);
+				wantedMost = std::max(wantedMost, expect);
+			}
+			CHECK(wantedMost > 10);
+			// The camera far from all of it: only the sea (in the list of big chunks) is wanted.
+			CHECK(w.stats().chunksPending <= 1);
+		}
+	}
+
+	// 3. Standing in the middle: the world around, the objects only near.
+	{
+		World w;
+		StreamConfig& cfg = w.config();
+		cfg.drawDistance = 6000.0f;
+		cfg.loadRadius = 8000.0f;
+		cfg.unloadRadius = 12000.0f;
+		cfg.detailDistance[DETAIL_MEDIUM] = 3000.0f;
+		cfg.detailDistance[DETAIL_SMALL] = 1500.0f;
+		CHECK(w.open(&pakSplit, "t"));
+		const Vec3 at = {20000, 100, 20000};
+		w.preload(at);
+		CHECK(w.stats().chunksPending == 0 && w.stats().loadFailures == 0);
+		u32 resident[3] = {0, 0, 0};
+		for (u32 i = 0; i < w.header().chunkCount; ++i) {
+			if (!w.chunkResident(i)) continue;
+			const u32 t = w.chunkTier(i);
+			++resident[t];
+			CHECK(boxDistance(w.chunkInfo(i), at) < (t == 0 ? 8000.0f : t == 1 ? 3000.0f * 1.1f + 1500.0f : 1500.0f * 1.1f + 1500.0f));
+		}
+		CHECK(resident[0] > resident[1] && resident[1] > resident[2] && resident[2] >= 1);
+		CHECK(w.stats().loadedDetail == resident[1] + resident[2]);
+		// The same place in the archive that holds everything in one chunk costs far more.
+		World p;
+		p.config() = cfg;
+		CHECK(p.open(&pakPlain, "t"));
+		p.preload(at);
+		CHECK(p.stats().residentBytes > w.stats().residentBytes * 3 / 2);
+		std::printf("  tiers: %u+%u+%u chunks, %.2f MB resident against %.2f MB with whole chunks\n", resident[0], resident[1], resident[2],
+		            double(w.stats().residentBytes) / 1048576.0, double(p.stats().residentBytes) / 1048576.0);
+		// Walking away frees the objects first.
+		Vec3 far = at;
+		far.x += 3500.0f;
+		for (int i = 0; i < 40; ++i) w.update(far);
+		w.preload(far);
+		CHECK(w.stats().loadFailures == 0);
+		for (u32 i = 0; i < w.header().chunkCount; ++i)
+			if (w.chunkResident(i)) CHECK(boxDistance(w.chunkInfo(i), far) <= (w.chunkTier(i) == 0 ? 12000.0f : 3000.0f * 1.1f + 1500.0f + 1200.0f));
+		// Out of everything's reach: all freed.
+		for (int i = 0; i < 4; ++i) w.update({1.0e6f, 0, 1.0e6f});
+		CHECK(w.stats().chunksLoaded <= 1 && w.stats().loadedDetail == 0 && w.stats().detailBytes == 0);
+	}
+
+	// 4. A budget that is too small: the nearest world comes first, the objects of far chunks are not kept,
+	// what is turned away is counted once and nothing breaks.
+	{
+		World w;
+		StreamConfig& cfg = w.config();
+		cfg.drawDistance = 6000.0f;
+		cfg.loadRadius = 8000.0f;
+		cfg.unloadRadius = 12000.0f;
+		cfg.detailDistance[DETAIL_MEDIUM] = 3000.0f;
+		cfg.detailDistance[DETAIL_SMALL] = 1500.0f;
+		cfg.background = true;
+		cfg.worker = false;
+		cfg.maxLoadsPerFrame = 2;
+		CHECK(w.open(&pakSplit, "t"));
+		u64 coreBytes = 0;
+		for (u32 i = 0; i < w.header().chunkCount; ++i)
+			if (w.chunkTier(i) == 0 && boxDistance(w.chunkInfo(i), {20000, 100, 20000}) < 8000.0f)
+				coreBytes += u64(w.chunkInfo(i).vertexCount) * sizeof(WorldVertex) + u64(w.chunkInfo(i).indexCount) * 2;
+		// Room for most of the world around, with textures, and not for the objects.
+		cfg.memoryBudget = u32(coreBytes * 6 / 5);
+		Vec3 at = {20000, 100, 20000};
+		for (int f = 0; f < 3000; ++f) {
+			w.update(at);
+			if (w.stats().chunksPending == 0 && w.stats().chunksInFlight == 0) break;
+		}
+		CHECK(w.stats().loadFailures == 0);
+		CHECK(w.stats().residentBytes <= cfg.memoryBudget + 1);
+		CHECK(w.stats().budgetRejects > 0);
+		// Nothing resident is farther by priority than something missing (the swap rule), beyond its margin.
+		auto key = [&](u32 i) { return boxDistance(w.chunkInfo(i), at) + cfg.tierBias[w.chunkTier(i)]; };
+		float worstResident = -1e30f, bestMissing = 1e30f;
+		for (u32 i = 0; i < w.header().chunkCount; ++i) {
+			const float d = boxDistance(w.chunkInfo(i), at);
+			const u32 t = w.chunkTier(i);
+			const float reach = t == 0 ? 8000.0f : std::min(cfg.detailDistance[t] * cfg.detailHysteresis + cfg.detailLead, 8000.0f);
+			if (w.chunkResident(i))
+				worstResident = std::max(worstResident, key(i));
+			else if (d < reach)
+				bestMissing = std::min(bestMissing, key(i));
+		}
+		CHECK(worstResident <= bestMissing + 300.0f + 1.0f);
+		// Waiting is not a refusal per frame.
+		const u32 rejects = w.stats().budgetRejects;
+		for (int f = 0; f < 120; ++f) w.update(at);
+		CHECK(w.stats().budgetRejects == rejects);
+		// Walking on keeps it going, the heading counts, and the budget holds.
+		for (int f = 0; f < 600; ++f) {
+			at.x += 20.0f;
+			w.update(at);
+			CHECK(w.stats().residentBytes <= cfg.memoryBudget + 1);
+		}
+		CHECK(w.stats().loadFailures == 0 && w.stats().evictions > 0);
+	}
+	pakSplit.close();
+	pakPlain.close();
+}
+
 static void testFarLayer() {
 	SrcScene scene;
 	scene.materials.resize(2);
@@ -6710,6 +6921,10 @@ static void testFarLayer() {
 			addQuad(scene, k[f[3]], k[f[2]], k[f[1]], k[f[0]], 1);
 		}
 	}
+	// The tower is shut in (ambient occlusion 200 of 255) as a baked world would have it.
+	for (SrcTriangle& t : scene.triangles)
+		if (t.material == 1)
+			for (SrcVertex& v : t.v) v.occlusion = 200;
 	scene.spawnPos[1] = 400.0f;
 	scene.hasSpawn = true;
 	const u32 input = u32(scene.triangles.size());
@@ -6766,6 +6981,17 @@ static void testFarLayer() {
 		bool refsOk = true;
 		for (u32 i = 0; i < fh.chunkRefCount; ++i) refsOk = refsOk && refs[i] < wh.chunkCount;
 		CHECK(refsOk);
+	}
+	// The far layer carries the occlusion in the vertices' w, as the chunks do (and none where there is none).
+	{
+		const WorldVertex* verts = reinterpret_cast<const WorldVertex*>(blob.data() + sizeof(FarHeader) + fh.tileCount * sizeof(FarTile) +
+		                                                              fh.rangeCount * sizeof(FarRange) + fh.chunkRefCount * sizeof(u32));
+		u32 shut = 0, open = 0;
+		for (u32 i = 0; i < fh.vertexCount; ++i) {
+			shut += verts[i].w >= 150;
+			open += verts[i].w == 0;
+		}
+		CHECK(shut >= 4 && open > shut);
 	}
 	// Without the option there is none, and the rest of the archive is as it was.
 	{
@@ -8285,6 +8511,7 @@ int main(int argc, char** argv) {
 	             {"settings", testSettings},
 	             {"graphics+", testGfxPlus},
 	             {"far layer", testFarLayer},
+	             {"chunk tiers", testChunkTiers},
 	             {"music", testMusic},
 	             {"speech", testSpeech},
              {"sound", testSound},

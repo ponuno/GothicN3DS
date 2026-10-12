@@ -307,6 +307,7 @@ private:
 // The triangles of one grid cell that share a quantisation frame.
 struct Group {
 	int gx, gz;
+	u8 tier = 0;
 	int k; // step = base step * 2^k
 	std::vector<u32> tris;
 	i64 origin[3] = {0, 0, 0}; // lattice coordinates (base steps) of the chunk origin
@@ -429,6 +430,7 @@ struct CellBuilder {
 			cur.gridX = gx;
 			cur.gridZ = gz;
 			cur.part = part++;
+			cur.tier = g.tier;
 			cur.header.magic = CHUNK_MAGIC;
 			std::memcpy(cur.header.origin, mn, sizeof(mn));
 			cur.header.posScale = posScale;
@@ -475,6 +477,9 @@ struct CellBuilder {
 				}
 			}
 			stats.outputTriangles += cur.indices.size() / 3;
+			++stats.tierChunks[g.tier];
+			stats.tierTriangles[g.tier] += cur.indices.size() / 3;
+			stats.tierVertices[g.tier] += cur.vertices.size();
 			stats.vertices += cur.vertices.size();
 			stats.maxChunkTriangles = std::max(stats.maxChunkTriangles, u32(cur.indices.size() / 3));
 			stats.maxChunkVertices = std::max(stats.maxChunkVertices, u32(cur.vertices.size()));
@@ -687,12 +692,39 @@ std::vector<BakedChunk> buildChunks(const SrcScene& scene, const std::vector<int
 			}
 		return std::max({mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]});
 	};
-	std::vector<Group> groups;
+	// Each cell by tier (the lowest detail class in it decides how far from the camera the chunk is
+	// wanted, so a tier is never more than what it is called for).
+	struct CellTier {
+		int gx, gz;
+		u8 tier;
+		std::vector<u32> tris;
+	};
+	std::vector<CellTier> cellTiers;
 	for (auto& kv : cells) {
 		std::vector<u32>& tris = kv.second;
+		if (!opt.splitDetail) {
+			cellTiers.push_back(CellTier {kv.first.first, kv.first.second, 0, std::move(tris)});
+			continue;
+		}
+		std::vector<u32> byClass[DETAIL_COUNT];
+		for (u32 t : tris) byClass[CellBuilder::classOf(work[t])].push_back(t);
+		// Too few to be worth a chunk: fold into the tier above, small into medium into the world.
+		for (int c = DETAIL_COUNT - 1; c > 0; --c)
+			if (byClass[c].size() < opt.minTierTriangles) {
+				byClass[c - 1].insert(byClass[c - 1].end(), byClass[c].begin(), byClass[c].end());
+				byClass[c].clear();
+			}
+		for (int c = 0; c < DETAIL_COUNT; ++c)
+			if (!byClass[c].empty()) cellTiers.push_back(CellTier {kv.first.first, kv.first.second, u8(c), std::move(byClass[c])});
+	}
+	cells.clear();
+	std::vector<Group> groups;
+	for (CellTier& ct : cellTiers) {
+		std::vector<u32>& tris = ct.tris;
 		Group g;
-		g.gx = kv.first.first;
-		g.gz = kv.first.second;
+		g.gx = ct.gx;
+		g.gz = ct.gz;
+		g.tier = ct.tier;
 		g.k = stepFor(extentOf(tris), 0);
 		if (g.k <= cellK) {
 			g.tris = std::move(tris);

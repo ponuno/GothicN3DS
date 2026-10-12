@@ -71,7 +71,8 @@ void usage() {
 	          "  g3ds-bake world --game DIR [--zen NAME.ZEN ...] [options]   bake the worlds of a Gothic install\n"
 	          "  g3ds-bake extract --game DIR [--mod ...] [--ext sgt,sty,dls] -o DIR   copy music files out of the archives\n"
 	          "  g3ds-bake mesh --msh FILE [--textures DIR] [options]        bake a loose .MSH (development)\n"
-	          "  g3ds-bake synth [--cells N] [options]                       bake the built-in test scene\n"
+	          "  g3ds-bake synth [--cells N] [--clutter N] [options]         bake the built-in test scene\n"
+	          "                                                              (--clutter: N crates and barrels strewn over it)\n"
 	          "  g3ds-bake info FILE                                         describe a data.pak\n"
 	          "\n"
 	          "mod (Gothic 2 modifications, e.g. Chronicles of Myrtana: Archolos):\n"
@@ -94,6 +95,9 @@ void usage() {
 	          "  --no-follow        world: bake only the worlds named with --zen\n"
 	          "  --chunk CM         chunk edge length (default: 4000)\n"
 	          "  --cluster CM       edge of the boxes a chunk is cut into for culling (default: 1000; 0: off)\n"
+	          "  --no-split         one chunk per cell holding everything (default: medium and small objects\n"
+	          "                     go in chunks of their own, loaded only near the camera)\n"
+	          "  --tier-min N       fewest triangles a cell needs for a chunk of medium or small objects (default: 400)\n"
 	          "  --step CM          finest vertex position step (default: 0.125)\n"
 	          "  --seal CM          close seams: weld vertices and cut edges at vertices resting on\n"
 	          "                     them, within this distance (default: 0.5)\n"
@@ -174,6 +178,8 @@ int main(int argc, char** argv) {
 			else if (a == "--name") firstName = value();
 			else if (a == "--chunk") opt.chunker.chunkSize = std::stof(value());
 			else if (a == "--cluster") opt.chunker.clusterSize = std::stof(value());
+			else if (a == "--no-split") opt.chunker.splitDetail = false;
+			else if (a == "--tier-min") opt.chunker.minTierTriangles = u32(std::stoul(value()));
 			else if (a == "--step") opt.chunker.positionStep = std::stof(value());
 			else if (a == "--seal") opt.chunker.sealTolerance = std::stof(value());
 			else if (a == "--no-seal") opt.chunker.seal = false;
@@ -220,6 +226,7 @@ int main(int argc, char** argv) {
 			else if (a == "--flip") zen.flipWinding = true;
 			else if (a == "--no-flip") zen.flipWinding = false; // the default; kept for old command lines
 			else if (a == "--cells") synth.cells = std::stoi(value());
+			else if (a == "--clutter") synth.clutter = std::stoi(value());
 			else if (a == "--ao") {
 				const std::string v = value();
 				if (v == "off") opt.ao.level = AO_OFF;

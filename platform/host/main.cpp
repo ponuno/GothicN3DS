@@ -714,8 +714,11 @@ int main(int argc, char** argv) {
 	}
 	if (underwaterFrames) printf("camera under water %d frames\n", underwaterFrames);
 	if (app.worldSwitches()) printf("world switches    %u\n", app.worldSwitches());
-	printf("budget rejects %u, load failures %u, pak I/O %.2f MB\n", ws.budgetRejects, ws.loadFailures,
-	       double(app.pak().bytesRead()) / 1048576.0);
+	printf("budget rejects %u, allocator rejects %u, evictions %u, load failures %u, pak I/O %.2f MB\n", ws.budgetRejects, ws.allocRejects,
+	       ws.evictions, ws.loadFailures, double(app.pak().bytesRead()) / 1048576.0);
+	if (app.world().hasTiers())
+		printf("chunk tiers       now %u of %u chunks are medium/small objects (%.2f of %.2f MB); %u of those wanted are missing\n", ws.loadedDetail,
+		       ws.chunksLoaded, ws.detailBytes / 1048576.0, ws.residentBytes / 1048576.0, ws.pendingDetail);
 
 	if (statsPath) {
 		FILE* fp = fopen(statsPath, "w");
@@ -725,7 +728,7 @@ int main(int argc, char** argv) {
 		}
 		fprintf(fp,
 		        "{\"frames\":%d,\"trianglesAvg\":%llu,\"trianglesMax\":%u,\"drawCallsMax\":%u,"
-		        "\"chunksTotal\":%u,\"chunksLoadedMax\":%u,\"peakBytes\":%u,\"budgetRejects\":%u,"
+		        "\"chunksTotal\":%u,\"chunksLoadedMax\":%u,\"peakBytes\":%u,\"budgetRejects\":%u,\"allocRejects\":%u,\"evictions\":%u,"
 		        "\"loadFailures\":%u,\"overdraw\":%.3f,\"backfaceShare\":%.3f,\"groundedFrames\":%d,"
 		        "\"swimFrames\":%d,\"blendedDrawsMax\":%u,\"batchesCulledAvg\":%llu,\"worldSwitches\":%u,"
 		        "\"pixelsWritten\":%llu,\"heroFrames\":%d,\"heroRunFrames\":%d,\"heroAirFrames\":%d,"
@@ -735,7 +738,7 @@ int main(int argc, char** argv) {
 		        "\"collisionQueries\":%.1f,\"collisionItems\":%.1f,\"collisionTests\":%.1f,\"trianglesInChunksAvg\":%llu,"
 		        "\"drawCallsAvg\":%llu,\"clustersAvg\":%llu,\"mobsUsed\":%u,\"mobsInUse\":%u}\n",
 		        frames, static_cast<unsigned long long>(sumTris / u64(frames)), maxTris, maxDraws, ws.chunksTotal,
-		        maxLoaded, ws.peakResidentBytes, ws.budgetRejects, ws.loadFailures, double(sumWritten) / screen,
+		        maxLoaded, ws.peakResidentBytes, ws.budgetRejects, ws.allocRejects, ws.evictions, ws.loadFailures, double(sumWritten) / screen,
 		        backfaceShare, groundedFrames, swimFrames, maxBlended,
 		        static_cast<unsigned long long>(sumCulled / u64(frames)), app.worldSwitches(),
 		        static_cast<unsigned long long>(sumWritten), heroFrames, heroRoleFrames[Hero::RUN],

@@ -10,6 +10,8 @@ namespace g3 {
 
 struct BakedChunk {
 	int gridX = 0, gridZ = 0, part = 0;
+	// The lowest DetailClass the chunk holds (ChunkerOptions::splitDetail; 0 otherwise).
+	u8 tier = 0;
 	ChunkHeader header {};
 	std::vector<ChunkBatch> batches;
 	std::vector<WorldVertex> vertices;
@@ -44,6 +46,14 @@ struct ChunkerOptions {
 	// The vertices' w carries SrcVertex::occlusion and ::wind (WORLDF_AO,
 	// WORLDF_WIND); otherwise it is 1, as it always was.
 	bool vertexFx = false;
+	// Cuts every cell by detail class: the world and the big things (DETAIL_ALWAYS) go into
+	// chunks of their own, the medium objects into others, the small ones into others still
+	// (WORLDF_TIERS). The runtime keeps the first everywhere around the camera, and the others
+	// only near it: most of a chunk's memory is objects that are drawn only close up.
+	bool splitDetail = true;
+	// A tier with fewer triangles than this in a cell is not worth a chunk (and the bookkeeping that
+	// comes with one): small objects go in with the medium ones, those with the world.
+	u32 minTierTriangles = 400;
 };
 
 struct ChunkerStats {
@@ -68,6 +78,10 @@ struct ChunkerStats {
 	u32 maxChunkClusters = 0;
 	u32 coarsenedChunks = 0; // chunks whose boxes had to be bigger than asked to stay within 255
 	u64 detailTriangles[DETAIL_COUNT] = {0, 0, 0};
+	// Chunks, triangles and vertices by tier (splitDetail; all in tier 0 without it).
+	u32 tierChunks[DETAIL_COUNT] = {0, 0, 0};
+	u64 tierTriangles[DETAIL_COUNT] = {0, 0, 0};
+	u64 tierVertices[DETAIL_COUNT] = {0, 0, 0};
 	float maxPosError = 0; // cm, worst-case quantisation step / 2
 };
 

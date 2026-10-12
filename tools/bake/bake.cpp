@@ -101,23 +101,25 @@ struct TexJob {
 };
 
 // What a texture looks like from afar: the mean of its texels (of the solid
-// ones, for a cut-out), averaged as light (squared) rather than as numbers.
+// ones, for a cut-out), averaged as numbers - as the mip chain the chunks use
+// farther away averages them - so that the far layer is no lighter than a
+// chunk seen from the same place.
 void averageColour(const SrcImage& img, u8 out[3], float& coverage) {
 	double sum[3] = {0, 0, 0}, all[3] = {0, 0, 0};
 	u64 n = 0, nAll = 0;
 	const size_t texels = size_t(img.width) * size_t(img.height);
 	for (size_t i = 0; i < texels && i * 4 + 3 < img.rgba.size(); ++i) {
 		const u8* t = &img.rgba[i * 4];
-		for (int a = 0; a < 3; ++a) all[a] += double(t[a]) * t[a];
+		for (int a = 0; a < 3; ++a) all[a] += double(t[a]);
 		++nAll;
 		if (t[3] < 128) continue;
-		for (int a = 0; a < 3; ++a) sum[a] += double(t[a]) * t[a];
+		for (int a = 0; a < 3; ++a) sum[a] += double(t[a]);
 		++n;
 	}
 	coverage = nAll ? float(double(n) / double(nAll)) : 1.0f;
 	const double* s = n ? sum : all;
 	const double d = double(n ? n : nAll);
-	for (int a = 0; a < 3; ++a) out[a] = d > 0 ? u8(std::clamp(std::lround(std::sqrt(s[a] / d)), 0l, 255l)) : 128;
+	for (int a = 0; a < 3; ++a) out[a] = d > 0 ? u8(std::clamp(std::lround(s[a] / d), 0l, 255l)) : 128;
 }
 
 std::string format(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
@@ -529,6 +531,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		if (scene.indoor) wh.flags |= WORLDF_INDOOR;
 		if (opt.ao.level != AO_OFF) wh.flags |= WORLDF_AO;
 		if (hasWind) wh.flags |= WORLDF_WIND;
+		if (chunkerOpt.splitDetail) wh.flags |= WORLDF_TIERS;
 		// ---- the far layer (G10) ----
 		if (opt.far.enabled && !scene.indoor) {
 			FarStats fs;
@@ -553,6 +556,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		}
 
 		std::vector<ChunkInfo> infos;
+		std::vector<u8> tiers;
 		int gx0 = 1 << 30, gx1 = -(1 << 30), gz0 = 1 << 30, gz1 = -(1 << 30);
 		const u64 raw0 = pak.rawBytes(ASSET_CHUNK), packed0 = pak.packedBytes(ASSET_CHUNK);
 		for (size_t i = 0; i < chunks.size(); ++i) {
@@ -570,6 +574,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			ci.batchCount = c.header.batchCount;
 			ci.indexCount = c.header.indexCount;
 			infos.push_back(ci);
+			tiers.push_back(c.tier);
 			for (int a = 0; a < 3; ++a) {
 				wh.bbMin[a] = std::min(wh.bbMin[a], c.bbMin[a]);
 				wh.bbMax[a] = std::max(wh.bbMax[a], c.bbMax[a]);
@@ -598,6 +603,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		append(index, portals);
 		append(index, ladders);
 		append(index, infos);
+		if (chunkerOpt.splitDetail) append(index, tiers);
 		if (index.size() != worldBlobSize(wh)) throw std::logic_error("world index layout");
 		pak.add("world/" + bw.name, ASSET_WORLD, index);
 
@@ -847,6 +853,13 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			            static_cast<unsigned long long>(cs.sealTriangles)));
 		else
 			line("seams: not repaired (--no-seal)");
+		if (chunkerOpt.splitDetail) {
+			const double mb = double(1 << 20);
+			auto bytes = [&](int t) { return (double(cs.tierVertices[t]) * sizeof(WorldVertex) + double(cs.tierTriangles[t]) * 3.0 * sizeof(u16)) / mb; };
+			line(format("chunks by detail tier (--no-split: one chunk holds everything): %u of the world and big things (%.1f MB, always around the "
+			            "camera), %u with medium objects (%.1f MB, within their reach), %u with small ones (%.1f MB, within theirs)",
+			            cs.tierChunks[0], bytes(0), cs.tierChunks[1], bytes(1), cs.tierChunks[2], bytes(2)));
+		}
 		line(format("draw distance classes: %llu triangles always drawn, %llu medium, %llu small; %llu batches (%.1f per chunk)",
 		            static_cast<unsigned long long>(cs.detailTriangles[DETAIL_ALWAYS]),
 		            static_cast<unsigned long long>(cs.detailTriangles[DETAIL_MEDIUM]),

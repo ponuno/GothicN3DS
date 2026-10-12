@@ -200,6 +200,7 @@ void cluster(const SrcScene& scene, const std::vector<u32>& input, const Seams& 
 struct Point {
 	float pos[3];
 	u8 rgba[4];
+	u8 occlusion = 0; // ambient occlusion (the chunks' own, averaged): WorldVertex::w
 };
 
 // Where each box's point goes, and its colour.
@@ -208,7 +209,7 @@ std::vector<Point> place(const SrcScene& scene, const std::vector<u32>& input, c
 	const size_t n = c.boxes.size();
 	std::vector<double> q(n * 10, 0.0);  // plane quadrics: aa ab ac ad bb bc bd cc cd dd
 	std::vector<double> m(n * 4, 0.0);   // weighted sum of positions, weight
-	std::vector<double> col(n * 5, 0.0); // weighted sum of colour (squared: roughly linear light), daylight, weight
+	std::vector<double> col(n * 6, 0.0); // weighted sum of colour (as the chunks' mips average it: the plain mean), daylight, weight, occlusion
 	for (size_t i = 0; i < input.size(); ++i) {
 		const SrcTriangle& t = scene.triangles[input[i]];
 		const Corners cs = cornersOf(t, shrink);
@@ -225,13 +226,11 @@ std::vector<Point> place(const SrcScene& scene, const std::vector<u32>& input, c
 			double* mk = &m[size_t(k) * 4];
 			for (int a = 0; a < 3; ++a) mk[a] += w * cs.p[v][a];
 			mk[3] += w;
-			double* ck = &col[size_t(k) * 5];
-			for (int a = 0; a < 3; ++a) {
-				const double lit = double(mc[size_t(a)]) * double(t.v[v].rgba[a]) / 255.0;
-				ck[a] += w * lit * lit;
-			}
+			double* ck = &col[size_t(k) * 6];
+			for (int a = 0; a < 3; ++a) ck[a] += w * double(mc[size_t(a)]) * double(t.v[v].rgba[a]) / 255.0;
 			ck[3] += w * t.v[v].rgba[3];
 			ck[4] += w;
+			ck[5] += w * t.v[v].occlusion;
 		}
 		if (len <= 1e-9) continue;
 		nx /= len;
@@ -278,9 +277,10 @@ std::vector<Point> place(const SrcScene& scene, const std::vector<u32>& input, c
 		}
 		Point& o = out[k];
 		for (int a = 0; a < 3; ++a) o.pos[a] = float(p[a]);
-		const double* ck = &col[k * 5];
-		for (int a = 0; a < 3; ++a) o.rgba[a] = u8(std::clamp(std::lround(std::sqrt(ck[a] / ck[4])), 0l, 255l));
+		const double* ck = &col[k * 6];
+		for (int a = 0; a < 3; ++a) o.rgba[a] = u8(std::clamp(std::lround(ck[a] / ck[4]), 0l, 255l));
 		o.rgba[3] = u8(std::clamp(std::lround(ck[3] / ck[4]), 0l, 255l));
+		o.occlusion = u8(std::clamp(std::lround(ck[5] / ck[4]), 0l, 255l));
 	}
 	return out;
 }
@@ -304,7 +304,7 @@ std::vector<u8> buildFarLayer(const SrcScene& scene, const std::vector<bool>& in
 
 	struct Crown {
 		float mn[3], mx[3];
-		double col[3], day, w, solid;
+		double col[3], day, w, solid, occ;
 		u32 ci;
 	};
 	CellMap cells;
@@ -342,9 +342,9 @@ std::vector<u8> buildFarLayer(const SrcScene& scene, const std::vector<bool>& in
 				for (int a = 0; a < 3; ++a) {
 					cr.mn[a] = std::min(cr.mn[a], t.v[v].pos[a]);
 					cr.mx[a] = std::max(cr.mx[a], t.v[v].pos[a]);
-					const double lit = double(mc[size_t(a)]) * double(t.v[v].rgba[a]) / 255.0;
-					cr.col[a] += w * lit * lit;
+					cr.col[a] += w * double(mc[size_t(a)]) * double(t.v[v].rgba[a]) / 255.0;
 				}
+				cr.occ += w * t.v[v].occlusion;
 				cr.day += w * t.v[v].rgba[3];
 				cr.w += w;
 			}
@@ -451,8 +451,9 @@ std::vector<u8> buildFarLayer(const SrcScene& scene, const std::vector<bool>& in
 			if (big < 1.0f) continue;
 			for (float& h : half) h = std::max(h, big * 0.3f);
 			u8 rgb[3];
-			for (int a = 0; a < 3; ++a) rgb[a] = u8(std::clamp(std::lround(std::sqrt(cr.col[a] / cr.w)), 0l, 255l));
+			for (int a = 0; a < 3; ++a) rgb[a] = u8(std::clamp(std::lround(cr.col[a] / cr.w), 0l, 255l));
 			const u8 day = u8(std::clamp(std::lround(cr.day / cr.w), 0l, 255l));
+			const u8 occ = u8(std::clamp(std::lround(cr.occ / cr.w), 0l, 255l));
 			const u32 base = u32(pts.size());
 			// 0 top, 1 bottom, 2..5 round the middle (+x, +z, -x, -z).
 			const float off[6][3] = {{0, 1, 0}, {0, -1, 0}, {1, 0, 0}, {0, 0, 1}, {-1, 0, 0}, {0, 0, -1}};
@@ -462,6 +463,7 @@ std::vector<u8> buildFarLayer(const SrcScene& scene, const std::vector<bool>& in
 				for (int a = 0; a < 3; ++a) p.pos[a] = mid[a] + off[v][a] * half[a];
 				for (int a = 0; a < 3; ++a) p.rgba[a] = u8(std::clamp(int(float(rgb[a]) * shade[v] + 0.5f), 0, 255));
 				p.rgba[3] = day;
+				p.occlusion = occ;
 				pts.push_back(p);
 			}
 			// (In the cell of its leaves, where the chunker has them.)
@@ -495,7 +497,9 @@ std::vector<u8> buildFarLayer(const SrcScene& scene, const std::vector<bool>& in
 
 		// The chunks of each grid cell.
 		std::map<std::pair<int, int>, std::vector<u32>> cellChunks;
-		for (size_t i = 0; i < chunks.size(); ++i) cellChunks[{chunks[i].gridX, chunks[i].gridZ}].push_back(u32(i));
+		// (Only the world's own chunks: the far layer stands in for them, the chunks of medium and small objects come and go.)
+		for (size_t i = 0; i < chunks.size(); ++i)
+			if (chunks[i].tier == 0) cellChunks[{chunks[i].gridX, chunks[i].gridZ}].push_back(u32(i));
 		std::vector<u32> refs;
 		std::map<std::pair<int, int>, std::pair<u32, u32>> cellRefs;
 		auto refsOf = [&](int gx, int gz) {
@@ -664,7 +668,7 @@ std::vector<u8> buildFarLayer(const SrcScene& scene, const std::vector<bool>& in
 				i16* q[3] = {&v.x, &v.y, &v.z};
 				for (int a = 0; a < 3; ++a)
 					*q[a] = i16(std::clamp(std::lround((p.pos[a] - tile.origin[a]) / tile.posScale), -32767l, 32767l));
-				v.w = 1;
+				v.w = p.occlusion; // (the low byte: ambient occlusion; no sway)
 				v.r = p.rgba[0];
 				v.g = p.rgba[1];
 				v.b = p.rgba[2];

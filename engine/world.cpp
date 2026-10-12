@@ -31,8 +31,9 @@ bool World::open(Pak* pak, u32 entryHash) {
 	const u64 portalBytes = u64(_hdr.portalCount) * sizeof(WorldPortal);
 	const u64 ladderBytes = u64(_hdr.ladderCount) * sizeof(WorldLadder);
 	const u64 chunkBytes = u64(_hdr.chunkCount) * sizeof(ChunkInfo);
+	const u64 tierBytes = (_hdr.flags & WORLDF_TIERS) ? u64(_hdr.chunkCount) : 0u;
 	bool ok = _hdr.magic == WORLD_MAGIC && _hdr.version == WORLD_VERSION &&
-	          u64(e->size) == sizeof(WorldHeader) + matBytes + texBytes + portalBytes + ladderBytes + chunkBytes;
+	          u64(e->size) == sizeof(WorldHeader) + matBytes + texBytes + portalBytes + ladderBytes + chunkBytes + tierBytes;
 	if (ok) {
 		_materials = static_cast<WorldMaterial*>(malloc(size_t(matBytes) + 1));
 		_textures = static_cast<u32*>(malloc(size_t(texBytes) + 1));
@@ -44,8 +45,9 @@ bool World::open(Pak* pak, u32 entryHash) {
 		_resident = static_cast<u32*>(malloc((size_t(_hdr.chunkCount) + 1) * sizeof(u32)));
 		_order = static_cast<u32*>(malloc((size_t(_hdr.chunkCount) + 1) * sizeof(u32)));
 		_orderKey = static_cast<float*>(malloc((size_t(_hdr.chunkCount) + 1) * sizeof(float)));
+		_tier = tierBytes ? static_cast<u8*>(malloc(size_t(tierBytes))) : nullptr;
 		ok = _materials && _textures && _portals && _ladders && _chunks && _loaded && _tex && _resident && _order &&
-		     _orderKey;
+		     _orderKey && (_tier || !tierBytes);
 	}
 	if (ok) {
 		const u8* p = blob + sizeof(WorldHeader);
@@ -58,6 +60,12 @@ bool World::open(Pak* pak, u32 entryHash) {
 		memcpy(_ladders, p, size_t(ladderBytes));
 		p += ladderBytes;
 		memcpy(_chunks, p, size_t(chunkBytes));
+		p += chunkBytes;
+		if (_tier) {
+			memcpy(_tier, p, size_t(tierBytes));
+			for (u32 i = 0; i < _hdr.chunkCount; ++i)
+				if (_tier[i] >= DETAIL_COUNT) _tier[i] = u8(DETAIL_COUNT - 1);
+		}
 		// Every material must stay inside the texture table with all its frames.
 		for (u32 i = 0; ok && i < _hdr.materialCount; ++i)
 			ok = _materials[i].frameCount >= 1 && u32(_materials[i].texture) + _materials[i].frameCount <= _hdr.textureCount;
@@ -75,6 +83,12 @@ bool World::open(Pak* pak, u32 entryHash) {
 	_frame = 0;
 	_textureRetryAt = 0;
 	_chunksInFlight = _inFlightBytes = 0;
+	_candValid = false;
+	_candCount = 0;
+	_headStrength = 0.0f;
+	_anchorFrame = 0xFFFFFFFFu;
+	_lastRejected = 0xFFFFFFFFu;
+	buildGrid();
 	// Failing to start the loader is not fatal: update() then loads on the spot.
 	if (_cfg.background) _loader.start(pak->path(), _materials, _hdr.materialCount, _cfg.worker);
 	return true;
@@ -98,6 +112,8 @@ void World::close() {
 	free(_resident);
 	free(_order);
 	free(_orderKey);
+	free(_tier);
+	freeGrid();
 	_materials = nullptr;
 	_textures = nullptr;
 	_portals = nullptr;
@@ -108,6 +124,7 @@ void World::close() {
 	_resident = nullptr;
 	_order = nullptr;
 	_orderKey = nullptr;
+	_tier = nullptr;
 	_pak = nullptr;
 	_entryHash = 0;
 	_visible = 0;
@@ -302,6 +319,11 @@ LoadStatus World::finishChunk(LoadResult& r) {
 	_stats.residentBytes += l.bytes;
 	_stats.collisionBytes += l.collider.bytes() + l.water.bytes();
 	++_stats.chunksLoaded;
+	if (chunkTier(index)) {
+		++_stats.loadedDetail;
+		_stats.detailBytes += l.bytes;
+	}
+	if (_lastRejected == index) _lastRejected = 0xFFFFFFFFu;
 	for (u32 b = 0; b < l.batchCount; ++b) acquireMaterial(l.batches[b].material);
 	_stats.peakResidentBytes = max(_stats.peakResidentBytes, _stats.residentBytes);
 	r.discard(); // the blob: its contents now live in the mesh
@@ -329,6 +351,10 @@ void World::unloadChunk(u32 index) {
 	l.collider.release();
 	l.water.release();
 	_stats.residentBytes -= l.bytes;
+	if (chunkTier(index)) {
+		--_stats.loadedDetail;
+		_stats.detailBytes -= l.bytes;
+	}
 	// Keep the resident list dense: the last entry takes the freed slot.
 	--_stats.chunksLoaded;
 	const u32 last = _resident[_stats.chunksLoaded];
@@ -338,19 +364,226 @@ void World::unloadChunk(u32 index) {
 	_visible = 0; // the sorted list of the last draw() may name this chunk
 }
 
-// Frees chunks that are too far away and lists the missing ones that are
-// near enough in _order/_orderKey. Returns how many are missing.
-u32 World::collectPending(Vec3 camera) {
-	u32 pending = 0;
-	for (u32 i = 0; i < _hdr.chunkCount; ++i) {
-		const float d = distanceTo(i, camera);
-		if (_loaded[i].mesh) {
-			if (d > _cfg.unloadRadius) unloadChunk(i);
-		} else if (d < _cfg.loadRadius && !_loaded[i].failed) {
-			_order[pending] = i;
-			_orderKey[pending] = d;
-			++pending;
+float World::loadReach(u32 tier) const {
+	if (tier == 0 || tier >= DETAIL_COUNT) return _cfg.loadRadius;
+	return min(_cfg.detailDistance[tier] * _cfg.detailHysteresis + _cfg.detailLead, _cfg.loadRadius);
+}
+
+float World::unloadReach(u32 tier) const {
+	if (tier == 0 || tier >= DETAIL_COUNT) return _cfg.unloadRadius;
+	return min(loadReach(tier) + _cfg.detailSlack, _cfg.unloadRadius);
+}
+
+float World::priority(u32 index, float d, Vec3 camera) const {
+	const u32 tier = chunkTier(index);
+	float key = d + _cfg.tierBias[tier < DETAIL_COUNT ? tier : 0u];
+	if (_headStrength > 0.0f) {
+		const ChunkInfo& ci = _chunks[index];
+		const float vx = (ci.bbMin[0] + ci.bbMax[0]) * 0.5f - camera.x, vz = (ci.bbMin[2] + ci.bbMax[2]) * 0.5f - camera.z;
+		const float len = sqrtf(vx * vx + vz * vz);
+		if (len > 100.0f) {
+			const float dot = (vx * _headX + vz * _headZ) / len;
+			key += dot > 0.0f ? -_cfg.aheadBonus * dot * _headStrength : -_cfg.behindPenalty * dot * _headStrength;
 		}
+	}
+	return key;
+}
+
+// Which way the camera has been going, from where it was a few frames ago. Standing still lets the
+// certainty fade out over about three seconds; a jump (a teleport) forgets it.
+void World::trackHeading(Vec3 camera) {
+	if (_anchorFrame == 0xFFFFFFFFu) {
+		_anchor = camera; // (the first look: nowhere to have come from)
+		_anchorFrame = _frame;
+		return;
+	}
+	if (_frame - _anchorFrame < 10) return;
+	const float dx = camera.x - _anchor.x, dz = camera.z - _anchor.z;
+	const float dist = sqrtf(dx * dx + dz * dz);
+	if (dist > 3000.0f) {
+		_headStrength = 0.0f;
+	} else if (dist > 40.0f) {
+		float nx = dx / dist, nz = dz / dist;
+		if (_headStrength > 0.0f) {
+			nx = _headX * 0.5f + nx * 0.5f;
+			nz = _headZ * 0.5f + nz * 0.5f;
+			const float l = sqrtf(nx * nx + nz * nz);
+			if (l > 0.01f) {
+				nx /= l;
+				nz /= l;
+			} else {
+				nx = dx / dist;
+				nz = dz / dist;
+			}
+		}
+		_headX = nx;
+		_headZ = nz;
+		_headStrength = 1.0f;
+	} else {
+		_headStrength = max(0.0f, _headStrength - 0.1f);
+	}
+	_anchor = camera;
+	_anchorFrame = _frame;
+}
+
+static const float kCandidateMargin = 500.0f; // cm the camera may move before the candidate list is made anew
+
+void World::freeGrid() {
+	free(_gridStart);
+	free(_gridItems);
+	free(_big);
+	free(_seen);
+	free(_cand);
+	_gridStart = _gridItems = _big = _seen = _cand = nullptr;
+	_gridW = _gridH = 0;
+	_bigCount = _candCount = _seenStamp = 0;
+	_candValid = false;
+}
+
+void World::buildGrid() {
+	freeGrid();
+	const u32 n = _hdr.chunkCount;
+	_seen = static_cast<u32*>(calloc(size_t(n) + 1, sizeof(u32)));
+	_cand = static_cast<u32*>(malloc((size_t(n) + 1) * sizeof(u32)));
+	_big = static_cast<u32*>(malloc((size_t(n) + 1) * sizeof(u32)));
+	if (!_seen || !_cand || !_big || n == 0) {
+		freeGrid(); // (without a grid every chunk is looked at, as before)
+		_cand = static_cast<u32*>(malloc((size_t(n) + 1) * sizeof(u32)));
+		_seen = static_cast<u32*>(calloc(size_t(n) + 1, sizeof(u32)));
+		return;
+	}
+	float x0 = 1e30f, z0 = 1e30f, x1 = -1e30f, z1 = -1e30f;
+	for (u32 i = 0; i < n; ++i) {
+		x0 = min(x0, _chunks[i].bbMin[0]);
+		z0 = min(z0, _chunks[i].bbMin[2]);
+		x1 = max(x1, _chunks[i].bbMax[0]);
+		z1 = max(z1, _chunks[i].bbMax[2]);
+	}
+	float cell = max(_hdr.chunkSize, 500.0f);
+	if (!(x1 >= x0) || !(z1 >= z0) || !(x1 - x0 < 1e8f) || !(z1 - z0 < 1e8f)) return;
+	while (double((x1 - x0) / cell + 1.0) * double((z1 - z0) / cell + 1.0) > double(1 << 18)) cell *= 2.0f;
+	_gridW = int((x1 - x0) / cell) + 1;
+	_gridH = int((z1 - z0) / cell) + 1;
+	_gridX0 = x0;
+	_gridZ0 = z0;
+	_gridCell = cell;
+	const size_t cells = size_t(_gridW) * size_t(_gridH);
+	_gridStart = static_cast<u32*>(calloc(cells + 1, sizeof(u32)));
+	if (!_gridStart) {
+		freeGrid();
+		_cand = static_cast<u32*>(malloc((size_t(n) + 1) * sizeof(u32)));
+		_seen = static_cast<u32*>(calloc(size_t(n) + 1, sizeof(u32)));
+		return;
+	}
+	auto span = [&](u32 i, int& cx0, int& cx1, int& cz0, int& cz1) {
+		cx0 = clamp(int((_chunks[i].bbMin[0] - x0) / cell), 0, _gridW - 1);
+		cx1 = clamp(int((_chunks[i].bbMax[0] - x0) / cell), 0, _gridW - 1);
+		cz0 = clamp(int((_chunks[i].bbMin[2] - z0) / cell), 0, _gridH - 1);
+		cz1 = clamp(int((_chunks[i].bbMax[2] - z0) / cell), 0, _gridH - 1);
+		return (cx1 - cx0 + 1) * (cz1 - cz0 + 1);
+	};
+	// Two passes: count the entries of each cell, then fill them.
+	u64 total = 0;
+	for (u32 i = 0; i < n; ++i) {
+		int a, b, c, d;
+		if (span(i, a, b, c, d) > 64) {
+			_big[_bigCount++] = i;
+			continue;
+		}
+		for (int z = c; z <= d; ++z)
+			for (int x = a; x <= b; ++x) {
+				++_gridStart[size_t(z) * size_t(_gridW) + size_t(x) + 1];
+				++total;
+			}
+	}
+	for (size_t k = 0; k < cells; ++k) _gridStart[k + 1] += _gridStart[k];
+	_gridItems = static_cast<u32*>(malloc(size_t(total) * sizeof(u32) + 1));
+	u32* fill = static_cast<u32*>(malloc(cells * sizeof(u32) + 1));
+	if (!_gridItems || !fill) {
+		free(fill);
+		freeGrid();
+		_cand = static_cast<u32*>(malloc((size_t(n) + 1) * sizeof(u32)));
+		_seen = static_cast<u32*>(calloc(size_t(n) + 1, sizeof(u32)));
+		return;
+	}
+	memcpy(fill, _gridStart, cells * sizeof(u32));
+	for (u32 i = 0; i < n; ++i) {
+		int a, b, c, d;
+		if (span(i, a, b, c, d) > 64) continue;
+		for (int z = c; z <= d; ++z)
+			for (int x = a; x <= b; ++x) _gridItems[fill[size_t(z) * size_t(_gridW) + size_t(x)]++] = i;
+	}
+	free(fill);
+}
+
+// Lists the chunks that may be wanted before the camera has moved `kCandidateMargin`: those within
+// their reach of it, plus that margin. Made anew only when the camera has moved farther than that,
+// or a reach has changed; in between, collectPending() looks at this short list only.
+void World::gatherCandidates(Vec3 camera) {
+	float reach[DETAIL_COUNT];
+	bool same = _candValid;
+	for (u32 t = 0; t < DETAIL_COUNT; ++t) {
+		reach[t] = loadReach(t);
+		same = same && reach[t] == _candReach[t];
+	}
+	if (same) {
+		const Vec3 m = camera - _candCam;
+		if (m.x * m.x + m.y * m.y + m.z * m.z <= kCandidateMargin * kCandidateMargin) return;
+	}
+	if (!_cand || !_seen) return;
+	_candValid = true;
+	_candCam = camera;
+	_candCount = 0;
+	float widest = 0.0f;
+	for (u32 t = 0; t < DETAIL_COUNT; ++t) {
+		_candReach[t] = reach[t];
+		widest = max(widest, reach[t]);
+	}
+	if (++_seenStamp == 0) {
+		memset(_seen, 0, (size_t(_hdr.chunkCount) + 1) * sizeof(u32));
+		_seenStamp = 1;
+	}
+	auto consider = [&](u32 i) {
+		if (_seen[i] == _seenStamp) return;
+		_seen[i] = _seenStamp;
+		if (distanceTo(i, camera) < reach[chunkTier(i)] + kCandidateMargin * 2.0f) _cand[_candCount++] = i;
+	};
+	if (_gridStart) {
+		const float r = widest + kCandidateMargin * 2.0f;
+		const int cx0 = clamp(int(floorf((camera.x - r - _gridX0) / _gridCell)), 0, _gridW - 1);
+		const int cx1 = clamp(int(floorf((camera.x + r - _gridX0) / _gridCell)), 0, _gridW - 1);
+		const int cz0 = clamp(int(floorf((camera.z - r - _gridZ0) / _gridCell)), 0, _gridH - 1);
+		const int cz1 = clamp(int(floorf((camera.z + r - _gridZ0) / _gridCell)), 0, _gridH - 1);
+		for (int z = cz0; z <= cz1; ++z)
+			for (int x = cx0; x <= cx1; ++x) {
+				const size_t cell = size_t(z) * size_t(_gridW) + size_t(x);
+				for (u32 k = _gridStart[cell]; k < _gridStart[cell + 1]; ++k) consider(_gridItems[k]);
+			}
+		for (u32 k = 0; k < _bigCount; ++k) consider(_big[k]);
+	} else {
+		for (u32 i = 0; i < _hdr.chunkCount; ++i) consider(i);
+	}
+}
+
+// Frees chunks that are too far away and lists the missing ones that are
+// near enough in _order/_orderKey (by priority). Returns how many are missing.
+u32 World::collectPending(Vec3 camera) {
+	trackHeading(camera);
+	// (Downwards: freeing a chunk moves the last one into its place, which has been looked at.)
+	for (u32 k = _stats.chunksLoaded; k-- > 0;) {
+		const u32 i = _resident[k];
+		if (distanceTo(i, camera) > unloadReach(chunkTier(i))) unloadChunk(i);
+	}
+	gatherCandidates(camera);
+	u32 pending = 0;
+	for (u32 c = 0; c < _candCount; ++c) {
+		const u32 i = _cand[c];
+		if (_loaded[i].mesh || _loaded[i].failed) continue;
+		const float d = distanceTo(i, camera);
+		if (d >= loadReach(chunkTier(i))) continue;
+		_order[pending] = i;
+		_orderKey[pending] = priority(i, d, camera);
+		++pending;
 	}
 	_visible = 0; // _order is shared scratch space
 	return pending;
@@ -378,6 +611,17 @@ void World::update(Vec3 camera) {
 		updateBackground(pending, camera);
 	else
 		updateImmediate(pending, camera);
+	{
+		u32 missing = 0, missingDetail = 0;
+		for (u32 k = 0; k < pending; ++k) {
+			const u32 i = _order[k];
+			if (_loaded[i].mesh) continue;
+			++missing;
+			missingDetail += chunkTier(i) != 0;
+		}
+		_stats.chunksPending = missing;
+		_stats.pendingDetail = missingDetail;
+	}
 	_stats.chunksInFlight = _chunksInFlight;
 	_stats.texturesWaiting = _texturesWaiting;
 	_stats.budgetBytes = budget();
@@ -498,24 +742,36 @@ u32 World::budget() const {
 	return b;
 }
 
-bool World::makeRoom(Vec3 camera, float forDistance, u32 need, u32 reserved) {
+int World::pickVictim(Vec3 camera, float forKey) const {
+	int victim = -1;
+	float far = forKey + 300.0f; // (a chunk about as far is not worth a swap)
+	for (u32 k = 0; k < _stats.chunksLoaded; ++k) {
+		const u32 i = _resident[k];
+		const float key = priority(i, distanceTo(i, camera), camera);
+		if (key > far) {
+			far = key;
+			victim = int(i);
+		}
+	}
+	return victim;
+}
+
+bool World::makeRoom(Vec3 camera, float forKey, u32 need, u32 reserved) {
 	const u32 limit = max(budget(), need);
 	while (_stats.residentBytes + reserved + need > limit) {
-		int victim = -1;
-		float far = forDistance + 300.0f; // (a chunk about as far is not worth a swap)
-		for (u32 k = 0; k < _stats.chunksLoaded; ++k) {
-			const u32 i = _resident[k];
-			const float d = distanceTo(i, camera);
-			if (d > far) {
-				far = d;
-				victim = int(i);
-			}
-		}
+		const int victim = pickVictim(camera, forKey);
 		if (victim < 0) return false;
 		unloadChunk(u32(victim));
 		++_stats.evictions;
 	}
 	return true;
+}
+
+// The budget turned a chunk away. A chunk that goes on waiting is one refusal, not one per frame.
+void World::countReject(u32 index) {
+	if (_lastRejected == index) return;
+	_lastRejected = index;
+	++_stats.budgetRejects;
 }
 
 void World::updateImmediate(u32 pending, Vec3 camera) {
@@ -526,14 +782,19 @@ void World::updateImmediate(u32 pending, Vec3 camera) {
 		sortNearest(n, pending);
 		const u32 index = _order[n];
 		if (_stats.residentBytes + meshBytes(_chunks[index]) > budget() && !makeRoom(camera, _orderKey[n], meshBytes(_chunks[index]), 0)) {
-			++_stats.budgetRejects;
+			countReject(index);
 			break; // everything else is farther away; try again next frame
 		}
 		const LoadStatus status = loadChunkNow(index);
 		if (status == LOAD_NO_MEMORY) {
-			// The budget said yes, the allocator said no. Same remedy: wait
-			// until something has been unloaded.
-			++_stats.budgetRejects;
+			// The budget said yes, the allocator said no (the memory is in pieces, or something else took it). Free
+			// the farthest chunk there is and try again next frame.
+			++_stats.allocRejects;
+			const int victim = pickVictim(camera, _orderKey[n]);
+			if (victim >= 0) {
+				unloadChunk(u32(victim));
+				++_stats.evictions;
+			}
 			break;
 		}
 		if (status == LOAD_OK) {
@@ -544,7 +805,7 @@ void World::updateImmediate(u32 pending, Vec3 camera) {
 		}
 		--remaining;
 	}
-	_stats.chunksPending = remaining;
+	(void)remaining;
 
 	// Textures that did not fit when their chunk arrived.
 	if (_texturesWaiting) {
@@ -576,7 +837,7 @@ void World::updateBackground(u32 pending, Vec3 camera) {
 		l.requested = false;
 		--_chunksInFlight;
 		_inFlightBytes -= meshBytes(_chunks[r.index]);
-		if (r.status == LOAD_OK && distanceTo(r.index, camera) > _cfg.unloadRadius) {
+		if (r.status == LOAD_OK && distanceTo(r.index, camera) > unloadReach(chunkTier(r.index))) {
 			r.discard(); // the camera has moved on in the meantime
 			continue;
 		}
@@ -587,19 +848,24 @@ void World::updateBackground(u32 pending, Vec3 camera) {
 			_loaded[r.index].failed = true;
 			++_stats.loadFailures;
 		} else {
-			// Out of memory: leave it alone for a second instead of reading it
-			// from the card again every frame.
-			++_stats.budgetRejects;
-			_loaded[r.index].retryAt = _frame + 60;
+			// Out of memory though the budget had room: the memory is in pieces. Free the farthest chunk
+			// there is (if it is farther than this one) and try again in a couple of frames; if there is
+			// none, wait a while instead of reading from the card again every frame.
+			++_stats.allocRejects;
+			const int victim = pickVictim(camera, priority(r.index, distanceTo(r.index, camera), camera));
+			if (victim >= 0) {
+				unloadChunk(u32(victim));
+				++_stats.evictions;
+				_loaded[r.index].retryAt = _frame + 2;
+			} else {
+				_loaded[r.index].retryAt = _frame + 30;
+			}
 		}
 	}
 
 	// 2. New wishes, nearest first. Only a couple at a time, so that what is
 	// being read is still what is wanted when it arrives.
-	u32 missing = 0;
-	for (u32 k = 0; k < pending; ++k) missing += !_loaded[_order[k]].mesh;
-	_stats.chunksPending = missing;
-	const u32 maxInFlight = 2;
+	const u32 maxInFlight = _cfg.maxInFlight > 0 ? _cfg.maxInFlight : 1;
 	for (u32 n = 0; n < pending && _chunksInFlight < maxInFlight; ++n) {
 		sortNearest(n, pending);
 		const u32 index = _order[n];
@@ -607,7 +873,7 @@ void World::updateBackground(u32 pending, Vec3 camera) {
 		if (l.mesh || l.requested || l.failed || _frame < l.retryAt) continue;
 		const u32 need = meshBytes(_chunks[index]);
 		if (_stats.residentBytes + _inFlightBytes + need > budget() && !makeRoom(camera, _orderKey[n], need, _inFlightBytes)) {
-			++_stats.budgetRejects;
+			countReject(index);
 			break; // everything else is farther away
 		}
 		LoadJob job;
@@ -1062,7 +1328,9 @@ void World::drawFar(const Frustum& view) {
 				const float push = 1.01f;
 				const float origin[3] = {_camera.x + (t.origin[0] - _camera.x) * push, _camera.y + (t.origin[1] - _camera.y) * push,
 				                         _camera.z + (t.origin[2] - _camera.z) * push};
-				gfx::setChunkTransform(origin, t.posScale * push, 1.0f, nullptr);
+				gfx::ChunkFx fx;
+				fx.occlusion = _fxOcclusion; // (the vertices' w carries the cell's average occlusion)
+				gfx::setChunkTransform(origin, t.posScale * push, 1.0f, &fx);
 				transformSet = true;
 			}
 			gfx::draw(tile.mesh, runFirst, runCount);

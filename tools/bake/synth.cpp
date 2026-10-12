@@ -457,6 +457,18 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 			++crates;
 		}
 	}
+	for (int i = 0, placedClutter = 0; placedClutter < opt.clutter && i < opt.clutter * 4; ++i) {
+		const float x = (rnd(i, 3, 977) * 2.0f - 1.0f) * (half - cell), z = (rnd(i, 4, 977) * 2.0f - 1.0f) * (half - cell);
+		if (height(x, z) < waterLevel + 30.0f) continue;
+		++placedClutter;
+		if (i % 3 == 0) {
+			b.detail = DETAIL_MEDIUM;
+			box(x, z, 110.0f, 160.0f, rnd(i, 5, 977) * 3.0f, 4, WOOD);
+		} else {
+			b.detail = DETAIL_SMALL;
+			box(x, z, 35.0f, 80.0f + 40.0f * rnd(i, 6, 977), rnd(i, 5, 977) * 3.0f, 8, WOOD);
+		}
+	}
 	b.detail = DETAIL_ALWAYS;
 
 	// ---- a gate that leads into the cave world, with a glow and a cobweb ----

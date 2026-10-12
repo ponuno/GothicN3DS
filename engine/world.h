@@ -33,6 +33,20 @@ struct StreamConfig {
 	// appear and vanish at once, as before. Off-screen they change at once.
 	float fadeMs = 400.0f;
 	u32 maxLoadsPerFrame = 2;      // chunks handed to the GPU per frame: bounds the upload hitch
+	u32 maxInFlight = 2;           // chunks being read at once in the background (nearer wishes wait: what is read is still wanted when it arrives)
+	// Worlds baked with WORLDF_TIERS: chunks of medium and small objects (tier 1, 2) are wanted only
+	// where those are drawn: out to the class's detailDistance, a tenth farther (detailHysteresis) and
+	// `detailLead` beyond that, so that they are there when the camera gets to the distance. They are
+	// freed `detailSlack` farther out still. Never farther than loadRadius / unloadRadius.
+	float detailLead = 1500.0f;
+	float detailSlack = 1200.0f;
+	// When memory is short a chunk is as good as a plain chunk this much farther away: the world around
+	// the camera is worth more than the objects in it (a hole shows, a missing barrel does not).
+	float tierBias[DETAIL_COUNT] = {0.0f, 1500.0f, 2500.0f};
+	// Chunks ahead of the way the camera moves count this much nearer, those behind it this much farther
+	// (cm), for what is loaded first and what is freed first. 0: only distance counts.
+	float aheadBonus = 800.0f;
+	float behindPenalty = 800.0f;
 	u32 maxTextureLoadsPerFrame = 4; // same for textures, background streaming only
 	u32 memoryBudget = 24u << 20;  // bytes of mesh + texture memory for the world (at most)
 	// Where the platform can say how much memory for meshes and textures is
@@ -70,6 +84,9 @@ struct WorldStats {
 	u32 chunksLoaded;
 	u32 chunksDrawn;
 	u32 chunksPending;   // wanted but not loaded yet
+	u32 pendingDetail;   // of them: chunks of medium and small objects (tier 1, 2)
+	u32 loadedDetail;    // of chunksLoaded: tier 1, 2
+	u32 detailBytes;     // of residentBytes: their meshes
 	u32 chunksInFlight;  // of those: being read in the background
 	u32 texturesWaiting; // textures of resident chunks that have not arrived yet
 	u32 texturesLoaded;
@@ -84,7 +101,8 @@ struct WorldStats {
 	u32 clustersTested;  // boxes of visible chunks looked at ...
 	u32 clustersCulled;  // ... and of them wholly out of view or past the fog
 	u32 loadsThisFrame;
-	u32 budgetRejects;   // loads skipped because the budget was full (cumulative)
+	u32 budgetRejects;   // chunks the budget had no room for (cumulative; a chunk that keeps waiting counts once)
+	u32 allocRejects;    // loads the allocator refused though the budget had room (memory too fragmented; cumulative)
 	u32 evictions;       // far chunks freed to make room for nearer ones (cumulative)
 	u32 loadFailures;    // corrupt or missing data (cumulative)
 	u32 residentBytes;   // mesh + texture bytes owned by the world
@@ -116,6 +134,9 @@ public:
 	// Chunk table access (statistics, tests).
 	const ChunkInfo& chunkInfo(u32 index) const { return _chunks[index]; }
 	bool chunkResident(u32 index) const { return _loaded[index].mesh != nullptr; }
+	// 0: the world and big things (or everything, in a world without WORLDF_TIERS); 1, 2: medium, small objects only.
+	u32 chunkTier(u32 index) const { return _tier ? _tier[index] : 0u; }
+	bool hasTiers() const { return (_hdr.flags & WORLDF_TIERS) != 0; }
 	u32 entryHash() const { return _entryHash; }
 	StreamConfig& config() { return _cfg; }
 	const StreamConfig& config() const { return _cfg; }
@@ -219,6 +240,19 @@ private:
 	void finishTexture(LoadResult& r);
 	void setWaiting(TexSlot& s, bool waiting);
 	u32 collectPending(Vec3 camera);
+	// How far from the camera a chunk of a tier is wanted / kept (cm).
+	float loadReach(u32 tier) const;
+	float unloadReach(u32 tier) const;
+	// What a chunk at distance `d` counts as for the order of loading and of freeing: distance, plus
+	// what its tier is worth less, minus (plus) a little for the way the camera is going.
+	float priority(u32 index, float d, Vec3 camera) const;
+	void trackHeading(Vec3 camera);
+	void buildGrid();
+	void freeGrid();
+	void gatherCandidates(Vec3 camera);
+	// The resident chunk to free for a wish of priority `forKey` (the one farthest by priority, if beyond it), or -1.
+	int pickVictim(Vec3 camera, float forKey) const;
+	void countReject(u32 index);
 	void sortNearest(u32 n, u32 pending);
 	void updateImmediate(u32 pending, Vec3 camera);
 	// Frees the farthest loaded chunks (farther than `forDistance`) until `need` more bytes fit the budget; false: they do not.
@@ -256,8 +290,32 @@ private:
 	Loaded* _loaded = nullptr; // parallel to _chunks; mesh == nullptr when absent
 	TexSlot* _tex = nullptr;   // parallel to _textures
 	u32* _resident = nullptr;  // indices of the loaded chunks, unordered
+	u8* _tier = nullptr;       // parallel to _chunks (null: all 0)
 	u32* _order = nullptr;     // scratch: chunk indices sorted for load/draw
 	float* _orderKey = nullptr;
+	// A grid over the ground plane, cells of a chunk's size, each holding the chunks whose box reaches
+	// into it; chunks that reach into very many cells (sea, mountains) are in `_big` instead. Finding
+	// the chunks near the camera looks at a handful of cells, not at all of them.
+	u32* _gridStart = nullptr; // per cell (+1): first entry in _gridItems
+	u32* _gridItems = nullptr;
+	u32* _big = nullptr;
+	u32 _bigCount = 0;
+	u32* _seen = nullptr;      // per chunk: the gather that last listed it
+	u32 _seenStamp = 0;
+	int _gridW = 0, _gridH = 0;
+	float _gridX0 = 0.0f, _gridZ0 = 0.0f, _gridCell = 1.0f;
+	// The chunks that may be wanted soon: within reach of where the camera was when this was made, plus
+	// `kCandidateMargin`. Rebuilt when the camera has gone farther than that margin or a reach changed.
+	u32* _cand = nullptr;
+	u32 _candCount = 0;
+	Vec3 _candCam {0, 0, 0};
+	float _candReach[DETAIL_COUNT] = {};
+	bool _candValid = false;
+	// Which way the camera has been going (unit vector on the ground) and how sure that is, 0..1.
+	Vec3 _anchor {0, 0, 0};
+	u32 _anchorFrame = 0;
+	float _headX = 0.0f, _headZ = 0.0f, _headStrength = 0.0f;
+	u32 _lastRejected = 0xFFFFFFFFu; // the chunk the budget last turned away: counted once while it waits
 	u32 _visible = 0;          // entries of _order filled by the last draw()
 	u32 _texturesWaiting = 0;  // texture slots with `waiting` set
 	StreamLoader _loader;      // running only with StreamConfig::background

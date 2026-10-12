@@ -219,9 +219,12 @@ int main(int, char**) {
 	// The linear heap, where meshes and textures live, is 32 MB; the command
 	// buffers, the characters, the particles and the sound are in it too. The
 	// world takes what is free there, less a reserve for those (World::budget),
-	// up to 28 MB - before, a fixed 20 MB, whatever was free.
+	// up to 28 MB - before, a fixed 20 MB, whatever was free. The reserve is 5 MB (it was 6): on a video
+	// from Archolos at night `lin` stayed at 5.5-7.5 MB with 6 reserved, so what the rest of the game takes
+	// beyond what it has already is well under 1 MB; and the world's refusals (`rej`) were that reserve, not
+	// the allocator (`nm`).
 	app.world().config().memoryBudget = 28u << 20;
-	app.world().config().memoryReserve = 6u << 20;
+	app.world().config().memoryReserve = 5u << 20;
 	app.world().config().freeMemory = []() -> g3::u32 { return g3::u32(linearSpaceFree()); };
 	// Continue where the last session ended, unless L is held at start.
 	const bool hadState = !(startKeys & KEY_L) && app.loadState(kStatePath);
@@ -574,15 +577,18 @@ int main(int, char**) {
 				     app.world().hasWind() ? ' ' : '-', static_cast<unsigned long>(ws.windyDrawCalls), int(st.shadows),
 				     static_cast<unsigned long>(app.shadows().stats().drawn), app.gfxRelief() ? " R" : "");
 			}
-			reportLine("resident %3lu/%lu  pending %3lu", static_cast<unsigned long>(ws.chunksLoaded),
-			     static_cast<unsigned long>(ws.chunksTotal), static_cast<unsigned long>(ws.chunksPending));
-			// (Meshes, textures and collision of the world; free linear memory; chunks refused for the budget, failed.)
-			reportLine("mesh %5.2f tex %5.2f MB col %5.0fK", double(mem.meshBytes) / 1048576.0, double(mem.textureBytes) / 1048576.0,
-			     double(ws.collisionBytes) / 1024.0);
-			// (Free linear memory and the world's budget from it; chunks refused for the budget, evicted, failed.)
-			reportLine("lin %4.1f bud %4.1fMB rej %lu ev %lu f%lu", double(linearSpaceFree()) / 1048576.0,
+			// (Chunks in memory: the world's own + those of medium and small objects, of all; wanted and not there: the same.)
+			reportLine("res %3lu+%3lu/%lu pend %3lu+%lu", static_cast<unsigned long>(ws.chunksLoaded - ws.loadedDetail),
+			     static_cast<unsigned long>(ws.loadedDetail), static_cast<unsigned long>(ws.chunksTotal),
+			     static_cast<unsigned long>(ws.chunksPending - ws.pendingDetail), static_cast<unsigned long>(ws.pendingDetail));
+			// (Meshes - of them the objects' share -, textures and collision of the world.)
+			reportLine("mesh %5.2f d%4.1f tex %5.2f MB col %4.0fK", double(mem.meshBytes) / 1048576.0, double(ws.detailBytes) / 1048576.0,
+			     double(mem.textureBytes) / 1048576.0, double(ws.collisionBytes) / 1024.0);
+			// (Free linear memory and the world's budget from it; chunks the budget had no room for, evicted, failed,
+			// refused by the allocator though the budget had room.)
+			reportLine("lin %4.1f bud %4.1fMB rej %lu ev %lu f%lu nm%lu", double(linearSpaceFree()) / 1048576.0,
 			     double(ws.budgetBytes) / 1048576.0, static_cast<unsigned long>(ws.budgetRejects), static_cast<unsigned long>(ws.evictions),
-			     static_cast<unsigned long>(ws.loadFailures));
+			     static_cast<unsigned long>(ws.loadFailures), static_cast<unsigned long>(ws.allocRejects));
 
 			reportLine("draw distance %3.0f m  time %02d:%02d", double(app.drawDistance() / 100.0f), int(app.environment().timeOfDay),
 			     int(app.environment().timeOfDay * 60.0f) % 60);

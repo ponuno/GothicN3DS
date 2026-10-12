@@ -34,12 +34,6 @@
 	 GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) |   \
 	 GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
 
-// The supersampled picture (twice the size each way) shrunk into the ordinary target: tiled in, tiled out, 2x2 averaged.
-#define SHRINK_TRANSFER_FLAGS                                                                        \
-	(GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |                 \
-	 GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |  \
-	 GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_XY))
-
 namespace g3 {
 namespace gfx {
 
@@ -57,10 +51,9 @@ struct Mesh {
 
 namespace {
 
-C3D_RenderTarget* gTarget = nullptr; // what goes to the screen
-C3D_RenderTarget* gBig = nullptr;    // supersampling: the picture is drawn here (480x800) and shrunk into gTarget
-C3D_RenderTarget* gDraw = nullptr;   // the one drawn into: gBig or gTarget
-bool gSuperWanted = false;
+C3D_RenderTarget* gTarget = nullptr;
+bool gSuper = false;       // supersampling in use: the target is 480x800 and the display transfer averages 2x2
+bool gSuperWanted = false; // asked for before init()
 DVLB_s* gDvlb = nullptr;
 shaderProgram_s gProgram;     // the full shader (entry `main`); with the classic, plain and fade ones the only program
 shaderProgram_s gProgramFast; // the fast shader (entry `fastmain` of the same binary), when gMvpShader
@@ -356,30 +349,21 @@ void reap() {
 
 } // namespace
 
-// The render targets: one 240x400 (the screen's own), or, supersampled, that one without a depth buffer and a
-// 480x800 one with it. (If the second does not fit into VRAM the picture is drawn the ordinary way.)
-static bool makeTargets(bool super) {
-	gBig = nullptr;
+// The render target: 240x400, the screen's own size, or, supersampled, 480x800 (four times the pixels, about 3 MB
+// of VRAM with the depth buffer) which the display transfer shrinks by averaging 2x2 as it copies it to the screen
+// (libctru: with scaling the dimensions given are the bigger ones, which is what citro3d passes). If the big one does
+// not fit into VRAM the ordinary one is made.
+static bool makeTarget(bool super) {
+	gSuper = false;
+	gTarget = nullptr;
 	if (super) {
-		gTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, -1);
-		if (gTarget) gBig = C3D_RenderTargetCreate(480, 800, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
-		if (!gBig && gTarget) {
-			C3D_RenderTargetDelete(gTarget);
-			gTarget = nullptr;
-		}
+		gTarget = C3D_RenderTargetCreate(480, 800, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
+		gSuper = gTarget != nullptr;
 	}
 	if (!gTarget) gTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 	if (!gTarget) return false;
-	C3D_RenderTargetSetOutput(gTarget, GFX_TOP, GFX_LEFT, DISPLAY_TRANSFER_FLAGS);
-	gDraw = gBig ? gBig : gTarget;
+	C3D_RenderTargetSetOutput(gTarget, GFX_TOP, GFX_LEFT, gSuper ? (DISPLAY_TRANSFER_FLAGS | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_XY)) : DISPLAY_TRANSFER_FLAGS);
 	return true;
-}
-
-// Before the transfer to the screen: the big picture into the small target (the GPU's list is submitted first).
-static void shrinkBig() {
-	if (!gBig) return;
-	C3D_SyncDisplayTransfer(static_cast<u32*>(gBig->frameBuf.colorBuf), GX_BUFFER_DIM(480, 800), static_cast<u32*>(gTarget->frameBuf.colorBuf),
-	                        GX_BUFFER_DIM(240, 400), SHRINK_TRANSFER_FLAGS);
 }
 
 bool init() {
@@ -395,7 +379,7 @@ bool init() {
 		if (!gOwnBuffer[0] || !gOwnBuffer[1]) return false;
 	}
 
-	if (!makeTargets(gSuperWanted)) return false;
+	if (!makeTarget(gSuperWanted)) return false;
 
 	gMvpShader = false;
 	gOnFast = false;
@@ -501,7 +485,6 @@ void shutdown() {
 		// through, and only then are its buffers safe to free. (No waiting
 		// for the display here - leaving must not depend on anything that
 		// might not come.)
-		if (gBig) C3D_RenderTargetDelete(gBig);
 		if (gTarget) C3D_RenderTargetDelete(gTarget);
 		reap();
 		// The command writer still points into one of the buffers freed next.
@@ -534,7 +517,8 @@ void shutdown() {
 	gProgramReady = gProgramFastReady = false;
 	gMvpShader = gOnFast = false;
 	gDvlb = nullptr;
-	gTarget = gBig = gDraw = nullptr;
+	gTarget = nullptr;
+	gSuper = false;
 	gReady = false;
 }
 
@@ -666,8 +650,8 @@ void frameBegin(const FrameDesc& f) {
 		if (!gInFrame) return;
 		markSync();
 		reap(); // the previous frame is off the GPU now
-		C3D_RenderTargetClear(gDraw, C3D_CLEAR_ALL, gClearColor, 0);
-		C3D_FrameDrawOn(gDraw);
+		C3D_RenderTargetClear(gTarget, C3D_CLEAR_ALL, gClearColor, 0);
+		C3D_FrameDrawOn(gTarget);
 	} else {
 		// Overlapped: the GPU may still be drawing the previous frame from
 		// the other buffer. Nothing here touches the GPU or waits for it; the
@@ -675,13 +659,13 @@ void frameBegin(const FrameDesc& f) {
 		GPUCMD_SetBuffer(gOwnBuffer[gOwnIndex], kOwnBufferWords, 0);
 		gInFrame = true;
 		// What C3D_FrameDrawOn does, minus its "inside a citro3d frame" check.
-		C3D_SetFrameBuf(&gDraw->frameBuf);
-		C3D_SetViewport(0, 0, gDraw->frameBuf.width, gDraw->frameBuf.height);
+		C3D_SetFrameBuf(&gTarget->frameBuf);
+		C3D_SetViewport(0, 0, gTarget->frameBuf.width, gTarget->frameBuf.height);
 	}
 	osTickCounterStart(&gCpuClock);
 	// The picture squeezed into half the screen: the same triangles and draws, half the pixels. (A scissor did not do
 	// this: the GPU still worked on what it cut away.)
-	if (gFillTest) C3D_SetViewport(0, 0, gDraw->frameBuf.width, gDraw->frameBuf.height / 2);
+	if (gFillTest) C3D_SetViewport(0, 0, gTarget->frameBuf.width, gTarget->frameBuf.height / 2);
 	C3D_BindProgram(&gProgram);
 	gOnFast = false;
 	gProgramSwitches = 0;
@@ -1029,7 +1013,6 @@ void frameEnd() {
 		// cache here. Measured on a New 3DS that costs next to nothing (the
 		// frame time equalled CPU + GPU time to a quarter of a millisecond),
 		// so the safe default stays.
-		shrinkBig();
 		C3D_FrameEnd(0);
 		gFrameStats.commandBufferUse = C3D_GetCmdBufUsage();
 		gFrameStats.gpuMs = C3D_GetDrawingTime(); // of the frame before
@@ -1047,12 +1030,11 @@ void frameEnd() {
 	// The GPU is idle: whatever was destroyed while it drew can go. The frame
 	// about to be submitted was recorded after those were destroyed.
 	reap();
-	C3D_RenderTargetClear(gDraw, C3D_CLEAR_ALL, gClearColor, 0);
+	C3D_RenderTargetClear(gTarget, C3D_CLEAR_ALL, gClearColor, 0);
 	gTarget->used = true; // C3D_FrameEnd copies used targets to the screen
 	// C3D_FrameBegin pointed the command writer at citro3d's own (empty)
 	// buffer; point it back at the end of what was recorded.
 	GPUCMD_SetBuffer(gOwnBuffer[gOwnIndex], kOwnBufferWords, recorded);
-	shrinkBig();
 	C3D_FrameEnd(0);
 	gOwnIndex ^= 1; // the GPU reads this buffer now; the next frame is written into the other
 }
@@ -1064,21 +1046,10 @@ void c3dSetClassicFrames(bool classic) {
 void c3dSetFillTest(bool on) { gFillTest = on; }
 
 void c3dSetSupersample(bool on) {
-	if (!gReady) {
-		gSuperWanted = on;
-		return;
-	}
-	if (gInFrame || on == (gBig != nullptr)) return;
-	// Deleting a target waits for the GPU; the picture of the next frame goes into the new ones.
-	reap();
-	if (gBig) C3D_RenderTargetDelete(gBig);
-	if (gTarget) C3D_RenderTargetDelete(gTarget);
-	gBig = gTarget = gDraw = nullptr;
-	if (!makeTargets(on)) makeTargets(false);
-	gSuperWanted = gBig != nullptr;
+	if (!gReady) gSuperWanted = on; // (only before init(): the target is not rebuilt while frames are in flight)
 }
 
-bool c3dSupersample() { return gBig != nullptr; }
+bool c3dSupersample() { return gSuper; }
 void c3dSetDoubleDraws(bool on) { gDoubleDraws = on; }
 
 void c3dSetPlainShader(bool plain) {

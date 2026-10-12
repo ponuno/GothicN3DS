@@ -71,7 +71,7 @@ const Item kGraphics[] = {
     {"Густота мелких объектов", CHOICE, &Settings::density, kDensity, 3, 0, 0, nullptr, 0, nullptr, kDensityNotes},
     {"Жители вдали", CHOICE, &Settings::npcDistance, kNpcRange, 3, 0, 0, nullptr, 0, "Как далеко видны жители и звери", nullptr},
     {"Купол Барьера", TOGGLE, &Settings::barrier, nullptr, 0, 0, 0, nullptr, 0, "Сияние неба и гул, если есть в данных", nullptr},
-    {"Сглаживание", TOGGLE, &Settings::antialias, nullptr, 0, 0, 0, nullptr, 0, "Края без лесенки; нагружает видеочип", nullptr},
+    {"Сглаживание", TOGGLE, &Settings::antialias, nullptr, 0, 0, 0, nullptr, 0, "Края без лесенки; после перезапуска", nullptr},
     {"Плавное появление", TOGGLE, &Settings::dissolve, nullptr, 0, 0, 0, nullptr, 0, "Вступит в силу после перезапуска", nullptr},
     {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 3, 0, 0, nullptr, 0, nullptr, kFrameNotes},
     {"Графика+", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GFX_PLUS, "Затенение углов, листва, тени, даль", nullptr},

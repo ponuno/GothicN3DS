@@ -63,7 +63,6 @@ void C3D_FrameEnd(u8 flags);
 float C3D_GetDrawingTime(void);
 float C3D_GetProcessingTime(void);
 C3D_RenderTarget* C3D_RenderTargetCreate(int width, int height, GPU_COLORBUF colorFmt, int depthFmt);
-void C3D_SyncDisplayTransfer(u32* inadr, u32 indim, u32* outadr, u32 outdim, u32 flags);
 void C3D_RenderTargetDelete(C3D_RenderTarget* target);
 void C3D_RenderTargetSetOutput(C3D_RenderTarget* target, gfxScreen_t screen, gfx3dSide_t side, u32 transferFlags);
 void C3D_FrameBufClear(C3D_FrameBuf* fb, C3D_ClearBits clearBits, u32 clearColor, u32 clearDepth);

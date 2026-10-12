@@ -198,8 +198,7 @@ int main(int, char**) {
 	gfx::c3dSetDoubleDraws((startKeys & KEY_START) != 0); // hold START at start: every draw twice
 	gfx::c3dSetFillTest(halfPicture); // hold ZR at start: half the pixels, the same triangles
 	gfx::c3dSetFadeShader(dissolve);
-	bool antialiasSet = settings.antialias != 0; // (changed in the menu: the targets are rebuilt between frames)
-	gfx::c3dSetSupersample(antialiasSet);
+	gfx::c3dSetSupersample(settings.antialias != 0); // (a change in the menu counts after a restart)
 
 	App& app = gApp;
 	// Chunks are read, unpacked and given their collision grids on a worker
@@ -382,10 +381,6 @@ int main(int, char**) {
 				}
 			}
 			app.soundIdle(dt);
-			if ((app.settings().antialias != 0) != antialiasSet) {
-				antialiasSet = app.settings().antialias != 0;
-				gfx::c3dSetSupersample(antialiasSet);
-			}
 			app.render();
 		} else {
 			Input in;
@@ -513,10 +508,6 @@ int main(int, char**) {
 				slopeFailed = !written;
 			}
 
-			if ((app.settings().antialias != 0) != antialiasSet) {
-				antialiasSet = app.settings().antialias != 0;
-				gfx::c3dSetSupersample(antialiasSet);
-			}
 			app.render();
 		} // (not in the menu)
 
@@ -638,6 +629,10 @@ int main(int, char**) {
 			reportLine("lin %4.1f bud %4.1fMB rej %lu ev %lu f%lu nm%lu", double(linearSpaceFree()) / 1048576.0,
 			     double(ws.budgetBytes) / 1048576.0, static_cast<unsigned long>(ws.budgetRejects), static_cast<unsigned long>(ws.evictions),
 			     static_cast<unsigned long>(ws.loadFailures), static_cast<unsigned long>(ws.allocRejects));
+			// What the system gives the application (MB): its whole region, what is free of it, the ordinary heap (the
+			// linear heap is `lin` above plus what is in use).
+			reportLine("sys app %4.1f free %4.1f heap %4.1f", double(osGetMemRegionSize(MEMREGION_APPLICATION)) / 1048576.0,
+			     double(osGetMemRegionFree(MEMREGION_APPLICATION)) / 1048576.0, double(envGetHeapSize()) / 1048576.0);
 
 			reportLine("draw distance %3.0f/%3.0f m  time %02d:%02d", double(app.drawDistance() / 100.0f * app.world().config().distanceScale), double(app.drawDistance() / 100.0f), int(app.environment().timeOfDay),
 			     int(app.environment().timeOfDay * 60.0f) % 60);

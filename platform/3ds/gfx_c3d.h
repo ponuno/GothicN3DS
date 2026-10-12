@@ -18,7 +18,7 @@ void c3dSetPlainShader(bool plain);
 // Squeezes the picture into half the screen: half the pixels, the same triangles (for finding out whether the GPU is limited by the pixels).
 void c3dSetFillTest(bool on);
 // Smooths the edges: the picture is drawn twice the size each way (four times the pixels) and shrunk by the
-// display-transfer unit. May be called any time between frames; if the bigger buffers do not fit into VRAM
+// display-transfer unit as it goes to the screen. Call before init(); if the bigger buffers do not fit into VRAM
 // the picture stays as it was (c3dSupersample() says which).
 void c3dSetSupersample(bool on);
 bool c3dSupersample();

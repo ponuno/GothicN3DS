@@ -710,15 +710,14 @@ C3D_RenderTarget* C3D_RenderTargetCreate(int width, int height, GPU_COLORBUF, in
 	t->frameBuf.height = u16(height);
 	return t;
 }
-void C3D_SyncDisplayTransfer(u32*, u32 indim, u32*, u32 outdim, u32) {
-	if (indim == ((800u << 16) | 480u) && outdim == ((400u << 16) | 240u)) ++gCount.shrinks;
-}
 void C3D_RenderTargetDelete(C3D_RenderTarget* target) {
 	gExecuting = List {}; // waits for the GPU
 	if (gLinked == target) gLinked = nullptr;
 	free(target);
 }
-void C3D_RenderTargetSetOutput(C3D_RenderTarget* target, gfxScreen_t, gfx3dSide_t, u32) {
+void C3D_RenderTargetSetOutput(C3D_RenderTarget* target, gfxScreen_t, gfx3dSide_t, u32 flags) {
+	gCount.outputWidth = target ? target->frameBuf.width : 0;
+	gCount.outputScaling = (flags >> 24) & 3;
 	gLinked = target;
 	if (target) target->linked = true;
 }

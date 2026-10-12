@@ -174,6 +174,11 @@ struct ShaderCheck {
 	// Graphics+: the bool register of `windy` in the shader in use (b2 in the
 	// dissolve's, b1 in the default one), and what was seen of it.
 	u16 windyBit = 4;
+	// Where the shader in use keeps its uniforms (world_fade/world.v.pica: the defaults; world_full/fast.v.pica:
+	// the combined matrix takes fewer registers) and which program a draw call may be drawn by.
+	int locChunk = 8, locParams = 9, locDayDelta = 10, locTexOffset = 11, locBones = 13, locFx = 91;
+	bool twoEntries = false; // the fast shader: entry 1 draws the static world, entry 0 characters and what sways
+	unsigned fastDraws = 0, fullDraws = 0, wrongEntry = 0, swayOnFast = 0;
 	unsigned occludedVertices = 0, swayedVertices = 0, windyDraws = 0;
 	double worstSway = 0; // cm: the farthest a corner was moved
 	unsigned fadedVertices = 0;
@@ -224,9 +229,15 @@ struct ShaderCheck {
 
 static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 	ShaderCheck& sc = *static_cast<ShaderCheck*>(user);
-	const int locChunk = 8, locParams = 9, locDayDelta = 10, locTexOffset = 11, locBones = 13, locFx = 91; // checked in testShader
+	const int locChunk = sc.locChunk, locParams = sc.locParams, locDayDelta = sc.locDayDelta, locTexOffset = sc.locTexOffset,
+	          locBones = sc.locBones, locFx = sc.locFx; // checked in the tests of each shader
 	const bool skinned = call.bools & 1;
 	const bool windy = (call.bools & sc.windyBit) != 0;
+	if (sc.twoEntries) {
+		// Characters and swaying materials need the full shader; the fast one has no branches for them.
+		(call.entry == 1 ? sc.fastDraws : sc.fullDraws) += 1;
+		sc.wrongEntry += call.entry == 1 && (skinned || windy);
+	}
 	const float* fx = call.uniforms[locFx];
 	if (windy) ++sc.windyDraws;
 	const float* chunk = call.uniforms[locChunk];
@@ -340,6 +351,7 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 			// Graphics+ (g3ds/world.h, gfx::ChunkFx): w's high byte sways along the
 			// wind by the wave x (1 - |x|), its low byte darkens the light.
 			const double sway = double(vertexWind(v.w)), occlusion = double(vertexOcclusion(v.w)) / 256.0;
+			sc.swayOnFast += sc.twoEntries && call.entry == 1 && sway > 0; // (the fast shader would take the sway for occlusion)
 			if (windy && sway > 0) {
 				double t = double(fx[2]) + (p[0] + p[2]) / double(gfx::WIND_WAVE_CM);
 				t -= std::floor(t);
@@ -561,14 +573,15 @@ static void testShader(const std::string& pak) {
 	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
 }
 
-// The default: the shader of the version before the dissolve (world.v.pica),
-// nothing on texture unit 1 - the GPU state that is known to work on the
-// console. (The first build with the dissolve always on gave a black screen.)
-static void testDefaultShader(const std::string& pak) {
+// The classic shader (ZL+ZR at start): the one of the version before the dissolve (world.v.pica), projection and
+// view apart, nothing on texture unit 1 - the GPU state that is known to work on the console. (The first build
+// with the dissolve always on gave a black screen.) It was the default before the fast one.
+static void testClassicShader(const std::string& pak) {
 	mock3ds::reset();
 	gfx::c3dSetClassicFrames(false);
-	CHECK(gfx::init() && !gfx::fadeSupported());
-	std::printf("  default shader: %u instructions, %u of 96 float registers%s%s\n", mock3ds::shaderInstructions(),
+	gfx::c3dSetClassicShader(true);
+	CHECK(gfx::init() && !gfx::fadeSupported() && !gfx::c3dFastShader());
+	std::printf("  classic shader: %u instructions, %u of 96 float registers%s%s\n", mock3ds::shaderInstructions(),
 	            mock3ds::shaderFloatRegisters(), *mock3ds::shaderProblem() ? "; PROBLEM: " : "", mock3ds::shaderProblem());
 	CHECK(!*mock3ds::shaderProblem() && mock3ds::shaderFloatRegisters() == 4 + 4 + 5 + MODEL_PALETTE * 3 + 1 + 1);
 	shaderProgram_s probe;
@@ -605,6 +618,105 @@ static void testDefaultShader(const std::string& pak) {
 		}
 		CHECK(sc.worldDraws > 10 && sc.worldVertices > 1000 && sc.failed == 0 && sc.unexpected == 0);
 		CHECK(sc.worstWorldPx < 0.02 && sc.worstGpuWorldPx < 0.25 && sc.worstGpuSkyPx < 0.75 && sc.worstColor < 1e-4 && sc.worstTex < 1e-3);
+		app.shutdown();
+	}
+	CHECK(mock3ds::counters().texUnit1Binds == 0 && mock3ds::counters().programSwitches == 0);
+	gfx::shutdown();
+	gfx::c3dSetClassicShader(false);
+	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
+}
+
+// The default: the shader with two entry points (world_full.v.pica, world_fast.v.pica), one combined matrix. The
+// fast entry draws the static world and the overlay, the full one the characters and what sways in the wind; the
+// vertices must come out as the engine's maths wants them from whichever entry, and the right one must be bound.
+static void testDefaultShader(const std::string& pak) {
+	mock3ds::reset();
+	gfx::c3dSetClassicFrames(false);
+	CHECK(gfx::init() && !gfx::fadeSupported() && gfx::c3dFastShader());
+	std::printf("  default shader: %u entry points, %u and %u instructions of %u, %u of 96 float registers%s%s\n", mock3ds::shaderEntries(),
+	            mock3ds::shaderEntryInstructions(0), mock3ds::shaderEntryInstructions(1), mock3ds::shaderInstructions(),
+	            mock3ds::shaderFloatRegisters(), *mock3ds::shaderProblem() ? "; PROBLEM: " : "", mock3ds::shaderProblem());
+	CHECK(!*mock3ds::shaderProblem() && mock3ds::shaderEntries() == 2);
+	// (mvp, fogRow, five vectors, the palette, fx, lightK, aoK; one constant)
+	CHECK(mock3ds::shaderFloatRegisters() == 4 + 1 + 5 + MODEL_PALETTE * 3 + 1 + 1 + 1 + 1);
+	CHECK(mock3ds::shaderEntryInstructions(1) <= 20 && mock3ds::shaderEntryInstructions(0) < 63);
+	shaderProgram_s probe;
+	shaderProgramInit(&probe);
+	shaderProgramSetVsh(&probe, nullptr);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "mvp") == 0);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fogRow") == 4);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "chunk") == 5);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "params") == 6);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "dayDelta") == 7);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "texOffset") == 8);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "bones") == 10);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fx") == 88);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "lightK") == 89);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "aoK") == 90);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "skinned") == 0x68);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "windy") == 0x69);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "projection") < 0);
+	{
+		ShaderCheck sc;
+		sc.windyBit = 2;
+		sc.locChunk = 5;
+		sc.locParams = 6;
+		sc.locDayDelta = 7;
+		sc.locTexOffset = 8;
+		sc.locBones = 10;
+		sc.locFx = 88;
+		sc.twoEntries = true;
+		App app;
+		CHECK(app.init(pak.c_str(), nullptr));
+		app.skipChapters();
+		app.world().config().fadeMs = 0.0f; // (as the console sets it without D-Pad Right)
+		app.setDrawDistance(6000.0f);
+		app.environment().timeOfDay = 19.5f;
+		CHECK(app.world().hasOcclusion() && app.world().hasWind());
+		app.world().config().occlusion = 1.0f;
+		app.world().config().wind = 2.0f;
+		app.world().preload(app.camera().pos);
+		unsigned switches = 0, frames = 0;
+		for (int f = 0; f < 50; ++f) {
+			Input in;
+			in.moveZ = 1.0f;
+			in.moveX = f > 20 ? 0.6f : 0.0f;
+			in.lookX = 0.4f;
+			in.lookY = f < 10 ? -0.3f : 0.0f;
+			app.update(in, 1.0f / 30.0f);
+			const bool check = f % 7 == 6;
+			if (check) {
+				app.render();
+				const Camera& cam = app.camera();
+				sc.beginFrame(viewLH(cam.pos, cam.yaw, cam.pitch), cam.pos, cam.fovY, cam.zNear, cam.zFar);
+				sc.expect(app.hero().model(), app.hero().pose(), app.hero().feet(), app.hero().yaw(), app.hero().light(), app.hero().lean());
+				sc.others = app.npcs().stats().drawCalls + app.loot().stats().drawCalls; // (and the things lying about)
+				mock3ds::setDrawHook(shaderHook, &sc);
+			}
+			app.render();
+			mock3ds::setDrawHook(nullptr, nullptr);
+			if (check) {
+				CHECK(app.heroVisible() && sc.nextPart == app.hero().model().partCount() && sc.others == 0);
+				switches += gfx::frameStats().programSwitches;
+				++frames;
+			}
+		}
+		std::printf("  world: %u draw calls (%u by the fast entry, %u by the full one), %u vertices: within %.4f px (%.4f px in 24-bit floats); "
+		            "depth within %.1e, colour and fog within %.1e, texture coordinates within %.1e\n",
+		            sc.worldDraws, sc.fastDraws, sc.fullDraws, sc.worldVertices, sc.worstWorldPx, sc.worstGpuWorldPx, sc.worstDepth,
+		            sc.worstColor, sc.worstTex);
+		std::printf("  hero: %u draw calls, %u vertices: within %.4f px; seams: %u shared points, %u split; %u program changes in %u frames\n",
+		            sc.skinnedDraws, sc.skinnedVertices, sc.worstSkinPx, sc.sharedPoints, sc.splitPoints, switches, frames);
+		CHECK(sc.worldDraws > 50 && sc.worldVertices > 5000 && sc.skinnedDraws >= 7 && sc.skinnedVertices > 500 && sc.blendedVertices > 50);
+		CHECK(sc.failed == 0 && sc.unexpected == 0);
+		CHECK(sc.fastDraws > 50 && sc.fullDraws >= sc.skinnedDraws && sc.wrongEntry == 0 && sc.swayOnFast == 0);
+		CHECK(sc.worstWorldPx < 0.02 && sc.worstSkinPx < 0.02);
+		CHECK(sc.worstGpuWorldPx < 0.25 && sc.worstGpuSkinPx < 0.25 && sc.worstGpuSkyPx < 0.75);
+		CHECK(sc.worstDepth < 1e-3 && sc.worstColor < 1e-4 && sc.worstTex < 1e-3);
+		CHECK(sc.sharedPoints > 20 && sc.splitPoints == 0);
+		CHECK(sc.occludedVertices > 1000 && sc.swayedVertices > 50 && sc.windyDraws > 0 && sc.worstSway > 0.5 && sc.worstSway < 40.0);
+		// The program changes are not free (a few dozen words of commands each); they stay in the tens a frame.
+		CHECK(switches > 0 && switches < frames * 120);
 		app.shutdown();
 	}
 	CHECK(mock3ds::counters().texUnit1Binds == 0);
@@ -669,21 +781,28 @@ static void testPlainShader(const std::string& pak) {
 // sideways screen. A quad's corners must land on their pixels, its colour
 // must be the vertex's, its texture coordinates the texels of the font.
 struct UiCheck {
-	unsigned draws = 0, vertices = 0, failed = 0;
+	bool fast = false; // the fast shader: chunk and params are elsewhere, and the matrix is the orthographic one itself
+	unsigned draws = 0, vertices = 0, failed = 0, notFastEntry = 0;
 	double worstPx = 0, worstColor = 0, worstTex = 0, worstDepth = 0;
 	float texW = 0, texH = 0;
 };
 
 static void uiHook(const mock3ds::DrawCall& call, void* user) {
 	UiCheck& uc = *static_cast<UiCheck*>(user);
-	const float* chunk = call.uniforms[8];
-	const float* params = call.uniforms[9];
-	// The overlay's draws: unit chunk transform, no fog, identity model view (c4..c7).
+	const float* chunk = call.uniforms[uc.fast ? 5 : 8];
+	const float* params = call.uniforms[uc.fast ? 6 : 9];
+	// The overlay's draws: unit chunk transform, no fog, identity model view (c4..c7; with the fast shader
+	// the matrix is the orthographic projection alone, and its fogRow is 0 0 0 1).
 	const float* mv = call.uniforms[4];
-	const bool ui = chunk[0] == 0 && chunk[1] == 0 && chunk[2] == 0 && chunk[3] == 1 && params[2] == 1 && params[3] == 0 &&
-	                mv[0] == 1 && mv[1] == 0 && call.uniforms[5][1] == 1 && call.uniforms[6][2] == 1 && (call.bools & 1) == 0;
+	const float* wRow = call.uniforms[3]; // an orthographic projection's last row is 0 0 0 1
+	const bool identity = uc.fast ? call.uniforms[4][0] == 0 && call.uniforms[4][1] == 0 && call.uniforms[4][2] == 0 && call.uniforms[4][3] == 1 &&
+	                                    wRow[0] == 0 && wRow[1] == 0 && wRow[2] == 0 && wRow[3] == 1
+	                              : mv[0] == 1 && mv[1] == 0 && call.uniforms[5][1] == 1 && call.uniforms[6][2] == 1;
+	const bool ui = chunk[0] == 0 && chunk[1] == 0 && chunk[2] == 0 && chunk[3] == 1 && params[2] == 1 && params[3] == 0 && identity &&
+	                (call.bools & 1) == 0;
 	if (!ui) return;
 	++uc.draws;
+	uc.notFastEntry += uc.fast && call.entry != 1;
 	for (unsigned i = 0; i < call.count; ++i) {
 		const u16 index = call.indices[i];
 		WorldVertex v;
@@ -721,6 +840,7 @@ static void testOverlay(const std::string& pak) {
 		CHECK(t != nullptr);
 		const gfx::MemStats before = gfx::memStats();
 		UiCheck uc;
+		uc.fast = gfx::c3dFastShader();
 		uc.texW = 32;
 		uc.texH = 16;
 		mock3ds::setDrawHook(uiHook, &uc);
@@ -746,7 +866,7 @@ static void testOverlay(const std::string& pak) {
 		std::printf("  overlay: %u draw calls, %u vertices: within %.4f px, colour %.5f, texels %.4f\n", uc.draws, uc.vertices,
 		            uc.worstPx, uc.worstColor, uc.worstTex);
 		// Three quads, two alphas runs and one more: three draws a frame.
-		CHECK(uc.draws == 12 && uc.vertices == 4 * 18 && uc.failed == 0);
+		CHECK(uc.draws == 12 && uc.vertices == 4 * 18 && uc.failed == 0 && uc.notFastEntry == 0);
 		CHECK(uc.worstPx < 0.02 && uc.worstColor < 1e-3 && uc.worstTex < 0.01 && uc.worstDepth == 0);
 		CHECK(gfx::memStats().textureBytes == before.textureBytes); // not world memory
 		gfx::textureDestroy(t);
@@ -760,6 +880,7 @@ static void testOverlay(const std::string& pak) {
 		app.setDrawDistance(6000.0f);
 		app.world().preload(app.camera().pos);
 		UiCheck uc;
+		uc.fast = gfx::c3dFastShader();
 		mock3ds::setDrawHook(uiHook, &uc);
 		for (int f = 0; f < 60; ++f) {
 			Input in;
@@ -772,7 +893,7 @@ static void testOverlay(const std::string& pak) {
 		mock3ds::setDrawHook(nullptr, nullptr);
 		std::printf("  application overlay: %u draw calls, %u vertices: within %.4f px, colour %.5f; %u quads dropped\n", uc.draws,
 		            uc.vertices, uc.worstPx, uc.worstColor, app.ui().dropped());
-		CHECK(app.ui().ready() && uc.draws >= 30 && uc.vertices > 30 * 40 && uc.failed == 0);
+		CHECK(app.ui().ready() && uc.draws >= 30 && uc.vertices > 30 * 40 && uc.failed == 0 && uc.notFastEntry == 0);
 		CHECK(uc.worstPx < 0.02 && uc.worstColor < 1e-3 && uc.worstDepth == 0 && app.ui().dropped() == 0);
 		CHECK(gfx::frameStats().drawsDropped == 0);
 		app.shutdown();
@@ -955,6 +1076,7 @@ int main(int argc, char** argv) {
 	testShader(pak);
 	std::printf("[ RUN ] the default shader, without the dissolve\n");
 	testDefaultShader(pak);
+	testClassicShader(pak);
 	std::printf("[ RUN ] the fallback shader without characters\n");
 	testPlainShader(pak);
 	std::printf("[ RUN ] the overlay\n");

@@ -20,6 +20,11 @@ void c3dSetFillTest(bool on);
 // Issues every world draw twice, with nothing changed between (for finding out what a draw call costs the GPU).
 void c3dSetDoubleDraws(bool on);
 bool c3dPlainShader();
+// `classic` = true: the shader of the versions before the fast one (world.v.pica: projection and view apart,
+// the same code for everything), for comparing. Call before init(); ignored with the plain or the fade shader.
+void c3dSetClassicShader(bool classic);
+// True if the two-entry shader (fast static world, full for characters and what sways) is the one in use.
+bool c3dFastShader();
 // `fade` = true: the shader with the dissolve (world_fade.v.pica) and the
 // noise texture on unit 1, so that gfx::setFade works. Off by default: the
 // first build with it showed a black screen on the console, and this keeps

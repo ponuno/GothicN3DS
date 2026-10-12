@@ -43,9 +43,11 @@ C3D_Tex* gBoundTex = nullptr;
 C3D_BufInfo gBufInfo {};
 C3D_AttrInfo gAttrInfo {};
 C3D_TexEnv gTexEnv[6];
-DVLE_s gDvle;
-DVLB_s gDvlb {&gDvle};
-shaderInstance_s gShader;
+const int kMaxEntries = 4; // DVLEs of one shader binary
+DVLE_s gDvle[kMaxEntries];
+DVLB_s gDvlb {gDvle};
+shaderInstance_s gShader[kMaxEntries];
+int gBoundEntry = 0; // the DVLE of the program C3D_BindProgram bound last
 
 // ---- the shader binary, as picasso wrote it ----
 
@@ -56,15 +58,20 @@ struct ShaderUniform {
 struct ShaderOutput {
 	int type, reg, mask;
 };
-struct Shader {
-	bool loaded = false;
-	std::vector<u32> code, opdesc;
+// One DVLE: an entry point of the shared code, with its own tables.
+struct ShaderEntry {
 	u32 main = 0, endMain = 0;
 	std::vector<ShaderUniform> uniforms;
 	std::vector<ShaderOutput> outputs;
 	float constants[96][4] = {};
 	bool isConstant[96] = {};
 	u16 boolConstants = 0;
+};
+struct Shader {
+	bool loaded = false;
+	std::vector<u32> code, opdesc;
+	ShaderEntry entry[kMaxEntries];
+	int entries = 0;
 	std::string problem;
 };
 Shader gSh;
@@ -93,60 +100,66 @@ void parseShader(const u32* file, u32 bytes) {
 	const u32 words = bytes / 4;
 	auto bad = [&](const char* what) { gSh.problem = what; };
 	if (words < 16 || file[0] != 0x424C5644u) return bad("not a DVLB file");
-	if (file[1] != 1) return bad("expected exactly one DVLE (one vertex shader)");
-	const u32* dvlp = file + 2 + file[1];
+	if (file[1] < 1 || file[1] > u32(kMaxEntries)) return bad("expected one to four DVLEs (vertex shaders)");
+	const u32 entries = file[1];
+	const u32* dvlp = file + 2 + entries;
 	if (dvlp[0] != 0x504C5644u) return bad("no DVLP block");
 	if (dvlp[2] / 4 + dvlp[3] > words || dvlp[4] / 4 + dvlp[5] * 2 > words) return bad("DVLP tables outside the file");
 	gSh.code.assign(dvlp + dvlp[2] / 4, dvlp + dvlp[2] / 4 + dvlp[3]);
 	for (u32 i = 0; i < dvlp[5]; ++i) gSh.opdesc.push_back(dvlp[dvlp[4] / 4 + i * 2]);
-	if (file[2] / 4 + 16 > words) return bad("DVLE outside the file");
-	const u32* dvle = file + file[2] / 4;
-	const u32 left = words - file[2] / 4;
-	if (dvle[0] != 0x454C5644u) return bad("no DVLE block");
-	if (((dvle[1] >> 16) & 0xFF) != 0) return bad("not a vertex shader");
-	gSh.main = dvle[2];
-	gSh.endMain = dvle[3];
-	if (gSh.main >= gSh.code.size() || gSh.endMain > gSh.code.size()) return bad("entry point outside the code");
-	if (dvle[6] / 4 + dvle[7] * 5 > left || dvle[10] / 4 + dvle[11] * 2 > left || dvle[12] / 4 + dvle[13] * 2 > left ||
-	    dvle[14] / 4 > left)
-		return bad("DVLE tables outside the file");
-	// Constants: { u16 type, u16 register, u32 data[4] }.
-	for (u32 i = 0; i < dvle[7]; ++i) {
-		const u32* c = dvle + dvle[6] / 4 + i * 5;
-		const u32 type = c[0] & 0xFFFF, id = c[0] >> 16;
-		if (type == 0) {
-			if (id < 16 && (c[1] & 1)) gSh.boolConstants = u16(gSh.boolConstants | (1u << id));
-		} else if (type == 2) {
-			if (id >= 96) return bad("float constant outside the registers");
-			gSh.isConstant[id] = true;
-			for (int k = 0; k < 4; ++k) gSh.constants[id][k] = fromFloat24(c[1 + k]);
+	for (u32 e = 0; e < entries; ++e) {
+		ShaderEntry& en = gSh.entry[e];
+		if (file[2 + e] / 4 + 16 > words) return bad("DVLE outside the file");
+		const u32* dvle = file + file[2 + e] / 4;
+		const u32 left = words - file[2 + e] / 4;
+		if (dvle[0] != 0x454C5644u) return bad("no DVLE block");
+		if (((dvle[1] >> 16) & 0xFF) != 0) return bad("not a vertex shader");
+		en.main = dvle[2];
+		en.endMain = dvle[3];
+		if (en.main >= gSh.code.size() || en.endMain > gSh.code.size()) return bad("entry point outside the code");
+		if (dvle[6] / 4 + dvle[7] * 5 > left || dvle[10] / 4 + dvle[11] * 2 > left || dvle[12] / 4 + dvle[13] * 2 > left ||
+		    dvle[14] / 4 > left)
+			return bad("DVLE tables outside the file");
+		// Constants: { u16 type, u16 register, u32 data[4] }.
+		for (u32 i = 0; i < dvle[7]; ++i) {
+			const u32* c = dvle + dvle[6] / 4 + i * 5;
+			const u32 type = c[0] & 0xFFFF, id = c[0] >> 16;
+			if (type == 0) {
+				if (id < 16 && (c[1] & 1)) en.boolConstants = u16(en.boolConstants | (1u << id));
+			} else if (type == 2) {
+				if (id >= 96) return bad("float constant outside the registers");
+				en.isConstant[id] = true;
+				for (int k = 0; k < 4; ++k) en.constants[id][k] = fromFloat24(c[1 + k]);
+			}
+		}
+		// Outputs: { u16 type, u16 register, u8 mask, u8 pad[3] }.
+		for (u32 i = 0; i < dvle[11]; ++i) {
+			const u32* o = dvle + dvle[10] / 4 + i * 2;
+			en.outputs.push_back({int(o[0] & 0xFFFF), int(o[0] >> 16), int(o[1] & 0xF)});
+		}
+		// Uniforms: { u32 symbol offset, u16 first register, u16 last register }.
+		const char* symbols = reinterpret_cast<const char*>(dvle + dvle[14] / 4);
+		const size_t symbolBytes = size_t(left - dvle[14] / 4) * 4;
+		for (u32 i = 0; i < dvle[13]; ++i) {
+			const u32* u = dvle + dvle[12] / 4 + i * 2;
+			if (u[0] >= symbolBytes || !memchr(symbols + u[0], 0, symbolBytes - u[0])) return bad("uniform name outside the file");
+			const ShaderUniform uniform = {symbols + u[0], int(u[1] & 0xFFFF), int(u[1] >> 16)};
+			if (uniform.start >= 0x10 && uniform.start < 0x70) {
+				if (uniform.end > 0x6F || uniform.end < uniform.start) return bad("float uniform outside the registers");
+				for (int r = uniform.start; r <= uniform.end; ++r)
+					if (en.isConstant[r - 0x10]) return bad("a uniform and a constant share a register");
+			}
+			en.uniforms.push_back(uniform);
 		}
 	}
-	// Outputs: { u16 type, u16 register, u8 mask, u8 pad[3] }.
-	for (u32 i = 0; i < dvle[11]; ++i) {
-		const u32* o = dvle + dvle[10] / 4 + i * 2;
-		gSh.outputs.push_back({int(o[0] & 0xFFFF), int(o[0] >> 16), int(o[1] & 0xF)});
-	}
-	// Uniforms: { u32 symbol offset, u16 first register, u16 last register }.
-	const char* symbols = reinterpret_cast<const char*>(dvle + dvle[14] / 4);
-	const size_t symbolBytes = size_t(left - dvle[14] / 4) * 4;
-	for (u32 i = 0; i < dvle[13]; ++i) {
-		const u32* u = dvle + dvle[12] / 4 + i * 2;
-		if (u[0] >= symbolBytes || !memchr(symbols + u[0], 0, symbolBytes - u[0])) return bad("uniform name outside the file");
-		const ShaderUniform uniform = {symbols + u[0], int(u[1] & 0xFFFF), int(u[1] >> 16)};
-		if (uniform.start >= 0x10 && uniform.start < 0x70) {
-			if (uniform.end > 0x6F || uniform.end < uniform.start) return bad("float uniform outside the registers");
-			for (int r = uniform.start; r <= uniform.end; ++r)
-				if (gSh.isConstant[r - 0x10]) return bad("a uniform and a constant share a register");
-		}
-		gSh.uniforms.push_back(uniform);
-	}
+	gSh.entries = int(entries);
 	gSh.loaded = true;
 }
 
 // ---- the vertex processor ----
 
 struct Machine {
+	int entry; // which DVLE runs
 	float in[16][4], tmp[16][4], out[16][4];
 	float uniform[96][4];
 	u16 bools;
@@ -202,7 +215,7 @@ bool run(Machine& m) {
 		u32 end, next;
 	};
 	std::vector<Block> stack;
-	u32 pc = gSh.main;
+	u32 pc = gSh.entry[m.entry].main;
 	for (unsigned steps = 0; steps < 4096; ++steps) {
 		while (!stack.empty() && pc == stack.back().end) {
 			pc = stack.back().next;
@@ -406,6 +419,7 @@ unsigned violations() {
 	       gCount.submittedUncleared;
 }
 void reset() {
+	gBoundEntry = 0;
 	gCount = Counters {};
 	gBuffersSeen.clear();
 }
@@ -421,25 +435,32 @@ const char* shaderProblem() { return gSh.loaded ? "" : (gSh.problem.empty() ? "n
 
 unsigned shaderFloatRegisters() {
 	bool used[96] = {};
-	for (const ShaderUniform& u : gSh.uniforms)
+	for (const ShaderUniform& u : gSh.entry[0].uniforms)
 		for (int r = u.start; r <= u.end && r < 0x70; ++r)
 			if (r >= 0x10) used[r - 0x10] = true;
 	unsigned n = 0;
-	for (int i = 0; i < 96; ++i) n += used[i] || gSh.isConstant[i];
+	for (int i = 0; i < 96; ++i) n += used[i] || gSh.entry[0].isConstant[i];
 	return n;
 }
 
 unsigned shaderInstructions() { return unsigned(gSh.code.size()); }
+unsigned shaderEntries() { return unsigned(gSh.entries); }
+unsigned shaderEntryInstructions(unsigned entry) {
+	return entry < unsigned(gSh.entries) ? gSh.entry[entry].endMain - gSh.entry[entry].main : 0;
+}
 
 bool shadeVertex(const DrawCall& call, unsigned index, ShadedVertex& out, bool gpuFloats) {
 	out = ShadedVertex {};
 	if (!gSh.loaded || !call.vertices || call.stride == 0) return false;
+	if (call.entry < 0 || call.entry >= gSh.entries) return false;
+	const ShaderEntry& en = gSh.entry[call.entry];
 	Machine m {};
+	m.entry = call.entry;
 	m.gpuFloats = gpuFloats;
-	m.bools = u16(call.bools | gSh.boolConstants);
+	m.bools = u16(call.bools | en.boolConstants);
 	for (int i = 0; i < 96; ++i)
 		for (int k = 0; k < 4; ++k) {
-			const float v = gSh.isConstant[i] ? gSh.constants[i][k] : call.uniforms[i][k];
+			const float v = en.isConstant[i] ? en.constants[i][k] : call.uniforms[i][k];
 			m.uniform[i][k] = gpuFloats ? toGpuFloat(v) : v;
 		}
 	// Attributes: the buffer holds them in the order of its permutation; a
@@ -479,7 +500,7 @@ bool shadeVertex(const DrawCall& call, unsigned index, ShadedVertex& out, bool g
 	}
 	// Outputs by meaning: the set bits of an entry's mask are the components
 	// of its semantic, in order.
-	for (const ShaderOutput& o : gSh.outputs) {
+	for (const ShaderOutput& o : en.outputs) {
 		float* target = o.type == 0 ? out.position : o.type == 2 ? out.color : o.type == 3 ? out.texcoord : o.type == 5 ? out.texcoord1 : nullptr;
 		const int limit = o.type == 3 || o.type == 5 ? 2 : 4;
 		if (!target || o.reg < 0 || o.reg > 15) continue;
@@ -544,15 +565,16 @@ int shaderProgramInit(shaderProgram_s* sp) {
 	return 0;
 }
 int shaderProgramFree(shaderProgram_s*) { return 0; }
-int shaderProgramSetVsh(shaderProgram_s* sp, DVLE_s*) {
-	sp->vertexShader = &gShader;
+int shaderProgramSetVsh(shaderProgram_s* sp, DVLE_s* dvle) {
+	const int e = int(dvle - gDvle);
+	sp->vertexShader = &gShader[e >= 0 && e < kMaxEntries ? e : 0];
 	return 0;
 }
 s32 shaderInstanceGetUniformLocation(const shaderInstance_s* si, const char* name) {
 	// As libctru does: the first register from the binary's uniform table,
 	// less 0x10 - and squeezed through a signed byte.
 	if (!si) return -1;
-	for (const ShaderUniform& u : gSh.uniforms)
+	for (const ShaderUniform& u : gSh.entry[si - gShader].uniforms)
 		if (u.name == name) return s32(static_cast<int8_t>(u.start - 0x10));
 	return -1;
 }
@@ -707,7 +729,11 @@ void C3D_SetScissor(GPU_SCISSORMODE, u32, u32, u32, u32) {}
 
 void C3D_SetBufInfo(C3D_BufInfo* info) { gBufInfo = *info; }
 C3D_AttrInfo* C3D_GetAttrInfo(void) { return &gAttrInfo; }
-void C3D_BindProgram(shaderProgram_s*) {}
+void C3D_BindProgram(shaderProgram_s* program) {
+	const int e = program && program->vertexShader ? int(program->vertexShader - gShader) : 0;
+	if (e != gBoundEntry) ++gCount.programSwitches;
+	gBoundEntry = e;
+}
 void C3D_FVUnifSet(GPU_SHADER_TYPE, int id, float x, float y, float z, float w) {
 	if (id < 0 || id >= 96) {
 		gSh.problem = "a float uniform was set outside c0..c95";
@@ -755,6 +781,7 @@ void C3D_DrawElements(GPU_Primitive_t, int count, int, const void* indices) {
 		call.count = unsigned(count);
 		memcpy(call.uniforms, gFloatUniforms, sizeof(call.uniforms));
 		call.bools = gBoolUniforms;
+		call.entry = gBoundEntry;
 		gDrawHook(call, gDrawHookUser);
 	}
 }

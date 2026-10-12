@@ -1,0 +1,126 @@
+; World and character vertex shader, the full one (PICA200, assembled with picasso).
+; Assembled together with world_fast.v.pica into one shbin (world_fast_shbin.h):
+; two entry points of the same code blob, so switching between them costs no
+; upload. This one (entry `main`, DVLE 0) draws what the fast one cannot:
+; characters (skinned) and the world materials that sway in the wind. Everything
+; else is drawn by `fastmain` in world_fast.v.pica.
+; Both files declare the same uniforms in the same order, so they share locations.
+;
+; The difference from world.v.pica (kept for the fallback, ZL+ZR at start): the
+; projection and the view are one matrix (mvp, multiplied on the CPU), and the
+; fog factor comes from one dp4 with fogRow (the view depth's row, scaled by
+; fogB, plus fogA): 4 + 4 + 4 instructions fewer. See world.v.pica for what the
+; vertex holds, how the position is made exact, the light, and the wind.
+
+.fvec mvp[4]        ; projection x modelView (worked out on the CPU), rows
+.fvec fogRow        ; fog factor before clamping = dp4(fogRow, position relative to the lattice point)
+.fvec chunk         ; xyz = origin relative to the eye's lattice point, w = position step
+.fvec params        ; x = uv scale, y = 1/255, z = fogA, w = fogB (the fog already is in fogRow; kept for the uv scale)
+.fvec dayDelta      ; xyz = dayLight - 1
+.fvec texOffset     ; xy = texture scroll offset (zw must be 0)
+.fvec skinLight     ; xyz = light on the character
+.fvec bones[78]     ; 26 bones, three rows of a 3x4 matrix each
+.fvec fx            ; Graphics+: xy = wind (cm per step of sway, times 4), z = wave phase, w = occlusion strength
+.fvec lightK        ; xyz = (dayLight - 1) / 255 / 255: the fast shader's daylight term
+.fvec aoK           ; x = occlusion strength / 256: the fast shader's occlusion term
+.bool skinned
+.bool windy
+
+.constf consts(0.0, 1.0, 0.00390625, 0.00125) ; 0, 1, 1/256, k = 1/800 cm (gfx.h WIND_WAVE_PER_CM)
+.alias zero consts.xxxx
+.alias one  consts.yyyy
+
+.out outpos position
+.out outtc0 texcoord0
+.out outclr color
+
+.alias inpos v0
+.alias intc  v1
+.alias inclr v2
+
+.entry main
+.proc main
+	; r0 = (position in chunk or model space, 1)
+	mul r0.xyz, chunk.www, inpos
+	mov r0.w,   one
+
+	ifu skinned
+		; r6, r7 = the position as each of the two bones sees it
+		mova a0.xy, inclr.xy
+		dp4 r6.x, bones[a0.x],   r0
+		dp4 r6.y, bones[a0.x+1], r0
+		dp4 r6.z, bones[a0.x+2], r0
+		dp4 r7.x, bones[a0.y],   r0
+		dp4 r7.y, bones[a0.y+1], r0
+		dp4 r7.z, bones[a0.y+2], r0
+		; r0 = r6 + (r7 - r6) * weight
+		add r7.xyz, r7.xyz, -r6.xyz
+		mul r8.x,   params.y, inclr.z
+		mul r7.xyz, r7.xyz, r8.xxx
+		add r0.xyz, r6.xyz, r7.xyz
+	.end
+
+	ifu windy
+		; r9.y = the sway of this corner (the high byte of w)
+		mul r9.x, consts.z, inpos.w
+		flr r9.y, r9.x
+		; r10.x = 2 fract(phase + k (x + z)) - 1
+		add r10.x, r0.x, r0.z
+		mul r10.x, consts.w, r10.x
+		add r10.x, fx.z, r10.x
+		flr r10.y, r10.x
+		add r10.x, r10.x, -r10.y
+		add r10.x, r10.x, r10.x
+		add r10.x, -consts.y, r10.x
+		; r10.x = x (1 - |x|) * sway
+		max r10.y, r10.x, -r10.x
+		add r10.y, consts.y, -r10.y
+		mul r10.x, r10.x, r10.y
+		mul r10.x, r10.x, r9.y
+		mul r11.xy, fx.xy, r10.xx
+		add r0.x, r0.x, r11.x
+		add r0.z, r0.z, r11.y
+	.end
+
+	; relative to the eye's lattice point
+	add r0.xyz, chunk.xyz, r0.xyz
+
+	dp4 outpos.x, mvp[0], r0
+	dp4 outpos.y, mvp[1], r0
+	dp4 outpos.z, mvp[2], r0
+	dp4 outpos.w, mvp[3], r0
+
+	mul r2, params.xxxx, intc
+	add r2, texOffset, r2
+	mov outtc0, r2
+
+	; fog factor
+	dp4 r3.x, fogRow, r0
+	max r3.x, zero, r3.x
+	min r3.x, one,  r3.x
+
+	ifu skinned
+		; light * shade
+		mul r4.x,   params.y, inclr.w
+		mul r4.xyz, skinLight.xyz, r4.xxx
+	.else
+		; r4 = (light, weight), both 0..1
+		mul r4, params.yyyy, inclr
+		; r5 = 1 + weight * (dayLight - 1)
+		mul r5.xyz, dayDelta, r4.www
+		add r5.xyz, one, r5.xyz
+		mul r4.xyz, r4.xyz, r5.xyz
+		; ambient occlusion: * (1 - fract(w / 256) * strength)
+		mul r9.x, consts.z, inpos.w
+		flr r9.y, r9.x
+		add r9.x, r9.x, -r9.y
+		mul r9.x, fx.w, r9.x
+		add r9.x, consts.y, -r9.x
+		mul r4.xyz, r4.xyz, r9.xxx
+	.end
+
+	mov r4.w, r3.x
+	mov outclr, r4
+
+	end
+.end

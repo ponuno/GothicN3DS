@@ -9,7 +9,13 @@ shader:
     python3 scripts/shbin2h.py world.shbin platform/3ds/world_shbin.h world_shbin
 
 and likewise world_plain.v.pica -> world_plain_shbin.h (world_plain_shbin),
-the fallback shader without characters.
+the fallback shader without characters, and world_fade.v.pica -> world_fade_shbin.h.
+
+The default shader is two source files assembled into one binary (two DVLEs
+sharing one code blob; the order of the files is the order of the entries):
+
+    picasso -o world_fast.shbin platform/3ds/world_full.v.pica platform/3ds/world_fast.v.pica
+    python3 scripts/shbin2h.py world_fast.shbin platform/3ds/world_fast_shbin.h world_fast_shbin
 """
 import struct
 import sys

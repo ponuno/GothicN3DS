@@ -86,7 +86,7 @@ const Item kControls[] = {
     {"Скорость камеры", RANGE, &Settings::cameraSpeed, nullptr, 1, 1, 10, "", 0, nullptr, nullptr},
     {"Инверсия по вертикали", TOGGLE, &Settings::invertY, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr},
     {"Камера за героем", TOGGLE, &Settings::autoCamera, nullptr, 0, 0, 0, nullptr, 0, "Камера заходит за спину на бегу", nullptr},
-    {"Вид от первого лица", TOGGLE, &Settings::firstPerson, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr},
+    {"Вид от первого лица", TOGGLE, &Settings::firstPerson, nullptr, 0, 0, 0, nullptr, 0, "Выкл — камера за героем", nullptr},
 };
 const Item kInterface[] = {
     {"Язык / Language", CHOICE, &Settings::language, kLanguages, 4, 0, 0, nullptr, 0, "Тексты игры берутся из её данных", nullptr},

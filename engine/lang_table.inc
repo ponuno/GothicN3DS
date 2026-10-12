@@ -58,6 +58,7 @@ const Entry kEntries[] = {
     {{"Взять", "Take", "Weź", "Nehmen"}},
     {{"Взять всё", "Take all", "Weź wszystko", "Alles nehmen"}},
     {{"Вид от первого лица", "First-person view", "Widok z pierwszej osoby", "Ego-Perspektive"}},
+    {{"Выкл — камера за героем", "Off: camera behind the hero", "Wył.: kamera za bohaterem", "Aus: Kamera hinter dem Helden"}},
     {{"Вкл", "On", "Wł.", "An"}},
     {{"Влево", "Left", "W lewo", "Links"}},
     {{"Восприятие жителей", "Inhabitants' perception", "Percepcja mieszkańców", "Wahrnehmung der Bewohner"}},

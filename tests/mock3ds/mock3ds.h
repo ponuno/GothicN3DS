@@ -30,6 +30,7 @@ struct Counters {
 	// was busy with the previous frame.
 	unsigned drawsWhileBusy;
 	unsigned texUnit1Binds;       // C3D_TexBind on unit 1 (only the dissolve uses it)
+	unsigned programSwitches;     // C3D_BindProgram that changed the entry point
 };
 
 Counters& counters();
@@ -55,6 +56,7 @@ struct DrawCall {
 	unsigned count;
 	float uniforms[96][4]; // float registers c0..c95: x y z w
 	uint16_t bools;        // bool registers b0..b15
+	int entry;             // the DVLE (entry point of the shader binary) of the program bound for the draw
 };
 typedef void (*DrawHook)(const DrawCall& call, void* user);
 // Called for every C3D_DrawElements issued inside a frame.
@@ -77,5 +79,9 @@ const char* shaderProblem();
 // Float registers the shader's uniforms and constants occupy (of 96).
 unsigned shaderFloatRegisters();
 unsigned shaderInstructions();
+// The DVLEs of the binary (entry points of the one code blob), and the
+// instructions of one of them.
+unsigned shaderEntries();
+unsigned shaderEntryInstructions(unsigned entry);
 
 } // namespace mock3ds

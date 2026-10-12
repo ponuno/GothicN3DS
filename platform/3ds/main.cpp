@@ -48,12 +48,16 @@
 //   X  no frame pacer (fixed object distances, never 30 fps)
 //   Y  citro3d's own frame order: the GPU waits while the CPU issues the draws
 //   A  first person from the start (sets the menu's "Вид от первого лица")
-//   R  the vertex shader of the versions before characters; no character at all
+//   R  the vertex shader of the versions before characters; no character at all (the view is first person
+//      for this run only: the menu's setting is not changed)
 //   SELECT   the inhabitants are not drawn (the scripts run all the same)
 //   D-Pad Up the inhabitants only stand where their routine has them: no
 //            states, no walking - as in the version before they lived
 //   ZL       whole chunks are drawn, as before they were cut into clusters
 //            (what the clusters save shows in "tris" and "gpu")
+//   ZR       the picture is squeezed into half the screen: half the pixels, the same triangles
+//   ZL+ZR    (both: neither of the two above) the vertex shader of the version before the fast one
+//            (world.v.pica: projection and view apart, one code for everything), to compare
 //   D-Pad Down  steady objects (sets the menu's "Объекты: Устойчиво")
 //   D-Pad Left  nobody perceives anything (sets the menu's "Восприятие: Выкл")
 //   D-Pad Right objects appear at once, without dissolving (the menu's
@@ -177,7 +181,10 @@ int main(int, char**) {
 	const bool plainShader = (startKeys & KEY_R) != 0;
 	const bool nobody = (startKeys & KEY_SELECT) != 0; // the scripts run, their people are not drawn
 	const bool standing = (startKeys & KEY_DUP) != 0;  // they stand: no states, no walking
-	const bool wholeChunks = (startKeys & KEY_ZL) != 0; // no culling inside chunks
+	const bool zl = (startKeys & KEY_ZL) != 0, zr = (startKeys & KEY_ZR) != 0;
+	const bool classicShader = zl && zr;           // both: the earlier shader, to compare with the fast one
+	const bool wholeChunks = zl && !zr;            // no culling inside chunks
+	const bool halfPicture = zr && !zl;            // half the pixels, the same triangles
 	const bool steadyKey = (startKeys & KEY_DDOWN) != 0; // objects drawn farther, never taken away by the pacer
 	const bool blind = (startKeys & KEY_DLEFT) != 0;     // no perception
 	g3::Settings settings;
@@ -187,8 +194,9 @@ int main(int, char**) {
 	const bool dissolve = settings.dissolve && !(startKeys & KEY_DRIGHT);
 	gfx::c3dSetClassicFrames(classic);
 	gfx::c3dSetPlainShader(plainShader);
+	gfx::c3dSetClassicShader(classicShader);
 	gfx::c3dSetDoubleDraws((startKeys & KEY_START) != 0); // hold START at start: every draw twice
-	gfx::c3dSetFillTest((startKeys & KEY_ZR) != 0); // hold ZR at start: half the pixels, the same triangles
+	gfx::c3dSetFillTest(halfPicture); // hold ZR at start: half the pixels, the same triangles
 	gfx::c3dSetFadeShader(dissolve);
 
 	App& app = gApp;
@@ -234,11 +242,12 @@ int main(int, char**) {
 	// a settings.bin that is not there yet.
 	if (!hadSettings && hadState) settings.drawMetres = g3::u8(g3::clamp(int(app.drawDistance() / 1000.0f + 0.5f) * 10, 40, 200));
 	if (steadyKey) settings.objects = g3::OBJECTS_STEADY;
-	if ((startKeys & KEY_A) || plainShader) settings.firstPerson = 1;
+	if (startKeys & KEY_A) settings.firstPerson = 1;
 	if (blind) settings.perception = 0;
 	if (standing) settings.life = 0;
 	app.settings() = settings;
 	app.applySettings();
+	if (plainShader) app.setThirdPerson(false); // (no character is drawn; for this run only, the menu keeps its setting)
 	app.setStatePath(kStatePath);
 	if (nobody || plainShader) app.npcs().config().maxShown = 0;
 	printf("loading...\n");
@@ -586,7 +595,7 @@ int main(int, char**) {
 			reportLine("lod %2lu cl %5lu tris  pacer %s%s%s%s", static_cast<unsigned long>(ws.lodChunks),
 			     static_cast<unsigned long>(ws.lodTriangles), pacing ? "on" : "off", fs.overlapped ? " ovl" : "",
 			     app.settings().objects == g3::OBJECTS_STEADY ? " ST" : app.settings().objects == g3::OBJECTS_BALANCED ? " BAL" : "",
-			     (startKeys & KEY_ZR) ? " HALF" : (startKeys & KEY_START) ? " DBL" : "");
+			     halfPicture ? " HALF" : (startKeys & KEY_START) ? " DBL" : "");
 			// ... and the far layer: its triangles and draw calls ('-': not in data.pak, bake with --far-lod;
 			// 'o': in it, but off in the menu).
 			// ... and the baked visibility: clusters (and chunks) not drawn because the table says they are hidden
@@ -640,8 +649,10 @@ int main(int, char**) {
 				static const char* const kRoles[g3::Hero::ROLE_COUNT] = {"stand", "run",   "walk",  "back", "step",
 				                                                         "turn",  "jump",  "fall",  "swim", "float",
 				                                                         "attack", "parry", "hit", "down", "draw", "use", "climb"};
-				reportLine("hero %-5s %3.0f cm/s %s%s cam %s", kRoles[hero.role()], double(hero.speed()),
-				     hero.walking() ? "walk " : "", app.thirdPerson() ? "3rd" : "1st", app.cameraSet().fromGame ? "game" : "own");
+				// F: the fast shader; C: the classic one (ZL+ZR at start); D: with the dissolve; sw: changes of program in the frame.
+				reportLine("hero %-5s %3.0f cm/s %s%s cam %s %c sw%lu", kRoles[hero.role()], double(hero.speed()),
+				     hero.walking() ? "walk " : "", app.thirdPerson() ? "3rd" : "1st", app.cameraSet().fromGame ? "game" : "own",
+				     gfx::c3dFastShader() ? 'F' : classicShader ? 'C' : 'D', static_cast<unsigned long>(fs.programSwitches));
 			} else {
 				reportLine("hero: none in data.pak");
 			}

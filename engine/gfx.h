@@ -51,6 +51,7 @@ struct MemStats {
 // What the backend made of the last finished frame.
 struct FrameStats {
 	u32 drawsDropped;     // draw calls skipped because the GPU command buffer was full
+	u32 programSwitches;  // changes between the fast and the full vertex shader in the frame (console only)
 	float commandBufferUse; // 0..1, share of the GPU command buffer the frame needed
 	// Timing; all zero where the backend has no display to keep pace with.
 	float frameMs; // from the previous frame's display sync to this one's: what the player sees

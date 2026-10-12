@@ -19,6 +19,7 @@
 #include "gfx_c3d.h"
 
 #include "world_fade_shbin.h"
+#include "world_fast_shbin.h"
 #include "world_plain_shbin.h"
 #include "world_shbin.h"
 
@@ -52,12 +53,21 @@ namespace {
 
 C3D_RenderTarget* gTarget = nullptr;
 DVLB_s* gDvlb = nullptr;
-shaderProgram_s gProgram;
-bool gProgramReady = false;
+shaderProgram_s gProgram;     // the full shader (entry `main`); with the classic, plain and fade ones the only program
+shaderProgram_s gProgramFast; // the fast shader (entry `fastmain` of the same binary), when gMvpShader
+bool gProgramReady = false, gProgramFastReady = false;
 bool gReady = false; // C3D_Init succeeded
 int gLocProjection = -1, gLocModelView = -1, gLocChunk = -1, gLocParams = -1, gLocDayDelta = -1, gLocTexOffset = -1;
 int gLocSkinLight = -1, gLocBones = -1, gLocSkinned = -1, gLocFading = -1;
 int gLocFx = -1, gLocWindy = -1; // Graphics+ (not in the plain shader)
+// The shader with the combined matrix (world_full / world_fast.v.pica): mvp and fogRow stand for projection and
+// modelView, lightK and aoK are the fast entry's own forms of dayDelta and the occlusion strength.
+int gLocMvp = -1, gLocFogRow = -1, gLocLightK = -1, gLocAoK = -1;
+bool gMvpShader = false;     // in use (not with the plain, fade or classic shader)
+bool gClassicShader = false; // asked for: the shader of earlier versions (world.v.pica), projection and view apart
+bool gOnFast = false;        // the fast entry is the bound program
+float gViewDepthRow[4] = {0, 0, 1, 0}; // modelView's third row: the fog is worked out from it
+u32 gProgramSwitches = 0;    // this frame's changes of the program
 bool gSkinned = false; // last value of the shader's `skinned` switch
 // Graphics+: the last `fx` uniform sent, and the `windy` switch - on for a
 // material with MATF_WIND while the chunk's wind is not zero.
@@ -235,6 +245,7 @@ void setFxUniform(float x, float y, float z, float w) {
 	gFx[2] = z;
 	gFx[3] = w;
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocFx, x, y, z, w);
+	if (gMvpShader) C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocAoK, w / 256.0f, 0.0f, 0.0f, 0.0f);
 }
 
 void updateWindy() {
@@ -242,6 +253,56 @@ void updateWindy() {
 	if (on == gWindy) return;
 	gWindy = on;
 	C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWindy, on);
+}
+
+// The shader with the combined matrix. A C3D_Mtx holds rows; its components are named, whatever order citro3d keeps them in.
+float rowComponent(const C3D_FVec& v, int j) { return j == 0 ? v.x : j == 1 ? v.y : j == 2 ? v.z : v.w; }
+
+// projection and modelView: to the two uniforms of the earlier shaders, or multiplied, to mvp. `view` = true:
+// the view's depth row is kept for the fog (the overlay's identity is not a view).
+void setMatrices(const C3D_Mtx& proj, const C3D_Mtx& mv, bool view) {
+	if (!gMvpShader) {
+		C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocProjection, &proj);
+		C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocModelView, &mv);
+		return;
+	}
+	C3D_Mtx mvp;
+	for (int i = 0; i < 4; ++i) {
+		float row[4];
+		for (int j = 0; j < 4; ++j) {
+			float sum = 0.0f;
+			for (int k = 0; k < 4; ++k) sum += rowComponent(proj.r[i], k) * rowComponent(mv.r[k], j);
+			row[j] = sum;
+		}
+		mvp.r[i].x = row[0];
+		mvp.r[i].y = row[1];
+		mvp.r[i].z = row[2];
+		mvp.r[i].w = row[3];
+	}
+	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocMvp, &mvp);
+	if (view)
+		for (int j = 0; j < 4; ++j) gViewDepthRow[j] = rowComponent(mv.r[2], j);
+}
+
+// The fog factor, before the clamp, as one dot product with the position: fogA - fogB * viewDepth.
+void setFogRow(float fogA, float fogB) {
+	if (!gMvpShader) return;
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocFogRow, -fogB * gViewDepthRow[0], -fogB * gViewDepthRow[1], -fogB * gViewDepthRow[2],
+	              fogA - fogB * gViewDepthRow[3]);
+}
+
+// dayLight - 1; the fast entry wants it divided by 255 twice (see world_fast.v.pica).
+void setDayDelta(float x, float y, float z) {
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocDayDelta, x, y, z, 0.0f);
+	if (gMvpShader) C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocLightK, x / 65025.0f, y / 65025.0f, z / 65025.0f, 0.0f);
+}
+
+// The fast entry draws the static world, the full one characters and what sways.
+void useProgram(bool fast) {
+	if (!gMvpShader || fast == gOnFast) return;
+	gOnFast = fast;
+	C3D_BindProgram(fast ? &gProgramFast : &gProgram);
+	++gProgramSwitches;
 }
 
 // The GPU executes a frame's command list after C3D_FrameEnd returns, so
@@ -303,17 +364,56 @@ bool init() {
 	if (!gTarget) return false;
 	C3D_RenderTargetSetOutput(gTarget, GFX_TOP, GFX_LEFT, DISPLAY_TRANSFER_FLAGS);
 
-	gDvlb = gPlainShader  ? DVLB_ParseFile(reinterpret_cast<u32*>(world_plain_shbin), world_plain_shbin_size)
-	        : gFadeShader ? DVLB_ParseFile(reinterpret_cast<u32*>(world_fade_shbin), world_fade_shbin_size)
-	                      : DVLB_ParseFile(reinterpret_cast<u32*>(world_shbin), world_shbin_size);
-	if (!gDvlb) return false;
-	shaderProgramInit(&gProgram);
-	shaderProgramSetVsh(&gProgram, &gDvlb->DVLE[0]);
+	gMvpShader = false;
+	gOnFast = false;
+	// The two-entry shader first; if it cannot be had (or its entries disagree about where the uniforms are)
+	// the shader of earlier versions takes over.
+	if (!gPlainShader && !gFadeShader && !gClassicShader) {
+		gDvlb = DVLB_ParseFile(reinterpret_cast<u32*>(world_fast_shbin), world_fast_shbin_size);
+		if (gDvlb) {
+			shaderProgramInit(&gProgram);
+			shaderProgramSetVsh(&gProgram, &gDvlb->DVLE[0]);
+			shaderProgramInit(&gProgramFast);
+			shaderProgramSetVsh(&gProgramFast, &gDvlb->DVLE[1]);
+			static const char* const kShared[] = {"mvp", "fogRow", "chunk", "params", "dayDelta", "texOffset", "lightK", "aoK", "fx"};
+			gMvpShader = true;
+			for (const char* name : kShared) {
+				const int a = shaderInstanceGetUniformLocation(gProgram.vertexShader, name);
+				gMvpShader = gMvpShader && a >= 0 && a == shaderInstanceGetUniformLocation(gProgramFast.vertexShader, name);
+			}
+			if (gMvpShader) {
+				gProgramFastReady = true;
+			} else {
+				shaderProgramFree(&gProgram);
+				shaderProgramFree(&gProgramFast);
+				DVLB_Free(gDvlb);
+				gDvlb = nullptr;
+			}
+		}
+	}
+	if (!gMvpShader) {
+		gDvlb = gPlainShader  ? DVLB_ParseFile(reinterpret_cast<u32*>(world_plain_shbin), world_plain_shbin_size)
+		        : gFadeShader ? DVLB_ParseFile(reinterpret_cast<u32*>(world_fade_shbin), world_fade_shbin_size)
+		                      : DVLB_ParseFile(reinterpret_cast<u32*>(world_shbin), world_shbin_size);
+		if (!gDvlb) return false;
+		shaderProgramInit(&gProgram);
+		shaderProgramSetVsh(&gProgram, &gDvlb->DVLE[0]);
+	}
 	gProgramReady = true;
 	C3D_BindProgram(&gProgram);
 
-	gLocProjection = shaderInstanceGetUniformLocation(gProgram.vertexShader, "projection");
-	gLocModelView = shaderInstanceGetUniformLocation(gProgram.vertexShader, "modelView");
+	gLocProjection = gLocModelView = gLocMvp = gLocFogRow = gLocLightK = gLocAoK = -1;
+	if (gMvpShader) {
+		gLocMvp = shaderInstanceGetUniformLocation(gProgram.vertexShader, "mvp");
+		gLocFogRow = shaderInstanceGetUniformLocation(gProgram.vertexShader, "fogRow");
+		gLocLightK = shaderInstanceGetUniformLocation(gProgram.vertexShader, "lightK");
+		gLocAoK = shaderInstanceGetUniformLocation(gProgram.vertexShader, "aoK");
+		if (gLocMvp < 0 || gLocFogRow < 0 || gLocLightK < 0 || gLocAoK < 0) return false;
+		gLocProjection = gLocModelView = 0; // (stand-ins for the check below; the matrices go to mvp)
+	} else {
+		gLocProjection = shaderInstanceGetUniformLocation(gProgram.vertexShader, "projection");
+		gLocModelView = shaderInstanceGetUniformLocation(gProgram.vertexShader, "modelView");
+	}
 	gLocChunk = shaderInstanceGetUniformLocation(gProgram.vertexShader, "chunk");
 	gLocParams = shaderInstanceGetUniformLocation(gProgram.vertexShader, "params");
 	gLocDayDelta = shaderInstanceGetUniformLocation(gProgram.vertexShader, "dayDelta");
@@ -382,6 +482,7 @@ void shutdown() {
 		gNoiseReady = false;
 		gLocFading = gLocFx = gLocWindy = -1;
 		if (gProgramReady) shaderProgramFree(&gProgram);
+		if (gProgramFastReady) shaderProgramFree(&gProgramFast);
 		if (gDvlb) DVLB_Free(gDvlb);
 	}
 	// (Only ever allocated after citro3d was up, and freed after it is down:
@@ -396,7 +497,8 @@ void shutdown() {
 	free(gDeadMeshes.items);
 	gDeadTextures = {};
 	gDeadMeshes = {};
-	gProgramReady = false;
+	gProgramReady = gProgramFastReady = false;
+	gMvpShader = gOnFast = false;
 	gDvlb = nullptr;
 	gTarget = nullptr;
 	gReady = false;
@@ -547,17 +649,18 @@ void frameBegin(const FrameDesc& f) {
 	// this: the GPU still worked on what it cut away.)
 	if (gFillTest) C3D_SetViewport(0, 0, gTarget->frameBuf.width, gTarget->frameBuf.height / 2);
 	C3D_BindProgram(&gProgram);
+	gOnFast = false;
+	gProgramSwitches = 0;
 
 	// Mtx_PerspTilt handles the sideways screen and PICA's -1..0 depth range.
 	C3D_Mtx proj;
 	Mtx_PerspTilt(&proj, f.fovY, C3D_AspectRatioTop, f.zNear, f.zFar, true);
-	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocProjection, &proj);
 	// One view matrix for the whole frame; chunks only differ in `chunk`.
 	const EyeFrame ef = eyeFrame(f.view, f.eye);
 	memcpy(gAnchor, ef.anchor, sizeof(gAnchor));
 	C3D_Mtx mv;
 	toC3D(ef.view, &mv);
-	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocModelView, &mv);
+	setMatrices(proj, mv, true);
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, 0.0f, 0.0f, 0.0f, 1.0f);
 	gParams[0] = gParams[1] = gParams[2] = gParams[3] = -1.0f; // unknown: the first chunk sends them
 	if (!gPlainShader) C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocSkinned, false);
@@ -566,6 +669,7 @@ void frameBegin(const FrameDesc& f) {
 	if (gLocFx >= 0) {
 		gFx[0] = gFx[1] = gFx[2] = gFx[3] = 0.0f;
 		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocFx, 0.0f, 0.0f, 0.0f, 0.0f);
+		if (gMvpShader) C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocAoK, 0.0f, 0.0f, 0.0f, 0.0f);
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWindy, false);
 	}
 	gWindy = gMaterialWind = gChunkWind = false;
@@ -573,7 +677,7 @@ void frameBegin(const FrameDesc& f) {
 	// Start every frame from a known state; from here on only changes are sent.
 	setStage0(true, 255);
 	setFogStage(false);
-	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocDayDelta, f.dayLight[0] - 1.0f, f.dayLight[1] - 1.0f, f.dayLight[2] - 1.0f, 0.0f);
+	setDayDelta(f.dayLight[0] - 1.0f, f.dayLight[1] - 1.0f, f.dayLight[2] - 1.0f);
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocTexOffset, 0.0f, 0.0f, 0.0f, 0.0f);
 	gTexOffset[0] = gTexOffset[1] = 0.0f;
 	gPass = PASS_SKY; // force setPass to apply the world state
@@ -633,6 +737,7 @@ static void setParams(float uvScale) {
 	if (memcmp(params, gParams, sizeof(params)) != 0) {
 		memcpy(gParams, params, sizeof(params));
 		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocParams, params[0], params[1], params[2], params[3]);
+		setFogRow(fogA, fogB);
 	}
 }
 
@@ -710,6 +815,8 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 		return;
 	}
 	setSkinned(false);
+	// What sways is the full shader's (its vertices carry the sway in w, which the fast one does not know).
+	useProgram(!gMaterialWind);
 	if (m != gBoundMesh) {
 		C3D_SetBufInfo(&m->buf);
 		gBoundMesh = m;
@@ -738,6 +845,7 @@ void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin) 
 			C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocBones + int(b) * 3 + r, row[r * 4], row[r * 4 + 1], row[r * 4 + 2], row[r * 4 + 3]);
 	}
 	setSkinned(true);
+	useProgram(false);
 	if (m != gBoundMesh) {
 		C3D_SetBufInfo(&m->buf);
 		gBoundMesh = m;
@@ -797,24 +905,25 @@ static void beginUi(Texture* t) {
 	setBlend(BLEND_ALPHA);
 	if (gFogToBlack) setFogStage(false);
 	setSkinned(false);
+	useProgram(true);
 	setTexOffset(0.0f, 0.0f);
 	setFxUniform(0.0f, 0.0f, 0.0f, 0.0f);
 	gMaterialWind = gChunkWind = false;
 	updateWindy();
 	C3D_Mtx proj, identity;
 	Mtx_OrthoTilt(&proj, 0.0f, float(SCREEN_W), float(SCREEN_H), 0.0f, -1.0f, 1.0f, true);
-	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocProjection, &proj);
 	memset(&identity, 0, sizeof(identity));
 	identity.r[0].x = identity.r[1].y = identity.r[2].z = identity.r[3].w = 1.0f;
-	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, gLocModelView, &identity);
+	setMatrices(proj, identity, false);
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, 0.0f, 0.0f, 0.0f, 1.0f);
-	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocDayDelta, 0.0f, 0.0f, 0.0f, 0.0f);
+	setDayDelta(0.0f, 0.0f, 0.0f);
 	const float uvScale = t ? 1.0f / (16.0f * float(t->tex.width)) : 0.0f;
 	gParams[0] = uvScale;
 	gParams[1] = 1.0f / 255.0f;
 	gParams[2] = 1.0f;
 	gParams[3] = 0.0f;
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocParams, gParams[0], gParams[1], gParams[2], gParams[3]);
+	setFogRow(1.0f, 0.0f); // (never fogged)
 }
 
 void uiDraw(Texture* t, const UiQuad* quads, u32 count) {
@@ -879,6 +988,7 @@ void frameEnd() {
 	osTickCounterUpdate(&gCpuClock);
 	gFrameStats.cpuMs = float(osTickCounterRead(&gCpuClock));
 	gFrameStats.drawsDropped = gDropped;
+	gFrameStats.programSwitches = gProgramSwitches;
 	gFrameStats.overlapped = !gClassic;
 	if (gClassic) {
 		// With flags = 0 citro3d flushes the whole linear heap out of the CPU
@@ -923,6 +1033,12 @@ void c3dSetPlainShader(bool plain) {
 }
 
 bool c3dPlainShader() { return gPlainShader; }
+
+void c3dSetClassicShader(bool classic) {
+	if (!gReady) gClassicShader = classic;
+}
+
+bool c3dFastShader() { return gMvpShader; }
 
 void c3dSetFadeShader(bool fade) {
 	if (!gReady) gFadeShader = fade;

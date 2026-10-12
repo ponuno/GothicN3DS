@@ -145,10 +145,29 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 	}
 	result.missingTextures = missing;
 
+	// ---- --simplify: fewer triangles (parts cut out of a texture stay) ----
+	std::vector<SrcModelPart> simplifiedParts;
+	const std::vector<SrcModelPart>* srcParts = &model.parts;
+	if (opt.simplifyModels.enabled && !model.parts.empty()) {
+		simplifiedParts = model.parts;
+		std::vector<bool> skip(simplifiedParts.size(), false);
+		for (size_t i = 0; i < simplifiedParts.size(); ++i) {
+			const std::string& tex = simplifiedParts[i].material.texture;
+			skip[i] = !tex.empty() && textureAlpha[tex];
+		}
+		ModelSimplifyStats ss;
+		simplifyModelParts(simplifiedParts, skip, opt.simplifyModels, ss);
+		if (ss.simplified) {
+			line("simplified (--simplify): " + std::to_string(ss.simplified) + " of " + std::to_string(ss.parts) + " parts, " +
+			     std::to_string(ss.before) + " -> " + std::to_string(ss.after) + " triangles");
+			srcParts = &simplifiedParts;
+		}
+	}
+
 	// ---- mesh: bounds, then parts by texture and bone palette ----
 	float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
 	size_t triangles = 0;
-	for (const SrcModelPart& part : model.parts) {
+	for (const SrcModelPart& part : (*srcParts)) {
 		if (part.verts.size() % 3) throw std::runtime_error("model '" + model.name + "': a part is not a triangle list");
 		triangles += part.verts.size() / 3;
 		for (const SrcSkinVertex& v : part.verts) {
@@ -162,7 +181,7 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 	}
 	// No mesh at all is a skeleton with its animations; a mesh without
 	// triangles is a mistake.
-	if (triangles == 0 && !model.parts.empty()) throw std::runtime_error("model '" + model.name + "' has no triangles");
+	if (triangles == 0 && !(*srcParts).empty()) throw std::runtime_error("model '" + model.name + "' has no triangles");
 	if (triangles == 0) {
 		if (model.clips.empty()) throw std::runtime_error("model '" + model.name + "' has neither mesh nor animations");
 		for (int a = 0; a < 3; ++a) mn[a] = mx[a] = 0.0f;
@@ -179,7 +198,7 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 	// Source parts that draw the same way are one group; a group is cut
 	// wherever its triangles need more bones than one draw call can address.
 	std::map<std::pair<u32, u16>, std::vector<const SrcModelPart*>> groups;
-	for (const SrcModelPart& part : model.parts) {
+	for (const SrcModelPart& part : (*srcParts)) {
 		const u32 tex = part.material.texture.empty() ? 0 : textureHash[part.material.texture];
 		u16 flags = 0;
 		if (tex == 0) flags |= MATF_NO_TEXTURE;

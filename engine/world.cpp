@@ -1217,14 +1217,21 @@ void World::classify(const Loaded& l, u32 index, bool count) {
 	}
 }
 
-void World::drawBatches(Loaded& l, bool blended) {
+void World::drawBatches(Loaded& l, bool blended, int phase) {
 	const u32 ms = _timeMs;
 	bool transformSet = false;
 	// A chunk that was not drawn the frame before (it has just come into view,
 	// or just been loaded) shows its objects as they are, without dissolving;
-	// so does the translucent pass.
-	const bool snap = blended || _fadeStep >= 255 || l.drawnFrame + 1 != _drawFrame;
-	if (!blended) l.drawnFrame = _drawFrame;
+	// so does the translucent pass. (The second pass over a chunk takes the first one's answer.)
+	bool snap;
+	if (phase == 2) {
+		snap = l.snapNow;
+	} else {
+		snap = blended || _fadeStep >= 255 || l.drawnFrame + 1 != _drawFrame;
+		l.snapNow = snap;
+		l.windBatches = 0;
+		if (!blended) l.drawnFrame = _drawFrame;
+	}
 	u8 runShown = 255;
 	// A culled stretch this short between two runs of a material is drawn
 	// along with them: a draw call costs the GPU about what 300 triangles do
@@ -1271,6 +1278,12 @@ void World::drawBatches(Loaded& l, bool blended) {
 		Batch& batch = l.batches[b];
 		const WorldMaterial& m = _materials[batch.material];
 		if (((m.flags & MATF_TRANSLUCENT) != 0) != blended || batch.indexCount == 0) continue;
+		// What sways is drawn after everything else: on the console it is a different vertex shader, and a change
+		// of shader between two draw calls costs more than the calls do.
+		if (phase != 0 && ((m.flags & MATF_WIND) != 0) != (phase == 2)) {
+			l.windBatches += phase == 1;
+			continue;
+		}
 		// A chunk far enough away shows its simplified stand-ins in place of the batches they replace.
 		const u32 c = batch.cluster < l.clusterCount ? batch.cluster : 0u;
 		if (batch.lodMode != BATCH_LOD_BOTH && batch.lodMode != (l.clusters[c].lod ? BATCH_LOD_FAR_ONLY : BATCH_LOD_FULL_ONLY)) continue;
@@ -1439,11 +1452,15 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	for (u32 k = 0; k < n; ++k) {
 		Loaded& l = _loaded[_order[k]];
 		classify(l, _order[k], true);
-		drawBatches(l, false);
+		drawBatches(l, false, 1);
 		++_stats.chunksDrawn;
 		_stats.trianglesInChunks += l.triangles;
 	}
 	if (farActive()) drawFar(whole);
+	for (u32 k = 0; k < n; ++k) {
+		Loaded& l = _loaded[_order[k]];
+		if (l.windBatches) drawBatches(l, false, 2);
+	}
 }
 
 bool World::farCovered(u32 firstChunk, u32 count) const {

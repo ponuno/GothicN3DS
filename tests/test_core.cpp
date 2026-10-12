@@ -7211,6 +7211,242 @@ static void testLod() {
 	testLodWith(true);
 }
 
+// ---- fewer triangles in everything (--simplify) ----
+
+// A gentle hill whose far half is medium objects (another detail class), in the chunker's own cells.
+static SrcScene simplifyScene() {
+	SrcScene scene = hillScene(true);
+	for (size_t t = 0; t < scene.triangles.size(); ++t) {
+		float cx = 0;
+		for (int k = 0; k < 3; ++k) cx += scene.triangles[t].v[k].pos[0] / 3.0f;
+		if (cx >= 4000.0f) scene.triangles[t].detail = DETAIL_MEDIUM;
+	}
+	return scene;
+}
+
+static void testSimplifyWorld() {
+	const SrcScene scene = simplifyScene();
+	ChunkerOptions co;
+	co.chunkSize = 4000.0f;
+	co.minTierTriangles = 1; // (the medium half is its own chunks)
+	ChunkerStats cs;
+	std::vector<BakedChunk> chunks = buildChunks(scene, {0}, {0}, co, cs);
+	CHECK(chunks.size() >= 4);
+	WorldMaterial mat {};
+	const std::vector<WorldMaterial> materials = {mat};
+	const std::vector<BakedChunk> original = chunks;
+	std::vector<u32> originalCollision;
+	for (const BakedChunk& c : original) {
+		ChunkCollider cc;
+		CHECK(cc.build(c.header, c.batches.data(), c.vertices.data(), c.indices.data(), materials.data(), MATF_NO_COLLISION, 0));
+		originalCollision.push_back(cc.triangleCount);
+		cc.release();
+	}
+	SimplifyOptions so;
+	so.enabled = true;
+	so.ratio = 0.5f;
+	so.threads = 2;
+	SimplifyStats ss;
+	buildSimplified(chunks, materials, so, ss);
+	std::printf("  simplify: %llu -> %llu triangles in %u of %u chunks, vertices %llu -> %llu\n", static_cast<unsigned long long>(ss.trianglesBefore),
+	            static_cast<unsigned long long>(ss.trianglesAfter), ss.chunks, ss.candidates, static_cast<unsigned long long>(ss.verticesBefore),
+	            static_cast<unsigned long long>(ss.verticesAfter));
+	CHECK(ss.chunks >= 4 && ss.trianglesAfter * 10 < ss.trianglesBefore * 7);
+	CHECK(ss.verticesAfter < ss.verticesBefore); // (what nothing uses any more is dropped)
+	auto placeOf = [](const BakedChunk& c, u32 v) {
+		return (u64(u16(c.vertices[v].x)) << 32) | (u64(u16(c.vertices[v].y)) << 16) | u64(u16(c.vertices[v].z));
+	};
+	for (size_t ci = 0; ci < chunks.size(); ++ci) {
+		const BakedChunk& c = chunks[ci];
+		const BakedChunk& o = original[ci];
+		CHECK(c.header.vertexCount == c.vertices.size() && c.header.batchCount == c.batches.size() && c.header.indexCount == c.indices.size());
+		std::set<u64> before;
+		for (u32 v = 0; v < o.vertices.size(); ++v) before.insert(placeOf(o, v));
+		// Every batch is a range inside the indices, with its own box, and nothing new was made: every place was there before.
+		u32 expect = 0;
+		for (const ChunkBatch& b : c.batches) {
+			CHECK(b.firstIndex == expect && b.indexCount % 3 == 0);
+			expect += b.indexCount;
+			for (u32 i = 0; i < b.indexCount; ++i) {
+				const u16 vi = c.indices[b.firstIndex + i];
+				CHECK(vi < c.vertices.size() && before.count(placeOf(c, vi)) == 1);
+				const i16 p[3] = {c.vertices[vi].x, c.vertices[vi].y, c.vertices[vi].z};
+				for (int d = 0; d < 3; ++d) CHECK(p[d] >= b.bbMin[d] && p[d] <= b.bbMax[d]);
+			}
+		}
+		CHECK(expect == c.indices.size());
+		// The border of each detail class's triangles is where it was: no crack towards a neighbour, and the other
+		// class (drawn or not as the camera moves) fits as before.
+		auto borders = [&](const BakedChunk& k) {
+			std::map<u8, std::map<std::pair<u64, u64>, int>> perClass;
+			for (const ChunkBatch& b : k.batches)
+				for (u32 i = 0; i + 2 < b.indexCount; i += 3)
+					for (int e = 0; e < 3; ++e) {
+						const u64 a = placeOf(k, k.indices[b.firstIndex + i + u32(e)]), d = placeOf(k, k.indices[b.firstIndex + i + u32((e + 1) % 3)]);
+						++perClass[u8(b.detail & 3)][{std::min(a, d), std::max(a, d)}];
+					}
+			std::map<u8, std::set<std::pair<u64, u64>>> out;
+			for (const auto& cls : perClass)
+				for (const auto& kv : cls.second)
+					if (kv.second == 1) out[cls.first].insert(kv.first);
+			return out;
+		};
+		CHECK(borders(c) == borders(o));
+		// The collision mesh is the simplified one.
+		ChunkCollider cc;
+		CHECK(cc.build(c.header, c.batches.data(), c.vertices.data(), c.indices.data(), materials.data(), MATF_NO_COLLISION, 0));
+		CHECK(cc.triangleCount > 0 && cc.triangleCount < originalCollision[ci]);
+		cc.release();
+	}
+	// Water, glass and cut-out leaves are left as they are.
+	{
+		std::vector<BakedChunk> kept = original;
+		WorldMaterial leaf {};
+		leaf.flags = MATF_ALPHA_TEST;
+		SimplifyStats none;
+		buildSimplified(kept, {leaf}, so, none);
+		CHECK(none.chunks == 0);
+		for (size_t ci = 0; ci < kept.size(); ++ci) CHECK(kept[ci].indices == original[ci].indices);
+	}
+	// Through the baker, into an archive the engine draws from.
+	const std::string plain = gDir + "/simplify_off.pak", lean = gDir + "/simplify_on.pak";
+	for (int on = 0; on < 2; ++on) {
+		std::vector<BakeWorld> worlds(1);
+		worlds[0].name = "h";
+		worlds[0].scene = scene;
+		BakeOptions opt;
+		opt.chunker.chunkSize = 4000.0f;
+		opt.tex.maxSize = 32;
+		opt.tex.quality = 0;
+		opt.threads = 2;
+		opt.quiet = true;
+		opt.simplify.enabled = on != 0;
+		PakWriter pak;
+		const BakeResult r = bakeWorlds(worlds, opt, pak);
+		if (on) CHECK(r.report.find("simplified geometry (--simplify)") != std::string::npos);
+		pak.write(on ? lean : plain);
+	}
+	gfx::init();
+	u32 drawn[2] = {0, 0};
+	for (int on = 0; on < 2; ++on) {
+		App app;
+		CHECK(app.init((on ? lean : plain).c_str(), "h"));
+		World& w = app.world();
+		app.setDrawDistance(20000.0f);
+		app.player().flying = true;
+		app.camera().yaw = 0.7f;
+		app.camera().pitch = -0.4f;
+		app.teleport({1000.0f, 1500.0f, 1000.0f});
+		w.preload(app.camera().pos);
+		for (int i = 0; i < 6; ++i) {
+			app.update(Input {}, 1.0f / 30.0f);
+			app.render();
+		}
+		drawn[on] = w.stats().trianglesDrawn;
+	}
+	std::printf("  simplify in the engine: %u triangles drawn, %u simplified\n", drawn[0], drawn[1]);
+	CHECK(drawn[0] > 0 && drawn[1] > 0 && drawn[1] * 10 < drawn[0] * 7);
+}
+
+// A tube of two bones, a hundred rings of sixteen: the weights change along it, and a part of it
+// is the cut-out kind.
+static SrcModelPart tubePart(int rings, int around, bool openEnds) {
+	SrcModelPart part;
+	part.material.name = "skin";
+	auto vertex = [&](int r, int a) {
+		SrcSkinVertex v {};
+		const float angle = float(a) * 6.2831853f / float(around);
+		v.pos[0] = 12.0f * std::cos(angle);
+		v.pos[1] = float(r) * 4.0f;
+		v.pos[2] = 12.0f * std::sin(angle);
+		v.normal[0] = std::cos(angle);
+		v.normal[1] = 0;
+		v.normal[2] = std::sin(angle);
+		v.uv[0] = float(a) / float(around);
+		v.uv[1] = float(r) / float(rings);
+		v.bone[0] = 0;
+		v.bone[1] = 1;
+		v.weight1 = float(r) / float(rings);
+		return v;
+	};
+	(void)openEnds;
+	for (int r = 0; r < rings; ++r)
+		for (int a = 0; a < around; ++a) {
+			const int a1 = (a + 1) % around;
+			SrcSkinVertex q[4] = {vertex(r, a), vertex(r, a1), vertex(r + 1, a1), vertex(r + 1, a)};
+			// (the seam of the texture: the last column has its own coordinates)
+			if (a == around - 1) {
+				q[1].uv[0] = 1.0f;
+				q[2].uv[0] = 1.0f;
+			}
+			const int idx[6] = {0, 2, 1, 0, 3, 2};
+			for (int k = 0; k < 6; ++k) part.verts.push_back(q[idx[k]]);
+		}
+	return part;
+}
+
+static void testSimplifyModel() {
+	std::vector<SrcModelPart> parts = {tubePart(100, 16, true), tubePart(2, 6, true)};
+	const std::vector<SrcModelPart> original = parts;
+	ModelSimplifyOptions mo;
+	mo.enabled = true;
+	mo.ratio = 0.5f;
+	ModelSimplifyStats ms;
+	simplifyModelParts(parts, std::vector<bool>(parts.size(), false), mo, ms);
+	std::printf("  simplify characters: %llu -> %llu triangles in %u of %u parts\n", static_cast<unsigned long long>(ms.before),
+	            static_cast<unsigned long long>(ms.after), ms.simplified, ms.parts);
+	CHECK(ms.parts == 2 && ms.simplified == 1 && ms.after * 10 < ms.before * 7);
+	CHECK(parts[0].verts.size() % 3 == 0 && parts[0].verts.size() / 3 == ms.after);
+	CHECK(parts[1].verts.size() == original[1].verts.size()); // too few triangles: left alone
+	// Nothing new is made: every vertex is one of the source's, with its bones and its weight.
+	std::set<std::vector<float>> known;
+	for (const SrcSkinVertex& v : original[0].verts)
+		known.insert({v.pos[0], v.pos[1], v.pos[2], v.normal[0], v.normal[1], v.normal[2], v.uv[0], v.uv[1], float(v.bone[0]), float(v.bone[1]), v.weight1});
+	for (const SrcSkinVertex& v : parts[0].verts)
+		CHECK(known.count({v.pos[0], v.pos[1], v.pos[2], v.normal[0], v.normal[1], v.normal[2], v.uv[0], v.uv[1], float(v.bone[0]), float(v.bone[1]), v.weight1}) == 1);
+	// A part told to stay stays.
+	std::vector<SrcModelPart> again = original;
+	ModelSimplifyStats keep;
+	simplifyModelParts(again, {true, false}, mo, keep);
+	CHECK(keep.simplified == 0 && again[0].verts.size() == original[0].verts.size());
+	// The first and last ring (the open ends) did not move: the tube is as long as it was.
+	float lo = 1e9f, hi = -1e9f;
+	for (const SrcSkinVertex& v : parts[0].verts) {
+		lo = std::min(lo, v.pos[1]);
+		hi = std::max(hi, v.pos[1]);
+	}
+	CHECK(lo == 0.0f && hi == 400.0f);
+
+	// Through the model baker: fewer triangles in the archive, the same skeleton.
+	SrcModel m;
+	m.name = "tube";
+	SrcNode root, child;
+	root.name = "ROOT";
+	child.name = "BONE";
+	child.parent = 0;
+	child.pos[1] = 200.0f;
+	m.nodes = {root, child};
+	m.parts = {tubePart(100, 16, true)};
+	size_t triangles[2] = {0, 0};
+	for (int on = 0; on < 2; ++on) {
+		BakeOptions bo;
+		bo.quiet = true;
+		bo.simplifyModels.enabled = on != 0;
+		bo.simplifyModels.ratio = 0.5f;
+		PakWriter writer;
+		const ModelBakeResult r = bakeModel(m, bo, writer);
+		triangles[on] = r.triangles;
+		if (on) CHECK(r.report.find("simplified (--simplify)") != std::string::npos);
+	}
+	std::printf("  simplify in the model baker: %zu -> %zu triangles\n", triangles[0], triangles[1]);
+	CHECK(triangles[0] == 3200 && triangles[1] > 0 && triangles[1] * 10 < triangles[0] * 7);
+}
+
+static void testSimplify() {
+	testSimplifyWorld();
+	testSimplifyModel();
+}
+
 static void testFarLayer() {
 	SrcScene scene;
 	scene.materials.resize(2);
@@ -8836,6 +9072,7 @@ int main(int argc, char** argv) {
 	             {"chunk tiers", testChunkTiers},
 	             {"visibility", testVisibility},
 	             {"lod", testLod},
+             {"simplify", testSimplify},
 	             {"music", testMusic},
 	             {"speech", testSpeech},
              {"sound", testSound},

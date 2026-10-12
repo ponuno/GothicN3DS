@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <map>
 #include <queue>
 #include <thread>
 #include <unordered_map>
@@ -17,6 +18,7 @@ struct Tri {
 	u16 v[3];
 	u16 material;
 	u8 cluster;
+	u8 group = 0; // ChunkBatch::detail without the stand-in bits: what a place may not be shared across
 	bool alive = true;
 };
 
@@ -62,7 +64,9 @@ struct Candidate {
 // exactly that: the texture and the light of the triangle go on as they were.
 class Simplifier {
 public:
-	Simplifier(const BakedChunk& chunk, std::vector<Tri> tris, const std::vector<bool>& usedOutside, float maxError)
+	// `lockClusters`: what two clusters share stays as it is (stand-ins, which are switched on per cluster).
+	// A place shared by two detail groups always stays: one of them may be drawn without the other.
+	Simplifier(const BakedChunk& chunk, std::vector<Tri> tris, const std::vector<bool>& usedOutside, float maxError, bool lockClusters = true)
 	    : _c(chunk), _tris(std::move(tris)), _maxErr2(double(maxError) * double(maxError)) {
 		const size_t n = chunk.vertices.size();
 		_vertexCount = n;
@@ -104,10 +108,13 @@ public:
 		// The stand-ins are switched on per cluster (a neighbouring cluster may still be drawn in full), so what
 		// two clusters share stays as it is: no crack opens between them.
 		for (u32 p = 0; p < places; ++p) {
-			int first = -1;
+			int first = -1, firstGroup = -1;
 			for (u32 t : _inc[p]) {
-				if (first < 0) first = _tris[t].cluster;
-				if (int(_tris[t].cluster) != first) {
+				if (first < 0) {
+					first = _tris[t].cluster;
+					firstGroup = _tris[t].group;
+				}
+				if ((lockClusters && int(_tris[t].cluster) != first) || int(_tris[t].group) != firstGroup) {
 					_locked[p] = true;
 					break;
 				}
@@ -465,6 +472,112 @@ Result simplifyChunk(BakedChunk& c, const std::vector<WorldMaterial>& materials,
 	return Result::Done;
 }
 
+// ---- --simplify: the geometry itself, in place ----
+
+enum class InPlace { Done, TooFew, TooLittle, Other };
+
+// The triangles of every simplifiable batch (any detail class) with fewer of them, written back as the batches
+// they came from, in the same order; the vertices nothing uses any more are dropped.
+InPlace simplifyInPlace(BakedChunk& c, const std::vector<WorldMaterial>& materials, const SimplifyOptions& opt, u64& before, u64& after) {
+	if (c.vertices.empty() || c.vertices.size() > 65535 || c.batches.empty()) return InPlace::Other;
+	std::vector<bool> take(c.batches.size(), false);
+	std::vector<Tri> tris;
+	for (size_t b = 0; b < c.batches.size(); ++b) {
+		const ChunkBatch& cb = c.batches[b];
+		if (batchLod(cb.detail) != BATCH_LOD_BOTH || cb.material >= materials.size()) continue;
+		// What is cut out of a texture, blended, animated by the wind or water stays: its triangles are its shape.
+		const u16 bad = MATF_ALPHA_TEST | MATF_BLEND | MATF_ADD | MATF_WATER | MATF_WIND;
+		if (materials[cb.material].flags & bad) continue;
+		take[b] = true;
+		for (u32 i = 0; i + 2 < cb.indexCount; i += 3) {
+			Tri t;
+			for (int k = 0; k < 3; ++k) t.v[k] = c.indices[cb.firstIndex + i + k];
+			t.material = cb.material;
+			t.cluster = cb.cluster;
+			t.group = u8(cb.detail & 0x3Fu);
+			tris.push_back(t);
+		}
+	}
+	if (tris.size() < opt.minTriangles) return InPlace::TooFew;
+	std::vector<bool> usedOutside(c.vertices.size(), false);
+	for (size_t b = 0; b < c.batches.size(); ++b) {
+		if (take[b]) continue;
+		const ChunkBatch& cb = c.batches[b];
+		for (u32 i = 0; i < cb.indexCount; ++i) usedOutside[c.indices[cb.firstIndex + i]] = true;
+	}
+	const u32 initial = u32(tris.size());
+	Simplifier simp(c, std::move(tris), usedOutside, opt.maxError, /*lockClusters=*/false);
+	simp.run(u32(double(initial) * double(opt.ratio)));
+	if (simp.alive() > u32(double(initial) * 0.97)) return InPlace::TooLittle;
+
+	c.vertices.insert(c.vertices.end(), simp.added().begin(), simp.added().end());
+	// What is left of each (material, cluster, detail) triple, to go where its batch was.
+	struct Key {
+		u16 material;
+		u8 cluster, group;
+		bool operator<(const Key& o) const {
+			return material != o.material ? material < o.material : cluster != o.cluster ? cluster < o.cluster : group < o.group;
+		}
+	};
+	std::map<Key, std::vector<const Tri*>> kept;
+	for (const Tri& t : simp.tris())
+		if (t.alive) kept[{t.material, t.cluster, t.group}].push_back(&t);
+	std::vector<ChunkBatch> batches;
+	std::vector<u16> indices;
+	indices.reserve(c.indices.size());
+	for (size_t b = 0; b < c.batches.size(); ++b) {
+		const ChunkBatch& old = c.batches[b];
+		ChunkBatch nb = old;
+		nb.firstIndex = u32(indices.size());
+		if (!take[b]) {
+			for (u32 i = 0; i < old.indexCount; ++i) indices.push_back(c.indices[old.firstIndex + i]);
+			batches.push_back(nb);
+			continue;
+		}
+		const auto it = kept.find({old.material, old.cluster, u8(old.detail & 0x3Fu)});
+		if (it == kept.end() || it->second.empty()) continue; // (nothing of it is left: it was all slivers)
+		i16 mn[3] = {32767, 32767, 32767}, mx[3] = {-32768, -32768, -32768};
+		for (const Tri* t : it->second)
+			for (int a = 0; a < 3; ++a) {
+				const u16 vi = t->v[a];
+				indices.push_back(vi);
+				const WorldVertex& w = c.vertices[vi];
+				const i16 p[3] = {w.x, w.y, w.z};
+				for (int d = 0; d < 3; ++d) {
+					mn[d] = std::min(mn[d], p[d]);
+					mx[d] = std::max(mx[d], p[d]);
+				}
+			}
+		nb.indexCount = u32(it->second.size()) * 3;
+		std::memcpy(nb.bbMin, mn, sizeof(mn));
+		std::memcpy(nb.bbMax, mx, sizeof(mx));
+		batches.push_back(nb);
+		it->second.clear(); // (a triple that came twice: its triangles go out once)
+	}
+	// Drop the vertices nothing uses, keeping the order of the others.
+	std::vector<u32> remap(c.vertices.size(), 0xFFFFFFFFu);
+	std::vector<WorldVertex> vertices;
+	vertices.reserve(c.vertices.size());
+	for (u16& i : indices) {
+		if (remap[i] == 0xFFFFFFFFu) remap[i] = 0; // (marked; numbered below in vertex order)
+	}
+	for (size_t v = 0; v < c.vertices.size(); ++v)
+		if (remap[v] != 0xFFFFFFFFu) {
+			remap[v] = u32(vertices.size());
+			vertices.push_back(c.vertices[v]);
+		}
+	for (u16& i : indices) i = u16(remap[i]);
+	before += initial;
+	after += simp.alive();
+	c.vertices.swap(vertices);
+	c.indices.swap(indices);
+	c.batches.swap(batches);
+	c.header.vertexCount = u16(c.vertices.size());
+	c.header.batchCount = u16(c.batches.size());
+	c.header.indexCount = u32(c.indices.size());
+	return InPlace::Done;
+}
+
 } // namespace
 
 void buildLods(std::vector<BakedChunk>& chunks, const std::vector<WorldMaterial>& materials, const LodOptions& opt, LodStats& stats) {
@@ -512,6 +625,51 @@ void buildLods(std::vector<BakedChunk>& chunks, const std::vector<WorldMaterial>
 		stats.trianglesBefore += p.before;
 		stats.trianglesAfter += p.after;
 		stats.extraBytes += p.bytes;
+	}
+	stats.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
+
+void buildSimplified(std::vector<BakedChunk>& chunks, const std::vector<WorldMaterial>& materials, const SimplifyOptions& opt,
+                     SimplifyStats& stats) {
+	stats = SimplifyStats {};
+	if (!opt.enabled) return;
+	const auto start = std::chrono::steady_clock::now();
+	std::atomic<size_t> next {0};
+	struct Part {
+		u32 chunks = 0, candidates = 0, few = 0, little = 0;
+		u64 before = 0, after = 0, verticesBefore = 0, verticesAfter = 0;
+	};
+	const unsigned threads = std::max(1u, opt.threads);
+	std::vector<Part> parts(threads);
+	auto worker = [&](unsigned id) {
+		for (;;) {
+			const size_t i = next.fetch_add(1);
+			if (i >= chunks.size()) return;
+			BakedChunk& c = chunks[i];
+			++parts[id].candidates;
+			parts[id].verticesBefore += c.vertices.size();
+			switch (simplifyInPlace(c, materials, opt, parts[id].before, parts[id].after)) {
+			case InPlace::Done: ++parts[id].chunks; break;
+			case InPlace::TooFew: ++parts[id].few; break;
+			case InPlace::TooLittle: ++parts[id].little; break;
+			default: break;
+			}
+			parts[id].verticesAfter += c.vertices.size();
+		}
+	};
+	std::vector<std::thread> pool;
+	for (unsigned t = 1; t < threads; ++t) pool.emplace_back(worker, t);
+	worker(0);
+	for (std::thread& t : pool) t.join();
+	for (const Part& p : parts) {
+		stats.chunks += p.chunks;
+		stats.candidates += p.candidates;
+		stats.tooFew += p.few;
+		stats.tooLittle += p.little;
+		stats.trianglesBefore += p.before;
+		stats.trianglesAfter += p.after;
+		stats.verticesBefore += p.verticesBefore;
+		stats.verticesAfter += p.verticesAfter;
 	}
 	stats.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 }

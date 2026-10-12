@@ -237,6 +237,8 @@ private:
 		u32 slot; // position in _resident
 		u32 retryAt; // frame before which loading is not attempted again (out of memory)
 		u32 drawnFrame; // the last draw() that drew it: one that did not draw it the frame before shows its objects at once
+		bool snapNow = false; // this frame's "shows its objects at once", kept for the second (swaying) pass over the chunk
+		u32 windBatches = 0;  // batches of swaying materials the first pass left for the second
 		u16 batchCount;
 		bool failed;    // bad data: never retried
 		bool requested; // handed to the background loader
@@ -292,7 +294,8 @@ private:
 	void acquireTexture(u32 texture);
 	void releaseTexture(u32 texture);
 	float distanceTo(u32 index, Vec3 camera) const;
-	void drawBatches(Loaded& l, bool blended);
+	// phase 0: all batches; 1: the ones that do not sway in the wind; 2: the ones that do (see draw()).
+	void drawBatches(Loaded& l, bool blended, int phase = 0);
 	// The far layer: read once it is asked for, freed when it is not.
 	void loadFar();
 	void freeFar();

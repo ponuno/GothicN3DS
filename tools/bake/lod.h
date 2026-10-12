@@ -36,6 +36,36 @@ struct LodStats {
 	double seconds = 0;
 };
 
+// g3ds-bake --simplify: the geometry itself with fewer triangles, in place - the world's meshes of every
+// detail class, the level, the large objects, the medium and the small ones, in every tier (what is cut out
+// of a texture, blended, swaying or water is left as it is). The same edge collapse as the stand-ins, with
+// a much smaller error allowed, since this is what is drawn close up: a surface is only moved by a few
+// centimetres, a place the objects of two detail classes share stays, and so does the border of every mesh.
+// Done after the visibility is worked out (from the unsimplified scene) and before the stand-ins, which are
+// then made from the simplified chunks.
+struct SimplifyOptions {
+	bool enabled = false;
+	float ratio = 0.6f;       // triangles to keep, of what is simplified
+	float maxError = 3.0f;    // cm: how far (mean, over the planes around a vertex) a collapse may move the surface
+	u32 minTriangles = 24;    // a chunk with fewer simplifiable triangles is left alone
+	unsigned threads = 1;
+};
+
+struct SimplifyStats {
+	u32 chunks = 0;            // chunks that got simpler
+	u32 candidates = 0;        // chunks looked at
+	u32 tooFew = 0;            // ... too few simplifiable triangles
+	u32 tooLittle = 0;         // ... simplified by less than 3%
+	u64 trianglesBefore = 0;   // of the simplified chunks' simplifiable batches
+	u64 trianglesAfter = 0;
+	u64 verticesBefore = 0;    // all chunks
+	u64 verticesAfter = 0;
+	double seconds = 0;
+};
+
+void buildSimplified(std::vector<BakedChunk>& chunks, const std::vector<WorldMaterial>& materials, const SimplifyOptions& opt,
+                     SimplifyStats& stats);
+
 // Adds the stand-ins to `chunks` (batches with BATCH_LOD_FAR_ONLY, the ones they replace marked
 // BATCH_LOD_FULL_ONLY). `materials`: the world material table (what is not opaque is left alone).
 void buildLods(std::vector<BakedChunk>& chunks, const std::vector<WorldMaterial>& materials, const LodOptions& opt, LodStats& stats);

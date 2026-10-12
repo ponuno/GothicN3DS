@@ -9,6 +9,7 @@
 #include "script_src.h"
 #include "texture_bake.h"
 #include "lod.h"
+#include "model_simplify.h"
 #include "visibility.h"
 #include "vertex_fx.h"
 
@@ -39,6 +40,9 @@ struct BakeOptions {
 	// Visibility (--vis): which parts of the world are hidden from which cell (see visibility.h).
 	VisOptions vis;
 	LodOptions lod;
+	// Fewer triangles in everything (--simplify): the world's meshes in place (lod.h) and the characters' (model_simplify.h).
+	SimplifyOptions simplify;
+	ModelSimplifyOptions simplifyModels;
 };
 
 struct BakeWorld {

@@ -566,6 +566,25 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				line("visibility: nothing to put in it");
 			}
 		}
+		// ---- --simplify: fewer triangles in the geometry itself ----
+		if (opt.simplify.enabled) {
+			SimplifyStats ss;
+			buildSimplified(chunks, worldMaterials, opt.simplify, ss);
+			if (ss.chunks) {
+				const u64 removed = ss.trianglesBefore - ss.trianglesAfter;
+				cs.outputTriangles = cs.outputTriangles > removed ? cs.outputTriangles - removed : cs.outputTriangles;
+				line(format("simplified geometry (--simplify): %u of %u chunks, %llu -> %llu triangles of what was simplified (%.0f%%), "
+				            "vertices %llu -> %llu, %.1f s",
+				            ss.chunks, ss.candidates, static_cast<unsigned long long>(ss.trianglesBefore),
+				            static_cast<unsigned long long>(ss.trianglesAfter),
+				            100.0 * double(ss.trianglesAfter) / double(std::max<u64>(ss.trianglesBefore, 1)),
+				            static_cast<unsigned long long>(ss.verticesBefore), static_cast<unsigned long long>(ss.verticesAfter), ss.seconds));
+			} else {
+				line("simplified geometry (--simplify): nothing to simplify");
+			}
+			line(format("  of %u chunks: %u have fewer than %u simplifiable triangles, %u would shrink by less than 3%%", ss.candidates,
+			            ss.tooFew, opt.simplify.minTriangles, ss.tooLittle));
+		}
 		// ---- simplified stand-ins for far chunks ----
 		if (opt.lod.enabled && !scene.indoor) {
 			LodStats ls;

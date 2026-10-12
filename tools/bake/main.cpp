@@ -128,6 +128,11 @@ void usage() {
 	          "  --ao-rays N        rays per corner instead of the level's\n"
 	          "  --ao-radius CM     how far a ray looks instead of the level's\n"
 	          "  --wind             Graphics+: trees, bushes and grass sway (marked by their names; see the report)\n"
+	          "  --simplify         fewer triangles in everything that is drawn: the world's objects and the level (edge\n"
+	          "                     collapse, a few cm of error; trees' leaves, water and glass stay) and the characters (the\n"
+	          "                     bones and the texture mapping are kept). Smaller archive, faster drawing; the look changes a little\n"
+	          "  --simplify-ratio R triangles kept of what is simplified (default 0.6); --simplify-error CM: how far a collapse\n"
+	          "                     may move the surface (default 3); --simplify-no-characters: the world only\n"
 	          "  --lod              Graphics+: a simplified stand-in for the world meshes of far chunks (about half the\n"
 	          "                     triangles, same vertices; menu: Graphics+ -> Far geometry; adds ~10 %% to the chunks)\n"
 	          "  --lod-ratio R      triangles kept of what is simplified (default 0.45); --lod-error CM: how far a\n"
@@ -247,6 +252,13 @@ int main(int argc, char** argv) {
 			else if (a == "--ao-rays") opt.ao.rays = u32(std::clamp(std::stoi(value()), 1, 256));
 			else if (a == "--ao-radius") opt.ao.radius = std::clamp(std::stof(value()), 10.0f, 5000.0f);
 			else if (a == "--wind") opt.wind = true;
+			else if (a == "--simplify") opt.simplify.enabled = opt.simplifyModels.enabled = true;
+			else if (a == "--simplify-ratio") {
+				opt.simplify.ratio = std::clamp(std::stof(value()), 0.2f, 0.95f);
+				opt.simplifyModels.ratio = std::max(opt.simplify.ratio, 0.4f);
+			}
+			else if (a == "--simplify-error") opt.simplify.maxError = std::clamp(std::stof(value()), 0.5f, 50.0f);
+			else if (a == "--simplify-no-characters") opt.simplifyModels.enabled = false;
 			else if (a == "--lod") opt.lod.enabled = true;
 			else if (a == "--lod-ratio") opt.lod.ratio = std::clamp(std::stof(value()), 0.1f, 0.9f);
 			else if (a == "--lod-error") opt.lod.maxError = std::clamp(std::stof(value()), 1.0f, 500.0f);
@@ -273,6 +285,7 @@ int main(int argc, char** argv) {
 		opt.ao.threads = opt.threads;
 		opt.vis.threads = opt.threads;
 		opt.lod.threads = opt.threads;
+		opt.simplify.threads = opt.threads;
 		if (opt.debugFile == "?") {
 			const size_t slash = out.find_last_of("/\\");
 			opt.debugFile = (slash == std::string::npos ? std::string() : out.substr(0, slash + 1)) + "bake_debug.txt";

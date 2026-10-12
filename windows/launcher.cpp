@@ -164,7 +164,7 @@ void pipeline(std::wstring game, bool music, bool gfxPlus, bool voices, bool deb
 		std::wstring cmd = bake + L" world --game \"" + gameShort + L"\" -o \"" + outShort + L"data.pak\" --no-script-check";
 		if (haveMusic) cmd += L" --music-dir \"" + shortPath(wavs) + L"\"";
 		// Graphics+ in the data: corner shading and swaying plants (switched on in the game's menu, Graphics -> Graphics+).
-		if (gfxPlus) cmd += L" --ao low --wind";
+		if (gfxPlus) cmd += L" --ao low --wind --far-lod";
 		if (!voices) cmd += L" --no-voices";
 		if (debug) cmd += L" --debug-report \"" + outShort + L"bake_debug.txt\"";
 		ok = run(cmd);

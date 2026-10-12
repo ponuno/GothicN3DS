@@ -36,6 +36,7 @@ enum ScriptFlags : u8 {
 	SCRIPTF_RETURN = 1 << 1,   // a function with a return value
 	SCRIPTF_MEMBER = 1 << 2,   // a member of a class: lives in an instance
 	SCRIPTF_EXTERNAL = 1 << 3, // a function the engine provides
+	SCRIPTF_NULLED = 1 << 4,   // an Ikarus primitive: calls are skipped (answer 0)
 };
 
 struct ScriptHeader {

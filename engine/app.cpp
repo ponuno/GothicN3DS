@@ -292,10 +292,17 @@ void App::setDrawDistance(float cm) {
 	cfg.drawDistance = cm;
 	cfg.loadRadius = cm + 2000.0f;   // have chunks ready before they become visible
 	cfg.unloadRadius = cm + 6000.0f; // hysteresis against load/unload thrash
-	_env.fogEnd = cm;
-	_env.fogStart = cm * 0.2f;
 	// Chunk bounds are tested, not triangles: leave room for a whole chunk.
 	_cam.zFar = cm + _world.header().chunkSize * 1.5f;
+	_env.fogEnd = cm;
+	_env.fogStart = cm * 0.2f;
+	// The far layer (G10): the fog moves out to its end, and starts later -
+	// past the full-detail chunks it would hide what the far layer is for.
+	if (_world.hasFarLayer() && cfg.farDistance > cm) {
+		_env.fogEnd = cfg.farDistance;
+		_env.fogStart = max(cm * 0.5f, cfg.farDistance * 0.2f);
+		_cam.zFar = cfg.farDistance + _world.header().chunkSize * 4.0f;
+	}
 }
 
 void App::shutdown() {
@@ -1106,6 +1113,7 @@ void App::respawn(const char* statePath) {
 
 void App::applySettings() {
 	_settings.sanitize();
+	_world.config().farDistance = _settings.farCm(); // (before the fog, which follows it)
 	setDrawDistance(_settings.drawDistanceCm());
 	StreamConfig& cfg = _world.config();
 	cfg.detailDistance[DETAIL_MEDIUM] = _settings.mediumObjectsCm();

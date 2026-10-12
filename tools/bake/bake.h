@@ -2,6 +2,7 @@
 // tool and the tests.
 #pragma once
 #include "chunker.h"
+#include "far_lod.h"
 #include "model_src.h"
 #include "pak_writer.h"
 #include "scene.h"
@@ -31,6 +32,8 @@ struct BakeOptions {
 	// sway (--wind; the importer marks them, without it the marks are dropped).
 	AoOptions ao;
 	bool wind = false;
+	// The far layer (G10, --far-lod): a coarse copy of the world drawn beyond the draw distance.
+	FarOptions far;
 };
 
 struct BakeWorld {

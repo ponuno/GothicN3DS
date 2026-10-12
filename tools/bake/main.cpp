@@ -124,6 +124,10 @@ void usage() {
 	          "  --ao-rays N        rays per corner instead of the level's\n"
 	          "  --ao-radius CM     how far a ray looks instead of the level's\n"
 	          "  --wind             Graphics+: trees, bushes and grass sway (marked by their names; see the report)\n"
+	          "  --far-lod          Graphics+: a coarse copy of the world drawn beyond the draw distance and where\n"
+	          "                     chunks are not loaded yet (far layer; about 1.5-2 MB on the console)\n"
+	          "  --far-cell M       its finest grid, metres (default 4; coarser if needed to fit)\n"
+	          "  --far-tris N       its most triangles, thousands (default 80)\n"
 	          "  --plant-words A,B  more words that name a tree in object/material/texture names (a mod's own)\n"
 	          "  --threads N        worker threads");
 }
@@ -226,6 +230,9 @@ int main(int argc, char** argv) {
 			else if (a == "--ao-rays") opt.ao.rays = u32(std::clamp(std::stoi(value()), 1, 256));
 			else if (a == "--ao-radius") opt.ao.radius = std::clamp(std::stof(value()), 10.0f, 5000.0f);
 			else if (a == "--wind") opt.wind = true;
+			else if (a == "--far-lod") opt.far.enabled = true;
+			else if (a == "--far-cell") opt.far.cell = std::clamp(std::stof(value()), 0.5f, 100.0f) * 100.0f;
+			else if (a == "--far-tris") opt.far.maxTriangles = u32(std::clamp(std::stoi(value()), 5, 1000)) * 1000u;
 			else if (a == "--plant-words") {
 				const std::string v = value();
 				for (size_t p = 0; p <= v.size();) {

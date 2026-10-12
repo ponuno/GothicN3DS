@@ -79,6 +79,8 @@ struct Settings {
 	u8 occlusion = 0;        // 0..100 %: the baked ambient occlusion's strength (data baked with --ao)
 	u8 wind = 0;             // the plants sway: 0 still, 1 gently, 2 normal, 3 strongly (data baked with --wind)
 	u8 shadows = SHADOWS_OFF; // round shadows under the characters
+	// Version 9: the far layer (G10; data baked with --far-lod): 0 off, 1 250 m, 2 400 m, 3 600 m.
+	u8 farLayer = 0;
 
 	// Clamps every value into its range (after reading a file of another version).
 	void sanitize();
@@ -100,6 +102,8 @@ struct Settings {
 	void applyGfxPreset(u8 preset);
 	u8 gfxPresetOf() const;
 	float occlusionStrength() const { return float(occlusion) * 0.01f; }
+	// How far the far layer reaches, cm (0: off).
+	float farCm() const { return farLayer == 1 ? 25000.0f : farLayer == 2 ? 40000.0f : farLayer == 3 ? 60000.0f : 0.0f; }
 	float windStrength() const { return wind == 1 ? 0.5f : wind == 2 ? 1.0f : wind == 3 ? 1.7f : 0.0f; }
 
 	// settings.bin. load() leaves the defaults and returns false if the file

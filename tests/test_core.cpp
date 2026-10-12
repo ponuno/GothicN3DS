@@ -6676,6 +6676,200 @@ static void testGfxPlus() {
 	CHECK(gfx::memStats().meshCount == 0);
 }
 
+// The far layer (G10): what the baker makes of a world (within its budget, every cell
+// naming its chunks), and what the runtime draws with it - beyond the draw distance and
+// in place of chunks not drawn, without the sky showing through where the two meet.
+static void testFarLayer() {
+	SrcScene scene;
+	scene.materials.resize(2);
+	scene.materials[0].name = "grass";
+	scene.materials[0].hasColor = true;
+	scene.materials[0].color[0] = 40;
+	scene.materials[0].color[1] = 160;
+	scene.materials[0].color[2] = 40;
+	scene.materials[1].name = "tower";
+	scene.materials[1].hasColor = true;
+	scene.materials[1].color[0] = 220;
+	scene.materials[1].color[1] = 30;
+	scene.materials[1].color[2] = 30;
+	auto height = [](float x, float z) { return 300.0f * std::sin(x / 3000.0f) * std::cos(z / 2500.0f); };
+	const float step = 400.0f, half = 16000.0f;
+	for (float x = -half; x < half; x += step)
+		for (float z = -half; z < half; z += step) {
+			const float a[3] = {x, height(x, z + step), z + step}, b[3] = {x + step, height(x + step, z + step), z + step};
+			const float c[3] = {x + step, height(x + step, z), z}, d[3] = {x, height(x, z), z};
+			addQuad(scene, d, c, b, a, 0); // (facing up: see the bake's winding note)
+		}
+	// A red tower 140 m away, seen from either side.
+	{
+		const float x0 = -500, x1 = 500, z0 = 13500, z1 = 14500, y0 = -300, y1 = 3000;
+		const float k[8][3] = {{x0, y0, z0}, {x1, y0, z0}, {x1, y0, z1}, {x0, y0, z1}, {x0, y1, z0}, {x1, y1, z0}, {x1, y1, z1}, {x0, y1, z1}};
+		const int faces[5][4] = {{4, 5, 6, 7}, {0, 1, 5, 4}, {1, 2, 6, 5}, {2, 3, 7, 6}, {3, 0, 4, 7}};
+		for (const auto& f : faces) {
+			addQuad(scene, k[f[0]], k[f[1]], k[f[2]], k[f[3]], 1);
+			addQuad(scene, k[f[3]], k[f[2]], k[f[1]], k[f[0]], 1);
+		}
+	}
+	scene.spawnPos[1] = 400.0f;
+	scene.hasSpawn = true;
+	const u32 input = u32(scene.triangles.size());
+
+	// ---- the baker ----
+	std::vector<BakeWorld> worlds(1);
+	worlds[0].name = "far";
+	worlds[0].scene = scene;
+	BakeOptions opt;
+	opt.chunker.chunkSize = 4000.0f;
+	opt.tex.maxSize = 32;
+	opt.tex.quality = 0;
+	opt.threads = 2;
+	opt.quiet = true;
+	opt.far.enabled = true;
+	opt.far.maxTriangles = 3000;
+	PakWriter pakw;
+	bakeWorlds(worlds, opt, pakw);
+	const std::string path = gDir + "/far.pak";
+	pakw.write(path);
+	Pak pak;
+	CHECK(pak.open(path.c_str()));
+	const PakEntry* we = pak.find("world/far");
+	CHECK(we != nullptr);
+	if (!we) return;
+	std::vector<u8> index(we->size);
+	CHECK(pak.read(*we, index.data()));
+	WorldHeader wh;
+	std::memcpy(&wh, index.data(), sizeof(wh));
+	const PakEntry* fe = pak.find(wh.farEntry);
+	CHECK(wh.farEntry == hashName("world/far/far") && fe != nullptr);
+	if (!fe) return;
+	std::vector<u8> blob(fe->size);
+	CHECK(pak.read(*fe, blob.data()));
+	FarHeader fh;
+	std::memcpy(&fh, blob.data(), sizeof(fh));
+	CHECK(fh.magic == FAR_MAGIC && fh.version == FAR_VERSION && blob.size() == farBlobSize(fh));
+	u32 stripTris = 0, cells = 0, seams = 0;
+	{
+		const FarRange* ranges = reinterpret_cast<const FarRange*>(blob.data() + sizeof(FarHeader) + fh.tileCount * sizeof(FarTile));
+		for (u32 i = 0; i < fh.rangeCount; ++i) {
+			cells += !ranges[i].seam;
+			seams += ranges[i].seam;
+			if (ranges[i].seam) stripTris += ranges[i].indexCount / 3;
+		}
+	}
+	const u32 farTris = fh.indexCount / 3 - stripTris;
+	std::printf("  far layer: %u triangles of %u (and %u in %u seams), grid %.1f m, %u tiles, %u cells, %u bytes\n", farTris, input,
+	            stripTris, seams, double(fh.cellSize) / 100.0, fh.tileCount, cells, u32(blob.size()));
+	CHECK(farTris <= 3000 && farTris > 200 && fh.cellSize > 400.0f && cells == 64 && seams >= 100 && stripTris < farTris);
+	{
+		const u32* refs = reinterpret_cast<const u32*>(blob.data() + sizeof(FarHeader) + fh.tileCount * sizeof(FarTile) +
+		                                               fh.rangeCount * sizeof(FarRange));
+		bool refsOk = true;
+		for (u32 i = 0; i < fh.chunkRefCount; ++i) refsOk = refsOk && refs[i] < wh.chunkCount;
+		CHECK(refsOk);
+	}
+	// Without the option there is none, and the rest of the archive is as it was.
+	{
+		BakeOptions plain = opt;
+		plain.far.enabled = false;
+		std::vector<BakeWorld> w2(1);
+		w2[0].name = "far";
+		w2[0].scene = scene;
+		PakWriter p2;
+		bakeWorlds(w2, plain, p2);
+		const std::string path2 = gDir + "/far_off.pak";
+		p2.write(path2);
+		Pak q;
+		CHECK(q.open(path2.c_str()) && q.find("world/far/far") == nullptr);
+	}
+
+	// ---- the runtime ----
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), "far"));
+	World& w = app.world();
+	CHECK(w.hasFarLayer());
+	app.player().flying = true;
+	app.setThirdPerson(false);
+	auto look = [&](float farM, Vec3 at, float yaw, float pitch, u32& red, u32& sky) {
+		w.config().farDistance = farM * 100.0f;
+		app.setDrawDistance(6000.0f);
+		app.camera().yaw = yaw;
+		app.camera().pitch = pitch;
+		app.teleport(at);
+		w.preload(app.camera().pos);
+		for (int i = 0; i < 3; ++i) {
+			app.update(Input {}, 1.0f / 30.0f);
+			app.camera().yaw = yaw;
+			app.camera().pitch = pitch;
+			app.render();
+		}
+		const u8* fb = gfx::softFramebuffer();
+		if (getenv("FAR_DEBUG")) {
+			static int shot = 0;
+			char name[64];
+			std::snprintf(name, sizeof(name), "far_%d.ppm", shot++);
+			if (FILE* f = std::fopen(name, "wb")) {
+				std::fprintf(f, "P6 %d %d 255\n", gfx::SCREEN_W, gfx::SCREEN_H);
+				for (int i = 0; i < gfx::SCREEN_W * gfx::SCREEN_H; ++i) std::fwrite(fb + i * 4, 1, 3, f);
+				std::fclose(f);
+			}
+			std::printf("    camera %.0f %.0f %.0f pitch %.2f: %u chunks drawn of %u loaded, %u triangles, far %u\n", double(app.camera().pos.x),
+			            double(app.camera().pos.y), double(app.camera().pos.z), double(app.camera().pitch), w.stats().chunksDrawn,
+			            w.stats().chunksLoaded, w.stats().trianglesDrawn, w.stats().farTriangles);
+		}
+		red = sky = 0;
+		for (int y = 0; y < gfx::SCREEN_H; ++y)
+			for (int x = 0; x < gfx::SCREEN_W; ++x) {
+				const u8* px = fb + (y * gfx::SCREEN_W + x) * 4;
+				red += px[0] > 120 && px[1] < 90 && px[2] < 90;
+				// Below the middle of a view down on to the ground: blue is the sky through a hole.
+				sky += y > gfx::SCREEN_H / 3 && px[2] > px[1] + 4;
+			}
+	};
+	u32 redNear, skyNear, redFar, skyFar, redDown, skyDown, redDownFar, skyDownFar;
+	// Towards the tower, 140 m off: past the draw distance only the far layer has it.
+	look(0.0f, {0, 400, 0}, 0.0f, 0.0f, redNear, skyNear);
+	CHECK(!w.farActive() && w.stats().farBytes == 0);
+	look(300.0f, {0, 400, 0}, 0.0f, 0.0f, redFar, skyFar);
+	const WorldStats fs = w.stats();
+	CHECK(w.farActive() && fs.farBytes > 0 && fs.farTriangles > 0 && fs.farDrawCalls > 0);
+	// From high up, steeply down: the chunks drawn in full in the middle, the far layer round them.
+	look(0.0f, {0, 2500, -3000}, 0.0f, -0.45f, redDown, skyDown);
+	look(300.0f, {0, 2500, -3000}, 0.0f, -0.45f, redDownFar, skyDownFar);
+	const u32 farTrisDown = w.stats().farTriangles;
+	std::printf("  far layer: tower %u pixels without it, %u with; looking down, %u sky pixels below the horizon without it, %u with "
+	            "(%u far triangles)\n",
+	            redNear, redFar, skyDown, skyDownFar, farTrisDown);
+	CHECK(redNear == 0 && redFar > 40);
+	CHECK(skyDown > 2000 && skyDownFar < 10 && w.stats().farSeams > 0);
+	// Farther draw distance: more of the world in full, less of the far layer.
+	w.config().farDistance = 30000.0f;
+	app.setDrawDistance(12000.0f);
+	w.preload(app.camera().pos);
+	for (int i = 0; i < 3; ++i) {
+		app.update(Input {}, 1.0f / 30.0f);
+		app.render();
+	}
+	CHECK(w.stats().farTriangles < farTrisDown);
+	// Switched off: freed.
+	w.config().farDistance = 0.0f;
+	app.update(Input {}, 1.0f / 30.0f);
+	CHECK(!w.farActive() && w.stats().farBytes == 0);
+	// The menu's values: the sets switch it on, sanitize keeps it in range.
+	{
+		Settings s;
+		s.applyGfxPreset(GFX_PLUS_BALANCED);
+		CHECK(s.farLayer == 1 && s.farCm() == 25000.0f);
+		s.applyGfxPreset(GFX_PLUS_MAX);
+		CHECK(s.farLayer == 2 && s.gfxPresetOf() == GFX_PLUS_MAX);
+		s.farLayer = 9;
+		s.sanitize();
+		CHECK(s.farLayer == 0);
+	}
+	app.shutdown();
+	CHECK(gfx::memStats().meshCount == 0);
+}
+
 // Settings (settings.bin) and the pause menu.
 static void testSettings() {
 	const std::string path = gDir + "/settings.bin";
@@ -8090,6 +8284,7 @@ int main(int argc, char** argv) {
              {"corpses", testCorpses},
 	             {"settings", testSettings},
 	             {"graphics+", testGfxPlus},
+	             {"far layer", testFarLayer},
 	             {"music", testMusic},
 	             {"speech", testSpeech},
              {"sound", testSound},

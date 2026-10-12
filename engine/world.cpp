@@ -82,6 +82,8 @@ bool World::open(Pak* pak, u32 entryHash) {
 
 void World::close() {
 	_loader.stop(); // before the tables it reads go away
+	freeFar();
+	_farTried = false;
 	if (_loaded) {
 		for (u32 i = 0; i < _hdr.chunkCount; ++i)
 			if (_loaded[i].mesh) unloadChunk(i);
@@ -379,6 +381,106 @@ void World::update(Vec3 camera) {
 	_stats.chunksInFlight = _chunksInFlight;
 	_stats.texturesWaiting = _texturesWaiting;
 	_stats.budgetBytes = budget();
+	// The far layer: in memory while it is asked for.
+	const bool wantFar = hasFarLayer() && _cfg.farDistance > _cfg.drawDistance;
+	if (wantFar && !_farTiles && !_farTried) {
+		loadFar();
+	} else if (!wantFar) {
+		if (_farTiles) freeFar();
+		_farTried = false;
+	}
+	_stats.farBytes = _farBytes;
+}
+
+void World::loadFar() {
+	_farTried = true;
+	const PakEntry* e = _pak ? _pak->find(_hdr.farEntry) : nullptr;
+	if (!e || e->size < sizeof(FarHeader)) return;
+	u8* blob = static_cast<u8*>(_pak->readAlloc(*e));
+	if (!blob) return;
+	FarHeader h;
+	memcpy(&h, blob, sizeof(h));
+	bool ok = h.magic == FAR_MAGIC && h.version == FAR_VERSION && h.tileCount > 0 && h.tileCount < (1u << 20) &&
+	          h.rangeCount < (1u << 24) && h.chunkRefCount < (1u << 24) && h.vertexCount < (1u << 26) && h.indexCount < (1u << 28) &&
+	          u64(e->size) == u64(farBlobSize(h));
+	const u8* p = blob + sizeof(FarHeader);
+	const FarTile* tiles = reinterpret_cast<const FarTile*>(p);
+	const u8* rangeBytes = p + size_t(h.tileCount) * sizeof(FarTile);
+	const u8* refBytes = rangeBytes + size_t(h.rangeCount) * sizeof(FarRange);
+	const u8* vertexBytes = refBytes + size_t(h.chunkRefCount) * sizeof(u32);
+	const u8* indexBytes = vertexBytes + size_t(h.vertexCount) * sizeof(WorldVertex);
+	if (ok) {
+		_farTiles = static_cast<FarTileRt*>(calloc(h.tileCount, sizeof(FarTileRt)));
+		_farRanges = static_cast<FarRange*>(malloc(size_t(h.rangeCount) * sizeof(FarRange) + 1));
+		_farRefs = static_cast<u32*>(malloc(size_t(h.chunkRefCount) * sizeof(u32) + 1));
+		_farOrder = static_cast<u32*>(malloc(size_t(h.tileCount) * sizeof(u32)));
+		_farKey = static_cast<float*>(malloc(size_t(h.tileCount) * sizeof(float)));
+		ok = _farTiles && _farRanges && _farRefs && _farOrder && _farKey;
+	}
+	if (ok) {
+		memcpy(_farRanges, rangeBytes, size_t(h.rangeCount) * sizeof(FarRange));
+		memcpy(_farRefs, refBytes, size_t(h.chunkRefCount) * sizeof(u32));
+		_farTileCount = h.tileCount;
+		_farRangeCount = h.rangeCount;
+		_farRefCount = h.chunkRefCount;
+		for (u32 i = 0; ok && i < h.chunkRefCount; ++i) ok = _farRefs[i] < _hdr.chunkCount;
+		for (u32 i = 0; ok && i < h.tileCount; ++i) {
+			FarTile t;
+			memcpy(&t, &tiles[i], sizeof(t));
+			ok = t.vertexCount > 0 && t.vertexCount <= CHUNK_MAX_VERTICES && u64(t.firstVertex) + t.vertexCount <= h.vertexCount &&
+			     u64(t.firstIndex) + t.indexCount <= h.indexCount && t.indexCount % 3 == 0 &&
+			     u64(t.firstRange) + t.rangeCount <= h.rangeCount && t.posScale > 0.0f;
+			for (u32 r = 0; ok && r < t.rangeCount; ++r) {
+				const FarRange& fr = _farRanges[t.firstRange + r];
+				ok = u64(fr.firstIndex) + fr.indexCount <= t.indexCount && fr.indexCount % 3 == 0 &&
+				     u64(fr.firstChunk) + fr.chunkCount + fr.otherCount <= h.chunkRefCount && fr.seam <= 1 &&
+				     true;
+			}
+			const u16* idx = reinterpret_cast<const u16*>(indexBytes) + t.firstIndex;
+			for (u32 k = 0; ok && k < t.indexCount; ++k) {
+				u16 v;
+				memcpy(&v, idx + k, sizeof(v));
+				ok = v < t.vertexCount;
+			}
+			if (!ok) break;
+			_farTiles[i].t = t;
+		}
+	}
+	if (ok) {
+		// One mesh per tile. One that does not fit in memory is left out (a
+		// hole far away rather than no layer at all).
+		for (u32 i = 0; i < h.tileCount; ++i) {
+			const FarTile& t = _farTiles[i].t;
+			_farTiles[i].mesh = gfx::meshCreate(reinterpret_cast<const WorldVertex*>(vertexBytes) + t.firstVertex, t.vertexCount,
+			                                    reinterpret_cast<const u16*>(indexBytes) + t.firstIndex, t.indexCount);
+			if (_farTiles[i].mesh) _farBytes += t.vertexCount * u32(sizeof(WorldVertex)) + t.indexCount * u32(sizeof(u16));
+		}
+	}
+	free(blob);
+	if (!ok) {
+		logf("world: the far layer is damaged; drawn without it");
+		freeFar();
+		_farTried = true;
+	}
+}
+
+void World::freeFar() {
+	if (_farTiles)
+		for (u32 i = 0; i < _farTileCount; ++i)
+			if (_farTiles[i].mesh) gfx::meshDestroy(_farTiles[i].mesh);
+	free(_farTiles);
+	free(_farRanges);
+	free(_farRefs);
+	free(_farOrder);
+	free(_farKey);
+	_farTiles = nullptr;
+	_farRanges = nullptr;
+	_farRefs = nullptr;
+	_farOrder = nullptr;
+	_farKey = nullptr;
+	_farTileCount = _farRangeCount = _farRefCount = 0;
+	_farBytes = 0;
+	_stats.farBytes = 0;
 }
 
 // Everything on the spot: read, unpack, upload. Simple and predictable, and
@@ -821,10 +923,19 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_stats.trianglesInChunks = 0;
 	_stats.clustersTested = 0;
 	_stats.clustersCulled = 0;
+	_stats.farDrawCalls = 0;
+	_stats.farTriangles = 0;
+	_stats.farTiles = 0;
+	_stats.farSeams = 0;
 	_visible = 0;
 	if (!_pak) return;
 
 	_frustum = frustumFromViewProj(viewProj);
+	const Frustum whole = _frustum;
+	// With the far layer the fog ends farther out than the chunks are drawn:
+	// a chunk in reach is drawn to its end (the far layer leaves out all of
+	// it, not a part).
+	const float chunkReach = _cfg.drawDistance + (farActive() ? _hdr.chunkSize * 1.5f : 0.0f);
 	// The far plane is where the fog ends (the draw distance): what lies
 	// wholly behind it has the fog's colour all over and need not be drawn.
 	// (The projection's own far plane is further out, to leave room for the
@@ -838,7 +949,7 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 			farPlane[0] = -ahead[0];
 			farPlane[1] = -ahead[1];
 			farPlane[2] = -ahead[2];
-			farPlane[3] = ahead[0] * camera.x + ahead[1] * camera.y + ahead[2] * camera.z + _cfg.drawDistance;
+			farPlane[3] = ahead[0] * camera.x + ahead[1] * camera.y + ahead[2] * camera.z + chunkReach;
 		}
 	}
 	_camera = camera;
@@ -888,6 +999,111 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 		drawBatches(l, false);
 		++_stats.chunksDrawn;
 		_stats.trianglesInChunks += l.triangles;
+	}
+	if (farActive()) drawFar(whole);
+}
+
+bool World::farCovered(u32 firstChunk, u32 count) const {
+	if (!count) return false;
+	for (u32 k = 0; k < count; ++k) {
+		const u32 c = _farRefs[firstChunk + k];
+		// What draw() draws: loaded, and within the draw distance.
+		if (!_loaded[c].mesh || distanceTo(c, _camera) > _cfg.drawDistance) return false;
+	}
+	return true;
+}
+
+void World::drawFar(const Frustum& view) {
+	// Out to the end of the fog, which is the far layer's reach.
+	Frustum f = view;
+	{
+		float* nearPlane = f.p[4];
+		const float len = sqrtf(nearPlane[0] * nearPlane[0] + nearPlane[1] * nearPlane[1] + nearPlane[2] * nearPlane[2]);
+		if (len > 0.0f) {
+			const float ahead[3] = {nearPlane[0] / len, nearPlane[1] / len, nearPlane[2] / len};
+			float* farPlane = f.p[5];
+			farPlane[0] = -ahead[0];
+			farPlane[1] = -ahead[1];
+			farPlane[2] = -ahead[2];
+			farPlane[3] = ahead[0] * _camera.x + ahead[1] * _camera.y + ahead[2] * _camera.z + _cfg.farDistance;
+		}
+	}
+	// Front to back, after the chunks (which hide most of what is near).
+	u32 n = 0;
+	for (u32 i = 0; i < _farTileCount; ++i) {
+		const FarTile& t = _farTiles[i].t;
+		if (!_farTiles[i].mesh) continue;
+		const float d = aabbDistance(t.bbMin, t.bbMax, _camera);
+		if (d > _cfg.farDistance || !aabbInFrustum(f, t.bbMin, t.bbMax)) continue;
+		u32 k = n++;
+		while (k > 0 && _farKey[k - 1] > d) {
+			_farOrder[k] = _farOrder[k - 1];
+			_farKey[k] = _farKey[k - 1];
+			--k;
+		}
+		_farOrder[k] = i;
+		_farKey[k] = d;
+	}
+	if (!n) return;
+	// One flat colour per corner: no texture, no cut-outs, no fade.
+	gfx::setMaterial(nullptr, 0);
+	gfx::setFade(1.0f);
+	for (u32 o = 0; o < n; ++o) {
+		const FarTileRt& tile = _farTiles[_farOrder[o]];
+		const FarTile& t = tile.t;
+		bool transformSet = false, any = false;
+		u32 runFirst = 0, runCount = 0;
+		auto flush = [&]() {
+			if (!runCount) return;
+			if (!transformSet) {
+				// A hair farther from the eye than it is (scaled about the eye:
+				// the same pixels, a deeper depth), so that where it overlaps a
+				// chunk drawn in full along their seam, the chunk is in front.
+				const float push = 1.01f;
+				const float origin[3] = {_camera.x + (t.origin[0] - _camera.x) * push, _camera.y + (t.origin[1] - _camera.y) * push,
+				                         _camera.z + (t.origin[2] - _camera.z) * push};
+				gfx::setChunkTransform(origin, t.posScale * push, 1.0f, nullptr);
+				transformSet = true;
+			}
+			gfx::draw(tile.mesh, runFirst, runCount);
+			++_stats.farDrawCalls;
+			++_stats.drawCalls;
+			_stats.farTriangles += runCount / 3;
+			any = true;
+			runCount = 0;
+		};
+		for (u32 r = 0; r < t.rangeCount; ++r) {
+			const FarRange& fr = _farRanges[t.firstRange + r];
+			if (fr.seam) {
+				// A seam: drawn where one of its cells is in full and the other is not.
+				const bool a = farCovered(fr.firstChunk, fr.chunkCount), b = farCovered(fr.firstChunk + fr.chunkCount, fr.otherCount);
+				flush();
+				if (a == b || aabbDistance(fr.bbMin, fr.bbMax, _camera) > _cfg.farDistance || !aabbInFrustum(f, fr.bbMin, fr.bbMax))
+					continue;
+				runFirst = fr.firstIndex;
+				runCount = fr.indexCount;
+				gfx::setTwoSided(true);
+				flush();
+				gfx::setTwoSided(false);
+				++_stats.farSeams;
+				continue;
+			}
+			const bool draw = !farCovered(fr.firstChunk, fr.chunkCount) && aabbDistance(fr.bbMin, fr.bbMax, _camera) <= _cfg.farDistance &&
+			                  aabbInFrustum(f, fr.bbMin, fr.bbMax);
+			if (!draw) {
+				flush();
+				continue;
+			}
+			if (runCount && fr.firstIndex == runFirst + runCount) {
+				runCount += fr.indexCount;
+			} else {
+				flush();
+				runFirst = fr.firstIndex;
+				runCount = fr.indexCount;
+			}
+		}
+		flush();
+		_stats.farTiles += any;
 	}
 }
 

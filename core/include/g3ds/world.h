@@ -70,7 +70,11 @@ struct WorldHeader {
 	u32 flags;       // WorldFlags
 	u8 fogColor[3];  // WORLDF_INDOOR: colour of the fog and of everything not drawn
 	u8 reserved8;
-	u32 reserved[3];
+	// Pak entry of the world's far layer (FarHeader below; g3ds-bake
+	// --far-lod), 0 if it has none. A runtime that knows nothing of it reads
+	// the field as reserved and draws the world as before.
+	u32 farEntry;
+	u32 reserved[2];
 };
 static_assert(sizeof(WorldHeader) == 96, "WorldHeader layout");
 
@@ -179,6 +183,66 @@ constexpr float WORLD_WIND_UNIT = 0.25f; // cm of sway per step of the wind byte
 inline i16 packVertexFx(u8 occlusion, u8 wind) { return i16(u16(occlusion) | (u16(wind > 127 ? 127 : wind) << 8)); }
 inline u8 vertexOcclusion(i16 w) { return u8(u16(w) & 0xFFu); }
 inline u8 vertexWind(i16 w) { return u8((u16(w) >> 8) & 0x7Fu); }
+
+// ---- G3FR: the far layer ----
+// A coarse copy of the whole world - its ground, buildings and big objects,
+// no small things, one flat colour per corner (the texture's average times the
+// baked light), no texture - drawn where the chunks are not: beyond the draw
+// distance, and in their place where they are not loaded yet. It is cut into
+// tiles of a few chunks' edge, one mesh each; a tile is made of runs of
+// indices ("ranges"), each covering one grid cell of the chunks, so that the
+// cells whose chunks are drawn in full are left out of it.
+//   FarHeader | FarTile[tileCount] | FarRange[rangeCount] | u32 chunk[chunkRefCount] |
+//   WorldVertex[vertexCount] | u16 index[indexCount]
+// Vertices: positions as in a chunk (origin + xyz * posScale of their tile),
+// u = v = 0, w = 1, rgb the colour, a the daylight weight. Indices are local
+// to the tile's vertices; a range's firstIndex is local to the tile's indices.
+constexpr u32 FAR_MAGIC = fourcc('G', '3', 'F', 'R');
+constexpr u32 FAR_VERSION = 1;
+
+struct FarHeader {
+	u32 magic;
+	u32 version;
+	u32 tileCount;
+	u32 rangeCount;
+	u32 chunkRefCount;
+	u32 vertexCount;
+	u32 indexCount;
+	float cellSize; // cm: the edge of the boxes the world was simplified in (the coarseness)
+	u32 reserved[4];
+};
+static_assert(sizeof(FarHeader) == 48, "FarHeader layout");
+
+struct FarTile {
+	float bbMin[3], bbMax[3];
+	float origin[3];
+	float posScale;
+	u32 firstVertex, vertexCount; // into the vertex array (vertexCount <= CHUNK_MAX_VERTICES)
+	u32 firstIndex, indexCount;   // into the index array
+	u32 firstRange, rangeCount;
+};
+static_assert(sizeof(FarTile) == 64, "FarTile layout");
+
+// A range is a cell's piece of the layer - or a seam (FarRange::seam): the
+// strips hanging down along the edges two cells share (against the sky
+// showing through the slit where a chunk drawn in full meets the coarser far
+// layer). A seam is drawn only while one of its cells is drawn in full and
+// the other not: the first half of its indices faces the first cell, the
+// second half the other (the one in full is where the eye is).
+struct FarRange {
+	float bbMin[3], bbMax[3];
+	u32 firstIndex, indexCount; // local to the tile's indices
+	u32 firstChunk;             // into the chunk list: the chunks of the cell (then those of the other cell of a seam)
+	u16 chunkCount;             // 0: a cell without chunks, never drawn in full
+	u8 seam;                    // 1: a seam (0: a cell's piece)
+	u8 otherCount;              // a seam: the other cell's chunks
+};
+static_assert(sizeof(FarRange) == 40, "FarRange layout");
+
+inline u32 farBlobSize(const FarHeader& h) {
+	return u32(sizeof(FarHeader)) + h.tileCount * u32(sizeof(FarTile)) + h.rangeCount * u32(sizeof(FarRange)) +
+	       h.chunkRefCount * u32(sizeof(u32)) + h.vertexCount * u32(sizeof(WorldVertex)) + h.indexCount * u32(sizeof(u16));
+}
 
 inline u32 chunkBlobSize(u32 batches, u32 vertices, u32 indices) {
 	return u32(sizeof(ChunkHeader)) + batches * u32(sizeof(ChunkBatch)) + vertices * u32(sizeof(WorldVertex)) +

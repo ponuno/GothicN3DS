@@ -69,6 +69,12 @@ std::vector<u8> bakeScript(const SrcScript& script, ScriptBakeResult& result) {
 		++members;
 	}
 
+	bool ikarus = false;
+	for (const auto& sy : script.symbols) {
+		std::string up = sy.name;
+		for (char& c : up) c = char(toupper((unsigned char)c));
+		if (up == "IKARUS_VERSION" || up == "MEM_INITALL") ikarus = true;
+	}
 	for (u32 i = 0; i < n; ++i) {
 		SrcSymbol s = script.symbols[i];
 		s.member = isMember[i] != 0;
@@ -95,7 +101,15 @@ std::vector<u8> bakeScript(const SrcScript& script, ScriptBakeResult& result) {
 			}
 		}
 		o.type = u8(s.type);
-		o.flags = u8((s.isConst ? SCRIPTF_CONST : 0) | (s.hasReturn ? SCRIPTF_RETURN : 0) | (s.member ? SCRIPTF_MEMBER : 0) |
+		bool nulled = false;
+		if (ikarus && s.type == SCRIPT_FUNC && !s.external && !s.member && s.isConst) {
+			std::string up = s.name;
+			for (char& c : up) c = char(toupper((unsigned char)c));
+			static const char* const pre[] = {"MEM_", "MEMINT_", "ASM_", "ASMINT_", "CALL_", "CALLINT_"};
+			for (const char* p : pre)
+				if (up.compare(0, strlen(p), p) == 0) nulled = true;
+		}
+		o.flags = u8((nulled ? SCRIPTF_NULLED : 0) | (s.isConst ? SCRIPTF_CONST : 0) | (s.hasReturn ? SCRIPTF_RETURN : 0) | (s.member ? SCRIPTF_MEMBER : 0) |
 		             (s.external ? SCRIPTF_EXTERNAL : 0));
 		o.count = u16(s.count);
 		o.parent = s.parent;

@@ -58,6 +58,11 @@ struct StreamConfig {
 	// WORLDF_WIND): hasOcclusion(), hasWind().
 	float occlusion = 0.0f;
 	float wind = 0.0f;
+	// The far layer (G10; a world baked with --far-lod): drawn out to here, cm,
+	// where the chunks are not - beyond drawDistance, and in place of chunks
+	// not loaded yet. 0 (or no farther than drawDistance): not drawn, and not
+	// held in memory either.
+	float farDistance = 0.0f;
 };
 
 struct WorldStats {
@@ -86,6 +91,12 @@ struct WorldStats {
 	u32 peakResidentBytes;
 	u32 budgetBytes;     // the budget of the last update (World::budget())
 	u32 collisionBytes;  // CPU-side collision data of the resident chunks
+	// The far layer (StreamConfig::farDistance).
+	u32 farDrawCalls;    // (also counted in drawCalls)
+	u32 farTriangles;    // drawn this frame (not in trianglesDrawn)
+	u32 farTiles;        // tiles of it drawn this frame
+	u32 farSeams;        // strips along its seams to chunks drawn in full
+	u32 farBytes;        // its meshes (0: not loaded)
 };
 
 class World {
@@ -152,6 +163,10 @@ public:
 	// Whether the world was baked with Graphics+ data (g3ds-bake --ao, --wind).
 	bool hasOcclusion() const { return (_hdr.flags & WORLDF_AO) != 0; }
 	bool hasWind() const { return (_hdr.flags & WORLDF_WIND) != 0; }
+	// Whether the world has a far layer (g3ds-bake --far-lod), and whether it
+	// is drawn now: loaded and asked to reach beyond the draw distance.
+	bool hasFarLayer() const { return _hdr.farEntry != 0 && !indoor(); }
+	bool farActive() const { return _farTiles != nullptr && _cfg.farDistance > _cfg.drawDistance; }
 
 private:
 	struct Batch {
@@ -222,6 +237,12 @@ private:
 	void releaseTexture(u32 texture);
 	float distanceTo(u32 index, Vec3 camera) const;
 	void drawBatches(Loaded& l, bool blended);
+	// The far layer: read once it is asked for, freed when it is not.
+	void loadFar();
+	void freeFar();
+	void drawFar(const Frustum& view);
+	// Whether all of these chunks (of the far layer's chunk list) are drawn in full this frame.
+	bool farCovered(u32 firstChunk, u32 count) const;
 	void classify(const Loaded& l, bool count);
 
 	Pak* _pak = nullptr;
@@ -260,6 +281,21 @@ private:
 	// push along x and z (gusts included), and the time the wave goes by.
 	float _fxOcclusion = 0.0f, _windX = 0.0f, _windZ = 0.0f;
 	double _windSeconds = 0.0;
+	// The far layer (FarHeader in g3ds/world.h).
+	struct FarTileRt {
+		FarTile t;
+		gfx::Mesh* mesh;
+	};
+	FarTileRt* _farTiles = nullptr;
+	u32 _farTileCount = 0;
+	FarRange* _farRanges = nullptr;
+	u32 _farRangeCount = 0;
+	u32* _farRefs = nullptr;
+	u32 _farRefCount = 0;
+	u32* _farOrder = nullptr;
+	float* _farKey = nullptr;
+	u32 _farBytes = 0;
+	bool _farTried = false; // read once (and failed, or freed again): not read again until asked anew
 	StreamConfig _cfg;
 	WorldStats _stats {};
 };

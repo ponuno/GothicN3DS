@@ -11,6 +11,7 @@
 #include "g3ds/world.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <cmath>
@@ -95,7 +96,29 @@ struct TexJob {
 	std::vector<u8> data;
 	TexBakeInfo info;
 	bool ok = false;
+	u8 average[3] = {128, 128, 128}; // the texture's colour from afar (the far layer)
+	float coverage = 1.0f;            // share of its texels that are solid (alpha >= 128)
 };
+
+// What a texture looks like from afar: the mean of its texels (of the solid
+// ones, for a cut-out), averaged as light (squared) rather than as numbers.
+void averageColour(const SrcImage& img, u8 out[3], float& coverage) {
+	double sum[3] = {0, 0, 0}, all[3] = {0, 0, 0};
+	u64 n = 0, nAll = 0;
+	const size_t texels = size_t(img.width) * size_t(img.height);
+	for (size_t i = 0; i < texels && i * 4 + 3 < img.rgba.size(); ++i) {
+		const u8* t = &img.rgba[i * 4];
+		for (int a = 0; a < 3; ++a) all[a] += double(t[a]) * t[a];
+		++nAll;
+		if (t[3] < 128) continue;
+		for (int a = 0; a < 3; ++a) sum[a] += double(t[a]) * t[a];
+		++n;
+	}
+	coverage = nAll ? float(double(n) / double(nAll)) : 1.0f;
+	const double* s = n ? sum : all;
+	const double d = double(n ? n : nAll);
+	for (int a = 0; a < 3; ++a) out[a] = d > 0 ? u8(std::clamp(std::lround(std::sqrt(s[a] / d)), 0l, 255l)) : 128;
+}
 
 std::string format(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 std::string format(const char* fmt, ...) {
@@ -233,6 +256,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 					}
 					if (!found) continue;
 					jobs[i].data = bakeTexture(img, opt.tex, &jobs[i].info);
+					averageColour(img, jobs[i].average, jobs[i].coverage);
 					jobs[i].ok = true;
 				} catch (const std::exception& ex) {
 					std::lock_guard<std::mutex> g(loadLock);
@@ -340,6 +364,10 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			}
 		std::vector<AoMaterial> aoMaterials(scene.materials.size(), AoMaterial {0.0f, false});
 		u32 windyMaterials = 0;
+		// The far layer: which materials go into it, in what colour.
+		std::vector<bool> farInclude(scene.materials.size(), false);
+		std::vector<std::array<u8, 3>> farColor(scene.materials.size(), std::array<u8, 3> {128, 128, 128});
+		std::vector<float> farShrink(scene.materials.size(), 1.0f);
 		for (size_t i = 0; i < scene.materials.size(); ++i) {
 			if (!used[w][i]) continue;
 			const SrcMaterial& sm = scene.materials[i];
@@ -384,6 +412,16 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			if (wm.flags & MATF_TRANSLUCENT) wm.opacity = sm.opacity;
 			if (sm.noCollision) wm.flags |= MATF_NO_COLLISION;
 			if (windy[i]) wm.flags |= MATF_WIND;
+			// Glow and glass are not seen from afar; water is, as a plain surface.
+			farInclude[i] = !(wm.flags & MATF_ADD) && (!(wm.flags & MATF_BLEND) || (wm.flags & MATF_WATER));
+			if (tex >= 0) {
+				const TexJob& tj = jobs[jobIndex[texturePakName(sm.texture)]];
+				farColor[i] = {tj.average[0], tj.average[1], tj.average[2]};
+				// A cut-out drawn solid: smaller by its holes (area goes with the square).
+				if (wm.flags & MATF_ALPHA_TEST) farShrink[i] = std::clamp(std::sqrt(tj.coverage), 0.35f, 1.0f);
+			} else if (sm.hasColor) {
+				farColor[i] = {sm.color[0], sm.color[1], sm.color[2]};
+			}
 			// Glass, water and glow let the sky through and are not shaded; a
 			// cut-out (leaves, fences) stops about half of what passes it.
 			aoMaterials[i] = (wm.flags & MATF_TRANSLUCENT) ? AoMaterial {0.0f, false}
@@ -491,6 +529,22 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		if (scene.indoor) wh.flags |= WORLDF_INDOOR;
 		if (opt.ao.level != AO_OFF) wh.flags |= WORLDF_AO;
 		if (hasWind) wh.flags |= WORLDF_WIND;
+		// ---- the far layer (G10) ----
+		if (opt.far.enabled && !scene.indoor) {
+			FarStats fs;
+			const std::vector<u8> far = buildFarLayer(scene, farInclude, farColor, farShrink, chunks, opt.chunker.chunkSize, opt.far, fs);
+			if (!far.empty()) {
+				const std::string farName = "world/" + bw.name + "/far";
+				pak.add(farName, ASSET_META, far);
+				wh.farEntry = hashName(farName.c_str());
+				line(format("far layer: %u triangles (and %u in strips along %u seam edges; %u vertices) of %llu, %u crowns, grid %.1f-%.1f m "
+				            "(seams %.1f; %u tries), %u tiles, %u ranges, %.2f MB",
+				            fs.triangles - fs.skirtTriangles, fs.skirtTriangles, fs.seamEdges, fs.vertices, static_cast<unsigned long long>(fs.inputTriangles), fs.crowns, double(fs.cellFinest) / 100.0, double(fs.cellCoarsest) / 100.0, double(fs.cell) / 100.0,
+				            fs.passes, fs.tiles, fs.ranges, double(fs.bytes) / MB));
+			} else {
+				line("far layer: nothing to put in it");
+			}
+		}
 		std::memcpy(wh.fogColor, scene.fogColor, sizeof(wh.fogColor));
 		wh.triangleCount = u32(cs.outputTriangles);
 		for (int a = 0; a < 3; ++a) {

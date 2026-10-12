@@ -555,6 +555,10 @@ int main(int, char**) {
 			else
 				reportLine("detail %3.0f%%  %2d fps  late %2lu/30 fd off", double(app.world().config().detailScale * 100.0f),
 				     interval == 2 ? 30 : 60, static_cast<unsigned long>(lateFrames));
+			// Triangles drawn, of those in the chunks in view (the rest is what the clusters save); draw calls; chunks.
+			reportLine("tris %6lu/%6lu dr %4lu ch %2lu%s", static_cast<unsigned long>(ws.trianglesDrawn),
+			     static_cast<unsigned long>(ws.trianglesInChunks), static_cast<unsigned long>(ws.drawCalls),
+			     static_cast<unsigned long>(ws.chunksDrawn), wholeChunks ? " ZL" : "");
 			// Where the triangles are: level and large objects / medium / small; then by distance from the camera
 			// (under 12 m / 12-25 m / farther); chunks drawn as stand-ins and their triangles.
 			reportLine("A%5lu M%5lu S%5lu n%5lu m%5lu f%5lu", static_cast<unsigned long>(ws.trisByDetail[0]),

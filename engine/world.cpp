@@ -279,11 +279,13 @@ LoadStatus World::finishChunk(LoadResult& r) {
 		r.discard();
 		return LOAD_NO_MEMORY;
 	}
-	for (u32 c = 0; c < clusterCount; ++c)
+	for (u32 c = 0; c < clusterCount; ++c) {
+		l.clusters[c].lod = false;
 		for (int a = 0; a < 3; ++a) {
 			l.clusters[c].bbMin[a] = 1e30f;
 			l.clusters[c].bbMax[a] = -1e30f; // (a number nobody uses stays inside out: never in view)
 		}
+	}
 	for (u32 b = 0; b < h.batchCount; ++b) {
 		const ChunkBatch& src = batches[b];
 		Batch& dst = l.batches[b];
@@ -1191,7 +1193,7 @@ static float aabbFarDistance(const float mn[3], const float mx[3], Vec3 c) {
 // batches what to do without looking at them.
 void World::classify(const Loaded& l, u32 index, bool count) {
 	for (u32 c = 0; c < l.clusterCount; ++c) {
-		const Cluster& k = l.clusters[c];
+		Cluster& k = l.clusters[c];
 		if (k.bbMin[0] > k.bbMax[0]) {
 			_clusterState[c] = CLUSTER_OUT; // nothing in it
 			continue;
@@ -1207,6 +1209,9 @@ void World::classify(const Loaded& l, u32 index, bool count) {
 		// kept up to date there too, so that turning the view finds them as
 		// they should be, not dissolving in.)
 		_clusterNear[c] = aabbDistance(k.bbMin, k.bbMax, _camera);
+		// Far enough from the camera for the stand-ins (a cluster's own distance: a chunk is 40 m wide).
+		k.lod = l.hasLod && _cfg.lodDistance > 0.0f && _clusterNear[c] > (k.lod ? _cfg.lodDistance * 0.9f : _cfg.lodDistance);
+		_stats.lodChunks += count && k.lod;
 		if (where == 0) continue;
 		_clusterFar[c] = aabbFarDistance(k.bbMin, k.bbMax, _camera);
 	}
@@ -1265,8 +1270,8 @@ void World::drawBatches(Loaded& l, bool blended) {
 		const WorldMaterial& m = _materials[batch.material];
 		if (((m.flags & MATF_TRANSLUCENT) != 0) != blended || batch.indexCount == 0) continue;
 		// A chunk far enough away shows its simplified stand-ins in place of the batches they replace.
-		if (batch.lodMode != BATCH_LOD_BOTH && batch.lodMode != (l.lodOn ? BATCH_LOD_FAR_ONLY : BATCH_LOD_FULL_ONLY)) continue;
 		const u32 c = batch.cluster < l.clusterCount ? batch.cluster : 0u;
+		if (batch.lodMode != BATCH_LOD_BOTH && batch.lodMode != (l.clusters[c].lod ? BATCH_LOD_FAR_ONLY : BATCH_LOD_FULL_ONLY)) continue;
 		bool visible = _clusterState[c] != CLUSTER_OUT;
 		u8 shown = 255;
 		if (batch.detail != DETAIL_ALWAYS && _clusterState[c] != CLUSTER_OUT) {
@@ -1431,10 +1436,7 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 
 	for (u32 k = 0; k < n; ++k) {
 		Loaded& l = _loaded[_order[k]];
-		const float chunkDist = _orderKey[k];
-		l.lodOn = l.hasLod && _cfg.lodDistance > 0.0f && chunkDist > (l.lodOn ? _cfg.lodDistance * 0.9f : _cfg.lodDistance);
 		classify(l, _order[k], true);
-		_stats.lodChunks += l.lodOn;
 		drawBatches(l, false);
 		++_stats.chunksDrawn;
 		_stats.trianglesInChunks += l.triangles;

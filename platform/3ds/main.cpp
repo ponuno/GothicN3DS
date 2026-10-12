@@ -561,7 +561,7 @@ int main(int, char**) {
 			     static_cast<unsigned long>(ws.trisByDetail[1]), static_cast<unsigned long>(ws.trisByDetail[2]),
 			     static_cast<unsigned long>(ws.trisByDist[0]), static_cast<unsigned long>(ws.trisByDist[1]),
 			     static_cast<unsigned long>(ws.trisByDist[2]));
-			reportLine("lod %2lu ch %5lu tris  pacer %s%s%s", static_cast<unsigned long>(ws.lodChunks),
+			reportLine("lod %2lu cl %5lu tris  pacer %s%s%s", static_cast<unsigned long>(ws.lodChunks),
 			     static_cast<unsigned long>(ws.lodTriangles), pacing ? "on" : "off", fs.overlapped ? " ovl" : "",
 			     app.settings().objects == g3::OBJECTS_STEADY ? " ST" : app.settings().objects == g3::OBJECTS_BALANCED ? " BAL" : "");
 			// ... and the far layer: its triangles and draw calls ('-': not in data.pak, bake with --far-lod;

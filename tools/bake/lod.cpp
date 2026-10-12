@@ -101,6 +101,18 @@ public:
 		for (size_t v = 0; v < n; ++v)
 			if (_pid[v] != 0xFFFFFFFFu && usedOutside[v]) _locked[_pid[v]] = true;
 		lockBorders();
+		// The stand-ins are switched on per cluster (a neighbouring cluster may still be drawn in full), so what
+		// two clusters share stays as it is: no crack opens between them.
+		for (u32 p = 0; p < places; ++p) {
+			int first = -1;
+			for (u32 t : _inc[p]) {
+				if (first < 0) first = _tris[t].cluster;
+				if (int(_tris[t].cluster) != first) {
+					_locked[p] = true;
+					break;
+				}
+			}
+		}
 		for (u32 t = 0; t < _tris.size(); ++t) {
 			double nx, ny, nz, d;
 			if (!_tris[t].alive || !plane(_tris[t], nx, ny, nz, d)) continue;

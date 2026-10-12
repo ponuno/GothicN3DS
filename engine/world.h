@@ -104,7 +104,7 @@ struct WorldStats {
 	u32 trianglesDrawn;
 	u32 trisByDetail[3]; // drawn: level geometry and large objects / medium / small (DetailClass)
 	u32 trisByDist[3];   // drawn, by the batch's cluster box: nearer than 12 m / 12-25 m / farther
-	u32 lodChunks;       // chunks drawn this frame with their simplified stand-ins
+	u32 lodChunks;       // clusters drawn this frame with their simplified stand-ins
 	u32 lodTriangles;    // of the drawn triangles: those of the stand-ins
 	u32 trianglesInChunks; // all the triangles of the chunks drawn: what drawing whole chunks would cost
 	u32 clustersTested;  // boxes of visible chunks looked at ...
@@ -223,6 +223,7 @@ private:
 	// it: one look at the box settles most of its batches.
 	struct Cluster {
 		float bbMin[3], bbMax[3];
+		bool lod; // drawn with its simplified stand-ins just now (with a little hysteresis)
 	};
 	struct Loaded {
 		gfx::Mesh* mesh;
@@ -241,7 +242,6 @@ private:
 		bool requested; // handed to the background loader
 		bool hasBlended;
 		bool hasLod;    // has batches of BATCH_LOD_FAR_ONLY
-		bool lodOn;     // drawn with the stand-ins just now (with a little hysteresis)
 		ChunkCollider collider;
 		ChunkCollider water;
 	};

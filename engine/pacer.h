@@ -28,7 +28,7 @@ struct PacerConfig {
 	// When even that is too much (the objects are gone and the world itself is more than a frame
 	// can take - an open square) the world's own draw distance, with its fog, shortens too, down to
 	// this share, a little at a time; it is given back before the objects are.
-	float minDistance = 0.65f;
+	float minDistance = 0.5f;
 	float distOver = 1.0f;     // load above which (objects gone) the distance shortens
 	float distStep = 0.02f;    // most taken away in a frame (less when only a little over)
 	float distRecover = 0.05f; // given back at a time (with the same calm as the objects)

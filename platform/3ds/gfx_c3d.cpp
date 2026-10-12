@@ -63,7 +63,7 @@ bool gSkinned = false; // last value of the shader's `skinned` switch
 // material with MATF_WIND while the chunk's wind is not zero.
 float gFx[4] = {0, 0, 0, 0};
 bool gWindy = false, gMaterialWind = false, gChunkWind = false;
-bool gFillTest = false;    // draw only the left half of the picture (hold ZR at start): does the GPU time follow the pixels?
+bool gFillTest = false;    // the picture squeezed into half the screen (hold ZR at start): does the GPU time follow the pixels?
 bool gDoubleDraws = false; // every world draw is issued twice (hold START at start): what does one more draw call cost with no state change?
 bool gPlainShader = false; // the world-only shader of earlier versions: no characters
 bool gFadeShader = false;  // the shader with the dissolve, and the noise on unit 1
@@ -543,7 +543,9 @@ void frameBegin(const FrameDesc& f) {
 		C3D_SetViewport(0, 0, gTarget->frameBuf.width, gTarget->frameBuf.height);
 	}
 	osTickCounterStart(&gCpuClock);
-	if (gFillTest) C3D_SetScissor(GPU_SCISSOR_NORMAL, 0, 0, gTarget->frameBuf.width, gTarget->frameBuf.height / 2);
+	// The picture squeezed into half the screen: the same triangles and draws, half the pixels. (A scissor did not do
+	// this: the GPU still worked on what it cut away.)
+	if (gFillTest) C3D_SetViewport(0, 0, gTarget->frameBuf.width, gTarget->frameBuf.height / 2);
 	C3D_BindProgram(&gProgram);
 
 	// Mtx_PerspTilt handles the sideways screen and PICA's -1..0 depth range.

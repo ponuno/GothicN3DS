@@ -331,6 +331,8 @@ public:
 	void draw(const Mat4& viewProj, const float dayLight[3]);
 	// Whose models and archive the weapons in their hands are drawn from.
 	void setHeldSource(class Loot* loot, Pak* pak) { _heldLoot = loot; _heldPak = pak; }
+	// Models, textures and animations of those about to come into range are read ahead on a thread of its own.
+	void setReadAhead(class ReadAhead* ahead) { _ahead = ahead; }
 
 	NpcConfig& config() { return _cfg; }
 	const NpcStats& stats() const { return _stats; }
@@ -742,6 +744,7 @@ private:
 	float _drawnRadius[ACTORS] = {};
 	u32 _drawnCount = 0;
 	class Loot* _heldLoot = nullptr;
+	class ReadAhead* _ahead = nullptr;
 	Pak* _heldPak = nullptr;
 	Pak* _pak = nullptr; // the archive of the world entered (animations are read from it at any time)
 	const World* _world = nullptr; // ... and the world

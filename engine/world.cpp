@@ -1,5 +1,7 @@
 #include "world.h"
 
+#include "readahead.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -7,6 +9,11 @@ namespace g3 {
 
 // Graphics+: how many waves of the wind go by a plant in a second (G2).
 static const float kWindWavesPerSecond = 0.35f;
+
+void World::setReadAhead(ReadAhead* ahead) {
+	_ahead = ahead;
+	_loader.setReadAhead(ahead);
+}
 
 bool World::open(Pak* pak, const char* name) {
 	char path[96];
@@ -380,6 +387,21 @@ float World::unloadReach(u32 tier) const {
 	return min(loadReach(tier) + _cfg.detailSlack, _cfg.unloadRadius);
 }
 
+// How much farther a chunk ahead of the way the camera goes is wanted: the world arrives before the camera does.
+// Never so far that the chunk would be freed again at once (the unload distance is farther than the load distance).
+float World::headLeadFor(u32 index, Vec3 camera) const {
+	if (_cfg.headLead <= 0.0f || _headStrength <= 0.0f) return 0.0f;
+	const ChunkInfo& ci = _chunks[index];
+	const float vx = (ci.bbMin[0] + ci.bbMax[0]) * 0.5f - camera.x, vz = (ci.bbMin[2] + ci.bbMax[2]) * 0.5f - camera.z;
+	const float len = sqrtf(vx * vx + vz * vz);
+	if (len < 100.0f) return 0.0f;
+	const float dot = (vx * _headX + vz * _headZ) / len;
+	if (dot <= 0.0f) return 0.0f;
+	const u32 tier = chunkTier(index);
+	const float room = unloadReach(tier) - loadReach(tier) - 200.0f;
+	return room > 0.0f ? min(_cfg.headLead * dot * _headStrength, room) : 0.0f;
+}
+
 float World::priority(u32 index, float d, Vec3 camera) const {
 	const u32 tier = chunkTier(index);
 	float key = d + _cfg.tierBias[tier < DETAIL_COUNT ? tier : 0u];
@@ -552,10 +574,10 @@ void World::gatherCandidates(Vec3 camera) {
 	auto consider = [&](u32 i) {
 		if (_seen[i] == _seenStamp) return;
 		_seen[i] = _seenStamp;
-		if (distanceTo(i, camera) < reach[chunkTier(i)] + kCandidateMargin * 2.0f) _cand[_candCount++] = i;
+		if (distanceTo(i, camera) < reach[chunkTier(i)] + kCandidateMargin * 2.0f + _cfg.headLead) _cand[_candCount++] = i;
 	};
 	if (_gridStart) {
-		const float r = widest + kCandidateMargin * 2.0f;
+		const float r = widest + kCandidateMargin * 2.0f + _cfg.headLead;
 		const int cx0 = clamp(int(floorf((camera.x - r - _gridX0) / _gridCell)), 0, _gridW - 1);
 		const int cx1 = clamp(int(floorf((camera.x + r - _gridX0) / _gridCell)), 0, _gridW - 1);
 		const int cz0 = clamp(int(floorf((camera.z - r - _gridZ0) / _gridCell)), 0, _gridH - 1);
@@ -586,7 +608,7 @@ u32 World::collectPending(Vec3 camera) {
 		const u32 i = _cand[c];
 		if (_loaded[i].mesh || _loaded[i].failed) continue;
 		const float d = distanceTo(i, camera);
-		if (d >= loadReach(chunkTier(i))) continue;
+		if (d >= loadReach(chunkTier(i)) + headLeadFor(i, camera)) continue;
 		_order[pending] = i;
 		_orderKey[pending] = priority(i, d, camera);
 		++pending;
@@ -1037,6 +1059,24 @@ void World::updateBackground(u32 pending, Vec3 camera) {
 		l.requested = true;
 		++_chunksInFlight;
 		_inFlightBytes += need;
+	}
+
+	// 2b. The chunks after those: their bytes come off the card now, while the loader is busy with collision grids,
+	// so that their jobs find them waiting. Only what the budget has room for as it is (no point in reading what
+	// would be turned away).
+	if (_ahead && _ahead->running() && _ahead->enabled()) {
+		u32 asked = 0, spare = _stats.residentBytes + _inFlightBytes;
+		for (u32 n = 0; n < pending && asked < _cfg.readAheadChunks; ++n) {
+			sortNearest(n, pending);
+			const u32 index = _order[n];
+			const Loaded& l = _loaded[index];
+			if (l.mesh || l.requested || l.failed) continue;
+			const u32 need = meshBytes(_chunks[index]);
+			if (spare + need > budget()) break; // (everything farther is no nearer to fitting)
+			spare += need;
+			_ahead->request(_chunks[index].entryHash);
+			++asked;
+		}
 	}
 
 	// 3. Textures of the chunks that have arrived.

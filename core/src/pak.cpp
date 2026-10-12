@@ -68,6 +68,7 @@ void Pak::close() {
 	_names = nullptr;
 	_scratch = nullptr;
 	_scratchCap = 0;
+	_hooks = PakHooks();
 	_path[0] = 0;
 	_hdr = {};
 }
@@ -89,6 +90,17 @@ const PakEntry* Pak::find(u32 hash) const {
 }
 
 bool Pak::read(const PakEntry& e, void* dst) {
+	if (_hooks.take && e.size) {
+		if (void* ready = _hooks.take(_hooks.user, e)) {
+			memcpy(dst, ready, e.size);
+			free(ready);
+			return true;
+		}
+	}
+	return readCard(e, dst);
+}
+
+bool Pak::readCard(const PakEntry& e, void* dst) {
 	if (!_file || !seekTo(_file, e.offset)) return false;
 
 	if (e.codec == PAK_RAW) {
@@ -120,8 +132,11 @@ bool Pak::readRange(const PakEntry& e, u32 offset, void* dst, u32 size) {
 }
 
 void* Pak::readAlloc(const PakEntry& e) {
+	if (_hooks.take && e.size) {
+		if (void* ready = _hooks.take(_hooks.user, e)) return ready;
+	}
 	void* p = malloc(e.size ? e.size : 1);
-	if (p && !read(e, p)) {
+	if (p && !readCard(e, p)) {
 		free(p);
 		p = nullptr;
 	}

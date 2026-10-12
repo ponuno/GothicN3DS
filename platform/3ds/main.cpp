@@ -276,6 +276,10 @@ int main(int, char**) {
 	stream.maxLoadsPerFrame = background ? 1 : 2;
 	stream.clusterCulling = !wholeChunks;
 	if (!dissolve) stream.fadeMs = 0.0f;
+	// The card is read ahead on a thread of its own: 4 MB of models, textures, animations and chunks waiting
+	// (the menu's "Чтение наперёд"). The chunks ahead of the way the camera goes are wanted 12 m sooner.
+	app.setReadAheadBudget(4u << 20);
+	stream.headLead = 1200.0f;
 	// Sound before the application, which hands it to the sound engine.
 	if (gAudio.open()) app.setAudio(&gAudio);
 	else printf("no sound: the DSP firmware is missing\n(dump it with DSP1 to sdmc:/3ds/dspfirm.cdc)\n");
@@ -323,7 +327,7 @@ int main(int, char**) {
 	if (nobody || plainShader) app.npcs().config().maxShown = 0;
 	// Characters coming into range: one set going per frame, the models of those on their way read ahead.
 	app.npcs().config().startsPerFrame = 1;
-	app.npcs().config().prefetchRange = 1500.0f;
+	app.npcs().config().prefetchRange = 3000.0f; // (their models are read on the read-ahead's thread; the frame only builds them)
 	printf("loading...\n");
 	app.world().preload(app.camera().pos);
 	consoleClear();
@@ -733,6 +737,14 @@ int main(int, char**) {
 			reportLine("loader %-6s job %5.1f ms  fly %lu",
 			     !app.world().backgroundStreaming() ? "off" : app.world().workerThread() ? "thread" : "inline",
 			     double(app.world().takeWorstLoadMs()), static_cast<unsigned long>(ws.chunksInFlight));
+			{
+				// Read-ahead: reads that found their bytes waiting / went to the card; entries and KB waiting.
+				const g3::ReadAheadStats ra = app.readAhead().stats();
+				if (app.readAhead().running())
+					reportLine("ahead %s %lu+/%lu- w%lu %luK", app.readAhead().enabled() ? "on" : "off",
+					     static_cast<unsigned long>(ra.hits), static_cast<unsigned long>(ra.misses),
+					     static_cast<unsigned long>(ra.entries), static_cast<unsigned long>(ra.bytes >> 10));
+			}
 			// (fd: objects dissolving in or out, on average; "off": the dissolve is off.)
 			if (dissolve && gfx::fadeSupported())
 				reportLine("detail %3.0f%%  %2d fps  late %2lu/30 fd %lu", double(app.world().config().detailScale * 100.0f),

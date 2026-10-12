@@ -320,6 +320,8 @@ const Entry kEntries[] = {
     {{"45–80 Гц", "45-80 Hz", "45-80 Hz", "45-80 Hz"}},
     {{"Держать 72", "Hold 72", "Trzymaj 72", "72 halten"}},
     {{"Держать 80", "Hold 80", "Trzymaj 80", "80 halten"}},
+    {{"Чтение наперёд", "Read ahead", "Czytanie z wyprzedzeniem", "Vorausladen"}},
+    {{"Модели и чанки читаются с карты заранее", "Models and chunks are read from the card early", "Modele i fragmenty czytane z karty wcześniej", "Modelle und Teile werden früh gelesen"}},
     {{"Доворот кадра", "Frame turn", "Obrót klatki", "Bilddrehung"}},
     {{"Старый кадр довёрнут, пока ждём новый", "Old frame turned while the new one is late", "Stara klatka obrócona, gdy nowa się spóźnia", "Alter Frame gedreht, bis der neue kommt"}},
     {{"Сглаживание", "Smoothing", "Wygładzanie", "Kantenglättung"}},

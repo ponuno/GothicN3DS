@@ -1,4 +1,6 @@
 #include "npcs.h"
+
+#include "readahead.h"
 #include "loot.h"
 
 #include <math.h>
@@ -268,7 +270,7 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 	u32 startsLeft = _cfg.startsPerFrame;
 	// Those about to come into range, nearest first: their models are read ahead (see below).
 	const float prefetch2 = (_reach + 300.0f + _cfg.prefetchRange) * (_reach + 300.0f + _cfg.prefetchRange);
-	enum { AHEAD = 4 };
+	enum { AHEAD = 8 };
 	u32 ahead[AHEAD];
 	float aheadKey[AHEAD];
 	u32 aheadCount = 0;
@@ -382,12 +384,26 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 	}
 	// A frame with a load to spare reads the models of those who are about to come: by the time they are in range
 	// they are in memory, and the frame they appear in is no longer the one with the archive read in it.
-	for (u32 k = 0; k < aheadCount && loadsLeft > 0; ++k) {
+	// With a read-ahead (readahead.h) the card's part is done on its own thread: the wish goes there (it reads the
+	// model, then its textures and the animations the game is known to use), and the frame only turns what is waiting
+	// into a model - never reads from the card itself here.
+	const bool reading = _ahead && _ahead->running() && _ahead->enabled();
+	for (u32 k = 0; k < aheadCount; ++k) {
 		const LookEntry* look = lookOf(_game.npc(ahead[k]).look);
 		if (!look) continue;
-		piece(pak, look->rig, loadsLeft);
-		if (loadsLeft > 0) piece(pak, look->body, loadsLeft);
-		if (loadsLeft > 0 && look->head) piece(pak, look->head, loadsLeft);
+		const u32 hashes[3] = {look->rig, look->body, look->head};
+		for (u32 h : hashes) {
+			if (!h) continue;
+			if (reading) {
+				bool inMemory = false;
+				for (const Piece& p : _pieces) inMemory = inMemory || (p.hash == h && !p.failed);
+				if (inMemory) continue;
+				_ahead->request(h);
+				if (loadsLeft > 0 && _ahead->has(h)) piece(pak, h, loadsLeft);
+			} else if (loadsLeft > 0) {
+				piece(pak, h, loadsLeft);
+			}
+		}
 	}
 	u32 models = 0;
 	for (const Piece& p : _pieces) models += p.hash != 0 && !p.failed;

@@ -46,6 +46,15 @@ struct PakEntry {
 };
 static_assert(sizeof(PakEntry) == 24, "PakEntry layout");
 
+// Where the bytes of an entry may already be waiting (engine/readahead.h reads them ahead on a thread of its own).
+// `take` returns the entry's e.size bytes in a malloc'ed buffer the caller owns, or null if they are not there; `clip`
+// is told the name of an animation that is being read (so the read-ahead learns which ones are worth reading).
+struct PakHooks {
+	void* (*take)(void* user, const PakEntry& e) = nullptr;
+	void (*clip)(void* user, u32 nameHash) = nullptr;
+	void* user = nullptr;
+};
+
 class Pak {
 public:
 	Pak() = default;
@@ -66,6 +75,11 @@ public:
 	const PakEntry* find(u32 hash) const;
 	const PakEntry* find(const char* name) const { return find(hashName(name)); }
 
+	void setHooks(const PakHooks& hooks) { _hooks = hooks; }
+	void noteClip(u32 nameHash) const {
+		if (_hooks.clip) _hooks.clip(_hooks.user, nameHash);
+	}
+
 	// dst must hold e.size bytes.
 	bool read(const PakEntry& e, void* dst);
 	// `size` bytes from `offset` into an entry stored raw (music: read in pieces).
@@ -77,6 +91,7 @@ public:
 	u64 bytesRead() const { return _bytesRead; }
 
 private:
+	bool readCard(const PakEntry& e, void* dst); // from the card, whatever the hooks have
 	FILE* _file = nullptr;
 	PakHeader _hdr {};
 	PakEntry* _table = nullptr;
@@ -84,6 +99,7 @@ private:
 	u8* _scratch = nullptr;
 	u32 _scratchCap = 0;
 	u64 _bytesRead = 0;
+	PakHooks _hooks;
 	char _path[256] = {0};
 };
 

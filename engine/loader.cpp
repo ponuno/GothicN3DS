@@ -1,6 +1,7 @@
 #include "loader.h"
 
 #include "g3ds/tex.h"
+#include "readahead.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -91,6 +92,7 @@ void StreamLoader::process(Pak& pak, const LoadJob& job, const WorldMaterial* ma
 bool StreamLoader::start(const char* pakPath, const WorldMaterial* materials, u32 materialCount, bool threaded) {
 	stop();
 	if (!pakPath || !pakPath[0] || !_pak.open(pakPath)) return false;
+	if (_ahead) _ahead->attach(_pak);
 	_materials = materials;
 	_materialCount = materialCount;
 	_jobHead = _jobCount = _resultHead = _resultCount = _outstanding = 0;

@@ -35,6 +35,7 @@ struct StreamConfig {
 	// appear and vanish at once, as before. Off-screen they change at once.
 	float fadeMs = 400.0f;
 	u32 maxLoadsPerFrame = 2;      // chunks handed to the GPU per frame: bounds the upload hitch
+	u32 readAheadChunks = 4;       // chunks after those being read whose bytes are read ahead from the card (with a ReadAhead)
 	u32 maxInFlight = 2;           // chunks being read at once in the background (nearer wishes wait: what is read is still wanted when it arrives)
 	// Worlds baked with WORLDF_TIERS: chunks of medium and small objects (tier 1, 2) are wanted only
 	// where those are drawn: out to the class's detailDistance, a tenth farther (detailHysteresis) and
@@ -47,6 +48,9 @@ struct StreamConfig {
 	float tierBias[DETAIL_COUNT] = {0.0f, 1500.0f, 2500.0f};
 	// Chunks ahead of the way the camera moves count this much nearer, those behind it this much farther
 	// (cm), for what is loaded first and what is freed first. 0: only distance counts.
+	// Chunks ahead of the way the camera goes are wanted this much farther out (cm, at most; the unload distance is the
+	// limit), so that they are there before the camera is. 0: the same distance all round.
+	float headLead = 0.0f;
 	float aheadBonus = 800.0f;
 	float behindPenalty = 800.0f;
 	u32 maxTextureLoadsPerFrame = 4; // same for textures, background streaming only
@@ -162,6 +166,8 @@ public:
 	void preload(Vec3 camera);
 	// True if chunks are streamed in the background, and whether a worker
 	// thread does it.
+	// Chunks about to be wanted are read from the card ahead of time (readahead.h); the loader reads through it too.
+	void setReadAhead(class ReadAhead* ahead);
 	bool backgroundStreaming() const { return _loader.running(); }
 	bool workerThread() const { return _loader.threaded(); }
 	// The longest a background job took since the last call, ms.
@@ -269,6 +275,7 @@ private:
 	float unloadReach(u32 tier) const;
 	// What a chunk at distance `d` counts as for the order of loading and of freeing: distance, plus
 	// what its tier is worth less, minus (plus) a little for the way the camera is going.
+	float headLeadFor(u32 index, Vec3 camera) const;
 	float priority(u32 index, float d, Vec3 camera) const;
 	void trackHeading(Vec3 camera);
 	void buildGrid();
@@ -351,6 +358,7 @@ private:
 	u32 _lastRejected = 0xFFFFFFFFu; // the chunk the budget last turned away: counted once while it waits
 	u32 _visible = 0;          // entries of _order filled by the last draw()
 	u32 _texturesWaiting = 0;  // texture slots with `waiting` set
+	class ReadAhead* _ahead = nullptr;
 	StreamLoader _loader;      // running only with StreamConfig::background
 	bool _immediate = false;   // inside preload(): load on the spot even with a loader
 	u32 _frame = 0;            // update() counter

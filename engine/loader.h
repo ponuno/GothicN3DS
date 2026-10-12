@@ -61,6 +61,8 @@ public:
 	// `materials` must stay valid until stop(). Without `threaded`, or if no
 	// thread can be started, the same queue is worked off inside peek() and
 	// poll() on the caller's thread. False if the archive cannot be opened.
+	// The archive the worker reads through (null: straight from the card). Before start().
+	void setReadAhead(class ReadAhead* ahead) { _ahead = ahead; }
 	bool start(const char* pakPath, const WorldMaterial* materials, u32 materialCount, bool threaded);
 	// Finishes the job in progress, drops everything else. Safe to call twice.
 	void stop();
@@ -93,6 +95,7 @@ private:
 	void work();
 	bool runOne(); // unthreaded: one queued job, on this thread
 
+	class ReadAhead* _ahead = nullptr;
 	Pak _pak; // the worker's own file handle and unpack buffer
 	const WorldMaterial* _materials = nullptr;
 	u32 _materialCount = 0;

@@ -12,6 +12,7 @@
 #include "npcs.h"
 #include "panel.h"
 #include "player.h"
+#include "readahead.h"
 #include "recorder.h"
 #include "settings.h"
 #include "sky.h"
@@ -128,6 +129,9 @@ public:
 	World& world() { return _world; }
 	const World& world() const { return _world; }
 	Pak& pak() { return _pak; }
+	// Reading ahead (readahead.h): bytes of cache, 0 for none. Before init(). The menu's switch turns it on and off.
+	void setReadAheadBudget(u32 bytes) { _aheadBudget = bytes; }
+	ReadAhead& readAhead() { return _ahead; }
 	SkyColors skyColors() const { return skyColorsAt(_env.timeOfDay); }
 	const char* error() const { return _error; }
 	// Name of the current world asset ("world/oldmine"), for display.
@@ -377,6 +381,8 @@ private:
 	int heroIndex() const;
 	bool projectToScreen(Vec3 p, int& x, int& y) const;
 
+	ReadAhead _ahead; // (before the archive and the world, which ask it: it is the last to go)
+	u32 _aheadBudget = 0;
 	Pak _pak;
 	AudioOut* _audio = nullptr;
 	ScriptVm _sfxVm, _musicVm; // the sounds (SFX.DAT) and music themes (MUSIC.DAT) of the game: scripts of their own

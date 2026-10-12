@@ -133,6 +133,7 @@ const Item kDebugWorld[] = {
     {"Полёт вкл/выкл", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_FLY, "Свободная камера без столкновений", nullptr},
     {"Следующий мир", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_NEXT_WORLD, nullptr, nullptr},
     {"Время +1 час", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_HOUR, nullptr, nullptr},
+    {"Чтение наперёд", TOGGLE, &Settings::readAhead, nullptr, 0, 0, 0, nullptr, 0, "Модели и чанки читаются с карты заранее", nullptr},
 };
 #undef NONE
 

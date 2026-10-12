@@ -19,6 +19,7 @@
 #include "waynet.h"
 #include "model_bake.h"
 #include "pacer.h"
+#include "readahead.h"
 #include "reproject.h"
 #include "pak_writer.h"
 #include "rg_etc1.h"
@@ -1688,11 +1689,12 @@ static void testStreaming() {
 		std::vector<u8> frame;
 	};
 	gfx::init();
-	Snapshot shots[3];
-	static const char* names[3] = {"on the frame", "background, no thread", "background, worker thread"};
-	for (int mode = 0; mode < 3; ++mode) {
-		const bool background = mode > 0, threaded = mode == 2;
+	Snapshot shots[4];
+	static const char* names[4] = {"on the frame", "background, no thread", "background, worker thread", "worker + read-ahead"};
+	for (int mode = 0; mode < 4; ++mode) {
+		const bool background = mode > 0, threaded = mode >= 2;
 		App app;
+		if (mode == 3) app.setReadAheadBudget(2u << 20);
 		app.world().config().background = background;
 		app.world().config().worker = threaded;
 		CHECK(app.init(path.c_str(), "t"));
@@ -1752,6 +1754,12 @@ static void testStreaming() {
 		app.setClock(5.0); // the water moves: same moment in every mode
 		app.render();
 		shot.frame.assign(gfx::softFramebuffer(), gfx::softFramebuffer() + gfx::SCREEN_W * gfx::SCREEN_H * 4);
+		if (mode == 3) {
+			// The chunks after those being read came off the card ahead of time, and the loader found them waiting.
+			const ReadAheadStats ra = app.readAhead().stats();
+			std::printf("  read-ahead: %u hits, %u misses, %u read, %u evicted\n", ra.hits, ra.misses, ra.loaded, ra.evicted);
+			CHECK(app.readAhead().running() && ra.loaded > 0 && ra.hits > 0);
+		}
 		const u32 near = w.stats().chunksLoaded;
 		CHECK(near > 4 && near < w.stats().chunksTotal && w.stats().loadFailures == 0 && w.stats().budgetRejects == 0);
 		const u32 skyBytes = gfx::memStats().meshBytes + gfx::memStats().textureBytes - w.stats().residentBytes;
@@ -1869,7 +1877,7 @@ static void testStreaming() {
 		CHECK(gfx::memStats().meshCount == 0 && gfx::memStats().textureCount == 0);
 	}
 	gfx::shutdown();
-	for (int mode = 1; mode < 3; ++mode) {
+	for (int mode = 1; mode < 4; ++mode) {
 		CHECK(shots[mode].resident == shots[0].resident);
 		CHECK(shots[mode].bytes == shots[0].bytes && shots[mode].textures == shots[0].textures &&
 		      shots[mode].collision == shots[0].collision);
@@ -7623,6 +7631,130 @@ static void testReproject() {
 	}
 }
 
+// Reading ahead (engine/readahead.h): what is wished for is read and waits; the archive hands it over once and then
+// reads from the card as before; a model brings its textures and the animations the game has been seen to fetch; a
+// full cache drops what has waited longest; the switch drops everything.
+static void testReadAhead() {
+	const std::string path = gDir + "/readahead.pak";
+	auto blobOf = [](size_t n, u8 seed) {
+		std::vector<u8> v(n);
+		for (size_t i = 0; i < n; ++i) v[i] = u8(seed + i * 7);
+		return v;
+	};
+	const u32 texHash = hashName("tex/skin"), runName = hashName("S_RUN"), walkName = hashName("S_WALK");
+	const u32 runClip = hashName("clip/run"), walkClip = hashName("clip/walk");
+	std::vector<u8> model(sizeof(ModelHeader) + sizeof(ModelNode) + sizeof(ModelPart) + 2 * sizeof(ModelClipRef), 0);
+	{
+		ModelHeader h {};
+		h.magic = MODEL_MAGIC;
+		h.version = MODEL_VERSION;
+		h.nodeCount = 1;
+		h.partCount = 1;
+		h.clipCount = 2;
+		memcpy(model.data(), &h, sizeof(h));
+		ModelPart part {};
+		part.texture = texHash;
+		memcpy(model.data() + sizeof(ModelHeader) + sizeof(ModelNode), &part, sizeof(part));
+		const ModelClipRef refs[2] = {{runName, runClip}, {walkName, walkClip}};
+		memcpy(model.data() + sizeof(ModelHeader) + sizeof(ModelNode) + sizeof(ModelPart), refs, sizeof(refs));
+	}
+	{
+		PakWriter w;
+		w.add("model/man", ASSET_MODEL, model);
+		w.add("tex/skin", ASSET_TEXTURE, blobOf(3000, 1));
+		w.add("clip/run", ASSET_CLIP, blobOf(2000, 2));
+		w.add("clip/walk", ASSET_CLIP, blobOf(2000, 3));
+		for (int i = 0; i < 20; ++i) w.add("chunk/" + std::to_string(i), ASSET_CHUNK, blobOf(40000, u8(10 + i)));
+		w.add("sound/x", ASSET_SOUND, blobOf(500, 9));
+		w.write(path);
+	}
+	const u32 modelHash = hashName("model/man");
+
+	// 1. Without a thread: wishes are read by pump(); the model brings the texture and the run clip, not the walk clip
+	//    (nobody has fetched it); the archive takes the bytes once.
+	{
+		ReadAhead ra;
+		Pak pak;
+		CHECK(pak.open(path.c_str()) && ra.start(path.c_str(), 1u << 20, false));
+		ra.attach(pak);
+		ra.noteClip(runName);
+		ra.request(modelHash);
+		ra.request(modelHash); // (the same wish twice is one)
+		ra.request(hashName("sound/x")); // (not worth it: read and then ignored)
+		while (ra.pump()) {}
+		CHECK(ra.has(modelHash) && ra.has(texHash) && ra.has(runClip) && !ra.has(walkClip) && !ra.has(hashName("sound/x")));
+		const PakEntry* e = pak.find(modelHash);
+		CHECK(e != nullptr);
+		void* got = e ? pak.readAlloc(*e) : nullptr;
+		CHECK(got && std::memcmp(got, model.data(), model.size()) == 0);
+		free(got);
+		CHECK(ra.stats().hits == 1 && !ra.has(modelHash));
+		void* again = pak.readAlloc(*e); // (from the card now)
+		CHECK(again && std::memcmp(again, model.data(), model.size()) == 0 && ra.stats().misses == 1);
+		free(again);
+		// read() takes from the cache too, into the caller's buffer.
+		const PakEntry* te = pak.find(texHash);
+		std::vector<u8> buf(te->size);
+		CHECK(pak.read(*te, buf.data()) && buf == blobOf(3000, 1) && ra.stats().hits == 2);
+		// A clip fetched through the archive teaches the name.
+		pak.noteClip(walkName);
+		ra.request(modelHash);
+		while (ra.pump()) {}
+		CHECK(ra.has(walkClip));
+		// 4. The switch.
+		ra.setEnabled(false);
+		CHECK(!ra.has(walkClip) && ra.stats().entries == 0 && ra.stats().bytes == 0);
+		ra.request(modelHash);
+		CHECK(!ra.pump() && !ra.has(modelHash));
+		ra.setEnabled(true);
+		ra.stop();
+	}
+	// 2. A cache that holds only part of the wishes: the one that has waited longest goes, the size is kept.
+	{
+		ReadAhead ra;
+		CHECK(ra.start(path.c_str(), 130000, false));
+		for (int i = 0; i < 20; ++i) ra.request(hashName(("chunk/" + std::to_string(i)).c_str()));
+		// (the queue holds 48: all twenty are in)
+		while (ra.pump()) {}
+		const ReadAheadStats st = ra.stats();
+		std::printf("  read-ahead: %u chunks in %u bytes, %u evicted\n", st.entries, st.bytes, st.evicted);
+		CHECK(st.bytes <= 130000 && st.entries == 3 && st.evicted == 17 && st.loaded == 20);
+		CHECK(ra.has(hashName("chunk/19")) && ra.has(hashName("chunk/17")) && !ra.has(hashName("chunk/0")));
+		// A wish for what is waiting makes it the youngest: chunk 17 survives the next two.
+		ra.request(hashName("chunk/17"));
+		ra.request(hashName("chunk/0"));
+		ra.request(hashName("chunk/1"));
+		while (ra.pump()) {}
+		CHECK(ra.has(hashName("chunk/17")) && ra.has(hashName("chunk/1")) && !ra.has(hashName("chunk/18")));
+	}
+	// 3. With the thread: the wishes are read on their own.
+	{
+		ReadAhead ra;
+		CHECK(ra.start(path.c_str(), 1u << 20, true));
+		CHECK(ra.running());
+		for (int i = 0; i < 6; ++i) ra.request(hashName(("chunk/" + std::to_string(i)).c_str()));
+		bool all = false;
+		for (int t = 0; t < 4000 && !all; ++t) {
+			all = true;
+			for (int i = 0; i < 6; ++i) all = all && ra.has(hashName(("chunk/" + std::to_string(i)).c_str()));
+			if (!all) usleep(500);
+		}
+		CHECK(all && ra.stats().loaded == 6);
+		ra.stop();
+		CHECK(!ra.running() && !ra.has(hashName("chunk/0")));
+	}
+	// 5. The menu's setting and the stream's: on at first, kept by the file.
+	{
+		Settings st;
+		CHECK(st.readAhead == 1);
+		st.readAhead = 0;
+		const std::string sp = gDir + "/readahead_settings.bin";
+		CHECK(st.save(sp.c_str()));
+		Settings back;
+		CHECK(back.load(sp.c_str()) && back.readAhead == 0);
+	}
+}
+
 static void testSimplify() {
 	testSimplifyWorld();
 	testSimplifyModel();
@@ -9256,6 +9388,7 @@ int main(int argc, char** argv) {
              {"simplify", testSimplify},
              {"displaytiming", testDisplayTiming},
              {"reproject", testReproject},
+             {"readahead", testReadAhead},
 	             {"music", testMusic},
 	             {"speech", testSpeech},
              {"sound", testSound},

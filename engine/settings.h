@@ -98,6 +98,8 @@ struct Settings {
 	// Version 14: when a refresh has no new picture the old one is shown turned sideways by the turn of the view
 	// (experimental, see reproject.h): 0 off, 1 on.
 	u8 reproject = 0;
+	// Version 15: the cache that reads models, textures, animations and chunks ahead (readahead.h): 0 off, 1 on.
+	u8 readAhead = 1;
 	float lodDistanceCm() const;
 
 	// Clamps every value into its range (after reading a file of another version).

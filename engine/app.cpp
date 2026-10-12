@@ -14,6 +14,13 @@ bool App::init(const char* pakPath, const char* worldName) {
 		_error = "cannot open data.pak";
 		return false;
 	}
+	// The read-ahead has an archive handle of its own; the world's loader and the inhabitants ask it for their reads.
+	if (_aheadBudget && _ahead.start(pakPath, _aheadBudget, true)) {
+		_ahead.setEnabled(_settings.readAhead != 0);
+		_ahead.attach(_pak);
+		_world.setReadAhead(&_ahead);
+		_npcs.setReadAhead(&_ahead);
+	}
 	char start[64] = "world";
 	if (worldName && *worldName) {
 		snprintf(start, sizeof(start), "%s", worldName);
@@ -335,6 +342,7 @@ void App::shutdown() {
 	_sky.release();
 	_world.close();
 	_pak.close();
+	_ahead.stop();
 }
 
 void App::checkPortals() {
@@ -1139,6 +1147,7 @@ void App::applySettings() {
 	_windWanted = _settings.windStrength();
 	cfg.wind = _gfxRelief ? 0.0f : _windWanted;
 	setLanguage(_settings.language);
+	_ahead.setEnabled(_settings.readAhead != 0);
 	_env.dayLength = _settings.dayLengthSeconds();
 	NpcConfig& nc = _npcs.config();
 	nc.range = _settings.npcRangeCm();

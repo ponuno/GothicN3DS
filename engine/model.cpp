@@ -246,6 +246,7 @@ const Clip* Model::fetch(Pak& pak, u32 nameHash, u32& inMemory, u32 budget, u32 
 			const PakEntry* e = pak.find(_clipRefs[at].entryHash);
 			if (!e || inMemory + e->size > budget) break; // (not marked as tried: there may be room later)
 			_clipTried[at] = 1;
+			pak.noteClip(nameHash);
 			if (c.load(pak, _clipRefs[at].entryHash, _h.nodeCount)) inMemory += c.bytes();
 		}
 		if (!c.loaded()) break;

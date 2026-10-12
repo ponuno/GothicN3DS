@@ -337,7 +337,7 @@ int main(int, char**) {
 		const g3::Settings& st = app.settings();
 		pacer.cfg.minDetail = st.minDetail(); // (steady: too heavy means 30 fps, the objects stay)
 		pacer.cfg.halfOnly = st.frameRate == g3::FRAMES_30;
-		pacer.cfg.freeRate = st.frameRate == g3::FRAMES_FREE || (st.frameRate == g3::FRAMES_40 && displayOk);
+		pacer.cfg.freeRate = st.frameRate == g3::FRAMES_FREE || (st.frameRate == g3::FRAMES_40 && displayOk) || (st.refreshHold() && displayOk);
 		// Leaving a mode (the steady 30 above all) starts the pacer afresh: its half rate must not outlive the setting.
 		if (st.frameRate != pacedMode) {
 			pacedMode = st.frameRate;
@@ -599,8 +599,10 @@ int main(int, char**) {
 		// CPU, and a frame takes the sum. (Measured in that order on a New
 		// 3DS: 28% + 97% gave 20.9 ms, which is 125% of 16.7 ms.)
 		const bool lock40 = displayOk && app.settings().frameRate == g3::FRAMES_40;
+		// "Hold 72/80": the detail is kept to that rate's frame time (12.5 ms at 80), the screen follows the frame.
+		const bool hold = !lock40 && displayOk && app.settings().refreshHold() && interval == 1 && !menu.isOpen();
 		const gfx::FrameStats fs = gfx::frameStats();
-		const float load = (fs.overlapped ? max(fs.cpuMs + updateMs, fs.gpuMs) : fs.cpuMs + fs.gpuMs) * (lock40 ? 0.04f : 0.06f);
+		const float load = (fs.overlapped ? max(fs.cpuMs + updateMs, fs.gpuMs) : fs.cpuMs + fs.gpuMs) * (lock40 ? 0.04f : hold ? app.settings().refreshMaxHz() * 0.001f : 0.06f);
 		// The view turning faster than about 60 degrees a second: what comes
 		// into view comes and goes, so no objects are given back meanwhile.
 		float turn = app.camera().yaw - lastYaw;

@@ -91,7 +91,10 @@ struct Settings {
 	// Version 13: the top screen's refresh rate follows the frame (experimental, writes the screen controller's timing):
 	// 0 off (60 Hz), 1 between 45 and 60 Hz, 2 up to 72, 3 up to 80.
 	u8 refresh = 0;
-	float refreshMaxHz() const { return refresh == 1 ? 60.0f : refresh == 2 ? 72.0f : refresh == 3 ? 80.0f : 0.0f; }
+	// 1..3: the screen follows the frame up to 60 / 72 / 80 Hz (detail as at 60 fps); 4, 5: the same up to 72 / 80, and the
+	// detail is kept to that rate's frame time too ("hold").
+	float refreshMaxHz() const { return refresh == 1 ? 60.0f : (refresh == 2 || refresh == 4) ? 72.0f : (refresh == 3 || refresh == 5) ? 80.0f : 0.0f; }
+	bool refreshHold() const { return refresh >= 4; }
 	float lodDistanceCm() const;
 
 	// Clamps every value into its range (after reading a file of another version).

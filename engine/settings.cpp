@@ -107,7 +107,7 @@ void Settings::sanitize() {
 	if (shadows >= SHADOW_MODES) shadows = SHADOWS_OFF;
 	if (farLayer > 3) farLayer = 0;
 	if (farGeometry > 3) farGeometry = 2;
-	if (refresh > 3) refresh = 0;
+	if (refresh > 5) refresh = 0;
 	gfxPlus = gfxPresetOf();
 	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier, &visibility, &antialias};
 	for (u8* f : flags) *f = *f ? 1 : 0;

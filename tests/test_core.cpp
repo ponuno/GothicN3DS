@@ -3952,8 +3952,11 @@ static std::vector<u8> imaWav(const std::vector<i16>& samples, u32 rate) {
 
 // Lets the sound engine's loading thread and the host's clock run until `count` sounds have started.
 static bool soundWait(Sound& sound, HostAudio& audio, u32 count) {
-	for (int i = 0; i < 600; ++i) {
-		sound.update(0.01f, 12.0f);
+	// The game's clock must not run ahead of the loading thread: a sample that has waited longer than
+	// WAIT_FOR_SAMPLE of game time counts as late and is dropped, and on a slow or busy machine the thread needs
+	// longer than the 60 ms of real time that 10 ms steps would allow. So the steps are tiny.
+	for (int i = 0; i < 3000; ++i) {
+		sound.update(0.0002f, 12.0f);
 		audio.advance(0.01f);
 		if (audio.startedCount() >= count) return true;
 		usleep(2000);
@@ -7488,6 +7491,10 @@ static void testDisplayTiming() {
 	CHECK(st.refresh == 0 && st.refreshMaxHz() == 0.0f);
 	st.refresh = 2;
 	CHECK(st.refreshMaxHz() == 72.0f);
+	st.refresh = 5;
+	CHECK(st.refreshMaxHz() == 80.0f && st.refreshHold());
+	st.refresh = 3;
+	CHECK(st.refreshMaxHz() == 80.0f && !st.refreshHold());
 	st.refresh = 9;
 	st.sanitize();
 	CHECK(st.refresh == 0);

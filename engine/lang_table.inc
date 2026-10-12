@@ -318,6 +318,8 @@ const Entry kEntries[] = {
     {{"45–60 Гц", "45-60 Hz", "45-60 Hz", "45-60 Hz"}},
     {{"45–72 Гц", "45-72 Hz", "45-72 Hz", "45-72 Hz"}},
     {{"45–80 Гц", "45-80 Hz", "45-80 Hz", "45-80 Hz"}},
+    {{"Держать 72", "Hold 72", "Trzymaj 72", "72 halten"}},
+    {{"Держать 80", "Hold 80", "Trzymaj 80", "80 halten"}},
     {{"Сглаживание", "Smoothing", "Wygładzanie", "Kantenglättung"}},
     {{"Края без лесенки; после перезапуска", "No jagged edges; after a restart", "Bez schodków; po ponownym uruchomieniu", "Keine Treppen; nach Neustart"}},
     {{"Дальняя геометрия", "Far geometry", "Dalsza geometria", "Ferne Geometrie"}},

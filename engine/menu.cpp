@@ -46,7 +46,7 @@ const char* const kGfxPresetNotes[] = {"Всё выключено, как ран
                                        "Значения изменены вручную"};
 const char* const kWind[] = {"Нет", "Слабое", "Обычное", "Сильное"};
 const char* const kShadows[] = {"Выкл", "Герой", "Все рядом"};
-const char* const kRefresh[] = {"Выкл", "45–60 Гц", "45–72 Гц", "45–80 Гц"};
+const char* const kRefresh[] = {"Выкл", "45–60 Гц", "45–72 Гц", "45–80 Гц", "Держать 72", "Держать 80"};
 const char* const kFarGeometry[] = {"Выкл", "25 м", "40 м", "60 м"};
 const char* const kFarLayer[] = {"Выкл", "250 м", "400 м", "600 м"};
 const char* const kFarLayerNotes[] = {"Дальше дальности прорисовки — туман", "Упрощённый мир до 250 м",
@@ -107,7 +107,7 @@ const Item kGfxPlus[] = {
     {"Тени персонажей", CHOICE, &Settings::shadows, kShadows, 3, 0, 0, nullptr, 0, nullptr, kShadowNotes},
     {"Дальний план", CHOICE, &Settings::farLayer, kFarLayer, 4, 0, 0, nullptr, 0, nullptr, kFarLayerNotes},
     {"Дальняя геометрия", CHOICE, &Settings::farGeometry, kFarGeometry, 4, 0, 0, nullptr, 0, "Упрощённые дальние чанки (мир с --lod)", nullptr},
-    {"Частота экрана", CHOICE, &Settings::refresh, kRefresh, 4, 0, 0, nullptr, 0, "Экран подстраивается под кадр (опыт)", nullptr},
+    {"Частота экрана", CHOICE, &Settings::refresh, kRefresh, 6, 0, 0, nullptr, 0, "Экран подстраивается под кадр (опыт)", nullptr},
     {"Сглаживание", TOGGLE, &Settings::antialias, nullptr, 0, 0, 0, nullptr, 0, "Края без лесенки; после перезапуска", nullptr},
     {"Видимость", TOGGLE, &Settings::visibility, nullptr, 0, 0, 0, nullptr, 0, "Не рисовать скрытое стенами (мир с --vis)", nullptr},
 };

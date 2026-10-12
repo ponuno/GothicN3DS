@@ -1,64 +1,65 @@
-# Gothic 3DS — Gothic 1 на New Nintendo 3DS
+# Gothic 3DS — Gothic 1 on the New Nintendo 3DS
 
-*Описание порта — по-русски; руководство по сборке двуязычное (сначала English, затем русский).*
+> **Game data is not distributed.** This project contains nothing from Gothic: you need your own legal copy, and the baked `data.pak`, `music.pak`, `speech.pak` and the music WAVs you produce from it must not be published.
 
-> **Данные игры не распространяются / Game data is not distributed.** Проект не содержит ничего из Gothic: нужна ваша легальная копия, а `data.pak`, `music.pak`, `speech.pak` и WAV с музыкой, которые вы запекаете из неё, нельзя публиковать. This project contains nothing from Gothic; you need your own legal copy, and the baked `.pak` files and music WAVs must not be published.
+A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, its own renderer for the PICA200 GPU, its own Daedalus virtual machine). The game takes your original files, bakes them into a compact `data.pak` and runs the world on the console: scripts, dialogue, combat, magic, townsfolk with daily routines, sound and voices.
 
-Порт **Gothic 1** на **New Nintendo 3DS** на собственном движке (C++17, свой рендер под PICA200, своя виртуальная машина Daedalus). Игра берёт ваши оригинальные файлы, «запекает» их в компактный `data.pak` и запускает мир на консоли: скрипты, диалоги, бой, магия, жители с распорядком дня, звук и голоса. / A port of Gothic 1 to the New 3DS: a custom engine with its own Daedalus VM; your own game files are baked into `data.pak`.
+![Test scene: camp by day, lake, cave, gate at sunset](docs/preview.png)
 
-![Тестовая сцена: лагерь днём, озеро, пещера, ворота на закате](docs/preview.png)
+## Features
 
-## Особенности порта
+**World**
+- Real Gothic 1 worlds (and Gothic 2 mods such as Chronicles of Myrtana: Archolos via `--mod`; Archolos is still being verified).
+- The world is cut into 40 m chunks and streamed in the background within a memory budget; distant chunks are unloaded; culling by 10 m clusters. Draw distance up to 200 m, 60 fps in the castle.
+- ETC1/ETC1A4 textures with mipmaps, quantised vertices, lightmaps, water, sky and time of day, portals between worlds and interiors.
+- Lamps, campfires and torches with flames and particles; distant objects dissolve instead of popping in.
+- **Graphics+** (menu: Graphics → Graphics+, everything off by default):
+  - baked ambient occlusion in the vertices (`g3ds-bake --ao low|high`);
+  - trees, bushes and grass swaying in the vertex shader (`--wind`);
+  - round shadows under the hero and townsfolk;
+  - **far layer** (`--far-lod`): a coarse, simplified copy of the whole world drawn beyond the draw distance (250 / 400 / 600 m) and over chunks that did not fit in memory. Only checked on PC so far; it costs about 1.5–2 MB of linear memory on the console.
+  - Under load the foliage stops swaying and shadows stay on the hero alone before objects start to disappear.
+- The world's memory budget on the 3DS adapts to the free linear memory (it used to be a hard 20 MB).
 
-**Мир**
-- Настоящие миры Gothic 1 (и моды Gothic 2 вроде Chronicles of Myrtana: Archolos через `--mod`; Archolos пока в проверке).
-- Мир режется на чанки по 40 м и подгружается в фоне с бюджетом памяти; дальние чанки выгружаются, отсечение по кластерам 10 м. Дальность прорисовки до 200 м, в замке 60 кадров/с.
-- Текстуры ETC1/ETC1A4 с мипами, квантованные вершины, лайтмапы, вода, небо и смена времени суток, порталы между мирами и интерьеры.
-- Светильники, костры и факелы с огнём и частицами; растворение дальних объектов вместо «выскакивания».
-- **«Графика+»** (меню: Графика → Графика+, всё выключено по умолчанию): затенение углов — запечённый AO в вершинах (`g3ds-bake --ao low|high`), колыхание деревьев, кустов и травы в вершинном шейдере (`--wind`), круглые тени под героем и жителями. Под нагрузкой листва замирает и тени остаются только у героя раньше, чем пропадают объекты.
-- Бюджет памяти мира на 3DS подстраивается под свободную линейную память (раньше — жёсткие 20 МБ).
+**Character and controls**
+- Hero with skeletal animation from the game files: walking, running, swimming, ladders, jumping, climbing ledges, sneaking.
+- Third-person camera using the original settings (`CAMERA.DAT`); two control schemes: console (after Gothic Classic on PS) and classic PC.
+- Inventory, quick slots on the bottom screen, diary, character window, pause menu with settings (distance, object mode, frame rate, sound, language).
+- Saving and loading of position and story, quick save.
 
-**Персонаж и управление**
-- Герой со скелетной анимацией из файлов игры: ходьба, бег, плавание, лестницы, прыжки, карабканье на уступы, красться.
-- Камера от третьего лица по настройкам оригинала (`CAMERA.DAT`); две схемы управления — консольная (по образцу Gothic Classic на PS) и классическая ПК.
-- Инвентарь, быстрые слоты на нижнем экране, дневник, окно персонажа, меню паузы с настройками (дальность, режим объектов, частота кадров, звук, язык).
-- Сохранение и загрузка позиции и истории, быстрое сохранение.
+**Combat and magic**
+- Combat by the game's rules: target lock, combo strikes with direction, parry, dodge back, looting corpses.
+- Bow and crossbow: aiming, arrows with gravity and a hit-throw, the white trail as in the original.
+- Magic driven by the game's scripts: fire bolt, fireball, lightning, healing, scrolls and runes, effects from `VISUALFX.DAT`; instant spells fire at once, chargeable ones charge; area spells (fire rain).
 
-**Бой и магия**
-- Бой по правилам игры: захват цели, удары с комбо и направлением, парирование, отскок, обыск трупов.
-- Лук и арбалет: прицел, стрелы с гравитацией и броском на попадание, белый след как в оригинале.
-- Магия по скриптам игры: огненная стрела, огненный шар, молния, лечение, свитки и руны, эффекты из `VISUALFX.DAT`; быстрые заклинания срабатывают сразу, заряжаемые заряжаются; область (огненный дождь).
+**Townsfolk and scripts**
+- Own Daedalus virtual machine: 2075 of 2075 runs matched the ZenKit interpreter.
+- More than a thousand characters are placed by the startup scripts; the nearest live by a daily routine: they walk the waypoint network, stand guard, sit at campfires and on benches, work at the anvil, sleep in beds.
+- Perception and reactions to the hero: sight, hearing, threats, attacks, creatures and humans.
+- Dialogue with the real lines, quests and chapters, items in hand and in the world, chests, searching.
+- Experimental compatibility mode for Ikarus-based mods: writes to constants are allowed and the Ikarus memory primitives return 0 (no emulation of Ikarus memory yet).
 
-**Жители и скрипты**
-- Собственная виртуальная машина Daedalus: 2075 запусков из 2075 совпали с интерпретатором ZenKit.
-- Более тысячи персонажей расставлены стартовыми скриптами; ближайшие живут по распорядку дня: ходят по сети путей, встают на посты, садятся у костра и на скамьи, работают у наковальни, спят в кроватях.
-- Восприятие и реакции на героя: зрение, слух, угрозы, нападения, существа и люди.
-- Диалоги с настоящими репликами, задания и главы, предметы в руках и в мире, сундуки, обыск.
+**Sound**
+- Footsteps, combat and world sounds driven by animation events, music by zone, time of day and combat, voiced lines (`speech.pak`). Needs the DSP firmware, see below.
 
-**Звук**
-- Шаги, бой и звуки мира по событиям анимаций, музыка по зонам, времени суток и бою, озвученные реплики (`speech.pak`). Нужна прошивка DSP, см. ниже.
+**Tools**
+- `g3ds-bake` (Linux/WSL/Windows) and the **Gothic3DS-Baker.exe** window: one-click baking without WSL (`windows/README.md`).
+- The `g3ds-host` host build: the same renderer on PC for debugging; `ctest` tests (6 suites), the console-code check `scripts/check_3ds.sh`.
+- Interface in four languages.
 
-**Инструменты**
-- `g3ds-bake` (Linux/WSL/Windows) и окно **Gothic3DS-Baker.exe**: запекание в один щелчок, без WSL (`windows/README.md`).
-- Хост `g3ds-host`: тот же рендер на ПК для отладки; тесты `ctest` (6 наборов), проверка кода консоли `scripts/check_3ds.sh`.
-- Интерфейс на четырёх языках.
+**Not there yet:** trading, teachers and learning points, some triggers and mechanisms (doors, lifts), summoning and transformations, weather. Details and measurements: [`docs/HANDOFF.md`](docs/HANDOFF.md), [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/TECHNICAL.md`](docs/TECHNICAL.md). Next for Graphics+: sky with clouds, height fog, a smooth transition to the far layer and more (the plan is at the end of `docs/HANDOFF.md`).
 
-**Чего ещё нет:** торговля, учителя и очки обучения, часть триггеров и механизмов (двери, лифты), призыв и превращения, погода. Подробности и замеры — [`docs/HANDOFF.md`](docs/HANDOFF.md), [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/TECHNICAL.md`](docs/TECHNICAL.md). Дальше в «Графике+»: небо с облаками, туман по высоте, дальний слой LOD и др. (план — в конце `docs/HANDOFF.md`).
+**Status.** Much of this has been verified on a real New 3DS (60 fps, world, townsfolk, AI), but the latest rounds (combat, magic, climbing, Archolos memory, the far layer) have only been checked on PC and are waiting for a test on the console. The project licence has not been chosen yet; third-party code: [`third_party/README.md`](third_party/README.md).
 
-**Статус.** Многое проверено на настоящей New 3DS (60 к/с, мир, жители, ИИ), но последние раунды (бой, магия, карабканье, память Archolos) проверены только на ПК и ждут проверки на консоли. Лицензия проекта пока не выбрана; сторонний код — [`third_party/README.md`](third_party/README.md).
+## Quick start
 
-## Быстрый старт
-
-1. Windows, только запечь данные: три `.exe` из Releases и `Gothic3DS-Baker.exe` — [`windows/README.md`](windows/README.md).
-2. Полная сборка (3DS-программа, музыка, SD-карта): руководство ниже.
-3. Устройство и подробное управление: [`docs/TECHNICAL.md`](docs/TECHNICAL.md).
+1. Windows, baking the data only: three `.exe` files from Releases plus `Gothic3DS-Baker.exe`, see [`windows/README.md`](windows/README.md).
+2. Full build (3DS program, music, SD card): the guide below.
+3. How it works and detailed controls: [`docs/TECHNICAL.md`](docs/TECHNICAL.md).
 
 ---
 
-
-*(Русская версия — ниже, после этого раздела. / The Russian version follows below.)*
-
-> **Easier for baking only (no WSL):** download `Gothic3DS-Baker.exe`, `g3ds-bake.exe` and `dmrender.exe` from the Releases page into one folder and run the window. See [`windows/README.md`](windows/README.md). / **Проще, если нужно только запечь данные (без WSL):** скачайте три `.exe` из Releases в одну папку и запустите `Gothic3DS-Baker.exe`, см. [`windows/README.md`](windows/README.md).
+> **Easier for baking only (no WSL):** download `Gothic3DS-Baker.exe`, `g3ds-bake.exe` and `dmrender.exe` from the Releases page into one folder and run the window. See [`windows/README.md`](windows/README.md).
 
 **Legal note.** The game's data (textures, models, sounds, music, scripts) is not distributed with this project and must not be distributed by you either. You need your own legal copy of Gothic 1. The files you produce (`data.pak`, `music.pak`, `speech.pak`, rendered WAVs) contain the game's content: keep them for yourself and never publish them. Only the source code, the tools, the compiled `gothic3ds.3dsx` (it contains no game data) and these instructions may be shared.
 
@@ -197,7 +198,7 @@ Good to know:
 - The voices come from the game's own `Speech.vdf`/`Sounds.vdf` (or loose files in `_work\Data\Sound\Speech`). The report has a line `voices: N lines of dialogue, M recordings baked (... MB ...)`; M should be in the thousands. The voices are baked in **full quality** (16-bit, the recordings' own sample rate): `speech.pak` is large, probably 1–2 GB, and the converter needs that much free RAM while it works. That is fine for a 64–128 GB card. Smaller and lower quality, if you ever need it: `--voice-codec ima` (a quarter of the size) and/or `--voice-rate 11025`; skip the voices altogether: `--no-voices`. If M is 0 the game was installed without the speech archive (some localized versions keep it elsewhere) — send the `voices:` line to the developer.
 - Print the report again with `./build/g3ds-bake info ~/out/data.pak`.
 - The quality of the sound effects is set with `--sound-rate 22050`, of the music with `--music-rate 44100`, of the voices with `--voice-rate` (default: as recorded) and `--voice-codec pcm|ima`.
-- **Graphics+** (optional): `--ao low` (or `high`) bakes shaded corners into the vertices, `--wind` lets trees, bushes and grass sway. Both are switched on in the game's menu (Graphics → Graphics+); without them in `data.pak` those menu items do nothing. Cost: about 10 % more vertices (memory) and some seconds to a minute of baking. The report says `ambient occlusion (--ao low): ...` and `plants that sway (kept with --wind): N trees, M bushes, K grasses` with the names it took for plants — send those lines if trees do not sway. More tree words for a mod: `--plant-words WORD1,WORD2`.
+- **Graphics+** (optional): `--ao low` (or `high`) bakes shaded corners into the vertices, `--wind` lets trees, bushes and grass sway. `--far-lod` adds a coarse far layer drawn beyond the draw distance (tuning: `--far-cell M`, `--far-tris N` in thousands, default 80; about 1.5–2 MB on the console). All three are switched on in the game's menu (Graphics → Graphics+); without them in `data.pak` those menu items do nothing. Cost: about 10 % more vertices (memory) for `--ao`/`--wind` and some seconds to a minute of baking. The report says `ambient occlusion (--ao low): ...` and `plants that sway (kept with --wind): N trees, M bushes, K grasses` with the names it took for plants — send those lines if trees do not sway. More tree words for a mod: `--plant-words WORD1,WORD2`.
 - **Never put the game's data into the project archive** and never publish `data.pak`, `music.pak` or `speech.pak`: they are the game's content.
 - After every project update, bake `data.pak` again (`docs/HANDOFF.md` says in the section of the round whether that is needed).
 
@@ -300,249 +301,3 @@ If something is wrong with the sound, after you quit the game the report `/3ds/g
 
 When a new `gothic3ds-base.zip` arrives: repeat step 3 (find and check the newest archive, move the old project away, unpack), then steps 4, 6, 7 and 8. The project is rebuilt from scratch (a few minutes). The WAV files in `~/music_wavs` and the results in `~/out` are outside the project and stay, so step 5 is needed only if you want to render the music again.
 
----
-
----
-
-# Сборка проекта с нуля через WSL (инструкция для новичка) — русская версия
-
-**Юридическое замечание.** Данные игры (текстуры, модели, звуки, музыка, скрипты) в проект не входят, и вы тоже не должны их распространять. Нужна ваша собственная легальная копия Gothic 1. Файлы, которые вы получаете (`data.pak`, `music.pak`, `speech.pak`, WAV с музыкой), содержат материалы игры: оставьте их себе и нигде не публикуйте. Делиться можно только исходным кодом, инструментами, собранным `gothic3ds.3dsx` (в нём нет данных игры) и этими инструкциями.
-
-Что получится в конце: на SD-карте 3DS лежат `gothic3ds.3dsx`, `data.pak` (мир и звуки), `music.pak` (музыка) и `speech.pak` (голоса), а также файл прошивки DSP `dspfirm.cdc`, без которого не будет никакого звука (см. рамку ниже).
-
-> **⚠ БЕЗ `dspfirm.cdc` ЗВУКА НЕ БУДЕТ.** 3DS проигрывает звук через чип DSP, а ему нужна прошивка, которую система Nintendo прячет внутри консоли. Хоумбрю может ею пользоваться, только если вы **один раз** выгрузите её на SD-карту как `sdmc:/3ds/dspfirm.cdc` (прямо в папку `3ds`, **не** в `3ds/gothic3ds`). На консоли: Homebrew Launcher → **DSP1** (есть и в Homebrew App Store) → запустить → появится сообщение, что прошивка выгружена. Проверьте на ПК, что на SD-карте есть `3ds/dspfirm.cdc`. Без этого файла игра запускается, но полностью немая: ни эффектов, ни музыки, ни голосов, как бы правильно ни были собраны `.pak`. После выхода из игры файл `3ds/gothic3ds/sound.txt` показывает это в первой строке: `dsp: open` — хорошо; `dsp: NOT open (ndspInit 0xD880A7FA ...)` — файла нет.
-
-Все команды ниже вводятся в терминале **Ubuntu (WSL)**, если не сказано иное. Команду можно скопировать целиком и вставить правой кнопкой мыши. Строки, которые начинаются с `#`, — пояснения, их вводить не нужно.
-
-**Главное правило WSL.** Диски Windows в WSL лежат в `/mnt/`: диск `C:` — это `/mnt/c`, а `C:\Program Files (x86)\Steam` — это `"/mnt/c/Program Files (x86)/Steam"`. Обратные слэши `\` и буквы дисков (`C:`) в командах WSL не работают. Пути с пробелами всегда берите в кавычки.
-
----
-
-## Шаг 0. Что понадобится
-
-- Windows 10 (2004+) или Windows 11.
-- Установленная **Gothic 1** (Steam-версия) — для неё нужен путь к папке игры.
-- Консоль **New Nintendo 3DS** с Homebrew Launcher и выгруженная утилитой **DSP1** прошивка DSP в `sdmc:/3ds/dspfirm.cdc` (см. предупреждение выше; один раз на консоль).
-- Около 15 ГБ свободного места и интернет.
-
-## Шаг 1. Установка WSL и Ubuntu (один раз)
-
-1. Откройте **PowerShell от имени администратора** (Пуск → PowerShell → правая кнопка → «Запуск от имени администратора»).
-2. Введите:
-   ```
-   wsl --install -d Ubuntu
-   ```
-3. Перезагрузите компьютер, если попросит. После перезагрузки откроется окно Ubuntu: придумайте имя пользователя и пароль (при вводе пароля символы не видны — это нормально).
-4. Дальше терминал Ubuntu открывается так: Пуск → **Ubuntu** (или в PowerShell командой `wsl`).
-
-## Шаг 2. Программы для сборки (один раз)
-
-```
-sudo apt update
-sudo apt install -y build-essential cmake ninja-build git zip unzip python3 wget gpg
-```
-
-Проверьте все четыре команды: каждая должна напечатать версию, а не «command not found»:
-```
-cmake --version
-ninja --version
-g++ --version
-unzip -v | head -1
-```
-`cmake` — 3.16 или выше, `g++` — GCC 11 или новее (нужна поддержка C++20). **Если нет `ninja` или `unzip`, шаги 3 и 4 не пройдут**: выполните строку `apt install` выше ещё раз.
-
-## Шаг 3. Проект
-
-Проект надо держать **внутри WSL** (в домашней папке `~`), а не на диске `C:`: на `/mnt/c` всё работает в разы медленнее.
-
-1. Скачайте **самый свежий** `gothic3ds-base.zip` и оставьте в Windows ровно одну его копию, например в `C:\Users\ВАШ_ПОЛЬЗОВАТЕЛЬ\Downloads` (старые копии удалите: браузер добавляет к именам `(1)`, `(2)` ..., и старый архив легко распаковать по ошибке).
-2. Найдите его и проверьте, что он правильный (`ВАШ_ПОЛЬЗОВАТЕЛЬ` — имя вашего пользователя Windows, папка в `C:\Users`):
-   ```
-   cd ~
-   ZIP=$(ls -t /mnt/c/Users/ВАШ_ПОЛЬЗОВАТЕЛЬ/Downloads/gothic3ds-base*.zip | head -1)
-   echo "$ZIP"
-   unzip -p "$ZIP" gothic3ds/tools/bake/import_zen.cpp | grep -c importZenSfxScript
-   ```
-   Последняя команда должна напечатать `1` или больше. Если `0`, это старый архив: удалите его и скачайте самый свежий.
-3. Распакуйте в домашнюю папку WSL **в пустое место** (сначала уберите старый проект, чтобы старые и новые файлы не смешались):
-   ```
-   cd ~
-   [ -d gothic3ds ] && mv gothic3ds gothic3ds_old_$(date +%s)
-   unzip -q "$ZIP"
-   cd ~/gothic3ds
-   ls
-   ```
-   `ls` должен показать `CMakeLists.txt  Makefile  README.md  core  docs  engine  platform  scripts  tests  third_party  tools`.
-
-Дальше все команды выполняются из папки `~/gothic3ds`. Если окно закрыли, вернитесь командой `cd ~/gothic3ds`.
-
-> Файлы вида `*:Zone.Identifier` — служебные метки Windows, они безвредны. Удалить: `find ~/gothic3ds -name '*:Zone.Identifier' -delete`.
-
-## Шаг 4. Сборка инструментов для ПК
-
-```
-cd ~/gothic3ds
-cmake -S . -B build -G Ninja
-cmake --build build -j
-strings build/g3ds-bake | grep -c "script/sfx"
-```
-
-Последняя строка должна напечатать число больше 0: это доказывает, что собран именно новый конвертер. (Если `ninja` не установлен, cmake сразу остановится с «unable to find a build program corresponding to Ninja»: поставьте его `sudo apt install -y ninja-build`, удалите папку `build` и повторите команды.)
-
-Первый запуск скачивает библиотеку ZenKit с GitHub, это займёт несколько минут. Получатся программы `build/g3ds-bake` (конвертер) и `build/g3ds-host` (запуск на ПК).
-
-Быстрая проверка без игры (необязательно):
-
-```
-./build/g3ds-bake synth -o /tmp/test.pak
-ls -la /tmp/test.pak
-```
-
-Тесты (необязательно, долго): `ctest --test-dir build --output-on-failure`.
-
-## Шаг 5. Музыка игры в WAV
-
-Оригинальная музыка Gothic — формат DirectMusic, 3DS её читать не умеет. Поэтому её один раз превращают в WAV отдельной программой `dmrender`.
-
-1. Соберите программу (библиотека dmusic скачается сама):
-   ```
-   cd ~/gothic3ds
-   cmake -S tools/dmrender -B build-dmrender
-   cmake --build build-dmrender
-   ls build-dmrender/dmrender
-   ```
-   Последняя команда должна просто напечатать путь к файлу.
-2. Отрендерите всю музыку (путь — папка игры `_work\DATA\Music`; программа сама просматривает подпапки `orchestra`, `dungeon`, `menu_men` …):
-   ```
-   build-dmrender/dmrender "/mnt/c/Program Files (x86)/Steam/steamapps/common/Gothic/_work/DATA/Music" ~/music_wavs
-   ```
-   Для пробы одной темы добавьте в конец её имя: `... ~/music_wavs OC_DAY_STD.sgt`. Результат — файлы `~/music_wavs/*.wav`.
-   **Музыка внутри архивов (Gothic 2, Chronicles of Myrtana).** Стили `.sty` и банки `.dls` часто лежат в `.vdf`/`.mod` игры, а не в `_work/Data/Music`; тогда `dmrender` пишет `cannot load` для многих тем. Сначала вынимайте всё нужное в одну папку и рендерите из неё:
-   ```
-   ./build/g3ds-bake extract --game "/mnt/c/Program Files (x86)/Steam/steamapps/common/TheChroniclesOfMyrtana" -o ~/music_src
-   build-dmrender/dmrender ~/music_src ~/music_wavs
-   ```
-   (Архивы `.mod` из `Data/`, например `KM_Music.mod`, подключаются сами.)
-3. Послушайте один-два файла в Windows: папка `\\wsl$\Ubuntu\home\ВАШЕ_ИМЯ\music_wavs`.
-
-Если для какой-то темы программа пишет `cannot load`, значит, не нашёлся её `.sty` или `.dls`; остальные темы это не останавливает.
-
-## Шаг 6. Запекание данных игры (`data.pak`, `music.pak`, `speech.pak`)
-
-Конвертер читает файлы игры и делает архив для 3DS. Сама игра остаётся нетронутой.
-
-```
-cd ~/gothic3ds
-mkdir -p ~/out
-./build/g3ds-bake world --game "/mnt/c/Program Files (x86)/Steam/steamapps/common/Gothic" -o ~/out/data.pak --music-dir ~/music_wavs
-```
-
-Полезно знать:
-- Конвертер работает несколько минут и печатает отчёт. В нём должны быть строки `script/sfx: SFX.DAT`, `sounds: N C_SFX instances ... M baked` (M заметно больше нуля), `ambient sounds: ...`, `script/music: MUSIC.DAT` и `music: N C_MUSICTHEME instances ... K baked` (K больше нуля). Если где-то стоит 0: звуки и темы игры лежат в `SFX.DAT` и `MUSIC.DAT` в `_work\Data\Scripts\_compiled`; если их нет, в отчёте будет `sounds: SFX.DAT not found` / `music: MUSIC.DAT not found`. Если строки `music:` нет совсем, проверьте, что `--music-dir` указывает на папку с WAV из шага 5. Быстрая проверка: `grep -E "script/(sfx|music)|sounds:|music:" ~/out/bake.log`.
-- Рядом с `data.pak` появятся `music.pak` и `speech.pak`: нужны все три файла (в `speech.pak` озвучка реплик; без него игра покажет только субтитры).
-- Голоса берутся из `Speech.vdf`/`Sounds.vdf` игры (или из отдельных файлов в `_work\Data\Sound\Speech`). В отчёте будет строка `voices: N lines of dialogue, M recordings baked (... MB ...)`; M должно быть в тысячах. Голоса запекаются в **полном качестве** (16 бит, родная частота записей): `speech.pak` большой, вероятно 1–2 ГБ, и пока работает конвертер, ему нужно столько же свободной оперативной памяти. Для карты на 64–128 ГБ это не проблема. Если когда-нибудь понадобится меньше и хуже: `--voice-codec ima` (в 4 раза меньше) и/или `--voice-rate 11025`; совсем без голосов: `--no-voices`. Если M равно 0 — в вашей копии игры нет архива озвучки (в некоторых локализациях он лежит в другом месте); пришлите строку `voices:` разработчику.
-- Папка `~/out` создаётся командой `mkdir -p ~/out`; без неё конвертер напишет ошибку.
-- Отчёт можно напечатать ещё раз: `./build/g3ds-bake info ~/out/data.pak`.
-- Качество звуков задаётся флагом `--sound-rate 22050`, качество музыки — `--music-rate 44100`, качество голосов — `--voice-rate` (по умолчанию как в записи) и `--voice-codec pcm|ima`.
-- **«Графика+»** (по желанию): `--ao low` (или `high`) запекает затенение углов в вершины, `--wind` даёт колыхание деревьев, кустов и травы. Включаются в меню игры (Графика → Графика+); если их нет в `data.pak`, эти пункты ничего не делают. Цена: примерно на 10 % больше вершин (память) и от нескольких секунд до минуты запекания. В отчёте строки `ambient occlusion (--ao low): ...` и `plants that sway (kept with --wind): N trees, M bushes, K grasses` со списком имён, принятых за растения, — пришлите их, если деревья не качаются. Свои слова для деревьев мода: `--plant-words СЛОВО1,СЛОВО2` (латиницей, как в именах файлов).
-- **Данные игры в архив проекта не кладите** и никуда не выкладывайте `data.pak`, `music.pak` и `speech.pak`: это материалы игры.
-- После каждого обновления проекта `data.pak` нужно запекать заново (в `docs/HANDOFF.md` в разделе нужного раунда указано, нужно ли это).
-
-Посмотреть результат на ПК без консоли (необязательно):
-```
-./build/g3ds-host --pak ~/out/data.pak --still --shots 1 --out ~/out/world
-```
-
-**Моды для Gothic 2 (Chronicles of Myrtana: Archolos).** Установите мод в папку Gothic II, как велит его установщик, и добавьте `--mod` с именем его `.ini` из папки `System`:
-
-```sh
-./build/g3ds-bake world --game "/mnt/c/GOG Games/Gothic II" --mod Archolos -o ~/out/data.pak
-```
-
-Конвертер подключает `.mod` мода поверх игры, начинает с мира из `.ini` и берёт скрипты мода. Если он пишет, что не может определить мир, запустите с `--zen ИМЯ.ZEN`, взяв одно из имён, которые он перечислит.
-
-## Шаг 7. Программа для 3DS (`gothic3ds.3dsx`) — НЕ ОБЯЗАТЕЛЬНО
-
-**Этот шаг можно пропустить.** Автор проекта выкладывает готовый `gothic3ds.3dsx`; в нём нет данных игры (они в отдельных `data.pak` и `music.pak`, которые вы запекаете сами в шагах 4–6), поэтому его можно свободно распространять. Скачайте его и переходите сразу к шагу 8. Собирайте сами, только если хотите менять код или не доверяете готовому файлу.
-
-Для сборки нужен набор разработчика devkitPro.
-
-1. Установка менеджера пакетов (один раз):
-   ```
-   wget https://apt.devkitpro.org/install-devkitpro-pacman
-   chmod +x install-devkitpro-pacman
-   sudo ./install-devkitpro-pacman
-   ```
-2. Установка компилятора и библиотек для 3DS (скачивает ~1 ГБ):
-   ```
-   sudo dkp-pacman -S 3ds-dev
-   ```
-   На вопросы отвечайте Enter (по умолчанию «все»).
-3. Переменные окружения (чтобы не вводить каждый раз, добавьте в `~/.bashrc`):
-   ```
-   echo 'export DEVKITPRO=/opt/devkitpro' >> ~/.bashrc
-   echo 'export DEVKITARM=/opt/devkitpro/devkitARM' >> ~/.bashrc
-   source ~/.bashrc
-   ```
-4. Сборка:
-   ```
-   cd ~/gothic3ds
-   make
-   ```
-   Получатся `gothic3ds.3dsx` и `gothic3ds.smdh` в корне проекта. После изменения исходников повторяйте `make`; чистая пересборка: `make clean && make`.
-
-## Шаг 8. Копирование на SD-карту
-
-SD-карту вставьте в картридер ПК (она появится в Windows как диск, например `E:`). Сначала скопируйте результат из WSL в Windows (например, на рабочий стол):
-
-```
-mkdir -p /mnt/c/gothic3ds_sd/3ds/gothic3ds
-cp ~/gothic3ds/gothic3ds.3dsx ~/gothic3ds/gothic3ds.smdh ~/out/data.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
-cp ~/out/music.pak ~/out/speech.pak /mnt/c/gothic3ds_sd/3ds/gothic3ds/
-```
-
-Затем в Windows скопируйте папку `C:\gothic3ds_sd\3ds\gothic3ds` на SD-карту в `3ds\gothic3ds`. Итог на карте:
-
-```
-/3ds/gothic3ds/gothic3ds.3dsx
-/3ds/gothic3ds/gothic3ds.smdh
-/3ds/gothic3ds/data.pak
-/3ds/gothic3ds/music.pak
-/3ds/gothic3ds/speech.pak
-/3ds/dspfirm.cdc          <- НЕ в gothic3ds, а прямо в папке 3ds
-```
-
-**Не забудьте `/3ds/dspfirm.cdc`** (рамка в начале): прошивка DSP, выгруженная утилитой DSP1 с вашей консоли. Без неё звука нет совсем. Меню звука в игре: **Громкость** (эффекты), **Музыка**, **Голоса**.
-
-Запуск: Homebrew Launcher → Gothic 3DS.
-
-Если что-то не так со звуком, после выхода из игры появится отчёт `/3ds/gothic3ds/sound.txt`: там перечислено, какие звуки и темы игра искала и не нашла. Пришлите его разработчику.
-
----
-
-## Если что-то не получается
-
-| Что видите | Причина и решение |
-|---|---|
-| `unable to find a build program corresponding to "Ninja"` / `CMAKE_CXX_COMPILER not set` | Не установлен `ninja` (или компилятор): `sudo apt install -y ninja-build build-essential cmake`, затем `rm -rf build` и повторите шаг 4 |
-| `unzip: command not found` | `sudo apt install -y unzip` |
-| `strings build/g3ds-bake \| grep -c "script/sfx"` печатает 0 или в отчёте `0 C_SFX instances` | Старый конвертер или архив: в папке проекта старые файлы. Повторите шаг 3 с самым свежим архивом (проверьте его командой `unzip -p ... \| grep -c importZenSfxScript`), затем `rm -rf build` и шаг 4 |
-| `cannot find or open .../ВАШ_ПОЛЬЗОВАТЕЛЬ/Downloads/...zip` | `ВАШ_ПОЛЬЗОВАТЕЛЬ` нужно заменить на настоящее имя пользователя Windows; посмотреть: `ls /mnt/c/Users` |
-| `cmake: command not found` | Не выполнен шаг 2: `sudo apt install -y build-essential cmake ninja-build git` |
-| `The source directory ".../tools/dmrender" does not exist` | Вы не в папке проекта (`cd ~/gothic3ds`) или проект распакован не туда |
-| `Parse error in command line argument: DMUSIC_DIR` | Команда оборвана: после `-DDMUSIC_DIR=` должен стоять путь. В шаге 5 этот параметр не нужен вовсе |
-| В `tools/dmrender` лежит много лишних файлов (`src`, `include`, `vendor`) | В эту папку попала библиотека dmusic. Должны быть только `CMakeLists.txt` и `dmrender.c`; распакуйте проект заново |
-| `build-dmrender/dmrender: No such file or directory` | Сборка не дошла до конца: выполните `cmake --build build-dmrender` и прочитайте последние строки с `error` |
-| `usage: dmrender MUSIC_DIR OUT_DIR ...` | Не указаны оба пути: откуда брать музыку и куда класть WAV |
-| `No such file or directory` для пути к игре | Путь неверен: проверьте `ls "/mnt/c/Program Files (x86)/Steam/steamapps/common/Gothic"`; буквы дисков `C:` и `\` не работают |
-| `Please set DEVKITARM in your environment` | Не выполнен пункт 3 шага 7; выполните `source ~/.bashrc` |
-| Конвертер пишет `cannot open` / не находит `WORLD.ZEN` | Указана не папка игры. В ней должны лежать `Data` и `_work` |
-| Игра на 3DS молчит (ни эффектов, ни музыки, ни голосов) | Нет `/3ds/dspfirm.cdc` на SD-карте: запустите DSP1 на консоли. `sound.txt` тогда начинается с `dsp: NOT open (ndspInit 0xD880A7FA ...)` |
-| Звуки и музыка есть, никто не говорит | `speech.pak` не лежит рядом с `data.pak`, ползунок **Голоса** на 0, или при запекании не нашлось записей (строка `voices:` отчёта и строка `voices:` в `sound.txt`) |
-| Звук есть, музыки нет | Нет `music.pak` рядом с `data.pak`, или имена тем в `sound.txt` не нашлись; пришлите отчёт |
-| `wsl: Конфигурация прокси-сервера localhost обнаружена...` | Предупреждение, на сборку не влияет |
-| Очень медленно | Проект лежит на `/mnt/c`. Перенесите в `~` (шаг 3) |
-
-## Обновление проекта
-
-Когда пришёл новый `gothic3ds-base.zip`: повторите шаг 3 (найдите и проверьте самый свежий архив, уберите старый проект, распакуйте), затем шаги 4, 6, 7 и 8. Проект пересобирается с нуля (несколько минут). WAV в `~/music_wavs` и результаты в `~/out` лежат вне проекта и остаются, поэтому шаг 5 нужен, только если хотите заново отрендерить музыку.

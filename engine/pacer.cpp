@@ -4,6 +4,7 @@ namespace g3 {
 
 void FramePacer::reset() {
 	_detail = 1.0f;
+	_dist = 1.0f;
 	_load = 0.0f;
 	_interval = 1;
 	_over = _under = _calm = 0;
@@ -30,26 +31,36 @@ void FramePacer::update(float frameLoad, bool turning) {
 	if (_interval == 1) {
 		++_atFullRate;
 		++_sinceStep;
+		const bool objectsGone = _detail <= cfg.minDetail + 0.001f;
 		if (_load > cfg.high) {
 			// The further over, the bigger the step; never so big that it is
-			// seen as one.
-			_detail -= clamp((_load - cfg.high) * 0.5f, 0.01f, 0.08f);
+			// seen as one. Objects first; when they are gone, the distance.
+			if (!objectsGone)
+				_detail -= clamp((_load - cfg.high) * 0.5f, 0.01f, 0.08f);
+			else if (_load > cfg.distOver)
+				_dist -= clamp((_load - cfg.distOver) * 0.1f, 0.002f, cfg.distStep);
 			_calm = 0;
 		} else if (_load < cfg.low && !turning) {
 			// (Only once the load has settled: see PacerConfig::calmFrames.
 			// And a step at a time, not a little every frame: a new step of
 			// objects comes in together, then nothing for a while.)
-			if (++_calm >= cfg.calmFrames && _sinceStep >= cfg.recoverEvery && _detail < 1.0f) {
-				_detail += cfg.recoverStep;
-				_sinceStep = 0;
+			if (++_calm >= cfg.calmFrames && _sinceStep >= cfg.recoverEvery) {
+				if (_dist < 1.0f) {
+					_dist += cfg.distRecover;
+					_sinceStep = 0;
+				} else if (_detail < 1.0f) {
+					_detail += cfg.recoverStep;
+					_sinceStep = 0;
+				}
 			}
 		} else {
 			_calm = 0;
 		}
 		_detail = clamp(_detail, cfg.minDetail, 1.0f);
+		_dist = clamp(_dist, cfg.minDistance, 1.0f);
 
 		// Everything that can go has gone and it still does not fit.
-		if (_detail <= cfg.minDetail + 0.001f && _load > cfg.enterHalf)
+		if (_detail <= cfg.minDetail + 0.001f && _dist <= cfg.minDistance + 0.001f && _load > cfg.enterHalf)
 			++_over;
 		else
 			_over = 0;
@@ -66,7 +77,8 @@ void FramePacer::update(float frameLoad, bool turning) {
 		return;
 	}
 
-	// Half rate: there is twice the time now.
+	// Half rate: there is twice the time now (and the whole distance again).
+	_dist = min(_dist + 0.01f, 1.0f);
 	if (_probing) {
 		// Take the objects away, quickly but not at once, and see what is left.
 		if (_detail > cfg.minDetail + 0.001f) {

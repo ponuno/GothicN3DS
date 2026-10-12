@@ -25,6 +25,13 @@ struct PacerConfig {
 	float high = 0.90f;      // load above which detail is taken away
 	float low = 0.80f;       // load below which it is given back
 	float minDetail = 0.35f; // shortest object distance, as a share of the configured one
+	// When even that is too much (the objects are gone and the world itself is more than a frame
+	// can take - an open square) the world's own draw distance, with its fog, shortens too, down to
+	// this share, a little at a time; it is given back before the objects are.
+	float minDistance = 0.65f;
+	float distOver = 1.0f;     // load above which (objects gone) the distance shortens
+	float distStep = 0.02f;    // most taken away in a frame (less when only a little over)
+	float distRecover = 0.05f; // given back at a time (with the same calm as the objects)
 	float recoverStep = 0.10f; // detail given back at a time ...
 	u32 recoverEvery = 120;    // ... at most every this many frames (2 s) ...
 	u32 calmFrames = 90;       // ... once the load has been below `low` this many frames running (1.5 s)
@@ -66,6 +73,8 @@ public:
 
 	// Factor for StreamConfig::detailScale.
 	float detailScale() const { return _detail; }
+	// Factor for the draw distance of the world itself (1 unless the objects are already at their minimum).
+	float distanceScale() const { return _dist; }
 	// Refreshes per frame: 1 (60 fps) or 2 (30 fps).
 	int interval() const { return _interval; }
 	// The smoothed load the decisions are based on.
@@ -75,6 +84,7 @@ public:
 
 private:
 	float _detail = 1.0f;
+	float _dist = 1.0f;
 	float _load = 0.0f;
 	int _interval = 1;
 	u32 _over = 0, _under = 0, _calm = 0, _sinceStep = 0;

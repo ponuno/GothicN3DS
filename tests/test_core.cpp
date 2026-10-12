@@ -1912,6 +1912,38 @@ static void testStreamingWorlds() {
 
 // ---- frame pacing ----
 
+// An open square the objects cannot save: the world's own distance shortens after them and returns before them.
+static void testPacerDistance() {
+	FramePacer p;
+	p.cfg.freeRate = true;
+	p.reset();
+	for (int i = 0; i < 600; ++i) p.update(1.2f);
+	CHECK(p.detailScale() <= p.cfg.minDetail + 0.01f);
+	CHECK(p.distanceScale() < 0.9f);
+	CHECK(p.distanceScale() >= p.cfg.minDistance - 0.001f);
+	CHECK(p.interval() == 1);
+	// Objects go before the distance does: with a load that the objects alone cure the distance stays whole.
+	FramePacer q;
+	q.reset();
+	for (int i = 0; i < 300; ++i) q.update(0.95f);
+	CHECK(q.distanceScale() == 1.0f);
+	// Light again: the distance is back before any object.
+	bool objectsBackFirst = false;
+	for (int i = 0; i < 3000 && (p.distanceScale() < 1.0f || p.detailScale() < 1.0f); ++i) {
+		p.update(0.5f);
+		if (p.distanceScale() < 1.0f && p.detailScale() > p.cfg.minDetail + 0.01f) objectsBackFirst = true;
+	}
+	CHECK(!objectsBackFirst);
+	CHECK(p.distanceScale() == 1.0f && p.detailScale() > 0.99f);
+	// Without free rate: the settled 30 fps comes only once the distance is spent too, and gives it back.
+	FramePacer h;
+	h.reset();
+	for (int i = 0; i < 2000 && h.interval() == 1; ++i) h.update(1.5f);
+	CHECK(h.interval() == 2);
+	for (int i = 0; i < 200; ++i) h.update(1.1f);
+	CHECK(h.distanceScale() > 0.99f);
+}
+
 static void testPacer() {
 	// A stand-in for the console: objects are 40% of a frame's cost.
 	auto cost = [](float scene, float detail) { return scene * (0.6f + 0.4f * detail); };
@@ -8628,6 +8660,7 @@ int main(int argc, char** argv) {
 	             {"streaming", testStreaming},
 	             {"streaming worlds", testStreamingWorlds},
 	             {"pacer", testPacer},
+	             {"pacer distance", testPacerDistance},
 	             {"detail fade", testDetailFade},
              {"thinning", testThinning},
 	             {"collision", testCollision},

@@ -15,6 +15,7 @@ struct StreamConfig {
 	float loadRadius = 14000.0f;   // cm: chunks closer than this get loaded
 	float unloadRadius = 18000.0f; // cm: chunks farther than this get freed
 	float drawDistance = 12000.0f; // cm: matches the fog; farther chunks are skipped
+	float distanceScale = 1.0f;    // the pacer's share of it actually drawn (the fog follows: App::setDistanceScale)
 	// How far each DetailClass is drawn. Small and medium objects (barrels,
 	// bushes, fences) are most of the world's triangles but invisible from afar.
 	float detailDistance[DETAIL_COUNT] = {1.0e9f, 7000.0f, 3500.0f};
@@ -195,6 +196,8 @@ public:
 	// Whether the world has a far layer (g3ds-bake --far-lod), and whether it
 	// is drawn now: loaded and asked to reach beyond the draw distance.
 	bool hasFarLayer() const { return _hdr.farEntry != 0 && !indoor(); }
+	// How far chunks are drawn now: the draw distance, shortened by the pacer (not with the far layer).
+	float drawReach() const { return _farTiles != nullptr && _cfg.farDistance > _cfg.drawDistance ? _cfg.drawDistance : _cfg.drawDistance * _cfg.distanceScale; }
 	bool farActive() const { return _farTiles != nullptr && _cfg.farDistance > _cfg.drawDistance; }
 	// Whether the world has a visibility table (g3ds-bake --vis), and whether it is used now.
 	bool hasVisibility() const { return _hdr.visEntry != 0; }

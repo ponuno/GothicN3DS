@@ -124,6 +124,7 @@ other objects named like lights: ADANOSLIGHT.PFX x1 (not drawn); BRAZIER_FIRE.AS
 water: 9 materials, opacity 150..240 of 255
 camera: from the game's CAMERA.DAT: CAMMODNORMAL range 3.00 m (2.00..10.00), elevation 30, azimuth 0, view offset 23 0, pace 40; CAMMODSWIM range 3.00 m (2.90..5.10), elevation 20, azimuth 0, view offset 15 0, pace 40; CAMMODFALL range 3.00 m (1.50..5.50), elevation 60, azimuth 0, view offset 0 0, pace 10
 far layer: 78886 triangles (and 32050 in strips along 16025 seam edges; 51391 vertices) of 2863200, 3433 crowns, grid 15.2-259.5 m (seams 34.2; 16 tries), 337 tiles, 15564 ranges, 2.16 MB
+visibility (--vis): 3632 cells, 43480 places looked from, 5669477 clusters in the rows of which 1866736 (33%) hidden, 535.7 M rays in 9.6 s, radius 150 m, near 25 m; 0.76 MB
 ambient sounds: 961 placed in world 'archolos_mainland'
 music zones: 73 in world 'archolos_mainland'
 world 'archolos_mainland': 3444 x 423 x 3379 m, grid 86 x 85 cells of 40 m
@@ -136,7 +137,7 @@ seams: 31471 vertices welded to a neighbour within 0.25 cm, 406910 T-junctions c
 chunks by detail tier (--no-split: one chunk holds everything): 5967 of the world and big things (95.9 MB, always around the camera), 509 with medium objects (77.8 MB, within their reach), 453 with small ones (143.1 MB, within theirs)
 draw distance classes: 2887467 triangles always drawn, 2566581 medium, 5350318 small; 215721 batches (31.1 per chunk)
 clusters: the chunks are cut into 75686 boxes of 10 m (95 at most in one): 143 triangles and 2.9 batches in a box on average
-ambient occlusion (--ao low): 30328917 corners from 14416200 places, 16 rays of 2.5 m each against 5227338 triangles (230.7 M rays, 30.8 s); 52% shut in on average, 15567062 corners more than half
+ambient occlusion (--ao low): 30328917 corners from 14416200 places, 16 rays of 2.5 m each against 5227338 triangles (230.7 M rays, 31.2 s); 52% shut in on average, 15567062 corners more than half
 wind: 6898236 corners sway, 119 world materials marked
 materials: 1606 world materials from 3313 source materials, 1317 textures; 41 blended (5 water), 14 animated, 3 scrolling
 untextured: 5 materials drawn in their own colour: 'SUN_BLOCKER_2000' (no texture, 1706 triangles, colour 237 34 244), 'TELLER' (no texture, 60 triangles, colour 136 136 136), 'MEAT' (no texture, 37 triangles, colour 209 105 84), 'BEERMUG' (no texture, 10 triangles, colour 122 81 37), 'MATERIAL #1' (no texture, 5 triangles, colour 242 242 220)
@@ -179,6 +180,7 @@ objects skipped (not supported yet): 25 camera-facing sprites, 0 other
 objects: 5 have no ground below them, lit with the world average
 other objects named like lights: DT_FIREPLACE_V1.3DS x4; FIRE.PFX x2 (not drawn); FIREPLACE_GROUND.ASC x1 <- FIREPLACE_GROUND.MDL; FIRE_COMPLETE_A0.TGA x4 (not drawn); FIRE_MEDIUM.PFX x39 (not drawn); FIRE_SMOKE.PFX x6 (not drawn); FIRE_SPARKS.PFX x6 (not drawn); ITLS_TORCH_01.3DS x2; KM_VOB_LANTERN_WALL.3DS x2; KM_VOB_SKULL_CANDLE_01.3DS x2; NW_MISC_FIREPLACE_01.3DS x4; OC_FIREPLACE_V1.3DS x1; OC_FIREPLACE_V5.3DS x2; OW_MISC_WALL_TORCH_01.3DS x22
 water: 3 materials, opacity 150..180 of 255
+visibility (--vis): 36 cells, 459 places looked from, 33901 clusters in the rows of which 10047 (30%) hidden, 3.4 M rays in 0.1 s, radius 150 m, near 25 m; 0.01 MB
 ambient sounds: 72 placed in world 'archolos_sewers'
 music zones: 1 in world 'archolos_sewers'
 world 'archolos_sewers': 228 x 68 x 332 m, grid 7 x 9 cells of 40 m
@@ -191,7 +193,7 @@ seams: 1485 vertices welded to a neighbour within 0.25 cm, 8962 T-junctions clos
 chunks by detail tier (--no-split: one chunk holds everything): 40 of the world and big things (2.0 MB, always around the camera), 24 with medium objects (2.0 MB, within their reach), 25 with small ones (2.9 MB, within theirs)
 draw distance classes: 79003 triangles always drawn, 89241 medium, 112621 small; 3972 batches (44.6 per chunk)
 clusters: the chunks are cut into 1100 boxes of 10 m (31 at most in one): 255 triangles and 3.6 batches in a box on average
-ambient occlusion (--ao low): 683064 corners from 273755 places, 16 rays of 2.5 m each against 122558 triangles (4.4 M rays, 0.4 s); 45% shut in on average, 284689 corners more than half
+ambient occlusion (--ao low): 683064 corners from 273755 places, 16 rays of 2.5 m each against 122558 triangles (4.4 M rays, 0.5 s); 45% shut in on average, 284689 corners more than half
 wind: 3030 corners sway, 1 world materials marked
 materials: 202 world materials from 211 source materials, 207 textures; 9 blended (3 water), 3 animated, 1 scrolling
 indoor world: no sky, background colour 10 10 14
@@ -222,6 +224,7 @@ particle effects: 33 placed by the world, 0 from fire places' trees
 objects skipped (not supported yet): 4 camera-facing sprites, 0 other
 objects: 5 have no ground below them, lit with the world average
 other objects named like lights: FIRE.PFX x1 (not drawn); FIRE_COMPLETE_A0.TGA x4 (not drawn); FIRE_HOT.PFX x3 (not drawn); FIRE_MEDIUM.PFX x17 (not drawn); FIRE_SMOKE.PFX x2 (not drawn); FIRE_SPARKS.PFX x1 (not drawn); ITLS_TORCHBURNED_01.3DS x2; ITLS_TORCH_01.3DS x4; KM_VOB_LANTERN_WITHCHAIN.3DS x2; NW_CITY_CANDLE_01.3DS x2; NW_MISC_FIREPLACE_01.3DS x1; OC_FIREPLACE_V5.3DS x2; OC_FIREWOOD_V1.3DS x2; OC_FIREWOOD_V3.3DS x2; OC_LOB_LIGHTER_HUGE3.3DS x16; TORCH.PFX x2 (not drawn)
+visibility (--vis): 19 cells, 133 places looked from, 12089 clusters in the rows of which 5038 (42%) hidden, 0.8 M rays in 0.0 s, radius 150 m, near 25 m; 0.00 MB
 ambient sounds: 20 placed in world 'archolos_silvermine'
 music zones: 1 in world 'archolos_silvermine'
 world 'archolos_silvermine': 123 x 94 x 235 m, grid 4 x 7 cells of 40 m
@@ -298,6 +301,7 @@ fire places: 77 objects of 1 kinds (their flames are not drawn yet):
   VOLFZACKFIRE_HIGH.ASC x77, fire FIRETREE_MEDIUM.ZEN at BIP01 FIRE <- VOLFZACKFIRE_HIGH.MDL: node BIP01 258 tris OBJ_CITY_STREETLAMP_01.TGA MOSTSTONES02.TGA
 other objects named like lights: BSFIRE_OC.MDS x1 <- BSFIRE_OC.MDM + BSFIRE_OC.MDH [script: tree BSFIRE_OC]; FIRE_COMPLETE_A0.TGA x13 (not drawn); FIRE_HOT.PFX x1 (not drawn); ITLS_TORCHBURNED_01.3DS x1; KM_VOB_BROKEN_LAMP_01.3DS x4; KM_VOB_BROKEN_LAMP_02.3DS x5; KM_VOB_CANDLESTICK_02.3DS x4; KM_VOB_CANDLESTICK_02_BIG.3DS x9; KM_VOB_CRYSTALCANDLE.3DS x7; KM_VOB_CRYSTAL_LAMP_01.3DS x12; KM_VOB_CRYSTAL_LAMP_02.3DS x2; KM_VOB_CRYSTAL_LAMP_04.3DS x2; KM_VOB_LANTERN_NOCHAIN.3DS x3; KM_VOB_LANTERN_WALL.3DS x5; KM_VOB_LANTERN_WITHCHAIN.3DS x4; KM_VOB_SKULL_CANDLE_01.3DS x18; LIGHTCONE.PFX x1 (not drawn); MFX_LIGHT_ORIGIN.PFX x1 (not drawn); NW_CITY_CANDLE_01.3DS x4; NW_MISC_FIREPLACE_01.3DS x1; OC_BIGLIGHTER_01.3DS x2; OC_FIREWOOD_V2.3DS x3
 water: 1 materials, opacity 150..150 of 255
+visibility (--vis): 43 cells, 550 places looked from, 44910 clusters in the rows of which 9891 (22%) hidden, 3.3 M rays in 0.1 s, radius 150 m, near 25 m; 0.01 MB
 ambient sounds: 11 placed in world 'archolos_volfzacke'
 music zones: 2 in world 'archolos_volfzacke'
 world 'archolos_volfzacke': 256 x 88 x 256 m, grid 6 x 8 cells of 40 m
@@ -310,7 +314,7 @@ seams: 1495 vertices welded to a neighbour within 0.25 cm, 25598 T-junctions clo
 chunks by detail tier (--no-split: one chunk holds everything): 79 of the world and big things (1.3 MB, always around the camera), 20 with medium objects (4.6 MB, within their reach), 23 with small ones (9.9 MB, within theirs)
 draw distance classes: 49968 triangles always drawn, 201096 medium, 389304 small; 4521 batches (37.1 per chunk)
 clusters: the chunks are cut into 1150 boxes of 10 m (42 at most in one): 557 triangles and 3.9 batches in a box on average
-ambient occlusion (--ao low): 1730124 corners from 692683 places, 16 rays of 2.5 m each against 216722 triangles (11.1 M rays, 1.0 s); 59% shut in on average, 1018245 corners more than half
+ambient occlusion (--ao low): 1730124 corners from 692683 places, 16 rays of 2.5 m each against 216722 triangles (11.1 M rays, 1.1 s); 59% shut in on average, 1018245 corners more than half
 wind: 200 corners sway, 1 world materials marked
 materials: 257 world materials from 277 source materials, 195 textures; 10 blended (1 water), 0 animated, 0 scrolling
 indoor world: no sky, background colour 10 10 14
@@ -490,7 +494,7 @@ things lying about: 4796 (4786 from the world files, 10 from the start-up script
 WARNING: 4 looks of things not baked (they lie there unseen): ITAT_CRAWLERQUEEN: no mesh; ITLSTORCHBURNING: no mesh; ITLSTORCHBURNING_EDITED: no mesh; ITLSTORCHCRYSTAL: no mesh
 dialogue: 50900 lines (3029 KB of text) from ou.bin (from an archive), in 127 blocks, 263 names given twice (the first kept)
 font: not baked (the glyphs of the fonts do not fit in 256x512 (need 584 rows)); the overlay keeps its own font
-C:\GOTHIC~1\windows\data.pak written (19459 entries); the rest (voices, music) follows
+C:\GOTHIC~1\windows\data.pak written (19463 entries); the rest (voices, music) follows
 hero: fightclip T_JUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_RUN
 hero: fightclip T_FISTJUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_FISTRUN
 hero: fightclip T_FISTPARADEJUMPB: file T_FISTPARADEJUMPB, mds frames 1..12, 12 frames @ 25 fps, moves; hits -; hitEnds -; windows 1,10; parry -; fightMode -1; next -
@@ -536,4 +540,4 @@ hero: fightclip T_2HRUN_2_2HRUNL: file T_2HRUN_2_2HRUNL, mds frames 1..11, 11 fr
 hero: fightclip T_2HRUNL_2_2HRUN: file T_2HRUNL_2_2HRUN, mds frames 32..38, 7 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HRUN
 hero: fightclip T_2HWALK_2_2HWALKL: file T_2HWALK_2_2HWALKL, mds frames 1..18, 18 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALKL
 hero: fightclip T_2HWALKL_2_2HWALK: file T_2HWALKL_2_2HWALK, mds frames 39..49, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALK
-wrote C:\GOTHIC~1\windows\data.pak: 4 worlds, 19459 entries in 194.5 s
+wrote C:\GOTHIC~1\windows\data.pak: 4 worlds, 19463 entries in 204.8 s

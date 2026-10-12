@@ -1354,7 +1354,7 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	// With the far layer the fog ends farther out than the chunks are drawn:
 	// a chunk in reach is drawn to its end (the far layer leaves out all of
 	// it, not a part).
-	const float chunkReach = _cfg.drawDistance + (farActive() ? _hdr.chunkSize * 1.5f : 0.0f);
+	const float chunkReach = drawReach() + (farActive() ? _hdr.chunkSize * 1.5f : 0.0f);
 	// The far plane is where the fog ends (the draw distance): what lies
 	// wholly behind it has the fog's colour all over and need not be drawn.
 	// (The projection's own far plane is further out, to leave room for the
@@ -1399,7 +1399,7 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	for (u32 r = 0; r < _stats.chunksLoaded; ++r) {
 		const u32 i = _resident[r];
 		const float d = distanceTo(i, camera);
-		if (d > _cfg.drawDistance || !aabbInFrustum(_frustum, _chunks[i].bbMin, _chunks[i].bbMax)) continue;
+		if (d > drawReach() || !aabbInFrustum(_frustum, _chunks[i].bbMin, _chunks[i].bbMax)) continue;
 		if (_visRow && _visAllHidden[i]) {
 			++_stats.chunksHidden;
 			continue;

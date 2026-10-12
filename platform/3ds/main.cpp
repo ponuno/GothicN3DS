@@ -507,6 +507,7 @@ int main(int, char**) {
 		if (pacing && updateMs < 50.0f && !record) {
 			pacer.update(load, turning);
 			app.world().config().detailScale = pacer.detailScale();
+			app.setDistanceScale(pacer.distanceScale());
 			// Graphics+ gives way first: once the pacer takes objects away, the plants
 			// stand still and only the hero keeps a shadow, until all objects are back.
 			const bool heavy = app.gfxRelief() ? pacer.detailScale() < 0.999f || pacer.interval() == 2 : pacer.detailScale() < 0.95f;
@@ -594,7 +595,7 @@ int main(int, char**) {
 			     double(ws.budgetBytes) / 1048576.0, static_cast<unsigned long>(ws.budgetRejects), static_cast<unsigned long>(ws.evictions),
 			     static_cast<unsigned long>(ws.loadFailures), static_cast<unsigned long>(ws.allocRejects));
 
-			reportLine("draw distance %3.0f m  time %02d:%02d", double(app.drawDistance() / 100.0f), int(app.environment().timeOfDay),
+			reportLine("draw distance %3.0f/%3.0f m  time %02d:%02d", double(app.drawDistance() / 100.0f * app.world().config().distanceScale), double(app.drawDistance() / 100.0f), int(app.environment().timeOfDay),
 			     int(app.environment().timeOfDay * 60.0f) % 60);
 			reportLine("%-22.22s %-16.16s", state, app.worldName());
 			// The player's eyes, wherever the camera hangs behind them.

@@ -81,6 +81,8 @@ public:
 
 	// Sets draw distance, streaming radii, fog and far plane consistently.
 	void setDrawDistance(float cm);
+	// The pacer's share of the draw distance (the world and its fog; ignored with the far layer).
+	void setDistanceScale(float scale);
 	// Moves the player's eyes to `eye` (keeps walking or flying as it was).
 	void teleport(Vec3 eye);
 	// Switches to another world of the archive. `eye` null uses its start

@@ -294,6 +294,7 @@ void App::setDrawDistance(float cm) {
 	cfg.unloadRadius = cm + 6000.0f; // hysteresis against load/unload thrash
 	// Chunk bounds are tested, not triangles: leave room for a whole chunk.
 	_cam.zFar = cm + _world.header().chunkSize * 1.5f;
+	cfg.distanceScale = 1.0f;
 	_env.fogEnd = cm;
 	_env.fogStart = cm * 0.2f;
 	// The far layer (G10): the fog moves out to its end, and starts later -
@@ -303,6 +304,16 @@ void App::setDrawDistance(float cm) {
 		_env.fogStart = max(cm * 0.5f, cfg.farDistance * 0.2f);
 		_cam.zFar = cfg.farDistance + _world.header().chunkSize * 4.0f;
 	}
+}
+
+void App::setDistanceScale(float scale) {
+	StreamConfig& cfg = _world.config();
+	scale = clamp(scale, 0.3f, 1.0f);
+	if (_world.farActive()) scale = 1.0f;
+	if (cfg.distanceScale == scale) return;
+	cfg.distanceScale = scale;
+	_env.fogEnd = cfg.drawDistance * scale;
+	_env.fogStart = cfg.drawDistance * scale * 0.2f;
 }
 
 void App::shutdown() {

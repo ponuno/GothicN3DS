@@ -581,6 +581,10 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			} else {
 				line("far geometry (--lod): nothing to simplify");
 			}
+			line(format("  of %u chunks: %u hold only medium or small objects, %u have fewer than %u simplifiable triangles, %u would shrink "
+			            "by less than 10%%; %llu simplifiable triangles in the rest",
+			            ls.candidates, ls.notTierZero, ls.tooFew, opt.lod.minTriangles, ls.tooLittle,
+			            static_cast<unsigned long long>(ls.simplifiable)));
 		}
 		std::memcpy(wh.fogColor, scene.fogColor, sizeof(wh.fogColor));
 		wh.triangleCount = u32(cs.outputTriangles);

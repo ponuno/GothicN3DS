@@ -51,51 +51,78 @@ double dot(P3 a, P3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 struct Candidate {
 	double cost;
 	u32 from, to;
-	u32 verFrom, verTo;
 	bool operator<(const Candidate& o) const { return cost > o.cost; } // (a min-heap)
 };
 
+// Edge collapse on a mesh whose vertices carry texture coordinates and light: polygons that meet at a place
+// usually do not share a vertex (each has its own coordinates), so the mesh is treated by position - one node
+// per place - and a collapse moves every corner at the place to a vertex at the other one: the vertex of the
+// triangle's own neighbourhood whose coordinates and light come closest to what the triangle had there. A
+// corner gets, if none of the vertices there fits what the triangle itself had at that place, a new vertex with
+// exactly that: the texture and the light of the triangle go on as they were.
 class Simplifier {
 public:
 	Simplifier(const BakedChunk& chunk, std::vector<Tri> tris, const std::vector<bool>& usedOutside, float maxError)
 	    : _c(chunk), _tris(std::move(tris)), _maxErr2(double(maxError) * double(maxError)) {
 		const size_t n = chunk.vertices.size();
-		_pos.resize(n);
-		for (size_t i = 0; i < n; ++i) {
-			const WorldVertex& v = chunk.vertices[i];
-			const double s = chunk.header.posScale;
-			_pos[i] = {double(v.x) * s, double(v.y) * s, double(v.z) * s};
+		_vertexCount = n;
+		const double scale = chunk.header.posScale;
+		_pid.assign(n, 0xFFFFFFFFu);
+		std::unordered_map<u64, u32> byPlace;
+		for (const Tri& t : _tris)
+			for (int k = 0; k < 3; ++k) {
+				const u32 v = t.v[k];
+				if (_pid[v] != 0xFFFFFFFFu) continue;
+				const WorldVertex& w = chunk.vertices[v];
+				const u64 key = (u64(u16(w.x)) << 32) | (u64(u16(w.y)) << 16) | u64(u16(w.z));
+				auto it = byPlace.find(key);
+				if (it == byPlace.end()) {
+					it = byPlace.emplace(key, u32(_pos.size())).first;
+					_pos.push_back({double(w.x) * scale, double(w.y) * scale, double(w.z) * scale});
+					_vertsAt.emplace_back();
+				}
+				_pid[v] = it->second;
+				_vertsAt[it->second].push_back(u16(v));
+			}
+		// (Vertices of triangles dropped below as degenerate keep their place.)
+		const size_t places = _pos.size();
+		_inc.resize(places);
+		_locked.assign(places, false);
+		_quadric.resize(places);
+		for (u32 t = 0; t < _tris.size(); ++t) {
+			Tri& tri = _tris[t];
+			const u32 p0 = _pid[tri.v[0]], p1 = _pid[tri.v[1]], p2 = _pid[tri.v[2]];
+			if (p0 == p1 || p1 == p2 || p0 == p2) {
+				tri.alive = false; // (a sliver: it is not part of the stand-in)
+				continue;
+			}
+			for (int k = 0; k < 3; ++k) _inc[_pid[tri.v[k]]].push_back(t);
 		}
-		_inc.resize(n);
-		_locked.assign(n, false);
-		_quadric.resize(n);
-		_ver.assign(n, 0);
-		for (u32 t = 0; t < _tris.size(); ++t)
-			for (int k = 0; k < 3; ++k) _inc[_tris[t].v[k]].push_back(t);
-		for (size_t i = 0; i < n; ++i)
-			if (usedOutside[i]) _locked[i] = true;
+		for (size_t v = 0; v < n; ++v)
+			if (_pid[v] != 0xFFFFFFFFu && usedOutside[v]) _locked[_pid[v]] = true;
 		lockBorders();
 		for (u32 t = 0; t < _tris.size(); ++t) {
 			double nx, ny, nz, d;
-			if (!plane(_tris[t], nx, ny, nz, d)) continue;
-			for (int k = 0; k < 3; ++k) _quadric[_tris[t].v[k]].add(nx, ny, nz, d);
+			if (!_tris[t].alive || !plane(_tris[t], nx, ny, nz, d)) continue;
+			for (int k = 0; k < 3; ++k) _quadric[_pid[_tris[t].v[k]]].add(nx, ny, nz, d);
 		}
-		_alive = u32(_tris.size());
+		_alive = 0;
+		for (const Tri& t : _tris) _alive += t.alive;
 	}
 
 	// Collapses until `target` triangles are left or nothing may go.
 	void run(u32 target) {
 		std::priority_queue<Candidate> heap;
-		for (u32 v = 0; v < _inc.size(); ++v)
-			if (!_inc[v].empty()) push(heap, v);
+		for (u32 p = 0; p < _inc.size(); ++p)
+			if (!_inc[p].empty()) push(heap, p);
 		while (_alive > target && !heap.empty()) {
 			const Candidate c = heap.top();
 			heap.pop();
 			if (_inc[c.from].empty() || _inc[c.to].empty()) continue;
-			// What it costs may have grown since it was queued (its end took in another vertex's planes).
+			// What it costs may have grown since it was queued (its end took in another place's planes).
 			const double now = cost(c.from, c.to);
 			if (now > c.cost * 1.000001 + 1e-9) {
-				if (now <= _maxErr2) heap.push({now, c.from, c.to, 0, 0});
+				if (now <= _maxErr2) heap.push({now, c.from, c.to});
 				continue;
 			}
 			if (!legal(c.from, c.to)) continue;
@@ -104,21 +131,33 @@ public:
 	}
 
 	const std::vector<Tri>& tris() const { return _tris; }
+	// Vertices made for the stand-in (to be appended to the chunk's, from index vertexCount()).
+	const std::vector<WorldVertex>& added() const { return _added; }
 	u32 alive() const { return _alive; }
 
 private:
 	const BakedChunk& _c;
 	std::vector<Tri> _tris;
 	double _maxErr2;
-	std::vector<P3> _pos;
-	std::vector<std::vector<u32>> _inc;
+	std::vector<u32> _pid;                // vertex -> place
+	std::vector<P3> _pos;                 // place -> position
+	std::vector<std::vector<u16>> _vertsAt; // place -> its vertices
+	std::vector<std::vector<u32>> _inc;   // place -> triangles with a corner there
 	std::vector<bool> _locked;
 	std::vector<Quadric> _quadric;
-	std::vector<u32> _ver;
 	u32 _alive = 0;
+	size_t _vertexCount = 0;
+	std::vector<WorldVertex> _added;
+	static constexpr size_t kMaxVertices = 65535;
+
+	const WorldVertex& vertexAt(u32 v) const { return v < _vertexCount ? _c.vertices[v] : _added[v - _vertexCount]; }
+
+	// How far a corner's coordinates and light may be off what the triangle had at that place.
+	static constexpr double kUvTolerance = 0.01; // texture repeats
+	static constexpr double kLightTolerance = 10.0; // of 255
 
 	bool plane(const Tri& t, double& nx, double& ny, double& nz, double& d) const {
-		const P3 a = _pos[t.v[0]], b = _pos[t.v[1]], c = _pos[t.v[2]];
+		const P3 a = _pos[_pid[t.v[0]]], b = _pos[_pid[t.v[1]]], c = _pos[_pid[t.v[2]]];
 		const P3 n = cross(sub(b, a), sub(c, a));
 		const double len = std::sqrt(dot(n, n));
 		if (len < 1e-9) return false;
@@ -129,7 +168,7 @@ private:
 		return true;
 	}
 
-	// Vertices that stay: the border of the simplified mesh, a change of material, a seam (two vertices at one place).
+	// Places that stay: the border of the simplified mesh and a change of material.
 	void lockBorders() {
 		struct Edge {
 			u64 key;
@@ -137,11 +176,13 @@ private:
 		};
 		std::vector<Edge> edges;
 		edges.reserve(_tris.size() * 3);
-		for (u32 t = 0; t < _tris.size(); ++t)
+		for (u32 t = 0; t < _tris.size(); ++t) {
+			if (!_tris[t].alive) continue;
 			for (int k = 0; k < 3; ++k) {
-				const u32 a = _tris[t].v[k], b = _tris[t].v[(k + 1) % 3];
+				const u32 a = _pid[_tris[t].v[k]], b = _pid[_tris[t].v[(k + 1) % 3]];
 				edges.push_back({(u64(std::min(a, b)) << 32) | std::max(a, b), t});
 			}
+		}
 		std::sort(edges.begin(), edges.end(), [](const Edge& l, const Edge& r) { return l.key < r.key; });
 		for (size_t i = 0; i < edges.size();) {
 			size_t e = i;
@@ -154,26 +195,14 @@ private:
 			}
 			i = e;
 		}
-		// Seams: two vertices at the same place.
-		std::unordered_map<u64, u32> at;
-		for (u32 v = 0; v < _inc.size(); ++v) {
-			if (_inc[v].empty()) continue;
-			const WorldVertex& w = _c.vertices[v];
-			const u64 key = (u64(u16(w.x)) << 32) | (u64(u16(w.y)) << 16) | u64(u16(w.z));
-			auto it = at.find(key);
-			if (it == at.end())
-				at.emplace(key, v);
-			else
-				_locked[v] = _locked[it->second] = true;
-		}
 	}
 
-	void neighbours(u32 v, std::vector<u32>& out) const {
+	void neighbours(u32 p, std::vector<u32>& out) const {
 		out.clear();
-		for (u32 t : _inc[v])
+		for (u32 t : _inc[p])
 			for (int k = 0; k < 3; ++k) {
-				const u32 o = _tris[t].v[k];
-				if (o != v) out.push_back(o);
+				const u32 o = _pid[_tris[t].v[k]];
+				if (o != p) out.push_back(o);
 			}
 		std::sort(out.begin(), out.end());
 		out.erase(std::unique(out.begin(), out.end()), out.end());
@@ -191,44 +220,106 @@ private:
 		neighbours(from, nb);
 		for (u32 to : nb) {
 			const double c = cost(from, to);
-			if (c <= _maxErr2) heap.push({c, from, to, _ver[from], _ver[to]});
+			if (c <= _maxErr2) heap.push({c, from, to});
 		}
 	}
+
+	struct Attr {
+		double v[6]; // u, v (repeats), r, g, b, a
+	};
+	Attr attrOf(const WorldVertex& w) const {
+		const double uv = _c.header.uvScale;
+		return {{double(w.u) * uv, double(w.v) * uv, double(w.r), double(w.g), double(w.b), double(w.a)}};
+	}
+
+	// What triangle `t` (which has a corner at `from`) has at the place `to`: its own mapping carried there.
+	// 0: it cannot be told; 1: a vertex there is close enough (`out`); 2: none is, a new one is needed (`made`).
+	int chooseVertex(const Tri& t, u32 from, u32 to, u32& out, WorldVertex& made) const {
+		int fk = -1;
+		for (int k = 0; k < 3; ++k)
+			if (_pid[t.v[k]] == from) fk = k;
+		const P3 pa = _pos[from];
+		const P3 e1 = sub(_pos[_pid[t.v[(fk + 1) % 3]]], pa), e2 = sub(_pos[_pid[t.v[(fk + 2) % 3]]], pa), d = sub(_pos[to], pa);
+		const double a11 = dot(e1, e1), a12 = dot(e1, e2), a22 = dot(e2, e2);
+		const double det = a11 * a22 - a12 * a12;
+		if (det < 1e-9) return 0;
+		const double r1 = dot(e1, d), r2 = dot(e2, d);
+		const double s = (r1 * a22 - r2 * a12) / det, u = (a11 * r2 - a12 * r1) / det;
+		if (std::fabs(s) > 8.0 || std::fabs(u) > 8.0) return 0;
+		const Attr A = attrOf(vertexAt(t.v[fk])), X = attrOf(vertexAt(t.v[(fk + 1) % 3])), Y = attrOf(vertexAt(t.v[(fk + 2) % 3]));
+		double want[6];
+		for (int i = 0; i < 6; ++i) want[i] = A.v[i] + s * (X.v[i] - A.v[i]) + u * (Y.v[i] - A.v[i]);
+		double best = 1e30;
+		for (u16 cand : _vertsAt[to]) {
+			const Attr C = attrOf(vertexAt(cand));
+			const double eu = std::max(std::fabs(C.v[0] - want[0]), std::fabs(C.v[1] - want[1]));
+			double el = 0;
+			for (int i = 2; i < 6; ++i) el = std::max(el, std::fabs(C.v[i] - want[i]));
+			if (eu > kUvTolerance || el > kLightTolerance) continue;
+			const double score = eu / kUvTolerance + el / kLightTolerance;
+			if (score < best) {
+				best = score;
+				out = cand;
+			}
+		}
+		if (best < 1e29) return 1;
+		// A new one: the place's own vertex with the triangle's coordinates and light.
+		const double uvScale = _c.header.uvScale > 0 ? _c.header.uvScale : 1.0;
+		const double qu = std::floor(want[0] / uvScale + 0.5), qv = std::floor(want[1] / uvScale + 0.5);
+		if (qu < -32768 || qu > 32767 || qv < -32768 || qv > 32767) return 0;
+		made = vertexAt(_vertsAt[to][0]);
+		made.u = i16(qu);
+		made.v = i16(qv);
+		made.r = u8(int(clampd(std::floor(want[2] + 0.5), 0, 255)));
+		made.g = u8(int(clampd(std::floor(want[3] + 0.5), 0, 255)));
+		made.b = u8(int(clampd(std::floor(want[4] + 0.5), 0, 255)));
+		made.a = u8(int(clampd(std::floor(want[5] + 0.5), 0, 255)));
+		return 2;
+	}
+
+	static double clampd(double v, double lo, double hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 	bool legal(u32 from, u32 to) const {
 		if (_locked[from]) return false;
 		std::vector<u32> na, nb;
 		neighbours(from, na);
 		neighbours(to, nb);
-		// The two ends may share only the vertices opposite the edge (the link condition): more would fold the mesh.
+		// The two ends may share only the places opposite the edge (the link condition): more would fold the mesh.
 		u32 common = 0, shared = 0;
 		for (u32 x : na)
 			if (std::binary_search(nb.begin(), nb.end(), x)) ++common;
 		for (u32 t : _inc[from])
 			for (int k = 0; k < 3; ++k)
-				if (_tris[t].v[k] == to) {
+				if (_pid[_tris[t].v[k]] == to) {
 					++shared;
 					break;
 				}
 		if (shared != 2 || common != 2) return false;
-		// No triangle may turn over or collapse to a sliver.
+		u32 needed = 0;
 		for (u32 t : _inc[from]) {
 			const Tri& tri = _tris[t];
 			bool hasTo = false;
-			for (int k = 0; k < 3; ++k) hasTo |= tri.v[k] == to;
+			for (int k = 0; k < 3; ++k) hasTo |= _pid[tri.v[k]] == to;
 			if (hasTo) continue;
+			// No triangle may turn over or collapse to a sliver.
 			P3 before[3], after[3];
 			for (int k = 0; k < 3; ++k) {
-				before[k] = _pos[tri.v[k]];
-				after[k] = tri.v[k] == from ? _pos[to] : before[k];
+				const u32 p = _pid[tri.v[k]];
+				before[k] = _pos[p];
+				after[k] = p == from ? _pos[to] : before[k];
 			}
 			const P3 n0 = cross(sub(before[1], before[0]), sub(before[2], before[0]));
 			const P3 n1 = cross(sub(after[1], after[0]), sub(after[2], after[0]));
 			const double l0 = std::sqrt(dot(n0, n0)), l1 = std::sqrt(dot(n1, n1));
 			if (l1 < 1e-6 || l0 < 1e-9) return false;
 			if (dot(n0, n1) < 0.3 * l0 * l1) return false;
+			u32 pick = 0;
+			WorldVertex made {};
+			const int how = chooseVertex(tri, from, to, pick, made);
+			if (how == 0) return false;
+			needed += how == 2;
 		}
-		return true;
+		return _vertexCount + _added.size() + needed <= kMaxVertices;
 	}
 
 	void collapse(u32 from, u32 to, std::priority_queue<Candidate>& heap) {
@@ -238,19 +329,27 @@ private:
 		for (u32 t : incFrom) {
 			Tri& tri = _tris[t];
 			bool hasTo = false;
-			for (int k = 0; k < 3; ++k) hasTo |= tri.v[k] == to;
+			for (int k = 0; k < 3; ++k) hasTo |= _pid[tri.v[k]] == to;
 			if (hasTo) {
 				tri.alive = false;
 				--_alive;
 				for (int k = 0; k < 3; ++k) {
-					const u32 v = tri.v[k];
-					if (v == from) continue;
-					auto& list = _inc[v];
+					const u32 p = _pid[tri.v[k]];
+					if (p == from) continue;
+					auto& list = _inc[p];
 					list.erase(std::remove(list.begin(), list.end(), t), list.end());
 				}
 			} else {
+				u32 pick = 0;
+				WorldVertex made {};
+				if (chooseVertex(tri, from, to, pick, made) == 2) {
+					pick = u32(_vertexCount + _added.size());
+					_added.push_back(made);
+					_pid.push_back(to);
+					_vertsAt[to].push_back(u16(pick));
+				}
 				for (int k = 0; k < 3; ++k)
-					if (tri.v[k] == from) tri.v[k] = u16(to);
+					if (_pid[tri.v[k]] == from) tri.v[k] = u16(pick);
 				_inc[to].push_back(t);
 			}
 		}
@@ -263,8 +362,11 @@ private:
 };
 
 // One chunk. Returns false when it is left as it is.
-bool simplifyChunk(BakedChunk& c, const std::vector<WorldMaterial>& materials, const LodOptions& opt, u64& before, u64& after) {
-	if (c.tier != 0 || c.vertices.empty() || c.vertices.size() > 65535) return false;
+enum class Result { Done, NotTierZero, TooFew, TooLittle, Other };
+
+Result simplifyChunk(BakedChunk& c, const std::vector<WorldMaterial>& materials, const LodOptions& opt, u64& before, u64& after, u64& simplifiable) {
+	if (c.tier != 0) return Result::NotTierZero;
+	if (c.vertices.empty() || c.vertices.size() > 65535) return Result::Other;
 	// Which batches are simplified: opaque world triangles of the class that is always drawn.
 	std::vector<bool> take(c.batches.size(), false);
 	std::vector<Tri> tris;
@@ -282,7 +384,8 @@ bool simplifyChunk(BakedChunk& c, const std::vector<WorldMaterial>& materials, c
 			tris.push_back(t);
 		}
 	}
-	if (tris.size() < opt.minTriangles) return false;
+	if (tris.size() < opt.minTriangles) return Result::TooFew;
+	simplifiable += tris.size();
 	// Vertices that something not simplified also uses stay.
 	std::vector<bool> usedOutside(c.vertices.size(), false);
 	for (size_t b = 0; b < c.batches.size(); ++b) {
@@ -293,8 +396,11 @@ bool simplifyChunk(BakedChunk& c, const std::vector<WorldMaterial>& materials, c
 	const u32 initial = u32(tris.size());
 	Simplifier simp(c, std::move(tris), usedOutside, opt.maxError);
 	simp.run(u32(double(initial) * double(opt.ratio)));
-	if (simp.alive() > u32(double(initial) * 0.85)) return false; // not worth a second picture
+	if (simp.alive() > u32(double(initial) * 0.9)) return Result::TooLittle; // not worth a second picture
 
+	// The vertices the stand-in needed that the chunk did not have.
+	c.vertices.insert(c.vertices.end(), simp.added().begin(), simp.added().end());
+	c.header.vertexCount = u16(c.vertices.size());
 	// The stand-ins: by material, then cluster, as the batches themselves are.
 	std::vector<const Tri*> kept;
 	for (const Tri& t : simp.tris())
@@ -303,7 +409,6 @@ bool simplifyChunk(BakedChunk& c, const std::vector<WorldMaterial>& materials, c
 		if (l->material != r->material) return l->material < r->material;
 		return l->cluster < r->cluster;
 	});
-	if (c.batches.size() + kept.size() > 65000) return false; // (never so many batches)
 	std::vector<ChunkBatch> added;
 	std::vector<u16> indices = c.indices;
 	for (size_t i = 0; i < kept.size();) {
@@ -332,6 +437,11 @@ bool simplifyChunk(BakedChunk& c, const std::vector<WorldMaterial>& materials, c
 		added.push_back(nb);
 		i = e;
 	}
+	if (c.batches.size() + added.size() > 65535) { // (never so many batches)
+		c.vertices.resize(c.vertices.size() - simp.added().size());
+		c.header.vertexCount = u16(c.vertices.size());
+		return Result::Other;
+	}
 	for (size_t b = 0; b < c.batches.size(); ++b)
 		if (take[b]) c.batches[b].detail = withBatchLod(c.batches[b].detail, BATCH_LOD_FULL_ONLY);
 	c.batches.insert(c.batches.end(), added.begin(), added.end());
@@ -340,7 +450,7 @@ bool simplifyChunk(BakedChunk& c, const std::vector<WorldMaterial>& materials, c
 	c.header.indexCount = u32(c.indices.size());
 	before += initial;
 	after += kept.size();
-	return true;
+	return Result::Done;
 }
 
 } // namespace
@@ -351,8 +461,8 @@ void buildLods(std::vector<BakedChunk>& chunks, const std::vector<WorldMaterial>
 	const auto start = std::chrono::steady_clock::now();
 	std::atomic<size_t> next {0};
 	struct Part {
-		u32 chunks = 0, candidates = 0;
-		u64 before = 0, after = 0, bytes = 0;
+		u32 chunks = 0, candidates = 0, notTier = 0, few = 0, little = 0;
+		u64 before = 0, after = 0, bytes = 0, simplifiable = 0;
 	};
 	const unsigned threads = std::max(1u, opt.threads);
 	std::vector<Part> parts(threads);
@@ -361,11 +471,18 @@ void buildLods(std::vector<BakedChunk>& chunks, const std::vector<WorldMaterial>
 			const size_t i = next.fetch_add(1);
 			if (i >= chunks.size()) return;
 			BakedChunk& c = chunks[i];
-			const size_t indices0 = c.indices.size(), batches0 = c.batches.size();
+			const size_t indices0 = c.indices.size(), batches0 = c.batches.size(), vertices0 = c.vertices.size();
 			++parts[id].candidates;
-			if (simplifyChunk(c, materials, opt, parts[id].before, parts[id].after)) {
+			switch (simplifyChunk(c, materials, opt, parts[id].before, parts[id].after, parts[id].simplifiable)) {
+			case Result::Done:
 				++parts[id].chunks;
-				parts[id].bytes += (c.indices.size() - indices0) * sizeof(u16) + (c.batches.size() - batches0) * sizeof(ChunkBatch);
+				parts[id].bytes += (c.indices.size() - indices0) * sizeof(u16) + (c.batches.size() - batches0) * sizeof(ChunkBatch) +
+				                          (c.vertices.size() - vertices0) * sizeof(WorldVertex);
+				break;
+			case Result::NotTierZero: ++parts[id].notTier; break;
+			case Result::TooFew: ++parts[id].few; break;
+			case Result::TooLittle: ++parts[id].little; break;
+			default: break;
 			}
 		}
 	};
@@ -376,6 +493,10 @@ void buildLods(std::vector<BakedChunk>& chunks, const std::vector<WorldMaterial>
 	for (const Part& p : parts) {
 		stats.chunks += p.chunks;
 		stats.candidates += p.candidates;
+		stats.notTierZero += p.notTier;
+		stats.tooFew += p.few;
+		stats.tooLittle += p.little;
+		stats.simplifiable += p.simplifiable;
 		stats.trianglesBefore += p.before;
 		stats.trianglesAfter += p.after;
 		stats.extraBytes += p.bytes;

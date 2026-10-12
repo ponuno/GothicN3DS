@@ -7063,7 +7063,7 @@ static void testVisibility() {
 
 // ---- simplified stand-ins for far chunks (--lod) ----
 
-static SrcScene hillScene() {
+static SrcScene hillScene(bool jitter = false) {
 	SrcScene scene;
 	scene.materials.resize(1);
 	scene.materials[0].name = "ground";
@@ -7083,6 +7083,10 @@ static SrcScene hillScene() {
 			float q[4][3] = {{float(x) * 100, height(x, z), float(z) * 100}, {float(x + 1) * 100, height(x + 1, z), float(z) * 100},
 			                 {float(x + 1) * 100, height(x + 1, z + 1), float(z + 1) * 100}, {float(x) * 100, height(x, z + 1), float(z + 1) * 100}};
 			addQuad(scene, q[3], q[2], q[1], q[0], 0);
+			// Every quad its own light, a little apart: no two share a vertex, as polygons of a level do not.
+			if (jitter)
+				for (size_t t = scene.triangles.size() - 2; t < scene.triangles.size(); ++t)
+					for (int k = 0; k < 3; ++k) scene.triangles[t].v[k].rgba[0] = u8(190 + (x * 7 + z * 13) % 21);
 		}
 	scene.spawnPos[0] = 4000.0f;
 	scene.spawnPos[1] = 600.0f;
@@ -7091,8 +7095,8 @@ static SrcScene hillScene() {
 	return scene;
 }
 
-static void testLod() {
-	const SrcScene scene = hillScene();
+static void testLodWith(bool jitter) {
+	const SrcScene scene = hillScene(jitter);
 	ChunkerOptions co;
 	co.chunkSize = 4000.0f;
 	ChunkerStats cs;
@@ -7115,29 +7119,34 @@ static void testLod() {
 	LodStats ls;
 	buildLods(chunks, materials, lo, ls);
 	CHECK(ls.chunks == 4);
-	CHECK(ls.trianglesAfter * 10 < ls.trianglesBefore * 7); // a good third gone from a gentle hill
-	std::printf("  lod: %llu -> %llu triangles of %u chunks, +%.0f KB\n", static_cast<unsigned long long>(ls.trianglesBefore),
+	CHECK(ls.trianglesAfter * 10 < ls.trianglesBefore * 7);
+	if (jitter) CHECK(cs.outputTriangles == 12800); // a good third gone from a gentle hill
+	std::printf("  lod%s: %llu -> %llu triangles of %u chunks, +%.0f KB\n", jitter ? " (every polygon its own vertices)" : "", static_cast<unsigned long long>(ls.trianglesBefore),
 	            static_cast<unsigned long long>(ls.trianglesAfter), ls.chunks, double(ls.extraBytes) / 1024.0);
 	for (size_t ci = 0; ci < chunks.size(); ++ci) {
 		const BakedChunk& c = chunks[ci];
 		CHECK(c.header.batchCount == c.batches.size() && c.header.indexCount == c.indices.size());
 		CHECK(std::equal(originalIndices[ci].begin(), originalIndices[ci].end(), c.indices.begin())); // (the full picture is untouched)
 		// The border of what the stand-in draws is the border of what it replaces: no crack towards a neighbour.
-		std::map<std::pair<u32, u32>, int> full, far;
-		auto edges = [&](std::map<std::pair<u32, u32>, int>& m, u8 lodWanted) {
+		// (By place: polygons that meet at a place need not share a vertex.)
+		std::vector<u64> place(c.vertices.size());
+		for (size_t v = 0; v < place.size(); ++v)
+			place[v] = (u64(u16(c.vertices[v].x)) << 32) | (u64(u16(c.vertices[v].y)) << 16) | u64(u16(c.vertices[v].z));
+		std::map<std::pair<u64, u64>, int> full, far;
+		auto edges = [&](std::map<std::pair<u64, u64>, int>& m, u8 lodWanted) {
 			for (const ChunkBatch& b : c.batches) {
 				if (batchLod(b.detail) == BATCH_LOD_BOTH || batchLod(b.detail) == lodWanted)
 					for (u32 i = 0; i + 2 < b.indexCount; i += 3)
 						for (int k = 0; k < 3; ++k) {
 							const u32 a = c.indices[b.firstIndex + i + u32(k)], d = c.indices[b.firstIndex + i + u32((k + 1) % 3)];
 							CHECK(a < c.vertices.size() && d < c.vertices.size());
-							++m[{std::min(a, d), std::max(a, d)}];
+							++m[{std::min(place[a], place[d]), std::max(place[a], place[d])}];
 						}
 			}
 		};
 		edges(full, BATCH_LOD_FULL_ONLY);
 		edges(far, BATCH_LOD_FAR_ONLY);
-		std::set<std::pair<u32, u32>> borderFull, borderFar;
+		std::set<std::pair<u64, u64>> borderFull, borderFar;
 		for (const auto& kv : full) if (kv.second == 1) borderFull.insert(kv.first);
 		for (const auto& kv : far) if (kv.second == 1) borderFar.insert(kv.first);
 		CHECK(!borderFull.empty() && borderFull == borderFar);
@@ -7196,6 +7205,11 @@ static void testLod() {
 	CHECK(near == full);
 }
 
+
+static void testLod() {
+	testLodWith(false);
+	testLodWith(true);
+}
 
 static void testFarLayer() {
 	SrcScene scene;

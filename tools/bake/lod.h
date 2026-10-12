@@ -18,13 +18,18 @@ struct LodOptions {
 	bool enabled = false;
 	float ratio = 0.45f;       // triangles to keep, of what is simplified
 	float maxError = 100.0f;   // cm: how far (mean, over the planes around a vertex) a collapse may move the surface
-	u32 minTriangles = 96;     // a chunk with fewer simplifiable triangles is left alone
+	u32 minTriangles = 48;     // a chunk with fewer simplifiable triangles is left alone
 	unsigned threads = 1;
 };
 
 struct LodStats {
 	u32 chunks = 0;           // chunks that got a stand-in
 	u32 candidates = 0;       // chunks looked at
+	u32 notTierZero = 0;      // ... of them chunks of medium or small objects
+	u32 tooFew = 0;           // ... too few simplifiable triangles (opaque world triangles of the always-drawn class)
+	u32 tooLittle = 0;        // ... simplified too little to be worth a second picture
+	u64 simplifiable = 0;     // triangles that could be simplified, all chunks
+	u64 locked = 0;           // ... of which in chunks that stayed as they are
 	u64 trianglesBefore = 0;  // of the simplified batches
 	u64 trianglesAfter = 0;
 	u64 extraBytes = 0;       // indices and batch entries added

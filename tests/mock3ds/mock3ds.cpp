@@ -654,7 +654,13 @@ void C3D_Fini(void) {
 }
 float C3D_GetCmdBufUsage(void) { return 0.1f; }
 float C3D_FrameRate(float) { return 60.0f; }
+static u32 gMockVBlanks = 0;
 void C3D_FrameSync(void) { gNow += 1000.0 / 60.0; }
+u32 C3D_FrameCounter(int) { return gMockVBlanks; }
+void gspWaitForAnyEvent(void) {
+	gNow += 1000.0 / 60.0;
+	++gMockVBlanks;
+}
 float C3D_GetDrawingTime(void) { return 9.0f; }
 float C3D_GetProcessingTime(void) { return 4.0f; }
 

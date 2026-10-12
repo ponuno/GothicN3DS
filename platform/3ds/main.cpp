@@ -331,14 +331,26 @@ int main(int, char**) {
 	bool displayWritten = false;
 	u32 lastPerceived = 0;
 	g3::FramePacer pacer;
+	int pacedMode = app.settings().frameRate;
+	int interval = 1;
 	const auto pace = [&]() {
 		const g3::Settings& st = app.settings();
 		pacer.cfg.minDetail = st.minDetail(); // (steady: too heavy means 30 fps, the objects stay)
 		pacer.cfg.halfOnly = st.frameRate == g3::FRAMES_30;
 		pacer.cfg.freeRate = st.frameRate == g3::FRAMES_FREE;
+		// Leaving a mode (the steady 30 above all) starts the pacer afresh: its half rate must not outlive the setting.
+		if (st.frameRate != pacedMode) {
+			pacedMode = st.frameRate;
+			pacer.reset();
+			app.world().config().detailScale = pacer.detailScale();
+			app.setDistanceScale(pacer.distanceScale());
+			if (interval != 1) {
+				interval = 1;
+				C3D_FrameRate(60.0f);
+			}
+		}
 	};
 	pace();
-	int interval = 1;
 	int reportLines = 0;
 	u32 lastStateCalls = 0;
 	g3::UpdateTimes partSum;               // where update() spent its time, summed over a report
@@ -635,6 +647,7 @@ int main(int, char**) {
 				}
 			}
 		}
+		gfx::c3dSyncTopOnly(displayWritten && refreshHz > 61.0f);
 		const float periodMs = displayWritten ? 1000.0f / refreshHz : 16.7f;
 		{
 			// Loads since the last frame (the counters of the inhabitants and of the world only grow).

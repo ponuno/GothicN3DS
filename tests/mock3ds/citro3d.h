@@ -57,6 +57,8 @@ void C3D_Fini(void);
 float C3D_GetCmdBufUsage(void);
 float C3D_FrameRate(float fps);
 void C3D_FrameSync(void);
+u32 C3D_FrameCounter(int id);
+void gspWaitForAnyEvent(void);
 bool C3D_FrameBegin(u8 flags);
 bool C3D_FrameDrawOn(C3D_RenderTarget* target);
 void C3D_FrameEnd(u8 flags);

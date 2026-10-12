@@ -631,6 +631,19 @@ void meshDestroy(Mesh* m) {
 
 // The display sync of a frame: everything the player sees is paced by the
 // time between two of these.
+static bool gTopOnly = false;
+void c3dSyncTopOnly(bool on) { gTopOnly = on; }
+
+// C3D_FrameBegin with the wait for the display: for the top screen alone when it runs faster than the bottom one.
+static bool frameBeginSynced() {
+	if (!gTopOnly) return C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+	const u32 start = C3D_FrameCounter(0);
+	do {
+		gspWaitForAnyEvent();
+	} while (C3D_FrameCounter(0) == start);
+	return C3D_FrameBegin(0);
+}
+
 static void markSync() {
 	if (gSyncStarted) {
 		osTickCounterUpdate(&gSyncClock);
@@ -646,7 +659,7 @@ void frameBegin(const FrameDesc& f) {
 	gFrame = f;
 	gClearColor = (u32(f.clearColor[0]) << 24) | (u32(f.clearColor[1]) << 16) | (u32(f.clearColor[2]) << 8) | 0xFFu;
 	if (gClassic) {
-		gInFrame = C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+		gInFrame = frameBeginSynced();
 		if (!gInFrame) return;
 		markSync();
 		reap(); // the previous frame is off the GPU now
@@ -1024,7 +1037,7 @@ void frameEnd() {
 	const u32 recorded = gpuCmdBufOffset;
 	gFrameStats.commandBufferUse = float(recorded) / float(kOwnBufferWords);
 	GPUCMD_SetBuffer(nullptr, 0, 0);
-	if (!C3D_FrameBegin(C3D_FRAME_SYNCDRAW)) return; // cannot happen without C3D_FRAME_NONBLOCK; the frame is dropped
+	if (!frameBeginSynced()) return; // cannot happen without C3D_FRAME_NONBLOCK; the frame is dropped
 	markSync();
 	gFrameStats.gpuMs = C3D_GetDrawingTime(); // of the frame the GPU has just finished
 	// The GPU is idle: whatever was destroyed while it drew can go. The frame

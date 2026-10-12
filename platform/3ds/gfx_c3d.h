@@ -22,6 +22,9 @@ void c3dSetFillTest(bool on);
 // the picture stays as it was (c3dSupersample() says which).
 void c3dSetSupersample(bool on);
 bool c3dSupersample();
+// Wait only for the top screen's refresh (the bottom one stays at 60 Hz, and citro3d's own sync waits for both:
+// a top screen set faster than 60 Hz would be held to 60 frames).
+void c3dSyncTopOnly(bool on);
 // Issues every world draw twice, with nothing changed between (for finding out what a draw call costs the GPU).
 void c3dSetDoubleDraws(bool on);
 bool c3dPlainShader();

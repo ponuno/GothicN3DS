@@ -95,6 +95,9 @@ struct Settings {
 	// detail is kept to that rate's frame time too ("hold").
 	float refreshMaxHz() const { return refresh == 1 ? 60.0f : (refresh == 2 || refresh == 4) ? 72.0f : (refresh == 3 || refresh == 5) ? 80.0f : 0.0f; }
 	bool refreshHold() const { return refresh >= 4; }
+	// Version 14: when a refresh has no new picture the old one is shown turned sideways by the turn of the view
+	// (experimental, see reproject.h): 0 off, 1 on.
+	u8 reproject = 0;
 	float lodDistanceCm() const;
 
 	// Clamps every value into its range (after reading a file of another version).

@@ -66,6 +66,7 @@
 #include "app.h"
 #include "audio_3ds.h"
 #include "display_rate.h"
+#include "reproject_3ds.h"
 #include "gfx_c3d.h"
 #include "pacer.h"
 #include "sys.h"
@@ -154,8 +155,10 @@ static aptHookCookie gAptCookie;
 static void onApt(APT_HookType hook, void*) {
 	if (hook == APTHOOK_ONSUSPEND || hook == APTHOOK_ONSLEEP) {
 		gSuspended = true;
+		g3::reproject::pause(true);
 		g3::display::restore(); // (the system's own timing while it has the screen)
 	} else if (hook == APTHOOK_ONRESTORE || hook == APTHOOK_ONWAKEUP) {
+		g3::reproject::pause(false);
 		g3::display::resume();
 	}
 }
@@ -223,8 +226,11 @@ int main(int, char**) {
 	// New 3DS: 804 MHz + L2 cache. Without this the app runs at Old 3DS speed.
 	osSetSpeedupEnable(true);
 
+	// (The black pad in front of the first framebuffer for the re-projection: it has to be allocated before libctru's.)
+	g3::reproject::reserve();
 	gfxInitDefault();
 	gfxSet3D(false);
+	g3::reproject::noteInit();
 	consoleInit(GFX_BOTTOM, nullptr);
 
 	bool isNew = false;
@@ -322,6 +328,8 @@ int main(int, char**) {
 	app.world().preload(app.camera().pos);
 	consoleClear();
 	aptHook(&gAptCookie, onApt, nullptr);
+	// When a refresh has no new picture, the old one is shown turned by the turn of the view (the menu's "Доворот кадра").
+	const bool reprojectOk = g3::reproject::start();
 	hidSetRepeatParameters(24, 6);
 
 	u32 frame = 0;
@@ -592,6 +600,10 @@ int main(int, char**) {
 			app.render();
 		} // (not in the menu)
 
+		// The re-projection's side: the picture just handed to the GPU was drawn for this view.
+		g3::reproject::enable(reprojectOk && app.settings().reproject != 0);
+		g3::reproject::submit(app.camera().yaw, app.camera().fovY);
+
 		// What the frame cost decides how much detail the next one gets, and
 		// whether the display runs at 60 or a steady 30. With overlapped
 		// frames the CPU and the GPU work at the same time and the slower of
@@ -763,9 +775,17 @@ int main(int, char**) {
 				     static_cast<unsigned long>(app.shadows().stats().drawn), app.gfxRelief() ? " R" : "", gfx::c3dSupersample() ? " AA" : "");
 			}
 			// (Chunks in memory: the world's own + those of medium and small objects, of all; wanted and not there: the same.)
-			reportLine("res %3lu+%3lu/%lu pend %3lu+%lu", static_cast<unsigned long>(ws.chunksLoaded - ws.loadedDetail),
+			// (RP: the re-projection, when asked for: columns of the last move and refreshes that showed the old picture
+			// moved; "RP!" - asked for, but the framebuffers were not found as expected, so it is not running.)
+			char reprojectTag[20] = "";
+			if (app.settings().reproject) {
+				const g3::reproject::Stats rs = g3::reproject::stats();
+				if (rs.running) snprintf(reprojectTag, sizeof(reprojectTag), " RP%+d %lu", rs.columns, static_cast<unsigned long>(rs.moved));
+				else snprintf(reprojectTag, sizeof(reprojectTag), " RP!");
+			}
+			reportLine("res %3lu+%3lu/%lu pend %3lu+%lu%s", static_cast<unsigned long>(ws.chunksLoaded - ws.loadedDetail),
 			     static_cast<unsigned long>(ws.loadedDetail), static_cast<unsigned long>(ws.chunksTotal),
-			     static_cast<unsigned long>(ws.chunksPending - ws.pendingDetail), static_cast<unsigned long>(ws.pendingDetail));
+			     static_cast<unsigned long>(ws.chunksPending - ws.pendingDetail), static_cast<unsigned long>(ws.pendingDetail), reprojectTag);
 			// (Meshes - of them the objects' share -, textures and collision of the world.)
 			reportLine("mesh %5.2f d%4.1f tex %5.2f MB col %4.0fK", double(mem.meshBytes) / 1048576.0, double(ws.detailBytes) / 1048576.0,
 			     double(mem.textureBytes) / 1048576.0, double(ws.collisionBytes) / 1024.0);
@@ -924,6 +944,7 @@ int main(int, char**) {
 	g3::display::restore(); // (the screen as the system had it)
 	app.settings().save(kSettingsPath);
 	flushHitches();
+	g3::reproject::stop();
 	aptUnhook(&gAptCookie);
 	exitStep("exit 2/4: closing the world");
 	if (FILE* sf = fopen(kSoundReportPath, "w")) {

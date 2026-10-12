@@ -21,7 +21,8 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 11: simplified far geometry.
 // 12: smoothing of edges.
 // 13: the screen's refresh rate follows the frame.
-constexpr u32 SETTINGS_VERSION = 13;
+// 14: the old picture turned sideways when a refresh has no new one.
+constexpr u32 SETTINGS_VERSION = 14;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -52,6 +53,7 @@ void Settings::resetGraphics() {
 	farGeometry = d.farGeometry;
 	antialias = d.antialias;
 	refresh = d.refresh;
+	reproject = d.reproject;
 	applyGfxPreset(GFX_PLUS_OFF);
 }
 
@@ -109,7 +111,7 @@ void Settings::sanitize() {
 	if (farGeometry > 3) farGeometry = 2;
 	if (refresh > 5) refresh = 0;
 	gfxPlus = gfxPresetOf();
-	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier, &visibility, &antialias};
+	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier, &visibility, &antialias, &reproject};
 	for (u8* f : flags) *f = *f ? 1 : 0;
 }
 

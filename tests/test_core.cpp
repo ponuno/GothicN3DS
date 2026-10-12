@@ -19,6 +19,7 @@
 #include "waynet.h"
 #include "model_bake.h"
 #include "pacer.h"
+#include "reproject.h"
 #include "pak_writer.h"
 #include "rg_etc1.h"
 #include "test_models.h"
@@ -7500,6 +7501,128 @@ static void testDisplayTiming() {
 	CHECK(st.refresh == 0);
 }
 
+// The re-projection of a turning view (engine/reproject.h): how far the old picture is moved is what the engine's own
+// camera would have moved it, the guess follows the turn the last pictures made and dies away, and it stays within
+// what the buffer has to spare.
+static void testReproject() {
+	// 1. The geometry, against the engine's own projection: the middle of the picture, seen from a camera turned by
+	//    `d` more, lands focal * tan(d) pixels to the left (the world slides left when the view turns right).
+	{
+		YawReprojector r;
+		for (float fov : {0.9f, 1.0472f, 1.3f})
+			for (float yaw0 : {0.0f, 1.0f, -2.0f, 3.0f})
+				for (float d : {0.03f, -0.03f, 0.12f}) {
+					r.cfg.fovY = fov;
+					const Vec3 eye = {120.0f, 50.0f, -300.0f};
+					const Vec3 look = forwardFromYawPitch(yaw0, 0.0f);
+					const Vec4 world = {eye.x + look.x * 1000.0f, eye.y + look.y * 1000.0f, eye.z + look.z * 1000.0f, 1.0f};
+					const Mat4 proj = perspectiveLH(fov, 400.0f / 240.0f, 20.0f, 14000.0f);
+					const Vec4 clip = transform(mul(proj, viewLH(eye, yaw0 + d, 0.0f)), world);
+					const float ndcX = clip.x / clip.w;
+					const float movedLeft = -ndcX * 200.0f;
+					CHECK(std::fabs(movedLeft - r.focalPixels() * std::tan(d)) < 0.02f);
+					CHECK((movedLeft > 0) == (d > 0));
+				}
+	}
+	// 2. A steady turn of 1 rad/s, a picture every 16.7 ms: nothing to do while the pictures keep coming.
+	{
+		YawReprojector r;
+		double t = 10.0;
+		float yaw = 0.5f;
+		int presents = 0;
+		for (int i = 0; i < 30; ++i) {
+			r.arrive(yaw, t);
+			presents += r.onVBlank(true, t, 24, 24).present;
+			t += 1.0 / 60.0;
+			yaw += 1.0f / 60.0f;
+		}
+		CHECK(presents == 0 && std::fabs(r.rate() - 1.0f) < 0.02f && r.measured());
+		// 3. Then the pictures stop coming: the old one is moved further with every refresh, never past the cap, and
+		//    each change is told to the display once.
+		int told = 0, last = 0;
+		bool grows = true;
+		for (int k = 1; k <= 5; ++k) {
+			const double now = t - 1.0 / 60.0 + double(k) / 60.0;
+			const ReprojectStep st = r.onVBlank(false, now, 24, 24);
+			const float age = float(k) / 60.0f;
+			const float want = r.focalPixels() * std::tan(1.0f * 0.15f * (1.0f - std::exp(-age / 0.15f)));
+			CHECK(std::fabs(float(st.columns) - want) <= 0.51f);
+			CHECK(st.columns >= last && st.columns <= 24 && st.columns > 0);
+			grows = grows && st.columns >= last;
+			told += st.present;
+			CHECK(st.present == (st.columns != last));
+			last = st.columns;
+		}
+		CHECK(grows && told >= 3 && last >= 10 && last <= 24);
+		// 4. A new picture comes: the display is not told anything (the system has put it on the screen as it is),
+		//    and the next refresh without one starts again from little.
+		CHECK(!r.onVBlank(true, t + 0.1, 24, 24).present);
+		r.arrive(yaw + 0.05f, t + 0.1);
+		const ReprojectStep again = r.onVBlank(false, t + 0.1 + 1.0 / 60.0, 24, 24);
+		CHECK(again.columns < last);
+	}
+	// 5. What the buffer has to spare limits the move; no room in a direction means no move that way.
+	{
+		YawReprojector r;
+		r.arrive(0.0f, 1.0);
+		r.arrive(0.1f, 1.0 + 1.0 / 30.0); // 3 rad/s to the right
+		CHECK(r.onVBlank(false, 1.2, 24, 3).columns == 3);
+		YawReprojector l;
+		l.arrive(0.0f, 1.0);
+		l.arrive(-0.1f, 1.0 + 1.0 / 30.0); // to the left
+		const ReprojectStep none = l.onVBlank(false, 1.2, 0, 24);
+		CHECK(none.columns == 0 && !none.present);
+		const ReprojectStep some = l.onVBlank(false, 1.2, 5, 24);
+		CHECK(some.columns == -5 && some.present);
+		// The cap, whatever the turn and the wait.
+		YawReprojector fast;
+		fast.arrive(0.0f, 1.0);
+		fast.arrive(0.12f, 1.0 + 1.0 / 60.0); // 7.2 rad/s
+		CHECK(fast.columnsAt(3.0) == fast.cfg.maxColumns);
+	}
+	// 6. What is not a measure of a turn gives no guess: a cut, a long pause, a crawl, a madman; the turn through
+	//    +-pi is a small turn.
+	{
+		YawReprojector r;
+		r.arrive(0.0f, 1.0);
+		r.arrive(1.0f, 1.0 + 1.0 / 60.0);
+		CHECK(!r.measured() && r.columnsAt(1.1) == 0); // a cut
+		r.arrive(0.0f, 5.0);
+		r.arrive(0.1f, 5.6);
+		CHECK(!r.measured()); // 0.6 s apart: a pause, not a turn
+		r.arrive(0.0f, 8.0);
+		r.arrive(0.0005f, 8.0 + 1.0 / 60.0);
+		CHECK(!r.measured()); // 0.03 rad/s
+		r.arrive(0.0f, 9.0);
+		r.arrive(0.5f, 9.0 + 0.01);
+		CHECK(!r.measured()); // 50 rad/s
+		r.arrive(3.13f, 12.0);
+		r.arrive(-3.13f, 12.0 + 1.0 / 60.0);
+		CHECK(r.measured() && r.rate() > 1.0f && r.rate() < 2.0f);
+		r.reset();
+		CHECK(!r.measured() && r.columnsAt(100.0) == 0);
+	}
+	// 7. The setting: off at first, kept by the file, one or none, back to off with the graphics.
+	{
+		Settings st;
+		CHECK(st.reproject == 0);
+		st.reproject = 1;
+		const std::string path = gDir + "/reproject_settings.bin";
+		CHECK(st.save(path.c_str()));
+		Settings back;
+		CHECK(back.load(path.c_str()) && back.reproject == 1);
+		back.reproject = 7;
+		back.sanitize();
+		CHECK(back.reproject == 1);
+		back.resetGraphics();
+		CHECK(back.reproject == 0);
+		Menu m;
+		bool found = false;
+		for (int i = 0; i < m.itemCount(Menu::PAGE_GFX_PLUS); ++i) found = found || std::strstr(m.label(Menu::PAGE_GFX_PLUS, i), "Доворот") != nullptr;
+		CHECK(found);
+	}
+}
+
 static void testSimplify() {
 	testSimplifyWorld();
 	testSimplifyModel();
@@ -9132,6 +9255,7 @@ int main(int argc, char** argv) {
 	             {"lod", testLod},
              {"simplify", testSimplify},
              {"displaytiming", testDisplayTiming},
+             {"reproject", testReproject},
 	             {"music", testMusic},
 	             {"speech", testSpeech},
              {"sound", testSound},

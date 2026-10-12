@@ -31,7 +31,11 @@ struct PacerConfig {
 	float minDistance = 0.5f;
 	float distOver = 1.0f;     // load above which (objects gone) the distance shortens
 	float distStep = 0.02f;    // most taken away in a frame (less when only a little over)
-	float distRecover = 0.05f; // given back at a time (with the same calm as the objects)
+	float distRecover = 0.05f; // given back at a time (with the same calm as the objects) ...
+	u32 distRecoverEvery = 40; // ... at most every this many frames (0.7 s: a shortened distance is quick to give back,
+	                           // it moves the fog, not the objects; the objects keep recoverEvery)
+	float distParallel = 1.35f; // load above which the distance shortens along with the objects, not after them
+	                           // (a scene this far over is not cured by the objects alone)
 	float recoverStep = 0.10f; // detail given back at a time ...
 	u32 recoverEvery = 120;    // ... at most every this many frames (2 s) ...
 	u32 calmFrames = 90;       // ... once the load has been below `low` this many frames running (1.5 s)
@@ -87,7 +91,7 @@ private:
 	float _dist = 1.0f;
 	float _load = 0.0f;
 	int _interval = 1;
-	u32 _over = 0, _under = 0, _calm = 0, _sinceStep = 0;
+	u32 _over = 0, _under = 0, _calm = 0, _sinceStep = 0, _sinceDist = 0;
 	bool _probing = false;
 	u32 _sinceProbe = 0, _probeWait = 0, _settled = 0, _atFullRate = 0;
 };

@@ -1954,6 +1954,34 @@ static void testPacerDistance() {
 	CHECK(h.distanceScale() > 0.99f);
 }
 
+// A scene far over the time there is: the distance starts to shorten with the objects, and comes back quickly.
+static void testPacerHeavy() {
+	FramePacer p;
+	p.cfg.freeRate = true;
+	p.reset();
+	int firstDist = -1;
+	for (int f = 0; f < 40; ++f) {
+		p.update(1.6f);
+		if (firstDist < 0 && p.distanceScale() < 1.0f) firstDist = f;
+	}
+	std::printf("  pacer heavy: distance starts at frame %d (objects %.2f)\n", firstDist, double(p.detailScale()));
+	CHECK(firstDist >= 0 && firstDist < 10);
+	for (int f = 0; f < 600; ++f) p.update(1.6f);
+	CHECK(p.distanceScale() <= p.cfg.minDistance + 0.01f);
+	// Light again: the distance is whole after about 10 steps of 0.7 s, then the objects.
+	int distBack = -1;
+	for (int f = 0; f < 3000 && p.detailScale() < 1.0f; ++f) {
+		p.update(0.5f);
+		if (distBack < 0 && p.distanceScale() >= 1.0f) distBack = f;
+	}
+	std::printf("  pacer heavy: distance back after %d frames\n", distBack);
+	CHECK(distBack > 0 && distBack < 600 && p.detailScale() > 0.99f);
+	// A load over the line but not far: the objects go first and the distance is not touched while they are going.
+	FramePacer q;
+	for (int f = 0; f < 5; ++f) q.update(1.25f);
+	CHECK(q.detailScale() > q.cfg.minDetail + 0.01f && q.distanceScale() == 1.0f);
+}
+
 static void testPacer() {
 	// A stand-in for the console: objects are 40% of a frame's cost.
 	auto cost = [](float scene, float detail) { return scene * (0.6f + 0.4f * detail); };
@@ -9390,6 +9418,7 @@ int main(int argc, char** argv) {
 	             {"streaming worlds", testStreamingWorlds},
 	             {"pacer", testPacer},
 	             {"pacer distance", testPacerDistance},
+             {"pacer heavy", testPacerHeavy},
 	             {"detail fade", testDetailFade},
              {"thinning", testThinning},
 	             {"collision", testCollision},

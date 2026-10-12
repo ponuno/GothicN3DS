@@ -9,6 +9,7 @@ void FramePacer::reset() {
 	_interval = 1;
 	_over = _under = _calm = 0;
 	_sinceStep = cfg.recoverEvery;
+	_sinceDist = cfg.distRecoverEvery;
 	_probing = false;
 	_sinceProbe = _settled = _atFullRate = 0;
 	_probeWait = cfg.probeEvery;
@@ -31,24 +32,30 @@ void FramePacer::update(float frameLoad, bool turning) {
 	if (_interval == 1) {
 		++_atFullRate;
 		++_sinceStep;
+		++_sinceDist;
 		const bool objectsGone = _detail <= cfg.minDetail + 0.001f;
 		if (_load > cfg.high) {
 			// The further over, the bigger the step; never so big that it is
 			// seen as one. Objects first; when they are gone, the distance.
-			if (!objectsGone)
+			if (!objectsGone) {
 				_detail -= clamp((_load - cfg.high) * 0.5f, 0.01f, 0.08f);
-			else if (_load > cfg.distOver)
+				// Far over the time there is: the objects alone will not cure it, the distance goes along.
+				if (_load > cfg.distParallel) _dist -= clamp((_load - cfg.distParallel) * 0.05f, 0.001f, 0.01f);
+			} else if (_load > cfg.distOver)
 				_dist -= clamp((_load - cfg.distOver) * 0.1f, 0.002f, cfg.distStep);
 			_calm = 0;
 		} else if (_load < cfg.low && !turning) {
 			// (Only once the load has settled: see PacerConfig::calmFrames.
 			// And a step at a time, not a little every frame: a new step of
 			// objects comes in together, then nothing for a while.)
-			if (++_calm >= cfg.calmFrames && _sinceStep >= cfg.recoverEvery) {
+			if (++_calm >= cfg.calmFrames) {
 				if (_dist < 1.0f) {
-					_dist += cfg.distRecover;
-					_sinceStep = 0;
-				} else if (_detail < 1.0f) {
+					if (_sinceDist >= cfg.distRecoverEvery) {
+						_dist += cfg.distRecover;
+						_sinceDist = 0;
+						_sinceStep = 0; // (the objects wait their turn after the last of it)
+					}
+				} else if (_detail < 1.0f && _sinceStep >= cfg.recoverEvery) {
 					_detail += cfg.recoverStep;
 					_sinceStep = 0;
 				}

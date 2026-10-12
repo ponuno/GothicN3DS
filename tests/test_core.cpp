@@ -6890,6 +6890,145 @@ static void testChunkTiers() {
 	pakPlain.close();
 }
 
+// ---- baked visibility (--vis) ----
+
+static void testVisibility() {
+	SrcScene scene;
+	scene.materials.resize(4);
+	const char* names[4] = {"ground", "wall", "house", "crate"};
+	const u8 reds[4] = {40, 200, 230, 250};
+	for (int m = 0; m < 4; ++m) {
+		scene.materials[size_t(m)].name = names[m];
+		scene.materials[size_t(m)].hasColor = true;
+		scene.materials[size_t(m)].color[0] = reds[m];
+		scene.materials[size_t(m)].color[1] = u8(30 + m * 50);
+		scene.materials[size_t(m)].color[2] = u8(250 - m * 60);
+	}
+	// 3 x 3 cells of 40 m, a floor in each; a wall 30 m high across the whole width at z = 60 m; behind it houses and crates.
+	for (int cz = 0; cz < 3; ++cz)
+		for (int cx = 0; cx < 3; ++cx) {
+			const float x0 = float(cx) * 4000.0f, z0 = float(cz) * 4000.0f;
+			const float f[4][3] = {{x0, 0, z0}, {x0 + 4000, 0, z0}, {x0 + 4000, 0, z0 + 4000}, {x0, 0, z0 + 4000}};
+			addQuad(scene, f[3], f[2], f[1], f[0], 0);
+		}
+	addBlock(scene, 0.0f, 12000.0f, 6000.0f, 6200.0f, 3000.0f); // (material 0 in the helper; recoloured below)
+	for (size_t t = 0; t < scene.triangles.size(); ++t)
+		if (scene.triangles[t].v[0].pos[1] > 1.0f || scene.triangles[t].v[1].pos[1] > 1.0f) scene.triangles[t].material = 1;
+	for (int i = 0; i < 12; ++i) {
+		const float x = 800.0f + float(i % 4) * 2800.0f, z = 8600.0f + float(i / 4) * 1100.0f;
+		const size_t first = scene.triangles.size();
+		addBlock(scene, x, x + 600.0f, z, z + 600.0f, 800.0f);
+		for (size_t t = first; t < scene.triangles.size(); ++t) scene.triangles[t].material = 2;
+	}
+	for (int i = 0; i < 40; ++i) {
+		const float x = 300.0f + float(i % 8) * 1400.0f, z = 8200.0f + float(i / 8) * 700.0f;
+		const float p[4][3] = {{x, 60, z}, {x + 50, 60, z}, {x + 50, 60, z + 50}, {x, 60, z + 50}};
+		const size_t first = scene.triangles.size();
+		addQuad(scene, p[3], p[2], p[1], p[0], 3);
+		for (size_t t = first; t < scene.triangles.size(); ++t) scene.triangles[t].detail = DETAIL_MEDIUM;
+	}
+	scene.spawnPos[0] = 6000.0f;
+	scene.spawnPos[1] = 170.0f;
+	scene.spawnPos[2] = 1500.0f;
+	scene.hasSpawn = true;
+
+	const std::string withVis = gDir + "/vis.pak", without = gDir + "/novis.pak";
+	{
+		std::vector<BakeWorld> worlds(1);
+		worlds[0].name = "v";
+		worlds[0].scene = scene;
+		BakeOptions opt;
+		opt.chunker.chunkSize = 4000.0f;
+		opt.tex.maxSize = 32;
+		opt.tex.quality = 0;
+		opt.threads = 2;
+		opt.quiet = true;
+		opt.vis.enabled = true;
+		opt.vis.threads = 2;
+		PakWriter pak;
+		bakeWorlds(worlds, opt, pak);
+		pak.write(withVis);
+		BakeOptions plain = opt;
+		plain.vis.enabled = false;
+		PakWriter pak2;
+		bakeWorlds(worlds, plain, pak2);
+		pak2.write(without);
+	}
+	gfx::init();
+	{
+		Pak p1, p2;
+		CHECK(p1.open(withVis.c_str()) && p2.open(without.c_str()));
+		World a, b;
+		CHECK(a.open(&p1, "v") && b.open(&p2, "v"));
+		CHECK(a.hasVisibility() && !b.hasVisibility());
+	}
+
+	App app;
+	CHECK(app.init(withVis.c_str(), "v"));
+	World& w = app.world();
+	CHECK(w.hasVisibility());
+	app.setDrawDistance(12000.0f);
+	app.player().flying = true;
+	const float dt = 1.0f / 30.0f;
+	auto frame = [&](bool vis, std::vector<u8>& px, u32& tris, u32& hidden) {
+		w.config().visibility = vis;
+		app.setClock(100.0); // (the texture animation must not tell the two runs apart)
+		app.update(Input {}, dt);
+		app.render();
+		px.assign(gfx::softFramebuffer(), gfx::softFramebuffer() + gfx::SCREEN_W * gfx::SCREEN_H * 4);
+		tris = w.stats().trianglesDrawn;
+		hidden = w.stats().clustersHidden + w.stats().chunksHidden;
+	};
+	w.config().detailDistance[DETAIL_MEDIUM] = 20000.0f;
+	app.camera().pitch = -0.05f;
+	u32 culledSomewhere = 0, fewer = 0;
+	// Poses in front of the wall, looking every which way, and behind it.
+	const float poses[][4] = {{2000, 1000, 0.0f, 170}, {6000, 1500, 0.3f, 170}, {10000, 800, -0.4f, 170}, {6000, 3000, 0.0f, 450},
+	                          {1000, 3500, 0.7f, 170}, {6000, 2500, 3.1f, 170}, {6000, 9500, 3.14f, 170}, {3000, 7000, 0.0f, 170},
+	                          {9000, 1200, 0.1f, 600}, {6000, 500, -0.2f, 170}};
+	for (const auto& pose : poses) {
+		app.camera().yaw = pose[2];
+		app.teleport({pose[0], pose[3], pose[1]});
+		w.preload(app.camera().pos);
+		std::vector<u8> off, on;
+		u32 trisOff = 0, trisOn = 0, hiddenOff = 0, hiddenOn = 0;
+		for (int i = 0; i < 12; ++i) frame(false, off, trisOff, hiddenOff);
+		for (int i = 0; i < 12; ++i) frame(true, on, trisOn, hiddenOn);
+		CHECK(hiddenOff == 0);
+		CHECK(off == on); // not a pixel of the picture depends on the table
+		CHECK(trisOn <= trisOff);
+		culledSomewhere += hiddenOn > 0;
+		fewer += trisOn < trisOff;
+		CHECK(w.stats().visRow); // (the poses are all in cells with a row)
+	}
+	CHECK(culledSomewhere >= 3 && fewer >= 3);
+	std::printf("  visibility: hidden clusters in %u of %zu poses, fewer triangles in %u\n", culledSomewhere, sizeof(poses) / sizeof(poses[0]), fewer);
+	// The poses facing the houses from this side of the wall: the houses are behind it, hidden.
+	{
+		app.camera().yaw = 0.0f;
+		app.teleport({6000.0f, 170.0f, 1500.0f});
+		std::vector<u8> on;
+		u32 t = 0, h = 0;
+		frame(true, on, t, h);
+		frame(true, on, t, h);
+		CHECK(h > 0);
+		CHECK(w.stats().visBytes > 0);
+		// Off: the table is let go, and nothing is hidden.
+		frame(false, on, t, h);
+		frame(false, on, t, h);
+		CHECK(h == 0 && w.stats().visBytes == 0 && !w.visibilityActive());
+	}
+	// Outside every cell with a row: all is drawn.
+	{
+		app.teleport({-90000.0f, 170.0f, -90000.0f});
+		std::vector<u8> on;
+		u32 t = 0, h = 0;
+		frame(true, on, t, h);
+		frame(true, on, t, h);
+		CHECK(h == 0 && !w.stats().visRow);
+	}
+}
+
 static void testFarLayer() {
 	SrcScene scene;
 	scene.materials.resize(2);
@@ -8512,6 +8651,7 @@ int main(int argc, char** argv) {
 	             {"graphics+", testGfxPlus},
 	             {"far layer", testFarLayer},
 	             {"chunk tiers", testChunkTiers},
+	             {"visibility", testVisibility},
 	             {"music", testMusic},
 	             {"speech", testSpeech},
              {"sound", testSound},

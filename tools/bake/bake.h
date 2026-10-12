@@ -8,6 +8,7 @@
 #include "scene.h"
 #include "script_src.h"
 #include "texture_bake.h"
+#include "visibility.h"
 #include "vertex_fx.h"
 
 #include <functional>
@@ -34,6 +35,8 @@ struct BakeOptions {
 	bool wind = false;
 	// The far layer (G10, --far-lod): a coarse copy of the world drawn beyond the draw distance.
 	FarOptions far;
+	// Visibility (--vis): which parts of the world are hidden from which cell (see visibility.h).
+	VisOptions vis;
 };
 
 struct BakeWorld {

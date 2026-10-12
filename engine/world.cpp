@@ -98,6 +98,8 @@ void World::close() {
 	_loader.stop(); // before the tables it reads go away
 	freeFar();
 	_farTried = false;
+	freeVis();
+	_visTried = false;
 	if (_loaded) {
 		for (u32 i = 0; i < _hdr.chunkCount; ++i)
 			if (_loaded[i].mesh) unloadChunk(i);
@@ -634,6 +636,151 @@ void World::update(Vec3 camera) {
 		_farTried = false;
 	}
 	_stats.farBytes = _farBytes;
+	// The visibility table: in memory while it is asked for.
+	if (_cfg.visibility && hasVisibility() && !_visBlob && !_visTried) {
+		loadVis();
+	} else if (!_cfg.visibility) {
+		if (_visBlob) freeVis();
+		_visTried = false;
+	}
+	_stats.visBytes = _visBlob ? visBlobSize(_vis) : 0u;
+}
+
+void World::freeVis() {
+	free(_visBlob);
+	free(_visBase);
+	free(_visAllHidden);
+	_visBlob = nullptr;
+	_visBase = nullptr;
+	_visAllHidden = nullptr;
+	_visCellX = _visCellZ = nullptr;
+	_visClusters = nullptr;
+	_visOrder = nullptr;
+	_visViewers = nullptr;
+	_visBits = nullptr;
+	_visRow = _visHave = false;
+	_vis = {};
+	_stats.visBytes = 0;
+}
+
+void World::loadVis() {
+	_visTried = true;
+	const PakEntry* e = _pak ? _pak->find(_hdr.visEntry) : nullptr;
+	if (!e || e->size < sizeof(VisHeader)) return;
+	u8* blob = static_cast<u8*>(_pak->readAlloc(*e));
+	if (!blob) return;
+	VisHeader h;
+	memcpy(&h, blob, sizeof(h));
+	bool ok = h.magic == VIS_MAGIC && h.version == VIS_VERSION && h.chunkCount == _hdr.chunkCount && h.viewerCount > 0 &&
+	          h.viewerCount < (1u << 24) && h.chunkCount < (1u << 24) && h.bitCount < 0xFFFFFFE0u && h.cellSize > 0.0f &&
+	          h.radius > 0.0f && h.radius < 1.0e7f && u64(e->size) == u64(visBlobSize(h));
+	if (ok) {
+		const u8* p = blob + sizeof(VisHeader);
+		_visCellX = reinterpret_cast<const i16*>(p);
+		p += size_t(h.chunkCount) * 2;
+		_visCellZ = reinterpret_cast<const i16*>(p);
+		p += size_t(h.chunkCount) * 2;
+		_visClusters = p;
+		p += size_t(h.chunkCount) + visPad(h.chunkCount);
+		_visOrder = reinterpret_cast<const u32*>(p);
+		p += size_t(h.chunkCount) * 4;
+		_visViewers = reinterpret_cast<const VisViewer*>(p);
+		p += size_t(h.viewerCount) * sizeof(VisViewer);
+		_visBits = reinterpret_cast<const u32*>(p);
+		for (u32 i = 0; ok && i < h.chunkCount; ++i) ok = _visOrder[i] < h.chunkCount;
+		for (u32 i = 0; ok && i < h.viewerCount; ++i) {
+			ok = _visViewers[i].bitOffset <= h.bitCount;
+			if (ok && i > 0)
+				ok = _visViewers[i - 1].z < _visViewers[i].z || (_visViewers[i - 1].z == _visViewers[i].z && _visViewers[i - 1].x < _visViewers[i].x);
+		}
+	}
+	_visBase = ok ? static_cast<u32*>(malloc(size_t(h.chunkCount) * 4 + 4)) : nullptr;
+	_visAllHidden = ok ? static_cast<u8*>(calloc(size_t(h.chunkCount) + 1, 1)) : nullptr;
+	if (!ok || !_visBase || !_visAllHidden) {
+		logf("world: the visibility table is damaged or does not fit; drawn without it");
+		free(blob);
+		freeVis();
+		_visTried = true;
+		return;
+	}
+	_vis = h;
+	_visBlob = blob;
+	_visRow = _visHave = false;
+}
+
+// The row of the table for the cell the camera is in: where each chunk's clusters begin in it.
+void World::updateVisibility(Vec3 camera) {
+	_stats.visRow = false;
+	if (!visibilityActive()) {
+		_visRow = _visHave = false;
+		return;
+	}
+	const int cx = int(floorf(camera.x / _vis.cellSize)), cz = int(floorf(camera.z / _vis.cellSize));
+	if (_visHave && cx == _visCellNowX && cz == _visCellNowZ) {
+		_stats.visRow = _visRow;
+		return;
+	}
+	_visHave = true;
+	_visCellNowX = cx;
+	_visCellNowZ = cz;
+	_visRow = false;
+	// The row: the cells are sorted by z, then x.
+	u32 lo = 0, hi = _vis.viewerCount;
+	while (lo < hi) {
+		const u32 mid = (lo + hi) / 2;
+		const VisViewer& v = _visViewers[mid];
+		if (v.z < cz || (v.z == cz && v.x < cx))
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	if (lo >= _vis.viewerCount || _visViewers[lo].z != cz || _visViewers[lo].x != cx) return;
+	for (u32 i = 0; i < _vis.chunkCount; ++i) {
+		_visBase[i] = 0xFFFFFFFFu;
+		_visAllHidden[i] = 0;
+	}
+	u64 bit = _visViewers[lo].bitOffset;
+	const int reach = int(ceilf(_vis.radius / _vis.cellSize)) + 1;
+	bool ok = true;
+	for (int dz = -reach; dz <= reach && ok; ++dz)
+		for (int dx = -reach; dx <= reach && ok; ++dx) {
+			const float gx = float(max(abs(dx) - 1, 0)) * _vis.cellSize, gz = float(max(abs(dz) - 1, 0)) * _vis.cellSize;
+			if (sqrtf(gx * gx + gz * gz) > _vis.radius) continue;
+			const int tz = cz + dz, tx = cx + dx;
+			// The chunks of that cell: the first of them in `order` by (z, x).
+			u32 a = 0, b = _vis.chunkCount;
+			while (a < b) {
+				const u32 mid = (a + b) / 2;
+				const u32 c = _visOrder[mid];
+				if (_visCellZ[c] < tz || (_visCellZ[c] == tz && _visCellX[c] < tx))
+					a = mid + 1;
+				else
+					b = mid;
+			}
+			for (u32 k = a; k < _vis.chunkCount; ++k) {
+				const u32 c = _visOrder[k];
+				if (_visCellZ[c] != tz || _visCellX[c] != tx) break;
+				const u32 n = _visClusters[c];
+				if (bit + n > _vis.bitCount) {
+					ok = false;
+					break;
+				}
+				_visBase[c] = u32(bit);
+				bool any = false;
+				for (u32 cl = 0; cl < n && !any; ++cl) any = (_visBits[(bit + cl) >> 5] & (1u << ((bit + cl) & 31))) != 0;
+				_visAllHidden[c] = n > 0 && !any;
+				bit += n;
+			}
+		}
+	if (!ok) {
+		for (u32 i = 0; i < _vis.chunkCount; ++i) {
+			_visBase[i] = 0xFFFFFFFFu;
+			_visAllHidden[i] = 0;
+		}
+		return;
+	}
+	_visRow = true;
+	_stats.visRow = true;
 }
 
 void World::loadFar() {
@@ -1040,17 +1187,20 @@ static float aabbFarDistance(const float mn[3], const float mx[3], Vec3 c) {
 
 // Looks at the boxes of a chunk once; drawBatches() then knows of most
 // batches what to do without looking at them.
-void World::classify(const Loaded& l, bool count) {
+void World::classify(const Loaded& l, u32 index, bool count) {
 	for (u32 c = 0; c < l.clusterCount; ++c) {
 		const Cluster& k = l.clusters[c];
 		if (k.bbMin[0] > k.bbMax[0]) {
 			_clusterState[c] = CLUSTER_OUT; // nothing in it
 			continue;
 		}
-		const int where = _cfg.clusterCulling ? aabbFrustumClass(_frustum, k.bbMin, k.bbMax) : 1;
+		// Hidden from the camera's cell (the baked table) counts as out of view.
+		const bool hidden = _visRow && visHidden(index, c);
+		_stats.clustersHidden += count && hidden;
+		const int where = hidden ? 0 : _cfg.clusterCulling ? aabbFrustumClass(_frustum, k.bbMin, k.bbMax) : 1;
 		_clusterState[c] = where == 0 ? u8(CLUSTER_OUT) : where == 1 ? u8(CLUSTER_IN) : u8(CLUSTER_PARTLY);
 		_stats.clustersTested += count;
-		_stats.clustersCulled += count && where == 0;
+		_stats.clustersCulled += count && where == 0 && !hidden;
 		// (Also out of view: whether its objects are within their distance is
 		// kept up to date there too, so that turning the view finds them as
 		// they should be, not dissolving in.)
@@ -1193,8 +1343,11 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_stats.farTriangles = 0;
 	_stats.farTiles = 0;
 	_stats.farSeams = 0;
+	_stats.chunksHidden = 0;
+	_stats.clustersHidden = 0;
 	_visible = 0;
 	if (!_pak) return;
+	updateVisibility(camera);
 
 	_frustum = frustumFromViewProj(viewProj);
 	const Frustum whole = _frustum;
@@ -1247,6 +1400,10 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 		const u32 i = _resident[r];
 		const float d = distanceTo(i, camera);
 		if (d > _cfg.drawDistance || !aabbInFrustum(_frustum, _chunks[i].bbMin, _chunks[i].bbMax)) continue;
+		if (_visRow && _visAllHidden[i]) {
+			++_stats.chunksHidden;
+			continue;
+		}
 		// Insertion sort, front to back, so the depth test rejects hidden pixels early.
 		u32 k = n++;
 		while (k > 0 && _orderKey[k - 1] > d) {
@@ -1261,7 +1418,7 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 
 	for (u32 k = 0; k < n; ++k) {
 		Loaded& l = _loaded[_order[k]];
-		classify(l, true);
+		classify(l, _order[k], true);
 		drawBatches(l, false);
 		++_stats.chunksDrawn;
 		_stats.trianglesInChunks += l.triangles;
@@ -1380,7 +1537,7 @@ void World::drawBlended() {
 	for (u32 k = _visible; k-- > 0;) {
 		Loaded& l = _loaded[_order[k]];
 		if (!l.mesh || !l.hasBlended) continue;
-		classify(l, false);
+		classify(l, _order[k], false);
 		drawBatches(l, true);
 	}
 }

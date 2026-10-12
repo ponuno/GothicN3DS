@@ -1,178 +1,87 @@
 Gothic 3DS: bake_debug.txt (--debug)
 script: GOTHIC.DAT (from an archive)
 
-world 'archolos_mainland' (STARTUP_ARCHOLOS_MAINLAND): 3323493 instructions, 43739 complaints, 0 calls given up, 17684 calls of engine functions nobody carries out, 15458 uses of members of no object; 1980 characters
-world 'archolos_sewers' (STARTUP_ARCHOLOS_SEWERS): 1976343 instructions, 41649 complaints, 0 calls given up, 696 calls of engine functions nobody carries out, 15368 uses of members of no object; 65 characters
-world 'archolos_silvermine' (STARTUP_ARCHOLOS_SILVERMINE): 1956277 instructions, 41617 complaints, 0 calls given up, 569 calls of engine functions nobody carries out, 15368 uses of members of no object; 63 characters
-world 'archolos_volfzacke' (STARTUP_ARCHOLOS_VOLFZACKE): 1952098 instructions, 41609 complaints, 0 calls given up, 364 calls of engine functions nobody carries out, 15368 uses of members of no object; 61 characters
+world 'archolos_mainland' (STARTUP_ARCHOLOS_MAINLAND): 1638108 instructions, 144 complaints, 0 calls given up, 17319 calls of engine functions nobody carries out, 9894 uses of members of no object; 1979 characters
+world 'archolos_sewers' (STARTUP_ARCHOLOS_SEWERS): 136265 instructions, 2 complaints, 0 calls given up, 332 calls of engine functions nobody carries out, 5780 uses of members of no object; 65 characters
+world 'archolos_silvermine' (STARTUP_ARCHOLOS_SILVERMINE): 114604 instructions, 2 complaints, 0 calls given up, 205 calls of engine functions nobody carries out, 5780 uses of members of no object; 63 characters
+world 'archolos_volfzacke' (STARTUP_ARCHOLOS_VOLFZACKE): 109992 instructions, 2 complaints, 0 calls given up, 0 calls of engine functions nobody carries out, 5780 uses of members of no object; 61 characters
 
-== the start-up scripts, all worlds: 9337804 instructions, 168616 complaints, 0 calls given up, 61562 uses of members of no object ==
-script image 14.30 MB; objects of the characters and items made by the start-up: 8568, 2.14 MB; strings made 0.16 MB
+== the start-up scripts, all worlds: 2128609 instructions, 150 complaints, 0 calls given up, 27234 uses of members of no object ==
+script image 14.28 MB; objects of the characters and items made by the start-up: 8567, 2.14 MB; strings made 0.17 MB
 
 -- complaints in the order they FIRST happened (the first is where things began to go wrong; later ones may follow from it) --
-  1. a constant was written to in B_SETFIGHTSKILLS  (x1946, library: the game / the mod)
-  2. a constant was written to in MEMINT_HANDLEERROR  (x110896, library: Ikarus)
-  3. a constant was written to in ASMINT_PUSH  (x7617, library: Ikarus)
-  4. a constant was written to in ASMINT_PUSHCONTEXT  (x4620, library: Ikarus)
-  5. a constant was written to in CALL_OPEN  (x770, library: Ikarus)
-  6. a constant was written to in MEM_PTRTOINST  (x9374, library: Ikarus)
-  7. a member was used without an object in MEM_GETFUNCID  (x1540, library: Ikarus)
-  8. a member was used without an object in MEM_WRITEINT  (x8240, library: Ikarus)
-  9. a member was used without an object in MEM_ALLOC  (x49384, library: Ikarus)
- 10. a constant was written to in ASM_OPEN  (x23820, library: Ikarus)
- 11. a member was used without an object in _@  (x4, library: the game / the mod)
- 12. a constant was written to in CALL_INTPARAM  (x1568, library: Ikarus)
- 13. a constant was written to in CALL_PUTRETVALTO  (x644, library: Ikarus)
- 14. a constant was written to in CALLINT_MAKECALL  (x2196, library: Ikarus)
- 15. a constant was written to in ASM_RUNONCE  (x732, library: Ikarus)
- 16. a constant was written to in ASMINT_POP  (x1457, library: Ikarus)
- 17. a constant was written to in MEMINT_SETUPEXCEPTIONHANDLER  (x4, library: Ikarus)
- 18. a constant was written to in LOADLIBRARY  (x192, library: the game / the mod)
- 19. a constant was written to in FINDKERNELDLLFUNCTION  (x192, library: the game / the mod)
- 20. a constant was written to in GETPROCADDRESS  (x216, library: the game / the mod)
- 21. a constant was written to in VIRTUALPROTECT  (x384, library: the game / the mod)
- 22. a member was used without an object in MEMINT_OLDWRITEINT  (x820, library: Ikarus)
- 23. a member was used without an object in MEMINT_PREPAREASSIGNMENTS  (x1, library: Ikarus)
- 24. a member was used without an object in ZERROR_SETTEMPLEVEL  (x8, library: the game / the mod)
- 25. a constant was written to in ZERROR_SETTEMPLEVEL  (x4, library: the game / the mod)
- 26. a member was used without an object in CONCATSTRINGS  (x72, library: the game / the mod)
- 27. a member was used without an object in ZERROR_RESTORELEVEL  (x4, library: the game / the mod)
- 28. a constant was written to in LEGO_INITFLAGS  (x4, library: LeGo)
- 29. a constant was written to in MEM_FINDPARSERSYMBOL  (x4, library: Ikarus)
- 30. a constant was written to in LEGO_INIT  (x4, library: LeGo)
- 31. a constant was written to in WIN_GETLASTERROR  (x24, library: the game / the mod)
- 32. a constant was written to in KMLIB_INITIALIZEGAMESTART  (x4, library: the game / the mod)
- 33. a member was used without an object in CC_REGISTER  (x136, library: the game / the mod)
- 34. a member lies outside its object in MEMINT_OLDWRITEINT  (x812, library: Ikarus)
- 35. a member lies outside its object in MEMINT_PREPAREASSIGNMENTS  (x203, library: Ikarus)
- 36. a constant was written to in MEM_COPYBYTES  (x20, library: Ikarus)
- 37. a constant was written to in LOCALS  (x533, library: LeGo)
- 38. a constant was written to in SB_USE  (x45, library: the game / the mod)
- 39. a constant was written to in MEMINT_GETESP  (x41, library: Ikarus)
- 40. a member was used without an object in MEMINT_FINDFRAMEBOUNDARY  (x82, library: Ikarus)
- 41. a constant was written to in MEMINT_ISFRAMEBOUNDARY  (x41, library: Ikarus)
- 42. a member was used without an object in MEM_GETFRAMEBOUNDARY  (x41, library: Ikarus)
- 43. a member was used without an object in MEMINT_BUILDFUNCSTARTSARRAY  (x164, library: Ikarus)
- 44. a constant was written to in MEM_GETFUNCIDBYOFFSET  (x82, library: Ikarus)
- 45. a member was used without an object in MEM_GETFUNCIDBYOFFSET  (x82, library: Ikarus)
- 46. a constant was written to in MEM_GETFRAMEBOUNDARY  (x41, library: Ikarus)
- 47. a constant was written to in CATINV_INIT  (x8, library: the game / the mod)
- 48. a member was used without an object in MEMINT_OPT_FINDSECTION  (x40, library: Ikarus)
- 49. a member was used without an object in MEM_SETGOTHOPT  (x48, library: Ikarus)
- 50. a member was used without an object in MEM_ARRAYINSERT  (x240, library: Ikarus)
- 51. a member was used without an object in MEM_WRITEINTARRAY  (x88, library: Ikarus)
- 52. a member was used without an object in MEMINT_OPT_FINDENTRY  (x12, library: Ikarus)
- 53. a member was used without an object in STR_LEN  (x20, library: the game / the mod)
- 54. a member was used without an object in STR_TOCHAR  (x16, library: the game / the mod)
- 55. a member was used without an object in STR_TOINT  (x16, library: the game / the mod)
- 56. a constant was written to in APPLYGOTHIC1MODESETTINGS  (x8, library: the game / the mod)
- 57. a constant was written to in MEMINT_BYTETOKEYHEX  (x16, library: Ikarus)
- 58. a constant was written to in STR_FROMCHAR  (x16, library: the game / the mod)
- 59. a constant was written to in MEM_SETKEYS  (x4, library: Ikarus)
- 60. a member was used without an object in MEM_PTRTOINST  (x16, library: Ikarus)
+  1. a member was used without an object in ZERROR_SETTEMPLEVEL  (x2, library: the game / the mod)
+  2. a member was used without an object in ZERROR_RESTORELEVEL  (x1, library: the game / the mod)
+  3. a member was used without an object in _HT_CREATEPTR  (x237, library: the game / the mod)
+  4. a member was used without an object in _HT_HAS  (x71, library: the game / the mod)
+  5. division by zero in _HT_HAS  (x71, library: the game / the mod)
+  6. a member was used without an object in _HT_INSERT  (x553, library: the game / the mod)
+  7. division by zero in _HT_INSERT  (x79, library: the game / the mod)
+  8. a member was used without an object in CC_REGISTER  (x34, library: the game / the mod)
+  9. a member was used without an object in CONCATSTRINGS  (x81, library: the game / the mod)
+ 10. a member was used without an object in LOCALS  (x256, library: LeGo)
+ 11. a member was used without an object in STR_STARTSWITH  (x96, library: the game / the mod)
+ 12. a member was used without an object in SB_INITBUFFER  (x6976, library: the game / the mod)
+ 13. a member was used without an object in SBW  (x8448, library: the game / the mod)
+ 14. a member was used without an object in SBC  (x10208, library: the game / the mod)
+ 15. a member was used without an object in STR_LEN  (x5, library: the game / the mod)
+ 16. a member was used without an object in STR_TOCHAR  (x4, library: the game / the mod)
+ 17. a member was used without an object in STR_TOINT  (x4, library: the game / the mod)
+ 18. a member was used without an object in _PM_TOCLASS  (x5, library: the game / the mod)
+ 19. a member was used without an object in _VIEWPTR_CREATEINTOPTR  (x2, library: the game / the mod)
+ 20. a member was used without an object in VIEWPTR_SETCOLOR  (x1, library: the game / the mod)
+ 21. a member was used without an object in VIEWPTR_SETALPHA  (x3, library: the game / the mod)
+ 22. a member was used without an object in VIEWPTR_OPEN  (x8, library: the game / the mod)
+ 23. a member was used without an object in _^  (x2, library: the game / the mod)
+ 24. a member was used without an object in SIGHTSCALING_APPLYSOMESETTINGS  (x1, library: the game / the mod)
+ 25. a member was used without an object in _FF_CREATE  (x32, library: LeGo)
+ 26. a member was used without an object in TIMER  (x4, library: the game / the mod)
+ 27. a member was used without an object in LIST_FORFS  (x4, library: LeGo)
+ 28. a member was used without an object in SBRAW  (x128, library: the game / the mod)
+ 29. a member was used without an object in SB_TOSTRING  (x4, library: the game / the mod)
+ 30. a member was used without an object in SB_CLEAR  (x16, library: the game / the mod)
+ 31. a member was used without an object in INIT_ITEMGROUPS_MEAT  (x16, library: the game / the mod)
+ 32. a member was used without an object in RESTORENPCNAMES  (x32, library: the game / the mod)
 
 -- complaints by how often (all, up to 400 kinds) --
-  110896  a constant was written to in MEMINT_HANDLEERROR
-   49384  a member was used without an object in MEM_ALLOC
-   23820  a constant was written to in ASM_OPEN
-    9374  a constant was written to in MEM_PTRTOINST
-    8240  a member was used without an object in MEM_WRITEINT
-    7617  a constant was written to in ASMINT_PUSH
-    4620  a constant was written to in ASMINT_PUSHCONTEXT
-    2196  a constant was written to in CALLINT_MAKECALL
-    1946  a constant was written to in B_SETFIGHTSKILLS
-    1568  a constant was written to in CALL_INTPARAM
-    1540  a member was used without an object in MEM_GETFUNCID
-    1457  a constant was written to in ASMINT_POP
-     820  a member was used without an object in MEMINT_OLDWRITEINT
-     812  a member lies outside its object in MEMINT_OLDWRITEINT
-     770  a constant was written to in CALL_OPEN
-     732  a constant was written to in ASM_RUNONCE
-     644  a constant was written to in CALL_PUTRETVALTO
-     533  a constant was written to in LOCALS
-     384  a constant was written to in VIRTUALPROTECT
-     240  a member was used without an object in MEM_ARRAYINSERT
-     216  a constant was written to in GETPROCADDRESS
-     203  a member lies outside its object in MEMINT_PREPAREASSIGNMENTS
-     192  a constant was written to in LOADLIBRARY
-     192  a constant was written to in FINDKERNELDLLFUNCTION
-     164  a member was used without an object in MEMINT_BUILDFUNCSTARTSARRAY
-     136  a member was used without an object in CC_REGISTER
+   10208  a member was used without an object in SBC
+    8448  a member was used without an object in SBW
+    6976  a member was used without an object in SB_INITBUFFER
+     553  a member was used without an object in _HT_INSERT
+     256  a member was used without an object in LOCALS
+     237  a member was used without an object in _HT_CREATEPTR
      128  a member was used without an object in SBRAW
-      88  a member was used without an object in MEM_WRITEINTARRAY
-      82  a member was used without an object in MEM_GETFUNCIDBYOFFSET
-      82  a member was used without an object in MEMINT_FINDFRAMEBOUNDARY
-      82  a constant was written to in MEM_GETFUNCIDBYOFFSET
-      72  a member was used without an object in CONCATSTRINGS
-      64  a member was used without an object in SB_INITBUFFER
-      56  a member was used without an object in _HT_INSERT
-      48  a member was used without an object in MEM_SETGOTHOPT
-      45  a constant was written to in SB_USE
-      41  a member was used without an object in MEM_GETFRAMEBOUNDARY
-      41  a constant was written to in MEM_GETFRAMEBOUNDARY
-      41  a constant was written to in MEMINT_ISFRAMEBOUNDARY
-      41  a constant was written to in MEMINT_GETESP
-      40  a member was used without an object in MEMINT_OPT_FINDSECTION
+      96  a member was used without an object in STR_STARTSWITH
+      81  a member was used without an object in CONCATSTRINGS
+      79  division by zero in _HT_INSERT
+      71  division by zero in _HT_HAS
+      71  a member was used without an object in _HT_HAS
+      34  a member was used without an object in CC_REGISTER
       32  a member was used without an object in _FF_CREATE
-      32  a member was used without an object in VIEWPTR_OPEN
       32  a member was used without an object in RESTORENPCNAMES
-      24  a member was used without an object in _HT_CREATEPTR
-      24  a constant was written to in WIN_GETLASTERROR
-      20  a member was used without an object in STR_LEN
-      20  a constant was written to in MEM_COPYBYTES
-      16  a member was used without an object in STR_TOINT
-      16  a member was used without an object in STR_TOCHAR
       16  a member was used without an object in SB_CLEAR
-      16  a member was used without an object in MEM_READINTARRAY
-      16  a member was used without an object in MEM_PTRTOINST
       16  a member was used without an object in INIT_ITEMGROUPS_MEAT
-      16  a constant was written to in STR_FROMCHAR
-      16  a constant was written to in MEMINT_BYTETOKEYHEX
-      12  a member was used without an object in VIEWPTR_SETALPHA
-      12  a member was used without an object in MEMINT_OPT_FINDENTRY
-      12  a constant was written to in NEW
-      12  a constant was written to in INIT_ACHIEVEMENTS_GAMESTART
-       8  division by zero in _HT_INSERT
-       8  a member was used without an object in _^
-       8  a member was used without an object in _VIEWPTR_CREATEINTOPTR
-       8  a member was used without an object in _PM_TOCLASS
-       8  a member was used without an object in ZERROR_SETTEMPLEVEL
-       8  a member was used without an object in MEM_ARRAYREAD
-       8  a member was used without an object in CALL_INTPARAM
-       8  a constant was written to in MEM_GETBUFFERCRC32
-       8  a constant was written to in CATINV_INIT
-       8  a constant was written to in APPLYGOTHIC1MODESETTINGS
-       4  a member was used without an object in _@
-       4  a member was used without an object in ZERROR_RESTORELEVEL
-       4  a member was used without an object in VIEWPTR_SETCOLOR
+       8  a member was used without an object in VIEWPTR_OPEN
+       5  a member was used without an object in _PM_TOCLASS
+       5  a member was used without an object in STR_LEN
        4  a member was used without an object in TIMER
-       4  a member was used without an object in SIGHTSCALING_APPLYSOMESETTINGS
+       4  a member was used without an object in STR_TOINT
+       4  a member was used without an object in STR_TOCHAR
        4  a member was used without an object in SB_TOSTRING
        4  a member was used without an object in LIST_FORFS
-       4  a constant was written to in ZERROR_SETTEMPLEVEL
-       4  a constant was written to in STR_UPPER
-       4  a constant was written to in SB_RELEASE
-       4  a constant was written to in MUSIC_DISABLEOVERRIDE
-       4  a constant was written to in MEM_SETKEYS
-       4  a constant was written to in MEM_GETSYSTEMTIME
-       4  a constant was written to in MEM_FINDPARSERSYMBOL
-       4  a constant was written to in MEMINT_SETUPEXCEPTIONHANDLER
-       4  a constant was written to in LEGO_INITFLAGS
-       4  a constant was written to in LEGO_INIT
-       4  a constant was written to in KMLIB_INITIALIZEGAMESTART
-       4  a constant was written to in KMLIB_INITIALIZEALWAYS
-       4  a constant was written to in INIT_GLOBAL
-       4  a constant was written to in FADESCREENINIT
-       4  a constant was written to in APPLYHOUSEWALLTEXTURE
-       1  a member was used without an object in MEMINT_PREPAREASSIGNMENTS
+       3  a member was used without an object in VIEWPTR_SETALPHA
+       2  a member was used without an object in _^
+       2  a member was used without an object in _VIEWPTR_CREATEINTOPTR
+       2  a member was used without an object in ZERROR_SETTEMPLEVEL
+       1  a member was used without an object in ZERROR_RESTORELEVEL
+       1  a member was used without an object in VIEWPTR_SETCOLOR
+       1  a member was used without an object in SIGHTSCALING_APPLYSOMESETTINGS
 -- complaints by library (by the function's name) --
-  225804  Ikarus
-     577  LeGo
-    3795  the game / the mod
+     292  LeGo
+   27092  the game / the mod
 
 -- engine functions the start-up called that this engine does not carry out (every one: they return 0 / an empty string) --
    17645  NPC_SETTALENTSKILL
-    1457  EXITGAME
      195  WLD_ASSIGNROOMTOGUILD
       12  WLD_SETOBJECTROUTINE
        3  WLD_SETMOBROUTINE

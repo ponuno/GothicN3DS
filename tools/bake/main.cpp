@@ -128,6 +128,10 @@ void usage() {
 	          "  --ao-rays N        rays per corner instead of the level's\n"
 	          "  --ao-radius CM     how far a ray looks instead of the level's\n"
 	          "  --wind             Graphics+: trees, bushes and grass sway (marked by their names; see the report)\n"
+	          "  --vis              Graphics+: bake which parts of the world are hidden from which place (walls, hills),\n"
+	          "                     so the game need not draw them (menu: Graphics+ -> Visibility; minutes to bake)\n"
+	          "  --vis-radius M     how far from a cell the table goes, metres (default 150); --vis-near M: nothing\n"
+	          "                     this near is ever hidden (default 25); --vis-high: more places and rays (slower, surer)\n"
 	          "  --far-lod          Graphics+: a coarse copy of the world drawn beyond the draw distance and where\n"
 	          "                     chunks are not loaded yet (far layer; about 1.5-2 MB on the console)\n"
 	          "  --far-cell M       its finest grid, metres (default 4; coarser if needed to fit)\n"
@@ -237,6 +241,10 @@ int main(int argc, char** argv) {
 			else if (a == "--ao-rays") opt.ao.rays = u32(std::clamp(std::stoi(value()), 1, 256));
 			else if (a == "--ao-radius") opt.ao.radius = std::clamp(std::stof(value()), 10.0f, 5000.0f);
 			else if (a == "--wind") opt.wind = true;
+			else if (a == "--vis") opt.vis.enabled = true;
+			else if (a == "--vis-high") opt.vis.high = true;
+			else if (a == "--vis-radius") opt.vis.radius = std::clamp(std::stof(value()), 40.0f, 500.0f) * 100.0f;
+			else if (a == "--vis-near") opt.vis.nearAlways = std::clamp(std::stof(value()), 0.0f, 200.0f) * 100.0f;
 			else if (a == "--far-lod") opt.far.enabled = true;
 			else if (a == "--far-cell") opt.far.cell = std::clamp(std::stof(value()), 0.5f, 100.0f) * 100.0f;
 			else if (a == "--far-tris") opt.far.maxTriangles = u32(std::clamp(std::stoi(value()), 5, 1000)) * 1000u;
@@ -254,6 +262,7 @@ int main(int argc, char** argv) {
 			else throw std::runtime_error("unknown option " + a);
 		}
 		opt.ao.threads = opt.threads;
+		opt.vis.threads = opt.threads;
 		if (opt.debugFile == "?") {
 			const size_t slash = out.find_last_of("/\\");
 			opt.debugFile = (slash == std::string::npos ? std::string() : out.substr(0, slash + 1)) + "bake_debug.txt";

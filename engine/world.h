@@ -77,6 +77,9 @@ struct StreamConfig {
 	// not loaded yet. 0 (or no farther than drawDistance): not drawn, and not
 	// held in memory either.
 	float farDistance = 0.0f;
+	// Baked visibility (a world baked with --vis; hasVisibility()): what the table says cannot be seen from the
+	// camera's cell is not drawn. Held in memory (about a megabyte) only while this is on.
+	bool visibility = false;
 };
 
 struct WorldStats {
@@ -115,6 +118,11 @@ struct WorldStats {
 	u32 farTiles;        // tiles of it drawn this frame
 	u32 farSeams;        // strips along its seams to chunks drawn in full
 	u32 farBytes;        // its meshes (0: not loaded)
+	// Visibility (StreamConfig::visibility).
+	u32 chunksHidden;    // chunks in reach not drawn at all this frame: the table says all of them is hidden
+	u32 clustersHidden;  // clusters of the others not drawn for the same reason (counted in the draw pass)
+	u32 visBytes;        // the table in memory (0: not loaded)
+	bool visRow;         // the camera's cell has a row in the table
 };
 
 class World {
@@ -188,6 +196,9 @@ public:
 	// is drawn now: loaded and asked to reach beyond the draw distance.
 	bool hasFarLayer() const { return _hdr.farEntry != 0 && !indoor(); }
 	bool farActive() const { return _farTiles != nullptr && _cfg.farDistance > _cfg.drawDistance; }
+	// Whether the world has a visibility table (g3ds-bake --vis), and whether it is used now.
+	bool hasVisibility() const { return _hdr.visEntry != 0; }
+	bool visibilityActive() const { return _visBlob != nullptr && _cfg.visibility; }
 
 private:
 	struct Batch {
@@ -277,7 +288,15 @@ private:
 	void drawFar(const Frustum& view);
 	// Whether all of these chunks (of the far layer's chunk list) are drawn in full this frame.
 	bool farCovered(u32 firstChunk, u32 count) const;
-	void classify(const Loaded& l, bool count);
+	void classify(const Loaded& l, u32 index, bool count);
+	void loadVis();
+	void freeVis();
+	// Looks up the camera's row of the table when the camera has moved to another cell.
+	void updateVisibility(Vec3 camera);
+	bool visHidden(u32 chunk, u32 cluster) const {
+		return _visRow && _visBase[chunk] != 0xFFFFFFFFu && cluster < _visClusters[chunk] &&
+		       (_visBits[(_visBase[chunk] + cluster) >> 5] & (1u << ((_visBase[chunk] + cluster) & 31))) == 0;
+	}
 
 	Pak* _pak = nullptr;
 	u32 _entryHash = 0;
@@ -354,6 +373,21 @@ private:
 	float* _farKey = nullptr;
 	u32 _farBytes = 0;
 	bool _farTried = false; // read once (and failed, or freed again): not read again until asked anew
+	// The visibility table (VisHeader in g3ds/world.h), one blob; the pointers point into it.
+	u8* _visBlob = nullptr;
+	VisHeader _vis {};
+	const i16* _visCellX = nullptr;
+	const i16* _visCellZ = nullptr;
+	const u8* _visClusters = nullptr;
+	const u32* _visOrder = nullptr;
+	const VisViewer* _visViewers = nullptr;
+	const u32* _visBits = nullptr;
+	u32* _visBase = nullptr;   // per chunk: the first bit of its clusters in the camera's row, or 0xFFFFFFFF (not in it)
+	u8* _visAllHidden = nullptr; // per chunk: every cluster of it is hidden from the camera's cell
+	bool _visTried = false;
+	bool _visRow = false;      // the camera's cell has a row and _visBase is filled from it
+	bool _visHave = false;     // _visCellNow is the cell the row was looked up for
+	int _visCellNowX = 0, _visCellNowZ = 0;
 	StreamConfig _cfg;
 	WorldStats _stats {};
 };

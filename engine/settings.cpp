@@ -17,7 +17,8 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 7: the frame counter, the flow of time.
 // 8: Graphics+ (ambient occlusion, wind, shadows).
 // 9: the far layer.
-constexpr u32 SETTINGS_VERSION = 9;
+// 10: baked visibility.
+constexpr u32 SETTINGS_VERSION = 10;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -44,6 +45,7 @@ void Settings::resetGraphics() {
 	frameRate = d.frameRate;
 	density = d.density;
 	npcDistance = d.npcDistance;
+	visibility = d.visibility;
 	applyGfxPreset(GFX_PLUS_OFF);
 }
 
@@ -99,7 +101,7 @@ void Settings::sanitize() {
 	if (shadows >= SHADOW_MODES) shadows = SHADOWS_OFF;
 	if (farLayer > 3) farLayer = 0;
 	gfxPlus = gfxPresetOf();
-	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier};
+	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier, &visibility};
 	for (u8* f : flags) *f = *f ? 1 : 0;
 }
 

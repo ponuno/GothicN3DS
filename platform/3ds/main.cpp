@@ -563,10 +563,14 @@ int main(int, char**) {
 			     static_cast<unsigned long>(ws.chunksDrawn), wholeChunks ? " ZL" : "");
 			// ... and the far layer: its triangles and draw calls ('-': not in data.pak, bake with --far-lod;
 			// 'o': in it, but off in the menu).
-			reportLine("bl %3lu cul %4lu mg %4lu far %5lu/%2lu%c", static_cast<unsigned long>(ws.blendedDrawCalls),
+			// ... and the baked visibility: clusters (and chunks) not drawn because the table says they are hidden
+			// ('-': not in data.pak, bake with --vis; 'o': in it, but off in the menu; '?': on, but the camera's cell has no row).
+			reportLine("bl %3lu cul %4lu mg %4lu far %5lu/%2lu%c vis %4lu%c", static_cast<unsigned long>(ws.blendedDrawCalls),
 			     static_cast<unsigned long>(ws.batchesCulled), static_cast<unsigned long>(ws.batchesMerged),
 			     static_cast<unsigned long>(ws.farTriangles), static_cast<unsigned long>(ws.farDrawCalls),
-			     !app.world().hasFarLayer() ? '-' : app.world().farActive() ? ' ' : 'o');
+			     !app.world().hasFarLayer() ? '-' : app.world().farActive() ? ' ' : 'o',
+			     static_cast<unsigned long>(ws.clustersHidden + ws.chunksHidden),
+			     !app.world().hasVisibility() ? '-' : !app.world().visibilityActive() ? 'o' : ws.visRow ? ' ' : '?');
 			{
 				// The command buffer's use and the draws dropped for want of room; then Graphics+: occlusion
 				// strength, wind setting and its draw calls, shadow setting and shadows laid. '-' after a value:

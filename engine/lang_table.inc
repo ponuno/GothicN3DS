@@ -310,6 +310,8 @@ const Entry kEntries[] = {
     {{"Тени персонажей", "Character shadows", "Cienie postaci", "Figurenschatten"}},
     {{"%", "%", "%", "%"}},
     {{"Дальний план", "Far view", "Dalszy plan", "Fernsicht"}},
+    {{"Видимость", "Visibility", "Widoczność", "Sichtbarkeit"}},
+    {{"Не рисовать скрытое стенами (мир с --vis)", "Skip what walls hide (world baked --vis)", "Bez tego, co kryją ściany (świat z --vis)", "Verdecktes nicht zeichnen (Welt mit --vis)"}},
     {{"250 м", "250 m", "250 m", "250 m"}},
     {{"400 м", "400 m", "400 m", "400 m"}},
     {{"600 м", "600 m", "600 m", "600 m"}},

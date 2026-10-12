@@ -548,6 +548,24 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				line("far layer: nothing to put in it");
 			}
 		}
+		// ---- visibility ----
+		if (opt.vis.enabled) {
+			VisStats vs;
+			const std::vector<u8> vis = buildVisibility(scene, aoMaterials, chunks, opt.chunker.chunkSize, opt.vis, vs);
+			if (!vis.empty()) {
+				const std::string visName = "world/" + bw.name + "/vis";
+				pak.add(visName, ASSET_META, vis);
+				wh.visEntry = hashName(visName.c_str());
+				line(format("visibility (--vis%s): %u cells, %llu places looked from, %llu clusters in the rows of which %llu (%.0f%%) hidden, "
+				            "%.1f M rays in %.1f s, radius %.0f m, near %.0f m; %.2f MB",
+				            opt.vis.high ? "-high" : "", vs.viewers, static_cast<unsigned long long>(vs.samples),
+				            static_cast<unsigned long long>(vs.targets), static_cast<unsigned long long>(vs.hidden),
+				            vs.targets ? 100.0 * double(vs.hidden) / double(vs.targets) : 0.0, double(vs.rays) / 1e6, vs.seconds,
+				            double(vs.radius) / 100.0, double(opt.vis.nearAlways) / 100.0, double(vs.bytes) / MB));
+			} else {
+				line("visibility: nothing to put in it");
+			}
+		}
 		std::memcpy(wh.fogColor, scene.fogColor, sizeof(wh.fogColor));
 		wh.triangleCount = u32(cs.outputTriangles);
 		for (int a = 0; a < 3; ++a) {

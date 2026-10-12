@@ -49,6 +49,7 @@ static void usage() {
 	     "                      the bottom screen is saved next to each shot (PREFIX_bottom_NN.png)\n"
 	     "  --pickup            the character walks to the things lying about and picks them up (A)\n"
 	     "  --far M             the far layer (data baked with --far-lod) out to M metres (default: off)\n"
+	     "  --vis               use the baked visibility table (data baked with --vis): what is hidden from the camera's cell is not drawn\n"
 	     "  --gfx-plus A,W,S    Graphics+: occlusion 0..100 %, wind 0..3, shadows 0 off / 1 hero / 2 all near\n"
 	     "  --stats FILE        write a JSON summary");
 }
@@ -163,6 +164,7 @@ int main(int argc, char** argv) {
 	int menuPage = -1;
 	const char* gfxPlusSpec = nullptr;
 	float budgetMb = 24.0f, drawDistance = 12000.0f, farMetres = 0.0f;
+	bool useVis = false;
 
 	for (int i = 1; i < argc; ++i) {
 		auto arg = [&](const char* name) { return strcmp(argv[i], name) == 0 && i + 1 < argc; };
@@ -185,6 +187,7 @@ int main(int argc, char** argv) {
 		else if (arg("--menu")) menuPage = atoi(argv[++i]);
 		else if (arg("--gfx-plus")) gfxPlusSpec = argv[++i];
 		else if (arg("--far")) farMetres = float(atof(argv[++i]));
+		else if (!strcmp(argv[i], "--vis")) useVis = true;
 		else if (strcmp(argv[i], "--console") == 0) console = true;
 		else if (strcmp(argv[i], "--fight") == 0) fight = true;
 		else if (strcmp(argv[i], "--sword") == 0) sword = true;
@@ -238,6 +241,7 @@ int main(int argc, char** argv) {
 	cfg.memoryBudget = u32(budgetMb * 1024.0f * 1024.0f);
 	cfg.clusterCulling = !wholeChunks;
 	cfg.farDistance = farMetres * 100.0f;
+	cfg.visibility = useVis;
 	app.setDrawDistance(drawDistance);
 	if (farMetres > 0.0f)
 		printf("far layer         out to %.0f m (%s)\n", double(farMetres), app.world().hasFarLayer() ? "in the data" : "NOT in the data");
@@ -383,7 +387,7 @@ int main(int argc, char** argv) {
 	u64 sumCulled = 0, sumDraws = 0;
 	int swimFrames = 0, wadeFrames = 0, underwaterFrames = 0;
 	u64 sumTris = 0, sumWritten = 0, sumTested = 0, sumBackface = 0, sumFacing = 0;
-	u64 sumInChunks = 0, sumMerged = 0, sumClusters = 0, sumClustersCulled = 0;
+	u64 sumInChunks = 0, sumMerged = 0, sumClusters = 0, sumClustersCulled = 0, sumHiddenChunks = 0, sumHiddenClusters = 0;
 	int saved = 0, groundedFrames = 0;
 	double updateSum = 0, updateWorst = 0;
 	u32 maxInFlight = 0, maxTexturesWaiting = 0;
@@ -536,6 +540,8 @@ int main(int argc, char** argv) {
 		sumMerged += ws.batchesMerged;
 		sumClusters += ws.clustersTested;
 		sumClustersCulled += ws.clustersCulled;
+		sumHiddenChunks += ws.chunksHidden;
+		sumHiddenClusters += ws.clustersHidden;
 		sumWritten += ss.pixelsWritten;
 		sumTested += ss.pixelsTested;
 		sumBackface += ss.trianglesBackface;
@@ -587,6 +593,10 @@ int main(int argc, char** argv) {
 	       static_cast<unsigned long long>(sumDraws / u64(frames)), maxDraws, maxBlended,
 	       static_cast<unsigned long long>(sumCulled / u64(frames)), static_cast<unsigned long long>(sumMerged / u64(frames)),
 	       static_cast<unsigned long long>(sumClusters / u64(frames)), static_cast<unsigned long long>(sumClustersCulled / u64(frames)));
+	if (useVis)
+		printf("visibility        %s: per frame %llu chunks and %llu more clusters not drawn because the table says they are hidden (%.2f MB)\n",
+		       app.world().hasVisibility() ? "in the data" : "NOT in the data", static_cast<unsigned long long>(sumHiddenChunks / u64(frames)),
+		       static_cast<unsigned long long>(sumHiddenClusters / u64(frames)), ws.visBytes / 1048576.0);
 	printf("chunks resident   max %u of %u (pending max %u, loads/frame max %u)\n", maxLoaded, ws.chunksTotal,
 	       maxPending, maxLoadsFrame);
 	printf("streaming         %s%s: update %.3f ms avg, %.3f ms worst on this PC; in flight max %u, textures waiting max %u\n",

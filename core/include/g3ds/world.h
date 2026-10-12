@@ -74,7 +74,10 @@ struct WorldHeader {
 	// --far-lod), 0 if it has none. A runtime that knows nothing of it reads
 	// the field as reserved and draws the world as before.
 	u32 farEntry;
-	u32 reserved[2];
+	// Pak entry of the world's visibility table (VisHeader below; g3ds-bake
+	// --vis), 0 if it has none. Ignored by a runtime that does not know it.
+	u32 visEntry;
+	u32 reserved;
 };
 static_assert(sizeof(WorldHeader) == 96, "WorldHeader layout");
 
@@ -250,6 +253,48 @@ static_assert(sizeof(FarRange) == 40, "FarRange layout");
 inline u32 farBlobSize(const FarHeader& h) {
 	return u32(sizeof(FarHeader)) + h.tileCount * u32(sizeof(FarTile)) + h.rangeCount * u32(sizeof(FarRange)) +
 	       h.chunkRefCount * u32(sizeof(u32)) + h.vertexCount * u32(sizeof(WorldVertex)) + h.indexCount * u32(sizeof(u16));
+}
+
+// ---- visibility (g3ds-bake --vis) ----
+//
+// Which parts of the world can be seen from which cell, worked out at bake time. A cell is a square of
+// the chunk grid (WorldHeader::chunkSize); a part is a cluster of a chunk (ChunkBatch::cluster). For
+// every cell the table says, for every cluster of every chunk within `radius` of it, whether it can be
+// seen from somewhere in the cell - from a few eye heights, at a few places - or is hidden behind
+// something solid. The camera in a cell does not draw what the cell's row marks hidden. What lies
+// farther than `radius`, and everything in a cell the table has no row for, is drawn as usual.
+// The estimate leans to "visible": what is near, or not certainly hidden, is marked visible.
+constexpr u32 VIS_MAGIC = fourcc('G', '3', 'V', 'S');
+constexpr u32 VIS_VERSION = 1;
+
+struct VisHeader {
+	u32 magic;
+	u32 version;
+	u32 chunkCount;  // must be the world's
+	u32 viewerCount; // cells with a row
+	u32 bitCount;    // all rows together
+	float radius;    // cm: chunks whose cell reaches no farther than this from the viewing cell have bits
+	float cellSize;  // cm
+	u32 reserved;
+};
+static_assert(sizeof(VisHeader) == 32, "VisHeader layout");
+
+struct VisViewer {
+	i16 x, z;       // the cell: floor(position / cellSize)
+	u32 bitOffset;  // where its row begins in the bit array
+};
+static_assert(sizeof(VisViewer) == 8, "VisViewer layout");
+
+// The blob: VisHeader | i16 cellX[chunkCount] | i16 cellZ[chunkCount] | u8 clusters[chunkCount] (clusters in
+// the chunk; 0: none) | padding to 4 | u32 order[chunkCount] (chunks sorted by cellZ, cellX, number) |
+// VisViewer[viewerCount] (sorted by z, x) | u32 bits[ceil(bitCount / 32)].
+// A row holds one bit per cluster (1: visible) of the chunks within reach of the viewing cell: its cells
+// in rows of z, then x, and in each cell the chunks in `order`, and each chunk's clusters in turn. A cell
+// is within reach when the gap between it and the viewing cell (squares of cellSize) is at most `radius`.
+inline u32 visPad(u32 n) { return (4u - (n & 3u)) & 3u; }
+inline u32 visBlobSize(const VisHeader& h) {
+	return u32(sizeof(VisHeader)) + h.chunkCount * 4u + h.chunkCount + visPad(h.chunkCount) + h.chunkCount * 4u +
+	       h.viewerCount * u32(sizeof(VisViewer)) + ((h.bitCount + 31u) / 32u) * 4u;
 }
 
 inline u32 chunkBlobSize(u32 batches, u32 vertices, u32 indices) {

@@ -81,6 +81,8 @@ struct Settings {
 	u8 shadows = SHADOWS_OFF; // round shadows under the characters
 	// Version 9: the far layer (G10; data baked with --far-lod): 0 off, 1 250 m, 2 400 m, 3 600 m.
 	u8 farLayer = 0;
+	// Version 10: baked visibility (data baked with --vis): 0 off, 1 what the table says is hidden is not drawn.
+	u8 visibility = 0;
 
 	// Clamps every value into its range (after reading a file of another version).
 	void sanitize();

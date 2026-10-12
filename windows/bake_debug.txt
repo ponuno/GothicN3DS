@@ -7,7 +7,7 @@ world 'archolos_silvermine' (STARTUP_ARCHOLOS_SILVERMINE): 114604 instructions, 
 world 'archolos_volfzacke' (STARTUP_ARCHOLOS_VOLFZACKE): 109992 instructions, 2 complaints, 0 calls given up, 0 calls of engine functions nobody carries out, 5780 uses of members of no object; 61 characters
 
 == the start-up scripts, all worlds: 2128609 instructions, 150 complaints, 0 calls given up, 27234 uses of members of no object ==
-script image 14.28 MB; objects of the characters and items made by the start-up: 8567, 2.14 MB; strings made 0.17 MB
+script image 14.30 MB; objects of the characters and items made by the start-up: 8567, 2.14 MB; strings made 0.16 MB
 
 -- complaints in the order they FIRST happened (the first is where things began to go wrong; later ones may follow from it) --
   1. a member was used without an object in ZERROR_SETTEMPLEVEL  (x2, library: the game / the mod)

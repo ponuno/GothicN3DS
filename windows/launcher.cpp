@@ -163,8 +163,8 @@ void pipeline(std::wstring game, bool music, bool gfxPlus, bool voices, bool deb
 		status(L"Baking the game data (data.pak)... a few minutes, the window may look idle.");
 		std::wstring cmd = bake + L" world --game \"" + gameShort + L"\" -o \"" + outShort + L"data.pak\" --no-script-check";
 		if (haveMusic) cmd += L" --music-dir \"" + shortPath(wavs) + L"\"";
-		// Graphics+ in the data: corner shading and swaying plants (switched on in the game's menu, Graphics -> Graphics+).
-		if (gfxPlus) cmd += L" --ao low --wind --far-lod";
+		// Graphics+ in the data: corner shading, swaying plants, far layer and visibility table (switched on in the game's menu, Graphics -> Graphics+).
+		if (gfxPlus) cmd += L" --ao low --wind --far-lod --vis";
 		if (!voices) cmd += L" --no-voices";
 		if (debug) cmd += L" --debug-report \"" + outShort + L"bake_debug.txt\"";
 		ok = run(cmd);
@@ -338,7 +338,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
 	gBrowse = make(L"BUTTON", L"Browse...", BS_PUSHBUTTON, 610, 29, 90, 26, ID_BROWSE);
 	gMusic = make(L"BUTTON", L"Also bake the music (10-30 minutes more)", BS_AUTOCHECKBOX, 12, 62, 290, 22, ID_MUSIC);
 	SendMessageW(gMusic, BM_SETCHECK, BST_CHECKED, 0);
-	gGfxPlus = make(L"BUTTON", L"Graphics+: shaded corners, swaying plants", BS_AUTOCHECKBOX, 306, 62, 296, 22, ID_GFXPLUS);
+	gGfxPlus = make(L"BUTTON", L"Graphics+: shading, plants, far layer, visibility", BS_AUTOCHECKBOX, 306, 62, 296, 22, ID_GFXPLUS);
 	gVoices = make(L"BUTTON", L"Bake the voices (speech.pak)", BS_AUTOCHECKBOX, 12, 84, 290, 22, ID_VOICES);
 	SendMessageW(gVoices, BM_SETCHECK, BST_CHECKED, 0);
 	gDebug = make(L"BUTTON", L"Debug report (bake_debug.txt)", BS_AUTOCHECKBOX, 306, 84, 296, 22, ID_DEBUG);

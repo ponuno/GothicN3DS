@@ -264,6 +264,7 @@ int main(int, char**) {
 	u32 lastStateCalls = 0;
 	g3::UpdateTimes partSum;               // where update() spent its time, summed over a report
 	g3::UpdateTimes partWorst;             // ... and the worst frame of each part
+	float lootWorst = 0.0f;
 	float npcClockWorst = 0.0f, npcSelectWorst = 0.0f, npcTickWorst = 0.0f; // of the inhabitants' part: clock / choosing / steps
 	u32 collQueries = 0, collTests = 0;    // and what its collision queries looked at
 	u32 slopeWrites = 0;                   // L+R+SELECT: records written (a failed write counts as none)
@@ -468,6 +469,7 @@ int main(int, char**) {
 				partSum.script += ut.script;
 				partSum.player += ut.player;
 				partSum.camera += ut.camera;
+				lootWorst = max(lootWorst, ut.loot);
 				npcClockWorst = max(npcClockWorst, app.npcs().stats().clockMs);
 				npcSelectWorst = max(npcSelectWorst, app.npcs().stats().selectMs);
 				npcTickWorst = max(npcTickWorst, app.npcs().stats().tickMs);
@@ -629,7 +631,8 @@ int main(int, char**) {
 			     static_cast<unsigned long>(pl.popUps), static_cast<unsigned long>(pl.unstuck), static_cast<unsigned long>(slopeWrites),
 			     slopeFailed ? "!" : "");
 			// The inhabitants' part, worst frame: clock (routines) / choosing and making actors / their steps.
-			reportLine("npc worst clk %.0f sel %.0f tick %.0f ms", double(npcClockWorst), double(npcSelectWorst), double(npcTickWorst));
+			reportLine("npc worst clk%.0f sel%.0f tick%.0f loot%.0f ms", double(npcClockWorst), double(npcSelectWorst), double(npcTickWorst),
+			     double(lootWorst));
 			const g3::Hero& hero = app.hero();
 			if (plainShader) {
 				reportLine("hero off: plain shader (R at start)");
@@ -731,7 +734,7 @@ int main(int, char**) {
 			updateWorst = 0.0f;
 			partSum = g3::UpdateTimes();
 			partWorst = g3::UpdateTimes();
-			npcClockWorst = npcSelectWorst = npcTickWorst = 0.0f;
+			npcClockWorst = npcSelectWorst = npcTickWorst = lootWorst = 0.0f;
 			collQueries = collTests = 0;
 			lateFrames = 0;
 			fadingSum = 0;

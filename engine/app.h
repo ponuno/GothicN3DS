@@ -56,6 +56,7 @@ struct UpdateTimes {
 	float script = 0; // ... of which inside the scripts' functions
 	float player = 0; // the character: steering, walls, ground
 	float camera = 0; // finding the camera a place
+	float loot = 0;   // the things lying about (inside `npcs`): their light, their models
 };
 
 class App {

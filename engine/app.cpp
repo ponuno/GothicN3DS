@@ -387,7 +387,9 @@ void App::update(const Input& in, float dt) {
 	_world.update(_player.eye());
 	const double t1 = sys::timeMs();
 	_npcs.update(_pak, _world, _player.eye(), _env.timeOfDay, dt);
+	const double tLoot0 = sys::timeMs();
 	if (_npcs.loaded()) _loot.update(_pak, _world, _npcs.game(), _player.eye());
+	const double tLoot1 = sys::timeMs();
 	_particles.update(dt, _player.eye());
 	const double t2 = sys::timeMs();
 
@@ -495,6 +497,7 @@ void App::update(const Input& in, float dt) {
 	_times.stream = float(t1 - t0);
 	_times.npcs = float(t2 - t1);
 	_times.script = _npcs.stats().scriptMs;
+	_times.loot = float(tLoot1 - tLoot0);
 	_times.player = float(t3 - t2);
 	_times.camera = float(sys::timeMs() - t3);
 }

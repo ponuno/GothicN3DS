@@ -89,13 +89,15 @@ void Loot::enterWorld(Pak& pak, const char* worldName, u32 worldHash, Game& game
 
 void Loot::update(Pak& pak, const World& world, Game& game, Vec3 eye) {
 	bool loadedOne = false;
+	u32 rays = 0; // floors looked for this frame: a few, so that a crowd of things coming into reach is not met in one frame
 	_stats.noModel = 0;
 	for (u32 i = 0; i < _count; ++i) {
 		LootItem& it = _items[i];
 		if (it.taken) continue;
 		const float dx = it.pos.x - eye.x, dz = it.pos.z - eye.z;
 		if (dx * dx + dz * dz > 4000.0f * 4000.0f) continue;
-		if (!it.lit) {
+		if (!it.lit && rays < 6) {
+			++rays;
 			// Lit like the floor it lies on, once that is there.
 			float y;
 			Vec3 n;

@@ -63,6 +63,7 @@ bool gSkinned = false; // last value of the shader's `skinned` switch
 // material with MATF_WIND while the chunk's wind is not zero.
 float gFx[4] = {0, 0, 0, 0};
 bool gWindy = false, gMaterialWind = false, gChunkWind = false;
+bool gFillTest = false;    // draw only the left half of the picture (hold ZR at start): does the GPU time follow the pixels?
 bool gPlainShader = false; // the world-only shader of earlier versions: no characters
 bool gFadeShader = false;  // the shader with the dissolve, and the noise on unit 1
 Pass gPass = PASS_WORLD;
@@ -541,6 +542,7 @@ void frameBegin(const FrameDesc& f) {
 		C3D_SetViewport(0, 0, gTarget->frameBuf.width, gTarget->frameBuf.height);
 	}
 	osTickCounterStart(&gCpuClock);
+	if (gFillTest) C3D_SetScissor(GPU_SCISSOR_NORMAL, 0, 0, gTarget->frameBuf.width, gTarget->frameBuf.height / 2);
 	C3D_BindProgram(&gProgram);
 
 	// Mtx_PerspTilt handles the sideways screen and PICA's -1..0 depth range.
@@ -907,6 +909,8 @@ void frameEnd() {
 void c3dSetClassicFrames(bool classic) {
 	if (!gReady) gClassic = classic;
 }
+
+void c3dSetFillTest(bool on) { gFillTest = on; }
 
 void c3dSetPlainShader(bool plain) {
 	if (!gReady) gPlainShader = plain;

@@ -337,7 +337,7 @@ int main(int, char**) {
 		const g3::Settings& st = app.settings();
 		pacer.cfg.minDetail = st.minDetail(); // (steady: too heavy means 30 fps, the objects stay)
 		pacer.cfg.halfOnly = st.frameRate == g3::FRAMES_30;
-		pacer.cfg.freeRate = st.frameRate == g3::FRAMES_FREE;
+		pacer.cfg.freeRate = st.frameRate == g3::FRAMES_FREE || (st.frameRate == g3::FRAMES_40 && displayOk);
 		// Leaving a mode (the steady 30 above all) starts the pacer afresh: its half rate must not outlive the setting.
 		if (st.frameRate != pacedMode) {
 			pacedMode = st.frameRate;
@@ -598,8 +598,9 @@ int main(int, char**) {
 		// the two sets the pace; in citro3d's own order the GPU waits for the
 		// CPU, and a frame takes the sum. (Measured in that order on a New
 		// 3DS: 28% + 97% gave 20.9 ms, which is 125% of 16.7 ms.)
+		const bool lock40 = displayOk && app.settings().frameRate == g3::FRAMES_40;
 		const gfx::FrameStats fs = gfx::frameStats();
-		const float load = (fs.overlapped ? max(fs.cpuMs + updateMs, fs.gpuMs) : fs.cpuMs + fs.gpuMs) * 0.06f;
+		const float load = (fs.overlapped ? max(fs.cpuMs + updateMs, fs.gpuMs) : fs.cpuMs + fs.gpuMs) * (lock40 ? 0.04f : 0.06f);
 		// The view turning faster than about 60 degrees a second: what comes
 		// into view comes and goes, so no objects are given back meanwhile.
 		float turn = app.camera().yaw - lastYaw;
@@ -626,7 +627,16 @@ int main(int, char**) {
 		// The screen's refresh rate follows the frame: as long as it takes (CPU and GPU in parallel), a little over, between
 		// the menu's limits - a frame that is a little late is shown when it is ready, not a whole refresh later. At
 		// half rate (30 fps) and in the menu the screen stays as the system has it.
-		if (displayOk) {
+		if (lock40) {
+			// The steady 40: the screen itself at 40 Hz, every frame has 25 ms; frames the pacer cannot fit still come at 40.
+			if (!displayWritten || fabsf(refreshHz - 40.0f) > 0.7f) {
+				const float made = g3::display::set(40.0f);
+				if (made > 0.0f) {
+					refreshHz = made;
+					displayWritten = true;
+				}
+			}
+		} else if (displayOk) {
 			const float maxHz = app.settings().refreshMaxHz();
 			if (maxHz <= 0.0f || interval != 1 || menu.isOpen() || updateMs >= 50.0f) {
 				if (displayWritten && (maxHz <= 0.0f || interval != 1 || menu.isOpen())) {
@@ -647,7 +657,7 @@ int main(int, char**) {
 				}
 			}
 		}
-		gfx::c3dSyncTopOnly(displayWritten && refreshHz > 61.0f);
+		gfx::c3dSyncTopOnly(displayWritten && fabsf(refreshHz - 60.0f) > 1.5f);
 		const float periodMs = displayWritten ? 1000.0f / refreshHz : 16.7f;
 		{
 			// Loads since the last frame (the counters of the inhabitants and of the world only grow).

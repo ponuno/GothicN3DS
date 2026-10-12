@@ -18,6 +18,7 @@ enum FrameRateMode : u8 {
 	FRAMES_60,   // 60, a steady 30 while the frame does not fit
 	FRAMES_30,   // always a steady 30 (more detail, smoother under load)
 	FRAMES_FREE, // each frame goes out at the first refresh after it is done: 30..60, never held to a steady 30
+	FRAMES_40,   // the screen itself runs at 40 Hz and every frame has 25 ms (needs the display timing; otherwise as 60)
 	FRAME_MODES
 };
 

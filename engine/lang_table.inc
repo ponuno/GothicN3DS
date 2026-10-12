@@ -204,6 +204,8 @@ const Entry kEntries[] = {
     {{"Прочее", "Misc", "Inne", "Sonstiges"}},
     {{"Пьёт:", "Drinking:", "Pije:", "Trinkt:"}},
     {{"Разговор", "Conversation", "Rozmowa", "Gespräch"}},
+    {{"Ровно 40", "Steady 40", "Stałe 40", "Konstant 40"}},
+    {{"Экран 40 Гц, на кадр 25 мс (опыт)", "Screen at 40 Hz, 25 ms per frame (experimental)", "Ekran 40 Hz, 25 ms na klatkę (eksperyment)", "Bildschirm 40 Hz, 25 ms pro Bild (Versuch)"}},
     {{"Ровно 30", "Steady 30", "Stałe 30", "Konstant 30"}},
     {{"Руки заняты", "Hands are busy", "Ręce są zajęte", "Die Hände sind beschäftigt"}},
     {{"Русский", "Русский", "Русский", "Русский"}},

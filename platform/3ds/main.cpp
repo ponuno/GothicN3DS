@@ -65,6 +65,7 @@
 #include "lang.h"
 #include "app.h"
 #include "audio_3ds.h"
+#include "display_rate.h"
 #include "gfx_c3d.h"
 #include "pacer.h"
 #include "sys.h"
@@ -128,12 +129,35 @@ void __system_allocateHeaps(void) {
 
 // The menu's settings.
 static const char* kSettingsPath = "sdmc:/3ds/gothic3ds/settings.bin";
+static const char* kHitchPath = "sdmc:/3ds/gothic3ds/hitches.txt";
+
+// The log of dropped frames: a line for every frame that took well over a refresh, with where the time went. Kept
+// in memory and written to the card in batches (and at the end), so that the writing itself does not make the
+// hitches it is there to find.
+static char gHitchLines[48][220];
+static int gHitchCount = 0;
+static unsigned long gHitchTotal = 0;
+
+static void flushHitches() {
+	if (gHitchCount == 0) return;
+	if (FILE* f = fopen(kHitchPath, "a")) {
+		for (int i = 0; i < gHitchCount; ++i) fputs(gHitchLines[i], f);
+		fclose(f);
+	}
+	gHitchCount = 0;
+}
+
 
 // The HOME Menu was opened: the game stands still in its pause menu meanwhile.
 static volatile bool gSuspended = false;
 static aptHookCookie gAptCookie;
 static void onApt(APT_HookType hook, void*) {
-	if (hook == APTHOOK_ONSUSPEND || hook == APTHOOK_ONSLEEP) gSuspended = true;
+	if (hook == APTHOOK_ONSUSPEND || hook == APTHOOK_ONSLEEP) {
+		gSuspended = true;
+		g3::display::restore(); // (the system's own timing while it has the screen)
+	} else if (hook == APTHOOK_ONRESTORE || hook == APTHOOK_ONWAKEUP) {
+		g3::display::resume();
+	}
 }
 
 // The application: 13 KB, with the character's poses in it. Not a local of
@@ -255,6 +279,8 @@ int main(int, char**) {
 		printf("%s\nexpected at %s\n", app.error(), kPakPath);
 		ok = false;
 	}
+	// The screen's refresh rate (only read here; written when the menu asks for it).
+	const bool displayOk = ok && g3::display::init();
 	if (!ok) {
 		printf("\nPress START to exit.\n");
 		waitForStart();
@@ -289,6 +315,9 @@ int main(int, char**) {
 	if (plainShader) app.setThirdPerson(false); // (no character is drawn; for this run only, the menu keeps its setting)
 	app.setStatePath(kStatePath);
 	if (nobody || plainShader) app.npcs().config().maxShown = 0;
+	// Characters coming into range: one set going per frame, the models of those on their way read ahead.
+	app.npcs().config().startsPerFrame = 1;
+	app.npcs().config().prefetchRange = 1500.0f;
 	printf("loading...\n");
 	app.world().preload(app.camera().pos);
 	consoleClear();
@@ -298,6 +327,8 @@ int main(int, char**) {
 	u32 frame = 0;
 	float msAccum = 0.0f, msWorst = 0.0f, updateAccum = 0.0f, updateWorst = 0.0f;
 	u32 lateFrames = 0; // frames of this report that missed their refresh
+	float refreshHz = 60.0f, refreshNeed = 16.7f; // the screen's rate as set, and how long the frames need (smoothed)
+	bool displayWritten = false;
 	u32 lastPerceived = 0;
 	g3::FramePacer pacer;
 	const auto pace = [&]() {
@@ -580,10 +611,60 @@ int main(int, char**) {
 			}
 		}
 
+		// The screen's refresh rate follows the frame: as long as it takes (CPU and GPU in parallel), a little over, between
+		// the menu's limits - a frame that is a little late is shown when it is ready, not a whole refresh later. At
+		// half rate (30 fps) and in the menu the screen stays as the system has it.
+		if (displayOk) {
+			const float maxHz = app.settings().refreshMaxHz();
+			if (maxHz <= 0.0f || interval != 1 || menu.isOpen() || updateMs >= 50.0f) {
+				if (displayWritten && (maxHz <= 0.0f || interval != 1 || menu.isOpen())) {
+					g3::display::restore();
+					displayWritten = false;
+				}
+			} else {
+				const float need = fs.overlapped ? max(fs.cpuMs + updateMs, fs.gpuMs) : fs.cpuMs + fs.gpuMs;
+				// Quick to slow down, slow to speed up: a late frame must not be followed by another one.
+				refreshNeed = need > refreshNeed ? need : refreshNeed * 0.92f + need * 0.08f;
+				const float wantHz = clamp(1000.0f / (refreshNeed * 1.06f + 0.5f), 45.0f, maxHz);
+				if (!displayWritten || fabsf(wantHz - refreshHz) > 1.5f) {
+					const float made = g3::display::set(wantHz);
+					if (made > 0.0f) {
+						refreshHz = made;
+						displayWritten = true;
+					}
+				}
+			}
+		}
+		const float periodMs = displayWritten ? 1000.0f / refreshHz : 16.7f;
+		{
+			// Loads since the last frame (the counters of the inhabitants and of the world only grow).
+			static g3::u32 lastModels = 0, lastClips = 0, lastChunks = 0, lastEvict = 0;
+			const g3::NpcStats& nst = app.npcs().stats();
+			const WorldStats& wst = app.world().stats();
+			const g3::u32 dModels = nst.loads - lastModels, dClips = nst.clips - lastClips;
+			const g3::u32 dChunks = wst.chunksLoaded - lastChunks, dEvict = wst.evictions - lastEvict;
+			lastModels = nst.loads;
+			lastClips = nst.clips;
+			lastChunks = wst.chunksLoaded;
+			lastEvict = wst.evictions;
+			if (fs.frameMs > periodMs * float(interval) * 1.4f && frame > 60) {
+				const g3::UpdateTimes& ut = app.times();
+				const g3::Vec3 e = app.player().eye();
+				++gHitchTotal;
+				snprintf(gHitchLines[gHitchCount++], sizeof(gHitchLines[0]),
+				         "f%lu %.1fms cpu%.1f gpu%.1f upd%.1f | w%.1f n%.1f s%.1f p%.1f c%.1f l%.1f | clk%.1f sel%.1f tick%.1f | mdl%lu clip%lu chunk%+ld ev%lu pend%lu | tr%lu %.0f %.0f %.0f\n",
+				         static_cast<unsigned long>(frame), double(fs.frameMs), double(fs.cpuMs), double(fs.gpuMs), double(updateMs), double(ut.stream),
+				         double(ut.npcs), double(ut.script), double(ut.player), double(ut.camera), double(ut.loot), double(nst.clockMs),
+				         double(nst.selectMs), double(nst.tickMs), static_cast<unsigned long>(dModels), static_cast<unsigned long>(dClips),
+				         static_cast<long>(dChunks), static_cast<unsigned long>(dEvict), static_cast<unsigned long>(wst.chunksPending),
+				         static_cast<unsigned long>(wst.trianglesDrawn), double(e.x), double(e.y), double(e.z));
+				if (gHitchCount >= 48) flushHitches();
+			}
+		}
 		if (fs.frameMs > 0.0f) {
 			msAccum += fs.frameMs;
 			msWorst = max(msWorst, fs.frameMs);
-			lateFrames += fs.frameMs > 16.7f * float(interval) * 1.25f;
+			lateFrames += fs.frameMs > periodMs * float(interval) * 1.25f;
 		}
 		if (++frame % 30 == 0) {
 			const WorldStats& ws = app.world().stats();
@@ -596,7 +677,8 @@ int main(int, char**) {
 			                    : pl.waterDepth > 0 ? "wading"
 			                                        : "on the ground";
 			gReportCount = 0;
-			reportLine("frame %5.1f ms avg %5.1f worst", double(msAccum / 30.0f), double(msWorst));
+			reportLine("frame %5.1f ms avg %5.1f worst %2.0fHz%s", double(msAccum / 30.0f), double(msWorst), double(displayWritten ? refreshHz : 60.0f),
+			     !displayOk && app.settings().refresh ? "!" : g3::display::failure() == 3 ? "!w" : "");
 			reportLine("cpu %3.0f%%  gpu %3.0f%%  load %3.0f%%", double(fs.cpuMs * 6.0f), double(fs.gpuMs * 6.0f),
 			     double(load * 100.0f));
 			reportLine("update %4.2f ms avg %5.1f worst", double(updateAccum / 30.0f), double(updateWorst));
@@ -814,7 +896,9 @@ int main(int, char**) {
 	// console ever hang here, the last line tells where.
 	exitStep("exit 1/4: saving the position");
 	app.saveState(kStatePath);
+	g3::display::restore(); // (the screen as the system had it)
 	app.settings().save(kSettingsPath);
+	flushHitches();
 	aptUnhook(&gAptCookie);
 	exitStep("exit 2/4: closing the world");
 	if (FILE* sf = fopen(kSoundReportPath, "w")) {

@@ -20,7 +20,8 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 10: baked visibility.
 // 11: simplified far geometry.
 // 12: smoothing of edges.
-constexpr u32 SETTINGS_VERSION = 12;
+// 13: the screen's refresh rate follows the frame.
+constexpr u32 SETTINGS_VERSION = 13;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -50,6 +51,7 @@ void Settings::resetGraphics() {
 	visibility = d.visibility;
 	farGeometry = d.farGeometry;
 	antialias = d.antialias;
+	refresh = d.refresh;
 	applyGfxPreset(GFX_PLUS_OFF);
 }
 
@@ -105,6 +107,7 @@ void Settings::sanitize() {
 	if (shadows >= SHADOW_MODES) shadows = SHADOWS_OFF;
 	if (farLayer > 3) farLayer = 0;
 	if (farGeometry > 3) farGeometry = 2;
+	if (refresh > 3) refresh = 0;
 	gfxPlus = gfxPresetOf();
 	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier, &visibility, &antialias};
 	for (u8* f : flags) *f = *f ? 1 : 0;

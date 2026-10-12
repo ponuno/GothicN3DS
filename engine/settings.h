@@ -87,6 +87,10 @@ struct Settings {
 	u8 farGeometry = 2;
 	// Version 12: smoothing of edges (supersampling: the picture drawn at twice the size each way and shrunk): 0 off, 1 on.
 	u8 antialias = 0;
+	// Version 13: the top screen's refresh rate follows the frame (experimental, writes the screen controller's timing):
+	// 0 off (60 Hz), 1 between 45 and 60 Hz, 2 up to 72, 3 up to 80.
+	u8 refresh = 0;
+	float refreshMaxHz() const { return refresh == 1 ? 60.0f : refresh == 2 ? 72.0f : refresh == 3 ? 80.0f : 0.0f; }
 	float lodDistanceCm() const;
 
 	// Clamps every value into its range (after reading a file of another version).

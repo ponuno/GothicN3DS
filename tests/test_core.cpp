@@ -6,6 +6,7 @@
 #include "sound_bake.h"
 #include "chunker.h"
 #include "daedalus.h"
+#include "display_timing.h"
 #include "font_bake.h"
 #include "g3ds/font.h"
 #include "g3ds/pak.h"
@@ -7442,6 +7443,56 @@ static void testSimplifyModel() {
 	CHECK(triangles[0] == 3200 && triangles[1] > 0 && triangles[1] * 10 < triangles[0] * 7);
 }
 
+// The top screen's refresh rate from its timing registers: the rate asked for is what comes out, the visible part
+// and the order of the edges stay, and registers that are not the top screen's are left alone.
+static void testDisplayTiming() {
+	PdcTiming base;
+	base.reg[0] = 0x1C2;
+	base.reg[1] = 0xD1;
+	base.reg[2] = 0x1C1;
+	base.reg[3] = 0x1C1;
+	base.reg[4] = 0;
+	base.reg[5] = 0xCF;
+	base.reg[6] = 0xD1;
+	base.reg[7] = 0x1C501C1;
+	base.reg[9] = 0x19D;
+	base.reg[23] = 0x19000F0;
+	base.reg[24] = 0x1C100D1;
+	base.reg[25] = 0x1920002;
+	CHECK(pdcKnown(base));
+	std::printf("  display: defaults %.2f Hz\n", double(pdcRefresh(base)));
+	CHECK(pdcRefresh(base) > 59.5f && pdcRefresh(base) < 60.1f);
+	for (float hz : {30.0f, 45.0f, 50.0f, 55.0f, 59.8f, 60.0f, 65.0f, 72.0f, 80.0f, 90.0f}) {
+		PdcTiming t;
+		const float made = pdcTimingFor(base, hz, t);
+		std::printf("  display: asked %.1f made %.2f (HTotal %u VTotal %u)\n", double(hz), double(made), unsigned(t.reg[0] & 0xFFF), unsigned(t.reg[9] & 0xFFF));
+		CHECK(made > hz * 0.985f && made < hz * 1.015f);
+		CHECK(pdcRefresh(t) == made && pdcKnown(t));
+		// The visible part is 240 pixels wide, as it was; the edges keep their order; nothing else was touched.
+		CHECK((t.reg[24] >> 16) - (t.reg[24] & 0xFFFF) == 240);
+		CHECK(t.reg[1] < t.reg[0] && t.reg[6] == t.reg[1] && t.reg[5] + 2 == t.reg[1] && t.reg[2] < t.reg[0] + 1 && t.reg[3] <= t.reg[0]);
+		CHECK(t.reg[4] == base.reg[4] && t.reg[23] == base.reg[23] && t.reg[25] == base.reg[25]);
+		CHECK(t.reg[9] >= (base.reg[9] & 0xFFF) || hz >= pdcRefresh(base));
+	}
+	// Out of range is held to 30..90, and what is not the top screen's is not touched.
+	PdcTiming t;
+	CHECK(pdcTimingFor(base, 500.0f, t) < 91.0f && pdcTimingFor(base, 1.0f, t) > 29.0f);
+	PdcTiming odd = base;
+	odd.reg[0] = 0x20;
+	CHECK(!pdcKnown(odd) && pdcTimingFor(odd, 72.0f, t) == 0.0f && t.reg[0] == 0x20);
+	odd = base;
+	odd.reg[24] = 0x1C100F1; // 224 wide: another screen
+	CHECK(!pdcKnown(odd));
+	// The menu's setting: values, range.
+	Settings st;
+	CHECK(st.refresh == 0 && st.refreshMaxHz() == 0.0f);
+	st.refresh = 2;
+	CHECK(st.refreshMaxHz() == 72.0f);
+	st.refresh = 9;
+	st.sanitize();
+	CHECK(st.refresh == 0);
+}
+
 static void testSimplify() {
 	testSimplifyWorld();
 	testSimplifyModel();
@@ -9073,6 +9124,7 @@ int main(int argc, char** argv) {
 	             {"visibility", testVisibility},
 	             {"lod", testLod},
              {"simplify", testSimplify},
+             {"displaytiming", testDisplayTiming},
 	             {"music", testMusic},
 	             {"speech", testSpeech},
              {"sound", testSound},

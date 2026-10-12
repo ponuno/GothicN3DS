@@ -46,6 +46,7 @@ const char* const kGfxPresetNotes[] = {"Всё выключено, как ран
                                        "Значения изменены вручную"};
 const char* const kWind[] = {"Нет", "Слабое", "Обычное", "Сильное"};
 const char* const kShadows[] = {"Выкл", "Герой", "Все рядом"};
+const char* const kRefresh[] = {"Выкл", "45–60 Гц", "45–72 Гц", "45–80 Гц"};
 const char* const kFarGeometry[] = {"Выкл", "25 м", "40 м", "60 м"};
 const char* const kFarLayer[] = {"Выкл", "250 м", "400 м", "600 м"};
 const char* const kFarLayerNotes[] = {"Дальше дальности прорисовки — туман", "Упрощённый мир до 250 м",
@@ -71,7 +72,6 @@ const Item kGraphics[] = {
     {"Густота мелких объектов", CHOICE, &Settings::density, kDensity, 3, 0, 0, nullptr, 0, nullptr, kDensityNotes},
     {"Жители вдали", CHOICE, &Settings::npcDistance, kNpcRange, 3, 0, 0, nullptr, 0, "Как далеко видны жители и звери", nullptr},
     {"Купол Барьера", TOGGLE, &Settings::barrier, nullptr, 0, 0, 0, nullptr, 0, "Сияние неба и гул, если есть в данных", nullptr},
-    {"Сглаживание", TOGGLE, &Settings::antialias, nullptr, 0, 0, 0, nullptr, 0, "Края без лесенки; после перезапуска", nullptr},
     {"Плавное появление", TOGGLE, &Settings::dissolve, nullptr, 0, 0, 0, nullptr, 0, "Вступит в силу после перезапуска", nullptr},
     {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 3, 0, 0, nullptr, 0, nullptr, kFrameNotes},
     {"Графика+", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GFX_PLUS, "Затенение углов, листва, тени, даль", nullptr},
@@ -107,6 +107,8 @@ const Item kGfxPlus[] = {
     {"Тени персонажей", CHOICE, &Settings::shadows, kShadows, 3, 0, 0, nullptr, 0, nullptr, kShadowNotes},
     {"Дальний план", CHOICE, &Settings::farLayer, kFarLayer, 4, 0, 0, nullptr, 0, nullptr, kFarLayerNotes},
     {"Дальняя геометрия", CHOICE, &Settings::farGeometry, kFarGeometry, 4, 0, 0, nullptr, 0, "Упрощённые дальние чанки (мир с --lod)", nullptr},
+    {"Частота экрана", CHOICE, &Settings::refresh, kRefresh, 4, 0, 0, nullptr, 0, "Экран подстраивается под кадр (опыт)", nullptr},
+    {"Сглаживание", TOGGLE, &Settings::antialias, nullptr, 0, 0, 0, nullptr, 0, "Края без лесенки; после перезапуска", nullptr},
     {"Видимость", TOGGLE, &Settings::visibility, nullptr, 0, 0, 0, nullptr, 0, "Не рисовать скрытое стенами (мир с --vis)", nullptr},
 };
 const Item kDebug[] = {

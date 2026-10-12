@@ -1459,7 +1459,10 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	if (farActive()) drawFar(whole);
 	for (u32 k = 0; k < n; ++k) {
 		Loaded& l = _loaded[_order[k]];
-		if (l.windBatches) drawBatches(l, false, 2);
+		if (!l.windBatches) continue;
+		// The shared cluster arrays still hold the last chunk of the first pass: classify this one again.
+		classify(l, _order[k], false);
+		drawBatches(l, false, 2);
 	}
 }
 

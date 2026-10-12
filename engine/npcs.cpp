@@ -265,15 +265,37 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 	u32 count = 0;
 	_stats.here = _stats.near = _stats.waiting = _stats.noModel = 0;
 	_stats.reach = _reach;
+	u32 startsLeft = _cfg.startsPerFrame;
+	// Those about to come into range, nearest first: their models are read ahead (see below).
+	const float prefetch2 = (_reach + 300.0f + _cfg.prefetchRange) * (_reach + 300.0f + _cfg.prefetchRange);
+	enum { AHEAD = 4 };
+	u32 ahead[AHEAD];
+	float aheadKey[AHEAD];
+	u32 aheadCount = 0;
 	for (u32 i = 0; i < _game.npcCount(); ++i) {
 		const GameNpc& n = _game.npc(i);
 		if (n.hero || n.world != _game.currentWorld() || !n.placed) continue;
 		++_stats.here;
 		const float dx = n.pos[0] - eye.x, dy = n.pos[1] - eye.y, dz = n.pos[2] - eye.z;
 		const float d2 = dx * dx + dy * dy + dz * dz;
-		if (d2 > keep2) continue;
 		const bool isActor = n.active || actorOf(i) != nullptr;
-		if (d2 > range2 && !isActor) continue;
+		if ((d2 > keep2 || (d2 > range2 && !isActor)) && !isActor) {
+			if (d2 <= prefetch2 && n.down != DOWN_DEAD && _cfg.prefetchRange > 0.0f) {
+				u32 at = aheadCount;
+				while (at > 0 && aheadKey[at - 1] > d2) --at;
+				if (at < AHEAD) {
+					if (aheadCount < AHEAD) ++aheadCount;
+					for (u32 j = aheadCount - 1; j > at; --j) {
+						ahead[j] = ahead[j - 1];
+						aheadKey[j] = aheadKey[j - 1];
+					}
+					ahead[at] = i;
+					aheadKey[at] = d2;
+				}
+			}
+			continue;
+		}
+		if (d2 > keep2) continue;
 		++_stats.near;
 		// (The dead come last: the living need the places more.)
 		const float k = (isActor ? d2 * 0.7f : d2) * (n.down == DOWN_DEAD ? 4.0f : 1.0f);
@@ -333,6 +355,14 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 		// Pieces that do not fit together are as good as missing.
 		if (rig && body && !body->model.sameSkeleton(rig->model)) body = nullptr;
 		if (rig && head && !head->model.sameSkeleton(rig->model)) head = nullptr;
+		// One new character set going per frame: his first steps run scripts, and several in one frame were a hitch.
+		if (!a->ready && rig && body) {
+			if (startsLeft == 0 && _cfg.startsPerFrame > 0) {
+				++_stats.waiting;
+				continue;
+			}
+			if (startsLeft > 0) --startsLeft;
+		}
 		if (rig != a->rig) {
 			a->rig = rig;
 			a->anim.bind(rig ? &rig->model : nullptr);
@@ -349,6 +379,15 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 			a->grounded = false;
 		}
 		if (!a->grounded) ground(*a, world, 150.0f);
+	}
+	// A frame with a load to spare reads the models of those who are about to come: by the time they are in range
+	// they are in memory, and the frame they appear in is no longer the one with the archive read in it.
+	for (u32 k = 0; k < aheadCount && loadsLeft > 0; ++k) {
+		const LookEntry* look = lookOf(_game.npc(ahead[k]).look);
+		if (!look) continue;
+		piece(pak, look->rig, loadsLeft);
+		if (loadsLeft > 0) piece(pak, look->body, loadsLeft);
+		if (loadsLeft > 0 && look->head) piece(pak, look->head, loadsLeft);
 	}
 	u32 models = 0;
 	for (const Piece& p : _pieces) models += p.hash != 0 && !p.failed;

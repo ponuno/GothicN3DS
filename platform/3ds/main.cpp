@@ -72,6 +72,7 @@
 #include <3ds.h>
 #include <citro3d.h>
 
+#include <malloc.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -88,6 +89,43 @@ static const char* kPakPath = "sdmc:/3ds/gothic3ds/data.pak";
 static const char* kStatePath = "sdmc:/3ds/gothic3ds/state.bin";
 // Where L+R+SELECT writes the movement recorder.
 static const char* kSlopePath = "sdmc:/3ds/gothic3ds/slope.txt";
+// The memory split. libctru's own gives the linear heap (where meshes and textures live, what the GPU reads) at most
+// 32 MB and the rest to the ordinary heap: on a New 3DS with 124 MB that is 32 + 90 (HUD `sys`). The world's cache
+// of chunks lives in the linear heap, and `rej`/`ev` of a long walk in the market showed it too small, so it takes
+// 48 MB here, if the system gave enough to leave the ordinary heap at least 56 MB (else the library's split).
+static const u32 kLinearWanted = 48u << 20, kHeapLeast = 56u << 20;
+extern "C" {
+extern char* fake_heap_start;
+extern char* fake_heap_end;
+extern u32 __ctru_heap, __ctru_linear_heap, __ctru_heap_size, __ctru_linear_heap_size;
+void __system_allocateHeaps(void) {
+	Handle reslimit = 0;
+	if (R_FAILED(svcGetResourceLimit(&reslimit, CUR_PROCESS_HANDLE))) svcBreak(USERBREAK_PANIC);
+	s64 maxCommit = 0, currentCommit = 0;
+	ResourceLimitType type = RESLIMIT_COMMIT;
+	svcGetResourceLimitLimitValues(&maxCommit, reslimit, &type, 1);
+	svcGetResourceLimitCurrentValues(&currentCommit, reslimit, &type, 1);
+	svcCloseHandle(reslimit);
+	const u32 remaining = u32(maxCommit - currentCommit) & ~0xFFFu;
+	if (remaining >= kLinearWanted + kHeapLeast) {
+		__ctru_linear_heap_size = kLinearWanted;
+	} else {
+		// As libctru: half and half, the ordinary heap at most 24 MB, the linear one at most 32.
+		__ctru_linear_heap_size = (remaining / 2) & ~0xFFFu;
+		if (remaining - __ctru_linear_heap_size > (24u << 20)) {
+			__ctru_linear_heap_size = remaining - (24u << 20);
+			if (__ctru_linear_heap_size > (32u << 20)) __ctru_linear_heap_size = 32u << 20;
+		}
+	}
+	__ctru_heap_size = remaining - __ctru_linear_heap_size;
+	if (R_FAILED(svcControlMemory(&__ctru_heap, OS_HEAP_AREA_BEGIN, 0x0, __ctru_heap_size, MEMOP_ALLOC, MemPerm(MEMPERM_READ | MEMPERM_WRITE)))) svcBreak(USERBREAK_PANIC);
+	if (R_FAILED(svcControlMemory(&__ctru_linear_heap, 0x0, 0x0, __ctru_linear_heap_size, MEMOP_ALLOC_LINEAR, MemPerm(MEMPERM_READ | MEMPERM_WRITE)))) svcBreak(USERBREAK_PANIC);
+	mappableInit(OS_MAP_AREA_BEGIN, OS_MAP_AREA_END);
+	fake_heap_start = reinterpret_cast<char*>(__ctru_heap);
+	fake_heap_end = fake_heap_start + __ctru_heap_size;
+}
+}
+
 // The menu's settings.
 static const char* kSettingsPath = "sdmc:/3ds/gothic3ds/settings.bin";
 
@@ -234,7 +272,7 @@ int main(int, char**) {
 	// from Archolos at night `lin` stayed at 5.5-7.5 MB with 6 reserved, so what the rest of the game takes
 	// beyond what it has already is well under 1 MB; and the world's refusals (`rej`) were that reserve, not
 	// the allocator (`nm`).
-	app.world().config().memoryBudget = 28u << 20;
+	app.world().config().memoryBudget = (__ctru_linear_heap_size > (40u << 20) ? 44u : 28u) << 20;
 	app.world().config().memoryReserve = 5u << 20;
 	app.world().config().freeMemory = []() -> g3::u32 { return g3::u32(linearSpaceFree()); };
 	// Continue where the last session ended, unless L is held at start.
@@ -612,10 +650,10 @@ int main(int, char**) {
 				// strength, wind setting and its draw calls, shadow setting and shadows laid. '-' after a value:
 				// not in data.pak (bake with --ao / --wind); R: given way to the frame rate (the pacer).
 				const g3::Settings& st = app.settings();
-				reportLine("cmd%3.0f%% x%lu g+ao%3d%c w%d%c%2lu sh%d/%lu%s", double(fs.commandBufferUse * 100.0f),
+				reportLine("cmd%3.0f%% x%lu g+ao%3d%c w%d%c%2lu sh%d/%lu%s%s", double(fs.commandBufferUse * 100.0f),
 				     static_cast<unsigned long>(fs.drawsDropped), int(st.occlusion), app.world().hasOcclusion() ? ' ' : '-', int(st.wind),
 				     app.world().hasWind() ? ' ' : '-', static_cast<unsigned long>(ws.windyDrawCalls), int(st.shadows),
-				     static_cast<unsigned long>(app.shadows().stats().drawn), app.gfxRelief() ? " R" : "");
+				     static_cast<unsigned long>(app.shadows().stats().drawn), app.gfxRelief() ? " R" : "", gfx::c3dSupersample() ? " AA" : "");
 			}
 			// (Chunks in memory: the world's own + those of medium and small objects, of all; wanted and not there: the same.)
 			reportLine("res %3lu+%3lu/%lu pend %3lu+%lu", static_cast<unsigned long>(ws.chunksLoaded - ws.loadedDetail),
@@ -631,8 +669,9 @@ int main(int, char**) {
 			     static_cast<unsigned long>(ws.loadFailures), static_cast<unsigned long>(ws.allocRejects));
 			// What the system gives the application (MB): its whole region, what is free of it, the ordinary heap (the
 			// linear heap is `lin` above plus what is in use).
-			reportLine("sys app %4.1f free %4.1f heap %4.1f", double(osGetMemRegionSize(MEMREGION_APPLICATION)) / 1048576.0,
-			     double(osGetMemRegionFree(MEMREGION_APPLICATION)) / 1048576.0, double(envGetHeapSize()) / 1048576.0);
+			reportLine("sys app%4.0f free%4.1f heap%3.0f u%4.1f lin%3.0f", double(osGetMemRegionSize(MEMREGION_APPLICATION)) / 1048576.0,
+			     double(osGetMemRegionFree(MEMREGION_APPLICATION)) / 1048576.0, double(__ctru_heap_size) / 1048576.0,
+			     double(mallinfo().uordblks) / 1048576.0, double(__ctru_linear_heap_size) / 1048576.0);
 
 			reportLine("draw distance %3.0f/%3.0f m  time %02d:%02d", double(app.drawDistance() / 100.0f * app.world().config().distanceScale), double(app.drawDistance() / 100.0f), int(app.environment().timeOfDay),
 			     int(app.environment().timeOfDay * 60.0f) % 60);

@@ -558,8 +558,12 @@ int main(int, char**) {
 			reportLine("tris %6lu/%6lu dr %4lu ch %2lu%s", static_cast<unsigned long>(ws.trianglesDrawn),
 			     static_cast<unsigned long>(ws.trianglesInChunks), static_cast<unsigned long>(ws.drawCalls),
 			     static_cast<unsigned long>(ws.chunksDrawn), wholeChunks ? " ZL" : "");
-			reportLine("blend %3lu cull %4lu merged %4lu", static_cast<unsigned long>(ws.blendedDrawCalls),
-			     static_cast<unsigned long>(ws.batchesCulled), static_cast<unsigned long>(ws.batchesMerged));
+			// ... and the far layer: its triangles and draw calls ('-': not in data.pak, bake with --far-lod;
+			// 'o': in it, but off in the menu).
+			reportLine("bl %3lu cul %4lu mg %4lu far %5lu/%2lu%c", static_cast<unsigned long>(ws.blendedDrawCalls),
+			     static_cast<unsigned long>(ws.batchesCulled), static_cast<unsigned long>(ws.batchesMerged),
+			     static_cast<unsigned long>(ws.farTriangles), static_cast<unsigned long>(ws.farDrawCalls),
+			     !app.world().hasFarLayer() ? '-' : app.world().farActive() ? ' ' : 'o');
 			{
 				// The command buffer's use and the draws dropped for want of room; then Graphics+: occlusion
 				// strength, wind setting and its draw calls, shadow setting and shadows laid. '-' after a value:

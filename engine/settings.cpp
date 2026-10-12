@@ -16,7 +16,8 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 5: the sound volume.
 // 7: the frame counter, the flow of time.
 // 8: Graphics+ (ambient occlusion, wind, shadows).
-constexpr u32 SETTINGS_VERSION = 8;
+// 9: the far layer.
+constexpr u32 SETTINGS_VERSION = 9;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -52,16 +53,19 @@ void Settings::applyGfxPreset(u8 preset) {
 		occlusion = 0;
 		wind = 0;
 		shadows = SHADOWS_OFF;
+		farLayer = 0;
 		break;
 	case GFX_PLUS_BALANCED:
 		occlusion = 60;
 		wind = 2;
 		shadows = SHADOWS_HERO;
+		farLayer = 1;
 		break;
 	case GFX_PLUS_MAX:
 		occlusion = 100;
 		wind = 2;
 		shadows = SHADOWS_ALL;
+		farLayer = 2;
 		break;
 	default: return;
 	}
@@ -72,7 +76,7 @@ u8 Settings::gfxPresetOf() const {
 	for (u8 p = 0; p < GFX_PLUS_OWN; ++p) {
 		Settings t = *this;
 		t.applyGfxPreset(p);
-		if (t.occlusion == occlusion && t.wind == wind && t.shadows == shadows) return p;
+		if (t.occlusion == occlusion && t.wind == wind && t.shadows == shadows && t.farLayer == farLayer) return p;
 	}
 	return GFX_PLUS_OWN;
 }
@@ -93,6 +97,7 @@ void Settings::sanitize() {
 	occlusion = u8(clamp<int>(occlusion, 0, 100) / 10 * 10);
 	if (wind > 3) wind = 0;
 	if (shadows >= SHADOW_MODES) shadows = SHADOWS_OFF;
+	if (farLayer > 3) farLayer = 0;
 	gfxPlus = gfxPresetOf();
 	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier};
 	for (u8* f : flags) *f = *f ? 1 : 0;

@@ -146,6 +146,9 @@ bool ScriptVm::adopt(u8* blob, u32 size) {
 	_self = find("SELF");
 	_other = find("OTHER");
 	_hero = find("HERO");
+	// Ikarus (as OpenGothic's DirectMemory::isRequired): such scripts write to constants.
+	_ignoreConst = find("IKARUS_VERSION") != SCRIPT_NONE && find("MEM_INITALL") != SCRIPT_NONE && find("MEM_READINT") != SCRIPT_NONE &&
+	               find("MEM_WRITEINT") != SCRIPT_NONE;
 	u32* const globals[3] = {&_self, &_other, &_hero};
 	for (u32* g : globals)
 		if (*g != SCRIPT_NONE && _symbols[*g].type != SCRIPT_INSTANCE) *g = SCRIPT_NONE;
@@ -520,7 +523,7 @@ void ScriptVm::setInt(u32 symbol, u32 index, ScriptInstance* ctx, i32 v) {
 		fail("an integer was written to something else");
 		return;
 	}
-	if (s.flags & (SCRIPTF_CONST | SCRIPTF_EXTERNAL)) {
+	if ((s.flags & SCRIPTF_EXTERNAL) || ((s.flags & SCRIPTF_CONST) && !_ignoreConst)) {
 		fail("a constant was written to");
 		return;
 	}
@@ -538,7 +541,7 @@ void ScriptVm::setFloat(u32 symbol, u32 index, ScriptInstance* ctx, float v) {
 		fail("a float was written to something else");
 		return;
 	}
-	if (s.flags & SCRIPTF_CONST) {
+	if ((s.flags & SCRIPTF_CONST) && !_ignoreConst) {
 		fail("a constant was written to");
 		return;
 	}
@@ -592,7 +595,7 @@ void ScriptVm::setString(u32 symbol, u32 index, ScriptInstance* ctx, const char*
 		fail("a string was written to something else");
 		return;
 	}
-	if (s.flags & SCRIPTF_CONST) {
+	if ((s.flags & SCRIPTF_CONST) && !_ignoreConst) {
 		fail("a constant was written to");
 		return;
 	}
@@ -992,6 +995,10 @@ bool ScriptVm::step() {
 			break;
 		}
 		enter(target, operand, _pc);
+		if (_symbols[target].flags & SCRIPTF_NULLED) {
+			_sp = _frames[_fp - 1].base; // drop the arguments; leave() answers 0
+			leave();
+		}
 		break;
 	}
 	case OP_BE:

@@ -48,6 +48,7 @@ static void usage() {
 	     "                      a potion chosen and drunk, a ring put on, food held into a quick slot and used;\n"
 	     "                      the bottom screen is saved next to each shot (PREFIX_bottom_NN.png)\n"
 	     "  --pickup            the character walks to the things lying about and picks them up (A)\n"
+	     "  --far M             the far layer (data baked with --far-lod) out to M metres (default: off)\n"
 	     "  --gfx-plus A,W,S    Graphics+: occlusion 0..100 %, wind 0..3, shadows 0 off / 1 hero / 2 all near\n"
 	     "  --stats FILE        write a JSON summary");
 }
@@ -161,7 +162,7 @@ int main(int argc, char** argv) {
 	bool console = false, fight = false, sword = false, inventory = false, pickup = false;
 	int menuPage = -1;
 	const char* gfxPlusSpec = nullptr;
-	float budgetMb = 24.0f, drawDistance = 12000.0f;
+	float budgetMb = 24.0f, drawDistance = 12000.0f, farMetres = 0.0f;
 
 	for (int i = 1; i < argc; ++i) {
 		auto arg = [&](const char* name) { return strcmp(argv[i], name) == 0 && i + 1 < argc; };
@@ -183,6 +184,7 @@ int main(int argc, char** argv) {
 		else if (arg("--probe-grid")) probeGrid = atoi(argv[++i]);
 		else if (arg("--menu")) menuPage = atoi(argv[++i]);
 		else if (arg("--gfx-plus")) gfxPlusSpec = argv[++i];
+		else if (arg("--far")) farMetres = float(atof(argv[++i]));
 		else if (strcmp(argv[i], "--console") == 0) console = true;
 		else if (strcmp(argv[i], "--fight") == 0) fight = true;
 		else if (strcmp(argv[i], "--sword") == 0) sword = true;
@@ -235,7 +237,10 @@ int main(int argc, char** argv) {
 	StreamConfig& cfg = app.world().config();
 	cfg.memoryBudget = u32(budgetMb * 1024.0f * 1024.0f);
 	cfg.clusterCulling = !wholeChunks;
+	cfg.farDistance = farMetres * 100.0f;
 	app.setDrawDistance(drawDistance);
+	if (farMetres > 0.0f)
+		printf("far layer         out to %.0f m (%s)\n", double(farMetres), app.world().hasFarLayer() ? "in the data" : "NOT in the data");
 	if (detailSpec && sscanf(detailSpec, "%f,%f", &cfg.detailDistance[g3::DETAIL_MEDIUM], &cfg.detailDistance[g3::DETAIL_SMALL]) != 2) {
 		usage();
 		return 2;
@@ -545,8 +550,8 @@ int main(int argc, char** argv) {
 				fprintf(stderr, "error: cannot write %s\n", name);
 				return 1;
 			}
-			printf("frame %4d -> %s  (%u chunks, %u draws, %u tris)\n", f, name, ws.chunksDrawn, ws.drawCalls,
-			       ws.trianglesDrawn);
+			printf("frame %4d -> %s  (%u chunks, %u draws, %u tris; far: %u tiles, %u draws, %u tris)\n", f, name, ws.chunksDrawn,
+			       ws.drawCalls, ws.trianglesDrawn, ws.farTiles, ws.farDrawCalls, ws.farTriangles);
 			if (inventory) {
 				// The bottom screen next to it.
 				app.panel().draw(app.inventory(), true);
@@ -674,6 +679,11 @@ int main(int argc, char** argv) {
 		if (ps.emitters || ps.effects)
 			printf("particles         %u emitters in this world, %u running, %u effects read, %u particles alive, %u draw calls in the last frame\n",
 			       ps.emitters, ps.running, ps.effects, ps.particles, ps.drawCalls);
+	}
+	if (farMetres > 0.0f) {
+		const WorldStats& ws = app.world().stats();
+		printf("far layer         %.2f MB in memory; last frame %u tiles, %u draw calls, %u triangles\n", double(ws.farBytes) / 1048576.0,
+		       ws.farTiles, ws.farDrawCalls, ws.farTriangles);
 	}
 	if (gfxPlusSpec) {
 		const ShadowStats& ss = app.shadows().stats();

@@ -675,6 +675,11 @@ void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, 
 
 bool fadeSupported() { return gNoiseReady; }
 
+void setTwoSided(bool both) {
+	if (!gInFrame || gPass != PASS_WORLD) return;
+	C3D_CullFace(both ? GPU_CULL_NONE : GPU_CULL_BACK_CCW);
+}
+
 void setFade(float visible) {
 	if (!gInFrame) return;
 	u8 share = u8(clamp(visible, 0.0f, 1.0f) * 255.0f + 0.5f);

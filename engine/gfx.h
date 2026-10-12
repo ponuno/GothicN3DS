@@ -119,6 +119,9 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount);
 void setFade(float visible);
 // False where the backend cannot dissolve (setFade then draws everything).
 bool fadeSupported();
+// Both faces of the following draws, not only the front (PASS_WORLD; the
+// other passes draw both anyway). setPass and frameBegin end it.
+void setTwoSided(bool both);
 
 // Skinned geometry (characters). The mesh is made with meshCreate from
 // vertices in the layout model.h describes: every vertex follows two of the

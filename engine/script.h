@@ -242,6 +242,7 @@ private:
 	u32 _fp = 0;
 	u32 _pc = 0;
 	ScriptInstance* _current = nullptr;
+	bool _ignoreConst = false; // an Ikarus script: writing to a constant is allowed
 	u32 _self = SCRIPT_NONE, _other = SCRIPT_NONE, _hero = SCRIPT_NONE;
 	u32 _budget = 64000000, _spent = 0;
 	u32 _depth = 0; // nested call()s (a script calls an external that calls a script)

@@ -52,6 +52,7 @@ float bayer(int x, int y) {
 float gUvOffset[2] = {0, 0};
 ChunkFx gFx; // Graphics+ of the chunk being drawn (setChunkTransform)
 bool gCull = true;
+bool gTwoSided = false; // setTwoSided: this draw keeps its back faces
 u32 gMemoryLimit = 0;
 MemStats gMem;
 SoftStats gStats;
@@ -270,7 +271,7 @@ void drawTriangle(const ClipVert in[3]) {
 	}
 	if (area >= 0.0f && gPass == PASS_WORLD) {
 		++gStats.trianglesBackface;
-		if (gCull) return;
+		if (gCull && !gTwoSided) return;
 	}
 
 	// One mip level per triangle from the texel/pixel area ratio.
@@ -365,6 +366,7 @@ void meshDestroy(Mesh* m) {
 
 void frameBegin(const FrameDesc& f) {
 	gFrame = f;
+	gTwoSided = false;
 	gProj = perspectiveLH(f.fovY, float(SCREEN_W) / float(SCREEN_H), f.zNear, f.zFar);
 	const EyeFrame ef = eyeFrame(f.view, f.eye);
 	gViewProj = mul(gProj, ef.view);
@@ -393,7 +395,10 @@ bool fadeSupported() { return true; }
 
 void setFade(float visible) { gFade = clamp(visible, 0.0f, 1.0f); }
 
+void setTwoSided(bool both) { gTwoSided = both && gPass == PASS_WORLD; }
+
 void setPass(Pass pass) {
+	gTwoSided = false;
 	if (pass == gPass) return;
 	gPass = pass;
 	gFade = 1.0f; // (dissolving is for the opaque world only)

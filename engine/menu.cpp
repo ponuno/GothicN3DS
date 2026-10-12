@@ -42,10 +42,13 @@ const char* const kBottom[] = {"Инвентарь", "Отчёт"};
 const char* const kTimeFlow[] = {"Стоит", "Сутки за 24 мин", "Сутки за 1 ч", "Сутки за 2 ч"};
 const char* const kLanguages[] = {"Русский", "English", "Polski", "Deutsch"};
 const char* const kGfxPresets[] = {"Выкл", "Баланс", "Максимум", "Свой"};
-const char* const kGfxPresetNotes[] = {"Всё выключено, как раньше", "Умеренно: затенение, листва, тень героя", "Всё на полную",
+const char* const kGfxPresetNotes[] = {"Всё выключено, как раньше", "Затенение, листва, тень героя, даль 250 м", "Всё на полную",
                                        "Значения изменены вручную"};
 const char* const kWind[] = {"Нет", "Слабое", "Обычное", "Сильное"};
 const char* const kShadows[] = {"Выкл", "Герой", "Все рядом"};
+const char* const kFarLayer[] = {"Выкл", "250 м", "400 м", "600 м"};
+const char* const kFarLayerNotes[] = {"Дальше дальности прорисовки — туман", "Упрощённый мир до 250 м",
+                                      "Упрощённый мир до 400 м", "Упрощённый мир до 600 м"};
 const char* const kShadowNotes[] = {"Без теней под ногами", "Круглая тень под героем", "Под героем и жителями до 25 м"};
 
 #define NONE nullptr, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr
@@ -69,7 +72,7 @@ const Item kGraphics[] = {
     {"Купол Барьера", TOGGLE, &Settings::barrier, nullptr, 0, 0, 0, nullptr, 0, "Сияние неба и гул, если есть в данных", nullptr},
     {"Плавное появление", TOGGLE, &Settings::dissolve, nullptr, 0, 0, 0, nullptr, 0, "Вступит в силу после перезапуска", nullptr},
     {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 3, 0, 0, nullptr, 0, nullptr, kFrameNotes},
-    {"Графика+", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GFX_PLUS, "Затенение углов, листва, тени", nullptr},
+    {"Графика+", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GFX_PLUS, "Затенение углов, листва, тени, даль", nullptr},
     {"Сбросить графику", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_RESET_GRAPHICS, "Вернуть значения по умолчанию", nullptr},
 };
 const Item kGame[] = {
@@ -100,6 +103,7 @@ const Item kGfxPlus[] = {
     {"Затенение углов", RANGE, &Settings::occlusion, nullptr, 10, 0, 100, "%", 0, "Нужен data.pak, запечённый с --ao", nullptr},
     {"Колыхание листвы", CHOICE, &Settings::wind, kWind, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --wind", nullptr},
     {"Тени персонажей", CHOICE, &Settings::shadows, kShadows, 3, 0, 0, nullptr, 0, nullptr, kShadowNotes},
+    {"Дальний план", CHOICE, &Settings::farLayer, kFarLayer, 4, 0, 0, nullptr, 0, nullptr, kFarLayerNotes},
 };
 const Item kDebug[] = {
     {"Жители", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG_NPC, "Восприятие, жизнь, драки", nullptr},

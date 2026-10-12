@@ -566,6 +566,22 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				line("visibility: nothing to put in it");
 			}
 		}
+		// ---- simplified stand-ins for far chunks ----
+		if (opt.lod.enabled && !scene.indoor) {
+			LodStats ls;
+			buildLods(chunks, worldMaterials, opt.lod, ls);
+			if (ls.chunks) {
+				wh.flags |= WORLDF_LOD;
+				line(format("far geometry (--lod): %u of %u chunks got a stand-in, %llu -> %llu triangles of the simplified batches (%.0f%%), "
+				            "+%.2f MB, %.1f s",
+				            ls.chunks, ls.candidates, static_cast<unsigned long long>(ls.trianglesBefore),
+				            static_cast<unsigned long long>(ls.trianglesAfter),
+				            100.0 * double(ls.trianglesAfter) / double(std::max<u64>(ls.trianglesBefore, 1)), double(ls.extraBytes) / MB,
+				            ls.seconds));
+			} else {
+				line("far geometry (--lod): nothing to simplify");
+			}
+		}
 		std::memcpy(wh.fogColor, scene.fogColor, sizeof(wh.fogColor));
 		wh.triangleCount = u32(cs.outputTriangles);
 		for (int a = 0; a < 3; ++a) {

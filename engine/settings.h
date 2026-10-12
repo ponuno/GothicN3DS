@@ -83,6 +83,9 @@ struct Settings {
 	u8 farLayer = 0;
 	// Version 10: baked visibility (data baked with --vis): 0 off, 1 what the table says is hidden is not drawn.
 	u8 visibility = 0;
+	// Version 11: simplified far geometry (data baked with --lod): 0 off, then from 25 / 40 / 60 m a chunk lies in view.
+	u8 farGeometry = 2;
+	float lodDistanceCm() const;
 
 	// Clamps every value into its range (after reading a file of another version).
 	void sanitize();

@@ -19,12 +19,12 @@
 
 namespace {
 
-enum { ID_PATH = 1, ID_BROWSE, ID_MUSIC, ID_GFXPLUS, ID_START, ID_PROGRESS, ID_LOG, ID_STATUS, ID_VOICES, ID_DEBUG };
+enum { ID_PATH = 1, ID_BROWSE, ID_MUSIC, ID_GFXPLUS, ID_START, ID_PROGRESS, ID_LOG, ID_STATUS, ID_VOICES, ID_DEBUG, ID_LOD };
 const UINT WM_LOGLINE = WM_APP + 1; // lParam: new std::wstring*
 const UINT WM_STATUS = WM_APP + 2;  // lParam: new std::wstring*
 const UINT WM_FINISHED = WM_APP + 3; // wParam: 1 ok
 
-HWND gWnd, gPath, gBrowse, gMusic, gGfxPlus, gVoices, gDebug, gStart, gProgress, gLog, gStatus;
+HWND gWnd, gPath, gBrowse, gMusic, gGfxPlus, gLod, gVoices, gDebug, gStart, gProgress, gLog, gStatus;
 std::wstring gExeDir; // with a trailing backslash
 std::atomic<HANDLE> gChild(nullptr);
 std::atomic<bool> gRunning(false), gAbort(false);
@@ -135,7 +135,7 @@ bool run(const std::wstring& cmd) {
 	return code == 0;
 }
 
-void pipeline(std::wstring game, bool music, bool gfxPlus, bool voices, bool debug) {
+void pipeline(std::wstring game, bool music, bool gfxPlus, bool lod, bool voices, bool debug) {
 	const std::wstring bake = L"\"" + gExeDir + L"g3ds-bake.exe\"";
 	const std::wstring render = L"\"" + gExeDir + L"dmrender.exe\"";
 	const std::wstring out = gExeDir; // everything lands beside the program
@@ -165,6 +165,8 @@ void pipeline(std::wstring game, bool music, bool gfxPlus, bool voices, bool deb
 		if (haveMusic) cmd += L" --music-dir \"" + shortPath(wavs) + L"\"";
 		// Graphics+ in the data: corner shading, swaying plants, far layer and visibility table (switched on in the game's menu, Graphics -> Graphics+).
 		if (gfxPlus) cmd += L" --ao low --wind --far-lod --vis";
+		// Simplified stand-ins for far chunks (menu: Graphics+ -> Far geometry): about half the triangles there.
+		if (lod) cmd += L" --lod";
 		if (!voices) cmd += L" --no-voices";
 		if (debug) cmd += L" --debug-report \"" + outShort + L"bake_debug.txt\"";
 		ok = run(cmd);
@@ -241,6 +243,7 @@ void startPressed() {
 	}
 	const bool music = SendMessageW(gMusic, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	const bool gfxPlus = SendMessageW(gGfxPlus, BM_GETCHECK, 0, 0) == BST_CHECKED;
+	const bool lod = SendMessageW(gLod, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	const bool voices = SendMessageW(gVoices, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	const bool debug = SendMessageW(gDebug, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	if (gWorker.joinable()) gWorker.join();
@@ -254,10 +257,11 @@ void startPressed() {
 	EnableWindow(gPath, FALSE);
 	EnableWindow(gMusic, FALSE);
 	EnableWindow(gGfxPlus, FALSE);
+	EnableWindow(gLod, FALSE);
 	EnableWindow(gVoices, FALSE);
 	EnableWindow(gDebug, FALSE);
 	SendMessageW(gProgress, PBM_SETMARQUEE, TRUE, 40);
-	gWorker = std::thread(pipeline, game, music, gfxPlus, voices, debug);
+	gWorker = std::thread(pipeline, game, music, gfxPlus, lod, voices, debug);
 }
 
 LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
@@ -290,6 +294,7 @@ LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
 		EnableWindow(gPath, TRUE);
 		EnableWindow(gMusic, TRUE);
 		EnableWindow(gGfxPlus, TRUE);
+		EnableWindow(gLod, TRUE);
 		EnableWindow(gVoices, TRUE);
 		EnableWindow(gDebug, TRUE);
 		if (w) MessageBoxW(h, L"Done! data.pak (and music.pak, speech.pak) are next to this program.\r\nCopy them to the SD card, folder 3ds\\gothic3ds\\", L"Gothic 3DS", MB_OK | MB_ICONINFORMATION);
@@ -342,10 +347,12 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
 	gVoices = make(L"BUTTON", L"Bake the voices (speech.pak)", BS_AUTOCHECKBOX, 12, 84, 290, 22, ID_VOICES);
 	SendMessageW(gVoices, BM_SETCHECK, BST_CHECKED, 0);
 	gDebug = make(L"BUTTON", L"Debug report (bake_debug.txt)", BS_AUTOCHECKBOX, 306, 84, 296, 22, ID_DEBUG);
+	gLod = make(L"BUTTON", L"Simplified far geometry (about half the triangles far away, +10% size)", BS_AUTOCHECKBOX, 12, 106, 590, 22, ID_LOD);
+	SendMessageW(gLod, BM_SETCHECK, BST_CHECKED, 0);
 	gStart = make(L"BUTTON", L"Bake", BS_DEFPUSHBUTTON, 610, 60, 90, 28, ID_START);
-	gProgress = make(PROGRESS_CLASSW, L"", PBS_MARQUEE, 12, 118, 688, 14, ID_PROGRESS);
-	gStatus = make(L"STATIC", L"Select the folder and press \"Bake\". The files will appear next to this program.", 0, 12, 138, 688, 18, ID_STATUS);
-	gLog = make(L"EDIT", L"", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL, 12, 162, 688, 310, ID_LOG, WS_EX_CLIENTEDGE);
+	gProgress = make(PROGRESS_CLASSW, L"", PBS_MARQUEE, 12, 142, 688, 14, ID_PROGRESS);
+	gStatus = make(L"STATIC", L"Select the folder and press \"Bake\". The files will appear next to this program.", 0, 12, 162, 688, 18, ID_STATUS);
+	gLog = make(L"EDIT", L"", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL, 12, 186, 688, 286, ID_LOG, WS_EX_CLIENTEDGE);
 	SendMessageW(gLog, EM_SETLIMITTEXT, 0x7FFFFFF, 0);
 
 	ShowWindow(gWnd, show);

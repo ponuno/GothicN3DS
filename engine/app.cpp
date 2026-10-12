@@ -1131,6 +1131,7 @@ void App::applySettings() {
 	cfg.detailDistance[DETAIL_SMALL] = _settings.smallObjectsCm();
 	cfg.smallLayers = _settings.smallLayers();
 	cfg.visibility = _settings.visibility != 0;
+	cfg.lodDistance = _settings.lodDistanceCm();
 	cfg.occlusion = _settings.occlusionStrength();
 	_windWanted = _settings.windStrength();
 	cfg.wind = _gfxRelief ? 0.0f : _windWanted;

@@ -99,6 +99,9 @@ enum WorldFlags : u32 {
 	// Without the flag every chunk is tier 0 and holds everything. A runtime
 	// that does not know the flag sees a blob of the wrong size and refuses it.
 	WORLDF_TIERS = 1 << 3,
+	// Chunks with batches for a simplified stand-in (see batchLod): the engine draws those instead of the
+	// full-detail ones of a chunk that lies far enough away (g3ds-bake --lod).
+	WORLDF_LOD = 1 << 4,
 };
 
 struct WorldMaterial {
@@ -174,6 +177,17 @@ struct ChunkBatch {
 	i16 bbMax[3];
 };
 static_assert(sizeof(ChunkBatch) == 24, "ChunkBatch layout");
+
+// ChunkBatch::detail: bits 0-1 the DetailClass, 2-3 the layer of small objects, 6-7 which of a chunk's two
+// pictures the batch belongs to (g3ds-bake --lod): a chunk close to the camera is drawn with its ordinary
+// batches, one farther away with simplified stand-ins for some of them.
+enum BatchLod : u8 {
+	BATCH_LOD_BOTH = 0,      // drawn either way
+	BATCH_LOD_FULL_ONLY = 1, // has a stand-in: drawn only when the chunk is near
+	BATCH_LOD_FAR_ONLY = 2,  // the stand-in: drawn only when the chunk is far (not part of the collision mesh)
+};
+inline u8 batchLod(u8 detail) { return u8(detail >> 6); }
+inline u8 withBatchLod(u8 detail, u8 lod) { return u8((detail & 0x3Fu) | (lod << 6)); }
 
 struct WorldVertex {
 	i16 x, y, z;

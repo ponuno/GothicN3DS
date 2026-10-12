@@ -8,6 +8,7 @@
 #include "scene.h"
 #include "script_src.h"
 #include "texture_bake.h"
+#include "lod.h"
 #include "visibility.h"
 #include "vertex_fx.h"
 
@@ -37,6 +38,7 @@ struct BakeOptions {
 	FarOptions far;
 	// Visibility (--vis): which parts of the world are hidden from which cell (see visibility.h).
 	VisOptions vis;
+	LodOptions lod;
 };
 
 struct BakeWorld {

@@ -178,7 +178,7 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 		cv[i].firstBox = u32(boxes.size());
 		boxes.resize(boxes.size() + clusters, Box {{1e30f, 1e30f, 1e30f}, {-1e30f, -1e30f, -1e30f}});
 		for (const ChunkBatch& b : c.batches) {
-			if (!b.indexCount) continue;
+			if (!b.indexCount || batchLod(b.detail) == BATCH_LOD_FAR_ONLY) continue;
 			Box& box = boxes[cv[i].firstBox + b.cluster];
 			for (int a = 0; a < 3; ++a) {
 				box.mn[a] = std::min(box.mn[a], c.header.origin[a] + float(b.bbMin[a]) * c.header.posScale - 5.0f);
@@ -198,7 +198,8 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 		auto world = [&](const WorldVertex& v) { return V3 {o[0] + float(v.x) * sc, o[1] + float(v.y) * sc + 10.0f, o[2] + float(v.z) * sc}; };
 		std::vector<std::vector<u32>> tris(cv[i].clusters); // first index of each triangle, per cluster
 		for (const ChunkBatch& b : c.batches)
-			for (u32 k = 0; k + 2 < b.indexCount; k += 3) tris[b.cluster].push_back(b.firstIndex + k);
+			if (batchLod(b.detail) != BATCH_LOD_FAR_ONLY)
+				for (u32 k = 0; k + 2 < b.indexCount; k += 3) tris[b.cluster].push_back(b.firstIndex + k);
 		for (u32 cl = 0; cl < cv[i].clusters; ++cl) {
 			pointStart[cv[i].firstBox + cl] = u32(points.size());
 			const std::vector<u32>& list = tris[cl];

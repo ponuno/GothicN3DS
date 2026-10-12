@@ -291,6 +291,8 @@ LoadStatus World::finishChunk(LoadResult& r) {
 		dst.detail = (src.detail & 3) < DETAIL_COUNT ? u8(src.detail & 3) : u8(DETAIL_COUNT - 1);
 		dst.layer = u8((src.detail >> 2) & 3);
 		dst.cluster = src.cluster;
+		dst.lodMode = batchLod(src.detail);
+		l.hasLod = l.hasLod || dst.lodMode == BATCH_LOD_FAR_ONLY;
 		dst.shown = 0;
 		dst.firstIndex = src.firstIndex;
 		dst.indexCount = src.indexCount;
@@ -1262,6 +1264,8 @@ void World::drawBatches(Loaded& l, bool blended) {
 		Batch& batch = l.batches[b];
 		const WorldMaterial& m = _materials[batch.material];
 		if (((m.flags & MATF_TRANSLUCENT) != 0) != blended || batch.indexCount == 0) continue;
+		// A chunk far enough away shows its simplified stand-ins in place of the batches they replace.
+		if (batch.lodMode != BATCH_LOD_BOTH && batch.lodMode != (l.lodOn ? BATCH_LOD_FAR_ONLY : BATCH_LOD_FULL_ONLY)) continue;
 		const u32 c = batch.cluster < l.clusterCount ? batch.cluster : 0u;
 		bool visible = _clusterState[c] != CLUSTER_OUT;
 		u8 shown = 255;
@@ -1418,6 +1422,8 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 
 	for (u32 k = 0; k < n; ++k) {
 		Loaded& l = _loaded[_order[k]];
+		const float chunkDist = _orderKey[k];
+		l.lodOn = l.hasLod && _cfg.lodDistance > 0.0f && chunkDist > (l.lodOn ? _cfg.lodDistance * 0.9f : _cfg.lodDistance);
 		classify(l, _order[k], true);
 		drawBatches(l, false);
 		++_stats.chunksDrawn;

@@ -7061,6 +7061,142 @@ static void testVisibility() {
 	}
 }
 
+// ---- simplified stand-ins for far chunks (--lod) ----
+
+static SrcScene hillScene() {
+	SrcScene scene;
+	scene.materials.resize(1);
+	scene.materials[0].name = "ground";
+	scene.materials[0].hasColor = true;
+	scene.materials[0].color[0] = 90;
+	scene.materials[0].color[1] = 140;
+	scene.materials[0].color[2] = 60;
+	// 80 x 80 quads of one metre: a gentle swell with a ridge, flat enough that most of it may be simplified.
+	auto height = [](int x, int z) {
+		const float fx = float(x), fz = float(z);
+		float y = 150.0f * std::sin(fx * 0.012f) * std::cos(fz * 0.009f);
+		if (x >= 3000 / 100 + 5 && x < 3000 / 100 + 9) y += 120.0f; // a ridge
+		return y;
+	};
+	for (int z = 0; z < 80; ++z)
+		for (int x = 0; x < 80; ++x) {
+			float q[4][3] = {{float(x) * 100, height(x, z), float(z) * 100}, {float(x + 1) * 100, height(x + 1, z), float(z) * 100},
+			                 {float(x + 1) * 100, height(x + 1, z + 1), float(z + 1) * 100}, {float(x) * 100, height(x, z + 1), float(z + 1) * 100}};
+			addQuad(scene, q[3], q[2], q[1], q[0], 0);
+		}
+	scene.spawnPos[0] = 4000.0f;
+	scene.spawnPos[1] = 600.0f;
+	scene.spawnPos[2] = 4000.0f;
+	scene.hasSpawn = true;
+	return scene;
+}
+
+static void testLod() {
+	const SrcScene scene = hillScene();
+	ChunkerOptions co;
+	co.chunkSize = 4000.0f;
+	ChunkerStats cs;
+	std::vector<BakedChunk> chunks = buildChunks(scene, {0}, {0}, co, cs);
+	CHECK(chunks.size() == 4);
+	std::vector<std::vector<u16>> originalIndices;
+	std::vector<u32> originalCollision;
+	WorldMaterial mat {};
+	const std::vector<WorldMaterial> materials = {mat};
+	for (const BakedChunk& c : chunks) {
+		ChunkCollider cc;
+		CHECK(cc.build(c.header, c.batches.data(), c.vertices.data(), c.indices.data(), materials.data(), MATF_NO_COLLISION, 0));
+		originalCollision.push_back(cc.triangleCount);
+		originalIndices.push_back(c.indices);
+		cc.release();
+	}
+	LodOptions lo;
+	lo.enabled = true;
+	lo.threads = 2;
+	LodStats ls;
+	buildLods(chunks, materials, lo, ls);
+	CHECK(ls.chunks == 4);
+	CHECK(ls.trianglesAfter * 10 < ls.trianglesBefore * 7); // a good third gone from a gentle hill
+	std::printf("  lod: %llu -> %llu triangles of %u chunks, +%.0f KB\n", static_cast<unsigned long long>(ls.trianglesBefore),
+	            static_cast<unsigned long long>(ls.trianglesAfter), ls.chunks, double(ls.extraBytes) / 1024.0);
+	for (size_t ci = 0; ci < chunks.size(); ++ci) {
+		const BakedChunk& c = chunks[ci];
+		CHECK(c.header.batchCount == c.batches.size() && c.header.indexCount == c.indices.size());
+		CHECK(std::equal(originalIndices[ci].begin(), originalIndices[ci].end(), c.indices.begin())); // (the full picture is untouched)
+		// The border of what the stand-in draws is the border of what it replaces: no crack towards a neighbour.
+		std::map<std::pair<u32, u32>, int> full, far;
+		auto edges = [&](std::map<std::pair<u32, u32>, int>& m, u8 lodWanted) {
+			for (const ChunkBatch& b : c.batches) {
+				if (batchLod(b.detail) == BATCH_LOD_BOTH || batchLod(b.detail) == lodWanted)
+					for (u32 i = 0; i + 2 < b.indexCount; i += 3)
+						for (int k = 0; k < 3; ++k) {
+							const u32 a = c.indices[b.firstIndex + i + u32(k)], d = c.indices[b.firstIndex + i + u32((k + 1) % 3)];
+							CHECK(a < c.vertices.size() && d < c.vertices.size());
+							++m[{std::min(a, d), std::max(a, d)}];
+						}
+			}
+		};
+		edges(full, BATCH_LOD_FULL_ONLY);
+		edges(far, BATCH_LOD_FAR_ONLY);
+		std::set<std::pair<u32, u32>> borderFull, borderFar;
+		for (const auto& kv : full) if (kv.second == 1) borderFull.insert(kv.first);
+		for (const auto& kv : far) if (kv.second == 1) borderFar.insert(kv.first);
+		CHECK(!borderFull.empty() && borderFull == borderFar);
+		// The collision mesh is the full one: the stand-in is not part of it.
+		ChunkCollider cc;
+		CHECK(cc.build(c.header, c.batches.data(), c.vertices.data(), c.indices.data(), materials.data(), MATF_NO_COLLISION, 0));
+		CHECK(cc.triangleCount == originalCollision[ci]);
+		cc.release();
+		u32 farBatches = 0, fullOnly = 0;
+		for (const ChunkBatch& b : c.batches) {
+			farBatches += batchLod(b.detail) == BATCH_LOD_FAR_ONLY;
+			fullOnly += batchLod(b.detail) == BATCH_LOD_FULL_ONLY;
+		}
+		CHECK(farBatches >= 1 && fullOnly >= 1);
+	}
+
+	// In the engine: a chunk farther than lodDistance draws fewer triangles; not so one that is near.
+	const std::string withLod = gDir + "/lod.pak";
+	{
+		std::vector<BakeWorld> worlds(1);
+		worlds[0].name = "h";
+		worlds[0].scene = scene;
+		BakeOptions opt;
+		opt.chunker.chunkSize = 4000.0f;
+		opt.tex.maxSize = 32;
+		opt.tex.quality = 0;
+		opt.threads = 2;
+		opt.quiet = true;
+		opt.lod.enabled = true;
+		PakWriter pak;
+		bakeWorlds(worlds, opt, pak);
+		pak.write(withLod);
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(withLod.c_str(), "h"));
+	World& w = app.world();
+	CHECK((w.header().flags & WORLDF_LOD) != 0);
+	app.setDrawDistance(20000.0f);
+	app.player().flying = true;
+	app.camera().yaw = 0.7f;
+	app.camera().pitch = -0.4f;
+	auto trianglesAt = [&](float lod) {
+		w.config().lodDistance = lod;
+		app.teleport({1000.0f, 1500.0f, 1000.0f});
+		w.preload(app.camera().pos);
+		for (int i = 0; i < 6; ++i) {
+			app.update(Input {}, 1.0f / 30.0f);
+			app.render();
+		}
+		return w.stats().trianglesDrawn;
+	};
+	const u32 full = trianglesAt(0.0f), far = trianglesAt(1.0f), near = trianglesAt(1.0e6f);
+	std::printf("  lod in the engine: %u triangles drawn, %u with stand-ins everywhere, %u with the distance far away\n", full, far, near);
+	CHECK(full > 0 && far > 0 && far * 10 < full * 8);
+	CHECK(near == full);
+}
+
+
 static void testFarLayer() {
 	SrcScene scene;
 	scene.materials.resize(2);
@@ -8685,6 +8821,7 @@ int main(int argc, char** argv) {
 	             {"far layer", testFarLayer},
 	             {"chunk tiers", testChunkTiers},
 	             {"visibility", testVisibility},
+	             {"lod", testLod},
 	             {"music", testMusic},
 	             {"speech", testSpeech},
              {"sound", testSound},

@@ -97,6 +97,7 @@ set(G3DS_BAKE_SOURCES
     tools/bake/vertex_fx.cpp
     tools/bake/far_lod.cpp
     tools/bake/visibility.cpp
+    tools/bake/lod.cpp
     tools/bake/synth.cpp)
 
 if (G3DS_WITH_ZENKIT)

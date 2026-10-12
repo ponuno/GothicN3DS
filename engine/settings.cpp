@@ -18,7 +18,8 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 8: Graphics+ (ambient occlusion, wind, shadows).
 // 9: the far layer.
 // 10: baked visibility.
-constexpr u32 SETTINGS_VERSION = 10;
+// 11: simplified far geometry.
+constexpr u32 SETTINGS_VERSION = 11;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -46,6 +47,7 @@ void Settings::resetGraphics() {
 	density = d.density;
 	npcDistance = d.npcDistance;
 	visibility = d.visibility;
+	farGeometry = d.farGeometry;
 	applyGfxPreset(GFX_PLUS_OFF);
 }
 
@@ -100,9 +102,19 @@ void Settings::sanitize() {
 	if (wind > 3) wind = 0;
 	if (shadows >= SHADOW_MODES) shadows = SHADOWS_OFF;
 	if (farLayer > 3) farLayer = 0;
+	if (farGeometry > 3) farGeometry = 2;
 	gfxPlus = gfxPresetOf();
 	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier, &visibility};
 	for (u8* f : flags) *f = *f ? 1 : 0;
+}
+
+float Settings::lodDistanceCm() const {
+	switch (farGeometry) {
+	case 1: return 2500.0f;
+	case 2: return 4000.0f;
+	case 3: return 6000.0f;
+	default: return 0.0f;
+	}
 }
 
 float Settings::mediumObjectsCm() const {

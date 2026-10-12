@@ -64,7 +64,8 @@ bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const
 
 	u32 tris = 0;
 	for (u32 b = 0; b < h.batchCount; ++b)
-		if ((materials[batches[b].material].flags & flagMask) == flagValue) tris += batches[b].indexCount / 3;
+		if ((materials[batches[b].material].flags & flagMask) == flagValue && batchLod(batches[b].detail) != BATCH_LOD_FAR_ONLY)
+			tris += batches[b].indexCount / 3;
 	if (tris == 0) return true;
 	if (tris > MAX_TRIANGLES) return false; // (a chunk has 65535 vertices at most: far out of reach)
 
@@ -84,7 +85,7 @@ bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const
 	triangleCount = tris;
 	u32 n = 0, used = 0;
 	for (u32 b = 0; b < h.batchCount; ++b) {
-		if ((materials[batches[b].material].flags & flagMask) != flagValue) continue;
+		if ((materials[batches[b].material].flags & flagMask) != flagValue || batchLod(batches[b].detail) == BATCH_LOD_FAR_ONLY) continue;
 		const u32 count = batches[b].indexCount / 3 * 3;
 		for (u32 i = 0; i < count; ++i) {
 			const u16 v = indices[batches[b].firstIndex + i];

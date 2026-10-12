@@ -46,6 +46,7 @@ const char* const kGfxPresetNotes[] = {"Всё выключено, как ран
                                        "Значения изменены вручную"};
 const char* const kWind[] = {"Нет", "Слабое", "Обычное", "Сильное"};
 const char* const kShadows[] = {"Выкл", "Герой", "Все рядом"};
+const char* const kFarGeometry[] = {"Выкл", "25 м", "40 м", "60 м"};
 const char* const kFarLayer[] = {"Выкл", "250 м", "400 м", "600 м"};
 const char* const kFarLayerNotes[] = {"Дальше дальности прорисовки — туман", "Упрощённый мир до 250 м",
                                       "Упрощённый мир до 400 м", "Упрощённый мир до 600 м"};
@@ -104,6 +105,7 @@ const Item kGfxPlus[] = {
     {"Колыхание листвы", CHOICE, &Settings::wind, kWind, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --wind", nullptr},
     {"Тени персонажей", CHOICE, &Settings::shadows, kShadows, 3, 0, 0, nullptr, 0, nullptr, kShadowNotes},
     {"Дальний план", CHOICE, &Settings::farLayer, kFarLayer, 4, 0, 0, nullptr, 0, nullptr, kFarLayerNotes},
+    {"Дальняя геометрия", CHOICE, &Settings::farGeometry, kFarGeometry, 4, 0, 0, nullptr, 0, "Упрощённые дальние чанки (мир с --lod)", nullptr},
     {"Видимость", TOGGLE, &Settings::visibility, nullptr, 0, 0, 0, nullptr, 0, "Не рисовать скрытое стенами (мир с --vis)", nullptr},
 };
 const Item kDebug[] = {

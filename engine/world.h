@@ -15,6 +15,7 @@ struct StreamConfig {
 	float loadRadius = 14000.0f;   // cm: chunks closer than this get loaded
 	float unloadRadius = 18000.0f; // cm: chunks farther than this get freed
 	float drawDistance = 12000.0f; // cm: matches the fog; farther chunks are skipped
+	float lodDistance = 0.0f;      // cm: chunks wholly farther than this are drawn with their simplified stand-ins (0: never)
 	float distanceScale = 1.0f;    // the pacer's share of it actually drawn (the fog follows: App::setDistanceScale)
 	// How far each DetailClass is drawn. Small and medium objects (barrels,
 	// bushes, fences) are most of the world's triangles but invisible from afar.
@@ -209,6 +210,7 @@ private:
 		u8 detail;
 		u8 layer; // of the small objects: 0..3, see StreamConfig::smallLayers
 		u8 cluster;
+		u8 lodMode; // BatchLod: drawn near, far or either way (a chunk with stand-ins; see StreamConfig::lodDistance)
 		u8 shown; // smaller classes: how much of it is drawn, 0..255 (dissolving in between; see StreamConfig::fadeMs)
 		u32 firstIndex, indexCount;
 		float bbMin[3], bbMax[3]; // world space
@@ -234,6 +236,8 @@ private:
 		bool failed;    // bad data: never retried
 		bool requested; // handed to the background loader
 		bool hasBlended;
+		bool hasLod;    // has batches of BATCH_LOD_FAR_ONLY
+		bool lodOn;     // drawn with the stand-ins just now (with a little hysteresis)
 		ChunkCollider collider;
 		ChunkCollider water;
 	};

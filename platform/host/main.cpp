@@ -48,8 +48,10 @@ static void usage() {
 	     "                      a potion chosen and drunk, a ring put on, food held into a quick slot and used;\n"
 	     "                      the bottom screen is saved next to each shot (PREFIX_bottom_NN.png)\n"
 	     "  --pickup            the character walks to the things lying about and picks them up (A)\n"
+	     "  --lod M             draw chunks wholly farther than M metres with their simplified stand-ins (data baked with --lod)\n"
 	     "  --far M             the far layer (data baked with --far-lod) out to M metres (default: off)\n"
 	     "  --vis               use the baked visibility table (data baked with --vis): what is hidden from the camera's cell is not drawn\n"
+	     "  --lod M             draw chunks wholly farther than M metres with their simplified stand-ins (data baked with --lod)\n"
 	     "  --gfx-plus A,W,S    Graphics+: occlusion 0..100 %, wind 0..3, shadows 0 off / 1 hero / 2 all near\n"
 	     "  --stats FILE        write a JSON summary");
 }
@@ -163,7 +165,7 @@ int main(int argc, char** argv) {
 	bool console = false, fight = false, sword = false, inventory = false, pickup = false;
 	int menuPage = -1;
 	const char* gfxPlusSpec = nullptr;
-	float budgetMb = 24.0f, drawDistance = 12000.0f, farMetres = 0.0f;
+	float budgetMb = 24.0f, drawDistance = 12000.0f, farMetres = 0.0f, lodMetres = 0.0f;
 	bool useVis = false;
 
 	for (int i = 1; i < argc; ++i) {
@@ -188,6 +190,7 @@ int main(int argc, char** argv) {
 		else if (arg("--gfx-plus")) gfxPlusSpec = argv[++i];
 		else if (arg("--far")) farMetres = float(atof(argv[++i]));
 		else if (!strcmp(argv[i], "--vis")) useVis = true;
+		else if (arg("--lod")) lodMetres = float(atof(argv[++i]));
 		else if (strcmp(argv[i], "--console") == 0) console = true;
 		else if (strcmp(argv[i], "--fight") == 0) fight = true;
 		else if (strcmp(argv[i], "--sword") == 0) sword = true;
@@ -242,6 +245,7 @@ int main(int argc, char** argv) {
 	cfg.clusterCulling = !wholeChunks;
 	cfg.farDistance = farMetres * 100.0f;
 	cfg.visibility = useVis;
+	cfg.lodDistance = lodMetres * 100.0f;
 	app.setDrawDistance(drawDistance);
 	if (farMetres > 0.0f)
 		printf("far layer         out to %.0f m (%s)\n", double(farMetres), app.world().hasFarLayer() ? "in the data" : "NOT in the data");

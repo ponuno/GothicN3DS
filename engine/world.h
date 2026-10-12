@@ -102,6 +102,10 @@ struct WorldStats {
 	u32 batchesMerged;   // batches that went out in the draw call of the one before them
 	u32 batchesFading;   // batches drawn dissolving in or out (each a draw call of its own)
 	u32 trianglesDrawn;
+	u32 trisByDetail[3]; // drawn: level geometry and large objects / medium / small (DetailClass)
+	u32 trisByDist[3];   // drawn, by the batch's cluster box: nearer than 12 m / 12-25 m / farther
+	u32 lodChunks;       // chunks drawn this frame with their simplified stand-ins
+	u32 lodTriangles;    // of the drawn triangles: those of the stand-ins
 	u32 trianglesInChunks; // all the triangles of the chunks drawn: what drawing whole chunks would cost
 	u32 clustersTested;  // boxes of visible chunks looked at ...
 	u32 clustersCulled;  // ... and of them wholly out of view or past the fog

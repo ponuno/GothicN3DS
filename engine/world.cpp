@@ -1295,6 +1295,13 @@ void World::drawBatches(Loaded& l, bool blended) {
 			batch.shown = !thinned && _clusterNear[c] <= (batch.shown ? limit * _cfg.detailHysteresis : limit) ? 255 : 0;
 		}
 		if (visible && _clusterState[c] == CLUSTER_PARTLY) visible = aabbInFrustum(_frustum, batch.bbMin, batch.bbMax);
+		if (visible && !blended) {
+			const u32 t = batch.indexCount / 3;
+			_stats.trisByDetail[batch.detail & 3u] += t;
+			const float nd = _clusterNear[c];
+			_stats.trisByDist[nd < 1200.0f ? 0 : nd < 2500.0f ? 1 : 2] += t;
+			if (batch.lodMode == BATCH_LOD_FAR_ONLY) _stats.lodTriangles += t;
+		}
 		const bool follows = runCount && batch.material == runMaterial && batch.firstIndex == runFirst + runCount + gap;
 		if (!visible) {
 			++_stats.batchesCulled;
@@ -1341,6 +1348,8 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_stats.batchesFading = 0;
 	_stats.trianglesDrawn = 0;
 	_stats.trianglesInChunks = 0;
+	for (int i = 0; i < 3; ++i) _stats.trisByDetail[i] = _stats.trisByDist[i] = 0;
+	_stats.lodChunks = _stats.lodTriangles = 0;
 	_stats.clustersTested = 0;
 	_stats.clustersCulled = 0;
 	_stats.farDrawCalls = 0;
@@ -1425,6 +1434,7 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 		const float chunkDist = _orderKey[k];
 		l.lodOn = l.hasLod && _cfg.lodDistance > 0.0f && chunkDist > (l.lodOn ? _cfg.lodDistance * 0.9f : _cfg.lodDistance);
 		classify(l, _order[k], true);
+		_stats.lodChunks += l.lodOn;
 		drawBatches(l, false);
 		++_stats.chunksDrawn;
 		_stats.trianglesInChunks += l.triangles;

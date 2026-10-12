@@ -2,6 +2,7 @@ Windows: baking data.pak without WSL
 ====================================
 You need only your own copy of Gothic. No WSL, no Linux.
 
+0. Simplest: just run bake.bat. If g3ds-bake.exe is missing, it builds it itself (MSYS2 via winget, once).
 1. Take g3ds-bake.exe (from the release / CI artifact "g3ds-bake-windows") and put it next to bake.bat.
    No .exe? Run build_baker.bat once: it installs MSYS2 (via winget) and builds it itself.
 2. Drag your Gothic folder (the one with Data\ and _work\) onto bake.bat.

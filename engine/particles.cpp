@@ -124,8 +124,45 @@ int Particles::defFor(u32 effect) {
 	return d.ok ? int(_defCount - 1) : -1;
 }
 
+u32 Particles::arrowTrail() {
+	static const u32 h = hashName("G3_ARROW_TRAIL");
+	return h;
+}
+
 void Particles::loadDef(Def& d, u32 effect) {
-	ScriptVm& vm = _game->vm();
+	if (effect == arrowTrail()) {
+		d.pps = 220;
+		d.ppsKeys[0] = 1;
+		d.ppsKeyCount = 1;
+		d.ppsLooping = true;
+		d.shape = SHAPE_POINT;
+		d.objectFrame = true;
+		d.lifeAvg = 380;
+		d.lifeVar = 60;
+		d.additive = true;
+		d.colorStart[0] = 1.0f;
+		d.colorStart[1] = 0.93f;
+		d.colorStart[2] = 0.75f;
+		d.colorEnd[0] = d.colorEnd[1] = d.colorEnd[2] = 0.5f;
+		d.sizeStart[0] = d.sizeStart[1] = 5;
+		d.sizeEndScale = 1.5f;
+		d.alphaStart = 1.0f;
+		d.alphaEnd = 0.0f;
+		// (A soft dot: any picture of the effects will do.)
+		static const char* const pics[] = {"tex/fireflare", "tex/synth_smoke", "tex/synth_spark", "tex/firesmoke", "tex/smoke"};
+		for (const char* pic : pics) {
+			const u32 hash = hashName(pic);
+			if (gfx::Texture* t = _textures.acquire(*_pak, hash)) {
+				d.frames[0] = t;
+				d.frameHash[0] = hash;
+				d.frameCount = 1;
+				break;
+			}
+		}
+		d.ok = d.frameCount > 0;
+		return;
+	}
+	ScriptVm& vm = _game->particleVm();
 	const u32 sym = vm.findHash(effect);
 	static Members m;
 	static const ScriptVm* ownerVm = nullptr;

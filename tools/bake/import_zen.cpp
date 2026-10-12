@@ -2917,6 +2917,16 @@ bool importZenSfxScript(std::shared_ptr<const ZenGame> game, SrcScript& script, 
 	return importZenCompiled(game, "SFX.DAT", "sounds", "the game is silent", script, dat, notes);
 }
 
+bool importZenParticleScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes) {
+	std::vector<u8> dat;
+	return importZenCompiled(game, "PARTICLEFX.DAT", "particle effects", "fires, smoke and magic show nothing", script, dat, notes);
+}
+
+bool importZenVisualFxScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes) {
+	std::vector<u8> dat;
+	return importZenCompiled(game, "VISUALFX.DAT", "visual effects", "spells show nothing", script, dat, notes);
+}
+
 bool importZenMusicScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes) {
 	std::vector<u8> dat;
 	return importZenCompiled(game, "MUSIC.DAT", "music", "there is no music", script, dat, notes);

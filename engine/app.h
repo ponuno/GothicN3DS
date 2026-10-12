@@ -310,6 +310,7 @@ private:
 		u8 stage = SHOT_NONE;
 		float time = 0, length = 0;
 		bool fired = false;
+		bool again = false; // not the first of a run of shots
 	};
 	Shot _shot;
 	void rangedInput(const Input& in);

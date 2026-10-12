@@ -145,6 +145,9 @@ bool importZenScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std
 bool importZenFightScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
 // The sounds (SFX.DAT, the C_SFX instances) and the music themes (MUSIC.DAT, C_MUSICTHEME): Gothic compiles
 // each into a file of its own, not into GOTHIC.DAT. False, with a line in `notes`, if one cannot be read.
+// The particle effects (PARTICLEFX.DAT: C_PARTICLEFX) and the visual effects of the spells (VISUALFX.DAT: CFx_Base).
+bool importZenParticleScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
+bool importZenVisualFxScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
 bool importZenSfxScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
 bool importZenMusicScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
 

@@ -5,9 +5,12 @@ setlocal
 chcp 65001 >nul
 set "HERE=%~dp0"
 if not exist "%HERE%g3ds-bake.exe" (
-  echo g3ds-bake.exe is not here. Run build_baker.bat first ^(or take the .exe from the release^).
-  pause
-  exit /b 1
+  echo g3ds-bake.exe is not here yet: building it now ^(once, 10-15 minutes, needs internet^)...
+  call "%HERE%build_baker.bat" nopause
+  if not exist "%HERE%g3ds-bake.exe" (
+    pause
+    exit /b 1
+  )
 )
 set "GAME=%~1"
 if "%GAME%"=="" set /p "GAME=Path to the Gothic folder (the one with Data and _work): "

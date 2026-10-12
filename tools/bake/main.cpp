@@ -241,7 +241,7 @@ int main(int argc, char** argv) {
 		std::vector<SrcModel> models;
 		CameraSet camera = defaultCameraSet();
 		bool haveCamera = false;
-		SrcScript script, fightScript, sfxScript, musicScript;
+		SrcScript script, fightScript, sfxScript, musicScript, particleScript, visualFxScript;
 		SrcDialogue dialogue;
 		bool haveDialogue = false;
 		SrcFonts fonts;
@@ -369,6 +369,8 @@ int main(int argc, char** argv) {
 				if (importZenFightScript(game, fightScript, worlds[0].scene.notes)) scripts.fight = &fightScript;
 				// ... and its sounds and music themes, likewise in files of their own.
 				if (importZenSfxScript(game, sfxScript, worlds[0].scene.notes)) scripts.sfx = &sfxScript;
+				if (importZenParticleScript(game, particleScript, worlds[0].scene.notes)) scripts.particles = &particleScript;
+				if (importZenVisualFxScript(game, visualFxScript, worlds[0].scene.notes)) scripts.visualfx = &visualFxScript;
 				if (!opt.musicDir.empty() && importZenMusicScript(game, musicScript, worlds[0].scene.notes)) scripts.music = &musicScript;
 				// ... and what they say.
 				haveDialogue = importZenDialogue(game, dialogue, worlds[0].scene.notes);

@@ -83,6 +83,9 @@ struct BakeScripts {
 	// game; baked into "script/sfx" and "script/music". Without them the engine looks in `script`.
 	const SrcScript* sfx = nullptr;
 	const SrcScript* music = nullptr;
+	// The particle effects (PARTICLEFX.DAT) and the spells' effects (VISUALFX.DAT), likewise: "script/particlefx", "script/visualfx".
+	const SrcScript* particles = nullptr;
+	const SrcScript* visualfx = nullptr;
 	// The bytes of a sound file of the game by name ("DOOR_OPEN.WAV"); without it no sound is baked.
 	std::function<bool(const std::string& file, std::vector<u8>& bytes)> soundFile;
 	PakWriter* musicPak = nullptr; // where the music goes (bakeMusic); null: none

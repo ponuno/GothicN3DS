@@ -459,6 +459,10 @@ public:
 	const GameStats& stats() const { return _stats; }
 	ScriptVm& vm() { return _vm; }
 	const ScriptVm& vm() const { return _vm; }
+	// Where the C_PARTICLEFX instances (PARTICLEFX.DAT) and the spells' CFx_Base ones (VISUALFX.DAT) are: scripts of
+	// their own in the game, else the main one.
+	ScriptVm& particleVm() { return _haveParticleVm ? _particleVm : _vm; }
+	ScriptVm& visualVm() { return _haveVisualVm ? _visualVm : _vm; }
 
 private:
 	struct Armor {
@@ -645,6 +649,8 @@ private:
 	GameStats _stats;
 	GameSpell _spells[64];
 	bool _spellsRead[64] = {};
+	ScriptVm _particleVm, _visualVm;
+	bool _haveParticleVm = false, _haveVisualVm = false;
 	u32 _spellNames = SCRIPT_NONE, _spellLetters = SCRIPT_NONE, _spellProcess = SCRIPT_NONE, _spellRelease = SCRIPT_NONE;
 	i32 _strikeSpell = -1, _strikeLevel = 0;
 	i32 _strikeArrow[8] = {};

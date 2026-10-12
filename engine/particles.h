@@ -56,6 +56,9 @@ public:
 	void move(u32 handle, Vec3 pos);
 	void stop(u32 handle);
 
+	// The engine's own effect for the tail of an arrow (no script has one): a thin glowing streak. Start it with start().
+	static u32 arrowTrail();
+
 	const ParticleStats& stats() const { return _stats; }
 
 private:

@@ -48,6 +48,9 @@ bool GameLook::operator==(const GameLook& o) const {
 bool Game::load(Pak& pak) {
 	release();
 	if (!_vm.load(pak, "script/gothic")) return false;
+	// (Gothic 1: the particle effects and the spells' effects are scripts of their own; an older archive has none.)
+	_haveParticleVm = _particleVm.load(pak, "script/particlefx");
+	_haveVisualVm = _visualVm.load(pak, "script/visualfx");
 	return bindAll();
 }
 
@@ -62,6 +65,9 @@ void Game::release() {
 	_chapter = GameChapter();
 	_kapitel = SCRIPT_NONE;
 	_vm.release();
+	_particleVm.release();
+	_visualVm.release();
+	_haveParticleVm = _haveVisualVm = false;
 	memset(_itemObjects, 0, sizeof(_itemObjects)); // (the machine's, gone with it)
 	free(_npcs);
 	free(_routines);

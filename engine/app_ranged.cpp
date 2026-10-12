@@ -9,7 +9,6 @@ namespace g3 {
 namespace {
 constexpr float kArrowSpeed = 3000.0f; // cm/s: the original's 3 cm per ms
 constexpr float kGravity = 980.0f;     // cm/s^2
-constexpr float kMinAim = 0.2f;
 float wrapYawR(float a) {
 	while (a > 3.14159265f) a -= 6.2831853f;
 	while (a < -3.14159265f) a += 6.2831853f;
@@ -71,8 +70,10 @@ void App::rangedUpdate(float dt) {
 	if (_shot.stage == SHOT_NONE) return;
 	_shot.time += dt;
 	switch (_shot.stage) {
-	case SHOT_AIM:
-		if (!_attackHeld && _shot.time >= kMinAim) {
+	case SHOT_AIM: {
+		// (A press shoots, a held key shoots on and on; the first aim takes longer than the ones after a reload.)
+		const float aim = min(_shot.length > 0.0f ? _shot.length : 0.3f, _shot.again ? 0.18f : 0.4f);
+		if (_shot.time >= aim) {
 			_shot.stage = SHOT_SHOOT;
 			_shot.time = 0;
 			_shot.fired = false;
@@ -80,6 +81,7 @@ void App::rangedUpdate(float dt) {
 			if (_shot.length <= 0.0f) _shot.length = 0.3f;
 		}
 		break;
+	}
 	case SHOT_SHOOT:
 		if (!_shot.fired && _shot.time >= _shot.length * 0.4f) {
 			_shot.fired = true;
@@ -94,8 +96,25 @@ void App::rangedUpdate(float dt) {
 		break;
 	case SHOT_RELOAD:
 		if (_shot.time >= _shot.length) {
-			_shot = Shot();
-			_hero.castEnd();
+			const int hi = heroIndex();
+			Game& g = _npcs.game();
+			const GameNpc* h = hi >= 0 ? &g.npc(u32(hi)) : nullptr;
+			const GameItemInfo* bow = h && h->ranged != 0xFFFFFFFFu ? g.itemInfo(h->ranged) : nullptr;
+			const bool ammo = bow && bow->munition >= 0 && g.itemCount(u32(hi), u32(bow->munition)) > 0;
+			if (_attackHeld && ammo) {
+				// Still held: the next one.
+				_shot.stage = SHOT_AIM;
+				_shot.time = 0;
+				_shot.again = true;
+				_shot.length = _hero.rangedPlay(0);
+			} else {
+				if (_attackHeld && !ammo) {
+					++_ranged.noAmmo;
+					toast(tr("Нет стрел"));
+				}
+				_shot = Shot();
+				_hero.castEnd();
+			}
 		}
 		break;
 	}
@@ -151,6 +170,7 @@ void App::arrowShoot() {
 	// The arrow falls on its way: aim above by half of what gravity takes (OpenGothic's launch).
 	if (flat > 1.0f) b->vel[1] += 0.5f * kGravity * (flat / kArrowSpeed);
 	b->range = 4600.0f;
+	b->fx = _particles.start(Particles::arrowTrail(), from, _hero.yaw(), 8.0f);
 	// Its damage: the bow's and the arrow's, per type.
 	i32 type = bow->damageType ? bow->damageType : g.constant("DAM_POINT", 64);
 	for (int i = 0; i < 8; ++i) {

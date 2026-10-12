@@ -62,15 +62,16 @@ const GameSpell* Game::spellInfo(i32 id) {
 	sp.shoots = (sp.collectAlgo != none && sp.collectAlgo != caster && sp.collectAlgo != focus && sp.collectAlgo != allNone) || id == constant("SPL_STORMFIST", 47);
 	// The visual effect: the particle effects of its keys.
 	snprintf(name, sizeof(name), "SPELLFX_%s", sp.tag);
-	const u32 fx = _vm.find(name);
+	ScriptVm& vfx = visualVm();
+	const u32 fx = vfx.find(name);
 	const auto visOf = [&](const char* instName, const char* cls) -> u32 {
-		const u32 s = _vm.find(instName);
-		const u32 m = _vm.findMember(cls, "VISNAME_S");
-		if (s == SCRIPT_NONE || m == SCRIPT_NONE || _vm.symbol(s).type != SCRIPT_INSTANCE) return 0;
-		ScriptInstance* o = _vm.create(s);
+		const u32 s = vfx.find(instName);
+		const u32 m = vfx.findMember(cls, "VISNAME_S");
+		if (s == SCRIPT_NONE || m == SCRIPT_NONE || vfx.symbol(s).type != SCRIPT_INSTANCE) return 0;
+		ScriptInstance* o = vfx.create(s);
 		if (!o) return 0;
-		const u32 h = fxHash(_vm.getString(m, 0, o));
-		_vm.destroy(o);
+		const u32 h = fxHash(vfx.getString(m, 0, o));
+		vfx.destroy(o);
 		return h;
 	};
 	if (fx != SCRIPT_NONE) {

@@ -5861,6 +5861,21 @@ static void testRanged() {
 	CHECK(app.rangedStats().lastDamage == std::max(20 - protPoint, i32(0)));
 	CHECK(g.hitPoints(e) == std::max(hpBefore - std::max(20 - protPoint, i32(0)), i32(0)));
 	for (int i = 0; i < 90; ++i) app.update(Input {}, dt);
+	// 2b. The key held: it shoots on and on until the arrows are gone.
+	{
+		const u32 shot = app.rangedStats().shot;
+		const i32 left = g.itemCount(hero, arrow);
+		for (int i = 0; i < 30 * 4; ++i) {
+			Input in;
+			in.attack = i == 0;
+			in.attackHeld = true;
+			app.update(in, dt);
+		}
+		std::printf("  held for 4 s: %u more shots, arrows left %d -> %d\n", app.rangedStats().shot - shot, int(left), int(g.itemCount(hero, arrow)));
+		CHECK(app.rangedStats().shot - shot >= 3);
+		for (int i = 0; i < 90; ++i) app.update(Input {}, dt);
+		CHECK(!app.aiming());
+	}
 	// 3. Without arrows: a toast, no shot.
 	g.giveItems(hero, arrow, -g.itemCount(hero, arrow));
 	{

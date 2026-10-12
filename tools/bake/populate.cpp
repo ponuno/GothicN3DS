@@ -882,21 +882,26 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 
 
 	// ---- particle effects: the pictures of every C_PARTICLEFX of the scripts, and the effects the worlds carry ----
+	// (Gothic 1 keeps them in PARTICLEFX.DAT, the spells' effects in VISUALFX.DAT: scripts of their own.)
+	ScriptVm particleVm, visualVm;
+	const bool haveParticles = sideScript(scripts.particles, "script/particlefx", particleVm);
+	sideScript(scripts.visualfx, "script/visualfx", visualVm);
 	{
-		const u32 cls = game.vm().find("C_PARTICLEFX");
-		const u32 member = cls == SCRIPT_NONE ? SCRIPT_NONE : game.vm().findMember("C_PARTICLEFX", "VISNAME_S");
+		ScriptVm& pvm = haveParticles ? particleVm : game.vm();
+		const u32 cls = pvm.find("C_PARTICLEFX");
+		const u32 member = cls == SCRIPT_NONE ? SCRIPT_NONE : pvm.findMember("C_PARTICLEFX", "VISNAME_S");
 		std::set<std::string> effects;           // upper case names of the instances
 		std::set<std::string> wanted;            // picture names, lower case without extension
 		u32 instances = 0, noPicture = 0;
 		if (cls != SCRIPT_NONE && member != SCRIPT_NONE) {
-			for (u32 sym = 0; sym < game.vm().symbolCount(); ++sym) {
-				const ScriptSymbol& sy = game.vm().symbol(sym);
-				if (sy.type != SCRIPT_INSTANCE || !(sy.flags & SCRIPTF_CONST) || game.vm().classOf(sym) != cls) continue;
-				ScriptInstance* inst = game.vm().create(sym);
+			for (u32 sym = 0; sym < pvm.symbolCount(); ++sym) {
+				const ScriptSymbol& sy = pvm.symbol(sym);
+				if (sy.type != SCRIPT_INSTANCE || !(sy.flags & SCRIPTF_CONST) || pvm.classOf(sym) != cls) continue;
+				ScriptInstance* inst = pvm.create(sym);
 				if (!inst) continue;
 				++instances;
-				std::string pic = game.vm().getString(member, 0, inst);
-				game.vm().destroy(inst);
+				std::string pic = pvm.getString(member, 0, inst);
+				pvm.destroy(inst);
 				std::transform(pic.begin(), pic.end(), pic.begin(), [](unsigned char c) { return char(std::tolower(c)); });
 				const size_t dot = pic.rfind('.');
 				if (dot != std::string::npos) pic.resize(dot);
@@ -935,8 +940,8 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		for (size_t w = 0; w < worlds.size(); ++w) {
 			std::vector<WorldEmitter> table;
 			for (const SrcEmitter& e : worlds[w].scene.emitters) {
-				const u32 sym = game.vm().findHash(hashName(e.effect.c_str()));
-				if (sym == SCRIPT_NONE || game.vm().classOf(sym) != cls) {
+				const u32 sym = pvm.findHash(hashName(e.effect.c_str()));
+				if (sym == SCRIPT_NONE || pvm.classOf(sym) != cls) {
 					++unknownEffects;
 					continue;
 				}

@@ -21,7 +21,7 @@ namespace g3 {
 namespace {
 
 enum Node {
-	ROOT, SPINE, CHEST, HEAD, L_ARM, L_FOREARM, R_ARM, R_FOREARM, L_THIGH, L_CALF, L_FOOT, R_THIGH, R_CALF, R_FOOT, NODES
+	ROOT, SPINE, CHEST, HEAD, L_ARM, L_FOREARM, R_ARM, R_FOREARM, L_THIGH, L_CALF, L_FOOT, R_THIGH, R_CALF, R_FOOT, L_HAND, R_HAND, NODES
 };
 
 struct Rest {
@@ -45,6 +45,8 @@ const Rest kRest[NODES] = {
     {"BIP01 R THIGH", ROOT, 10, -5, 0},
     {"BIP01 R CALF", R_THIGH, 0, -42, 0},
     {"BIP01 R FOOT", R_CALF, 0, -42, 0},
+    {"BIP01 L HAND", L_FOREARM, 0, -26, 0},
+    {"BIP01 R HAND", R_FOREARM, 0, -26, 0},
 };
 
 void restWorld(float out[NODES][3]) {

@@ -61,6 +61,9 @@ public:
 	bool mantling() const { return _body == MANTLE; }
 	// How far through the climb onto a ledge, 0..1.
 	float mantleProgress() const;
+	// For the tests: the hands' height and the soles' (world, of the pose drawn now); false: no such nodes.
+	bool mantleProbe(float& handsY, float& soleY) const;
+	float mantleHandsWeight() const; // how much of the climb the hands are on the edge for (0..1)
 	// Second half, after the controller has moved the body: follows it,
 	// notices take-off, landing and water, takes the light of the ground.
 	// `dayLight` is the time-of-day tint the world is drawn with.
@@ -292,8 +295,7 @@ private:
 	};
 	Use _use;
 	float _stoop = 0; // how far bent over, 0..1 (drawn by updatePose)
-	int _spine[3] = {-1, -1, -1}, _headNode = -1, _armNodes[2] = {-1, -1}, _handNodes[2] = {-1, -1};
-	float mantleHandsWeight() const; // how much of the climb the hands are on the edge for (0..1)
+	int _spine[3] = {-1, -1, -1}, _headNode = -1, _armNodes[2] = {-1, -1}, _handNodes[2] = {-1, -1}, _footNodes[2] = {-1, -1};
 	void mobTick(float dt);
 };
 

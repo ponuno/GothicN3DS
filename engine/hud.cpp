@@ -80,7 +80,9 @@ void App::drawOverlay() {
 			if (const NpcActor* ta = _npcs.actorOf(u32(_target))) {
 				char dbg[96];
 				const char* st = ta->state ? _npcs.stateName(ta->state) : "-";
-				snprintf(dbg, sizeof(dbg), "%s  a%d  %d", st, int(ta->action.kind), int(t.weapon));
+				const int hero = heroIndex();
+				snprintf(dbg, sizeof(dbg), "%s  a%d  %d  tg%d f%d", st, int(ta->action.kind), int(t.weapon), int(t.target),
+				         hero >= 0 ? int(_npcs.game().talkFlag(u32(hero))) : -9);
 				_ui.text(W / 2, 11 + Ui::lineHeight(), dbg, ui::GREY, ui::TEXT, ui::CENTER);
 			}
 			if (_locked) {

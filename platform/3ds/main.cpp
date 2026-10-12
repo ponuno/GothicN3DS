@@ -559,8 +559,8 @@ int main(int, char**) {
 			// (Meshes, textures and collision of the world; free linear memory; chunks refused for the budget, failed.)
 			reportLine("mesh %5.2f tex %5.2f MB col %5.0fK", double(mem.meshBytes) / 1048576.0, double(mem.textureBytes) / 1048576.0,
 			     double(ws.collisionBytes) / 1024.0);
-			reportLine("linear free %5.1f MB rej %lu fail %lu", double(linearSpaceFree()) / 1048576.0,
-			     static_cast<unsigned long>(ws.budgetRejects), static_cast<unsigned long>(ws.loadFailures));
+			reportLine("lin free %4.1fMB rej %lu ev %lu fail %lu", double(linearSpaceFree()) / 1048576.0,
+			     static_cast<unsigned long>(ws.budgetRejects), static_cast<unsigned long>(ws.evictions), static_cast<unsigned long>(ws.loadFailures));
 			reportLine("draw distance %3.0f m  time %02d:%02d", double(app.drawDistance() / 100.0f), int(app.environment().timeOfDay),
 			     int(app.environment().timeOfDay * 60.0f) % 60);
 			reportLine("%-22.22s %-16.16s", state, app.worldName());

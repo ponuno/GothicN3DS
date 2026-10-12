@@ -66,6 +66,7 @@ struct WorldStats {
 	u32 clustersCulled;  // ... and of them wholly out of view or past the fog
 	u32 loadsThisFrame;
 	u32 budgetRejects;   // loads skipped because the budget was full (cumulative)
+	u32 evictions;       // far chunks freed to make room for nearer ones (cumulative)
 	u32 loadFailures;    // corrupt or missing data (cumulative)
 	u32 residentBytes;   // mesh + texture bytes owned by the world
 	u32 peakResidentBytes;
@@ -186,7 +187,9 @@ private:
 	void setWaiting(TexSlot& s, bool waiting);
 	u32 collectPending(Vec3 camera);
 	void sortNearest(u32 n, u32 pending);
-	void updateImmediate(u32 pending);
+	void updateImmediate(u32 pending, Vec3 camera);
+	// Frees the farthest loaded chunks (farther than `forDistance`) until `need` more bytes fit the budget; false: they do not.
+	bool makeRoom(Vec3 camera, float forDistance, u32 need, u32 reserved);
 	void updateBackground(u32 pending, Vec3 camera);
 	static u32 meshBytes(const ChunkInfo& ci) {
 		return u32(ci.vertexCount) * u32(sizeof(WorldVertex)) + ci.indexCount * u32(sizeof(u16));

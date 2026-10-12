@@ -359,6 +359,8 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 }
 
 void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt) {
+	// Nobody talks to the player: nobody waits for him to finish (ZS_Attack waits while the flag is set).
+	if (!talking() && _game.heroIndex() != SCRIPT_NONE) _game.clearTalkFlag(_game.heroIndex());
 	_lastHitAge += dt;
 	if (!loaded()) return;
 	_pak = &pak;

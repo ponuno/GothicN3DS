@@ -390,7 +390,10 @@ public:
 	i32 attributeOf(const GameNpc& n, i32 index) const;
 	void setAttribute(GameNpc& n, i32 index, i32 value);
 	// The talk flag (AIV_INVINCIBLE) off: fighters wait (AI_Wait in ZS_Attack) for as long as the player 'is talking'.
-	void clearTalkFlag(u32 npc);
+	void clearTalkFlag(u32 npc, bool clear = true);
+	i32 talkFlag(u32 npc); // its value (for the debug line), -1: unknown
+	u32 _mAivar = SCRIPT_NONE;
+	i32 _aivInvincible = -1;
 	// Members of a character by name ("FIGHT_TACTIC", "PROTECTION" index 2), 0 if none.
 	i32 npcInt(const GameNpc& n, u32 member, u32 index = 0) const;
 	// A constant of the scripts by name, or `otherwise`.

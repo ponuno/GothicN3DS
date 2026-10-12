@@ -372,21 +372,44 @@ void World::update(Vec3 camera) {
 	if (_loader.running() && !_immediate)
 		updateBackground(pending, camera);
 	else
-		updateImmediate(pending);
+		updateImmediate(pending, camera);
 	_stats.chunksInFlight = _chunksInFlight;
 	_stats.texturesWaiting = _texturesWaiting;
 }
 
 // Everything on the spot: read, unpack, upload. Simple and predictable, and
 // each load is a hitch as long as the chunk is big.
-void World::updateImmediate(u32 pending) {
+// What is loaded is not kept for the chunk's own sake: a nearer chunk that does not fit takes the room of the
+// farthest ones (before, the memory stayed with whatever came first - the place the player started in - and
+// every place reached later stayed empty, though the chunks that held the room were out of sight).
+bool World::makeRoom(Vec3 camera, float forDistance, u32 need, u32 reserved) {
+	const u32 limit = max(_cfg.memoryBudget, need);
+	while (_stats.residentBytes + reserved + need > limit) {
+		int victim = -1;
+		float far = forDistance + 300.0f; // (a chunk about as far is not worth a swap)
+		for (u32 k = 0; k < _stats.chunksLoaded; ++k) {
+			const u32 i = _resident[k];
+			const float d = distanceTo(i, camera);
+			if (d > far) {
+				far = d;
+				victim = int(i);
+			}
+		}
+		if (victim < 0) return false;
+		unloadChunk(u32(victim));
+		++_stats.evictions;
+	}
+	return true;
+}
+
+void World::updateImmediate(u32 pending, Vec3 camera) {
 	// Nearest first; only a handful per frame so a selection scan is enough.
 	u32 remaining = pending;
 	const u32 loads = min(pending, _cfg.maxLoadsPerFrame);
 	for (u32 n = 0; n < loads; ++n) {
 		sortNearest(n, pending);
 		const u32 index = _order[n];
-		if (_stats.residentBytes + meshBytes(_chunks[index]) > _cfg.memoryBudget) {
+		if (_stats.residentBytes + meshBytes(_chunks[index]) > _cfg.memoryBudget && !makeRoom(camera, _orderKey[n], meshBytes(_chunks[index]), 0)) {
 			++_stats.budgetRejects;
 			break; // everything else is farther away; try again next frame
 		}
@@ -467,7 +490,7 @@ void World::updateBackground(u32 pending, Vec3 camera) {
 		Loaded& l = _loaded[index];
 		if (l.mesh || l.requested || l.failed || _frame < l.retryAt) continue;
 		const u32 need = meshBytes(_chunks[index]);
-		if (_stats.residentBytes + _inFlightBytes + need > _cfg.memoryBudget) {
+		if (_stats.residentBytes + _inFlightBytes + need > _cfg.memoryBudget && !makeRoom(camera, _orderKey[n], need, _inFlightBytes)) {
 			++_stats.budgetRejects;
 			break; // everything else is farther away
 		}

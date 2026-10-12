@@ -154,6 +154,8 @@ bool Hero::load(Pak& pak) {
 	_armNodes[1] = _model.findNode(hashName("BIP01 R UPPERARM"));
 	_handNodes[0] = _model.findNode(hashName("BIP01 L HAND"));
 	_handNodes[1] = _model.findNode(hashName("BIP01 R HAND"));
+	_footNodes[0] = _model.findNode(hashName("BIP01 L FOOT"));
+	_footNodes[1] = _model.findNode(hashName("BIP01 R FOOT"));
 	_stoop = 0;
 	_restY = _model.node(0).restPos[1];
 	_anim.bind(&_model);
@@ -1144,6 +1146,25 @@ void Hero::updatePose(float dt) {
 			float anim, total, raw;
 			mantleLift(anim, total, &raw);
 			_drawn.pos[0].y -= raw;
+			// Where the root sits in the clips is not something to trust (the real ones put the hips
+			// high or low by their own measure: the body was seen floating over the edge, then dropping).
+			// So the pose is fitted to the ledge itself: while the hands hold the edge the hands are at
+			// its height, once they let go the soles are on its surface.
+			const float w = mantleHandsWeight();
+			const bool haveHands = _handNodes[0] >= 0 && _handNodes[1] >= 0, haveFeet = _footNodes[0] >= 0 && _footNodes[1] >= 0;
+			const u8 kind = _mantle.at < _mantle.n ? _mantle.kind[_mantle.at] : u8(0);
+			if (kind >= 1 && haveHands) {
+				Mat34 world[MODEL_MAX_NODES];
+				_model.worldTransforms(_drawn, world);
+				const float edge = _mantle.top.y - _mantle.bodyY; // (the edge, in the body's own height)
+				const float handsY = 0.5f * (world[_handNodes[0]].m[1][3] + world[_handNodes[1]].m[1][3]);
+				float dy = (edge - 2.0f - handsY) * w;
+				if (kind == 3 && haveFeet) {
+					const float soleY = min(world[_footNodes[0]].m[1][3], world[_footNodes[1]].m[1][3]) - 9.0f;
+					dy += (edge - soleY) * (1.0f - w);
+				}
+				_drawn.pos[0].y += clamp(dy, -300.0f, 300.0f);
+			}
 		} else if (!c) {
 			_drawn.pos[0].y = _restY;
 		}
@@ -1197,6 +1218,7 @@ bool Hero::beginMantle(const Ledge& ledge, const Player& player, bool fromGround
 	_mantle.start = player.feet;
 	_mantle.top = ledge.top;
 	_mantle.gap = ledge.gap;
+	_mantle.bodyY = player.feet.y;
 	_mantle.yaw = ledge.yaw;
 	const float h = max(ledge.height, 0.0f);
 	// Which way up, by the height (as the original's three).
@@ -1350,6 +1372,15 @@ void Hero::mantleDrive(Drive& drive, float dt) {
 // How firmly the hands are on the edge now: reaching for it, they come to it; hanging
 // on it, they are there; pulling over, they let go in the second half. (The flight
 // up to the edge, and a climb the model has no clips for, take no hold.)
+bool Hero::mantleProbe(float& handsY, float& soleY) const {
+	if (_handNodes[0] < 0 || _handNodes[1] < 0 || _footNodes[0] < 0 || _footNodes[1] < 0) return false;
+	Mat34 world[MODEL_MAX_NODES];
+	_model.worldTransforms(_drawn, world);
+	handsY = _mantle.bodyY + 0.5f * (world[_handNodes[0]].m[1][3] + world[_handNodes[1]].m[1][3]);
+	soleY = _mantle.bodyY + min(world[_footNodes[0]].m[1][3], world[_footNodes[1]].m[1][3]) - 9.0f;
+	return true;
+}
+
 float Hero::mantleHandsWeight() const {
 	if (!_mantle.n || _mantle.at >= _mantle.n) return 0.0f;
 	const auto smooth = [](float x) {

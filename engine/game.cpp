@@ -632,12 +632,20 @@ void Game::xChangeAttribute(ScriptVm& vm, void* user) {
 	g.setAttribute(*n, index, v);
 }
 
-void Game::clearTalkFlag(u32 npc) {
+void Game::clearTalkFlag(u32 npc, bool clear) {
 	if (npc >= _npcCount || !_npcs[npc].object) return;
-	const u32 member = _vm.findMember("C_NPC", "AIVAR");
-	const i32 index = constant("AIV_INVINCIBLE", -1);
+	if (_mAivar == SCRIPT_NONE) _mAivar = _vm.findMember("C_NPC", "AIVAR");
+	if (_aivInvincible < 0) _aivInvincible = constant("AIV_INVINCIBLE", -1);
+	const u32 member = _mAivar;
+	const i32 index = _aivInvincible;
 	if (member == SCRIPT_NONE || index < 0 || u32(index) >= _vm.symbol(member).count) return;
-	_vm.setInt(member, u32(index), _npcs[npc].object, 0);
+	if (clear) _vm.setInt(member, u32(index), _npcs[npc].object, 0);
+}
+
+i32 Game::talkFlag(u32 npc) {
+	clearTalkFlag(npc, false);
+	if (npc >= _npcCount || !_npcs[npc].object || _mAivar == SCRIPT_NONE || _aivInvincible < 0) return -1;
+	return _vm.getInt(_mAivar, u32(_aivInvincible), _npcs[npc].object);
 }
 
 void Game::xSetToFistMode(ScriptVm& vm, void* user) {

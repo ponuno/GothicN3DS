@@ -842,15 +842,18 @@ std::string effectName(const zenkit::VirtualObject& vob) {
 	return extensionOf(upper(vob.visual->name)) == "PFX" ? n : std::string();
 }
 
-void treeEmitters(const zenkit::VirtualObject& vob, std::vector<ObjectStats::TreeEmitter>& out, int depth) {
+// The effects hanging on `vob`, their places relative to the root they belong to (the game puts the tree's
+// roots at the fire's slot and keeps the others where they are to their root).
+void treeEmitters(const zenkit::VirtualObject& vob, const zenkit::Vec3& origin, std::vector<ObjectStats::TreeEmitter>& out, int depth) {
 	if (depth > 6) return;
 	const std::string effect = effectName(vob);
-	if (!effect.empty()) out.push_back({effect, {vob.position.x, vob.position.y, vob.position.z}});
+	if (!effect.empty()) out.push_back({effect, {vob.position.x - origin.x, vob.position.y - origin.y, vob.position.z - origin.z}});
 	for (const auto& child : vob.children)
-		if (child) treeEmitters(*child, out, depth + 1);
+		if (child) treeEmitters(*child, origin, out, depth + 1);
 }
 
-// The effects of a fire place's tree file, empty if it has none or cannot be read.
+// The effects of a fire place's tree file (a small world file: its top level objects are the roots), empty if it
+// has none or cannot be read.
 const std::vector<ObjectStats::TreeEmitter>& fireTree(const zenkit::Vfs& vfs, zenkit::GameVersion version, ObjectStats& stats,
                                                       const std::string& name) {
 	auto it = stats.trees.find(name);
@@ -860,9 +863,10 @@ const std::vector<ObjectStats::TreeEmitter>& fireTree(const zenkit::Vfs& vfs, ze
 	try {
 		if (const zenkit::VfsNode* node = vfs.find(name)) {
 			auto rd = node->open_read();
-			auto archive = zenkit::ReadArchive::from(rd.get());
-			if (archive)
-				if (auto root = zenkit::parse_vob_tree(*archive, version)) treeEmitters(*root, list, 0);
+			zenkit::World tree;
+			tree.load(rd.get(), version);
+			for (const auto& root : tree.world_vobs)
+				if (root) treeEmitters(*root, root->position, list, 0);
 		}
 	} catch (const std::exception&) {
 		list.clear();
@@ -1113,11 +1117,17 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 
 	// Flames hang on the slot node of the fire place's model (the game: `mapBone(slot)` for the fire tree), not
 	// on the object's origin: a torch burns at its tip.
+	u32 onNode = 0, offNode = 0;
+	std::set<std::string> offKinds;
 	for (const ObjectStats::PendingFire& pf : stats.pendingFires) {
 		const auto mesh = cache.find(pf.visual);
-		if (mesh == cache.end() || !mesh->second) continue;
-		const auto node = mesh->second->nodes.find(pf.slot);
-		if (node == mesh->second->nodes.end()) continue;
+		const auto node = mesh == cache.end() || !mesh->second ? decltype(mesh->second->nodes.end())() : mesh->second->nodes.find(pf.slot);
+		if (mesh == cache.end() || !mesh->second || node == mesh->second->nodes.end()) {
+			++offNode;
+			if (offKinds.size() < 6) offKinds.insert(pf.visual + " at " + pf.slot);
+			continue;
+		}
+		++onNode;
 		float inNode[3];
 		node->second.point(pf.local, inNode);
 		const zenkit::Vec3* c = pf.vob->rotation.columns;
@@ -1125,6 +1135,12 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 		e.pos[0] = pf.vob->position.x + c[0].x * inNode[0] + c[1].x * inNode[1] + c[2].x * inNode[2];
 		e.pos[1] = pf.vob->position.y + c[0].y * inNode[0] + c[1].y * inNode[1] + c[2].y * inNode[2];
 		e.pos[2] = pf.vob->position.z + c[0].z * inNode[0] + c[1].z * inNode[1] + c[2].z * inNode[2];
+	}
+	if (onNode || offNode) {
+		std::string list;
+		for (const std::string& k : offKinds) list += (list.empty() ? "" : "; ") + k;
+		scene.notes.push_back("fire flames: " + std::to_string(onNode) + " hung on their place's node, " + std::to_string(offNode) +
+		                      " on the object's origin (no such node in its model)" + (list.empty() ? "" : ": " + list));
 	}
 
 	// All object meshes come from the same exporter, so decide the winding once

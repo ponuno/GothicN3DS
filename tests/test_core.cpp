@@ -1807,6 +1807,22 @@ static void testStreaming() {
 		// Chunks are admitted by their mesh size; their textures come on top.
 		CHECK(w.stats().chunksLoaded > 0 && w.stats().chunksLoaded < near && w.stats().chunksPending > 0);
 		CHECK(peak <= shot.bytes / 2 + 256 * 1024);
+		// 5b. A budget that holds only part of the neighbourhood goes with the player: walking on, the chunks left
+		// behind give their room to the ones ahead (before, whatever came first kept the memory for good).
+		{
+			const u32 held = w.stats().chunksLoaded;
+			const u32 evicted = w.stats().evictions;
+			app.teleport({spawn.x + 4500.0f, spawn.y, spawn.z});
+			u32 peak2 = 0;
+			for (int f = 0; f < 300; ++f) {
+				app.update(Input {}, dt);
+				peak2 = std::max(peak2, w.stats().residentBytes);
+				if (threaded) usleep(100);
+			}
+			std::printf("  budget walk (%s): %u chunks held, %u evicted, peak %.2f of %.2f MB\n", names[mode], held,
+			            w.stats().evictions - evicted, double(peak2) / 1048576.0, double(shot.bytes / 2) / 1048576.0);
+			CHECK(w.stats().evictions > evicted && peak2 <= shot.bytes / 2 + 256 * 1024 && w.stats().loadFailures == 0);
+		}
 		w.config().memoryBudget = 24u << 20;
 
 		// 6. Closed with work under way.
@@ -2998,7 +3014,7 @@ static void testModel() {
 	{
 		// The test character: loops wrap, moving clips know their speed.
 		Model m;
-		CHECK(m.load(pak, "hero") && m.nodeCount() == 14 && m.clipCount() == 71 && m.blendCount() == 5);
+		CHECK(m.load(pak, "hero") && m.nodeCount() == 16 && m.clipCount() == 71 && m.blendCount() == 5);
 		// The frames of a fight come through: three blows of a combo, each
 		// with its window and its end; a parry's frames; where a draw changes hands.
 		{
@@ -7122,11 +7138,21 @@ static void testChests() {
 			const float y0 = app.player().feet.y;
 			int seenHang = 0;
 			bool mantled = false;
+			// The pose is fitted to the ledge: never the soles above its surface (the body floating over the
+			// edge), never the hands off it while they hold it.
+			float worstSole = -1e9f, handMiss = 0.0f;
+			int probed = 0;
 			for (int i = 0; i < 150; ++i) {
 				Input in;
 				in.jump = i < 3;
 				app.update(in, dt);
 				mantled = mantled || app.hero().mantling();
+				float hy, sy;
+				if (app.hero().mantling() && app.hero().mantleProbe(hy, sy)) {
+					++probed;
+					worstSole = std::max(worstSole, sy - top2);
+					if (app.hero().mantleHandsWeight() > 0.95f) handMiss = std::max(handMiss, std::fabs(hy - top2));
+				}
 				const Clip* c = app.hero().animator().current();
 				for (int k = 0; k < 3; ++k)
 					if (c && c == app.hero().clip(kHang[k])) seenHang |= 1 << k;
@@ -7135,6 +7161,9 @@ static void testChests() {
 			std::printf("  the high ledge (%.0f cm): mantled %d, hang %d of 7, feet %.0f %.0f %.0f\n", double(top2 - y0), int(mantled), seenHang,
 			            double(f.x), double(f.y), double(f.z));
 			CHECK(mantled && seenHang == 7 && std::fabs(f.y - top2) < 15.0f && app.player().grounded);
+			std::printf("  fitted pose: %d frames, soles at most %.1f cm over the surface, hands off the edge by %.1f cm\n", probed, double(worstSole),
+			            double(handMiss));
+			CHECK(probed > 10 && worstSole < 14.0f && handMiss < 6.0f);
 		}
 		// The wall too tall: straight up and down again, not forward.
 		{

@@ -4,7 +4,7 @@
 
 A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, its own renderer for the PICA200 GPU, its own Daedalus virtual machine). The game takes your original files, bakes them into a compact `data.pak` and runs the world on the console: scripts, dialogue, combat, magic, townsfolk with daily routines, sound and voices.
 
-![Test scene: camp by day, lake, cave, gate at sunset](docs/preview.png)
+![Test scene: camp by day, lake, cave, gate at sunset](docs/2011-01-02_15-24-48.555_top.bmp)
 
 ## Features
 

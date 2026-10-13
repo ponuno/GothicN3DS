@@ -209,7 +209,22 @@ bool App::meetsNeeds(const GameItemInfo& it, char* why, u32 size) const {
 			return false;
 		}
 	}
+	// A rune takes the circle of magic it is of (OpenGothic: Item::checkCondRune).
+	if (it.circle > 0) {
+		const i32 talent = g.constant("NPC_TALENT_MAGE", 7);
+		if (talent >= 0 && talent < 16 && h->skill[talent] < it.circle) {
+			if (why) snprintf(why, size, tr("Нужен круг магии: %ld"), static_cast<long>(it.circle));
+			return false;
+		}
+	}
 	return true;
+}
+
+bool App::heroCanSneak() const {
+	const GameNpc* h = heroNpc();
+	if (!h) return false;
+	const i32 talent = _npcs.game().constant("NPC_TALENT_SNEAK", 8);
+	return talent >= 0 && talent < 16 && h->skill[talent] != 0;
 }
 
 void App::itemMessage(const char* text, bool refusal) {
@@ -801,6 +816,7 @@ const InventoryView& App::inventory() {
 	stamp = mix(stamp, u32(i32(_inv.messageTime > 0.0f)));
 	stamp = mix(stamp, _npcs.talkView().version);
 	stamp = mix(stamp, _chests.version());
+	stamp = mix(stamp, u32(_npcs.trading()));
 	stamp = mix(stamp, u32(_chest.stage));
 	stamp = mix(stamp, u32(_chest.corpse + 1));
 	stamp = mix(stamp, u32(_corpseTarget + 1));
@@ -863,6 +879,7 @@ const InventoryView& App::inventory() {
 		memmove(&v.items[k + 1], &v.items[k], sizeof(ItemEntry) * (i - k));
 		memcpy(&v.items[k], &tmp, sizeof(tmp));
 	}
+	if (_npcs.trading()) tradeDecoratePack(v);
 	// The quick slots and the equipment.
 	const auto picture = [&](u32 s, u8& icon, u32& tint, char* label, u32 size) {
 		const GameItemInfo* it = s != NONE ? g.itemInfo(s) : nullptr;
@@ -916,6 +933,41 @@ const InventoryView& App::inventory() {
 			out[0] = 0;
 			if (it) scriptText(g.text(it->description ? it->description : it->name), out, size);
 		};
+		// The talents, by the scripts' own words: "Name#level 0|level 1|level 2".
+		sh.talentCount = 0;
+		const u32 tNames = g.vm().find("TXT_TALENTS"), tLevels = g.vm().find("TXT_TALENTS_SKILLS");
+		if (tNames != NONE && g.vm().symbol(tNames).type == SCRIPT_STRING) {
+			const u32 total = g.vm().symbol(tNames).count < 16 ? g.vm().symbol(tNames).count : 16u;
+			for (u32 t = 0; t < total && sh.talentCount < InventoryView::Sheet::TALENTS; ++t) {
+				const char* title = g.vm().getString(tNames, t);
+				if (!title || !*title) continue;
+				InventoryView::Sheet::Talent& tl = sh.talents[sh.talentCount++];
+				tl = InventoryView::Sheet::Talent();
+				tl.skill = h.skill[t];
+				tl.value = h.talent[t];
+				scriptText(title, tl.name, sizeof(tl.name));
+				if (tLevels != NONE && g.vm().symbol(tLevels).type == SCRIPT_STRING && t < g.vm().symbol(tLevels).count) {
+					// (The level's word: the text after '#', the tl.skill-th of those split by '|'.)
+					const char* en = g.vm().getString(tLevels, t);
+					const char* p = en ? strchr(en, '#') : nullptr;
+					p = p ? p + 1 : en;
+					for (i32 k = 0; p && k < tl.skill; ++k) {
+						p = strchr(p, '|');
+						if (p) ++p;
+					}
+					if (p) {
+						const char* e = strchr(p, '|');
+						char word[32];
+						size_t n = e ? size_t(e - p) : strlen(p);
+						if (n >= sizeof(word)) n = sizeof(word) - 1;
+						memcpy(word, p, n);
+						word[n] = 0;
+						scriptText(word, tl.level, sizeof(tl.level));
+					}
+				}
+				if (!tl.level[0]) snprintf(tl.level, sizeof(tl.level), "%ld", static_cast<long>(tl.skill));
+			}
+		}
 		nameOfItem(h.melee, sh.melee, sizeof(sh.melee));
 		nameOfItem(h.ranged, sh.ranged, sizeof(sh.ranged));
 		nameOfItem(h.armorItem, sh.armor, sizeof(sh.armor));
@@ -1379,6 +1431,15 @@ void App::drawItemHud() {
 			tag({m.pos[0], m.pos[1] + 75.0f, m.pos[2]}, line);
 		}
 	}
+	if (_mobTarget >= 0 && _lootTarget < 0 && _chestTarget < 0 && _corpseTarget < 0 && _mobJob.stage == MJ_NONE && _chest.stage == CH_NONE) {
+		const Mobs& mobs = _npcs.mobs();
+		if (u32(_mobTarget) < mobs.count()) {
+			const WorldMob& m = mobs.mob(u32(_mobTarget));
+			char line[80];
+			mobName(u32(_mobTarget), line, sizeof(line));
+			tag({m.pos[0], m.pos[1] + 90.0f, m.pos[2]}, line);
+		}
+	}
 	if (_corpseTarget >= 0 && _lootTarget < 0 && _chestTarget < 0 && _chest.stage == CH_NONE) {
 		const GameNpc& b = _npcs.game().npc(u32(_corpseTarget));
 		char name[40], line[96];
@@ -1386,7 +1447,7 @@ void App::drawItemHud() {
 		snprintf(line, sizeof(line), tr("Обыскать: %s"), name);
 		tag({b.pos[0], b.pos[1] + 60.0f, b.pos[2]}, line);
 	}
-	if (_lootTarget < 0 && _chestTarget < 0 && _talkTarget >= 0 && !_npcs.talkView().active) {
+	if (_lootTarget < 0 && _chestTarget < 0 && _mobTarget < 0 && _talkTarget >= 0 && !_npcs.talkView().active) {
 		const GameNpc& t = _npcs.game().npc(u32(_talkTarget));
 		char name[48], line[96];
 		scriptText(_npcs.game().nameOf(t), name, sizeof(name));
@@ -1439,6 +1500,24 @@ void App::drawItemHud() {
 		hint("L", tr("Влево"), true);
 		hint("R", tr("Вправо"), true);
 		hint("B", tr("Отмена"), true);
+		return;
+	}
+	if (chestPage && v.chest.trade) {
+		// The wares: what one does (buy / sell), what it comes to, the purse.
+		hint("A", chestSide ? tr("Купить") : tr("Продать"), e != nullptr);
+		hint("X", tr("Всю стопку"), e != nullptr);
+		hint("L R", chestSide ? tr("Рюкзак") : tr("Товар"), true);
+		hint("B", tr("Закрыть"), true);
+		char purse[64];
+		snprintf(purse, sizeof(purse), "%s: %ld", v.chest.currency[0] ? v.chest.currency : tr("Руда"), static_cast<long>(v.chest.gold));
+		if (e && e->price > 0) {
+			// (Under the thing that turns.)
+			char price[24];
+			snprintf(price, sizeof(price), tr("Цена: %ld"), static_cast<long>(e->price));
+			_ui.text((xm + x1) / 2, y1 - line - 3, price, chestSide && e->price > v.chest.gold ? ui::RED : 0xE8D890FFu, ui::TEXT, ui::CENTER);
+		}
+		const int w = _ui.measure(purse);
+		if (x + w + 12 < x1 - 4) _ui.text(x1 - 4, y, purse, 0xE8D890FFu, ui::TEXT, ui::RIGHT);
 		return;
 	}
 	if (chestPage) {

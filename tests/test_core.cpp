@@ -6115,6 +6115,7 @@ static void testMagic() {
 	app.world().preload(app.camera().pos);
 	for (int i = 0; i < 30; ++i) app.update(Input {}, dt);
 	const u32 rune = find("ITARRUNEFIREBOLT"), scroll = find("ITARSCROLLFIREBOLT"), healRune = find("ITARRUNEHEAL");
+	g.npcMut(hero).skill[g.constant("NPC_TALENT_MAGE", 7)] = 6; // (the circles are learnt: a teacher sets them)
 	g.giveItems(hero, rune, 1);
 	g.giveItems(hero, scroll, 1);
 	g.giveItems(hero, healRune, 1);
@@ -8514,6 +8515,346 @@ static void testParticles() {
 	CHECK(p.stats().particles < 40);
 }
 
+
+// Barter: Thorus's trade info opens his wares once it has been told; buying and selling at the scripts' prices,
+// the money neither bought nor sold, what is worn kept, the purse short; B ends the trade and the menu is back.
+// The things of the world the player uses: only those the world named show a prompt; a bench
+// holds him until he lets go, a thing with a script runs it (when its condition allows).
+static void testMobUse() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/mobuse.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.settings().immortal = 1;
+	app.applySettings();
+	const u32 hero = u32(g.hero() - &g.npc(0));
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	run(1.0f);
+	Mobs& mobs = npcs.mobs();
+	CHECK(mobs.hasInfo());
+	if (!mobs.hasInfo()) return;
+	int bench = -1, anvil = -1, sharp = -1, hiddenBed = -1, namedBed = -1;
+	u32 hidden = 0, named = 0;
+	for (u32 i = 0; i < mobs.count(); ++i) {
+		if (mobs.forPlayer(i)) ++named; else ++hidden;
+		if (mobs.isScheme(i, "BENCH")) bench = int(i);
+		else if (mobs.isScheme(i, "BSANVIL")) anvil = int(i);
+		else if (mobs.isScheme(i, "BEDLOW")) sharp = int(i);
+		else if (mobs.isScheme(i, "BEDHIGH")) (mobs.forPlayer(i) ? namedBed : hiddenBed) = int(i);
+	}
+	CHECK(bench >= 0 && anvil >= 0 && sharp >= 0 && hiddenBed >= 0 && namedBed >= 0);
+	CHECK(named == 4);        // the bench, a bed, the anvil, the other
+	CHECK(hidden == 4);    // the three chests and the second hut's bed: no prompt
+	if (bench < 0 || anvil < 0 || sharp < 0 || hiddenBed < 0 || namedBed < 0) return;
+	const auto stand = [&](int mob, float dx, float dz, float yaw) {
+		const WorldMob& m = mobs.mob(u32(mob));
+		app.camera().yaw = yaw;
+		app.teleport({m.pos[0] + dx, m.pos[1] + 220.0f, m.pos[2] + dz});
+		run(1.5f);
+	};
+	const auto pressA = [&]() {
+		Input in;
+		in.confirm = true;
+		app.update(in, dt);
+	};
+	const auto used = [&]() { return g.vm().getInt(g.vm().find("MOBTEST_USED")); };
+
+	// 1. A bed nobody named: no prompt, A does nothing.
+	stand(hiddenBed, 90.0f, 0.0f, -1.5708f);
+	CHECK(app.mobTarget() != int(hiddenBed));
+	pressA();
+	run(0.5f);
+	CHECK(!app.mobInUse());
+
+	// 2. The bench: the prompt, A, the place is held; A again lets go.
+	stand(bench, 0.0f, -90.0f, 0.0f);
+	CHECK(app.mobTarget() == bench);
+	pressA();
+	run(2.0f);
+	CHECK(app.mobInUse());
+	CHECK(mobs.userOf(u32(bench)) == int(hero));
+	for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
+	pressA();
+	run(2.0f);
+	CHECK(!app.mobInUse());
+	CHECK(mobs.userOf(u32(bench)) < 0);
+
+	// 3. The grinding thing: its condition says no first (nothing run), then yes (the state function runs once, he lets go by himself).
+	stand(sharp, 90.0f, 0.0f, -1.5708f);
+	CHECK(app.mobTarget() == sharp);
+	pressA();
+	run(1.0f);
+	CHECK(!app.mobInUse() && used() == 0);
+	g.vm().setInt(g.vm().find("MOBTEST_ALLOW"), 0, nullptr, 1);
+	pressA();
+	run(3.0f);
+	CHECK(used() == 1);
+	CHECK(!app.mobInUse());
+	CHECK(mobs.userOf(u32(sharp)) < 0);
+}
+
+static void testTrade() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/trade.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.settings().immortal = 1;
+	app.applySettings();
+	const u32 hero = u32(g.hero() - &g.npc(0));
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	const u32 thorusSym = g.vm().find("GRD_200_THORUS"), beer = g.vm().find("ITFOBEER"), potion = g.vm().find("ITFO_POTION_HEALTH_01"),
+	          nugget = g.vm().find("ITMINUGGET"), sword = g.vm().find("ITMW_SWORD");
+	CHECK(thorusSym != SCRIPT_NONE && beer != SCRIPT_NONE && potion != SCRIPT_NONE && nugget != SCRIPT_NONE);
+	u32 thorus = SCRIPT_NONE;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).symbol == thorusSym) thorus = i;
+	CHECK(thorus != SCRIPT_NONE);
+	if (thorus == SCRIPT_NONE) return;
+	// 0. The prices are the scripts': Gothic 1 has no multiplier, the money is the ore.
+	CHECK(g.tradeCurrency() == nugget && g.tradeMultiplier() == 1.0f);
+	CHECK(g.buyPrice(beer) == 10 && g.sellPrice(beer) == 10 && g.buyPrice(potion) == 25 && g.buyPrice(nugget) == 1);
+	CHECK(g.info(u32(g.infoIndex(g.vm().find("DIA_THORUS_TRADE")))).trade);
+	run(1.0f);
+	app.teleport({g.npc(thorus).pos[0], g.npc(thorus).pos[1] + 5.0f, g.npc(thorus).pos[2] + 150.0f});
+	app.camera().yaw = 3.14159265f;
+	run(1.5f);
+	Input a;
+	a.confirm = true;
+	app.update(a, dt);
+	const auto until = [&](auto&& pred, float limit) {
+		for (float t = 0; t < limit && !pred(); t += dt) {
+			if (npcs.talkView().saying) npcs.talkSkip();
+			app.update(Input {}, dt);
+		}
+		return pred();
+	};
+	CHECK(until([&] { return npcs.talkView().choosing; }, 40.0f));
+	const auto itemWith = [&](const char* prefix) {
+		const TalkView& v = npcs.talkView();
+		for (u32 i = 0; i < v.count; ++i)
+			if (strncmp(v.items[i], prefix, strlen(prefix)) == 0) return int(i);
+		return -1;
+	};
+	const int trade = itemWith("Let us trade");
+	CHECK(trade >= 0);
+	if (trade < 0) return;
+
+	// 1. The wares come up: the trade page, the stock without the sword he wears, the money out of the pack.
+	const i32 purse = 100;
+	g.giveItems(hero, nugget, purse - g.itemCount(hero, nugget));
+	npcs.talkChoose(u32(trade));
+	CHECK(until([&] { return npcs.trading(); }, 40.0f));
+	run(0.3f);
+	CHECK(app.panel().page() == InventoryPanel::PAGE_CHEST && npcs.talkView().trading && !npcs.talkView().choosing);
+	const auto view = [&]() -> const InventoryView& { return app.inventory(); };
+	{
+		const InventoryView& v = view();
+		CHECK(v.chest.trade && v.chest.open && v.chest.gold == purse && std::strcmp(v.chest.name, "Thorus") == 0);
+		CHECK(v.chest.count == 2); // (the beer and the potions; not the sword he wears)
+		for (u32 i = 0; i < v.chest.count; ++i) {
+			const ItemEntry& e = v.chest.items[i];
+			CHECK((e.symbol == beer && e.count == 4 && e.price == 10) || (e.symbol == potion && e.count == 2 && e.price == 25));
+		}
+		bool moneyOut = false;
+		for (u32 i = 0; i < v.count; ++i)
+			if (v.items[i].symbol == nugget) moneyOut = (v.items[i].flags & ITEMF_NOSELL) != 0;
+		CHECK(moneyOut);
+	}
+	const auto cmd = [&](u8 slot, u32 sym, i32 amount, u8 type = PANEL_CHEST_MOVE) {
+		PanelCommand c;
+		c.type = type;
+		c.slot = slot;
+		c.symbol = sym;
+		c.amount = amount;
+		app.panelCommand(c);
+	};
+	const i32 beers = g.itemCount(hero, beer), potions = g.itemCount(hero, potion);
+	// 2. Buying: two beers cost twenty; more than he has, or than the purse allows, is cut.
+	cmd(0, beer, 2);
+	CHECK(g.itemCount(hero, beer) == beers + 2 && g.itemCount(thorus, beer) == 2 && g.itemCount(hero, nugget) == purse - 20);
+	cmd(0, beer, 10);
+	CHECK(g.itemCount(hero, beer) == beers + 4 && g.itemCount(thorus, beer) == 0 && g.itemCount(hero, nugget) == purse - 40);
+	CHECK(view().chest.count == 1);
+	cmd(0, potion, 10); // (the purse allows two of a price of 25; he has two)
+	CHECK(g.itemCount(hero, potion) == potions + 2 && g.itemCount(hero, nugget) == purse - 40 - 50);
+	// Too poor: nothing moves.
+	g.giveItems(hero, nugget, -(g.itemCount(hero, nugget) - 3));
+	g.giveItems(thorus, potion, 1);
+	const i32 heroPotions = g.itemCount(hero, potion);
+	cmd(0, potion, 1);
+	CHECK(g.itemCount(thorus, potion) == 1 && g.itemCount(hero, potion) == heroPotions && g.itemCount(hero, nugget) == 3);
+	// 3. Selling: paid the whole value; the money itself is not sold; what is worn stays.
+	cmd(1, beer, 3);
+	CHECK(g.itemCount(hero, beer) == beers + 1 && g.itemCount(thorus, beer) == 3 && g.itemCount(hero, nugget) == 3 + 30);
+	const i32 ore = g.itemCount(hero, nugget), traderOre = g.itemCount(thorus, nugget);
+	cmd(1, nugget, ore);
+	CHECK(g.itemCount(hero, nugget) == ore && g.itemCount(thorus, nugget) == traderOre);
+	if (sword != SCRIPT_NONE) {
+		const i32 swords = g.itemCount(hero, sword);
+		cmd(1, sword, 5);
+		CHECK(g.itemCount(hero, sword) >= (g.npc(hero).melee == sword ? 1 : 0) && g.itemCount(hero, sword) <= swords);
+	}
+
+	// 4. B: the wares go, the menu is back and the talk goes on.
+	cmd(0, 0, 0, PANEL_CHEST_CLOSE);
+	CHECK(until([&] { return npcs.talkView().choosing && !npcs.talkView().trading; }, 10.0f));
+	CHECK(!npcs.trading() && itemWith("Let us trade") >= 0);
+	run(0.3f);
+	CHECK(app.panel().page() == InventoryPanel::PAGE_DIALOG);
+	// Again, and left by the talk's end (the hero walks off): no page is left behind.
+	npcs.talkChoose(u32(itemWith("Let us trade")));
+	CHECK(until([&] { return npcs.trading(); }, 40.0f));
+	npcs.talkAbort();
+	run(0.5f);
+	CHECK(!npcs.talkView().active && !npcs.trading() && app.panel().page() == InventoryPanel::PAGE_PLAY);
+}
+
+
+// Teaching: Thorus sells his skills for learning points (the scripts do the work: points taken, attribute raised,
+// talent skill set). Without the skill the character cannot sneak, a rune of a circle he has not learnt is
+// blocked; the character's page names the talents; the skills are kept in state.bin.
+static void testTeach() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/teach.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.settings().immortal = 1;
+	app.applySettings();
+	const u32 hero = u32(g.hero() - &g.npc(0));
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	const u32 thorusSym = g.vm().find("GRD_200_THORUS"), bigRune = g.vm().find("ITARRUNEFIREBALL");
+	const i32 sneak = g.constant("NPC_TALENT_SNEAK", 8), mage = g.constant("NPC_TALENT_MAGE", 7);
+	u32 thorus = SCRIPT_NONE;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).symbol == thorusSym) thorus = i;
+	CHECK(thorus != SCRIPT_NONE && bigRune != SCRIPT_NONE);
+	if (thorus == SCRIPT_NONE) return;
+	const u32 lpSym = g.vm().findMember("C_NPC", "LP");
+	const auto lp = [&]() { return g.npcInt(g.npc(hero), lpSym); };
+	CHECK(lp() == 10 && g.npc(hero).skill[sneak] == 0 && g.npc(hero).skill[mage] == 0);
+	CHECK(g.vm().find("NPC_GETTALENTSKILL") != SCRIPT_NONE);
+	run(1.0f);
+	// 1. Not learnt: the sneak key does nothing.
+	Input sn;
+	sn.toggleSneak = true;
+	app.update(sn, dt);
+	run(0.2f);
+	CHECK(!app.hero().sneaking() && !app.heroCanSneak());
+	// A rune of the third circle is out of reach (blocked in the pack).
+	g.giveItems(hero, bigRune, 1);
+	const auto blocked = [&]() {
+		const InventoryView& v = app.inventory();
+		for (u32 i = 0; i < v.count; ++i)
+			if (v.items[i].symbol == bigRune) return (v.items[i].flags & ITEMF_BLOCKED) != 0;
+		return false;
+	};
+	CHECK(blocked());
+	// 2. The talk.
+	app.teleport({g.npc(thorus).pos[0], g.npc(thorus).pos[1] + 5.0f, g.npc(thorus).pos[2] + 150.0f});
+	app.camera().yaw = 3.14159265f;
+	run(1.5f);
+	Input a;
+	a.confirm = true;
+	app.update(a, dt);
+	const auto until = [&](auto&& pred, float limit) {
+		for (float t = 0; t < limit && !pred(); t += dt) {
+			if (npcs.talkView().saying) npcs.talkSkip();
+			app.update(Input {}, dt);
+		}
+		return pred();
+	};
+	CHECK(until([&] { return npcs.talkView().choosing; }, 40.0f));
+	const auto itemWith = [&](const char* prefix) {
+		const TalkView& v = npcs.talkView();
+		for (u32 i = 0; i < v.count; ++i)
+			if (strncmp(v.items[i], prefix, strlen(prefix)) == 0) return int(i);
+		return -1;
+	};
+	const auto choose = [&](const char* prefix) {
+		const int k = itemWith(prefix);
+		CHECK(k >= 0);
+		if (k < 0) return;
+		npcs.talkChoose(u32(k));
+		app.update(Input {}, dt); // (the view follows the talk a frame later)
+		CHECK(until([&] { return npcs.talkView().choosing; }, 40.0f));
+	};
+	CHECK(app.inventory().sheet.learn == 10);
+	const i32 str = g.attributeOf(g.npc(hero), g.constant("ATR_STRENGTH", 4));
+	choose("Teach me strength");
+	CHECK(lp() == 9 && g.attributeOf(g.npc(hero), g.constant("ATR_STRENGTH", 4)) == str + 5);
+	choose("Teach me to sneak");
+	CHECK(lp() == 7 && g.npc(hero).skill[sneak] == 1 && itemWith("Teach me to sneak") < 0); // (taught: off the menu)
+	choose("Teach me the first circle");
+	CHECK(lp() == 4 && g.npc(hero).skill[mage] == 1 && itemWith("Teach me the first circle") < 0);
+	// Too poor: the scripts refuse, nothing changes.
+	g.vm().setInt(lpSym, 0, g.npc(hero).object, 0);
+	choose("Teach me strength");
+	CHECK(lp() == 0 && g.attributeOf(g.npc(hero), g.constant("ATR_STRENGTH", 4)) == str + 5);
+	npcs.talkAbort();
+	run(0.5f);
+	// 3. What was learnt: sneaking works, the circle 1 rune is open, the third is still blocked.
+	app.update(sn, dt);
+	run(0.2f);
+	CHECK(app.heroCanSneak() && app.hero().sneaking());
+	CHECK(blocked());
+	g.npcMut(hero).skill[mage] = 3;
+	g.giveItems(hero, bigRune, 1); // (the pack is looked at anew)
+	CHECK(!blocked());
+	g.npcMut(hero).skill[mage] = 1;
+	// 4. The page of the character names the talents by the scripts' words.
+	{
+		const InventoryView& v = app.inventory();
+		CHECK(v.sheet.talentCount == 3);
+		bool found = false;
+		for (u32 i = 0; i < v.sheet.talentCount; ++i)
+			if (std::strcmp(v.sheet.talents[i].name, "Sneaking") == 0) found = std::strcmp(v.sheet.talents[i].level, "Can") == 0;
+		CHECK(found);
+	}
+	// 5. state.bin keeps the skills.
+	const std::string statePath = gDir + "/teach-state.bin";
+	CHECK(app.saveState(statePath.c_str()));
+	g.npcMut(hero).skill[sneak] = 0;
+	g.npcMut(hero).skill[mage] = 0;
+	CHECK(app.loadState(statePath.c_str()));
+	CHECK(g.npc(hero).skill[sneak] == 1 && g.npc(hero).skill[mage] == 1);
+}
+
 static void testChests() {
 	std::vector<BakeWorld> worlds;
 	const std::string path = gDir + "/chests.pak";
@@ -9473,6 +9814,9 @@ int main(int argc, char** argv) {
              {"ranged", testRanged},
 	             {"inventory", testInventory},
              {"chests", testChests},
+             {"mob use", testMobUse},
+             {"trade", testTrade},
+             {"teach", testTeach},
              {"particles", testParticles},
              {"dialogs", testDialogs},
              {"npcai", testNpcAi},

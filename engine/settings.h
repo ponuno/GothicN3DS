@@ -102,6 +102,8 @@ struct Settings {
 	u8 readAhead = 1;
 	// Version 16: stereo 3D (the scene drawn for each eye, by the console's 3D slider; after a restart): 0 off, 1 on.
 	u8 stereo = 0;
+	// Version 17: the far layer fills in, within the draw distance, for chunks not loaded yet (0: it is only drawn beyond it).
+	u8 farFill = 0;
 	float lodDistanceCm() const;
 
 	// Clamps every value into its range (after reading a file of another version).

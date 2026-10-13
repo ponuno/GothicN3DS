@@ -50,13 +50,51 @@ bool Mobs::load(Pak& pak, const char* worldAsset) {
 	_mobs = mobs;
 	_slots = slots;
 	_names = names;
+	loadInfo(pak, worldAsset);
 	return true;
+}
+
+// The optional table of what the player may do (a pak baked before it has none: nothing is for him).
+void Mobs::loadInfo(Pak& pak, const char* worldAsset) {
+	char name[112];
+	snprintf(name, sizeof(name), "%s/mobinfo", worldAsset);
+	const PakEntry* e = pak.find(name);
+	if (!e || e->size < sizeof(MobInfoHeader)) return;
+	u8* blob = static_cast<u8*>(pak.readAlloc(*e));
+	if (!blob) return;
+	MobInfoHeader h;
+	memcpy(&h, blob, sizeof(h));
+	bool ok = h.magic == MOBINFO_MAGIC && h.version == MOBINFO_VERSION && h.count == _h.mobCount && h.nameBytes > 0 && h.nameBytes < (1u << 24) &&
+	          h.nameBytes % 4 == 0 && u64(sizeof(MobInfoHeader)) + u64(h.count) * sizeof(WorldMobInfo) + h.nameBytes == e->size;
+	const WorldMobInfo* infos = reinterpret_cast<const WorldMobInfo*>(blob + sizeof(MobInfoHeader));
+	const char* names = reinterpret_cast<const char*>(infos + (ok ? h.count : 0));
+	if (ok) ok = names[0] == 0 && names[h.nameBytes - 1] == 0;
+	for (u32 i = 0; ok && i < h.count; ++i)
+		ok = infos[i].focus < h.nameBytes && infos[i].onState < h.nameBytes && infos[i].condition < h.nameBytes && infos[i].useItem < h.nameBytes &&
+		     infos[i].target < h.nameBytes && infos[i].kind <= MOBKIND_OTHER;
+	if (!ok) {
+		free(blob);
+		return;
+	}
+	_infoBlob = blob;
+	_infos = infos;
+	_infoNames = names;
+}
+
+bool Mobs::forPlayer(u32 i) const {
+	if (!_infos || i >= _h.mobCount) return false;
+	const WorldMobInfo& m = _infos[i];
+	return m.focus != 0 && m.kind != MOBKIND_CONTAINER && m.kind != MOBKIND_DOOR && m.kind != MOBKIND_OTHER;
 }
 
 void Mobs::release() {
 	free(_blob);
+	free(_infoBlob);
 	free(_user);
 	_blob = nullptr;
+	_infoBlob = nullptr;
+	_infos = nullptr;
+	_infoNames = nullptr;
 	_user = nullptr;
 	_mobs = nullptr;
 	_slots = nullptr;

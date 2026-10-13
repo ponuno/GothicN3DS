@@ -117,6 +117,47 @@ struct MobSlot {
 };
 static_assert(sizeof(MobSlot) == 20, "MobSlot layout");
 
+// "world/<name>/mobinfo" (optional, one entry for each mob of "mobs", in its order): what the player's character
+// may do with a thing of the world. Without the table (a pak baked earlier) nothing is for the player to use,
+// the inhabitants still use all.
+//   MobInfoHeader | WorldMobInfo[count] | char names[nameBytes] (the first byte is 0: offset 0 is "")
+// A thing the world's maker gave no name to (oCMOB.focusName) is not shown to the player and is not for him: it
+// is, as in the original, for the inhabitants (a secret lever, a bed in a hut that is only furniture).
+constexpr u32 MOBINFO_MAGIC = fourcc('G', '3', 'M', 'I');
+constexpr u32 MOBINFO_VERSION = 1;
+
+struct MobInfoHeader {
+	u32 magic;
+	u32 version;
+	u32 count;
+	u32 nameBytes;
+};
+static_assert(sizeof(MobInfoHeader) == 16, "MobInfoHeader layout");
+
+enum MobKind : u8 {
+	MOBKIND_INTER = 0, // oCMobInter: a bench, an anvil, a cauldron ...
+	MOBKIND_BED,
+	MOBKIND_FIRE,
+	MOBKIND_SWITCH,
+	MOBKIND_WHEEL,     // the grindstone
+	MOBKIND_CONTAINER, // chests: the chests' own page
+	MOBKIND_DOOR,      // not yet: doors stay open
+	MOBKIND_OTHER,
+};
+
+struct WorldMobInfo {
+	u32 focus;     // the name shown (a script constant's name, "MOBNAME_BENCH", or the words themselves); 0: none
+	u32 onState;   // the script function run when the thing is in use (oCMobInter.onStateFunc); 0: none
+	u32 condition; // the script function that says whether it may be used; 0: none
+	u32 useItem;   // the item instance the user must carry; 0: none
+	u32 target;    // the name of what its use sets going (a mover, a trigger); 0: none
+	u8 kind;       // MobKind
+	u8 rewind;
+	u16 reserved;
+	u32 reserved2, reserved3;
+};
+static_assert(sizeof(WorldMobInfo) == 32, "WorldMobInfo layout");
+
 // "world/<name>/chests": the containers of a world (oCMobContainer: chests,
 // crates), each one of the mobs of "mobs" (its place, its scheme CHESTBIG or
 // CHESTSMALL, the places to stand at). What each holds at the start, and

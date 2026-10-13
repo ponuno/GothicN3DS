@@ -234,6 +234,7 @@ private:
 	u32 _talkVersion = 0xFFFFFFFFu;
 	int _topicY[InventoryView::DIARY_TOPICS] = {}; // where each topic was drawn (for taps)
 	u32 _selected = 0xFFFFFFFFu;
+	bool _talentsShown = false; // the character page shows the talents instead of the numbers (X, or a tap)
 	u32 _shown[INVENTORY_MAX] = {};
 	u32 _shownCount = 0;
 	u32 _filteredVersion = 0xFFFFFFFFu;

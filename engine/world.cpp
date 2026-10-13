@@ -1510,8 +1510,10 @@ bool World::farCovered(u32 firstChunk, u32 count) const {
 	if (!count) return false;
 	for (u32 k = 0; k < count; ++k) {
 		const u32 c = _farRefs[firstChunk + k];
-		// What draw() draws: loaded, and within the draw distance.
-		if (!_loaded[c].mesh || distanceTo(c, _camera) > _cfg.drawDistance) return false;
+		// What draw() draws: loaded, and within the draw distance. (Without farFillNear a chunk within the draw distance
+		// counts as drawn whether it is loaded or not: nothing coarse stands in for it.)
+		if (distanceTo(c, _camera) > _cfg.drawDistance) return false;
+		if (!_loaded[c].mesh && _cfg.farFillNear) return false;
 	}
 	return true;
 }

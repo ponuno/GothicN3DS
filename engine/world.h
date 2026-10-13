@@ -83,6 +83,9 @@ struct StreamConfig {
 	// not loaded yet. 0 (or no farther than drawDistance): not drawn, and not
 	// held in memory either.
 	float farDistance = 0.0f;
+	// In place of chunks not loaded yet within drawDistance the far layer fills in (true), or the gap is left as it is
+	// and the far layer is only beyond drawDistance (false): its flat, untextured colours are not seen close by.
+	bool farFillNear = true;
 	// Baked visibility (a world baked with --vis; hasVisibility()): what the table says cannot be seen from the
 	// camera's cell is not drawn. Held in memory (about a megabyte) only while this is on.
 	bool visibility = false;

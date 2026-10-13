@@ -287,6 +287,7 @@ void Npcs::runInfo(u32 info) {
 	_game.clearChoices(info);
 	_talk.menuInfo = int(info);
 	_talk.choosing = false;
+	_talk.tradeNext = _game.info(info).trade;
 	++_stats.infosTold;
 	_game.runInfo(info, u32(_talk.npc));
 	_menuDirty = true;
@@ -297,6 +298,14 @@ void Npcs::afterTold() {
 	Talk& t = _talk;
 	if (t.stop) {
 		finishTalk();
+		return;
+	}
+	if (t.tradeNext) {
+		// What the info said is said: now the wares (OpenGothic: DialogMenu::startTrade once the output is done).
+		t.tradeNext = false;
+		t.trading = true;
+		++_stats.trades;
+		_menuDirty = true;
 		return;
 	}
 	while (t.importantLeft > 0) {
@@ -341,8 +350,20 @@ void Npcs::talkSkip() {
 	}
 }
 
+void Npcs::tradeClose() {
+	if (!_talk.processing || !_talk.trading) return;
+	_talk.trading = false;
+	_menuDirty = true;
+	afterTold(); // (the menu again, or the end if the scripts said so)
+	refreshView();
+}
+
 bool Npcs::talkBack() {
 	if (!_talk.processing) return false;
+	if (_talk.trading) {
+		tradeClose();
+		return true;
+	}
 	if (_talk.choosing && _talk.count) return talkChoose(_talk.count - 1);
 	talkSkip();
 	return true;
@@ -377,7 +398,7 @@ void Npcs::tickTalk(float dt) {
 		talkAbort();
 		return;
 	}
-	if (!t.choosing && a->action.kind == NPC_ACT_NONE && !a->queueCount && !_say.active && !_speechCount) afterTold();
+	if (!t.choosing && !t.trading && a->action.kind == NPC_ACT_NONE && !a->queueCount && !_say.active && !_speechCount) afterTold();
 	refreshView();
 }
 
@@ -388,12 +409,14 @@ void Npcs::refreshView() {
 	const bool choosing = t.processing && t.choosing;
 	const bool saying = _say.active && _sayText[0];
 	const bool heroSays = saying && _say.speaker >= 0 && _game.npc(u32(_say.speaker)).hero;
-	bool changed = _menuDirty || v.active != active || v.choosing != choosing || v.saying != saying || v.heroSays != heroSays;
+	const bool trading = t.processing && t.trading;
+	bool changed = _menuDirty || v.active != active || v.choosing != choosing || v.saying != saying || v.heroSays != heroSays || v.trading != trading;
 	if (saying && strcmp(v.line, _sayText) != 0) changed = true;
 	if (!changed) return;
 	v.active = active;
 	v.choosing = choosing;
 	v.saying = saying;
+	v.trading = trading;
 	v.heroSays = heroSays;
 	copyText(v.line, sizeof(v.line), saying ? _sayText : "");
 	const int partner = t.processing ? t.npc : t.requested;

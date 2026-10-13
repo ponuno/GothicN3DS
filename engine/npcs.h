@@ -127,6 +127,7 @@ struct NpcStats {
 	u32 lines = 0;        // lines said (AI_Output)
 	u32 linesMissing = 0; // ... of which the archive has no words for
 	u32 talksAborted = 0; // talks cut short (the character was hurt, walked off ...)
+	u32 trades = 0;       // times the wares came up (a talk went on to trade)
 	// Things.
 	u32 itemsUsed = 0;    // things used up (AI_UseItem: a potion drunk)
 	u32 itemsHeld = 0;    // times somebody has taken a thing in hand to hold it (AI_UseItemToState)
@@ -340,6 +341,7 @@ public:
 	const Game& game() const { return _game; }
 	const WayNet& wayNet() const { return _net; }
 	const Mobs& mobs() const { return _mobs; }
+	Mobs& mobs() { return _mobs; }
 	// The world's name in the scripts ("WORLD"), "" before a world is entered.
 	const char* worldScript() const { return _script; }
 	// The actor a character is right now, or null.
@@ -448,6 +450,10 @@ public:
 	// (by the scripts' convention the one that leaves), or the line is skipped.
 	void talkSkip();
 	bool talkBack();
+	// An info with C_INFO.TRADE was told: the bottom screen is the wares (talkView().trading) until trade is
+	// closed (tradeClose), and the talk goes on from the menu.
+	bool trading() const { return _talk.processing && _talk.trading; }
+	void tradeClose();
 	// The words of the lines (for reports and tests).
 	DialogTexts& dialogTexts() { return _texts; }
 	// Ends the talk at once, without the scripts' say (the world changes, the player is hurt ...).
@@ -638,6 +644,8 @@ private:
 		bool stop = false;    // AI_StopProcessInfos was reached
 		int importantLeft = 0; // important infos the talk may still begin with (it is at most a few)
 		bool choosing = false;
+		bool tradeNext = false; // the info just run is a trade: the wares come up when it has been told
+		bool trading = false;   // the wares are up
 		int menuInfo = -1;    // the info whose choices are up, -1 for the main menu
 		u32 count = 0;
 		u32 ref[TALK_ITEMS] = {};

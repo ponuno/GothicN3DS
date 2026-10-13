@@ -367,6 +367,12 @@ void App::chestMove(u32 symbol, i32 amount, bool toChest) {
 }
 
 void App::chestCommand(const PanelCommand& c) {
+	if (_npcs.trading()) {
+		// The wares of a trader, not a chest (trade.cpp).
+		if (c.type == PANEL_CHEST_MOVE) tradeMove(c.symbol, c.amount, c.slot != 0);
+		else if (c.type == PANEL_CHEST_CLOSE) _npcs.tradeClose();
+		return;
+	}
 	switch (c.type) {
 	case PANEL_CHEST_MOVE: chestMove(c.symbol, c.amount, c.slot != 0); break;
 	case PANEL_CHEST_ALL:
@@ -446,6 +452,11 @@ const char* App::chestName(u32 index) const {
 // The chest as the bottom screen shows it.
 void App::chestView(const GameNpc& hero) {
 	InventoryView::Chest& v = _inv.chest;
+	if (_npcs.trading()) {
+		tradeView(hero);
+		return;
+	}
+	v.trade = false;
 	v.open = _chest.stage == CH_OPEN;
 	v.lock = _chest.stage == CH_LOCK;
 	v.count = 0;

@@ -369,7 +369,8 @@ void InventoryPanel::refilter(const InventoryView& v) {
 	const ItemEntry* list = items(v);
 	const u32 total = itemCount(v);
 	for (u32 i = 0; i < total && _shownCount < INVENTORY_MAX; ++i)
-		if (_page == PAGE_CHEST || _tab == TAB_ALL || tabOf(list[i].kind) == _tab) _shown[_shownCount++] = i;
+		if ((_page == PAGE_CHEST && !(v.chest.trade && (list[i].flags & ITEMF_NOSELL))) || (_page != PAGE_CHEST && (_tab == TAB_ALL || tabOf(list[i].kind) == _tab)))
+			_shown[_shownCount++] = i;
 	_scroll = clamp(_scroll, 0, maxScroll());
 	_dirty = true;
 }
@@ -506,10 +507,11 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 	}
 	const auto use = [&](const ItemEntry* e) {
 		if (e && _page == PAGE_CHEST) {
-			// Over to the other side: all of the stack.
+			// Over to the other side: all of the stack (a trader's wares one at a time: the strip's
+			// third button and X do the whole stack).
 			cmd.type = PANEL_CHEST_MOVE;
 			cmd.symbol = e->symbol;
-			cmd.amount = e->count;
+			cmd.amount = v.chest.trade ? 1 : e->count;
 			cmd.slot = _side == 0 ? 0 : 1;
 			_inspect = kInspectTime;
 			_dirty = true;
@@ -614,7 +616,17 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 			if (_page == PAGE_CHEST) {
 				// L and R: the chest's things or the pack's. X: everything out of the chest.
 				if (in.prevTab || in.nextTab) setSide(_side ? 0 : 1);
-				if (in.assign && _side == 0 && v.chest.count) cmd.type = PANEL_CHEST_ALL;
+				if (in.assign && v.chest.trade) {
+					if (const ItemEntry* e = entryOf(v, _selected)) {
+						cmd.type = PANEL_CHEST_MOVE;
+						cmd.symbol = e->symbol;
+						cmd.amount = e->count;
+						cmd.slot = _side == 0 ? 0 : 1;
+						_dirty = true;
+					}
+				} else if (in.assign && _side == 0 && v.chest.count) {
+					cmd.type = PANEL_CHEST_ALL;
+				}
 				if (in.confirm) use(entryOf(v, _selected));
 			} else {
 				if (in.prevTab && !wasAssigning) setTab(ItemTab((_tab + ITEM_TABS - 1) % ITEM_TABS));
@@ -628,6 +640,10 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 		} else {
 			if (in.prevTab) nextPage(-1);
 			if (in.nextTab) nextPage(1);
+			if (_page == PAGE_CHARACTER && in.assign) {
+				_talentsShown = !_talentsShown;
+				_dirty = true;
+			}
 			if (_page == PAGE_DIARY && v.topicCount) {
 				// The D-Pad walks the topics.
 				if (in.down) _topic = min(_topic + 1, int(v.topicCount) - 1);
@@ -701,7 +717,16 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 			case R_BUTTON: openPage(PanelPage(PAGE_INVENTORY + end.index)); break;
 			case R_STRIP:
 				if (end.index < 2) setSide(end.index);
-				else if (_side == 0 && v.chest.count) cmd.type = PANEL_CHEST_ALL;
+				else if (v.chest.trade) {
+					if (const ItemEntry* e = entryOf(v, _selected)) {
+						cmd.type = PANEL_CHEST_MOVE;
+						cmd.symbol = e->symbol;
+						cmd.amount = e->count;
+						cmd.slot = _side == 0 ? 0 : 1;
+						_inspect = kInspectTime;
+						_dirty = true;
+					}
+				} else if (_side == 0 && v.chest.count) cmd.type = PANEL_CHEST_ALL;
 				break;
 			case R_TALK:
 				if (v.talk.choosing && end.index >= 0 && u32(end.index) < v.talk.count) {
@@ -732,6 +757,10 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 				break;
 			}
 			case R_LIST:
+				if (_page == PAGE_CHARACTER) {
+					_talentsShown = !_talentsShown;
+					_dirty = true;
+				}
 				if (_page == PAGE_DIARY)
 					// A tap on a topic opens it (on the open one: closes it).
 					for (u32 t = 0; t < v.topicCount && t < InventoryView::DIARY_TOPICS; ++t)
@@ -917,6 +946,12 @@ void InventoryPanel::drawGrid(const InventoryView& v) {
 					_canvas.text(x + CELL_W - 4, y + 1, kKeys[q], 0xD8DCE0C0u, ui::TEXT, ui::RIGHT, 0, true);
 					break;
 				}
+			if (_page == PAGE_CHEST && v.chest.trade) {
+				// What it costs (the trader's wares) or fetches (the pack's): red where the purse is short.
+				char pr[16];
+				snprintf(pr, sizeof(pr), "%ld", static_cast<long>(e->price));
+				_canvas.text(x + 4, y + CELL_H - 14, pr, _side == 0 && e->price > v.chest.gold ? WARN : GOLD, ui::TEXT, ui::LEFT, 0, true);
+			}
 			if (e->count > 1 || dim) {
 				char n2[16];
 				snprintf(n2, sizeof(n2), "%ld", static_cast<long>(e->count));
@@ -943,9 +978,18 @@ void InventoryPanel::drawGrid(const InventoryView& v) {
 	}
 	if (_shownCount == 0)
 		_canvas.text((x0 + x1) / 2, y0 + GRID_H / 2 - 7,
-		             _page == PAGE_CHEST ? (_side == 0 ? tr("Сундук пуст") : tr("В рюкзаке пусто")) : v.present ? tr(kTabNames[_tab]) : tr("Инвентаря нет"),
+		             _page == PAGE_CHEST ? (_side == 0 ? (v.chest.trade ? tr("Товара нет") : tr("Сундук пуст")) : tr("В рюкзаке пусто"))
+		                                 : v.present ? tr(kTabNames[_tab]) : tr("Инвентаря нет"),
 		             TEXT_DIM, ui::TEXT, ui::CENTER, 0, true);
 	_canvas.unclip();
+	if (_page == PAGE_CHEST && v.chest.trade && !(v.messageTime > 0.0f && v.message[0])) {
+		// The purse, where the last news would be.
+		char purse[48];
+		snprintf(purse, sizeof(purse), "%s: %ld", v.chest.currency[0] ? v.chest.currency : tr("Руда"), static_cast<long>(v.chest.gold));
+		const int w = Canvas::measure(purse) + 12;
+		_canvas.fill(Canvas::W / 2 - w / 2, y1 - 17, Canvas::W / 2 + w / 2, y1 - 1, 0x000000C0u);
+		_canvas.text(Canvas::W / 2, y1 - 16, purse, GOLD, ui::TEXT, ui::CENTER, Canvas::W - 8);
+	}
 	if (v.messageTime > 0.0f && v.message[0]) {
 		// The last news over the bottom of the grid.
 		const int w = Canvas::measure(v.message) + 12;
@@ -961,19 +1005,21 @@ void InventoryPanel::drawStrip(const InventoryView& v) {
 	_canvas.fill(x0, y0, x1, y0 + 1, TAB_LIGHT);
 	_canvas.fill(x0, y1 - 1, x1, y1, TAB_DARK);
 	static const char* const kNames[3] = {"Сундук", "Рюкзак", "Взять всё"};
+	const bool trade = v.chest.trade;
 	for (int k = 0; k < 3; ++k) {
 		int cx, cy;
 		stripCentre(k, cx, cy);
 		const bool on = k < 2 && k == _side;
 		const bool pressed = _touching && !_moved && _start.region == R_STRIP && _start.index == k;
-		const bool off = k == 2 && (_side != 0 || v.chest.count == 0);
+		const bool off = k == 2 && (trade ? entryOf(v, _selected) == nullptr : (_side != 0 || v.chest.count == 0));
 		if (on || pressed) {
 			_canvas.fill(cx - 51, y0 + 1, cx + 51, y1 - 1, pressed ? SEL_BOTTOM : TAB_ON);
 			_canvas.fill(cx - 46, y1 - 3, cx + 46, y1 - 2, 0xE8ECF0FFu);
 		}
 		if (k > 0) _canvas.fill(cx - 53, y0 + 3, cx - 52, y1 - 3, TAB_LIGHT);
 		char label[40];
-		if (k == 0) snprintf(label, sizeof(label), tr("Сундук %lu"), static_cast<unsigned long>(v.chest.count));
+		if (k == 0) snprintf(label, sizeof(label), trade ? tr("Товар %lu") : tr("Сундук %lu"), static_cast<unsigned long>(v.chest.count));
+		else if (k == 2 && trade) snprintf(label, sizeof(label), "%s", tr("Всю стопку"));
 		else snprintf(label, sizeof(label), "%s", tr(kNames[k]));
 		_canvas.text(cx, y0 + 4, label, off ? TEXT_DIM : on ? TITLE : TEXT, ui::TEXT, ui::CENTER, 100, true);
 	}
@@ -1014,6 +1060,12 @@ void InventoryPanel::drawDialog(const InventoryView& v) {
 	// on the top screen.
 	const TalkView& t = v.talk;
 	const int x0 = 6, x1 = Canvas::W - 6;
+	if (t.choosing && v.sheet.learn > 0) {
+		// What a teacher is paid in.
+		char lp[40];
+		snprintf(lp, sizeof(lp), tr("Очки обучения: %ld"), static_cast<long>(v.sheet.learn));
+		_canvas.text(Canvas::W - 6, Canvas::H - 16, lp, GOLD, ui::TEXT, ui::RIGHT, 0, true);
+	}
 	if (t.choosing && t.count) {
 		for (u32 k = 0; k < t.count && k < u32(TALK_ITEMS); ++k) {
 			const int y = TALK_Y + int(k) * TALK_ROW;
@@ -1107,6 +1159,27 @@ void InventoryPanel::drawDiary(const InventoryView& v) {
 
 void InventoryPanel::drawCharacter(const InventoryView& v) {
 	const InventoryView::Sheet& s = v.sheet;
+	if (_talentsShown) {
+		// The talents the scripts name, with the level taught; the numbers again with X or a tap.
+		_canvas.text(Canvas::W / 2, BARS_H + 6, tr("Умения"), TITLE, ui::TITLE, ui::CENTER, 0, true);
+		int ty = BARS_H + 28;
+		bool any = false;
+		for (u32 k = 0; k < s.talentCount; ++k) {
+			const InventoryView::Sheet::Talent& t = s.talents[k];
+			char buf[48];
+			if (t.value > 0) snprintf(buf, sizeof(buf), "%s  %ld%%", t.level, static_cast<long>(t.value));
+			else snprintf(buf, sizeof(buf), "%s", t.level);
+			const bool learnt = t.skill != 0 || t.value > 0;
+			_canvas.text(12, ty, t.name, learnt ? TEXT : TEXT_DIM, ui::TEXT, ui::LEFT, 150, true);
+			_canvas.text(Canvas::W - 12, ty, buf, learnt ? GOLD : TEXT_DIM, ui::TEXT, ui::RIGHT, 150, true);
+			_canvas.fill(12, ty + 13, Canvas::W - 12, ty + 14, 0xFFFFFF14u);
+			ty += 15;
+			any = true;
+		}
+		if (!any) _canvas.text(Canvas::W / 2, ty + 10, tr("Умений пока нет"), TEXT_DIM, ui::TEXT, ui::CENTER, 0, true);
+		_canvas.text(Canvas::W / 2, Canvas::H - 16, tr("X или касание — характеристики"), TEXT_DIM, ui::TEXT, ui::CENTER, Canvas::W - 8, true);
+		return;
+	}
 	int y = BARS_H + 6;
 	_canvas.text(Canvas::W / 2, y, s.name[0] ? s.name : "—", TITLE, ui::TITLE, ui::CENTER, 0, true);
 	y += 20;
@@ -1152,6 +1225,7 @@ void InventoryPanel::drawCharacter(const InventoryView& v) {
 		_canvas.text(rx + 56, yr, worn[k][0] ? worn[k] : "—", TEXT, ui::TEXT, ui::LEFT, rw - 56, true);
 		yr += 15;
 	}
+	if (s.talentCount) _canvas.text(Canvas::W / 2, Canvas::H - 16, tr("X или касание — умения"), TEXT_DIM, ui::TEXT, ui::CENTER, Canvas::W - 8, true);
 }
 
 } // namespace g3

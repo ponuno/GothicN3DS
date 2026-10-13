@@ -8,6 +8,7 @@
 #include "fight.h"
 #include "game.h"
 
+#include <math.h>
 #include <string.h>
 
 namespace g3 {
@@ -241,6 +242,56 @@ void Game::xUnequipWeapons(ScriptVm& vm, void* user) {
 	// (A weapon in hand goes with it; bare hands stay bare.)
 	if (n.weapon == WEAPON_1H || n.weapon == WEAPON_2H) n.weapon = WEAPON_NONE;
 	++g._itemsVersion;
+}
+
+
+// ---- trade ----
+// How the original prices things is taken from OpenGothic (GameScript, Item::cost/sellCost, Npc::buyItem/sellItem):
+// Gothic 1 has neither the currency symbol nor the multiplier, so there the ore nugget is the money and the
+// player is paid what the thing costs; Gothic 2 and its mods name both in the scripts.
+
+void Game::tradeLookUp() {
+	if (_tradeTried) return;
+	_tradeTried = true;
+	_tradeCurrency = SCRIPT_NONE;
+	_tradeMultiplier = 1.0f;
+	const u32 named = _vm.find("TRADE_CURRENCY_INSTANCE");
+	if (named != SCRIPT_NONE && _vm.symbol(named).type == SCRIPT_STRING && !(_vm.symbol(named).flags & SCRIPTF_MEMBER)) {
+		const char* name = _vm.getString(named);
+		const u32 sym = name && *name ? _vm.find(name) : SCRIPT_NONE;
+		if (isItem(sym)) _tradeCurrency = sym;
+	}
+	if (_tradeCurrency == SCRIPT_NONE) {
+		const u32 sym = _vm.find("ITMINUGGET");
+		if (isItem(sym)) _tradeCurrency = sym;
+	}
+	const u32 mul = _vm.find("TRADE_VALUE_MULTIPLIER");
+	if (mul != SCRIPT_NONE && _vm.symbol(mul).type == SCRIPT_FLOAT && !(_vm.symbol(mul).flags & SCRIPTF_MEMBER)) {
+		const float m = _vm.getFloat(mul);
+		if (m >= 0.0f && m < 1000.0f) _tradeMultiplier = m;
+	}
+}
+
+u32 Game::tradeCurrency() {
+	tradeLookUp();
+	return _tradeCurrency;
+}
+
+float Game::tradeMultiplier() {
+	tradeLookUp();
+	return _tradeMultiplier;
+}
+
+i32 Game::buyPrice(u32 itemSymbol) {
+	const GameItemInfo* it = itemInfo(itemSymbol);
+	return it && it->value > 0 ? it->value : 0;
+}
+
+i32 Game::sellPrice(u32 itemSymbol) {
+	const GameItemInfo* it = itemInfo(itemSymbol);
+	if (!it || it->value <= 0) return 0;
+	const double p = ceil(double(tradeMultiplier()) * double(it->value));
+	return p < 0.0 ? 0 : p > 1.0e9 ? 1000000000 : i32(p);
 }
 
 } // namespace g3

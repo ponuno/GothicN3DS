@@ -55,6 +55,8 @@ struct GameNpc {
 	// Npc_SetTalentValue: for the fighting talents (1H, 2H) the chance, in per cent, of NOT striking
 	// a critical blow (Gothic 1 reckoning, see Game::meleeDamage).
 	i16 talent[16] = {};
+	// Npc_SetTalentSkill: what a teacher has taught (the level of a talent: 1H 0..2, sneaking 0/1, the mage's circle ...).
+	i16 skill[16] = {};
 	// Where it is now.
 	bool placed = false;   // false: the world has no such place
 	GameText want = 0;     // where its routine wants it
@@ -277,6 +279,16 @@ public:
 	i32 itemCount(u32 npc, u32 itemSymbol) const;
 	// Gives (count > 0) or takes (count < 0) items; never below none.
 	void giveItems(u32 npc, u32 itemSymbol, i32 count);
+	// ---- trade (barter; trade.cpp of the application, the rules here) ----
+	// The money of the colony: the item the scripts name (TRADE_CURRENCY_INSTANCE, as Gothic 2 has it),
+	// else the ore nugget (ITMINUGGET); SCRIPT_NONE if the scripts have none.
+	u32 tradeCurrency();
+	// What the scripts multiply a price by when the player sells (TRADE_VALUE_MULTIPLIER; 1 where they have none).
+	float tradeMultiplier();
+	// What one of the item costs the player to buy (C_ITEM.VALUE) and what he is paid for it (the value times
+	// the multiplier, rounded up), as OpenGothic's Item::cost and sellCost.
+	i32 buyPrice(u32 itemSymbol);
+	i32 sellPrice(u32 itemSymbol);
 	// Every stack of items anybody carries (some with a count of 0: given
 	// away), in the order they were first given.
 	u32 itemStackCount() const { return _itemCount; }
@@ -578,6 +590,10 @@ private:
 	u32 _itemInfoCount = 0, _itemInfoCap = 0;
 	ScriptInstance* _gilValues = nullptr;
 	bool _gilTried = false;
+	bool _tradeTried = false;
+	void tradeLookUp();
+	u32 _tradeCurrency = SCRIPT_NONE;
+	float _tradeMultiplier = 1.0f;
 	ScriptVm _vm;
 	GameNpc* _npcs = nullptr;
 	u32 _npcCount = 0, _npcCap = 0;
@@ -610,6 +626,8 @@ private:
 	static void xIsInCutscene(ScriptVm& vm, void* user);
 	static void xSetTalentValue(ScriptVm& vm, void* user);
 	static void xGetTalentValue(ScriptVm& vm, void* user);
+	static void xSetTalentSkill(ScriptVm& vm, void* user);
+	static void xGetTalentSkill(ScriptVm& vm, void* user);
 	GameInfo* _infos = nullptr;
 	u32 _infoCount = 0;
 	GameChoice* _choices = nullptr;

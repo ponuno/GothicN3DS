@@ -121,6 +121,8 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	_chests.leaveWorld();
 	_lootTarget = -1;
 	_chestTarget = -1;
+	_mobTarget = -1;
+	_mobJob = MobJob();
 	_corpseTarget = -1;
 	_world.close();
 	gfx::releaseDestroyed();
@@ -421,10 +423,16 @@ void App::update(const Input& in, float dt) {
 			fightIn.focus = false;
 		}
 		chestUpdate(fightIn, dt);
+		mobUpdate(fightIn, dt);
 		itemsUpdate(fightIn, dt); // (a job holds the hands: its frames take the fight keys)
 		talkUpdate(fightIn, dt);
 		fightInput(fightIn, dt);
 		Input heroIn = steerInput(in, dt);
+		// Sneaking is learnt (a teacher sets the talent's skill), as OpenGothic's Npc::canSneak has it.
+		if (heroIn.toggleSneak && !_hero.sneaking() && !heroCanSneak()) {
+			heroIn.toggleSneak = false;
+			if (_hero.weapon() == WEAPON_NONE) itemMessage(tr("Вы не умеете красться"));
+		}
 		// D-Pad down in the fighting stance: a hop back, as the stick pulled back does.
 		if (in.dodge && _hero.weapon() != WEAPON_NONE) {
 			heroIn.moveZ = -1.0f;
@@ -1155,6 +1163,7 @@ void App::respawn(const char* statePath) {
 void App::applySettings() {
 	_settings.sanitize();
 	_world.config().farDistance = _settings.farCm(); // (before the fog, which follows it)
+	_world.config().farFillNear = _settings.farFill != 0;
 	setDrawDistance(_settings.drawDistanceCm());
 	StreamConfig& cfg = _world.config();
 	cfg.detailDistance[DETAIL_MEDIUM] = _settings.mediumObjectsCm();

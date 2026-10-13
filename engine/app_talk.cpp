@@ -43,12 +43,18 @@ void App::talkUpdate(Input& in, float dt) {
 			const float want = atan2f(n.pos[0] - _player.feet.x, n.pos[2] - _player.feet.z);
 			_hero.setYaw(turnToward(_hero.yaw(), want, 6.0f * dt));
 		}
-		if (_panel.page() == InventoryPanel::PAGE_PLAY) {
-			_panel.openPage(InventoryPanel::PAGE_DIALOG);
+		// The talk's page is the menu of its ways - or, while the trader's wares are up, the trade page.
+		const bool trading = _npcs.trading();
+		const InventoryPanel::PanelPage want = trading ? InventoryPanel::PAGE_CHEST : InventoryPanel::PAGE_DIALOG;
+		const InventoryPanel::PanelPage other = trading ? InventoryPanel::PAGE_DIALOG : InventoryPanel::PAGE_CHEST;
+		if (_panel.page() == InventoryPanel::PAGE_PLAY || (_panel.page() == other && _chest.stage == CH_NONE)) {
+			_panel.openPage(want);
+			if (trading) _panel.setSide(0);
 			_invStamp = 0;
 		}
 	} else {
-		if (_panel.page() == InventoryPanel::PAGE_DIALOG) {
+		// (The wares may still be up if the talk was cut short.)
+		if (_panel.page() == InventoryPanel::PAGE_DIALOG || (_panel.page() == InventoryPanel::PAGE_CHEST && _chest.stage == CH_NONE)) {
 			_panel.openPage(InventoryPanel::PAGE_PLAY);
 			_invStamp = 0;
 		}
@@ -103,7 +109,7 @@ void App::talkUpdate(Input& in, float dt) {
 	_talkTarget = -1;
 	if (hi < 0 || !_hero.loaded() || _hero.down() || _hero.weapon() != WEAPON_NONE || _hero.drawing() || _job.stage != JOB_NONE ||
 	    _panel.open() || _player.swimming || _player.climbing || _hero.mantling() || !_player.grounded || _chest.stage != CH_NONE ||
-	    _lootTarget >= 0 || _chestTarget >= 0 || _corpseTarget >= 0 || _menu.isOpen()) {
+	    _lootTarget >= 0 || _chestTarget >= 0 || _corpseTarget >= 0 || _mobTarget >= 0 || _mobJob.stage != MJ_NONE || _menu.isOpen()) {
 		return;
 	}
 	// (A scan over the few characters about is as cheap as the chests' one.)

@@ -92,6 +92,10 @@ struct SrcMob {
 	std::string key;      // upper case item instance, "" for none
 	std::string pick;     // "LRRL"
 	std::string contents; // "ITMI_GOLD:75, ITFO_FISH:2"
+	// What the player may do with it (WorldMobInfo).
+	std::string focus, onState, condition, useItem, target; // names as the world has them (script names upper case)
+	int kind = 0;                                          // MobKind
+	bool rewind = false;
 };
 
 // A thing lying about (g3ds/game.h, WorldItem).

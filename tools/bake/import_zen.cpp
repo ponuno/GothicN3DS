@@ -1180,6 +1180,23 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 		out.pos[2] = vob.position.z;
 		out.yaw = std::atan2(col[2].x, col[2].z);
 		out.states = std::clamp(mob.states, 0, 16);
+		if (const auto* inter = dynamic_cast<const zenkit::VInteractiveObject*>(&vob)) {
+			out.focus = upper(inter->name);
+			out.onState = upper(inter->on_state_change_function);
+			out.condition = upper(inter->condition_function);
+			out.useItem = upper(inter->item);
+			out.target = inter->target;
+			out.rewind = inter->rewind;
+			using T = zenkit::VirtualObjectType;
+			out.kind = vob.type == T::oCMobBed ? MOBKIND_BED
+			           : vob.type == T::oCMobFire ? MOBKIND_FIRE
+			           : vob.type == T::oCMobSwitch ? MOBKIND_SWITCH
+			           : vob.type == T::oCMobWheel ? MOBKIND_WHEEL
+			           : vob.type == T::oCMobContainer ? MOBKIND_CONTAINER
+			           : vob.type == T::oCMobDoor ? MOBKIND_DOOR
+			           : vob.type == T::oCMobInter ? MOBKIND_INTER
+			                                       : MOBKIND_OTHER;
+		}
 		if (const auto* box = dynamic_cast<const zenkit::VContainer*>(&vob)) {
 			out.container = true;
 			out.locked = box->locked;

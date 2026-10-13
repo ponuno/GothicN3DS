@@ -19,12 +19,12 @@
 
 namespace {
 
-enum { ID_PATH = 1, ID_BROWSE, ID_MUSIC, ID_GFXPLUS, ID_START, ID_PROGRESS, ID_LOG, ID_STATUS, ID_VOICES, ID_DEBUG, ID_LOD, ID_SIMPLIFY, ID_SIMPLIFY_LARGE };
+enum { ID_PATH = 1, ID_BROWSE, ID_MUSIC, ID_GFXPLUS, ID_START, ID_PROGRESS, ID_LOG, ID_STATUS, ID_VOICES, ID_DEBUG, ID_LOD, ID_SIMPLIFY, ID_SIMPLIFY_LARGE, ID_FAR_HQ };
 const UINT WM_LOGLINE = WM_APP + 1; // lParam: new std::wstring*
 const UINT WM_STATUS = WM_APP + 2;  // lParam: new std::wstring*
 const UINT WM_FINISHED = WM_APP + 3; // wParam: 1 ok
 
-HWND gWnd, gPath, gBrowse, gMusic, gGfxPlus, gLod, gSimplify, gSimplifyLarge, gVoices, gDebug, gStart, gProgress, gLog, gStatus;
+HWND gWnd, gPath, gBrowse, gMusic, gGfxPlus, gLod, gSimplify, gSimplifyLarge, gFarHq, gVoices, gDebug, gStart, gProgress, gLog, gStatus;
 std::wstring gExeDir; // with a trailing backslash
 std::atomic<HANDLE> gChild(nullptr);
 std::atomic<bool> gRunning(false), gAbort(false);
@@ -135,7 +135,7 @@ bool run(const std::wstring& cmd) {
 	return code == 0;
 }
 
-void pipeline(std::wstring game, bool music, bool gfxPlus, bool lod, bool simplify, bool simplifyLarge, bool voices, bool debug) {
+void pipeline(std::wstring game, bool music, bool gfxPlus, bool lod, bool simplify, bool simplifyLarge, bool farHq, bool voices, bool debug) {
 	const std::wstring bake = L"\"" + gExeDir + L"g3ds-bake.exe\"";
 	const std::wstring render = L"\"" + gExeDir + L"dmrender.exe\"";
 	const std::wstring out = gExeDir; // everything lands beside the program
@@ -165,6 +165,8 @@ void pipeline(std::wstring game, bool music, bool gfxPlus, bool lod, bool simpli
 		if (haveMusic) cmd += L" --music-dir \"" + shortPath(wavs) + L"\"";
 		// Graphics+ in the data: corner shading, swaying plants, far layer and visibility table (switched on in the game's menu, Graphics -> Graphics+).
 		if (gfxPlus) cmd += L" --ao low --wind --far-lod --vis";
+		// A finer far view (Graphics+ -> Far layer): more triangles and finer cells, about 2.5 times the memory of the default.
+		if (gfxPlus && farHq) cmd += L" --far-tris 200 --far-cell 2";
 		// Simplified stand-ins for far chunks (menu: Graphics+ -> Far geometry): about half the triangles there.
 		if (lod) cmd += L" --lod";
 		if (simplify || simplifyLarge) cmd += L" --simplify";
@@ -249,6 +251,7 @@ void startPressed() {
 	const bool lod = SendMessageW(gLod, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	const bool simplify = SendMessageW(gSimplify, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	const bool simplifyLarge = SendMessageW(gSimplifyLarge, BM_GETCHECK, 0, 0) == BST_CHECKED;
+	const bool farHq = SendMessageW(gFarHq, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	const bool voices = SendMessageW(gVoices, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	const bool debug = SendMessageW(gDebug, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	if (gWorker.joinable()) gWorker.join();
@@ -265,10 +268,11 @@ void startPressed() {
 	EnableWindow(gLod, FALSE);
 	EnableWindow(gSimplify, FALSE);
 	EnableWindow(gSimplifyLarge, FALSE);
+	EnableWindow(gFarHq, FALSE);
 	EnableWindow(gVoices, FALSE);
 	EnableWindow(gDebug, FALSE);
 	SendMessageW(gProgress, PBM_SETMARQUEE, TRUE, 40);
-	gWorker = std::thread(pipeline, game, music, gfxPlus, lod, simplify, simplifyLarge, voices, debug);
+	gWorker = std::thread(pipeline, game, music, gfxPlus, lod, simplify, simplifyLarge, farHq, voices, debug);
 }
 
 LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
@@ -304,6 +308,7 @@ LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
 		EnableWindow(gLod, TRUE);
 		EnableWindow(gSimplify, TRUE);
 		EnableWindow(gSimplifyLarge, TRUE);
+		EnableWindow(gFarHq, TRUE);
 		EnableWindow(gVoices, TRUE);
 		EnableWindow(gDebug, TRUE);
 		if (w) MessageBoxW(h, L"Done! data.pak (and music.pak, speech.pak) are next to this program.\r\nCopy them to the SD card, folder 3ds\\gothic3ds\\", L"Gothic 3DS", MB_OK | MB_ICONINFORMATION);
@@ -340,7 +345,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
 	wc.lpszClassName = L"G3dsBaker";
 	RegisterClassW(&wc);
 	gWnd = CreateWindowExW(0, wc.lpszClassName, L"Gothic 3DS: data baker", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-	                       CW_USEDEFAULT, CW_USEDEFAULT, 720, 546, nullptr, nullptr, inst, nullptr);
+	                       CW_USEDEFAULT, CW_USEDEFAULT, 720, 568, nullptr, nullptr, inst, nullptr);
 	const HFONT font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
 	const auto make = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id, DWORD ex = 0) {
 		HWND c = CreateWindowExW(ex, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h, gWnd, reinterpret_cast<HMENU>(INT_PTR(id)), inst, nullptr);
@@ -360,10 +365,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
 	SendMessageW(gLod, BM_SETCHECK, BST_CHECKED, 0);
 	gSimplify = make(L"BUTTON", L"Simplified all geometry: objects and characters (fewer triangles, faster, less detail)", BS_AUTOCHECKBOX, 12, 128, 590, 22, ID_SIMPLIFY);
 	gSimplifyLarge = make(L"BUTTON", L"Large objects simplified harder (about 40% of their triangles kept; implies the option above)", BS_AUTOCHECKBOX, 12, 150, 590, 22, ID_SIMPLIFY_LARGE);
+	gFarHq = make(L"BUTTON", L"Finer far view (needs Graphics+): 200k triangles, 2 m cells; about 2.5x the memory", BS_AUTOCHECKBOX, 12, 172, 590, 22, ID_FAR_HQ);
 	gStart = make(L"BUTTON", L"Bake", BS_DEFPUSHBUTTON, 610, 60, 90, 28, ID_START);
-	gProgress = make(PROGRESS_CLASSW, L"", PBS_MARQUEE, 12, 178, 688, 14, ID_PROGRESS);
-	gStatus = make(L"STATIC", L"Select the folder and press \"Bake\". The files will appear next to this program.", 0, 12, 198, 688, 18, ID_STATUS);
-	gLog = make(L"EDIT", L"", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL, 12, 220, 688, 274, ID_LOG, WS_EX_CLIENTEDGE);
+	gProgress = make(PROGRESS_CLASSW, L"", PBS_MARQUEE, 12, 200, 688, 14, ID_PROGRESS);
+	gStatus = make(L"STATIC", L"Select the folder and press \"Bake\". The files will appear next to this program.", 0, 12, 220, 688, 18, ID_STATUS);
+	gLog = make(L"EDIT", L"", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL, 12, 242, 688, 274, ID_LOG, WS_EX_CLIENTEDGE);
 	SendMessageW(gLog, EM_SETLIMITTEXT, 0x7FFFFFF, 0);
 
 	ShowWindow(gWnd, show);

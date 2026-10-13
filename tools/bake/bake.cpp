@@ -763,6 +763,20 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			std::vector<WorldMob> mobs;
 			std::vector<MobSlot> slots;
 			std::vector<WorldChest> chests;
+			std::vector<WorldMobInfo> infos;
+			std::string infoNames(1, '\0');
+			std::map<std::string, u32> infoAt;
+			const auto infoName = [&](const std::string& text) -> u32 {
+				if (text.empty()) return 0;
+				auto found = infoAt.find(text);
+				if (found != infoAt.end()) return found->second;
+				const u32 where = u32(infoNames.size());
+				infoNames += text;
+				infoNames.push_back('\0');
+				infoAt[text] = where;
+				return where;
+			};
+			size_t infoNamed = 0, infoHidden = 0;
 			size_t chestItems = 0, chestLocked = 0;
 			std::map<std::string, u32> byScheme;
 			size_t withoutSlots = 0;
@@ -816,6 +830,19 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 					chestItems += std::count(src.contents.begin(), src.contents.end(), ',') + (src.contents.empty() ? 0 : 1);
 					chestLocked += src.locked;
 				}
+				{
+					WorldMobInfo info {};
+					info.focus = infoName(src.focus);
+					info.onState = infoName(src.onState);
+					info.condition = infoName(src.condition);
+					info.useItem = infoName(src.useItem);
+					info.target = infoName(src.target);
+					info.kind = u8(src.kind);
+					info.rewind = src.rewind ? 1 : 0;
+					infoNamed += info.focus != 0;
+					infoHidden += info.focus == 0;
+					infos.push_back(info);
+				}
 				mobs.push_back(m);
 			}
 			while (names.size() % 4) names.push_back('\0');
@@ -843,6 +870,21 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				cblob.insert(cblob.end(), names.begin(), names.end());
 				pak.add("world/" + bw.name + "/chests", ASSET_META, cblob);
 				chestNote = format("containers: %zu (%zu locked), with %zu stacks of things inside", chests.size(), chestLocked, chestItems);
+			}
+			if (!infos.empty()) {
+				while (infoNames.size() % 4) infoNames.push_back('\0');
+				MobInfoHeader ih {};
+				ih.magic = MOBINFO_MAGIC;
+				ih.version = MOBINFO_VERSION;
+				ih.count = u32(infos.size());
+				ih.nameBytes = u32(infoNames.size());
+				std::vector<u8> iblob(sizeof(ih));
+				std::memcpy(iblob.data(), &ih, sizeof(ih));
+				append(iblob, infos);
+				iblob.insert(iblob.end(), infoNames.begin(), infoNames.end());
+				pak.add("world/" + bw.name + "/mobinfo", ASSET_META, iblob);
+				line(format("things to use by the player: %zu have a name to show (he may use those), %zu have none (the inhabitants' only)",
+				            infoNamed, infoHidden));
 			}
 			std::vector<std::pair<u32, std::string>> order;
 			for (const auto& [scheme, count] : byScheme) order.push_back({count, scheme});

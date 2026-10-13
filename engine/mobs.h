@@ -22,6 +22,13 @@ public:
 	bool loaded() const { return _blob != nullptr; }
 
 	u32 count() const { return _h.mobCount; }
+	// What the player may do with the mob (the optional table "mobinfo"); false where the pak has none.
+	bool hasInfo() const { return _infos != nullptr; }
+	const WorldMobInfo& info(u32 i) const { return _infos[i]; }
+	const char* infoText(u32 offset) const { return _infoNames + offset; }
+	// Whether the player's character may use it: the world's maker named it for him (a thing without a focus
+	// name is for the inhabitants), and it is not one of the kinds with their own handling (chests, doors).
+	bool forPlayer(u32 i) const;
 	const WorldMob& mob(u32 i) const { return _mobs[i]; }
 	const char* scheme(u32 i) const { return _names + _mobs[i].scheme; }
 	const MobSlot& slot(u32 mob, u32 k) const { return _slots[_mobs[mob].firstSlot + k]; }
@@ -47,11 +54,15 @@ public:
 	void dropAll();
 
 private:
+	void loadInfo(Pak& pak, const char* worldAsset);
 	u8* _blob = nullptr;
 	MobsHeader _h {};
 	const WorldMob* _mobs = nullptr;
 	const MobSlot* _slots = nullptr;
 	const char* _names = nullptr;
+	u8* _infoBlob = nullptr;
+	const WorldMobInfo* _infos = nullptr;
+	const char* _infoNames = nullptr;
 	u16* _user = nullptr; // per mob: owner + 1, 0 for nobody
 };
 

@@ -15,6 +15,14 @@ const int ATR_HITPOINTS     = 0;
 const int ATR_HITPOINTS_MAX = 1;
 const int ATR_MANA          = 2;
 const int ATR_MANA_MAX      = 3;
+const int NPC_TALENT_1H     = 1;
+const int NPC_TALENT_MAGE   = 7;
+const int NPC_TALENT_SNEAK  = 8;
+const string TXT_TALENTS[9] = {"", "One-handed", "", "", "", "", "", "Magic", "Sneaking"};
+const string TXT_TALENTS_SKILLS[9] = {"", "One-handed#None|Apprentice|Master", "", "", "", "", "", "Magic#No circle|First circle|Second circle", "Sneaking#Cannot|Can"};
+const int LPCOST_ATTRIBUTE_STRENGTH = 1;
+const int LPCOST_TALENT_SNEAK = 2;
+const int LPCOST_TALENT_MAGE_1 = 3;
 const int ATR_STRENGTH      = 4;
 const int ATR_DEXTERITY     = 5;
 const int ATR_INDEX_MAX     = 8;
@@ -392,6 +400,7 @@ extern func float  IntToFloat(var int x);
 extern func int    FloatToInt(var float x);
 extern func int    Npc_IsPlayer(var C_NPC n);
 extern func void   Npc_SetTalentSkill(var C_NPC n, var int talent, var int value);
+extern func int    Npc_GetTalentSkill(var C_NPC n, var int talent);
 extern func void   Npc_SetToFistMode(var C_NPC n);
 extern func int    Npc_KnowsInfo(var C_NPC n, var int info);
 extern func int    Npc_GetDistToNpc(var C_NPC a, var C_NPC b);
@@ -1211,6 +1220,7 @@ instance PC_Hero (Npc_Default) {
 	voice = 15;
 	id = 0;
 	exp_next = 500;
+	lp = 10;
 	B_SetAttributes(self, 10, 40);
 	attribute[ATR_MANA_MAX] = 20;
 	attribute[ATR_MANA]     = 10;
@@ -1238,6 +1248,8 @@ instance GRD_200_Thorus (Npc_Default) {
 	Mdl_SetModelFatness(self, 0);
 	Npc_SetTalentSkill(self, 1, 2);
 	EquipItem(self, ItMw_Sword);
+	CreateInvItems(self, ItFoBeer, 4);
+	CreateInvItems(self, ItFo_Potion_Health_01, 2);
 	daily_routine = Rtn_start_200;
 };
 func void Rtn_start_200() {
@@ -1475,6 +1487,88 @@ func int DIA_Thorus_EXIT_Condition() {
 };
 func void DIA_Thorus_EXIT_Info() {
 	AI_StopProcessInfos(self);
+};
+
+// Thorus also teaches (the original's way: a price in learning points, the talent or attribute set by the script).
+instance DIA_Thorus_TeachStrength (C_INFO) {
+	npc = GRD_200_Thorus;
+	nr = 800;
+	condition = DIA_Thorus_TeachStrength_Condition;
+	information = DIA_Thorus_TeachStrength_Info;
+	permanent = TRUE;
+	description = "Teach me strength (1 learning point)";
+};
+func int DIA_Thorus_TeachStrength_Condition() { return TRUE; };
+func void DIA_Thorus_TeachStrength_Info() {
+	if (other.lp >= LPCOST_ATTRIBUTE_STRENGTH) {
+		other.lp = other.lp - LPCOST_ATTRIBUTE_STRENGTH;
+		other.attribute[ATR_STRENGTH] = other.attribute[ATR_STRENGTH] + 5;
+		PrintScreen("Strength increased", -1, 55, "FONT_OLD_10_WHITE.TGA", 2);
+	} else {
+		PrintScreen("Not enough learning points", -1, 55, "FONT_OLD_10_WHITE.TGA", 2);
+	};
+};
+
+instance DIA_Thorus_TeachSneak (C_INFO) {
+	npc = GRD_200_Thorus;
+	nr = 801;
+	condition = DIA_Thorus_TeachSneak_Condition;
+	information = DIA_Thorus_TeachSneak_Info;
+	permanent = TRUE;
+	description = "Teach me to sneak (2 learning points)";
+};
+// Things the player uses (the world names them; the bed at the second hut has no name).
+const string MOBNAME_BENCH = "Bench";
+const string MOBNAME_ANVIL = "Anvil";
+const string MOBNAME_BED   = "Bed";
+var int MOBTEST_USED;
+var int MOBTEST_ALLOW;
+func int  ANVIL_COND() { return MOBTEST_ALLOW; };
+func void ANVIL_S1()   { MOBTEST_USED = MOBTEST_USED + 1; };
+func int DIA_Thorus_TeachSneak_Condition() { return Npc_GetTalentSkill(other, NPC_TALENT_SNEAK) == 0; };
+func void DIA_Thorus_TeachSneak_Info() {
+	if (other.lp >= LPCOST_TALENT_SNEAK) {
+		other.lp = other.lp - LPCOST_TALENT_SNEAK;
+		Npc_SetTalentSkill(other, NPC_TALENT_SNEAK, 1);
+		PrintScreen("Learnt: sneaking", -1, 55, "FONT_OLD_10_WHITE.TGA", 2);
+	} else {
+		PrintScreen("Not enough learning points", -1, 55, "FONT_OLD_10_WHITE.TGA", 2);
+	};
+};
+
+instance DIA_Thorus_TeachCircle (C_INFO) {
+	npc = GRD_200_Thorus;
+	nr = 802;
+	condition = DIA_Thorus_TeachCircle_Condition;
+	information = DIA_Thorus_TeachCircle_Info;
+	permanent = TRUE;
+	description = "Teach me the first circle (3 learning points)";
+};
+func int DIA_Thorus_TeachCircle_Condition() { return Npc_GetTalentSkill(other, NPC_TALENT_MAGE) < 1; };
+func void DIA_Thorus_TeachCircle_Info() {
+	if (other.lp >= LPCOST_TALENT_MAGE_1) {
+		other.lp = other.lp - LPCOST_TALENT_MAGE_1;
+		Npc_SetTalentSkill(other, NPC_TALENT_MAGE, 1);
+		PrintScreen("Learnt: the first circle", -1, 55, "FONT_OLD_10_WHITE.TGA", 2);
+	} else {
+		PrintScreen("Not enough learning points", -1, 55, "FONT_OLD_10_WHITE.TGA", 2);
+	};
+};
+
+// Thorus also sells: the trade info opens the wares once it has been told.
+instance DIA_Thorus_Trade (C_INFO) {
+	npc = GRD_200_Thorus;
+	nr = 900;
+	condition = DIA_Thorus_Trade_Condition;
+	information = DIA_Thorus_Trade_Info;
+	permanent = TRUE;
+	trade = TRUE;
+	description = "Let us trade.";
+};
+func int DIA_Thorus_Trade_Condition() {
+	return TRUE;
+};
+func void DIA_Thorus_Trade_Info() {
 };
 
 instance DIA_Jackal_Hello (C_INFO) {

@@ -12,6 +12,7 @@ struct TalkView {
 	bool active = false;   // a talk is on: the player's character stands and listens
 	bool choosing = false; // the ways to go on are up (else: words are said, or a moment passes)
 	bool saying = false;   // a line is up
+	bool trading = false;  // the wares are up (the bottom screen is the trade page)
 	bool heroSays = false; // ... and it is the player's
 	char partner[48] = ""; // who is talked to (UTF-8)
 	char speaker[48] = ""; // who says the line

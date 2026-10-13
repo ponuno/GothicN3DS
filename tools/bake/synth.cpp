@@ -583,12 +583,16 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 		const size_t bench = thing("BENCH", 350.0f, 110.0f, 3.14159f, 1, 90.0f, 42.0f);
 		slot(bench, "ZS_POS0", -45.0f, -110.0f, 3.14159f, 100.0f);
 		slot(bench, "ZS_POS1", 45.0f, -110.0f, 3.14159f, 100.0f);
+		scene.mobs[bench].focus = "MOBNAME_BENCH";
+		scene.mobs[bench].kind = 1; // MOBKIND_BED: a place to be at
 		// Beds: got into from the front.
 		// (On the near side of the hut's wall: a bed behind it is not seen,
 		// and nobody walks through the wall to it.)
 		const size_t bed1 = thing("BEDHIGH", 900.0f - 190.0f, 900.0f, -1.5708f, 1, 110.0f, 45.0f);
 		slot(bed1, "ZS_POS0_FRONT", 125.0f, 0.0f, -1.5708f);
 		slot(bed1, "ZS_POS1_BACK", -125.0f, 0.0f, 1.5708f);
+		scene.mobs[bed1].focus = "MOBNAME_BED";
+		scene.mobs[bed1].kind = 1;
 		const size_t bed2 = thing("BEDHIGH", -900.0f + 190.0f, 800.0f, 1.5708f, 1, 110.0f, 45.0f);
 		slot(bed2, "ZS_POS0_FRONT", -125.0f, 0.0f, 1.5708f);
 		// A low bed by the first hut, too, behind the wall: the sleeper's
@@ -596,9 +600,17 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 		// it got into first - and never to go through the wall to this one.
 		const size_t bed3 = thing("BEDLOW", 900.0f + 190.0f, 900.0f, 1.5708f, 1, 110.0f, 30.0f);
 		slot(bed3, "ZS_POS0", -125.0f, 0.0f, 1.5708f);
+		// (This one the scripts never use: the player's own, with a condition.)
+		scene.mobs[bed3].focus = "MOBNAME_ANVIL";
+		scene.mobs[bed3].onState = "ANVIL_S1";
+		scene.mobs[bed3].condition = "ANVIL_COND";
+		scene.mobs[bed3].kind = 1;
 		// The anvil: one stands a pace from it, on whichever side one comes from.
 		const size_t anvil = thing("BSANVIL", -500.0f - 160.0f, 500.0f, 0.0f, 0, 32.0f, 75.0f);
 		slot(anvil, "ZS_POS0_DIST", 0.0f, 75.0f, 3.14159f);
+		scene.mobs[anvil].focus = "MOBNAME_ANVIL";
+		scene.mobs[anvil].onState = "ANVIL_S1";
+		scene.mobs[anvil].kind = 0;
 		// The chests: an open one with a few things in it, among them a key and
 		// lock picks; a small one that the key opens; a small one that only a pick
 		// opens, turning it left, right, left. Each is stood before from the north.

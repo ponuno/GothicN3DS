@@ -272,11 +272,17 @@ public:
 	const Chests& chests() const { return _chests; }
 	Chests& chests() { return _chests; }
 	int chestTarget() const { return _chestTarget; }
+	// The thing of the world (benches, beds, the grindstone ...) the character could use now (A; a mob's
+	// number, -1 for none), and whether he is at one.
+	int mobTarget() const { return _mobTarget; }
+	bool mobInUse() const { return _mobJob.stage != MJ_NONE; }
 	// The dead the character could search now (A; a character's index, -1 for none), and the
 	// one being searched (-1 for none: the open container is a chest).
 	int corpseTarget() const { return _corpseTarget; }
 	int corpseOpen() const { return _chest.stage != CH_NONE ? _chest.corpse : -1; }
 	enum ChestStage : u8 { CH_NONE, CH_LOCK, CH_GLIDE, CH_OPEN, CH_CLOSING };
+	// Whether the character has learnt to sneak (the scripts' NPC_TALENT_SNEAK skill).
+	bool heroCanSneak() const;
 	u8 chestStage() const { return _chest.stage; }
 	int chestIndex() const { return _chest.stage != CH_NONE ? int(_chest.index) : -1; }
 	// The platform says R is held: the quick slots are shown on the top screen.
@@ -526,6 +532,25 @@ private:
 		char news[64] = ""; // the lock page's line (a pick broke)
 	};
 	ChestJob _chest;
+	// The world's things the player uses (interact.cpp): benches, beds, the grindstone, fires, levers ...
+	// Only those the world's maker gave a name (a thing without one is for the inhabitants).
+	struct MobJob {
+		u8 stage = 0; // MJ_*
+		u32 mob = 0;
+		float time = 0;
+		Vec3 from {0, 0, 0}, to {0, 0, 0};
+		float yawFrom = 0, yawTo = 0;
+		bool stay = false;   // held until the player lets go (a bed, a bench)
+		bool ran = false;    // its state function has run
+	};
+	enum MobStage : u8 { MJ_NONE, MJ_GLIDE, MJ_IN, MJ_HELD, MJ_OUT };
+	MobJob _mobJob;
+	int _mobTarget = -1;
+	void mobUpdate(Input& in, float dt);
+	int mobNearest() const;
+	bool mobStart(u32 mob);
+	void mobEnd(bool hurried);
+	void mobName(u32 mob, char* out, size_t size) const;
 	void talkUpdate(Input& in, float dt);
 	void drawSubtitle();
 	// The Barrier's hum: heard outdoors while the setting is on, if the scripts have a sound for it.
@@ -546,6 +571,13 @@ private:
 	void chestMove(u32 symbol, i32 amount, bool toChest);
 	void chestView(const GameNpc& hero);
 	const char* chestName(u32 index) const; // "Большой сундук" ...
+	// ---- trade (trade.cpp) ----
+	// The wares of the trader the player talks to: his things, not the money and not what he wears, in the order
+	// he got them. `k`-th stack, false past the last.
+	bool traderStack(u32 npc, u32 k, u32& symbol, i32& count) const;
+	void tradeMove(u32 symbol, i32 amount, bool sell);
+	void tradeView(const GameNpc& hero);              // the trade page: the wares into _inv.chest
+	void tradeDecoratePack(InventoryView& v);         // prices on the pack's things, the money left out
 };
 
 } // namespace g3

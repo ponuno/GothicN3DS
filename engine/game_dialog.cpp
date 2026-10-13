@@ -72,7 +72,8 @@ void Game::bindDialogues() {
 	             {"NPC_EXCHANGEROUTINE", xExchangeRoutine}, {"PRINT", xPrint},
 	             {"PRINTSCREEN", xPrintScreen},          {"NPC_KNOWSPLAYER", xKnowsPlayer},
 	             {"NPC_SETKNOWSPLAYER", xSetKnowsPlayer},
-	             {"NPC_SETTALENTVALUE", xSetTalentValue}, {"NPC_GETTALENTVALUE", xGetTalentValue}, {"INTRODUCECHAPTER", xIntroduceChapter}};
+	             {"NPC_SETTALENTVALUE", xSetTalentValue}, {"NPC_GETTALENTVALUE", xGetTalentValue},
+	             {"NPC_SETTALENTSKILL", xSetTalentSkill}, {"NPC_GETTALENTSKILL", xGetTalentSkill}, {"INTRODUCECHAPTER", xIntroduceChapter}};
 	for (const auto& e : table) _vm.bind(e.name, e.fn, this);
 
 	// Every C_INFO instance the scripts define, made once: its code says whom it belongs to.
@@ -323,6 +324,24 @@ void Game::xGetTalentValue(ScriptVm& vm, void* user) {
 	const i32 talent = vm.popInt();
 	const int npc = g.indexOf(vm.popInstance());
 	vm.pushInt(npc >= 0 && talent >= 0 && talent < 16 ? g._npcs[npc].talent[talent] : 0);
+}
+
+void Game::xSetTalentSkill(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 value = vm.popInt();
+	const i32 talent = vm.popInt();
+	const int npc = g.indexOf(vm.popInstance());
+	if (npc >= 0 && talent >= 0 && talent < 16) {
+		g._npcs[npc].skill[talent] = i16(value < -32768 ? -32768 : value > 32767 ? 32767 : value);
+		++g._itemsVersion; // (the sheet of the character is made anew)
+	}
+}
+
+void Game::xGetTalentSkill(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 talent = vm.popInt();
+	const int npc = g.indexOf(vm.popInstance());
+	vm.pushInt(npc >= 0 && talent >= 0 && talent < 16 ? g._npcs[npc].skill[talent] : 0);
 }
 
 // ---- the daily routine ----

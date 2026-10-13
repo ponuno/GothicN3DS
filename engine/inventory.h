@@ -93,6 +93,7 @@ enum ItemEntryFlags : u8 {
 	ITEMF_ACTION = 1 << 3,   // there is something to do with it (`action`)
 	ITEMF_QUICK = 1 << 4,    // may go into a quick slot
 	ITEMF_BUSY = 1 << 5,     // being used right now
+	ITEMF_NOSELL = 1 << 6,   // not for trade (the money itself): the trade page leaves it out
 };
 
 // The quick slots: ten, as the number keys of the PC original, on the bottom
@@ -114,6 +115,7 @@ struct ItemEntry {
 	u32 symbol;
 	i32 count;
 	i32 value;
+	i32 price;     // on the trade page: what it costs to buy / what is paid for it (else 0)
 	u8 kind, icon, flags;
 	u16 quick;     // bit k: in quick slot k
 	i16 picture;   // the baked picture (ItemPictures), -1 for none: the drawn icon then
@@ -157,6 +159,9 @@ struct InventoryView {
 	struct Chest {
 		bool open = false;       // its contents are shown
 		bool lock = false;       // its lock is being picked
+		bool trade = false;      // it is a trader's wares (the trade page), not a chest
+		i32 gold = 0;            // trade: the money the character has
+		char currency[24] = "";   // ... and what it is called (the item's name in the scripts)
 		char name[40] = "";
 		u32 count = 0;
 		ItemEntry items[CHEST_MAX];
@@ -171,6 +176,15 @@ struct InventoryView {
 		i32 strength = 0, dexterity = 0;
 		i32 protection[4] = {}; // against weapons, arrows, fire, magic
 		char melee[48] = "", ranged[48] = "", armor[48] = "";
+		// The talents the scripts name (TXT_TALENTS), with the level taught (TXT_TALENTS_SKILLS) and the
+		// talent's value (the chance of a critical blow, of a lock that holds ...), in per cent.
+		enum { TALENTS = 16 };
+		struct Talent {
+			char name[32] = "";
+			char level[32] = "";
+			i32 skill = 0, value = 0;
+		} talents[TALENTS];
+		u32 talentCount = 0;
 	} sheet;
 	// The diary (Log_CreateTopic, Log_AddEntry): its topics, newest first,
 	// each with its entries.
@@ -220,6 +234,7 @@ enum PanelCommandType : u8 {
 	PANEL_TALK_CHOOSE,  // way `slot` of the talk's menu
 	PANEL_TALK_SKIP,    // on to the next line
 	PANEL_TALK_LEAVE,   // B: the way that leaves (the last one), or the line skipped
+	// (The trade page uses PANEL_CHEST_MOVE: `slot` 0 buys, 1 sells, `amount` of `symbol`; PANEL_CHEST_CLOSE ends it.)
 };
 struct PanelCommand {
 	u8 type = PANEL_NONE;

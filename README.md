@@ -37,6 +37,8 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, it
 - More than a thousand characters are placed by the startup scripts; the nearest live by a daily routine: they walk the waypoint network, stand guard, sit at campfires and on benches, work at the anvil, sleep in beds.
 - Perception and reactions to the hero: sight, hearing, threats, attacks, creatures and humans.
 - Dialogue with the real lines, quests and chapters, items in hand and in the world, chests, searching.
+- **Teachers and learning points:** the scripts' own teaching (points paid, attributes raised, talents set via `Npc_SetTalentSkill`) works; sneaking and the circles of runes need the learnt skill, as in the original; the character page lists the talents.
+- **Barter:** a character whose dialogue has a trade entry (`C_INFO.TRADE`) opens his wares on the bottom screen; buy and sell for ore at the scripts' prices (the item's value, times `TRADE_VALUE_MULTIPLIER` when the scripts have it).
 - Experimental compatibility mode for Ikarus-based mods: writes to constants are allowed and the Ikarus memory primitives return 0 (no emulation of Ikarus memory yet).
 
 **Sound**
@@ -47,7 +49,7 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, it
 - The `g3ds-host` host build: the same renderer on PC for debugging; `ctest` tests (6 suites), the console-code check `scripts/check_3ds.sh`.
 - Interface in four languages.
 
-**Not there yet:** trading, teachers and learning points, some triggers and mechanisms (doors, lifts), summoning and transformations, weather. Details and measurements: [`docs/HANDOFF.md`](docs/HANDOFF.md), [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/TECHNICAL.md`](docs/TECHNICAL.md). Next for Graphics+: sky with clouds, height fog, a smooth transition to the far layer and more (the plan is at the end of `docs/HANDOFF.md`).
+**Not there yet:** some triggers and mechanisms (doors, lifts), summoning and transformations, weather. Details and measurements: [`docs/HANDOFF.md`](docs/HANDOFF.md), [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/TECHNICAL.md`](docs/TECHNICAL.md). Next for Graphics+: sky with clouds, height fog, a smooth transition to the far layer and more (the plan is at the end of `docs/HANDOFF.md`).
 
 **Status.** Much of this has been verified on a real New 3DS (60 fps, world, townsfolk, AI), but the latest rounds (combat, magic, climbing, Archolos memory, the far layer) have only been checked on PC and are waiting for a test on the console. The project licence has not been chosen yet; third-party code: [`third_party/README.md`](third_party/README.md).
 

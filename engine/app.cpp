@@ -953,8 +953,10 @@ void App::updateTarget(const Input& in, float dt) {
 		_locked = false;
 		return;
 	}
-	// The weapon put away: the lock goes with it.
-	if (_heldBefore != WEAPON_NONE && _hero.weapon() == WEAPON_NONE) _locked = false;
+	// The weapon put away: the lock goes with it. A lock needs a weapon in hand at all - one taken with
+	// ZR on an empty hand would stay (the C-stick is given to the target switch then and the camera is held
+	// on the target, so it could not be turned until a weapon was drawn and put away).
+	if (_hero.weapon() == WEAPON_NONE) _locked = false;
 	_heldBefore = _hero.weapon();
 	const float feet[3] = {_player.feet.x, _player.feet.y, _player.feet.z};
 	const float aim = _scheme == CONTROLS_CONSOLE && thirdPerson() && !_locked ? _orbitYaw : _hero.yaw();
@@ -969,6 +971,9 @@ void App::updateTarget(const Input& in, float dt) {
 	if (in.focus) {
 		if (_locked) {
 			_locked = false;
+		} else if (_hero.weapon() == WEAPON_NONE) {
+			// (No weapon, no lock: only the camera comes round behind the character.)
+			if (_scheme == CONTROLS_CONSOLE) _orbitYaw = _hero.yaw();
 		} else {
 			// The enemies first, then anybody.
 			int t = _npcs.pickTarget(feet, aim, 1500.0f, 1.0f, -1, 0, true);

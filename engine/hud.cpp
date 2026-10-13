@@ -76,15 +76,6 @@ void App::drawOverlay() {
 			if (tmax > 0 && (w != WEAPON_NONE || thp < tmax))
 				_ui.bar(W / 2 - 50, 5 + Ui::lineHeight(), W / 2 + 50, 9 + Ui::lineHeight(), float(thp) / float(tmax),
 				        hostile ? ui::RED : 0xA0A0A0FFu);
-			// (What the script has it doing: for telling a stuck fighter from a calm one.)
-			if (const NpcActor* ta = _npcs.actorOf(u32(_target))) {
-				char dbg[96];
-				const char* st = ta->state ? _npcs.stateName(ta->state) : "-";
-				const int hero = heroIndex();
-				snprintf(dbg, sizeof(dbg), "%s  a%d  %d  tg%d f%d", st, int(ta->action.kind), int(t.weapon), int(t.target),
-				         hero >= 0 ? int(_npcs.game().talkFlag(u32(hero))) : -9);
-				_ui.text(W / 2, 11 + Ui::lineHeight(), dbg, ui::GREY, ui::TEXT, ui::CENTER);
-			}
 			if (_locked) {
 				int x, y;
 				// (Over a person's head; beasts are lower.)

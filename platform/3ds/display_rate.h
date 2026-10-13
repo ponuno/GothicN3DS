@@ -10,8 +10,9 @@ namespace display {
 bool init();
 // Sets the refresh rate (Hz, about 30..90); the rate the registers make is returned (0 if nothing was written).
 float set(float hz);
-// The system's own timing again (also before the game is suspended); resume() puts the last rate back.
-void restore();
+// The system's own timing again. With `pausing` (HOME, sleep) the rate in force is remembered and resume() puts it back;
+// without (the menu, 30 fps) nothing is remembered, so a later resume() leaves the system's timing alone.
+void restore(bool pausing = false);
 void resume();
 float current();
 // 0 ok, otherwise the failure (for the screen of numbers): 1 read, 2 not the top screen's registers, 3 write.

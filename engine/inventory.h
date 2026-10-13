@@ -203,6 +203,11 @@ struct InventoryView {
 	char entries[DIARY_ENTRIES][200];
 	u32 entryCount = 0;
 	TalkView talk;          // the talk in progress (the dialogue page)
+	struct Doc {
+		bool open = false;    // a book, a letter or a map is being read (the reading page)
+		bool map = false;
+		u32 page = 0, pages = 0;
+	} doc;
 	u32 version = 0;        // changes whenever anything shown changes
 };
 
@@ -234,6 +239,8 @@ enum PanelCommandType : u8 {
 	PANEL_TALK_CHOOSE,  // way `slot` of the talk's menu
 	PANEL_TALK_SKIP,    // on to the next line
 	PANEL_TALK_LEAVE,   // B: the way that leaves (the last one), or the line skipped
+	PANEL_DOC_PAGE,     // reading: `slot` 0 the page before, 1 the next (past the last: closed)
+	PANEL_DOC_CLOSE,    // reading: put it down
 	// (The trade page uses PANEL_CHEST_MOVE: `slot` 0 buys, 1 sells, `amount` of `symbol`; PANEL_CHEST_CLOSE ends it.)
 };
 struct PanelCommand {

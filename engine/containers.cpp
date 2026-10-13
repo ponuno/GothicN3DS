@@ -27,6 +27,25 @@ namespace {
 
 constexpr u32 NONE = SCRIPT_NONE;
 
+// A lock's combination as OpenGothic's PlayerControl::processPickLock reads it: only the L and R count (upper or lower
+// case), whatever else the object names is passed over.
+bool isTurn(char c) { return c == 'l' || c == 'L' || c == 'r' || c == 'R'; }
+
+// The n-th turn of the combination ('L' or 'R'), 0 past the last.
+char lockTurn(const char* combo, u32 n) {
+	for (; *combo; ++combo) {
+		if (!isTurn(*combo)) continue;
+		if (n-- == 0) return (*combo == 'l' || *combo == 'L') ? 'L' : 'R';
+	}
+	return 0;
+}
+
+u32 lockLength(const char* combo) {
+	u32 n = 0;
+	for (; *combo; ++combo) n += isTurn(*combo);
+	return n;
+}
+
 float angleBetween(float from, float to, float t) {
 	float d = to - from;
 	while (d > 3.14159265f) d -= 6.2831853f;
@@ -169,7 +188,15 @@ void App::chestStart(u32 index) {
 			const u32 pick = g.vm().findHash(hashName("ITKELOCKPICK"));
 			const i32 picks = pick != NONE ? g.itemCount(u32(hi), pick) : 0;
 			const char* combo = _chests.pick(index);
-			if (picks > 0 && combo[0]) {
+			// OpenGothic's Interactive::checkUseConditions: in Gothic 1 anybody with a pick may try; in Gothic 2 only one who
+			// has learnt the talent.
+			const bool skilled = !g.isGothic2() || g.talentSkill(u32(hi), g.constant("NPC_TALENT_PICKLOCK", 5)) != 0;
+			if (picks > 0 && lockLength(combo) > 0 && !skilled) {
+				itemMessage(tr("Заперто: взламывать замки вы не умеете"), true);
+				_chest = ChestJob();
+				return;
+			}
+			if (picks > 0 && lockLength(combo) > 0) {
 				_chest.stage = CH_LOCK;
 				_chest.progress = 0;
 				_chest.picks = u8(picks > 99 ? 99 : picks);
@@ -177,7 +204,7 @@ void App::chestStart(u32 index) {
 				_invStamp = 0;
 				return;
 			}
-			itemMessage(combo[0] ? tr("Заперто: нужен ключ или отмычка") : tr("Заперто: нужен ключ"), true);
+			itemMessage(lockLength(combo) > 0 ? tr("Заперто: нужен ключ или отмычка") : tr("Заперто: нужен ключ"), true);
 			_chest = ChestJob();
 			return;
 		}
@@ -409,28 +436,43 @@ void App::chestCommand(const PanelCommand& c) {
 		if (_chest.stage != CH_LOCK || hi < 0) break;
 		Game& g = _npcs.game();
 		const char* combo = _chests.pick(_chest.index);
-		const char want = combo[_chest.progress];
+		const char want = lockTurn(combo, _chest.progress);
 		const bool right = c.slot != 0;
 		if (want && ((want == 'R') == right)) {
-			if (!combo[++_chest.progress]) {
+			++_chest.progress;
+			if (!lockTurn(combo, _chest.progress)) {
 				// The last turn: it opens.
+				g.pickLockSays(u32(hi), 1, 1);
 				_chests.unlock(_chest.index);
 				itemMessage(tr("Замок открыт"), false);
 				_panel.openPage(InventoryPanel::PAGE_PLAY);
 				chestBegin();
+			} else {
+				g.pickLockSays(u32(hi), 1, 0);
+				_chest.news[0] = 0;
 			}
 		} else {
-			const u32 pick = g.vm().findHash(hashName("ITKELOCKPICK"));
-			if (pick != NONE) g.giveItems(u32(hi), pick, -1);
+			// A wrong turn starts the lock over, and the pick may break: OpenGothic keeps it when
+			// "chance to keep" > a die of 100; the chance is the dexterity (Gothic 2) or 100 less the talent's value (Gothic 1).
 			_chest.progress = 0;
-			if (_chest.picks > 0) --_chest.picks;
-			if (_chest.picks == 0) {
-				itemMessage(tr("Отмычка сломалась. Отмычек больше нет"), true);
-				_panel.openPage(InventoryPanel::PAGE_PLAY);
-				_chest = ChestJob();
+			const i32 keep = g.isGothic2() ? g.attributeOf(g.npc(u32(hi)), g.constant("ATR_DEXTERITY", 5))
+			                               : 100 - g.talentValue(u32(hi), g.constant("NPC_TALENT_PICKLOCK", 5));
+			if (keep <= i32(g.dice(100))) {
+				g.pickLockSays(u32(hi), 0, 1);
+				const u32 pick = g.vm().findHash(hashName("ITKELOCKPICK"));
+				if (pick != NONE) g.giveItems(u32(hi), pick, -1);
+				if (_chest.picks > 0) --_chest.picks;
+				if (_chest.picks == 0) {
+					itemMessage(tr("Отмычка сломалась. Отмычек больше нет"), true);
+					_panel.openPage(InventoryPanel::PAGE_PLAY);
+					_chest = ChestJob();
+				} else {
+					snprintf(_chest.news, sizeof(_chest.news), "%s", tr("Отмычка сломалась"));
+					++_itemStats.refused;
+				}
 			} else {
-				snprintf(_chest.news, sizeof(_chest.news), "%s", tr("Отмычка сломалась"));
-				++_itemStats.refused;
+				g.pickLockSays(u32(hi), 0, 0);
+				snprintf(_chest.news, sizeof(_chest.news), "%s", tr("Мимо — отмычка цела, начните сначала"));
 			}
 		}
 		_invStamp = 0;
@@ -490,7 +532,7 @@ void App::chestView(const GameNpc& hero) {
 	}
 	if (_chest.stage == CH_NONE || _chest.index >= _chests.count()) return;
 	snprintf(v.name, sizeof(v.name), "%s", chestName(_chest.index));
-	v.length = u8(strlen(_chests.pick(_chest.index)));
+	v.length = u8(lockLength(_chests.pick(_chest.index)));
 	if (_chest.stage != CH_OPEN) return;
 	const u32 stacks = _chests.stackCount(_chest.index);
 	for (u32 k = 0; k < stacks && v.count < InventoryView::CHEST_MAX; ++k) {

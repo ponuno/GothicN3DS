@@ -122,7 +122,7 @@ private:
 
 class InventoryPanel {
 public:
-	enum PanelPage : u8 { PAGE_PLAY, PAGE_INVENTORY, PAGE_DIARY, PAGE_CHARACTER, PAGE_CHEST, PAGE_LOCK, PAGE_DIALOG, PANEL_PAGES };
+	enum PanelPage : u8 { PAGE_PLAY, PAGE_INVENTORY, PAGE_DIARY, PAGE_CHARACTER, PAGE_CHEST, PAGE_LOCK, PAGE_DIALOG, PAGE_DOC, PANEL_PAGES };
 	// Where things are (for the platform and the tests).
 	static constexpr int BARS_H = 20;
 	// The play page: two rows of five quick slots, three buttons under them.
@@ -194,7 +194,7 @@ public:
 
 private:
 	static constexpr float kInspectTime = 4.0f;
-	enum Region : u8 { R_NONE, R_SLOT, R_BUTTON, R_BACK, R_KIND, R_PREV_TAB, R_NEXT_TAB, R_TILE, R_GRID, R_PICKER, R_LIST, R_BARS, R_STRIP, R_LOCK, R_TALK };
+	enum Region : u8 { R_NONE, R_SLOT, R_BUTTON, R_BACK, R_KIND, R_PREV_TAB, R_NEXT_TAB, R_TILE, R_GRID, R_PICKER, R_LIST, R_BARS, R_STRIP, R_LOCK, R_TALK, R_DOC };
 	struct Hit {
 		u8 region = R_NONE;
 		int index = -1;
@@ -218,6 +218,7 @@ private:
 	void drawStrip(const InventoryView& v);
 	void drawLock(const InventoryView& v);
 	void drawDialog(const InventoryView& v);
+	void drawDoc(const InventoryView& v);
 	void drawThing(int x, int y, int w, int h, i16 picture, u8 icon, u32 tint, bool dim);
 	void slotTile(int slot, const InventoryView& v, bool picker);
 	void cell(int x, int y, int w, int h, bool chosen, bool lit);

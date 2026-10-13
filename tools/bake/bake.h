@@ -50,6 +50,9 @@ struct BakeOptions {
 	// Fewer triangles in everything (--simplify): the world's meshes in place (lod.h) and the characters' (model_simplify.h).
 	SimplifyOptions simplify;
 	ModelSimplifyOptions simplifyModels;
+	// --npc-lod: a second, coarse body for each character, shown beyond npcLodDistance and swapped for the full one when near.
+	bool npcLod = false;
+	ModelSimplifyOptions npcLodSimplify = {true, 0.3f, 6.0f, 60};
 };
 
 struct BakeWorld {

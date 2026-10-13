@@ -1356,6 +1356,29 @@ void Npcs::xWait(ScriptVm& vm, void* user) {
 	if (act.f > 0.0f && act.f < 3600.0f) self.push(a, act);
 }
 
+// AI_WaitMS(self, ms): AI_Wait in milliseconds.
+void Npcs::xWaitMs(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	NpcAction act;
+	act.kind = NPC_ACT_WAIT;
+	act.f = float(vm.popInt()) / 1000.0f;
+	NpcActor* a = self.actorFor(vm.popInstance());
+	if (act.f > 0.0f && act.f < 3600.0f) self.push(a, act);
+}
+
+// Npc_SetRefuseTalk(self, seconds): it will not talk for a while; Npc_RefuseTalk(self) asks.
+void Npcs::xSetRefuseTalk(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const i32 s = vm.popInt();
+	if (NpcActor* a = self.actorFor(vm.popInstance())) a->refuseTalk = s > 0 ? float(s) : 0.0f;
+}
+
+void Npcs::xRefuseTalk(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const NpcActor* a = self.actorFor(vm.popInstance());
+	vm.pushInt(a && a->refuseTalk > 0.0f);
+}
+
 void Npcs::xStandUp(ScriptVm& vm, void* user) {
 	Npcs& self = *static_cast<Npcs*>(user);
 	NpcAction act;
@@ -1715,6 +1738,9 @@ void Npcs::bindAi() {
 	const char* const* names = Game::lifeFunctions(count);
 	static_assert(sizeof(table) / sizeof(table[0]) == 37, "one function per name");
 	for (u32 i = 0; i < count && i < sizeof(table) / sizeof(table[0]); ++i) vm.bind(names[i], table[i], this);
+	vm.bind("AI_WAITMS", xWaitMs, this);
+	vm.bind("NPC_SETREFUSETALK", xSetRefuseTalk, this);
+	vm.bind("NPC_REFUSETALK", xRefuseTalk, this);
 	bindPerception();
 	bindFight();
 	bindItems();

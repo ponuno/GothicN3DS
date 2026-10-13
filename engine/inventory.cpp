@@ -275,7 +275,7 @@ bool App::itemAction(u32 symbol) {
 	case IK_SCROLL:
 		if (_hero.weapon() == WEAPON_MAG && _spellItem == symbol && !_hero.drawing()) return heroTake(WEAPON_NONE);
 		return selectSpell(symbol);
-	case IK_DOC: itemMessage(tr("Читать пока нельзя")); return false;
+	case IK_DOC: return readItem(symbol);
 	case IK_LIGHT: itemMessage(tr("Факелов пока нет")); return false;
 	case IK_AMMO: itemMessage(tr("Стрелы берутся с луком")); return false;
 	default:
@@ -503,6 +503,8 @@ void App::panelCommand(const PanelCommand& c) {
 	case PANEL_TALK_CHOOSE: _npcs.talkChoose(c.slot); break;
 	case PANEL_TALK_SKIP: _npcs.talkSkip(); break;
 	case PANEL_TALK_LEAVE: _npcs.talkBack(); break;
+	case PANEL_DOC_PAGE:
+	case PANEL_DOC_CLOSE: docCommand(c); break;
 	default: break; // (the report and the cursor are the platform's)
 	}
 }
@@ -818,6 +820,7 @@ const InventoryView& App::inventory() {
 	stamp = mix(stamp, _chests.version());
 	stamp = mix(stamp, u32(_npcs.trading()));
 	stamp = mix(stamp, u32(_chest.stage));
+	stamp = mix(stamp, _doc.active ? 1u + _doc.page * 64u + _doc.pages : 0u);
 	stamp = mix(stamp, u32(_chest.corpse + 1));
 	stamp = mix(stamp, u32(_corpseTarget + 1));
 	if (_chest.corpse >= 0) {
@@ -832,6 +835,10 @@ const InventoryView& App::inventory() {
 	_invStamp = stamp;
 
 	v.present = true;
+	v.doc.open = _doc.active;
+	v.doc.map = _doc.map;
+	v.doc.page = _doc.page;
+	v.doc.pages = _doc.pages;
 	v.hp = g.attributeOf(h, 0);
 	v.hpMax = g.attributeOf(h, 1);
 	v.mana = g.attributeOf(h, 2);

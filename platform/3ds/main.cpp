@@ -156,7 +156,7 @@ static void onApt(APT_HookType hook, void*) {
 	if (hook == APTHOOK_ONSUSPEND || hook == APTHOOK_ONSLEEP) {
 		gSuspended = true;
 		g3::reproject::pause(true);
-		g3::display::restore(); // (the system's own timing while it has the screen)
+		g3::display::restore(true); // (the system's own timing while it has the screen; put back on return)
 	} else if (hook == APTHOOK_ONRESTORE || hook == APTHOOK_ONWAKEUP) {
 		g3::reproject::pause(false);
 		g3::display::resume();

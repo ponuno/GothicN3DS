@@ -441,6 +441,15 @@ InventoryPanel::Hit InventoryPanel::hitTest(int x, int y) const {
 			}
 		return h;
 	}
+	if (_page == PAGE_DOC) {
+		// The left half turns back, the right half on; the arrow at the top puts the book down.
+		if (y < BARS_H) h.region = x < BACK_W ? R_BACK : R_BARS;
+		else {
+			h.region = R_DOC;
+			h.index = x < Canvas::W / 3 ? 0 : 1;
+		}
+		return h;
+	}
 	if (_page == PAGE_DIALOG) {
 		// (The talk is left by the talk's own ways, not by the back arrow.)
 		if (y >= TALK_Y) {
@@ -546,7 +555,10 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 	const auto close = [&]() {
 		const u8 was = _page;
 		openPage(PAGE_PLAY);
-		cmd.type = was == PAGE_CHEST ? u8(PANEL_CHEST_CLOSE) : was == PAGE_LOCK ? u8(PANEL_LOCK_CANCEL) : u8(PANEL_CURSOR_OFF);
+		cmd.type = was == PAGE_CHEST  ? u8(PANEL_CHEST_CLOSE)
+		           : was == PAGE_LOCK ? u8(PANEL_LOCK_CANCEL)
+		           : was == PAGE_DOC  ? u8(PANEL_DOC_CLOSE)
+		                              : u8(PANEL_CURSOR_OFF);
 	};
 	const auto nextPage = [&](int step) {
 		// L / R on the diary and the character: the pages round.
@@ -575,6 +587,16 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 			cmd.type = PANEL_TALK_SKIP;
 		}
 		if (in.back) cmd.type = PANEL_TALK_LEAVE;
+	} else if (_page == PAGE_DOC) {
+		// A book: the pages turn with L / R, the D-Pad and A; B puts it down.
+		if (in.left || in.prevTab || in.up) {
+			cmd.type = PANEL_DOC_PAGE;
+			cmd.slot = 0;
+		} else if (in.right || in.nextTab || in.confirm || in.down) {
+			cmd.type = PANEL_DOC_PAGE;
+			cmd.slot = 1;
+		}
+		if (in.back) close();
 	} else if (open()) {
 		const ItemEntry* list = items(v);
 		if (_page == PAGE_LOCK) {
@@ -669,7 +691,7 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 		_held = 0;
 		_moved = _longDone = false;
 		if (_start.region == R_SLOT || _start.region == R_BUTTON || _start.region == R_PICKER || _start.region == R_STRIP ||
-		    _start.region == R_LOCK || _start.region == R_TALK)
+		    _start.region == R_LOCK || _start.region == R_TALK || _start.region == R_DOC)
 			_dirty = true; // (pressed)
 		if (_start.region == R_TALK && v.talk.choosing && _start.index >= 0 && u32(_start.index) < v.talk.count) _talkCursor = _start.index;
 	} else if (in.touching) {
@@ -735,6 +757,10 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 				} else if (!v.talk.choosing) {
 					cmd.type = PANEL_TALK_SKIP;
 				}
+				break;
+			case R_DOC:
+				cmd.type = PANEL_DOC_PAGE;
+				cmd.slot = u8(end.index);
 				break;
 			case R_LOCK:
 				cmd.type = PANEL_LOCK_PICK;
@@ -813,6 +839,7 @@ bool InventoryPanel::draw(const InventoryView& v, bool force) {
 		break;
 	case PAGE_LOCK: drawLock(v); break;
 	case PAGE_DIALOG: drawDialog(v); break;
+	case PAGE_DOC: drawDoc(v); break;
 	default: drawPlay(v); break;
 	}
 	if (_assigning) drawPicker(v);
@@ -1053,6 +1080,25 @@ void InventoryPanel::drawLock(const InventoryView& v) {
 		_canvas.text(cx, cy - 8, k ? tr("Вправо \xE2\x96\xB6") : tr("\xE2\x97\x80 Влево"), TITLE, ui::TITLE, ui::CENTER, 0, true);
 	}
 	_canvas.text(Canvas::W / 2, 214, tr("Крестовина или L / R — тоже; B — бросить"), TEXT_DIM, ui::TEXT, ui::CENTER, Canvas::W - 8, true);
+}
+
+void InventoryPanel::drawDoc(const InventoryView& v) {
+	// The words are on the top screen; here the pages turn.
+	const InventoryView::Doc& d = v.doc;
+	char buf[48];
+	snprintf(buf, sizeof(buf), tr("Страница %u из %u"), unsigned(d.page + 1), unsigned(d.pages ? d.pages : 1));
+	_canvas.text(Canvas::W / 2, BARS_H + 12, buf, TITLE, ui::TITLE, ui::CENTER, 0, true);
+	for (int k = 0; k < 2; ++k) {
+		const bool left = k == 0;
+		const bool ok = left ? d.page > 0 : true;
+		const int bx0 = left ? 6 : Canvas::W / 3 + 6, bx1 = left ? Canvas::W / 3 - 6 : Canvas::W - 6, by0 = 70, by1 = 190;
+		const bool pressed = _touching && !_moved && _start.region == R_DOC && _start.index == k;
+		_canvas.gradient(bx0, by0, bx1, by1, pressed ? SEL_TOP : TAB_TOP, pressed ? SEL_BOTTOM : TAB_BOTTOM);
+		_canvas.frame(bx0, by0, bx1, by1, pressed ? SEL_EDGE : TAB_LIGHT);
+		const char* label = left ? tr("\xE2\x97\x80 Назад") : d.page + 1 >= d.pages ? tr("Закрыть") : tr("Дальше \xE2\x96\xB6");
+		_canvas.text((bx0 + bx1) / 2, (by0 + by1) / 2 - 8, label, ok ? TITLE : TEXT_DIM, ui::TITLE, ui::CENTER, bx1 - bx0 - 8, true);
+	}
+	_canvas.text(Canvas::W / 2, 214, tr("A, R, крестовина — дальше; L — назад; B — закрыть"), TEXT_DIM, ui::TEXT, ui::CENTER, Canvas::W - 8, true);
 }
 
 void InventoryPanel::drawDialog(const InventoryView& v) {

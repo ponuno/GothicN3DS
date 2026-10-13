@@ -4709,15 +4709,15 @@ static void testInhabitants() {
 			app.render();
 		}
 
-		// Under load characters are shown less far, like the world's small
-		// things, and never further than the world itself is drawn.
+		// Under load the reach of characters stays (they would otherwise appear
+		// right in front of the player), never beyond what the world draws.
 		CHECK(npcs.stats().reach == 3000.0f);
 		app.world().config().detailScale = 0.5f;
 		app.update(Input {}, dt);
-		CHECK(npcs.stats().reach == 1500.0f && npcs.stats().near < 7);
+		CHECK(npcs.stats().reach == 3000.0f);
 		app.world().config().detailScale = 0.1f;
 		app.update(Input {}, dt);
-		CHECK(npcs.stats().reach == 1200.0f);
+		CHECK(npcs.stats().reach == 3000.0f);
 		app.world().config().detailScale = 1.0f;
 		const float drawDistance = app.drawDistance();
 		app.setDrawDistance(2000.0f);
@@ -9188,7 +9188,9 @@ static void testChests() {
 	CHECK(app.chestStage() == App::CH_NONE);
 
 	// 4. The combination: right first is wrong (the pick breaks, back to the start),
-	// then left, right, left opens it.
+	// then left, right, left opens it. (Gothic 1's rule, as OpenGothic has it: a wrong turn breaks the pick unless a die of
+	// 100 is below 100 less the talent's value; the talent at 100 means it always breaks.)
+	g.npcMut(hero).talent[5] = 100;
 	before(pickC);
 	CHECK(app.chestTarget() == int(pickC));
 	pressA();
@@ -9217,6 +9219,7 @@ static void testChests() {
 	CHECK(app.loadState(statePath.c_str()));
 	run(0.5f);
 	CHECK(chests.locked(keyC) && chests.locked(pickC));
+	g.npcMut(hero).talent[5] = 100; // (a wrong turn breaks the pick for sure, as before)
 	g.giveItems(hero, key, -count(key));
 	g.giveItems(hero, pick, -count(pick));
 	before(keyC);
@@ -9235,6 +9238,19 @@ static void testChests() {
 	cmd(PANEL_LOCK_PICK, 1);
 	cmd(PANEL_LOCK_PICK, 1);
 	CHECK(count(pick) == 0 && app.chestStage() == App::CH_NONE && chests.locked(pickC));
+	// ... but with the talent at 0 the chance to keep the pick is 100: a wrong turn only starts the lock over.
+	g.npcMut(hero).talent[5] = 0;
+	g.giveItems(hero, pick, 2);
+	pressA();
+	run(0.5f);
+	CHECK(app.chestStage() == App::CH_LOCK);
+	cmd(PANEL_LOCK_PICK, 1);
+	cmd(PANEL_LOCK_PICK, 1);
+	CHECK(count(pick) == 2 && app.chestStage() == App::CH_LOCK && app.inventory().chest.progress == 0);
+	app.panel().openPage(InventoryPanel::PAGE_PLAY); // (the panel closes itself, then says so)
+	cmd(PANEL_LOCK_CANCEL);
+	run(0.5f);
+	CHECK(app.chestStage() == App::CH_NONE && chests.locked(pickC));
 
 	// 6. A ledge: a jump at the block of stone (150 cm) takes hold of it and climbs onto it.
 	{

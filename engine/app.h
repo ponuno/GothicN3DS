@@ -266,6 +266,14 @@ public:
 	// talk is on (the character stands and listens, the bottom screen has the menu).
 	int talkTarget() const { return _talkTarget; }
 	bool talking() const { return _npcs.talkView().active; }
+	// ---- reading (app_doc.cpp) ----
+	// A book, a letter or a map the scripts put up (Doc_Show) is read on the top screen, its pages turned
+	// on the bottom one (A / R / D-Pad right: on, L / D-Pad left: back, B: close).
+	bool reading() const { return _doc.active; }
+	u32 readingPage() const { return _doc.page; }
+	u32 readingPages() const { return _doc.pages; }
+	// Reads an item of the documents' kind (its use function builds the document); false if it gave none.
+	bool readItem(u32 symbol);
 	// ---- the chests (containers.cpp) ----
 	// The containers of this world, the one the character could open now (A; -1
 	// for none), and what the character is doing at one.
@@ -296,6 +304,33 @@ public:
 	const ItemStats& itemStats() const { return _itemStats; }
 
 private:
+	// Reading.
+	struct DocReader {
+		enum { MAX_SCREENS = 32, LINES = 14, LINE = 100 };
+		bool active = false;
+		bool map = false;
+		u32 page = 0, pages = 0;
+		u32 serial = 0; // of the document last taken from the scripts
+		char level[40] = "";
+		i32 coords[4] = {};
+		u8 lineCount[MAX_SCREENS] = {};
+		char lines[MAX_SCREENS][LINES][LINE] = {};
+	};
+	// Falling: the highest the feet were since they left the ground, to see how far they dropped when they land.
+	void fallCheck();
+	void heroLanded(float drop);
+	// The clock the scripts set (Wld_SetTime: the sleep until morning): the time jumps under a dip to black.
+	float _timeFade = 0.0f;
+	static constexpr float kTimeFadeLength = 1.6f;
+	float _fallPeak = 0.0f;
+	bool _fallAir = false;
+	void docUpdate();
+	void docLayout(const GameDocument& d);
+	void docClose();
+	void docCommand(const PanelCommand& c);
+	void drawDocument();
+	int docWidth(const char* text) const;
+	DocReader _doc;
 	// Magic.
 	enum CastStage : u8 { CAST_NONE, CAST_INVEST, CAST_SHOOT };
 	struct Cast {

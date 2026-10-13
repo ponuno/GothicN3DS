@@ -1,5 +1,6 @@
 // The script machine: this project's Daedalus compiler, the image baker and
 // the interpreter. Usage: test_script <scratch dir>
+#include "bytes.h"
 #include "daedalus.h"
 #include "fight.h"
 #include "fight_ai.h"
@@ -515,6 +516,85 @@ static void testSyntheticScript() {
 #endif
 }
 
+// Books and letters (Doc_*), the clock and the day, the fall, the small questions: the engine side of the scripts.
+static void testDocsAndClock() {
+	SrcScript src;
+	compileDaedalus(std::string(syntheticScriptSource()) + R"(
+extern func int  Doc_Create();
+extern func int  Doc_CreateMap();
+extern func void Doc_SetPages(var int handle, var int count);
+extern func void Doc_PrintLine(var int handle, var int page, var string text);
+extern func void Doc_Show(var int handle);
+extern func int  Wld_GetDay();
+extern func int  Npc_GetHeightToNpc(var C_NPC a, var C_NPC b);
+var int probe_day;
+var int probe_height;
+func void ProbeBook() {
+	var int d; d = Doc_Create(); Doc_SetPages(d, 2);
+	Doc_PrintLine(d, 0, "First line"); Doc_PrintLine(d, 0, "Second line"); Doc_PrintLine(d, 1, "Over the page");
+	Doc_Show(d);
+};
+func void ProbeMap() { var int d; d = Doc_CreateMap(); Doc_Show(d); };
+func void ProbeDay() { probe_day = Wld_GetDay(); };
+func void ProbeLate() { Wld_SetTime(23, 0); };
+func void ProbeMorning() { Wld_SetTime(6, 30); };
+func void ProbeHeight() { probe_height = Npc_GetHeightToNpc(self, self); };
+)", src);
+	ScriptBakeResult baked;
+	const std::vector<u8> image = bakeScript(src, baked);
+	Game game;
+	u8* blob = static_cast<u8*>(std::malloc(image.size()));
+	std::memcpy(blob, image.data(), image.size());
+	CHECK(game.adopt(blob, u32(image.size())));
+	const u32 hero = game.heroIndex();
+	const auto call = [&](const char* name) { return game.callAs(game.function(name), hero, -1); };
+	const auto number = [&](const char* name) { return game.vm().getInt(game.vm().find(name)); };
+
+	// A book: pages of lines, put up by Doc_Show once.
+	CHECK(game.documentShown() == nullptr);
+	call("PROBEBOOK");
+	const GameDocument* doc = game.documentShown();
+	CHECK(doc && !doc->map && doc->pageCount == 2);
+	if (doc) {
+		CHECK(std::strcmp(doc->pages[0].text, "First line\nSecond line\n") == 0);
+		CHECK(std::strcmp(doc->pages[1].text, "Over the page\n") == 0);
+	}
+	const u32 serial = game.documentSerial();
+	game.documentDone();
+	CHECK(game.documentShown() == nullptr && game.documentSerial() == serial);
+	call("PROBEMAP");
+	CHECK(game.documentShown() && game.documentShown()->map && game.documentSerial() == serial + 1);
+	game.documentDone();
+
+	// The clock: a time put earlier than it is makes the next day; Wld_GetDay counts them.
+	float hours = 0.0f;
+	CHECK(!game.takeTimeSet(hours));
+	game.jumpClock(8.0f);
+	call("PROBEDAY");
+	CHECK(number("PROBE_DAY") == 0);
+	call("PROBELATE");
+	CHECK(game.takeTimeSet(hours) && fabsf(hours - 23.0f) < 0.01f && !game.takeTimeSet(hours));
+	game.jumpClock(hours);
+	call("PROBEMORNING");
+	CHECK(game.takeTimeSet(hours) && fabsf(hours - 6.5f) < 0.01f);
+	game.jumpClock(hours);
+	call("PROBEDAY");
+	CHECK(number("PROBE_DAY") == 1);
+	call("PROBEHEIGHT");
+	CHECK(number("PROBE_HEIGHT") == 0);
+
+	// A day goes in a save.
+	ByteSink sink;
+	game.save(sink);
+	CHECK(!sink.failed);
+	Game other;
+	u8* blob2 = static_cast<u8*>(std::malloc(image.size()));
+	std::memcpy(blob2, image.data(), image.size());
+	CHECK(other.adopt(blob2, u32(image.size())));
+	ByteSource source(sink.data, sink.size);
+	CHECK(other.restore(source) && other.day() == 1);
+}
+
 // The game layer on the built-in script: who is where, wearing what.
 static void testGame() {
 	// The built-in script, plus a world whose start-up names a place nobody has.
@@ -843,7 +923,7 @@ int main(int argc, char** argv) {
 		const char* name;
 		void (*fn)();
 	} tests[] = {{"basics", testBasics}, {"compiler errors", testCompilerErrors}, {"objects", testObjects}, {"broken images", testBrokenImages}, {"synthetic script", testSyntheticScript},
-	             {"game", testGame},
+	             {"game", testGame}, {"docs and clock", testDocsAndClock},
 #ifdef G3DS_WITH_ZENKIT
 	             {"against the reference", testAgainstReference},
 #endif

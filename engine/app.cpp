@@ -112,6 +112,7 @@ void App::teleport(Vec3 eye) {
 	_camPlaced = false;
 	_target = -1;
 	_locked = false;
+	_fallAir = false; // (put down somewhere: no fall)
 }
 
 bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
@@ -434,6 +435,7 @@ void App::update(const Input& in, float dt) {
 		mobUpdate(fightIn, dt);
 		itemsUpdate(fightIn, dt); // (a job holds the hands: its frames take the fight keys)
 		talkUpdate(fightIn, dt);
+		docUpdate();
 		fightInput(fightIn, dt);
 		Input heroIn = steerInput(in, dt);
 		// Sneaking is learnt (a teacher sets the talent's skill), as OpenGothic's Npc::canSneak has it.
@@ -479,6 +481,7 @@ void App::update(const Input& in, float dt) {
 		}
 		const Drive drive = _hero.control(heroIn, _player, dt, grab ? &ledge : nullptr, ground.found ? &ground : nullptr, wall);
 		_player.update(_world, heroIn, _hero.yaw(), 0.0f, dt, &drive);
+		fallCheck();
 		const SkyColors sky = skyColors();
 		const float indoorLight[3] = {1, 1, 1};
 		_hero.follow(_player, _world, _world.indoor() ? indoorLight : sky.light, dt);
@@ -544,43 +547,34 @@ static float cameraRoom(const World& world, Vec3 from, Vec3 dir, float range, fl
 	return range;
 }
 
-// The dialogue shot of the original: the camera hangs behind the character's
-// shoulder (a little to the right and up) and looks at the head of the one it
-// talks to; the one who speaks gets the frame (the looked-at point moves towards
-// them). `look` and `pos` are set when a talk is on; the way from the
-// character's head to the camera is kept free of walls.
+// The dialogue shot, as OpenGothic's DialogMenu::dialogCamera sets it (the game's
+// CAMMODDIALOG gives it nothing but the way the picture is kept clear): the
+// camera looks at the middle between the two hips, a little above (50 cm), from
+// as far as they are apart, level. It stands behind the one who is not speaking
+// and turned 45 degrees from them: the character speaks, the shot is over the
+// shoulder of the partner (turned from the partner's facing); the partner speaks,
+// it is over the character's (turned from the character's facing the other way).
+// `look` and `pos` are set when a talk is on. The way from the looked-at point
+// to the camera is kept free of walls.
 bool App::talkCamera(Vec3& look, Vec3& pos) {
 	if (!_npcs.loaded() || !_npcs.talkView().active || !thirdPerson()) return false;
 	const int partner = _npcs.talkPartner();
 	if (partner < 0) return false;
 	const GameNpc& n = _npcs.game().npc(u32(partner));
 	const TalkView& tv = _npcs.talkView();
-	const float height = max(_hero.hipHeight() * 1.72f, 120.0f); // (eyes above the feet)
-	const Vec3 eye = {_player.feet.x, _player.feet.y + height, _player.feet.z};
-	const Vec3 head = {n.pos[0], n.pos[1] + height, n.pos[2]};
-	Vec3 axis = {head.x - eye.x, 0.0f, head.z - eye.z};
-	const float dist = sqrtf(axis.x * axis.x + axis.z * axis.z);
+	const float hip = _hero.hipHeight();
+	const Vec3 a = {_player.feet.x, _player.feet.y + hip, _player.feet.z};
+	const Vec3 b = {n.pos[0], n.pos[1] + hip, n.pos[2]};
+	const Vec3 span = b - a;
+	const float dist = length(span);
 	if (dist < 20.0f) return false;
-	axis = axis * (1.0f / dist);
-	const Vec3 right = {axis.z, 0.0f, -axis.x};
-	// Whose turn it is: the camera moves a little with it (the partner speaking: the
-	// shot is on them; the character: it takes both).
+	look = {(a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f + 50.0f, (a.z + b.z) * 0.5f};
+	// (OpenGothic turns by angle = 90 - yaw; "other - 45" and "hero + 45" there are these here.)
 	const bool partnerSpeaks = tv.saying && !tv.heroSays;
-	const float share = partnerSpeaks ? 0.88f : tv.saying ? 0.55f : 0.72f;
-	look = eye + (head - eye) * share;
-	look.y = eye.y - 4.0f + (partnerSpeaks ? 6.0f : 0.0f);
-	const float back = clamp(100.0f + dist * 0.12f, 100.0f, 150.0f);
-	Vec3 want = eye - axis * back + right * (partnerSpeaks ? 42.0f : 52.0f);
-	want.y = eye.y + 12.0f;
-	// Not through a wall: the way from the head to the place is free as far as it goes.
-	Vec3 d = want - eye;
-	const float len = length(d);
-	if (len > 1.0f) {
-		d = d * (1.0f / len);
-		const float room = cameraRoom(_world, eye, d, len, _cam.boomRadius);
-		want = eye + d * min(room, len);
-	}
-	pos = want;
+	const float yaw = partnerSpeaks ? _hero.yaw() - 0.78539816f : n.yaw + 0.78539816f;
+	const Vec3 d = {-sinf(yaw), 0.0f, -cosf(yaw)}; // behind the way the shot looks
+	const float room = cameraRoom(_world, look, d, dist, _cam.boomRadius);
+	pos = look + d * min(room, dist);
 	return true;
 }
 
@@ -1144,6 +1138,49 @@ void App::heroHit(u32 attacker) {
 		_hero.fall(true, fromBehind);
 		_deadTime = 0.001f;
 		_npcs.goDown(u32(hi), int(attacker), true, fromBehind);
+		_target = -1;
+		_locked = false;
+	}
+}
+
+// Falls hurt as OpenGothic's MoveAlgo/DamageCalculator have it, with the height the feet really dropped (the
+// highest point since they left the ground to the one they land on): the scripts' table says from how high and
+// how much per metre. Water, ladders, a ledge climbed, a slide down a slope and the unsticking of a body that got
+// into the rock are no falls.
+void App::fallCheck() {
+	const Player::Debug dbg = _player.debug();
+	const bool air = !_player.grounded && !_player.swimming && !_player.climbing && !_player.flying && !_hero.mantling() &&
+	                 !_player.placedByAnimation() && !dbg.sliding && dbg.step != 'k' && dbg.step != 'p' && dbg.step != 'h' && dbg.step != '-';
+	if (air) {
+		_fallPeak = _fallAir ? max(_fallPeak, _player.feet.y) : _player.feet.y;
+		_fallAir = true;
+		return;
+	}
+	const bool landed = _fallAir && _player.grounded && !_player.swimming;
+	const float drop = _fallPeak - _player.feet.y;
+	_fallAir = false;
+	if (landed && drop > 0.0f) heroLanded(drop);
+}
+
+void App::heroLanded(float drop) {
+	const int hi = heroIndex();
+	if (hi < 0 || _hero.down() || !_npcs.loaded()) return;
+	Game& g = _npcs.game();
+	const i32 dmg = _settings.immortal ? 0 : g.fallDamage(u32(hi), drop);
+	if (dmg <= 0) return;
+	GameNpc& h = g.npcMut(u32(hi));
+	const i32 hp = max(g.hitPoints(h) - dmg, i32(0));
+	g.setAttribute(h, 0, hp);
+	++_fight.blowsTaken;
+	_fight.lastDamage = dmg;
+	if (hp > 0) {
+		// Hurt, on his feet (OpenGothic: "SVM_%d_AARGH", the fall's stumble).
+		_npcs.emitSvm(u32(hi), "AARGH");
+		_hero.hit(false);
+	} else {
+		_hero.fall(true, false);
+		_deadTime = 0.001f;
+		_npcs.goDown(u32(hi), -1, true, false);
 		_target = -1;
 		_locked = false;
 	}

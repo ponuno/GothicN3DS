@@ -62,6 +62,11 @@ bool Game::adopt(u8* image, u32 size) {
 
 void Game::release() {
 	freePending();
+	_timeSet = 0.0f;
+	_timeSetSerial = _timeSetTaken = 0;
+	_day = 0;
+	for (GameDocument& d : _docs) docFree(d);
+	docFree(_docShown);
 	_chapter = GameChapter();
 	_kapitel = SCRIPT_NONE;
 	_vm.release();
@@ -236,6 +241,25 @@ bool Game::bindAll() {
 	             {"FLOATTOINT", xFloatToInt},
 	             {"NPC_ISPLAYER", xIsPlayer},
 	             {"NPC_ISINCUTSCENE", xIsInCutscene},
+	             {"WLD_GETDAY", xGetDay},
+	             {"NPC_GETHEIGHTTONPC", xGetHeightToNpc},
+	             {"NPC_HASRANGEDWEAPONWITHAMMO", xHasRangedWeaponWithAmmo},
+	             // OpenGothic does not carry these out either (it logs "not implemented"): random idle animations
+	             // and a layer taken off; the overlays themselves (Mdl_ApplyOverlayMds) are not applied here.
+	             {"MDL_APPLYRANDOMANI", xNothing},
+	             {"MDL_APPLYRANDOMANIFREQ", xNothing},
+	             {"MDL_REMOVEOVERLAYMDS", xNothing},
+	             {"DOC_CREATE", xDocCreate},
+	             {"DOC_CREATEMAP", xDocCreateMap},
+	             {"DOC_SETPAGE", xDocSetPage},
+	             {"DOC_SETPAGES", xDocSetPages},
+	             {"DOC_PRINTLINE", xDocPrintLine},
+	             {"DOC_PRINTLINES", xDocPrintLine},
+	             {"DOC_SETMARGINS", xNothing},
+	             {"DOC_SETFONT", xNothing},
+	             {"DOC_SETLEVEL", xDocSetLevel},
+	             {"DOC_SETLEVELCOORDS", xDocSetLevelCoords},
+	             {"DOC_SHOW", xDocShow},
 	             {"WLD_SETTIME", xSetTime},
 	             {"WLD_ISTIME", xIsTime},
 	             {"WLD_SETGUILDATTITUDE", xSetGuildAttitude},
@@ -964,6 +988,8 @@ void Game::placeNow(GameNpc& n, PointFinder find, void* user) {
 }
 
 u32 Game::setTime(float hours, PointFinder find, void* user) {
+	// The clock came round past midnight: a new day (a step back of a few minutes is not a day).
+	if (hours < _hours - 12.0f) ++_day;
 	_hours = hours;
 	if (find) {
 		_find = find;
@@ -1189,10 +1215,21 @@ void Game::xIsPlayer(ScriptVm& vm, void* user) {
 	vm.pushInt(inst && g._hero != SCRIPT_NONE && g._npcs[g._hero].object == inst);
 }
 
-void Game::xSetTime(ScriptVm& vm, void*) {
-	// The clock is the player's to set here.
-	(void)vm.popInt();
-	(void)vm.popInt();
+// Wld_SetTime(hour, minute): the scripts move the clock (a bed's sleep until morning, a chapter's start). The
+// clock is the application's (the sky follows it), so it is asked to: takeTimeSet.
+void Game::xSetTime(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 minute = vm.popInt(), hour = vm.popInt();
+	const i32 m = minutesOf(hour, minute);
+	g._timeSet = float(m) / 60.0f;
+	++g._timeSetSerial;
+}
+
+bool Game::takeTimeSet(float& hours) {
+	if (_timeSetTaken == _timeSetSerial) return false;
+	_timeSetTaken = _timeSetSerial;
+	hours = _timeSet;
+	return true;
 }
 
 // (What it was given goes with its frame.)

@@ -223,7 +223,7 @@ static_assert(sizeof(WorldItem) == 40, "WorldItem layout");
 // texture variants), computed alike by the baker and by the game.
 //   LooksHeader | LookEntry[count]        (sorted by key)
 constexpr u32 LOOKS_MAGIC = fourcc('G', '3', 'L', 'K');
-constexpr u32 LOOKS_VERSION = 1;
+constexpr u32 LOOKS_VERSION = 2;
 
 struct LooksHeader {
 	u32 magic;
@@ -240,7 +240,8 @@ struct LookEntry {
 	u32 rig;
 	u32 body;
 	u32 head; // 0: none (a creature)
+	u32 bodyLow; // 0: none; else a body of few triangles (no head) for characters far away (--npc-lod)
 };
-static_assert(sizeof(LookEntry) == 16, "LookEntry layout");
+static_assert(sizeof(LookEntry) == 20, "LookEntry layout");
 
 } // namespace g3

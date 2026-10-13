@@ -90,6 +90,18 @@ i32 Game::constant(const char* name, i32 otherwise) const {
 	return _vm.getInt(sym);
 }
 
+void Game::pickLockSays(u32 npc, int success, int broken) {
+	const u32 fn = function("G_PICKLOCK");
+	if (fn == SCRIPT_NONE || npc >= _npcCount || _vm.symbol(fn).count != 2) return;
+	const u32 s = _vm.selfSymbol();
+	ScriptInstance* const selfBefore = _vm.instanceOf(s);
+	_vm.setInstance(s, _npcs[npc].object);
+	_vm.pushInt(success);
+	_vm.pushInt(broken);
+	_vm.call(fn);
+	_vm.setInstance(s, selfBefore);
+}
+
 u32 Game::function(const char* name) const {
 	const u32 fn = _vm.find(name);
 	return fn != SCRIPT_NONE && _vm.isPlainFunction(fn) ? fn : SCRIPT_NONE;
@@ -248,6 +260,20 @@ i32 Game::guildValue(const char* member, i32 guild, i32 otherwise) {
 	if (m == SCRIPT_NONE || _vm.symbol(m).type != SCRIPT_INT || u32(guild) >= _vm.symbol(m).count) return otherwise;
 	const i32 v = _vm.getInt(m, u32(guild), _gilValues);
 	return v ? v : otherwise;
+}
+
+i32 Game::fallDamage(u32 npc, float drop) {
+	if (npc >= _npcCount) return 0;
+	const GameNpc& n = _npcs[npc];
+	const i32 guild = guildOf(n);
+	const float height = float(guildValue("FALLDOWN_HEIGHT", guild, 9999));
+	const float perMetre = float(guildValue("FALLDOWN_DAMAGE", guild, 0));
+	const u32 prot = _vm.findMember("C_NPC", "PROTECTION");
+	const u32 kind = u32(constant("PROT_FALL", 7));
+	const i32 protection = prot != SCRIPT_NONE && kind < _vm.symbol(prot).count ? npcInt(n, prot, kind) : 0;
+	if (protection < 0) return 0; // (immune)
+	const i32 damage = i32(perMetre * (drop - height) / 100.0f - float(protection));
+	return damage > 0 ? damage : 0;
 }
 
 float Game::meleeRange(u32 a, u32 b) {

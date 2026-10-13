@@ -1268,7 +1268,7 @@ void World::classify(const Loaded& l, u32 index, bool count) {
 		// they should be, not dissolving in.)
 		_clusterNear[c] = aabbDistance(k.bbMin, k.bbMax, _camera);
 		// Far enough from the camera for the stand-ins (a cluster's own distance: a chunk is 40 m wide).
-		k.lod = l.hasLod && _cfg.lodDistance > 0.0f && _clusterNear[c] > (k.lod ? _cfg.lodDistance * 0.9f : _cfg.lodDistance);
+		k.lod = l.hasLod && _cfg.lodDistance > 0.0f && _clusterNear[c] > (k.lod ? _cfg.lodDistance * _cfg.lodHysteresis : _cfg.lodDistance);
 		_stats.lodChunks += count && k.lod;
 		// The stand-ins and the full batches dissolve into each other (a chunk not drawn the frame before takes its state at once).
 		if (k.mixFrame != _drawFrame) {
@@ -1277,9 +1277,9 @@ void World::classify(const Loaded& l, u32 index, bool count) {
 			if (_fadeStep >= 255 || l.drawnFrame + 1 != _drawFrame)
 				k.lodMix = u8(target);
 			else if (k.lodMix < target)
-				k.lodMix = u8(min(int(k.lodMix) + _fadeStep, 255));
+				k.lodMix = u8(min(int(k.lodMix) + _lodStep, 255));
 			else if (k.lodMix > target)
-				k.lodMix = u8(max(int(k.lodMix) - _fadeStep, 0));
+				k.lodMix = u8(max(int(k.lodMix) - _lodStep, 0));
 		}
 		if (where == 0) continue;
 		_clusterFar[c] = aabbFarDistance(k.bbMin, k.bbMax, _camera);
@@ -1496,6 +1496,7 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 		_fadeStep = 255;
 	else
 		_fadeStep = clamp(int(float(sinceMs) * 255.0f / _cfg.fadeMs + 0.5f), 1, 255);
+	_lodStep = _fadeStep >= 255 ? 255 : clamp(int(float(_fadeStep) * _cfg.fadeMs / max(_cfg.lodFadeMs, 1.0f) + 0.5f), 1, 255);
 	_lastDrawMs = timeMs;
 	++_drawFrame;
 	_timeMs = timeMs;

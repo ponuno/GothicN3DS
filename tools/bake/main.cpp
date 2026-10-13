@@ -136,10 +136,13 @@ void usage() {
 	          "  --simplify-ratio-large R   a second, harder pass over the large objects (the class that is always drawn, the\n"
 	          "                     heaviest in the busiest scenes): R of their triangles kept (try 0.4; off by default);\n"
 	          "                     --simplify-error-large CM: the error allowed in that pass (default 8)\n"
+	          "  --npc-lod          a second, coarse body for every character (about 30 %% of the triangles, no head): shown\n"
+	          "                     from afar and swapped for the full one with a dissolve as the player comes near, so\n"
+	          "                     characters can be shown further (menu: NPC distance); --npc-lod-ratio R (0.3), --npc-lod-error CM (6)\n"
 	          "  --lod              Graphics+: a simplified stand-in for the world meshes of far chunks (about half the\n"
 	          "                     triangles, same vertices; menu: Graphics+ -> Far geometry; adds ~10 %% to the chunks)\n"
-	          "  --lod-ratio R      triangles kept of what is simplified (default 0.45); --lod-error CM: how far a\n"
-	          "                     collapse may move the surface (default 100)\n"
+	          "  --lod-ratio R      triangles kept of what is simplified (default 0.6); --lod-error CM: how far a\n"
+	          "                     collapse may move the surface (default 30)\n"
 	          "  --vis              Graphics+: bake which parts of the world are hidden from which place (walls, hills),\n"
 	          "                     so the game need not draw them (menu: Graphics+ -> Visibility; minutes to bake)\n"
 	          "  --vis-radius M     how far from a cell the table goes, metres (default 150); --vis-near M: nothing\n"
@@ -269,6 +272,9 @@ int main(int argc, char** argv) {
 			else if (a == "--simplify-ratio-large") opt.simplify.ratioLarge = std::clamp(std::stof(value()), 0.1f, 0.95f);
 			else if (a == "--simplify-error-large") opt.simplify.maxErrorLarge = std::clamp(std::stof(value()), 0.5f, 50.0f);
 			else if (a == "--simplify-error") opt.simplify.maxError = std::clamp(std::stof(value()), 0.5f, 50.0f);
+			else if (a == "--npc-lod") opt.npcLod = true;
+			else if (a == "--npc-lod-ratio") opt.npcLodSimplify.ratio = std::clamp(std::stof(value()), 0.05f, 0.8f);
+			else if (a == "--npc-lod-error") opt.npcLodSimplify.maxError = std::clamp(std::stof(value()), 0.5f, 30.0f);
 			else if (a == "--simplify-no-characters") opt.simplifyModels.enabled = false;
 			else if (a == "--lod") opt.lod.enabled = true;
 			else if (a == "--lod-ratio") opt.lod.ratio = std::clamp(std::stof(value()), 0.1f, 0.9f);

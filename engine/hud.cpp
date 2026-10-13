@@ -118,6 +118,13 @@ void App::drawOverlay() {
 		_ui.text(W / 2, H / 2 - 26, _chapterCard.title, (ui::GOLD & 0xFFFFFF00u) | alpha, ui::TITLE, ui::CENTER);
 		_ui.text(W / 2, H / 2 + 6, _chapterCard.subtitle, (ui::WHITE & 0xFFFFFF00u) | alpha, ui::TEXT, ui::CENTER);
 	}
+	if (_timeFade > 0.0f) {
+		// The clock was set: black in, black out, the time changes at the dark.
+		const float t = 1.0f - _timeFade / kTimeFadeLength;
+		const float a = t < 0.5f ? t * 2.0f : (1.0f - t) * 2.0f;
+		_ui.rect(0, 0, W, H, (0x000000u << 8) | u32(clamp(a, 0.0f, 1.0f) * 255.0f));
+	}
+	if (!menuOpen) drawDocument();
 	if (!menuOpen) drawSubtitle();
 	if (!menuOpen && _toastTime > 0.0f && _toast[0]) {
 		// (Above the inventory's info box while that is up.)

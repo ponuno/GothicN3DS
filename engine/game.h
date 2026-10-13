@@ -182,6 +182,23 @@ struct GameMessage {
 	float seconds;
 };
 
+// A book, a letter or a map the scripts put up (Doc_Create ... Doc_Show, as OpenGothic's Gothic::doc_*): text
+// by pages. Doc_Show hands it to the reader (documentShown) and drops the handle, as the original does.
+constexpr u32 GAME_DOCS = 6, GAME_DOC_PAGES = 12;
+struct GameDocPage {
+	char* text;           // the lines, joined by '\n' (null for none)
+	u32 length, capacity; // bytes used, bytes allocated
+	char image[40];       // the page's own background, "" for none
+};
+struct GameDocument {
+	bool used, map;
+	u32 pageCount;
+	GameDocPage pages[GAME_DOC_PAGES];
+	char image[40];       // the background of the whole (a map: the map's picture)
+	char level[40];       // a map: the world it shows, lower case without the path
+	i32 coords[4];        // a map: the part of the world it covers (left, top, right, bottom)
+};
+
 // What the diary just did, for a line of news (Game::takeLogNotice).
 enum GameLogNoticeKind : u8 { LOGN_NEW_TOPIC = 1, LOGN_ENTRY = 2, LOGN_STATUS = 3 };
 struct GameLogNotice {
@@ -253,6 +270,15 @@ public:
 	// Where the player is, for the scripts' questions about the hero.
 	void setHeroPlace(const float pos[3], float yaw);
 	float hours() const { return _hours; }
+	// The days gone since the story began (Wld_GetDay); a day is over when the clock passes midnight.
+	i32 day() const { return _day; }
+	// The scripts (or a sleep) put the clock to `hours`: earlier than it was means the next day (OpenGothic's
+	// Wld_SetTime: "if the hour has passed, tomorrow"). The characters take their places by the new hour when
+	// the clock is next told to setTime.
+	void jumpClock(float hours) {
+		if (hours < _hours) ++_day;
+		_hours = hours;
+	}
 	// The way point the scripts read as the character's ("self.wp").
 	void setWayPoint(GameNpc& n, const char* name) {
 		if (_mWp != SCRIPT_NONE && n.object && name) _vm.setString(_mWp, 0, n.object, name);
@@ -334,7 +360,18 @@ public:
 	u32 lastChoiceInfo() const { return _lastChoiceInfo; }
 	// What the scripts print on the screen, oldest first; false when there is none.
 	bool takeMessage(GameMessage& out);
+	// The clock the scripts set (Wld_SetTime), once; false when there is none new. In hours, 0..24.
+	bool takeTimeSet(float& hours);
 	void pushMessage(const char* text, float seconds);
+	// Books, letters, maps (Doc_*). `documentShown` is the one Doc_Show put up last, null while there is none;
+	// `documentSerial` changes with each. The reader calls documentDone when it is closed.
+	const GameDocument* documentShown() const { return _docShown.used ? &_docShown : nullptr; }
+	u32 documentSerial() const { return _docSerial; }
+	void documentDone();
+	// The scripts' side, public for the tests: the handle, or -1 if all are taken.
+	int docCreate(bool map);
+	bool docPrint(int handle, int page, const char* text);
+	bool docShow(int handle);
 	// Switches the character's daily routine to another (Npc_ExchangeRoutine):
 	// the function "RTN_<name>_<id>"; false if the scripts lack it.
 	bool exchangeRoutine(u32 npc, const char* name);
@@ -450,6 +487,19 @@ public:
 	bool spellStriking() const { return _strikeSpell >= 0 || _strikeIsArrow; }
 	// The guilds' table of numbers (C_GILVALUES), an entry of it; `otherwise` if none.
 	i32 guildValue(const char* member, i32 guild, i32 otherwise);
+	// What a fall from `drop` cm costs a character, as OpenGothic's DamageCalculator::damageFall has it:
+	// the guild's FALLDOWN_DAMAGE per metre beyond its FALLDOWN_HEIGHT, less the PROT_FALL protection.
+	// 0 for none (a guild that is never hurt by falling has the height 9999, or a protection below 0).
+	i32 fallDamage(u32 npc, float drop);
+	// Whether the scripts are Gothic 2's (or a mod's on them): they have the regeneration attributes Gothic 1 lacks.
+	// OpenGothic asks its version for the few rules that differ (who may pick a lock, what a wrong turn costs).
+	bool isGothic2() const { return _vm.find("ATR_REGENERATEHP") != SCRIPT_NONE; }
+	// The skill (learnt level) and the value (per cent) of a talent of a character, 0 for none.
+	i32 talentSkill(u32 npc, i32 talent) const { return npc < _npcCount && talent >= 0 && talent < 16 ? _npcs[npc].skill[talent] : 0; }
+	i32 talentValue(u32 npc, i32 talent) const { return npc < _npcCount && talent >= 0 && talent < 16 ? _npcs[npc].talent[talent] : 0; }
+	// The scripts' say in a lock being picked (OpenGothic's GameScript::invokePickLock): G_PickLock(success, broken) with
+	// `self` the character. `success`: the turn was right; `broken`: the pick broke (a wrong turn) or the lock opened.
+	void pickLockSays(u32 npc, int success, int broken);
 	// Equips a weapon item (EquipItem, the faults menu): melee or ranged by its kind.
 	void equip(u32 npc, u32 itemSymbol);
 	// Puts an armour on (its protection counts; the old one's no more);
@@ -634,6 +684,25 @@ private:
 	u32 _choiceCount = 0, _choiceCap = 0, _choiceAdds = 0, _lastChoiceInfo = 0;
 	GameMessage _messages[6] = {};
 	u32 _messageFirst = 0, _messageCount = 0;
+	i32 _day = 0;
+	static void xGetDay(ScriptVm& vm, void* user);
+	static void xGetHeightToNpc(ScriptVm& vm, void* user);
+	static void xHasRangedWeaponWithAmmo(ScriptVm& vm, void* user);
+	float _timeSet = 0.0f;
+	u32 _timeSetSerial = 0, _timeSetTaken = 0;
+	GameDocument _docs[GAME_DOCS] = {};
+	GameDocument _docShown = {};
+	u32 _docSerial = 0;
+	void docFree(GameDocument& d);
+	GameDocument* docOf(int handle) { return handle >= 0 && u32(handle) < GAME_DOCS && _docs[handle].used ? &_docs[handle] : nullptr; }
+	static void xDocCreate(ScriptVm& vm, void* user);
+	static void xDocCreateMap(ScriptVm& vm, void* user);
+	static void xDocSetPage(ScriptVm& vm, void* user);
+	static void xDocSetPages(ScriptVm& vm, void* user);
+	static void xDocPrintLine(ScriptVm& vm, void* user);
+	static void xDocSetLevel(ScriptVm& vm, void* user);
+	static void xDocSetLevelCoords(ScriptVm& vm, void* user);
+	static void xDocShow(ScriptVm& vm, void* user);
 	u32 _talkVersion = 0;
 	u32 _mInfoNpc = SCRIPT_NONE, _mInfoNr = SCRIPT_NONE, _mInfoCondition = SCRIPT_NONE, _mInfoInformation = SCRIPT_NONE,
 	    _mInfoDescription = SCRIPT_NONE, _mInfoImportant = SCRIPT_NONE, _mInfoPermanent = SCRIPT_NONE, _mInfoTrade = SCRIPT_NONE,

@@ -59,6 +59,20 @@ void App::talkUpdate(Input& in, float dt) {
 			_invStamp = 0;
 		}
 	}
+	// The scripts move the clock (Wld_SetTime). A jump of more than a few minutes goes under a dip to black, as
+	// sleep does; the inhabitants take the places of the new hour by themselves (Npcs::update sees the clock).
+	{
+		float hours;
+		if (_npcs.game().takeTimeSet(hours)) {
+			float step = hours - _env.timeOfDay;
+			if (step > 12.0f) step -= 24.0f;
+			if (step < -12.0f) step += 24.0f;
+			if (fabsf(step) > 0.1f) _timeFade = kTimeFadeLength;
+			_env.timeOfDay = hours;
+			_npcs.game().jumpClock(hours);
+		}
+		if (_timeFade > 0.0f) _timeFade = max(_timeFade - dt, 0.0f);
+	}
 	// A chapter begins (IntroduceChapter): its card comes up.
 	{
 		const GameChapter& ch = _npcs.game().chapter();

@@ -140,6 +140,8 @@ void Game::save(ByteSink& out) const {
 	out.str(_chapter.sound);
 	out.i32v(_chapter.delay);
 	out.u32v(_chapter.serial);
+	// The day (Wld_GetDay). After the chapter, so that a save without it still reads.
+	out.i32v(_day);
 }
 
 bool Game::restore(ByteSource& in) {
@@ -227,6 +229,7 @@ bool Game::restore(ByteSource& in) {
 	c.serial = in.u32v();
 	if (c.serial < _chapter.serial) c.serial = _chapter.serial;
 	if (!in.bad) _chapter = c;
+	if (in.pos + 4 <= in.size) _day = in.i32v(); // (older saves end here)
 	++_itemsVersion;
 	return !in.bad;
 }

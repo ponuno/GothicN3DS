@@ -1093,6 +1093,7 @@ void checkScripts(std::shared_ptr<const ZenGame> game, const fs::path& dir, bool
 	bo.tex.quality = 0;
 	bo.chunker.chunkSize = 2000;
 	bo.quiet = true;
+	bo.npcLod = true;
 	PakWriter writer;
 	const BakeResult r = bakeWorlds(worlds, std::vector<SrcModel>(), scripts, bo, writer);
 	const size_t at = r.report.find("== scripts ==");
@@ -1127,6 +1128,12 @@ void checkScripts(std::shared_ptr<const ZenGame> game, const fs::path& dir, bool
 	CHECK(image && image->type == ASSET_SCRIPT);
 	const PakEntry* looks = pak.find("meta/looks");
 	CHECK(looks && looks->size == sizeof(LooksHeader) + 3 * sizeof(LookEntry));
+	if (looks) {
+		std::vector<u8> lb(looks->size);
+		CHECK(pak.read(*looks, lb.data()));
+		const LookEntry* le = reinterpret_cast<const LookEntry*>(lb.data() + sizeof(LooksHeader));
+		for (int i = 0; i < 3; ++i) CHECK(le[i].bodyLow != 0 && le[i].bodyLow != le[i].body && pak.find(le[i].bodyLow));
+	}
 	for (const char* name : {"world/fixture/points", "world/fixture2/points"}) {
 		const PakEntry* e = pak.find(name);
 		CHECK(e && e->size >= sizeof(PointsHeader));

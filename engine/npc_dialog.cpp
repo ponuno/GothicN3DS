@@ -191,7 +191,7 @@ bool Npcs::canTalk(u32 npc) const {
 	for (const NpcActor& a : _actors)
 		if (a.used && a.npc == npc) {
 			// (Not one in a fight: it has no ear for talk, nor does an enemy.)
-			if (!a.ready || inFightState(a) || a.flee > 0.0f || _game.npc(npc).weapon != WEAPON_NONE) return false;
+			if (!a.ready || inFightState(a) || a.flee > 0.0f || a.refuseTalk > 0.0f || _game.npc(npc).weapon != WEAPON_NONE) return false;
 			const u32 hero = _game.heroIndex();
 			if (hero != SCRIPT_NONE && _game.attitude(npc, hero) == _game.constant("ATT_HOSTILE", 0) && _game.isMonster(_game.npc(npc))) return false;
 			return (_percTalk >= 0 && _percTalk < Game::PERC_TYPES && a.perc[_percTalk]) || _game.hasInfos(npc);

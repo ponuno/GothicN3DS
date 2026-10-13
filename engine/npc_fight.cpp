@@ -669,6 +669,7 @@ void Npcs::tickFight(NpcActor& a, float dt) {
 	const float stumbleBefore = a.stumble;
 	if (a.stumble > -1.0f) a.stumble = max(a.stumble - dt, -1.0f);
 	if (a.faiWait > 0.0f) a.faiWait -= dt;
+	if (a.refuseTalk > 0.0f) a.refuseTalk -= dt;
 	if (stumbleBefore > 0.0f && a.stumble <= 0.0f && n.down == DOWN_NONE && !a.blow.clip && a.drawTo == 0xFF && n.weapon != WEAPON_NONE) {
 		// Done reeling: back on its feet in the fighting stance, not frozen in the last frame.
 		a.faiWait = 0;

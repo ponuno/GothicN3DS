@@ -850,6 +850,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	std::map<std::string, Rig> rigs;
 	std::map<std::string, u32> requested; // body or head as asked for -> model hash (0: cannot be had)
 	std::map<std::string, u32> bySignature;
+	std::map<u32, SrcModel> sources; // keyed by model hash; // bodies as baked, for their coarse versions (--npc-lod)
 	std::map<std::string, u32> problems; // reason -> looks
 	std::vector<LookEntry> entries;
 	size_t bodies = 0, heads = 0, triangles = 0, textures = 0, clipCount = 0;
@@ -885,12 +886,40 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			textures += mr.textures;
 			missingTextures.insert(mr.missingTextures.begin(), mr.missingTextures.end());
 			out = hashName(("model/" + m.name).c_str());
+			if (kind == "body" && opt.npcLod) sources[out] = m;
 			bySignature[sig] = out;
 			return out;
 		} catch (const std::exception& ex) {
 			why = kind + " unusable: " + ex.what();
 			return 0;
 		}
+	};
+
+	// The coarse body of a look (--npc-lod): the same source, cut down hard; baked once per full body.
+	std::map<u32, u32> lowOf;
+	size_t lowBodies = 0, lowTriangles = 0;
+	BakeOptions coarse = quiet;
+	coarse.simplifyModels = opt.npcLodSimplify;
+	coarse.simplifyModels.enabled = true;
+	const auto lowBody = [&](u32 full) -> u32 {
+		if (!full) return 0;
+		const auto known = lowOf.find(full);
+		if (known != lowOf.end()) return known->second;
+		u32& out = lowOf[full];
+		out = 0;
+		const auto src = sources.find(full);
+		if (src == sources.end()) return 0;
+		try {
+			SrcModel m = src->second;
+			m.name += ".lo";
+			const ModelBakeResult mr = bakeModel(m, coarse, pak, &shared);
+			lowTriangles += mr.triangles;
+			++lowBodies;
+			out = hashName(("model/" + m.name).c_str());
+		} catch (const std::exception&) {
+			out = 0;
+		}
+		return out;
 	};
 
 	for (const auto& [key, l] : looks) {
@@ -948,7 +977,11 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			           ", e.g. " + l.example + "]"];
 			continue;
 		}
-		entries.push_back(LookEntry {key, rig.hash, body, head});
+		u32 low = 0;
+		if (opt.npcLod) {
+			low = lowBody(body);
+		}
+		entries.push_back(LookEntry {key, rig.hash, body, head, low});
 	}
 
 	std::sort(entries.begin(), entries.end(), [](const LookEntry& a, const LookEntry& b) { return a.key < b.key; });
@@ -961,7 +994,8 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	size_t rigCount = 0;
 	for (const auto& r : rigs) rigCount += r.second.hash != 0;
 	result.looksBaked = entries.size();
-	result.npcModels = rigCount + bodies + heads;
+	result.npcModels = rigCount + bodies + heads + lowBodies;
+	if (lowBodies) line(format("coarse bodies (--npc-lod): %zu, %zu triangles", lowBodies, lowTriangles));
 	u32 drawn = 0;
 	for (const auto& [key, l] : looks)
 		for (const LookEntry& e : entries)

@@ -35,6 +35,7 @@ namespace g3 {
 
 struct NpcConfig {
 	float range = 3000.0f; // cm: how far away a character is still shown (less under load, see update())
+	float lodDistance = 1800.0f; // cm: beyond this a character with a coarse body (--npc-lod) is drawn with it, nearer with the full one (0: always full)
 	u32 maxShown = 12;     // at most this many, the nearest (up to 16)
 	u32 loadsPerFrame = 1; // models read from the archive per frame (each is a hitch)
 	u32 startsPerFrame = 0; // characters set going per frame (0: all at once): their first steps run scripts, and a crowd at once was a hitch (the console takes one)
@@ -208,6 +209,9 @@ struct NpcActor {
 	NpcPiece* rig = nullptr;
 	NpcPiece* body = nullptr;
 	NpcPiece* head = nullptr;
+	NpcPiece* low = nullptr; // the coarse body, if the look has one
+	bool far = false;        // beyond the distance of the coarse body (with hysteresis)
+	u8 mix = 255;            // the share of the full body drawn, the rest is the coarse one
 	Animator anim;
 	bool fist = false;     // a creature: its animations are the "fist" ones (S_FISTRUN ...)
 	u32 movedSeen = 0;     // GameNpc::moved it was last put on the ground for
@@ -289,6 +293,7 @@ struct NpcActor {
 	float animPrev = 0;    // where the animation was the frame before (for the frame a blow lands at)
 	const Clip* animClip = nullptr;
 	float flee = 0;        // seconds of fleeing left
+	float refuseTalk = 0;  // seconds it will not talk (Npc_SetRefuseTalk)
 	u8 drawTo = 0xFF;      // WeaponMode being taken in hand (0xFF: none)
 	u8 heardWeapon = 0;    // what it had in hand when that last made a sound
 	float drawAt = -1.0f;  // seconds into the draw where it changes hands
@@ -706,6 +711,9 @@ private:
 	static void xPlayAni(ScriptVm& vm, void* user);
 	static void xPlayAniBs(ScriptVm& vm, void* user);
 	static void xWait(ScriptVm& vm, void* user);
+	static void xWaitMs(ScriptVm& vm, void* user);
+	static void xSetRefuseTalk(ScriptVm& vm, void* user);
+	static void xRefuseTalk(ScriptVm& vm, void* user);
 	static void xStandUp(ScriptVm& vm, void* user);
 	static void xSetWalkMode(ScriptVm& vm, void* user);
 	static void xStartState(ScriptVm& vm, void* user);

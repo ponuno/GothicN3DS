@@ -34,6 +34,10 @@ struct StreamConfig {
 	// and dissolved out again when they leave it (see gfx::setFade); 0: they
 	// appear and vanish at once, as before. Off-screen they change at once.
 	float fadeMs = 400.0f;
+	// The simplified stand-ins and the full chunk dissolve into each other slower than objects do (a swap that near is seen),
+	// and the way back to the full chunk waits until it is this share of the distance (hysteresis: no flicker at the edge).
+	float lodFadeMs = 900.0f;
+	float lodHysteresis = 0.8f;
 	u32 maxLoadsPerFrame = 2;      // chunks handed to the GPU per frame: bounds the upload hitch
 	u32 readAheadChunks = 4;       // chunks after those being read whose bytes are read ahead from the card (with a ReadAhead)
 	u32 maxInFlight = 2;           // chunks being read at once in the background (nearer wishes wait: what is read is still wanted when it arrives)
@@ -387,7 +391,8 @@ private:
 	u32 _timeMs = 0;
 	u32 _drawFrame = 1;     // draw() counter
 	u32 _lastDrawMs = 0;
-	int _fadeStep = 255;    // how much of a dissolve one frame does (255: all of it)
+	int _fadeStep = 255;
+	int _lodStep = 255;     // the same for the stand-ins' dissolve (lodFadeMs)    // how much of a dissolve one frame does (255: all of it)
 	// Graphics+ of this frame (draw()): the occlusion's strength, the wind's
 	// push along x and z (gusts included), and the time the wave goes by.
 	float _fxOcclusion = 0.0f, _windX = 0.0f, _windZ = 0.0f;

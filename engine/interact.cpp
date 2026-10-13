@@ -178,7 +178,13 @@ void App::mobUpdate(Input& in, float dt) {
 			_mobJob.time = 0;
 			Game& g = _npcs.game();
 			if (mi.onState) {
-				const u32 fn = g.function(mobs.infoText(mi.onState));
+				// The function is the object's name for it with the state's number (OpenGothic's
+				// Interactive::invokeStateFunc: "<name>_S1" on the first use); one that is named whole still runs.
+				const char* name = mobs.infoText(mi.onState);
+				char state[96];
+				snprintf(state, sizeof(state), "%s_S1", name);
+				u32 fn = g.function(state);
+				if (fn == SCRIPT_NONE) fn = g.function(name);
 				if (fn != SCRIPT_NONE) g.callAs(fn, u32(hi), -1);
 				_invStamp = 0;
 			}

@@ -18,6 +18,7 @@ PdcTiming gBase, gNow;
 bool gReady = false, gModified = false;
 int gFailure = 0;
 float gHz = 0.0f;
+float gWanted = 0.0f; // the rate to put back after a pause (0: none)
 
 bool write(const PdcTiming& t, const PdcTiming& from) {
 	// Only the words that differ, in runs (the registers must be written 32 bits at a time).
@@ -72,18 +73,25 @@ float set(float hz) {
 	return made;
 }
 
-void restore() {
-	if (!gModified) return;
+void restore(bool pausing) {
+	if (!gModified) {
+		if (!pausing) gWanted = 0.0f;
+		return;
+	}
+	gWanted = pausing ? gHz : 0.0f;
 	// (Even after a failed write: the base is what the system had.)
 	GSPGPU_WriteHWRegs(kRegBase, gBase.reg, 0x20u); // words 0..7
 	GSPGPU_WriteHWRegs(kRegBase + 9u * 4u, &gBase.reg[9], 4u);
 	GSPGPU_WriteHWRegs(kRegBase + 24u * 4u, &gBase.reg[24], 4u);
 	gNow = gBase;
 	gModified = false;
+	gHz = pdcRefresh(gBase); // (what the screen runs at now)
 }
 
 void resume() {
-	if (gReady && gHz > 0.0f && fabsf(gHz - pdcRefresh(gBase)) > 0.01f) set(gHz);
+	const float hz = gWanted;
+	gWanted = 0.0f;
+	if (gReady && hz > 0.0f && fabsf(hz - pdcRefresh(gBase)) > 0.01f) set(hz);
 }
 
 float current() { return gHz; }

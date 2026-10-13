@@ -16,8 +16,8 @@ namespace g3 {
 
 struct LodOptions {
 	bool enabled = false;
-	float ratio = 0.45f;       // triangles to keep, of what is simplified
-	float maxError = 100.0f;   // cm: how far (mean, over the planes around a vertex) a collapse may move the surface
+	float ratio = 0.6f;        // triangles to keep, of what is simplified
+	float maxError = 30.0f;    // cm: how far (mean, over the planes around a vertex) a collapse may move the surface
 	u32 minTriangles = 48;     // a chunk with fewer simplifiable triangles is left alone
 	unsigned threads = 1;
 };

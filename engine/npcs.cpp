@@ -358,13 +358,28 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 			continue;
 		}
 		Piece* rig = piece(pak, look->rig, loadsLeft);
-		Piece* body = piece(pak, look->body, loadsLeft);
-		Piece* head = look->head ? piece(pak, look->head, loadsLeft) : nullptr;
+		// A look with a coarse body: from afar only that is read; the full body and head come as the player nears,
+		// and the coarse one stands in until they are there.
+		Piece* low = nullptr;
+		bool wantFull = true;
+		if (look->bodyLow && _cfg.lodDistance > 0.0f) {
+			const float d = _cfg.lodDistance;
+			const float edge = a->far ? d * 0.9f : d * 1.1f;
+			a->far = dist2[k] > edge * edge;
+			const float load = d + 600.0f;
+			low = piece(pak, look->bodyLow, loadsLeft);
+			wantFull = !a->far || dist2[k] < load * load;
+		} else {
+			a->far = false;
+		}
+		Piece* body = wantFull || !low ? piece(pak, look->body, loadsLeft) : nullptr;
+		Piece* head = look->head && body ? piece(pak, look->head, loadsLeft) : nullptr;
 		// Pieces that do not fit together are as good as missing.
 		if (rig && body && !body->model.sameSkeleton(rig->model)) body = nullptr;
+		if (rig && low && !low->model.sameSkeleton(rig->model)) low = nullptr;
 		if (rig && head && !head->model.sameSkeleton(rig->model)) head = nullptr;
 		// One new character set going per frame: his first steps run scripts, and several in one frame were a hitch.
-		if (!a->ready && rig && body) {
+		if (!a->ready && rig && (body || low)) {
 			if (startsLeft == 0 && _cfg.startsPerFrame > 0) {
 				++_stats.waiting;
 				continue;
@@ -379,7 +394,8 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 		}
 		a->body = body;
 		a->head = head;
-		a->ready = rig && body;
+		a->low = low;
+		a->ready = rig && (body || low);
 		if (!a->ready) ++_stats.waiting;
 		// Put somewhere else by its routine (nobody lives while `alive` is off).
 		if (a->movedSeen != n.moved) {
@@ -397,7 +413,8 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 	for (u32 k = 0; k < aheadCount; ++k) {
 		const LookEntry* look = lookOf(_game.npc(ahead[k]).look);
 		if (!look) continue;
-		const u32 hashes[3] = {look->rig, look->body, look->head};
+		const bool coarse = look->bodyLow && _cfg.lodDistance > 0.0f;
+		const u32 hashes[4] = {look->rig, coarse ? look->bodyLow : look->body, coarse ? 0 : look->head, 0};
 		for (u32 h : hashes) {
 			if (!h) continue;
 			if (reading) {
@@ -430,10 +447,11 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	++_frame;
 	_stats.scriptMs = 0;
 	const double tStart = sys::timeMs();
-	// No further than the world is drawn, and under load no further than the
-	// small things of the world: they go first, then come back.
+	// No further than the world is drawn. The reach is deliberately not tied to the
+	// pacer's detail scale: people shrinking to a dozen metres under load would
+	// appear right in front of the player.
 	const StreamConfig& sc = world.config();
-	_reach = min(_cfg.range * clamp(sc.detailScale, 0.4f, 1.0f), sc.drawDistance);
+	_reach = min(_cfg.range, sc.drawDistance);
 	// The clock has moved on by a minute or more: so may the routines have.
 	float hoursPassed = 0;
 	if (fabsf(hours - _hours) >= 1.0f / 60.0f) {
@@ -488,10 +506,18 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 			a.shown = u8(min(int(a.shown) + _fadeStep, 255));
 	}
 	for (NpcActor& a : _actors) {
-		if (!a.used || !a.ready || !a.rig || !a.body || a.shown == 0) continue;
+		if (!a.used || !a.ready || !a.rig || !(a.body || a.low) || a.shown == 0) continue;
 		const GameNpc& n = _game.npc(a.npc);
+		// Full body or coarse one: the full one once it is there and the player is near; one dissolves into the other.
+		const int target = a.body && (!a.far || !a.low) ? 255 : 0;
+		if (!a.low) a.mix = 255;
+		else if (_fadeStep >= 255 || !gfx::fadeSupported()) a.mix = u8(target);
+		else if (a.mix < target) a.mix = u8(min(int(a.mix) + _fadeStep, target));
+		else if (a.mix > target) a.mix = u8(max(int(a.mix) - _fadeStep, target));
+		if (!a.body) a.mix = 0;
+		const NpcPiece* mainPiece = a.body ? a.body : a.low;
 		const Vec3 feet = {n.pos[0], n.pos[1], n.pos[2]};
-		const Model& body = a.body->model;
+		const Model& body = mainPiece->model;
 		// Out of view? A box around the body where it stands, turned any way.
 		const ModelHeader& bh = body.header();
 		float reach = 0;
@@ -526,15 +552,27 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 			}
 		}
 		body.skinMatrices(*pose, n.yaw, a.noLying ? a.slump * 1.5f : 0.0f, scale, skin);
+		if (a.mix > 0 && a.body) {
+			gfx::setFade(float(int(a.shown) * int(a.mix) / 255) * (1.0f / 255.0f));
+			a.body->model.drawSkinned(skin, feet, light);
+			_stats.triangles += a.body->model.triangles();
+			_stats.drawCalls += a.body->model.partCount();
+		}
+		if (a.mix < 255 && a.low) {
+			gfx::setFade(float(int(a.shown) * (255 - int(a.mix)) / 255) * (1.0f / 255.0f));
+			a.low->model.drawSkinned(skin, feet, light);
+			_stats.triangles += a.low->model.triangles();
+			_stats.drawCalls += a.low->model.partCount();
+		}
 		gfx::setFade(float(a.shown) * (1.0f / 255.0f));
-		body.drawSkinned(skin, feet, light);
-		_stats.triangles += body.triangles();
-		_stats.drawCalls += body.partCount();
-		if (_heldLoot && _heldPak && n.down == DOWN_NONE)
-			_heldLoot->drawCarried(*_heldPak, _game, a.rig->model, *pose, n.yaw, 0.0f, scale, n.weapon, n.melee, feet, light);
-		if (_heldLoot && _heldPak && a.heldItem != 0xFFFFFFFFu && a.itemState >= 0)
-			_heldLoot->drawInHand(*_heldPak, _game, a.rig->model, *pose, n.yaw, scale, a.heldItem, feet, light);
-		if (a.head) {
+		if (a.mix > 127) {
+			if (_heldLoot && _heldPak && n.down == DOWN_NONE)
+				_heldLoot->drawCarried(*_heldPak, _game, a.rig->model, *pose, n.yaw, 0.0f, scale, n.weapon, n.melee, feet, light);
+			if (_heldLoot && _heldPak && a.heldItem != 0xFFFFFFFFu && a.itemState >= 0)
+				_heldLoot->drawInHand(*_heldPak, _game, a.rig->model, *pose, n.yaw, scale, a.heldItem, feet, light);
+		}
+		if (a.head && a.mix > 0) {
+			gfx::setFade(float(int(a.shown) * int(a.mix) / 255) * (1.0f / 255.0f));
 			a.head->model.drawSkinned(skin, feet, light);
 			_stats.triangles += a.head->model.triangles();
 			_stats.drawCalls += a.head->model.partCount();

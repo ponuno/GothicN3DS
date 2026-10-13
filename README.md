@@ -4,7 +4,7 @@
 
 A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, its own renderer for the PICA200 GPU, its own Daedalus virtual machine). The game takes your original files, bakes them into a compact `data.pak` and runs the world on the console: scripts, dialogue, combat, magic, townsfolk with daily routines, sound and voices.
 
-![Test scene: camp by day, lake, cave, gate at sunset](docs/preview.png)
+![Test scene: camp by day, lake, cave, gate at sunset](docs/2011-01-02_15-24-48.555_top.bmp)
 
 ## Features
 
@@ -17,7 +17,7 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, it
   - baked ambient occlusion in the vertices (`g3ds-bake --ao low|high`);
   - trees, bushes and grass swaying in the vertex shader (`--wind`);
   - round shadows under the hero and townsfolk;
-  - **far layer** (`--far-lod`): a coarse, simplified copy of the whole world drawn beyond the draw distance (250 / 400 / 600 m) and over chunks that did not fit in memory. Only checked on PC so far; it costs about 1.5–2 MB of linear memory on the console.
+  - **far layer** (`--far-lod`): a coarse, simplified copy of the whole world drawn beyond the draw distance (250 / 400 / 600 m) and over chunks that did not fit in memory.
   - Under load the foliage stops swaying and shadows stay on the hero alone before objects start to disappear.
 - The world's memory budget on the 3DS adapts to the free linear memory (it used to be a hard 20 MB).
 
@@ -61,9 +61,12 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, it
 
 ## Quick start
 
-1. Windows, baking the data only: three `.exe` files from Releases plus `Gothic3DS-Baker.exe`, see [`windows/README.md`](windows/README.md).
-2. Full build (3DS program, music, SD card): the guide below.
-3. How it works and detailed controls: [`docs/TECHNICAL.md`](docs/TECHNICAL.md).
+1. Download every file from the release
+2. Run Gothic3DS-Baker.exe and choose your original game folder(Gothic 1,2)
+3. Check every box(It should be fine for original games)
+4. Run Bake
+5. Put all baked files and 3dsx and smdh files to your N3DS sd card(3ds/gothic3ds)
+6. Run through Homebrew Launcher
 
 ---
 

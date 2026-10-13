@@ -144,6 +144,12 @@ void usage() {
 	          "                     so the game need not draw them (menu: Graphics+ -> Visibility; minutes to bake)\n"
 	          "  --vis-radius M     how far from a cell the table goes, metres (default 150); --vis-near M: nothing\n"
 	          "                     this near is ever hidden (default 25); --vis-high: more places and rays (slower, surer)\n"
+	          "  --lights           bake the light of the world's lamps (torches, fire places) into the vertices, with\n"
+	          "                     shadows; the large triangles near a lamp are cut smaller (more triangles, see --light-cell)\n"
+	          "  --light-strength F their light, 0.1..4 (default 1); --light-cell M: the edge they are cut to, metres (default 1.5)\n"
+	          "  --light-static     also the lamps the world's own compiled light has (otherwise those are left out)\n"
+	          "  --water-light N    the water's own light, 0..255 (default 200): the same blue-green tone all over it,\n"
+	          "                     not the patches of the source mesh's vertex light; 0: keep the source's light\n"
 	          "  --far-lod          Graphics+: a coarse copy of the world drawn beyond the draw distance and where\n"
 	          "                     chunks are not loaded yet (far layer; about 1.5-2 MB on the console)\n"
 	          "  --far-cell M       its finest grid, metres (default 4; coarser if needed to fit)\n"
@@ -267,6 +273,11 @@ int main(int argc, char** argv) {
 			else if (a == "--lod") opt.lod.enabled = true;
 			else if (a == "--lod-ratio") opt.lod.ratio = std::clamp(std::stof(value()), 0.1f, 0.9f);
 			else if (a == "--lod-error") opt.lod.maxError = std::clamp(std::stof(value()), 1.0f, 500.0f);
+			else if (a == "--lights") opt.light.enabled = true;
+			else if (a == "--light-strength") opt.light.strength = std::clamp(std::stof(value()), 0.1f, 4.0f);
+			else if (a == "--light-cell") opt.light.cell = std::clamp(std::stof(value()), 0.2f, 10.0f) * 100.0f;
+			else if (a == "--light-static") opt.light.statics = true;
+			else if (a == "--water-light") opt.waterLight = u8(std::clamp(std::stoi(value()), 0, 255));
 			else if (a == "--vis") opt.vis.enabled = true;
 			else if (a == "--vis-high") opt.vis.high = true;
 			else if (a == "--vis-radius") opt.vis.radius = std::clamp(std::stof(value()), 40.0f, 500.0f) * 100.0f;

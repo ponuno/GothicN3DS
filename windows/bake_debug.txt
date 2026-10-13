@@ -1,9 +1,9 @@
 Gothic 3DS: bake_debug.txt (--debug)
 script: GOTHIC.DAT (from an archive)
 
-world 'archolos_mainland' (STARTUP_ARCHOLOS_MAINLAND): 1638108 instructions, 144 complaints, 0 calls given up, 17319 calls of engine functions nobody carries out, 9894 uses of members of no object; 1979 characters
-world 'archolos_sewers' (STARTUP_ARCHOLOS_SEWERS): 136265 instructions, 2 complaints, 0 calls given up, 332 calls of engine functions nobody carries out, 5780 uses of members of no object; 65 characters
-world 'archolos_silvermine' (STARTUP_ARCHOLOS_SILVERMINE): 114604 instructions, 2 complaints, 0 calls given up, 205 calls of engine functions nobody carries out, 5780 uses of members of no object; 63 characters
+world 'archolos_mainland' (STARTUP_ARCHOLOS_MAINLAND): 1638108 instructions, 144 complaints, 0 calls given up, 211 calls of engine functions nobody carries out, 9894 uses of members of no object; 1979 characters
+world 'archolos_sewers' (STARTUP_ARCHOLOS_SEWERS): 136265 instructions, 2 complaints, 0 calls given up, 0 calls of engine functions nobody carries out, 5780 uses of members of no object; 65 characters
+world 'archolos_silvermine' (STARTUP_ARCHOLOS_SILVERMINE): 114604 instructions, 2 complaints, 0 calls given up, 0 calls of engine functions nobody carries out, 5780 uses of members of no object; 63 characters
 world 'archolos_volfzacke' (STARTUP_ARCHOLOS_VOLFZACKE): 109992 instructions, 2 complaints, 0 calls given up, 0 calls of engine functions nobody carries out, 5780 uses of members of no object; 61 characters
 
 == the start-up scripts, all worlds: 2128609 instructions, 150 complaints, 0 calls given up, 27234 uses of members of no object ==
@@ -81,7 +81,6 @@ script image 14.30 MB; objects of the characters and items made by the start-up:
    27092  the game / the mod
 
 -- engine functions the start-up called that this engine does not carry out (every one: they return 0 / an empty string) --
-   17645  NPC_SETTALENTSKILL
      195  WLD_ASSIGNROOMTOGUILD
       12  WLD_SETOBJECTROUTINE
        3  WLD_SETMOBROUTINE
@@ -129,7 +128,7 @@ script image 14.30 MB; objects of the characters and items made by the start-up:
        1  NPC_SETTRUEGUILD
        1  AI_WAITTILLEND
 
-== the talks: 6398 infos; the 24231 functions they run call 183 engine functions, 128 carried out ==
+== the talks: 6398 infos; the 24231 functions they run call 183 engine functions, 130 carried out ==
   functions run by the talks, in Ikarus: 139
   functions run by the talks, in LeGo: 46
   functions run by the talks, in the game / the mod: 24046
@@ -151,8 +150,6 @@ script image 14.30 MB; objects of the characters and items made by the start-up:
   NPC_STOPANI
   NPC_PLAYANI
   NPC_ISDETECTEDMOBOWNEDBYNPC
-  NPC_GETTALENTSKILL
-  NPC_SETTALENTSKILL
   AI_AIMAT
   AI_SHOOTAT
   AI_READYSPELL

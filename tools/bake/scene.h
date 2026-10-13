@@ -136,6 +136,15 @@ struct SrcEmitter {
 	float yaw = 0;
 };
 
+// A light the world places (zCVobLight: a torch, a fire place, a lamp): where, how far it reaches, its colour.
+// `isStatic`: the world's own compiled light already has it (the others - the flickering ones of torches and fires - are not in it).
+struct SrcLight {
+	float pos[3];
+	float range = 0;
+	u8 color[3] = {255, 255, 255};
+	bool isStatic = false;
+};
+
 struct SrcImage {
 	int width = 0, height = 0;
 	std::vector<u8> rgba; // top-down
@@ -165,6 +174,7 @@ struct SrcScene {
 	std::vector<SrcAmbient> ambient;
 	std::vector<SrcMusicZone> musicZones;
 	std::vector<SrcEmitter> emitters;
+	std::vector<SrcLight> lights;
 	std::vector<SrcWorldItem> items; // the world file's things (the scripts add theirs when baked)
 	std::vector<std::string> notes; // importer remarks for the bake report
 };

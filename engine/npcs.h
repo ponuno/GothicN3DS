@@ -201,6 +201,8 @@ struct NpcActor {
 
 	bool used = false;
 	bool ready = false;    // its models are in memory
+	u8 shown = 0;          // how much of it is drawn, 0..255: it dissolves in when it comes into range and out when it leaves
+	bool leaving = false;  // out of range: still drawn, dissolving, and let go when nothing is left of it
 	u32 npc = 0;           // Game's index
 	float dist2 = 0;       // to the player, squared
 	NpcPiece* rig = nullptr;
@@ -330,6 +332,8 @@ public:
 	void update(Pak& pak, const World& world, Vec3 eye, float hours, float dt);
 	// Call in PASS_WORLD. `dayLight` as for the world (1 1 1 indoors).
 	void draw(const Mat4& viewProj, const float dayLight[3]);
+	// How far a dissolve gets this frame (World::fadeStep(); 255: they come and go at once).
+	void setFadeStep(int step) { _fadeStep = step < 1 ? 1 : step > 255 ? 255 : step; }
 	// Whose models and archive the weapons in their hands are drawn from.
 	void setHeldSource(class Loot* loot, Pak* pak) { _heldLoot = loot; _heldPak = pak; }
 	// Models, textures and animations of those about to come into range are read ahead on a thread of its own.
@@ -761,6 +765,7 @@ private:
 	u32 _frame = 0;
 	float _clock = 0;
 	float _hours = -1.0f;
+	int _fadeStep = 255;
 	float _reach = 3000.0f; // how far characters are shown right now, cm
 };
 

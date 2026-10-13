@@ -149,6 +149,22 @@ static float aabbDistance(const float mn[3], const float mx[3], Vec3 c) {
 	return sqrtf(dx * dx + dy * dy + dz * dz);
 }
 
+bool World::pointShown(Vec3 p, Vec3 eye, int& chunk, bool wasOn) const {
+	if (chunk == -2) {
+		chunk = -1;
+		for (u32 i = 0; i < _hdr.chunkCount && chunk < 0; ++i) {
+			const ChunkInfo& c = _chunks[i];
+			if (p.x >= c.bbMin[0] - 50.0f && p.x <= c.bbMax[0] + 50.0f && p.y >= c.bbMin[1] - 50.0f && p.y <= c.bbMax[1] + 50.0f &&
+			    p.z >= c.bbMin[2] - 50.0f && p.z <= c.bbMax[2] + 50.0f)
+				chunk = int(i);
+		}
+	}
+	if (chunk >= 0 && (u32(chunk) >= _hdr.chunkCount || !_loaded[chunk].mesh)) return false;
+	const float dx = p.x - eye.x, dy = p.y - eye.y, dz = p.z - eye.z;
+	const float reach = min(_cfg.drawDistance, _cfg.detailDistance[DETAIL_SMALL] * _cfg.detailScale) * (wasOn ? _cfg.detailHysteresis : 1.0f);
+	return dx * dx + dy * dy + dz * dz <= reach * reach;
+}
+
 float World::distanceTo(u32 index, Vec3 c) const { return aabbDistance(_chunks[index].bbMin, _chunks[index].bbMax, c); }
 
 void World::setWaiting(TexSlot& s, bool waiting) {
@@ -288,6 +304,8 @@ LoadStatus World::finishChunk(LoadResult& r) {
 	}
 	for (u32 c = 0; c < clusterCount; ++c) {
 		l.clusters[c].lod = false;
+		l.clusters[c].lodMix = 0;
+		l.clusters[c].mixFrame = 0;
 		for (int a = 0; a < 3; ++a) {
 			l.clusters[c].bbMin[a] = 1e30f;
 			l.clusters[c].bbMax[a] = -1e30f; // (a number nobody uses stays inside out: never in view)
@@ -1252,6 +1270,17 @@ void World::classify(const Loaded& l, u32 index, bool count) {
 		// Far enough from the camera for the stand-ins (a cluster's own distance: a chunk is 40 m wide).
 		k.lod = l.hasLod && _cfg.lodDistance > 0.0f && _clusterNear[c] > (k.lod ? _cfg.lodDistance * 0.9f : _cfg.lodDistance);
 		_stats.lodChunks += count && k.lod;
+		// The stand-ins and the full batches dissolve into each other (a chunk not drawn the frame before takes its state at once).
+		if (k.mixFrame != _drawFrame) {
+			k.mixFrame = _drawFrame;
+			const int target = k.lod ? 255 : 0;
+			if (_fadeStep >= 255 || l.drawnFrame + 1 != _drawFrame)
+				k.lodMix = u8(target);
+			else if (k.lodMix < target)
+				k.lodMix = u8(min(int(k.lodMix) + _fadeStep, 255));
+			else if (k.lodMix > target)
+				k.lodMix = u8(max(int(k.lodMix) - _fadeStep, 0));
+		}
 		if (where == 0) continue;
 		_clusterFar[c] = aabbFarDistance(k.bbMin, k.bbMax, _camera);
 	}
@@ -1326,7 +1355,17 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 		}
 		// A chunk far enough away shows its simplified stand-ins in place of the batches they replace.
 		const u32 c = batch.cluster < l.clusterCount ? batch.cluster : 0u;
-		if (batch.lodMode != BATCH_LOD_BOTH && batch.lodMode != (l.clusters[c].lod ? BATCH_LOD_FAR_ONLY : BATCH_LOD_FULL_ONLY)) continue;
+		// (Not dissolving - the translucent pass, or no dissolve at all - it is one or the other at once.)
+		u8 lodShare = 255;
+		if (batch.lodMode != BATCH_LOD_BOTH) {
+			if (blended) {
+				if (batch.lodMode != (l.clusters[c].lod ? BATCH_LOD_FAR_ONLY : BATCH_LOD_FULL_ONLY)) continue;
+			} else {
+				const u8 mix = l.clusters[c].lodMix;
+				lodShare = batch.lodMode == BATCH_LOD_FAR_ONLY ? mix : u8(255 - mix);
+				if (lodShare == 0) continue;
+			}
+		}
 		bool visible = _clusterState[c] != CLUSTER_OUT;
 		u8 shown = 255;
 		if (batch.detail != DETAIL_ALWAYS && _clusterState[c] != CLUSTER_OUT) {
@@ -1353,6 +1392,10 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 			const float limit = _cfg.detailDistance[batch.detail] * _cfg.detailScale;
 			const bool thinned = batch.detail == DETAIL_SMALL && batch.layer >= _cfg.smallLayers;
 			batch.shown = !thinned && _clusterNear[c] <= (batch.shown ? limit * _cfg.detailHysteresis : limit) ? 255 : 0;
+		}
+		if (lodShare != 255) {
+			shown = u8(int(shown) * int(lodShare) / 255);
+			visible = visible && shown > 0;
 		}
 		if (visible && _clusterState[c] == CLUSTER_PARTLY) visible = aabbInFrustum(_frustum, batch.bbMin, batch.bbMax);
 		if (visible && !blended) {

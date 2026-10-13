@@ -44,6 +44,16 @@ public:
 	void release();
 
 	void update(float dt, Vec3 eye);
+	// Fire belongs to the torch that carries it: an emitter only runs while `shown` says its place is drawn
+	// (the chunk is in memory and the small objects are within their distance), and it comes in and goes out
+	// with the same dissolve (`fadeStep`, World::fadeStep(): 255 = at once). `chunk` is the emitter's own cache of
+	// where it stands, `wasOn` what it answered the frame before (for a little hysteresis). Without it every emitter in range runs.
+	typedef bool (*ShownFn)(void* user, Vec3 pos, Vec3 eye, int& chunk, bool wasOn);
+	void setGate(ShownFn shown, void* user) {
+		_shown = shown;
+		_shownUser = user;
+	}
+	void setFadeStep(int step) { _fadeStep = step < 1 ? 1 : step > 255 ? 255 : step; }
 	// In PASS_BLEND. `dayLight`: the time of day's colour (smoke is dimmed by it, glow is not).
 	void draw(const Mat4& view, Vec3 eye, const float dayLight[3]);
 
@@ -97,6 +107,8 @@ private:
 	};
 	struct Source { // an emitter's running state
 		float time = 0, acc = 0;
+		int chunk = -2;  // the world chunk it stands in (-2: not looked for yet, -1: in none)
+		u8 gate = 0;     // how much it emits, 0..255: it comes in with the object that carries it (see setGate)
 	};
 	struct Dynamic {
 		u16 def;
@@ -134,6 +146,9 @@ private:
 	u32 _seed = 12345;
 	u32 _nextId = 1;
 	ParticleStats _stats;
+	ShownFn _shown = nullptr;
+	void* _shownUser = nullptr;
+	int _fadeStep = 255;
 
 	static constexpr u32 MESHES = 3;
 	gfx::Mesh* _meshes[MESHES] = {};

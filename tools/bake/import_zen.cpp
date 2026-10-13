@@ -29,6 +29,7 @@
 #include <zenkit/Vfs.hh>
 #include <zenkit/World.hh>
 #include <zenkit/world/VobTree.hh>
+#include <zenkit/vobs/Light.hh>
 #include <zenkit/vobs/MovableObject.hh>
 #include <zenkit/vobs/Sound.hh>
 #include <zenkit/vobs/Trigger.hh>
@@ -987,6 +988,22 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 			}
 		}
 
+		// A light: kept for the baker's light (light_bake.h).
+		if (vob->type == zenkit::VirtualObjectType::zCVobLight) {
+			if (const auto* lamp = dynamic_cast<const zenkit::VLight*>(vob.get()); lamp && lamp->range > 1.0f) {
+				SrcLight l;
+				l.pos[0] = vob->position.x;
+				l.pos[1] = vob->position.y;
+				l.pos[2] = vob->position.z;
+				l.range = lamp->range;
+				l.color[0] = lamp->color.r;
+				l.color[1] = lamp->color.g;
+				l.color[2] = lamp->color.b;
+				l.isStatic = lamp->is_static;
+				scene.lights.push_back(l);
+			}
+			continue;
+		}
 		// A thing lying about: which (the script instance), where, how turned.
 		if (vob->type == zenkit::VirtualObjectType::oCItem) {
 			if (const auto* item = dynamic_cast<const zenkit::VItem*>(vob.get()); item && !item->instance.empty()) {

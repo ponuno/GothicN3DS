@@ -61,6 +61,119 @@ static int gFailures = 0, gChecks = 0;
 
 static std::string gDir;
 
+// ---- the light of lamps baked into the vertices ----
+static void testLampLight() {
+	CHECK(lampLight(0.0f, 800.0f, 1.0f) == 1.0f && lampLight(800.0f, 800.0f, 1.0f) == 0.0f && lampLight(900.0f, 800.0f, 1.0f) == 0.0f);
+	CHECK(lampLight(200.0f, 800.0f, 1.0f) > lampLight(400.0f, 800.0f, 1.0f) && lampLight(400.0f, 800.0f, 1.0f) > lampLight(700.0f, 800.0f, 1.0f));
+	CHECK(lampLight(300.0f, 800.0f, 0.2f) < lampLight(300.0f, 800.0f, 1.0f) && lampLight(300.0f, 800.0f, -1.0f) == 0.0f);
+
+	// A floor of two big triangles (front normal up), a wall across x = 1125, a torch above the middle.
+	auto build = [&](bool staticLamp) {
+		SrcScene scene;
+		scene.materials.resize(1);
+		auto tri = [&](const float a[3], const float b[3], const float c[3]) {
+			SrcTriangle t {};
+			const float* p[3] = {a, b, c};
+			for (int k = 0; k < 3; ++k) {
+				for (int i = 0; i < 3; ++i) t.v[k].pos[i] = p[k][i];
+				t.v[k].rgba[0] = t.v[k].rgba[1] = t.v[k].rgba[2] = 60;
+				t.v[k].rgba[3] = 255;
+			}
+			t.material = 0;
+			scene.triangles.push_back(t);
+		};
+		const float f00[3] = {0, 0, 0}, f10[3] = {2000, 0, 0}, f01[3] = {0, 0, 2000}, f11[3] = {2000, 0, 2000};
+		tri(f00, f10, f01);
+		tri(f10, f11, f01);
+		// The wall (a thin upright quad at x = 1125): two triangles with fronts to the lamp or not, it blocks either way.
+		const float w0[3] = {1125, 0, -500}, w1[3] = {1125, 600, -500}, w2[3] = {1125, 0, 2500}, w3[3] = {1125, 600, 2500};
+		tri(w0, w1, w2);
+		tri(w1, w3, w2);
+		SrcLight l;
+		l.pos[0] = 1000; l.pos[1] = 150; l.pos[2] = 1000;
+		l.range = 900;
+		l.color[0] = 255; l.color[1] = 200; l.color[2] = 120;
+		l.isStatic = staticLamp;
+		scene.lights.push_back(l);
+		return scene;
+	};
+	auto lightAt = [&](const SrcScene& s, float x, float z, int& weight) -> int {
+		for (const SrcTriangle& t : s.triangles)
+			for (const SrcVertex& v : t.v)
+				if (std::fabs(v.pos[0] - x) < 1.0f && std::fabs(v.pos[1]) < 1.0f && std::fabs(v.pos[2] - z) < 1.0f) {
+					weight = v.rgba[3];
+					return v.rgba[0];
+				}
+		weight = -1;
+		return -1;
+	};
+	const std::vector<AoMaterial> materials(1);
+	LightOptions off;
+	SrcScene a = build(false);
+	LightStats st;
+	bakeLights(a, materials, off, st); // (not asked for: nothing changes)
+	CHECK(a.triangles.size() == 4 && st.lamps == 0);
+	LightOptions on;
+	on.enabled = true;
+	SrcScene s = build(true);
+	bakeLights(s, materials, on, st); // (the world has this one's light already)
+	CHECK(s.triangles.size() == 4 && st.skippedStatic == 1);
+	on.statics = true;
+	s = build(true);
+	bakeLights(s, materials, on, st);
+	CHECK(st.lamps == 1);
+	s = build(false);
+	bakeLights(s, materials, on, st);
+	std::printf("  lamp light: %u triangles added, %llu corners lit, %.2f M shadow rays\n", st.added, static_cast<unsigned long long>(st.corners),
+	            double(st.rays) / 1e6);
+	CHECK(st.lamps == 1 && st.added > 20 && st.corners > 20 && s.triangles.size() == 4 + st.added);
+	int wUnder, wNear, wFar, wShadow;
+	const int under = lightAt(s, 1000, 1000, wUnder), near = lightAt(s, 750, 1000, wNear), far = lightAt(s, 0, 1000, wFar); // (about 1000 away: the lamp does not reach)
+	const int shadow = lightAt(s, 1250, 1000, wShadow); // (as near as 750, but the wall is between)
+	CHECK(under > 0 && near > 0 && far > 0 && shadow > 0);
+	CHECK(under > near && near > far && far == 60 && wFar == 255);       // out of its reach the vertex is as it was
+	CHECK(wUnder < wNear && wNear < 255 && under > 60);                  // lit: more light, less of it the sun's
+	CHECK(shadow == 60 && wShadow == 255);                               // (behind the wall nothing arrives)
+	// At night (the day colour 0.2) the lamp's share is what is left: the lit corner is brighter than the unlit.
+	auto atNight = [&](int rgb, int w) { return float(rgb) * (1.0f + float(w) / 255.0f * (0.2f - 1.0f)); };
+	CHECK(atNight(under, wUnder) > atNight(far, wFar) * 2.0f);
+	// And by day it is the sun's and the lamp's together, never darker than before.
+	CHECK(atNight(under, wUnder) < float(under));
+	CHECK(st.added <= on.maxExtra);
+}
+
+// ---- water: one light all over it ----
+static void testWaterLight() {
+	SrcScene scene;
+	scene.materials.resize(2);
+	scene.materials[0].water = false;
+	scene.materials[1].water = true;
+	SrcTriangle land {}, sea {};
+	land.material = 0;
+	sea.material = 1;
+	for (int k = 0; k < 3; ++k) {
+		for (int c = 0; c < 3; ++c) {
+			land.v[k].rgba[c] = u8(30 + 40 * k + c);
+			sea.v[k].rgba[c] = u8(10 + 90 * k + c); // (patches: a corner dark, one bright)
+		}
+		land.v[k].rgba[3] = 255;
+		sea.v[k].rgba[3] = 0; // (indoors, say)
+	}
+	scene.triangles = {land, sea, sea};
+	CHECK(applyWaterLight(scene, 0) == 0 && scene.triangles[1].v[0].rgba[0] == 10);
+	CHECK(applyWaterLight(scene, 200) == 2);
+	bool same = true;
+	for (int t = 1; t < 3; ++t)
+		for (int k = 0; k < 3; ++k) same = same && std::memcmp(scene.triangles[size_t(t)].v[k].rgba, scene.triangles[1].v[0].rgba, 3) == 0;
+	CHECK(same && scene.triangles[1].v[0].rgba[2] == 200 && scene.triangles[1].v[0].rgba[0] < scene.triangles[1].v[0].rgba[1] &&
+	      scene.triangles[1].v[0].rgba[1] < scene.triangles[1].v[0].rgba[2]);
+	CHECK(scene.triangles[1].v[2].rgba[3] == 0); // (the daylight weight is left as it was)
+	CHECK(scene.triangles[0].v[1].rgba[0] == 70 && scene.triangles[0].v[1].rgba[3] == 255); // (land is not touched)
+	float tint[3];
+	waterTint(255, tint);
+	CHECK(tint[2] == 1.0f && tint[0] < tint[1] && tint[1] < tint[2]);
+}
+
 static void testHash() {
 	CHECK(hashName("tex/Grass") == hashName("TEX/grass"));
 	CHECK(hashName("tex\\grass") == hashName("tex/grass"));
@@ -4503,6 +4616,7 @@ static void testInhabitants() {
 		CHECK(app.init(path.c_str(), nullptr));
 		app.world().preload(app.camera().pos);
 		Npcs& npcs = app.npcs();
+		app.world().config().fadeMs = 0.0f; // (they come and go at once here; the dissolve is checked below)
 		CHECK(npcs.loaded() && std::string(npcs.worldScript()) == "WORLD");
 		CHECK(npcs.stats().total == 9 && npcs.stats().here == 8 && npcs.game().vm().stats().errors == 0);
 		// Here everybody just stands where his routine has him; their life is testLife's.
@@ -4539,6 +4653,61 @@ static void testInhabitants() {
 			++checked;
 		}
 		CHECK(checked >= 5);
+
+		// Dissolving: the ones who leave are drawn fading out and let go when nothing is left; the ones who come fade in.
+		{
+			const Game& dg = npcs.game();
+			auto seen = [&](u32& partly, u32& whole, u32& actors) {
+				partly = whole = actors = 0;
+				for (u32 i = 0; i < dg.npcCount(); ++i)
+					if (const NpcActor* a = npcs.actorOf(i)) {
+						++actors;
+						partly += a->shown > 0 && a->shown < 255;
+						whole += a->shown == 255;
+					}
+			};
+			u32 partly, whole, actors;
+			app.world().config().fadeMs = 400.0f;
+			for (int i = 0; i < 3; ++i) {
+				app.update(Input {}, dt);
+				app.render();
+			}
+			seen(partly, whole, actors);
+			CHECK(actors >= 3 && whole == actors); // (they are all there in full: the dissolve in is long done)
+			npcs.config().maxShown = 0;
+			bool fading = false;
+			for (int i = 0; i < 4; ++i) {
+				app.update(Input {}, dt);
+				app.render();
+				seen(partly, whole, actors);
+				fading = fading || (actors > 0 && partly > 0);
+			}
+			CHECK(fading);
+			for (int i = 0; i < 40; ++i) {
+				app.update(Input {}, dt);
+				app.render();
+			}
+			seen(partly, whole, actors);
+			CHECK(actors == 0);
+			npcs.config().maxShown = 12;
+			bool coming = false;
+			for (int i = 0; i < 6; ++i) {
+				app.update(Input {}, dt);
+				app.render();
+				seen(partly, whole, actors);
+				coming = coming || partly > 0;
+			}
+			CHECK(coming);
+			for (int i = 0; i < 40; ++i) {
+				app.update(Input {}, dt);
+				app.render();
+			}
+			seen(partly, whole, actors);
+			CHECK(actors >= 3 && whole == actors);
+			app.world().config().fadeMs = 0.0f;
+			app.update(Input {}, dt);
+			app.render();
+		}
 
 		// Under load characters are shown less far, like the world's small
 		// things, and never further than the world itself is drawn.
@@ -5183,6 +5352,7 @@ func void Rtn_start_502() {
 		CHECK(app.init(path.c_str(), nullptr));
 		app.world().preload(app.camera().pos);
 		Npcs& npcs = app.npcs();
+		app.world().config().fadeMs = 0.0f; // (they come and go at once here)
 		const Game& game = npcs.game();
 		const WayNet& net = npcs.wayNet();
 		CHECK(net.loaded() && net.nodeCount() == 13 && net.freeCount() == 10);
@@ -7266,6 +7436,7 @@ static void testLodWith(bool jitter) {
 	CHECK(app.init(withLod.c_str(), "h"));
 	World& w = app.world();
 	CHECK((w.header().flags & WORLDF_LOD) != 0);
+	w.config().fadeMs = 0.0f; // (one set at once; the dissolve between them is checked below)
 	app.setDrawDistance(20000.0f);
 	app.player().flying = true;
 	app.camera().yaw = 0.7f;
@@ -7284,6 +7455,40 @@ static void testLodWith(bool jitter) {
 	std::printf("  lod in the engine: %u triangles drawn, %u with stand-ins everywhere, %u with the distance far away\n", full, far, near);
 	CHECK(full > 0 && far > 0 && far * 10 < full * 8);
 	CHECK(near == full);
+	// Dissolving: from full to stand-ins, both are drawn for a while (more than either alone), then only the stand-ins; and back.
+	w.config().fadeMs = 400.0f;
+	trianglesAt(1.0e6f);
+	for (int i = 0; i < 20; ++i) {
+		app.update(Input {}, 1.0f / 30.0f);
+		app.render();
+	}
+	const u32 settledFull = w.stats().trianglesDrawn;
+	w.config().lodDistance = 1.0f;
+	u32 most = 0;
+	for (int i = 0; i < 4; ++i) {
+		app.update(Input {}, 1.0f / 30.0f);
+		app.render();
+		most = std::max(most, w.stats().trianglesDrawn);
+	}
+	CHECK(most > settledFull); // (both sets at once)
+	for (int i = 0; i < 40; ++i) {
+		app.update(Input {}, 1.0f / 30.0f);
+		app.render();
+	}
+	CHECK(w.stats().trianglesDrawn == far);
+	w.config().lodDistance = 1.0e6f;
+	most = 0;
+	for (int i = 0; i < 4; ++i) {
+		app.update(Input {}, 1.0f / 30.0f);
+		app.render();
+		most = std::max(most, w.stats().trianglesDrawn);
+	}
+	CHECK(most > settledFull);
+	for (int i = 0; i < 40; ++i) {
+		app.update(Input {}, 1.0f / 30.0f);
+		app.render();
+	}
+	CHECK(w.stats().trianglesDrawn == full);
 }
 
 
@@ -8508,6 +8713,16 @@ static void testParticles() {
 	CHECK(app.particles().stats().effects == 2);
 	CHECK(app.particles().play(hashName("SYNTH_FIRE"), {0, 0, 0}, 0.0f, 1.0f));
 	CHECK(!app.particles().play(hashName("NO_SUCH_EFFECT"), {0, 0, 0}, 0.0f, 1.0f));
+	// A fire burns where its torch is drawn: where the world draws nothing that near, the fires are out (and come back with it).
+	{
+		const float drawn = app.drawDistance();
+		app.setDrawDistance(150.0f);
+		run(4.0f);
+		CHECK(p.stats().particles < 5);
+		app.setDrawDistance(drawn);
+		run(4.0f);
+		CHECK(p.stats().particles >= 20);
+	}
 	// Far away nothing emits and what is alive dies out.
 	app.teleport({app.camera().pos.x + 9000.0f, app.camera().pos.y, app.camera().pos.z});
 	run(4.0f);
@@ -9800,6 +10015,8 @@ int main(int argc, char** argv) {
 	             {"pacer distance", testPacerDistance},
              {"pacer heavy", testPacerHeavy},
              {"stereo", testStereoEyes},
+             {"water light", testWaterLight},
+             {"lamp light", testLampLight},
 	             {"detail fade", testDetailFade},
              {"thinning", testThinning},
 	             {"collision", testCollision},

@@ -12,6 +12,7 @@
 #include "model_simplify.h"
 #include "visibility.h"
 #include "vertex_fx.h"
+#include "light_bake.h"
 
 #include <functional>
 #include <set>
@@ -35,6 +36,12 @@ struct BakeOptions {
 	// sway (--wind; the importer marks them, without it the marks are dropped).
 	AoOptions ao;
 	bool wind = false;
+	// Water is lit the same everywhere (--water-light): the vertex light of its polygons is a fixed blue-green tone of this
+	// brightness (0..255) instead of what the source mesh has (big polygons, lightmapped per corner: patches of very
+	// different brightness). 0 keeps the source's light.
+	u8 waterLight = 200;
+	// The light of the world's lamps (torches, fire places) baked into the vertices (--lights, light_bake.h).
+	LightOptions light;
 	// The far layer (G10, --far-lod): a coarse copy of the world drawn beyond the draw distance.
 	FarOptions far;
 	// Visibility (--vis): which parts of the world are hidden from which cell (see visibility.h).
@@ -118,6 +125,12 @@ std::string texturePakName(const std::string& texture);
 // Bakes every world into `pak`. Textures are shared between the worlds, and
 // portals are resolved against the worlds of this call. The first world is
 // the one the game starts in. Throws std::runtime_error on failure.
+// Gives the water's triangles the one light all over (BakeOptions::waterLight); what is not water, and the daylight weight, stay.
+// Returns how many triangles it set. (0 as the brightness: nothing is changed.)
+size_t applyWaterLight(SrcScene& scene, u8 brightness);
+// The colour that light has, as a share of the white (the far layer's water is the texture's average in it).
+void waterTint(u8 brightness, float rgb[3]);
+
 BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const BakeOptions& opt, PakWriter& pak);
 // The same, plus animated characters. The first model is the player's
 // ("meta/hero" names it); its presence switches the game to third person.

@@ -95,6 +95,7 @@ set(G3DS_BAKE_SOURCES
     tools/bake/synth_actor.cpp
     tools/bake/ground.cpp
     tools/bake/vertex_fx.cpp
+    tools/bake/light_bake.cpp
     tools/bake/far_lod.cpp
     tools/bake/visibility.cpp
     tools/bake/lod.cpp

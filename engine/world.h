@@ -233,6 +233,8 @@ private:
 	struct Cluster {
 		float bbMin[3], bbMax[3];
 		bool lod; // drawn with its simplified stand-ins just now (with a little hysteresis)
+		u8 lodMix = 0;     // how much of the stand-ins and how little of the full batches is drawn, 0..255: dissolves between the two
+		u32 mixFrame = 0;  // the draw() lodMix was last stepped in (classify() runs more than once a frame)
 	};
 	struct Loaded {
 		gfx::Mesh* mesh;
@@ -313,6 +315,13 @@ private:
 	// Whether all of these chunks (of the far layer's chunk list) are drawn in full this frame.
 	bool farCovered(u32 firstChunk, u32 count) const;
 	void classify(const Loaded& l, u32 index, bool count);
+public:
+	// How far a dissolve gets this frame, 1..255 (255: all of it); worked out by draw(). Characters dissolve by it too.
+	int fadeStep() const { return _fadeStep; }
+	// Whether what stands at `p` (a torch, a fire place) is drawn just now: its chunk is in memory, within the draw distance,
+	// and a small object that near is within its distance. `chunk` is the caller's cache (start it at -2).
+	bool pointShown(Vec3 p, Vec3 eye, int& chunk, bool wasOn) const;
+private:
 	void loadVis();
 	void freeVis();
 	// Looks up the camera's row of the table when the camera has moved to another cell.

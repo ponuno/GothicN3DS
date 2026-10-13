@@ -153,6 +153,27 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 	return bakeWorlds(worlds, models, BakeScripts(), opt, pak);
 }
 
+void waterTint(u8 brightness, float rgb[3]) {
+	const float k = float(brightness) / 255.0f;
+	rgb[0] = k * 0.82f;
+	rgb[1] = k * 0.95f;
+	rgb[2] = k;
+}
+
+size_t applyWaterLight(SrcScene& scene, u8 brightness) {
+	if (brightness == 0) return 0;
+	float f[3];
+	waterTint(brightness, f);
+	const u8 tint[3] = {u8(f[0] * 255.0f + 0.5f), u8(f[1] * 255.0f + 0.5f), u8(f[2] * 255.0f + 0.5f)};
+	size_t n = 0;
+	for (SrcTriangle& t : scene.triangles) {
+		if (t.material >= scene.materials.size() || !scene.materials[t.material].water) continue;
+		for (SrcVertex& v : t.v) std::copy_n(tint, 3, v.rgba);
+		++n;
+	}
+	return n;
+}
+
 BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel>& models, const BakeScripts& scripts,
                       const BakeOptions& opt, PakWriter& pak) {
 	if (worlds.empty()) throw std::runtime_error("nothing to bake");
@@ -424,6 +445,12 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			} else if (sm.hasColor) {
 				farColor[i] = {sm.color[0], sm.color[1], sm.color[2]};
 			}
+			// (The far layer's water is the colour the near water has: the texture's average in the water's own light.)
+			if (sm.water && opt.waterLight > 0) {
+				float tint[3];
+				waterTint(opt.waterLight, tint);
+				for (int c = 0; c < 3; ++c) farColor[i][size_t(c)] = u8(std::clamp(float(farColor[i][size_t(c)]) * tint[c], 0.0f, 255.0f) + 0.5f);
+			}
 			// Glass, water and glow let the sky through and are not shaded; a
 			// cut-out (leaves, fences) stops about half of what passes it.
 			aoMaterials[i] = (wm.flags & MATF_TRANSLUCENT) ? AoMaterial {0.0f, false}
@@ -469,8 +496,15 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		if (scene.indoor)
 			for (SrcTriangle& t : bw.scene.triangles)
 				for (SrcVertex& v : t.v) v.rgba[3] = 0;
+		applyWaterLight(bw.scene, opt.waterLight);
 		AoStats ao;
 		if (opt.ao.level != AO_OFF) bakeOcclusion(bw.scene, aoMaterials, opt.ao, ao);
+		LightStats lightStats;
+		{
+			LightOptions lo = opt.light;
+			lo.threads = opt.threads;
+			bakeLights(bw.scene, aoMaterials, lo, lightStats);
+		}
 		const bool hasWind = opt.wind && windyMaterials > 0;
 		ChunkerOptions chunkerOpt = opt.chunker;
 		chunkerOpt.vertexFx = opt.ao.level != AO_OFF || hasWind;
@@ -979,6 +1013,11 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			            static_cast<unsigned long long>(ao.darkCorners)));
 		else
 			line("ambient occlusion: not baked (--ao low|high)");
+		if (opt.light.enabled)
+			line(format("lamp light (--lights): %zu lamps in the world, %u baked (%u static ones left out), %llu corners lit by %.2f M "
+			            "shadow rays, %u triangles added by cutting those near a lamp (%.1f s)",
+			            bw.scene.lights.size(), lightStats.lamps, lightStats.skippedStatic, static_cast<unsigned long long>(lightStats.corners),
+			            double(lightStats.rays) / 1e6, lightStats.added, lightStats.seconds));
 		if (opt.wind)
 			line(format("wind: %llu corners sway, %u world materials marked", static_cast<unsigned long long>(swayingCorners),
 			            windyMaterials));

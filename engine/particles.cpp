@@ -107,6 +107,8 @@ void Particles::enterWorld(Pak& pak, const char* worldName, Game& game) {
 	for (u32 i = 0; i < _emitterCount; ++i) {
 		_emitterDef[i] = 0xFFFE;
 		_sources[i].time = frand() * 1000.0f; // not all fires in step
+		_sources[i].chunk = -2;
+		_sources[i].gate = 0;
 	}
 	_stats.emitters = _emitterCount;
 }
@@ -415,7 +417,16 @@ void Particles::update(float dt, Vec3 eye) {
 			_emitterDef[i] = di < 0 ? 0xFFFF : u16(di);
 		}
 		if (_emitterDef[i] == 0xFFFF) continue;
-		emit(_defs[_emitterDef[i]], _emitterDef[i], _emitters[i].pos, _emitters[i].yaw, _sources[i], dtMs);
+		Source& src = _sources[i];
+		if (_shown) {
+			const bool on = _shown(_shownUser, {_emitters[i].pos[0], _emitters[i].pos[1], _emitters[i].pos[2]}, eye, src.chunk, src.gate > 0);
+			if (_fadeStep >= 255) src.gate = on ? 255 : 0;
+			else src.gate = u8(on ? min(int(src.gate) + _fadeStep, 255) : max(int(src.gate) - _fadeStep, 0));
+			if (src.gate == 0) continue;
+		} else {
+			src.gate = 255;
+		}
+		emit(_defs[_emitterDef[i]], _emitterDef[i], _emitters[i].pos, _emitters[i].yaw, src, dtMs * (float(src.gate) * (1.0f / 255.0f)));
 	}
 	for (u32 i = 0; i < _dynamicCount;) {
 		Dynamic& dyn = _dynamic[i];

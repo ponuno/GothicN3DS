@@ -326,7 +326,13 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 		if (!a.used) continue;
 		bool still = false;
 		for (u32 k = 0; k < count && !still; ++k) still = chosen[k] == a.npc;
-		if (!still) retire(a);
+		a.leaving = !still && a.leaving;
+		if (still) continue;
+		// (One that is seen dissolves out first, and goes when it is gone.)
+		if (a.ready && a.shown > 0 && _fadeStep < 255 && gfx::fadeSupported())
+			a.leaving = true;
+		else
+			retire(a);
 	}
 	// ... and who is new becomes an actor.
 	for (u32 k = 0; k < count; ++k) {
@@ -472,7 +478,17 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 	if (!loaded()) return;
 	const Frustum frustum = frustumFromViewProj(viewProj);
 	for (NpcActor& a : _actors) {
-		if (!a.used || !a.ready || !a.rig || !a.body) continue;
+		if (!a.used) continue;
+		// Dissolving in and out, whether or not it is in view.
+		if (_fadeStep >= 255 || !gfx::fadeSupported())
+			a.shown = a.leaving ? 0 : 255;
+		else if (a.leaving)
+			a.shown = u8(max(int(a.shown) - _fadeStep, 0));
+		else
+			a.shown = u8(min(int(a.shown) + _fadeStep, 255));
+	}
+	for (NpcActor& a : _actors) {
+		if (!a.used || !a.ready || !a.rig || !a.body || a.shown == 0) continue;
 		const GameNpc& n = _game.npc(a.npc);
 		const Vec3 feet = {n.pos[0], n.pos[1], n.pos[2]};
 		const Model& body = a.body->model;
@@ -510,6 +526,7 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 			}
 		}
 		body.skinMatrices(*pose, n.yaw, a.noLying ? a.slump * 1.5f : 0.0f, scale, skin);
+		gfx::setFade(float(a.shown) * (1.0f / 255.0f));
 		body.drawSkinned(skin, feet, light);
 		_stats.triangles += body.triangles();
 		_stats.drawCalls += body.partCount();
@@ -523,12 +540,13 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 			_stats.drawCalls += a.head->model.partCount();
 		}
 		++_stats.shown;
-		if (n.down == DOWN_NONE && _drawnCount < ACTORS) {
+		if (n.down == DOWN_NONE && a.shown > 127 && _drawnCount < ACTORS) {
 			_drawnFeet[_drawnCount] = feet;
 			_drawnRadius[_drawnCount] = clamp((reach - 40.0f) * 0.9f, 38.0f, 160.0f);
 			++_drawnCount;
 		}
 	}
+	gfx::setFade(1.0f);
 }
 
 } // namespace g3

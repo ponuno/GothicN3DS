@@ -10,6 +10,11 @@
 
 namespace g3 {
 
+// A fire burns where its torch is drawn (Particles::setGate).
+static bool emitterShown(void* world, Vec3 pos, Vec3 eye, int& chunk, bool wasOn) {
+	return static_cast<const World*>(world)->pointShown(pos, eye, chunk, wasOn);
+}
+
 bool App::init(const char* pakPath, const char* worldName) {
 	if (!_pak.open(pakPath)) {
 		_error = "cannot open data.pak";
@@ -64,6 +69,7 @@ bool App::init(const char* pakPath, const char* worldName) {
 		_npcs.enterWorld(_pak, _world, this->worldName(), _player.eye(), _env.timeOfDay);
 		_loot.enterWorld(_pak, this->worldName(), _world.entryHash(), _npcs.game());
 		_particles.enterWorld(_pak, this->worldName(), _npcs.game());
+		_particles.setGate(emitterShown, &_world);
 		_chests.enterWorld(_pak, this->worldName(), _world.entryHash(), _npcs.game());
 	}
 	HeroLink link;
@@ -146,6 +152,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	if (_npcs.loaded()) {
 		_loot.enterWorld(_pak, worldName(), _world.entryHash(), _npcs.game());
 		_particles.enterWorld(_pak, worldName(), _npcs.game());
+		_particles.setGate(emitterShown, &_world);
 		_chests.enterWorld(_pak, worldName(), _world.entryHash(), _npcs.game());
 	}
 	_portalLock = true;
@@ -401,6 +408,7 @@ void App::update(const Input& in, float dt) {
 	const double tLoot0 = sys::timeMs();
 	if (_npcs.loaded()) _loot.update(_pak, _world, _npcs.game(), _player.eye());
 	const double tLoot1 = sys::timeMs();
+	_particles.setFadeStep(_world.fadeStep());
 	_particles.update(dt, _player.eye());
 	const double t2 = sys::timeMs();
 
@@ -738,6 +746,7 @@ void App::render() {
 		_viewProj = viewProj;
 		_world.draw(viewProj, _cam.pos, u32(u64(_clock * 1000.0)));
 		const float indoorLight[3] = {1, 1, 1};
+		_npcs.setFadeStep(_world.fadeStep());
 		_npcs.draw(viewProj, indoor ? indoorLight : sky.light);
 		_loot.draw(_cam.pos, indoor ? indoorLight : sky.light);
 		drawShowcase();

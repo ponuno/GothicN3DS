@@ -10,6 +10,7 @@ struct TexBakeOptions {
 	int maxSize = 128;   // longest edge after downscaling; the top screen is only 400x240
 	int quality = 1;     // 0 fast, 1 medium, 2 best (slow)
 	bool mipmaps = true;
+	unsigned threads = 1; // worker threads for the blocks of one image (callers that already run in parallel leave 1)
 };
 
 struct TexBakeInfo {

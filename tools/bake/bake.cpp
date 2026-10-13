@@ -263,6 +263,8 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 	// ---- textures (ETC1 encoding dominates the bake time, so fan it out) ----
 	{
 		std::atomic<size_t> next {0};
+		TexBakeOptions serialTex = opt.tex; // (the images already run side by side)
+		serialTex.threads = 1;
 		std::mutex loadLock;
 		std::string firstError;
 		auto worker = [&]() {
@@ -278,7 +280,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 						found = scene.loadTexture && scene.loadTexture(jobs[i].source, img);
 					}
 					if (!found) continue;
-					jobs[i].data = bakeTexture(img, opt.tex, &jobs[i].info);
+					jobs[i].data = bakeTexture(img, serialTex, &jobs[i].info);
 					averageColour(img, jobs[i].average, jobs[i].coverage);
 					jobs[i].ok = true;
 				} catch (const std::exception& ex) {

@@ -375,6 +375,23 @@ static void testTexture() {
 	tiny.rgba.assign(4 * 2 * 4, 255);
 	baked = bakeTexture(tiny, opt, &info);
 	CHECK(info.width == 8 && info.height == 8 && info.mipCount == 1);
+
+	// Several threads on one image make the same bytes as one (plain and with an alpha channel).
+	for (int withAlpha = 0; withAlpha < 2; ++withAlpha) {
+		SrcImage noise;
+		noise.width = noise.height = 128;
+		noise.rgba.resize(128 * 128 * 4);
+		u32 seed = 12345u;
+		for (size_t i = 0; i < noise.rgba.size(); ++i) {
+			seed = seed * 1664525u + 1013904223u;
+			noise.rgba[i] = u8(seed >> 24);
+			if (i % 4 == 3 && !withAlpha) noise.rgba[i] = 255;
+		}
+		TexBakeOptions one = opt, many = opt;
+		one.threads = 1;
+		many.threads = 4;
+		CHECK(bakeTexture(noise, one, nullptr) == bakeTexture(noise, many, nullptr));
+	}
 }
 
 static void testChunker() {

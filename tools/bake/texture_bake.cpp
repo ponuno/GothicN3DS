@@ -3,6 +3,9 @@
 #include "g3ds/tex.h"
 #include "rg_etc1.h"
 
+#include <atomic>
+#include <thread>
+
 #include <algorithm>
 #include <cstring>
 #include <mutex>
@@ -99,10 +102,16 @@ void bleedColor(Image& img) {
 	}
 }
 
-// Appends one mip level in PICA layout (see g3ds/tex.h).
-void encodeLevel(const Image& img, bool alpha, rg_etc1::etc1_pack_params& params, std::vector<u8>& out) {
-	for (int ty = 0; ty < img.h / 8; ++ty) {
-		for (int tx = 0; tx < img.w / 8; ++tx) {
+// Appends one mip level in PICA layout (see g3ds/tex.h). The tile rows are independent, so with `threads` > 1 they are
+// shared out; the bytes are the same either way.
+void encodeLevel(const Image& img, bool alpha, rg_etc1::etc1_pack_params& params, std::vector<u8>& out, unsigned threads) {
+	const int rows = img.h / 8, cols = img.w / 8;
+	const size_t rowBytes = size_t(cols) * 4 * (alpha ? 16 : 8);
+	const size_t start = out.size();
+	out.resize(start + rowBytes * size_t(rows));
+	const auto doRow = [&](int ty) {
+		u8* o = out.data() + start + rowBytes * size_t(ty);
+		for (int tx = 0; tx < cols; ++tx) {
 			for (int sub = 0; sub < 4; ++sub) {
 				const int bx = tx * 8 + (sub & 1) * 4;
 				const int by = ty * 8 + (sub >> 1) * 4; // stored (bottom-up) rows
@@ -121,14 +130,28 @@ void encodeLevel(const Image& img, bool alpha, rg_etc1::etc1_pack_params& params
 				}
 
 				if (alpha) {
-					for (int i = 0; i < 8; ++i) out.push_back(u8(alpha4[i * 2] | (alpha4[i * 2 + 1] << 4)));
+					for (int i = 0; i < 8; ++i) *o++ = u8(alpha4[i * 2] | (alpha4[i * 2 + 1] << 4));
 				}
 				u8 etc[8];
 				rg_etc1::pack_etc1_block(etc, block, params);
-				for (int i = 7; i >= 0; --i) out.push_back(etc[i]);
+				for (int i = 7; i >= 0; --i) *o++ = etc[i];
 			}
 		}
+	};
+	// Small levels are not worth the threads.
+	if (threads <= 1 || rows < 4 || img.w * img.h < 16384) {
+		for (int ty = 0; ty < rows; ++ty) doRow(ty);
+		return;
 	}
+	const unsigned n = std::min<unsigned>(threads, unsigned(rows));
+	std::atomic<int> next(0);
+	const auto work = [&] {
+		for (int ty = next.fetch_add(1); ty < rows; ty = next.fetch_add(1)) doRow(ty);
+	};
+	std::vector<std::thread> pool;
+	for (unsigned i = 1; i < n; ++i) pool.emplace_back(work);
+	work();
+	for (std::thread& t : pool) t.join();
 }
 
 } // namespace
@@ -176,7 +199,7 @@ std::vector<u8> bakeTexture(const SrcImage& src, const TexBakeOptions& opt, TexB
 		if (l) level = resample(level, level.w / 2, level.h / 2);
 		Image enc = level;
 		if (alpha) bleedColor(enc);
-		encodeLevel(enc, alpha, params, data);
+		encodeLevel(enc, alpha, params, data, opt.threads);
 	}
 	hdr.dataSize = u32(data.size());
 

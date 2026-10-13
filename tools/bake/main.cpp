@@ -308,6 +308,7 @@ int main(int argc, char** argv) {
 		opt.vis.threads = opt.threads;
 		opt.lod.threads = opt.threads;
 		opt.simplify.threads = opt.threads;
+		opt.tex.threads = opt.threads;
 		if (opt.debugFile == "?") {
 			const size_t slash = out.find_last_of("/\\");
 			opt.debugFile = (slash == std::string::npos ? std::string() : out.substr(0, slash + 1)) + "bake_debug.txt";

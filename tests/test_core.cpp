@@ -23,6 +23,7 @@
 #include "stereo.h"
 #include "readahead.h"
 #include "rooms.h"
+#include "bytes.h"
 #include "triggers.h"
 #include "game.h"
 #include "reproject.h"
@@ -4427,7 +4428,7 @@ static void testMusic() {
 	buildSyntheticActor(models[0]);
 	BakeScripts scripts;
 	scripts.script = &script;
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays};
 	scripts.soundFile = buildSyntheticSound;
 	SrcScript sfxScript, musicScript;
 	buildSyntheticSfxScript(sfxScript);
@@ -4579,7 +4580,7 @@ static void testSound() {
 	buildSyntheticActor(models[0]);
 	BakeScripts scripts;
 	scripts.script = &script;
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays};
 	scripts.soundFile = buildSyntheticSound;
 	SrcScript sfxScript;
 	buildSyntheticSfxScript(sfxScript);
@@ -4756,7 +4757,7 @@ static void testInhabitants() {
 	};
 	BakeScripts scripts;
 	scripts.script = &script;
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays};
 	const std::string path = gDir + "/people.pak";
 	BakeResult baked;
 	bake(path, scripts, &baked);
@@ -5245,7 +5246,7 @@ static BakeResult bakeLifeWorlds(const std::string& source, const std::string& p
 		buildSyntheticFightScript(fight);
 		scripts.fight = &fight;
 	}
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays};
 	PakWriter writer;
 	const BakeResult r = bakeWorlds(worlds, models, scripts, bo, writer);
 	writer.write(path);
@@ -10526,6 +10527,139 @@ static void testTriggers() {
 	CHECK(!bad.adopt(b.first, b.second, game));
 }
 
+// Bodies: the player's character does not walk through an inhabitant.
+static void testBodies() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/bodies.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded()) return;
+	app.settings().scheme = CONTROLS_CONSOLE;
+	app.settings().immortal = 1;
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.applySettings();
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	const float dt = 1.0f / 30.0f;
+	int scav = -1;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).placed && g.npc(i).world == g.currentWorld() && std::strcmp(g.nameOf(g.npc(i)), "Scavenger") == 0) scav = int(i);
+	CHECK(scav >= 0);
+	if (scav < 0) return;
+	const GameNpc& e = g.npc(u32(scav));
+	app.teleport({e.pos[0], e.pos[1] + 400.0f, e.pos[2] - 400.0f});
+	app.world().preload(app.camera().pos);
+	for (int i = 0; i < 60; ++i) app.update(Input {}, dt);
+	const NpcActor* a = npcs.actorOf(u32(scav));
+	CHECK(a != nullptr);
+	if (!a) return;
+	float closest = 1e9f;
+	for (int i = 0; i < 30 * 4; ++i) {
+		Input in;
+		const Vec3 feet = app.player().feet;
+		const float want = std::atan2(e.pos[0] - feet.x, e.pos[2] - feet.z) - app.camera().yaw;
+		in.moveX = std::sin(want);
+		in.moveZ = std::cos(want);
+		app.update(in, dt);
+		const Vec3 f = app.player().feet;
+		closest = std::min(closest, std::sqrt((f.x - e.pos[0]) * (f.x - e.pos[0]) + (f.z - e.pos[2]) * (f.z - e.pos[2])));
+	}
+	std::printf("  walked into a scavenger: closest %.0f cm (bodies %.0f + %.0f)\n", double(closest), double(app.player().config.radius),
+	            double(a->bodyRadius));
+	CHECK(closest >= app.player().config.radius + a->bodyRadius - 25.0f); // (a frame's step may reach in before it is put out)
+	CHECK(closest < 200.0f);
+}
+
+// Overlays (Mdl_ApplyOverlayMds): Thorus wears the militia's; its standing and going stand in for the plain ones;
+// the player's character takes one on and off; a timed one runs out; a save keeps them.
+static void testOverlays() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/overlays.pak";
+	const BakeResult r = bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	(void)r;
+	{
+		Pak pak;
+		CHECK(pak.open(path.c_str()) && pak.find("model/ovl.humans_militia") && !pak.find("model/ovl.humans_nobody_names"));
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded()) return;
+	app.settings().immortal = 1;
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.applySettings();
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	const float dt = 1.0f / 30.0f;
+	int thorus = -1;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (std::strcmp(g.nameOf(g.npc(i)), "Thorus") == 0) thorus = int(i);
+	CHECK(thorus >= 0);
+	if (thorus < 0) return;
+	const GameNpc& t = g.npc(u32(thorus));
+	CHECK(t.overlayCount() == 1 && std::strcmp(g.text(t.overlay[0]), "humans_militia") == 0);
+	const Model* ovl = npcs.overlayModel(t.overlay[0]);
+	CHECK(ovl && ovl->clip("S_RUN") && ovl->clip("S_WALKL"));
+	if (!ovl) return;
+	app.teleport({t.pos[0], t.pos[1] + 400.0f, t.pos[2] - 300.0f});
+	app.world().preload(app.camera().pos);
+	int plain = 0, worn = 0;
+	for (int i = 0; i < 30 * 6; ++i) {
+		if (i == 60) {
+			// (He guards: told to play his standing, he plays the militia's.)
+			ScriptVm& vm = g.vm();
+			const u32 ext = vm.find("AI_PLAYANI");
+			if (ext != SCRIPT_NONE) {
+				vm.pushInstance(t.object);
+				vm.pushString("S_RUN");
+				vm.call(ext);
+			}
+		}
+		app.update(Input {}, dt);
+		const NpcActor* a = npcs.actorOf(u32(thorus));
+		if (!a || !a->rig || !a->anim.current()) continue;
+		const Clip* c = a->anim.current();
+		for (const char* name : {"S_RUN", "S_WALKL", "S_RUNL"}) {
+			if (c == a->rig->model.clip(name)) ++plain;
+			if (c == ovl->clip(name)) ++worn;
+		}
+	}
+	if (const NpcActor* a = npcs.actorOf(u32(thorus)))
+		std::printf("  Thorus is in %s (%s) cur %p ready %d stance '%s' rigS_RUN %p ovlS_RUN %p\n", npcs.animationName(*a), npcs.doing(*a),
+		            (const void*)a->anim.current(), int(a->ready), a->stance, a->rig ? (const void*)a->rig->model.clip("S_RUN") : nullptr,
+		            (const void*)ovl->clip("S_RUN"));
+	else
+		std::printf("  Thorus is no actor (%.0f %.0f %.0f)\n", double(t.pos[0]), double(t.pos[1]), double(t.pos[2]));
+	std::printf("  Thorus: %d frames in the militia's clips, %d in the plain ones\n", worn, plain);
+	CHECK(worn > 0 && plain == 0);
+	// The player's character: on, its standing is the overlay's; off again, the model's.
+	const u32 hero = g.heroIndex();
+	g.applyOverlay(hero, "Humans_Militia.MDS");
+	for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
+	CHECK(app.hero().animator().current() == ovl->clip("S_RUN"));
+	g.removeOverlay(hero, "HUMANS_MILITIA.mds");
+	for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
+	CHECK(app.hero().animator().current() != ovl->clip("S_RUN"));
+	// Timed: gone after its time.
+	g.applyOverlay(hero, "humans_militia", 0.5f);
+	CHECK(g.npc(hero).overlayCount() == 1);
+	for (int i = 0; i < 30; ++i) app.update(Input {}, dt);
+	CHECK(g.npc(hero).overlayCount() == 0);
+	// Kept in a save, given back by it.
+	g.applyOverlay(hero, "humans_militia");
+	ByteSink sink;
+	g.save(sink);
+	g.removeOverlay(hero, "humans_militia");
+	ByteSource src(sink.data, sink.size);
+	CHECK(g.restore(src) && g.npc(hero).overlayCount() == 1 && g.npc(u32(thorus)).overlayCount() == 1);
+}
+
 int main(int argc, char** argv) {
 	gDir = argc > 1 ? argv[1] : ".";
 	const char* only = argc > 2 ? argv[2] : nullptr; // run the tests whose name contains this
@@ -10566,6 +10700,8 @@ int main(int argc, char** argv) {
 	             {"fight", testFight},
              {"magic", testMagic},
              {"ranged", testRanged},
+             {"bodies", testBodies},
+             {"overlays", testOverlays},
 	             {"inventory", testInventory},
              {"chests", testChests},
              {"mob use", testMobUse},

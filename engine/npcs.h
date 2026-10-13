@@ -68,6 +68,10 @@ struct NpcConfig {
 	// A creature hurt that its scripts do not answer, or that sees an enemy they do not
 	// answer, attacks on its own (Npcs::provoke).
 	bool beastsRetaliate = true;
+	// Bodies (OpenGothic's NPC capsules): nobody walks through anybody - the player's character through the
+	// inhabitants, they through each other and through him; those that leave the way net (fighting, fleeing,
+	// going to somebody) do not walk through walls either. The dead and the knocked out lie in nobody's way.
+	bool bodies = true;
 };
 
 // What the inhabitants need of the player's character in a fight, and how
@@ -334,6 +338,8 @@ struct NpcActor {
 	// instead (`slump` 0..1, drawn as a lean), so that it still lies.
 	bool noLying = false;
 	float slump = 0.0f;
+	// How wide its body is for colliding, cm (from its model, once drawn; a person's until then).
+	float bodyRadius = 30.0f;
 };
 
 class Npcs {
@@ -511,6 +517,18 @@ public:
 	// AI_UseMob), or -1.
 	// The scripts sent the player's character somewhere (AI_Teleport: a rune, a quest): where its feet go, once.
 	bool takeHeroTeleport(float pos[3], float& yaw);
+
+	// The model of an overlay ("humans_militia": "model/ovl.humans_militia"), read the first time it is asked for;
+	// null if the archive has none. Kept for the session (clips of it may be playing anywhere).
+	const Model* overlayModel(GameText name);
+	// Those of a character, in the order applied (for the player's character: Hero::setOverlays).
+	u32 overlayModels(u32 npc, const Model** out, u32 max);
+	u32 overlaysLoaded() const { return _overlayCount; }
+
+	// Moves the player's character's feet out of the inhabitants' bodies (`radius` its own); true if moved.
+	bool pushHero(Vec3& feet, float radius) const;
+	// Bodies pushed apart since the start (for reports).
+	u32 bodyPushes() const { return _bodyPushes; }
 
 	// ---- rooms and owners (npc_world.cpp) ----
 	// The rooms of the world entered (none in an archive baked before them).
@@ -693,6 +711,16 @@ private:
 	int mobUsedBy(int npc) const;
 	Rooms _rooms;
 	int _heroMob = -1;
+	void collide(NpcActor& a, const World& world, const float before[3]);
+	enum { OVERLAY_MODELS = 8 };
+	struct OverlayModel {
+		u32 hash = 0;
+		bool failed = false;
+		Model model;
+	};
+	OverlayModel _overlayModels[OVERLAY_MODELS];
+	u32 _overlayCount = 0;
+	u32 _bodyPushes = 0;
 	float _heroTeleport[4] = {0, 0, 0, 0};
 	bool _heroTeleportPending = false;
 	u32 _roomsEntered = 0;

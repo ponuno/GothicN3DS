@@ -1058,6 +1058,49 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	if (!entries.empty()) std::memcpy(blob.data() + sizeof(lh), entries.data(), entries.size() * sizeof(LookEntry));
 	pak.add("meta/looks", ASSET_META, blob);
 
+	// ---- overlays (Mdl_ApplyOverlayMds: the militia's walk, the mage's, a learnt fight talent's blows) ----
+	// Of every skeleton the inhabitants have, and of the player's (humans): the overlays the game has that the
+	// scripts name. Each is a model of its own, "model/ovl.<name>" (the skeleton and the overlay's animations), read
+	// when somebody wears it.
+	if (scripts.looks.overlay && scripts.looks.overlays) {
+		std::set<std::string> named; // upper case stems the scripts mention ("HUMANS_MILITIA")
+		for (const SrcSymbol& sym : script.symbols)
+			for (const std::string& str : sym.strings) {
+				const std::string u = upper(str);
+				if (u.size() > 4 && u.compare(u.size() - 4, 4, ".MDS") == 0) named.insert(u.substr(0, u.size() - 4));
+			}
+		std::set<std::string> bases {"HUMANS"};
+		for (const auto& r : rigs)
+			if (r.second.hash) bases.insert(upper(r.first));
+		size_t overlays = 0, overlayClips = 0;
+		std::string list, failed;
+		for (const std::string& base : bases) {
+			for (const std::string& ovl : scripts.looks.overlays(base)) {
+				if (!named.count(ovl)) continue;
+				SrcModel m;
+				try {
+					if (!scripts.looks.overlay(base, ovl, m)) {
+						failed += (failed.empty() ? "" : ", ") + ovl;
+						continue;
+					}
+					m.parts.clear();
+					m.blends.clear();
+					std::string lowerName = ovl;
+					for (char& c : lowerName) c = char(std::tolower(static_cast<unsigned char>(c)));
+					m.name = "ovl." + lowerName;
+					const ModelBakeResult mr = bakeModel(m, quiet, pak, &shared);
+					++overlays;
+					overlayClips += mr.clips;
+					if (overlays <= 16) list += format("%s%s %zu", list.empty() ? "" : ", ", ovl.c_str(), mr.clips);
+				} catch (const std::exception& ex) {
+					failed += (failed.empty() ? "" : ", ") + ovl + " (" + ex.what() + ")";
+				}
+			}
+		}
+		line(format("overlays: %zu baked (%zu animations): ", overlays, overlayClips) + (list.empty() ? std::string("none") : list) +
+		     (overlays > 16 ? ", ..." : "") + (failed.empty() ? "" : "; not usable: " + failed));
+	}
+
 	size_t rigCount = 0;
 	for (const auto& r : rigs) rigCount += r.second.hash != 0;
 	result.looksBaked = entries.size();

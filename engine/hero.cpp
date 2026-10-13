@@ -75,93 +75,7 @@ bool Hero::load(Pak& pak) {
 		logf("hero: model '%s' could not be loaded", name);
 		return false;
 	}
-	char buf[64], a[24], b[24];
-	for (int r = 0; r < ROWS; ++r) {
-		for (int s = 0; s < ST_COUNT; ++s) {
-			stateName(r, s, a, sizeof(a));
-			snprintf(buf, sizeof(buf), "S_%s", a);
-			_state[r][s] = _model.clip(buf);
-		}
-		// Transitions between the states: animations and fades.
-		for (int x = 0; x <= ST_COUNT; ++x)
-			for (int y = 0; y <= ST_COUNT; ++y) {
-				_via[r][x][y] = {nullptr, -1.0f};
-				if (x == y) continue;
-				stateName(r, x, a, sizeof(a));
-				stateName(r, y, b, sizeof(b));
-				snprintf(buf, sizeof(buf), "T_%s_2_%s", a, b);
-				const u32 h = hashName(buf);
-				if (const Clip* c = _model.clip(h))
-					_via[r][x][y].clip = c;
-				else if (const ModelBlend* bl = _model.blend(h))
-					_via[r][x][y].fade = bl->time;
-				else if (r != WEAPON_NONE)
-					_via[r][x][y] = _via[WEAPON_NONE][x][y]; // (none of its own: as without a weapon)
-			}
-		const char* w = r == WEAPON_NONE || r == ROW_SNEAK ? "" : weaponWord(u8(r));
-		snprintf(buf, sizeof(buf), "T_%sJUMPB", w);
-		_jumpBack[r] = _model.clip(buf);
-		if (!_jumpBack[r]) {
-			snprintf(buf, sizeof(buf), "T_%sPARADEJUMPB", w);
-			_jumpBack[r] = _model.clip(buf);
-		}
-		if (!_jumpBack[r]) _jumpBack[r] = _model.clip("T_JUMPB");
-		for (int side = 0; side < 2; ++side) {
-			const char* lr = side ? "R" : "L";
-			if (r == ROW_SNEAK) {
-				snprintf(buf, sizeof(buf), "T_SNEAKSTRAFE%s", lr);
-				_strafe[r][0][side] = _strafe[r][1][side] = _model.clip(buf);
-				snprintf(buf, sizeof(buf), "T_SNEAKTURN%s", lr);
-				_turn[r][0][side] = _turn[r][1][side] = _model.clip(buf);
-			} else {
-				snprintf(buf, sizeof(buf), "T_%sRUNSTRAFE%s", w, lr);
-				_strafe[r][0][side] = _model.clip(buf);
-				snprintf(buf, sizeof(buf), "T_%sWALKSTRAFE%s", w, lr);
-				_strafe[r][1][side] = _model.clip(buf);
-				snprintf(buf, sizeof(buf), "T_%sRUNTURN%s", w, lr);
-				_turn[r][0][side] = _model.clip(buf);
-				snprintf(buf, sizeof(buf), "T_%sWALKTURN%s", w, lr);
-				_turn[r][1][side] = _model.clip(buf);
-			}
-			snprintf(buf, sizeof(buf), "T_SWIMTURN%s", lr);
-			_turn[r][2][side] = _model.clip(buf);
-			for (int k = 0; k < 2; ++k) {
-				if (!_strafe[r][1][side]) _strafe[r][1][side] = _strafe[r][0][side];
-				if (!_turn[r][1][side]) _turn[r][1][side] = _turn[r][0][side];
-				if (r != WEAPON_NONE) {
-					if (!_strafe[r][k][side]) _strafe[r][k][side] = _strafe[WEAPON_NONE][k][side];
-					if (!_turn[r][k][side]) _turn[r][k][side] = _turn[WEAPON_NONE][k][side];
-				}
-			}
-		}
-		snprintf(buf, sizeof(buf), "T_%sPARADE_O", w);
-		_parryClip[r] = r == WEAPON_NONE || r == ROW_SNEAK ? nullptr : _model.clip(buf);
-		if (!_parryClip[r] && r != WEAPON_NONE && r != ROW_SNEAK) {
-			snprintf(buf, sizeof(buf), "T_%sPARADE_0", w);
-			_parryClip[r] = _model.clip(buf);
-		}
-	}
-	// What the model script has for climbing onto a ledge (the clips that lift the body).
-	static const char* const kClimbNames[CLIMB_CLIPS] = {"T_STAND_2_JUMPUPLOW", "S_JUMPUPLOW", "T_JUMPUPLOW_2_STAND", "T_STAND_2_JUMPUPMID",
-	                                                     "S_JUMPUPMID",         "T_JUMPUPMID_2_STAND", "T_STAND_2_JUMPUP", "S_JUMPUP",
-	                                                     "T_JUMP_2_HANG",       "S_HANG",      "T_HANG_2_STAND"};
-	for (int k = 0; k < CLIMB_CLIPS; ++k) _climb[k] = _model.clip(kClimbNames[k]);
-	// The ladder's stretches in turn (the scheme LADDER, states S0, S1, ...); the run of them that the model has.
-	_ladderCount = 0;
-	for (int k = 0; k < LADDER_CLIPS; ++k) {
-		char ladderName[48];
-		snprintf(ladderName, sizeof(ladderName), "T_LADDER_S%d_2_S%d", k, k + 1);
-		const Clip* c = _model.clip(ladderName);
-		if (!c) break;
-		_ladder[_ladderCount] = c;
-		_ladderRise[_ladderCount] = c->rise() >= 20.0f ? c->rise() : 0.0f;
-		++_ladderCount;
-	}
-	// (Clips that carry no height of their own: each is taken for a stretch of a rung's worth.)
-	bool anyRise = false;
-	for (int k = 0; k < _ladderCount; ++k) anyRise = anyRise || _ladderRise[k] > 0.0f;
-	for (int k = 0; k < _ladderCount; ++k)
-		if (!anyRise || _ladderRise[k] <= 0.0f) _ladderRise[k] = anyRise ? _ladderRise[0] : 75.0f;
+	cacheClips();
 	_spine[0] = _model.findNode(hashName("BIP01 SPINE"));
 	_spine[1] = _model.findNode(hashName("BIP01 SPINE1"));
 	_spine[2] = _model.findNode(hashName("BIP01 SPINE2"));
@@ -183,7 +97,117 @@ bool Hero::load(Pak& pak) {
 	return true;
 }
 
+// The clips of the states, the transitions and the moves, as the overlays (Mdl_ApplyOverlayMds) and the model have them.
+void Hero::cacheClips() {
+	char buf[64], a[24], b[24];
+	for (int r = 0; r < ROWS; ++r) {
+		for (int s = 0; s < ST_COUNT; ++s) {
+			stateName(r, s, a, sizeof(a));
+			snprintf(buf, sizeof(buf), "S_%s", a);
+			_state[r][s] = lookup(buf);
+		}
+		// Transitions between the states: animations and fades.
+		for (int x = 0; x <= ST_COUNT; ++x)
+			for (int y = 0; y <= ST_COUNT; ++y) {
+				_via[r][x][y] = {nullptr, -1.0f};
+				if (x == y) continue;
+				stateName(r, x, a, sizeof(a));
+				stateName(r, y, b, sizeof(b));
+				snprintf(buf, sizeof(buf), "T_%s_2_%s", a, b);
+				const u32 h = hashName(buf);
+				if (const Clip* c = lookup(h))
+					_via[r][x][y].clip = c;
+				else if (const ModelBlend* bl = _model.blend(h))
+					_via[r][x][y].fade = bl->time;
+				else if (r != WEAPON_NONE)
+					_via[r][x][y] = _via[WEAPON_NONE][x][y]; // (none of its own: as without a weapon)
+			}
+		const char* w = r == WEAPON_NONE || r == ROW_SNEAK ? "" : weaponWord(u8(r));
+		snprintf(buf, sizeof(buf), "T_%sJUMPB", w);
+		_jumpBack[r] = lookup(buf);
+		if (!_jumpBack[r]) {
+			snprintf(buf, sizeof(buf), "T_%sPARADEJUMPB", w);
+			_jumpBack[r] = lookup(buf);
+		}
+		if (!_jumpBack[r]) _jumpBack[r] = lookup("T_JUMPB");
+		for (int side = 0; side < 2; ++side) {
+			const char* lr = side ? "R" : "L";
+			if (r == ROW_SNEAK) {
+				snprintf(buf, sizeof(buf), "T_SNEAKSTRAFE%s", lr);
+				_strafe[r][0][side] = _strafe[r][1][side] = lookup(buf);
+				snprintf(buf, sizeof(buf), "T_SNEAKTURN%s", lr);
+				_turn[r][0][side] = _turn[r][1][side] = lookup(buf);
+			} else {
+				snprintf(buf, sizeof(buf), "T_%sRUNSTRAFE%s", w, lr);
+				_strafe[r][0][side] = lookup(buf);
+				snprintf(buf, sizeof(buf), "T_%sWALKSTRAFE%s", w, lr);
+				_strafe[r][1][side] = lookup(buf);
+				snprintf(buf, sizeof(buf), "T_%sRUNTURN%s", w, lr);
+				_turn[r][0][side] = lookup(buf);
+				snprintf(buf, sizeof(buf), "T_%sWALKTURN%s", w, lr);
+				_turn[r][1][side] = lookup(buf);
+			}
+			snprintf(buf, sizeof(buf), "T_SWIMTURN%s", lr);
+			_turn[r][2][side] = lookup(buf);
+			for (int k = 0; k < 2; ++k) {
+				if (!_strafe[r][1][side]) _strafe[r][1][side] = _strafe[r][0][side];
+				if (!_turn[r][1][side]) _turn[r][1][side] = _turn[r][0][side];
+				if (r != WEAPON_NONE) {
+					if (!_strafe[r][k][side]) _strafe[r][k][side] = _strafe[WEAPON_NONE][k][side];
+					if (!_turn[r][k][side]) _turn[r][k][side] = _turn[WEAPON_NONE][k][side];
+				}
+			}
+		}
+		snprintf(buf, sizeof(buf), "T_%sPARADE_O", w);
+		_parryClip[r] = r == WEAPON_NONE || r == ROW_SNEAK ? nullptr : lookup(buf);
+		if (!_parryClip[r] && r != WEAPON_NONE && r != ROW_SNEAK) {
+			snprintf(buf, sizeof(buf), "T_%sPARADE_0", w);
+			_parryClip[r] = lookup(buf);
+		}
+	}
+	// What the model script has for climbing onto a ledge (the clips that lift the body).
+	static const char* const kClimbNames[CLIMB_CLIPS] = {"T_STAND_2_JUMPUPLOW", "S_JUMPUPLOW", "T_JUMPUPLOW_2_STAND", "T_STAND_2_JUMPUPMID",
+	                                                     "S_JUMPUPMID",         "T_JUMPUPMID_2_STAND", "T_STAND_2_JUMPUP", "S_JUMPUP",
+	                                                     "T_JUMP_2_HANG",       "S_HANG",      "T_HANG_2_STAND"};
+	for (int k = 0; k < CLIMB_CLIPS; ++k) _climb[k] = lookup(kClimbNames[k]);
+	// The ladder's stretches in turn (the scheme LADDER, states S0, S1, ...); the run of them that the model has.
+	_ladderCount = 0;
+	for (int k = 0; k < LADDER_CLIPS; ++k) {
+		char ladderName[48];
+		snprintf(ladderName, sizeof(ladderName), "T_LADDER_S%d_2_S%d", k, k + 1);
+		const Clip* c = lookup(ladderName);
+		if (!c) break;
+		_ladder[_ladderCount] = c;
+		_ladderRise[_ladderCount] = c->rise() >= 20.0f ? c->rise() : 0.0f;
+		++_ladderCount;
+	}
+	// (Clips that carry no height of their own: each is taken for a stretch of a rung's worth.)
+	bool anyRise = false;
+	for (int k = 0; k < _ladderCount; ++k) anyRise = anyRise || _ladderRise[k] > 0.0f;
+	for (int k = 0; k < _ladderCount; ++k)
+		if (!anyRise || _ladderRise[k] <= 0.0f) _ladderRise[k] = anyRise ? _ladderRise[0] : 75.0f;
+}
+
+const Clip* Hero::lookup(u32 hash) const {
+	for (u32 k = _overlayCount; k-- > 0;)
+		if (const Clip* c = _overlays[k] ? _overlays[k]->clip(hash) : nullptr) return c;
+	return _model.clip(hash);
+}
+
+void Hero::setOverlays(const Model* const* models, u32 count) {
+	if (count > OVERLAYS) count = OVERLAYS;
+	bool same = count == _overlayCount;
+	for (u32 k = 0; same && k < count; ++k) same = _overlays[k] == models[k];
+	if (same || !loaded()) return;
+	for (u32 k = 0; k < count; ++k) _overlays[k] = models[k];
+	_overlayCount = count;
+	cacheClips();
+	// Standing or going: in the new manner at once (whatever else it does finishes first).
+	if (_roleNow == IDLE && _body == GROUNDED) _anim.play(stateClip(_base), 0.2f);
+}
+
 void Hero::release() {
+	_overlayCount = 0;
 	_anim.bind(nullptr);
 	_model.release();
 	memset(_state, 0, sizeof(_state));
@@ -348,7 +372,7 @@ const Clip* Hero::weaponClip(const char* pattern, u8 mode) const {
 	char name[48];
 	const char* w = weaponWord(mode);
 	snprintf(name, sizeof(name), pattern, w, w);
-	return _model.clip(name);
+	return lookup(name);
 }
 
 bool Hero::draw(u8 mode) {
@@ -474,10 +498,10 @@ float Hero::castPlay(const char* letters, bool shoot) {
 	const Clip* c = nullptr;
 	const char* what = shoot ? "SHOOT" : "CAST";
 	snprintf(name, sizeof(name), "T_MAGRUN_2_%s%s", letters, what);
-	c = _model.clip(name);
+	c = lookup(name);
 	if (!c) {
 		snprintf(name, sizeof(name), "S_%s%s", letters, what);
-		c = _model.clip(name);
+		c = lookup(name);
 	}
 	if (!c) return 0.0f;
 	_anim.play(c, 0.1f);
@@ -528,8 +552,8 @@ bool Hero::dodging() const {
 void Hero::hit(bool fromBehind) {
 	if (!loaded() || _down) return;
 	castEnd();
-	const Clip* c = _model.clip(fromBehind ? "T_STUMBLE" : "T_STUMBLEB");
-	if (!c) c = _model.clip("T_GOTHIT");
+	const Clip* c = lookup(fromBehind ? "T_STUMBLE" : "T_STUMBLEB");
+	if (!c) c = lookup("T_GOTHIT");
 	if (_drawTo != 0xFF) {
 		_weapon = _drawTo; // (the hands have it now)
 		_drawTo = 0xFF;
@@ -545,9 +569,9 @@ void Hero::hit(bool fromBehind) {
 void Hero::fall(bool dead, bool fromBehind) {
 	if (!loaded()) return;
 	const char* name = dead ? (fromBehind ? "T_DEAD" : "T_DEADB") : (fromBehind ? "T_STAND_2_WOUNDED" : "T_STAND_2_WOUNDEDB");
-	const Clip* c = _model.clip(name);
-	if (!c) c = _model.clip(dead ? "T_DEAD" : "T_STAND_2_WOUNDED");
-	if (!c) c = _model.clip(dead ? "S_DEAD" : "S_WOUNDED");
+	const Clip* c = lookup(name);
+	if (!c) c = lookup(dead ? "T_DEAD" : "T_STAND_2_WOUNDED");
+	if (!c) c = lookup(dead ? "S_DEAD" : "S_WOUNDED");
 	_down = true;
 	cancelUse();
 	castEnd();
@@ -565,8 +589,8 @@ void Hero::getUp() {
 	_down = false;
 	const Clip* cur = _anim.current();
 	const Clip* up = nullptr;
-	if (cur && (cur == _model.clip("S_WOUNDEDB") || cur == _model.clip("T_STAND_2_WOUNDEDB"))) up = _model.clip("T_WOUNDEDB_2_STAND");
-	if (!up && cur && (cur == _model.clip("S_WOUNDED") || cur == _model.clip("T_STAND_2_WOUNDED"))) up = _model.clip("T_WOUNDED_2_STAND");
+	if (cur && (cur == lookup("S_WOUNDEDB") || cur == lookup("T_STAND_2_WOUNDEDB"))) up = lookup("T_WOUNDEDB_2_STAND");
+	if (!up && cur && (cur == lookup("S_WOUNDED") || cur == lookup("T_STAND_2_WOUNDED"))) up = lookup("T_WOUNDED_2_STAND");
 	if (up) {
 		_anim.play(up, 0.1f);
 		_reel = up;
@@ -665,13 +689,13 @@ bool Hero::pickUp(float seconds, float moment) {
 	if (!loaded()) return false;
 	// Gothic 1's own: "C_STAND_2_IGET_1" ... (the model script combines three of
 	// them by the height of the thing; _1 reaches lowest, to the ground).
-	const Clip* in = _model.clip("T_STAND_2_IGET");
-	const Clip* hold = _model.clip("S_IGET");
-	const Clip* out = _model.clip("T_IGET_2_STAND");
+	const Clip* in = lookup("T_STAND_2_IGET");
+	const Clip* hold = lookup("S_IGET");
+	const Clip* out = lookup("T_IGET_2_STAND");
 	if (!in) {
-		in = _model.clip("C_STAND_2_IGET_1");
-		hold = _model.clip("C_IGET_1");
-		out = _model.clip("C_IGET_2_STAND_1");
+		in = lookup("C_STAND_2_IGET_1");
+		hold = lookup("C_IGET_1");
+		out = lookup("C_IGET_2_STAND_1");
 	}
 	return beginUse(in, hold, out, seconds, moment, true);
 }
@@ -697,7 +721,7 @@ bool Hero::openMob(const char* scheme, int states, int slotKind) {
 			if (k == 1 && !tags[0][0]) break;
 			if (from == to) snprintf(name, sizeof(name), "S_%.40s%s_%s", scheme, tags[k], a);
 			else snprintf(name, sizeof(name), "T_%.40s%s_%s_2_%s", scheme, tags[k], a, b);
-			if (const Clip* c = _model.clip(name)) return c;
+			if (const Clip* c = lookup(name)) return c;
 		}
 		return nullptr;
 	};
@@ -706,7 +730,7 @@ bool Hero::openMob(const char* scheme, int states, int slotKind) {
 	// the people who rob the dead: B_AssessBody, "T_PLUNDER"): one clip, bending down and up.
 	const bool corpse = strcmp(scheme, "CORPSE") == 0;
 	if (corpse) {
-		in = _model.clip("T_PLUNDER");
+		in = lookup("T_PLUNDER");
 		states = 0;
 		if (in) _use.openAt = in->duration() * 0.55f;
 	}

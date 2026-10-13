@@ -33,6 +33,9 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 // The inhabitants of the synthetic scene (see LookSource): figures like the
 // test character in other clothes, and a four-legged creature.
 bool buildSyntheticRig(const std::string& script, bool humanoid, const std::set<std::string>& wanted, SrcModel& model);
+// The synthetic scene's overlay: HUMANS_MILITIA, its standing and going played at half speed (a test can tell it).
+bool buildSyntheticOverlay(const std::string& base, const std::string& overlay, SrcModel& model);
+std::vector<std::string> buildSyntheticOverlays(const std::string& base);
 bool buildSyntheticBody(const std::string& script, const std::string& mesh, int tex, int skin, SrcModel& model);
 bool buildSyntheticHead(const std::string& script, const std::string& head, int tex, int skin, int teeth, SrcModel& model);
 // A thing lying about in the synthetic scene: a box of its proportions.

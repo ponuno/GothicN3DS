@@ -85,6 +85,24 @@ const Clip* Npcs::clip(NpcActor& a, const char* name, bool force) {
 	if (!a.rig) return nullptr;
 	Model& m = a.rig->model;
 	const u32 hash = hashName(name);
+	// What it wears first, the last applied foremost (the militia's walk instead of the plain one).
+	{
+		const GameNpc& n = _game.npc(a.npc);
+		for (u32 k = n.overlayCount(); k-- > 0;) {
+			const Model* om = overlayModel(n.overlay[k]);
+			if (!om) continue;
+			if (const Clip* c = om->clip(hash)) {
+				bool known = false;
+				for (const Clip* x : a.named) known = known || x == c;
+				if (!known) {
+					a.named[a.nextName] = c;
+					upperCopy(a.names[a.nextName], sizeof(a.names[0]), name);
+					a.nextName = u8((a.nextName + 1) % NpcActor::NAMES);
+				}
+				return c;
+			}
+		}
+	}
 	if (!m.hasClip(hash)) return nullptr;
 	if (!_pak) return m.clip(hash);
 	const u32 before = _clipBytes;
@@ -1221,6 +1239,7 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 	}
 	const Vec3 moved = a.anim.takeMotion();
 	bool walked = false;
+	const float before[3] = {n.pos[0], n.pos[1], n.pos[2]};
 	if (a.carried && (moved.x != 0.0f || moved.z != 0.0f)) {
 		// The animation's own travel, turned the way the character faces.
 		const float s = sinf(n.yaw), c = cosf(n.yaw);
@@ -1305,6 +1324,7 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 		fallBack(a, 0.25f);
 	// (In a bed the ground is no concern: the animation knows where the body is.)
 	const bool inMob = a.mob >= 0 && a.mobStage >= NpcActor::MOB_ENTERING;
+	if (!inMob && _cfg.bodies) collide(a, world, before);
 	if ((walked || a.phase == NpcActor::MOVING || !a.grounded) && !inMob) ground(a, world, 120.0f);
 }
 

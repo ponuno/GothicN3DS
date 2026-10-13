@@ -508,8 +508,27 @@ void App::update(const Input& in, float dt) {
 				}
 			}
 		}
+		// What the character wears (Mdl_ApplyOverlayMds: a learnt fight talent, a potion's sprint).
+		if (_npcs.loaded() && heroIndex() >= 0) {
+			const Model* worn[4];
+			const u32 count = _npcs.overlayModels(u32(heroIndex()), worn, 4);
+			_hero.setOverlays(worn, count);
+		}
 		const Drive drive = _hero.control(heroIn, _player, dt, grab ? &ledge : nullptr, ground.found ? &ground : nullptr, wall);
 		_player.update(_world, heroIn, _hero.yaw(), 0.0f, dt, &drive);
+		// The inhabitants' bodies are in the way (not while climbing, using a thing, or lying).
+		if (_npcs.loaded() && !_player.climbing && !_player.swimming && _mobJob.stage == MJ_NONE && _chest.stage == CH_NONE && !_hero.down()) {
+			Vec3 feet = _player.feet;
+			if (_npcs.pushHero(feet, _player.config.radius)) {
+				// (Not into a wall: the body is put back out of it, sideways.)
+				Vec3 chest = {feet.x, feet.y + 100.0f, feet.z};
+				const Vec3 c0 = chest;
+				_world.pushSphere(chest, _player.config.radius);
+				feet.x += chest.x - c0.x;
+				feet.z += chest.z - c0.z;
+				_player.feet = feet;
+			}
+		}
 		{
 			float ladderYaw;
 			if (_player.takeLadderTurn(ladderYaw)) _hero.setYaw(ladderYaw);

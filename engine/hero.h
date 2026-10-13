@@ -26,6 +26,12 @@
 namespace g3 {
 
 class Hero {
+	enum { OVERLAYS = 4 };
+	const Model* _overlays[OVERLAYS] = {};
+	u32 _overlayCount = 0;
+	void cacheClips();
+	const Clip* lookup(u32 hash) const;
+	const Clip* lookup(const char* name) const { return lookup(hashName(name)); }
 public:
 	// What the character is doing, in broad terms (for display and tests).
 	enum Role { IDLE, RUN, WALK, BACK, STRAFE, TURN, JUMP, FALL, SWIM, SWIM_IDLE, ATTACK, PARRY, HIT, DOWN, DRAW, USE, CLIMB, ROLE_COUNT };
@@ -34,6 +40,9 @@ public:
 
 	// False if the archive has no hero (the game then stays first-person).
 	bool load(Pak& pak);
+	// The overlays the character wears (Mdl_ApplyOverlayMds: a fight talent's blows, a drunk's walk), the last one
+	// first in line: their animations stand in for the model's of the same name. The models must outlive their use.
+	void setOverlays(const Model* const* models, u32 count);
 	void release();
 	bool loaded() const { return _model.loaded(); }
 	// Told of the sound events of the clips as they play (footsteps, blows).

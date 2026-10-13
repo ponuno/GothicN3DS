@@ -2299,7 +2299,7 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 	// name of the mesh it was made from.
 	zenkit::ModelHierarchy hierarchy;
 	std::string treeName = scriptBase + ".MDH";
-	if (!loadFile(vfs, treeName, hierarchy)) {
+	if (!loadFile(vfs, treeName, hierarchy) && !(!opt.tree.empty() && loadFile(vfs, (treeName = stripExtension(upper(opt.tree)) + ".MDH"), hierarchy))) {
 		treeName = stripExtension(upper(script.skeleton.name)) + ".MDH";
 		if (script.skeleton.name.empty() || !loadFile(vfs, treeName, hierarchy)) {
 			model.notes.push_back("character: no skeleton (" + scriptBase + ".MDH) found, no character baked");
@@ -2477,7 +2477,7 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 	// say which way the model faces: they are read for that and then dropped,
 	// so that every piece of a character - skeleton, body, head - is turned alike.
 	std::set<std::string> witnesses;
-	if (!standardSet)
+	if (!standardSet && !opt.overlay)
 		for (const char* w : {"S_RUNL", "S_WALKL", "S_FISTRUNL", "S_FISTWALKL"})
 			if (std::find(wanted.begin(), wanted.end(), w) == wanted.end()) {
 				wanted.push_back(w);
@@ -2770,7 +2770,8 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 			offset += std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
 			++compared;
 		}
-	const bool conjugate = conjugated <= asIs;
+	const bool conjugate = opt.conjugated >= 0 ? opt.conjugated != 0 : conjugated <= asIs;
+	model.conjugated = conjugate ? 1 : 0;
 	if (compared) {
 		char buf[256];
 		std::snprintf(buf, sizeof(buf),
@@ -2853,7 +2854,10 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		// Quarter turns about the vertical that bring "forward" to +Z.
 		int quarters = 0;
 		char why[160] = "";
-		if (!witness.empty()) {
+		if (opt.quarters >= 0) {
+			quarters = opt.quarters & 3;
+			std::snprintf(why, sizeof(why), "as its base model");
+		} else if (!witness.empty()) {
 			const double angle = std::atan2(travel[0], travel[1]); // 0 = along +Z
 			quarters = int(std::lround(-angle / 1.5707963267948966)) & 3;
 			std::snprintf(why, sizeof(why), "%s carries it %.0f cm along %s", witness.c_str(),
@@ -2900,6 +2904,7 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 					}
 				}
 		}
+		model.quarters = quarters;
 		if (*why) {
 			char buf[256];
 			if (quarters)
@@ -2934,6 +2939,28 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 	if (model.clips.empty() && (standardSet || !opt.clips.empty()))
 		model.notes.push_back("WARNING: no animation could be read; the character stands in its rest pose");
 	return true;
+}
+
+std::vector<std::string> zenOverlaysOf(const ZenGame& game, const std::string& rawBase) {
+	const std::string base = stripExtension(upper(rawBase)) + "_";
+	std::set<std::string> found;
+	std::vector<const zenkit::VfsNode*> todo {&game.vfs.root()};
+	while (!todo.empty()) {
+		const zenkit::VfsNode* node = todo.back();
+		todo.pop_back();
+		if (node->type() == zenkit::VfsNodeType::DIRECTORY) {
+			for (const zenkit::VfsNode& c : node->children()) todo.push_back(&c);
+			continue;
+		}
+		const std::string name = upper(std::string(node->name()));
+		const std::string ext = extensionOf(name);
+		if ((ext != "MSB" && ext != "MDS") || name.compare(0, base.size(), base) != 0) continue;
+		const std::string stem = stripExtension(name);
+		// (A script with a skeleton of its own is a model, not an overlay: "HUMANS_SPEAR".)
+		if (game.vfs.find(stem + ".MDH") || game.vfs.find(stem + ".MDL")) continue;
+		found.insert(stem);
+	}
+	return std::vector<std::string>(found.begin(), found.end());
 }
 
 LookSource zenLookSource(std::shared_ptr<const ZenGame> game) {
@@ -3006,6 +3033,35 @@ LookSource zenLookSource(std::shared_ptr<const ZenGame> game) {
 		}
 		return true;
 	};
+	// An overlay's animations, on its base's skeleton, read as the base's are (no mesh).
+	source.overlay = [game](const std::string& base, const std::string& overlay, SrcModel& model) {
+		SrcModel probe;
+		ZenActorOptions b;
+		b.script = base;
+		b.body.clear();
+		b.head.clear();
+		b.heroClips = false;
+		b.onlyDeclared = true;
+		if (!importZenActor(game, b, probe)) return false;
+		ZenActorOptions o;
+		o.script = overlay;
+		o.tree = base;
+		o.body.clear();
+		o.head.clear();
+		o.heroClips = false;
+		o.onlyDeclared = true;
+		o.overlay = true;
+		o.clipPrefixes = {"T_", "S_", "C_", "R_"};
+		o.conjugated = probe.conjugated;
+		o.quarters = probe.quarters;
+		if (!importZenActor(game, o, model)) return false;
+		if (model.nodes.size() != probe.nodes.size()) {
+			model.notes.push_back(upper(overlay) + ": not the skeleton of " + upper(base));
+			return false;
+		}
+		return !model.clips.empty();
+	};
+	source.overlays = [game](const std::string& base) { return zenOverlaysOf(*game, base); };
 	source.body = [game](const std::string& script, const std::string& mesh, int tex, int skin, SrcModel& model) {
 		ZenActorOptions o;
 		o.script = script;

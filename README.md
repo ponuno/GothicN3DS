@@ -4,7 +4,7 @@
 
 A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, its own renderer for the PICA200 GPU, its own Daedalus virtual machine). The game takes your original files, bakes them into a compact `data.pak` and runs the world on the console: scripts, dialogue, combat, magic, townsfolk with daily routines, sound and voices.
 
-![Test scene: camp by day, lake, cave, gate at sunset](docs/2011-01-02_15-24-48.555_top.bmp)
+![Test scene: camp by day, lake, cave, gate at sunset](docs/preview.png)
 
 ## Features
 
@@ -17,7 +17,7 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, it
   - baked ambient occlusion in the vertices (`g3ds-bake --ao low|high`);
   - trees, bushes and grass swaying in the vertex shader (`--wind`);
   - round shadows under the hero and townsfolk;
-  - **far layer** (`--far-lod`): a coarse, simplified copy of the whole world drawn beyond the draw distance (250 / 400 / 600 m) and over chunks that did not fit in memory.
+  - **far layer** (`--far-lod`): a coarse, simplified copy of the whole world drawn beyond the draw distance (250 / 400 / 600 m) and over chunks that did not fit in memory. Only checked on PC so far; it costs about 1.5–2 MB of linear memory on the console.
   - Under load the foliage stops swaying and shadows stay on the hero alone before objects start to disappear.
 - The world's memory budget on the 3DS adapts to the free linear memory (it used to be a hard 20 MB).
 
@@ -49,18 +49,23 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, it
 - The `g3ds-host` host build: the same renderer on PC for debugging; `ctest` tests (6 suites), the console-code check `scripts/check_3ds.sh`.
 - Interface in four languages.
 
-**Not there yet:** some triggers and mechanisms (doors, lifts), summoning and transformations, weather. Details and measurements: [`docs/HANDOFF.md`](docs/HANDOFF.md), [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/TECHNICAL.md`](docs/TECHNICAL.md). Next for Graphics+: sky with clouds, height fog, a smooth transition to the far layer and more (the plan is at the end of `docs/HANDOFF.md`).
+- **Rooms and owners:** houses and huts are the world's BSP sectors; walking into somebody's house, picking things up in front of people and using somebody's chest or bench are perceived by the inhabitants the way the scripts say (`PERC_ASSESSENTERROOM`, `PERC_ASSESSTHEFT`, `PERC_ASSESSUSEMOB`, portal guilds, mob and item owners). Summoning (`Wld_SpawnNpcRange`) works, and characters the scripts insert later get their models baked and are kept in saves.
+- **Archers and mages among the inhabitants** shoot arrows and cast spells (fire bolts, fireballs) by the fight AI's far-fight tables; their shots can hit the player.
+
+- **Triggers and mechanisms:** gates, lifts and drawbridges (`zCMover`) move when a lever, a trigger zone, a world start or the scripts (`Wld_SendTrigger`) set them going; script triggers call their functions; teleport runes work. Shut gates block the way and lifts carry the player.
+- **Bodies:** nobody walks through anybody - the player through the inhabitants, they through each other; fighters and those fleeing do not pass through walls.
+- **Animation overlays** (`Mdl_ApplyOverlayMds`): the guards' and mages' walk, the drunk's, the hero's learnt fight talents, a sprint potion.
+- **Doors** open and shut (A), locked ones want their key or a lock pick; the inhabitants open them as they pass.
+
+**Not there yet:** transformations, weather. Details and measurements: [`docs/HANDOFF.md`](docs/HANDOFF.md), [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/TECHNICAL.md`](docs/TECHNICAL.md). Next for Graphics+: sky with clouds, height fog, a smooth transition to the far layer and more (the plan is at the end of `docs/HANDOFF.md`).
 
 **Status.** Much of this has been verified on a real New 3DS (60 fps, world, townsfolk, AI), but the latest rounds (combat, magic, climbing, Archolos memory, the far layer) have only been checked on PC and are waiting for a test on the console. The project licence has not been chosen yet; third-party code: [`third_party/README.md`](third_party/README.md).
 
 ## Quick start
 
-1. Download every file from the release
-2. Run Gothic3DS-Baker.exe and choose your original game folder(Gothic 1,2)
-3. Check every box(It should be fine for original games)
-4. Run Bake
-5. Put all baked files and 3dsx and smdh files to your N3DS sd card(3ds/gothic3ds)
-6. Run through Homebrew Launcher
+1. Windows, baking the data only: three `.exe` files from Releases plus `Gothic3DS-Baker.exe`, see [`windows/README.md`](windows/README.md).
+2. Full build (3DS program, music, SD card): the guide below.
+3. How it works and detailed controls: [`docs/TECHNICAL.md`](docs/TECHNICAL.md).
 
 ---
 

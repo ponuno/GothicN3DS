@@ -1104,4 +1104,20 @@ bool buildSyntheticHead(const std::string& script, const std::string& head, int 
 	return true;
 }
 
+bool buildSyntheticOverlay(const std::string& base, const std::string& overlay, SrcModel& model) {
+	if (base != "HUMANS" || overlay != "HUMANS_MILITIA") return false;
+	const std::set<std::string> none;
+	if (!buildSyntheticRig("humans", true, none, model)) return false;
+	const std::set<std::string> own = {"S_RUN", "S_WALKL", "S_RUNL"};
+	model.clips.erase(std::remove_if(model.clips.begin(), model.clips.end(), [&](const SrcClip& c) { return own.count(c.name) == 0; }),
+	                  model.clips.end());
+	for (SrcClip& c : model.clips) c.fps *= 0.5f;
+	return !model.clips.empty();
+}
+
+std::vector<std::string> buildSyntheticOverlays(const std::string& base) {
+	if (base == "HUMANS") return {"HUMANS_MILITIA", "HUMANS_NOBODY_NAMES"};
+	return {};
+}
+
 } // namespace g3

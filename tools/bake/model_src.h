@@ -79,6 +79,9 @@ struct SrcModel {
 	std::vector<SrcAniBlend> blends;
 	std::function<bool(const std::string& name, SrcImage& out)> loadTexture;
 	std::vector<std::string> notes; // importer remarks for the bake report
+	// How the importer read the animations (ZenGin: conjugated rotations, quarter turns to face +Z); -1: not decided.
+	// An overlay of the same skeleton is read the same way.
+	int conjugated = -1, quarters = -1;
 };
 
 } // namespace g3

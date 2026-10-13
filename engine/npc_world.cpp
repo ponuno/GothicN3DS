@@ -246,6 +246,120 @@ void Npcs::xSetNpcsToState(ScriptVm& vm, void* user) {
 	}
 }
 
+// ---- bodies ----
+
+namespace {
+bool lying(const GameNpc& n) { return n.down != DOWN_NONE; }
+} // namespace
+
+// After its step: out of the others' bodies (they stand; it moved), out of the player's, and - off the way net -
+// out of the walls (a sphere at the chest, only sideways: steps and slopes are the ground's business).
+void Npcs::collide(NpcActor& a, const World& world, const float before[3]) {
+	GameNpc& n = _game.npcMut(a.npc);
+	if (lying(n) || a.stance[0]) return;
+	const float mx = n.pos[0] - before[0], mz = n.pos[2] - before[2];
+	if (mx * mx + mz * mz < 1e-4f) return; // (it did not move: what bumps into it moves itself)
+	float px = n.pos[0], pz = n.pos[2];
+	bool pushed = false;
+	const auto away = [&](float ox, float oy, float oz, float r) {
+		if (fabsf(oy - n.pos[1]) > 170.0f) return;
+		const float dx = px - ox, dz = pz - oz, d2 = dx * dx + dz * dz;
+		if (d2 >= r * r) return;
+		const float d = sqrtf(d2);
+		if (d < 0.5f) {
+			// Right on top: back the way it came.
+			const float bl = sqrtf(mx * mx + mz * mz);
+			px = ox - mx / bl * r;
+			pz = oz - mz / bl * r;
+		} else {
+			px = ox + dx / d * r;
+			pz = oz + dz / d * r;
+		}
+		pushed = true;
+	};
+	for (const NpcActor& o : _actors) {
+		if (&o == &a || !o.used || !o.ready || o.leaving) continue;
+		const GameNpc& on = _game.npc(o.npc);
+		if (lying(on) || on.world != n.world || (o.mob >= 0 && o.mobStage >= NpcActor::MOB_ENTERING)) continue;
+		away(on.pos[0], on.pos[1], on.pos[2], a.bodyRadius + o.bodyRadius);
+	}
+	if (const GameNpc* hero = _game.hero())
+		if (!lying(*hero)) away(hero->pos[0], hero->pos[1], hero->pos[2], a.bodyRadius + 30.0f);
+	// Off the net: walls.
+	if (n.weapon != WEAPON_NONE || a.flee > 0.0f || a.action.kind == NPC_ACT_GOTO_NPC) {
+		Vec3 c = {px, n.pos[1] + 110.0f, pz};
+		const Vec3 c0 = c;
+		if (world.pushSphere(c, a.bodyRadius < 28.0f ? a.bodyRadius : 28.0f)) {
+			px += c.x - c0.x;
+			pz += c.z - c0.z;
+			pushed = true;
+		}
+	}
+	if (!pushed) return;
+	// Never further back than where it began this step (a crowd must not shove it about).
+	const float ex = px - before[0], ez = pz - before[2];
+	const float e2 = ex * ex + ez * ez, m2 = mx * mx + mz * mz + 25.0f;
+	if (e2 > m2) {
+		const float k = sqrtf(m2 / e2);
+		px = before[0] + ex * k;
+		pz = before[2] + ez * k;
+	}
+	n.pos[0] = px;
+	n.pos[2] = pz;
+	++_bodyPushes;
+}
+
+bool Npcs::pushHero(Vec3& feet, float radius) const {
+	if (!_cfg.bodies) return false;
+	bool moved = false;
+	for (const NpcActor& o : _actors) {
+		if (!o.used || !o.ready || o.leaving) continue;
+		const GameNpc& on = _game.npc(o.npc);
+		if (lying(on) || on.world != _game.currentWorld() || on.hero) continue;
+		// (One sitting, lying in bed: the thing is in the way already.)
+		if (o.mob >= 0 && o.mobStage >= NpcActor::MOB_ENTERING) continue;
+		if (feet.y > on.pos[1] + 170.0f || feet.y + 170.0f < on.pos[1]) continue;
+		const float r = radius + o.bodyRadius;
+		const float dx = feet.x - on.pos[0], dz = feet.z - on.pos[2], d2 = dx * dx + dz * dz;
+		if (d2 >= r * r) continue;
+		const float d = sqrtf(d2);
+		if (d < 0.5f) {
+			feet.x = on.pos[0] + r;
+		} else {
+			feet.x = on.pos[0] + dx / d * r;
+			feet.z = on.pos[2] + dz / d * r;
+		}
+		moved = true;
+	}
+	return moved;
+}
+
+// ---- overlays ----
+
+const Model* Npcs::overlayModel(GameText name) {
+	if (!name || !_pak) return nullptr;
+	char path[96];
+	snprintf(path, sizeof(path), "model/ovl.%s", _game.text(name));
+	const u32 hash = hashName(path);
+	for (u32 k = 0; k < _overlayCount; ++k)
+		if (_overlayModels[k].hash == hash) return _overlayModels[k].failed ? nullptr : &_overlayModels[k].model;
+	if (_overlayCount >= OVERLAY_MODELS) return nullptr;
+	OverlayModel& o = _overlayModels[_overlayCount++];
+	o.hash = hash;
+	o.failed = !_pak->find(hash) || !o.model.loadEntry(*_pak, hash, &_pool, false);
+	if (o.failed) o.model.release();
+	return o.failed ? nullptr : &o.model;
+}
+
+u32 Npcs::overlayModels(u32 npc, const Model** out, u32 max) {
+	if (npc >= _game.npcCount()) return 0;
+	const GameNpc& n = _game.npc(npc);
+	u32 count = 0;
+	for (u32 k = 0; k < n.overlayCount() && count < max; ++k)
+		if (const Model* m = overlayModel(n.overlay[k])) out[count++] = m;
+	return count;
+}
+
 void Npcs::bindWorld() {
 	ScriptVm& vm = _game.vm();
 	static const struct {

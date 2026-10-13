@@ -367,7 +367,7 @@ int main(int argc, char** argv) {
 				scripts.music = &musicScript;
 				scripts.script = &script;
 				scripts.fight = &fightScript;
-				scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture};
+				scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays};
 				scripts.soundFile = buildSyntheticSound;
 				buildSyntheticDialogue(dialogue);
 				haveDialogue = true;

@@ -122,7 +122,16 @@ struct ZenActorOptions {
 	std::vector<std::string> clipPrefixes;
 	// `body` and `head` may be empty: a head alone, a body alone, or - with
 	// neither - just the skeleton and its animations.
+	// An overlay (Mdl_ApplyOverlayMds: "HUMANS_MILITIA.MDS"): its skeleton is `tree`'s (the base script's), and
+	// its animations are read the way the base's were (`conjugated`, `quarters` of the base's SrcModel).
+	std::string tree;
+	bool overlay = false;
+	int conjugated = -1, quarters = -1;
 };
+
+// The overlays of a model script the game has ("HUMANS" -> "HUMANS_MILITIA", "HUMANS_1HST1", ...): compiled scripts
+// named "<BASE>_..." without a skeleton of their own. Upper case, no extension.
+std::vector<std::string> zenOverlaysOf(const ZenGame& game, const std::string& base);
 
 // Fills `model` from the game's files. Returns false, with the reason in
 // model.notes, if the game does not have them (the bake then goes on without a

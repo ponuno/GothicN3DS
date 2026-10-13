@@ -97,7 +97,7 @@ void Settings::sanitize() {
 	if (objects >= OBJECT_MODES) objects = OBJECTS_SMOOTH;
 	if (frameRate >= FRAME_MODES) frameRate = FRAMES_60;
 	if (scheme >= CONTROL_SCHEMES) scheme = CONTROLS_CLASSIC;
-	if (language > 3) language = 1;
+	if (language > 3) language = 0;
 	if (density > 2) density = 0;
 	if (npcDistance > 2) npcDistance = 1;
 	soundVolume = u8(clamp<int>(soundVolume, 0, 10));

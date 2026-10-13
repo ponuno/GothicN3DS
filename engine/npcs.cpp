@@ -68,6 +68,12 @@ void Npcs::release() {
 		p.used = 0;
 		p.failed = false;
 	}
+	for (u32 k = 0; k < _overlayCount; ++k) {
+		_overlayModels[k].model.release();
+		_overlayModels[k].hash = 0;
+		_overlayModels[k].failed = false;
+	}
+	_overlayCount = 0;
 	_pool.release();
 	_net.release();
 	_mobs.release();
@@ -471,6 +477,7 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	const double tClock = sys::timeMs();
 	const float feet[3] = {eye.x, eye.y - 170.0f, eye.z};
 	_game.setHeroPlace(feet, _heroYaw);
+	_game.tickOverlays(dt);
 	trackHeroRoom({feet[0], feet[1], feet[2]});
 	select(pak, world, eye, _cfg.loadsPerFrame);
 	const double tSelect = sys::timeMs();
@@ -601,6 +608,8 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 		if (n.down == DOWN_NONE && a.shown > 127 && _drawnCount < ACTORS) {
 			_drawnFeet[_drawnCount] = feet;
 			_drawnRadius[_drawnCount] = clamp((reach - 40.0f) * 0.9f, 38.0f, 160.0f);
+			// (The body's own width: the rest pose's arms take a share of the box.)
+			a.bodyRadius = clamp((reach - 40.0f) * 0.55f, 22.0f, 90.0f);
 			++_drawnCount;
 		}
 	}

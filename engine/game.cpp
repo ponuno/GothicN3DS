@@ -235,6 +235,7 @@ bool Game::bindAll() {
 	             {"MDL_SETMODELSCALE", xSetModelScale},
 	             {"MDL_SETMODELFATNESS", xSetModelFatness},
 	             {"MDL_APPLYOVERLAYMDS", xApplyOverlay},
+	             {"MDL_APPLYOVERLAYMDSTIMED", xApplyOverlayTimed},
 	             {"TA_MIN", xTaMin},
 	             {"TA", xTa},
 	             {"EQUIPITEM", xEquipItem},
@@ -257,7 +258,7 @@ bool Game::bindAll() {
 	             // and a layer taken off; the overlays themselves (Mdl_ApplyOverlayMds) are not applied here.
 	             {"MDL_APPLYRANDOMANI", xNothing},
 	             {"MDL_APPLYRANDOMANIFREQ", xNothing},
-	             {"MDL_REMOVEOVERLAYMDS", xNothing},
+	             {"MDL_REMOVEOVERLAYMDS", xRemoveOverlay},
 	             {"DOC_CREATE", xDocCreate},
 	             {"DOC_CREATEMAP", xDocCreateMap},
 	             {"DOC_SETPAGE", xDocSetPage},
@@ -1118,10 +1119,94 @@ void Game::xSetModelFatness(ScriptVm& vm, void* user) {
 	if (GameNpc* n = g.npcOf(vm.popInstance())) n->look.fatness = f > -10.0f && f < 10.0f ? f : 0.0f;
 }
 
-void Game::xApplyOverlay(ScriptVm& vm, void*) {
-	// Another way of walking: nothing a standing character shows.
-	(void)vm.popString();
-	(void)vm.popInstance();
+// Mdl_ApplyOverlayMds(npc, "Humans_Militia.mds"): another way of standing, walking, fighting (OpenGothic:
+// Npc::addOverlay). The same one twice is worn once.
+void Game::xApplyOverlay(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	char name[64];
+	copyText(name, sizeof(name), vm.popString());
+	const int n = g.indexOf(vm.popInstance());
+	if (n >= 0) g.applyOverlay(u32(n), name);
+}
+
+// Mdl_ApplyOverlayMdsTimed(npc, name, ms).
+void Game::xApplyOverlayTimed(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 ms = vm.popInt();
+	char name[64];
+	copyText(name, sizeof(name), vm.popString());
+	const int n = g.indexOf(vm.popInstance());
+	if (n >= 0 && ms > 0) g.applyOverlay(u32(n), name, float(ms) / 1000.0f);
+}
+
+void Game::xRemoveOverlay(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	char name[64];
+	copyText(name, sizeof(name), vm.popString());
+	const int n = g.indexOf(vm.popInstance());
+	if (n >= 0) g.removeOverlay(u32(n), name);
+}
+
+void Game::applyOverlay(u32 npc, const char* name, float seconds) {
+	if (npc >= _npcCount || !name || !name[0]) return;
+	const GameText t = intern(name, true);
+	if (!t) return;
+	GameNpc& n = _npcs[npc];
+	u32 count = n.overlayCount();
+	for (u32 k = 0; k < count; ++k)
+		if (n.overlay[k] == t) {
+			n.overlayLeft[k] = seconds > 0.0f ? (n.overlayLeft[k] > 0.0f ? max(n.overlayLeft[k], seconds) : 0.0f) : 0.0f;
+			return;
+		}
+	if (count == 4) {
+		// (Full: the oldest goes.)
+		for (u32 k = 1; k < 4; ++k) {
+			n.overlay[k - 1] = n.overlay[k];
+			n.overlayLeft[k - 1] = n.overlayLeft[k];
+		}
+		count = 3;
+	}
+	n.overlay[count] = t;
+	n.overlayLeft[count] = seconds > 0.0f ? seconds : 0.0f;
+	if (count + 1 < 4) n.overlay[count + 1] = 0;
+}
+
+void Game::removeOverlay(u32 npc, const char* name) {
+	if (npc >= _npcCount || !name) return;
+	char buf[64];
+	copyText(buf, sizeof(buf), name);
+	char* dot = strrchr(buf, '.');
+	if (dot) *dot = 0;
+	for (char* c = buf; *c; ++c)
+		if (*c >= 'A' && *c <= 'Z') *c = char(*c + 32);
+	GameNpc& n = _npcs[npc];
+	const u32 count = n.overlayCount();
+	for (u32 k = 0; k < count; ++k) {
+		if (strcmp(text(n.overlay[k]), buf) != 0) continue;
+		for (u32 j = k + 1; j < 4; ++j) {
+			n.overlay[j - 1] = n.overlay[j];
+			n.overlayLeft[j - 1] = n.overlayLeft[j];
+		}
+		n.overlay[3] = 0;
+		n.overlayLeft[3] = 0.0f;
+		return;
+	}
+}
+
+void Game::tickOverlays(float dt) {
+	for (u32 i = 0; i < _npcCount; ++i) {
+		GameNpc& n = _npcs[i];
+		if (!n.overlay[0]) continue;
+		for (u32 k = 0; k < 4 && n.overlay[k]; ++k) {
+			if (n.overlayLeft[k] <= 0.0f) continue;
+			n.overlayLeft[k] -= dt;
+			if (n.overlayLeft[k] > 0.0f) continue;
+			char name[80];
+			copyText(name, sizeof(name), text(n.overlay[k]));
+			removeOverlay(i, name);
+			--k;
+		}
+	}
 }
 
 void Game::xTaMin(ScriptVm& vm, void* user) {

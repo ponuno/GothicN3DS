@@ -17,6 +17,7 @@ namespace {
 constexpr u32 SAVE_VERSION = 1;
 constexpr u32 MAX_STRING_MEMBERS = 96;
 constexpr u32 LATE_MAGIC = 0x4554414Cu; // "LATE"
+constexpr u32 OVERLAY_MAGIC = 0x534C564Fu; // "OVLS"
 
 // The flags at the end of a character's record (0 for a record of an older save).
 u8 lateFlags(const ByteSource& r) {
@@ -120,6 +121,13 @@ void Game::save(ByteSink& out) const {
 				}
 		for (i16 t : n.talent) r.u16v(u16(t));
 		for (i16 t : n.skill) r.u16v(u16(t));
+		// The overlays it wears (a marker first: older saves have none).
+		r.u32v(OVERLAY_MAGIC);
+		r.u8v(u8(n.overlayCount()));
+		for (u32 k = 0; k < n.overlayCount(); ++k) {
+			r.str(text(n.overlay[k]));
+			r.f32v(n.overlayLeft[k]);
+		}
 		// Last (an older save's record ends before it): made after the start-up, summoned.
 		r.u32v(LATE_MAGIC);
 		r.u8v(u8((n.late ? 1 : 0) | (n.spawned ? 2 : 0)));
@@ -402,6 +410,27 @@ void Game::restoreNpc(u32 index, ByteSource& r) {
 	// (and those from before the skills.)
 	if (!r.bad && r.left() >= sizeof(n.skill) / sizeof(n.skill[0]) * 2)
 		for (i16& t : n.skill) t = i16(r.u16v());
+	// The overlays (a save from before them has none here: what the character's own code put on stays).
+	if (!r.bad && r.left() >= 5) {
+		ByteSource peek = r;
+		if (peek.u32v() == OVERLAY_MAGIC) {
+			r.u32v();
+			const u8 count = r.u8v();
+			for (u32 k = 0; k < 4; ++k) {
+				n.overlay[k] = 0;
+				n.overlayLeft[k] = 0.0f;
+			}
+			for (u32 k = 0; k < count && !r.bad; ++k) {
+				char name[80];
+				r.str(name, sizeof(name));
+				const float left = r.f32v();
+				if (k < 4 && name[0]) {
+					n.overlay[k] = intern(name, true);
+					n.overlayLeft[k] = left;
+				}
+			}
+		}
+	}
 }
 
 // A character was just made (addNpc): if a saved one is waiting for it, it

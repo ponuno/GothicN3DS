@@ -93,6 +93,15 @@ struct GameNpc {
 	bool spawned = false;
 	// Made after its world's start-up (Wld_InsertNpc in a talk, a summoning): a saved game makes it again.
 	bool late = false;
+	// The overlays it wears (Mdl_ApplyOverlayMds): the overlay's name, lower case without extension, and the
+	// seconds left of a timed one (Mdl_ApplyOverlayMdsTimed; 0: for good). In the order applied.
+	GameText overlay[4] = {};
+	float overlayLeft[4] = {};
+	u32 overlayCount() const {
+		u32 n = 0;
+		while (n < 4 && overlay[n]) ++n;
+		return n;
+	}
 };
 
 // A spell as the scripts' C_Spell instance and spellFX arrays describe it (made once per kind).
@@ -398,6 +407,11 @@ public:
 	// scripts' Kapitel; 0 if they have none).
 	const GameChapter& chapter() const { return _chapter; }
 	i32 chapterNumber() const { return _kapitel != SCRIPT_NONE ? _vm.getInt(_kapitel) : 0; }
+	// ---- overlays ----
+	void applyOverlay(u32 npc, const char* name, float seconds = 0.0f);
+	void removeOverlay(u32 npc, const char* name);
+	// The timed ones run out.
+	void tickOverlays(float dt);
 	// ---- effects the scripts set off (Wld_PlayEffect) ----
 	// The particle effect (hashName of a C_PARTICLEFX instance) to show at a character, oldest first; false when none.
 	struct Effect {
@@ -612,6 +626,8 @@ private:
 	static void xSetModelScale(ScriptVm& vm, void* user);
 	static void xSetModelFatness(ScriptVm& vm, void* user);
 	static void xApplyOverlay(ScriptVm& vm, void* user);
+	static void xApplyOverlayTimed(ScriptVm& vm, void* user);
+	static void xRemoveOverlay(ScriptVm& vm, void* user);
 	static void xTaMin(ScriptVm& vm, void* user);
 	static void xTa(ScriptVm& vm, void* user);
 	static void xEquipItem(ScriptVm& vm, void* user);

@@ -168,6 +168,49 @@ void App::chestEnd(bool hurried) {
 	_invStamp = 0;
 }
 
+// A: the door in front. Open: it shuts; locked: the key, else the pick (the chests' lock page), as
+// OpenGothic's Interactive for oCMobDoor.
+void App::doorUse(u32 door) {
+	const int hi = heroIndex();
+	if (hi < 0 || door >= _triggers.count()) return;
+	if (!_triggers.doorLocked(door)) {
+		_triggers.doorToggle(door, _player.feet);
+		return;
+	}
+	Game& g = _npcs.game();
+	char name[48], buf[96];
+	const char* keyName = _triggers.doorKey(door);
+	const u32 key = keyName[0] ? g.vm().find(keyName) : NONE;
+	if (key != NONE && g.itemCount(u32(hi), key) > 0) {
+		const GameItemInfo* ki = g.itemInfo(key);
+		scriptText(ki ? g.text(ki->description ? ki->description : ki->name) : "", name, sizeof(name));
+		_triggers.doorUnlock(door);
+		_triggers.doorToggle(door, _player.feet);
+		snprintf(buf, sizeof(buf), tr("Открыто ключом: %s"), name);
+		itemMessage(buf, false);
+		return;
+	}
+	const u32 pick = g.vm().findHash(hashName("ITKELOCKPICK"));
+	const i32 picks = pick != NONE ? g.itemCount(u32(hi), pick) : 0;
+	const char* combo = _triggers.doorPick(door);
+	const bool skilled = !g.isGothic2() || g.talentSkill(u32(hi), g.constant("NPC_TALENT_PICKLOCK", 5)) != 0;
+	if (picks > 0 && lockLength(combo) > 0 && !skilled) {
+		itemMessage(tr("Заперто: взламывать замки вы не умеете"), true);
+		return;
+	}
+	if (picks > 0 && lockLength(combo) > 0) {
+		_chest = ChestJob();
+		_chest.door = int(door);
+		_chest.stage = CH_LOCK;
+		_chest.progress = 0;
+		_chest.picks = u8(picks > 99 ? 99 : picks);
+		_panel.openPage(InventoryPanel::PAGE_LOCK);
+		_invStamp = 0;
+		return;
+	}
+	itemMessage(lockLength(combo) > 0 ? tr("Заперто: нужен ключ или отмычка") : tr("Заперто: нужен ключ"), true);
+}
+
 // A: the chest in front. A lock first, then the way to it.
 void App::chestStart(u32 index) {
 	const int hi = heroIndex();
@@ -199,6 +242,7 @@ void App::chestStart(u32 index) {
 			if (picks > 0 && lockLength(combo) > 0) {
 				_chest.stage = CH_LOCK;
 				_chest.progress = 0;
+				_npcs.heroUsesMob(int(_chests.mob(index))); // (seen picking a lock: OpenGothic's Interactive sends it too)
 				_chest.picks = u8(picks > 99 ? 99 : picks);
 				_panel.openPage(InventoryPanel::PAGE_LOCK);
 				_invStamp = 0;
@@ -315,6 +359,7 @@ void App::chestUpdate(Input& in, float dt) {
 			if (_hero.openMob(scheme)) {
 				_chest.stage = CH_OPEN;
 				_chest.time = 0;
+				if (_chest.corpse < 0 && mob < mobs.count()) _npcs.heroUsesMob(int(mob)); // (whose chest it is: PERC_ASSESSUSEMOB)
 			} else {
 				itemMessage(tr("Сейчас нельзя"));
 				_chest = ChestJob();
@@ -435,7 +480,7 @@ void App::chestCommand(const PanelCommand& c) {
 		const int hi = heroIndex();
 		if (_chest.stage != CH_LOCK || hi < 0) break;
 		Game& g = _npcs.game();
-		const char* combo = _chests.pick(_chest.index);
+		const char* combo = _chest.door >= 0 ? _triggers.doorPick(u32(_chest.door)) : _chests.pick(_chest.index);
 		const char want = lockTurn(combo, _chest.progress);
 		const bool right = c.slot != 0;
 		if (want && ((want == 'R') == right)) {
@@ -443,10 +488,17 @@ void App::chestCommand(const PanelCommand& c) {
 			if (!lockTurn(combo, _chest.progress)) {
 				// The last turn: it opens.
 				g.pickLockSays(u32(hi), 1, 1);
-				_chests.unlock(_chest.index);
 				itemMessage(tr("Замок открыт"), false);
 				_panel.openPage(InventoryPanel::PAGE_PLAY);
-				chestBegin();
+				if (_chest.door >= 0) {
+					// A door: unlocked for good, and it swings open.
+					_triggers.doorUnlock(u32(_chest.door));
+					_triggers.doorToggle(u32(_chest.door), _player.feet);
+					_chest = ChestJob();
+				} else {
+					_chests.unlock(_chest.index);
+					chestBegin();
+				}
 			} else {
 				g.pickLockSays(u32(hi), 1, 0);
 				_chest.news[0] = 0;
@@ -528,6 +580,11 @@ void App::chestView(const GameNpc& hero) {
 			memmove(&v.items[k + 1], &v.items[k], sizeof(ItemEntry) * (i - k));
 			memcpy(&v.items[k], &tmp, sizeof(tmp));
 		}
+		return;
+	}
+	if (_chest.door >= 0) {
+		snprintf(v.name, sizeof(v.name), "%s", tr("Дверь"));
+		v.length = u8(lockLength(_triggers.doorPick(u32(_chest.door))));
 		return;
 	}
 	if (_chest.stage == CH_NONE || _chest.index >= _chests.count()) return;

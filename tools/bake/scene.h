@@ -4,6 +4,7 @@
 #pragma once
 #include "g3ds/base.h"
 
+#include <array>
 #include <functional>
 #include <map>
 #include <string>
@@ -94,6 +95,7 @@ struct SrcMob {
 	std::string contents; // "ITMI_GOLD:75, ITFO_FISH:2"
 	// What the player may do with it (WorldMobInfo).
 	std::string focus, onState, condition, useItem, target; // names as the world has them (script names upper case)
+	std::string owner, ownerGuild;                          // whose it is (upper case), "" for nobody's
 	int kind = 0;                                          // MobKind
 	bool rewind = false;
 };
@@ -150,6 +152,35 @@ struct SrcImage {
 	std::vector<u8> rgba; // top-down
 };
 
+// A trigger of the world (zCTrigger, zCTriggerList, oCTriggerScript, zCTriggerWorldStart) or a mover (zCMover):
+// g3ds/world.h, "triggers".
+struct SrcTrigger {
+	int kind = 0;           // TriggerKind
+	std::string name;       // the object's name: what events are sent to (upper case)
+	std::string target;     // what it sends on (upper case); a script trigger: the function
+	std::string visual;     // a mover: its mesh, lower case without extension ("model/item.<visual>")
+	float bbMin[3] = {0, 0, 0}, bbMax[3] = {0, 0, 0};
+	bool startEnabled = true, sendUntrigger = false, reactTrigger = true, reactTouch = false, respondPc = false, respondNpc = false;
+	bool fireOnce = false, autoRotate = false;
+	int maxActivations = -1;
+	float retriggerDelay = 0, fireDelay = 0;
+	// A mover: its keyframes as world transforms (position, rotation as a unit quaternion x y z w rotating column
+	// vectors), how it behaves and moves.
+	std::vector<std::array<float, 7>> keys;
+	int behavior = 0, lerp = 0, speedMode = 0;
+	float speed = 0, stayOpen = 0;
+	std::string sfxOpenStart, sfxOpenEnd, sfxCloseStart, sfxCloseEnd, sfxMoving;
+	// A mover or a door that collides (cd_static / cd_dynamic): its triangles in its own space, 9 floats each.
+	std::vector<float> collision;
+	// A door (oCMobDoor): where it turns (its own space), locked, the key that opens it, the lock's combination.
+	float pivot[3] = {0, 0, 0};
+	bool locked = false;
+	std::string key, pick;
+	// A list: targets and their delays.
+	std::vector<std::pair<std::string, float>> list;
+	int listMode = 0;
+};
+
 struct SrcScene {
 	std::vector<SrcMaterial> materials;
 	std::vector<SrcTriangle> triangles;
@@ -176,6 +207,15 @@ struct SrcScene {
 	std::vector<SrcEmitter> emitters;
 	std::vector<SrcLight> lights;
 	std::vector<SrcWorldItem> items; // the world file's things (the scripts add theirs when baked)
+	// The rooms (BSP sectors): their names (upper case) and the boxes of their leaves; `room` indexes roomNames.
+	struct RoomBoxSrc {
+		float bbMin[3], bbMax[3];
+		u32 room;
+	};
+	std::vector<std::string> roomNames;
+	std::vector<SrcTrigger> triggers;
+	u32 moverConjugated = 0, moverPlain = 0; // how the movers' key rotations read (for the report)
+	std::vector<RoomBoxSrc> roomBoxes;
 	std::vector<std::string> notes; // importer remarks for the bake report
 };
 

@@ -854,12 +854,22 @@ int main(int, char**) {
 			const g3::Vec3 eye = pl.eye();
 			// Then: times the character was popped out of the rock and was
 			// unstuck (see Player::unstick), and the records written to slope.txt.
-			reportLine("pos %7.0f %6.0f %7.0f u%lu/%lu sd%lu%s", double(eye.x), double(eye.y), double(eye.z),
+			// ... and the room (BSP sector) the feet are in, with its guild (Wld_AssignRoomToGuild; -1 outside).
+			char roomNote[28] = "";
+			if (app.npcs().rooms().count()) {
+				const g3::u16 room = app.npcs().rooms().roomAt(pl.feet);
+				snprintf(roomNote, sizeof(roomNote), " r:%.10s %ld", room ? app.npcs().rooms().name(room) : "-",
+				         static_cast<long>(app.npcs().game().roomGuild(app.npcs().rooms().hash(room))));
+			}
+			reportLine("pos %7.0f %6.0f %7.0f u%lu/%lu sd%lu%s%s", double(eye.x), double(eye.y), double(eye.z),
 			     static_cast<unsigned long>(pl.popUps), static_cast<unsigned long>(pl.unstuck), static_cast<unsigned long>(slopeWrites),
-			     slopeFailed ? "!" : "");
+			     slopeFailed ? "!" : "", roomNote);
 			// The inhabitants' part, worst frame: clock (routines) / choosing and making actors / their steps.
-			reportLine("npc worst clk%.0f sel%.0f tick%.0f loot%.0f ms", double(npcClockWorst), double(npcSelectWorst), double(npcTickWorst),
-			     double(lootWorst));
+			// ... and the world's triggers: events that reached one, events to nobody, movers on their way and drawn.
+			const g3::TriggerStats& trs = app.triggers().stats();
+			reportLine("npc worst clk%.0f sel%.0f tick%.0f loot%.0f ms trg e%lu u%lu mv%lu/%lu", double(npcClockWorst), double(npcSelectWorst),
+			     double(npcTickWorst), double(lootWorst), static_cast<unsigned long>(trs.events), static_cast<unsigned long>(trs.unknown),
+			     static_cast<unsigned long>(trs.moving), static_cast<unsigned long>(trs.drawn));
 			const g3::Hero& hero = app.hero();
 			if (plainShader) {
 				reportLine("hero off: plain shader (R at start)");

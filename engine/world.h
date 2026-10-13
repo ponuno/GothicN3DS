@@ -209,6 +209,8 @@ public:
 	// line from `a` to `b` (a sphere stepped along it): who stands at `a`
 	// sees `b`. Only loaded chunks count.
 	bool lineFree(Vec3 a, Vec3 b, float radius = 8.0f) const;
+	// What moves and is solid (gates, lifts, shut doors: triggers.h) - asked by these queries too; null: nothing.
+	void setDynamic(const class Triggers* dynamic) { _dynamic = dynamic; }
 	// Highest water surface under `from`, no lower than from.y - maxDrop.
 	bool waterBelow(Vec3 from, float maxDrop, float& surfaceY) const;
 
@@ -339,6 +341,7 @@ public:
 	// and a small object that near is within its distance. `chunk` is the caller's cache (start it at -2).
 	bool pointShown(Vec3 p, Vec3 eye, int& chunk, bool wasOn) const;
 private:
+	const class Triggers* _dynamic = nullptr;
 	void loadVis();
 	void freeVis();
 	// Looks up the camera's row of the table when the camera has moved to another cell.

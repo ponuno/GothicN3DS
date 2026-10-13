@@ -402,7 +402,10 @@ void App::boltShoot(const GameSpell& sp, i32 spell, i32 level) {
 }
 
 void App::boltImpact(Bolt& b, int victim, Vec3 at) {
-	const int hi = heroIndex();
+	const int heroShot = heroIndex();
+	// Whose it is: the player's, or an inhabitant's (its stats are not the player's).
+	const int hi = b.owner >= 0 ? b.owner : heroShot;
+	const bool mine = hi == heroShot;
 	Game& g = _npcs.game();
 	if (b.fx) _particles.stop(b.fx);
 	b.fx = 0;
@@ -418,7 +421,7 @@ void App::boltImpact(Bolt& b, int victim, Vec3 at) {
 		else if (dist < maxRange) chance = b.hitChance * (1.0f - (dist - refRange) / (maxRange - refRange));
 		const float roll = float(g.dice(100)) / 100.0f;
 		if (dist > maxRange || chance <= roll) {
-			++_ranged.misses;
+			if (mine) ++_ranged.misses;
 			_ranged.lastDamage = 0;
 			return;
 		}
@@ -429,8 +432,10 @@ void App::boltImpact(Bolt& b, int victim, Vec3 at) {
 		g.setArrowStrike(dmg);
 		const i32 dealt = _npcs.strike(u32(hi), u32(victim), false);
 		g.endArrowStrike();
-		++_ranged.hits;
-		_ranged.lastDamage = dealt;
+		if (mine) {
+			++_ranged.hits;
+			_ranged.lastDamage = dealt;
+		}
 		return;
 	}
 	b.alive = false;
@@ -441,9 +446,11 @@ void App::boltImpact(Bolt& b, int victim, Vec3 at) {
 	g.setSpellStrike(-1, 0);
 	GameNpc& v = g.npcMut(u32(victim));
 	v.lastHitSpell = b.spell;
-	++_magic.hits;
-	_magic.lastDamage = dmg;
-	if (v.down == DOWN_NONE) _npcs.perceiveSingle(u32(victim), "PERC_ASSESSMAGIC", hi);
+	if (mine) {
+		++_magic.hits;
+		_magic.lastDamage = dmg;
+	}
+	if (v.down == DOWN_NONE && victim != heroShot) _npcs.perceiveSingle(u32(victim), "PERC_ASSESSMAGIC", hi);
 }
 
 void App::boltUpdate(float dt) {
@@ -468,10 +475,12 @@ void App::boltUpdate(float dt) {
 		float best = kBoltRadius * kBoltRadius;
 		if (_npcs.loaded() && hi >= 0) {
 			const Game& g = _npcs.game();
+			const int owner = b.owner >= 0 ? b.owner : hi;
 			for (u32 i = 0; i < g.npcCount(); ++i) {
-				if (int(i) == hi) continue;
+				if (int(i) == owner) continue;
 				const GameNpc& n = g.npc(i);
-				if (!n.placed || n.down != DOWN_NONE || !n.object) continue;
+				// (The player's character is a target of the others' shots.)
+				if (int(i) == hi ? _hero.down() : (!n.placed || n.down != DOWN_NONE || !n.object)) continue;
 				const float cx = n.pos[0] - from.x, cy = n.pos[1] + 90.0f - from.y, cz = n.pos[2] - from.z;
 				float t = cx * b.dir[0] + cy * b.dir[1] + cz * b.dir[2];
 				t = clamp(t, 0.0f, step);
@@ -503,6 +512,96 @@ void App::boltUpdate(float dt) {
 			b.alive = false;
 		}
 	}
+}
+
+// ---- the inhabitants' shots ----
+
+App::Bolt* App::freeBolt() {
+	Bolt* b = nullptr;
+	for (Bolt& x : _bolts)
+		if (!x.alive) b = &x;
+	if (!b) {
+		b = &_bolts[0]; // (the oldest goes)
+		if (b->fx) _particles.stop(b->fx);
+	}
+	return b;
+}
+
+bool App::npcShotThunk(void* user, u32 shooter, int target, i32 spell, i32 level) {
+	return static_cast<App*>(user)->npcShot(shooter, target, spell, level);
+}
+
+// From the shooter's hand at its target's chest, as the player's own arrows and spells fly (OpenGothic: an
+// inhabitant shoots through the same Bullet as the player).
+bool App::npcShot(u32 shooter, int target, i32 spell, i32 level) {
+	Game& g = _npcs.game();
+	if (shooter >= g.npcCount()) return false;
+	const GameNpc& s = g.npc(shooter);
+	const Vec3 from = {s.pos[0] + sinf(s.yaw) * 45.0f, s.pos[1] + 130.0f, s.pos[2] + cosf(s.yaw) * 45.0f};
+	float dir[3] = {sinf(s.yaw), 0.0f, cosf(s.yaw)};
+	float flat = 0.0f;
+	if (target >= 0 && u32(target) < g.npcCount()) {
+		const GameNpc& t = g.npc(u32(target));
+		const float dx = t.pos[0] - from.x, dy = t.pos[1] + 100.0f - from.y, dz = t.pos[2] - from.z;
+		const float len = sqrtf(dx * dx + dy * dy + dz * dz);
+		if (len > 1.0f) {
+			dir[0] = dx / len;
+			dir[1] = dy / len;
+			dir[2] = dz / len;
+			flat = sqrtf(dx * dx + dz * dz);
+		}
+	}
+	const float yaw = atan2f(dir[0], dir[2]);
+	if (spell >= 0) {
+		const GameSpell* sp = g.spellInfo(spell);
+		if (!sp) return false;
+		Bolt* b = freeBolt();
+		*b = Bolt();
+		b->alive = true;
+		b->owner = int(shooter);
+		for (int i = 0; i < 3; ++i) {
+			b->pos[i] = i == 0 ? from.x : i == 1 ? from.y : from.z;
+			b->dir[i] = dir[i];
+			b->vel[i] = dir[i] * kBoltSpeed;
+		}
+		b->range = sp->collectRange > 0 ? min(float(sp->collectRange), kMaxRange) : kMaxRange;
+		if (b->range < 1500.0f) b->range = kMaxRange;
+		b->spell = i16(spell);
+		b->level = u8(level < 1 ? 1 : level > kMaxLevel ? kMaxLevel : level);
+		b->fxCollide = sp->fxCollide;
+		const u32 fly = sp->fxFly ? sp->fxFly : sp->fxCast;
+		if (fly) b->fx = _particles.start(fly, from, yaw, b->range / kBoltSpeed + 0.5f);
+		if (sp->fxCast) _particles.play(sp->fxCast, from, yaw, 0.6f);
+		return true;
+	}
+	const GameItemInfo* bow = s.ranged != 0xFFFFFFFFu ? g.itemInfo(s.ranged) : nullptr;
+	if (!bow || bow->munition < 0) return false;
+	const u32 ammo = u32(bow->munition);
+	const GameItemInfo* am = g.itemInfo(ammo);
+	Bolt* b = freeBolt();
+	*b = Bolt();
+	b->alive = true;
+	b->arrow = true;
+	b->owner = int(shooter);
+	b->ammo = ammo;
+	const float speed = 3000.0f;
+	for (int i = 0; i < 3; ++i) {
+		b->pos[i] = i == 0 ? from.x : i == 1 ? from.y : from.z;
+		b->dir[i] = dir[i];
+		b->vel[i] = dir[i] * speed;
+	}
+	if (flat > 1.0f) b->vel[1] += 0.5f * 980.0f * (flat / speed);
+	b->range = 4600.0f;
+	b->fx = _particles.start(Particles::arrowTrail(), from, yaw, 8.0f);
+	const i32 type = bow->damageType ? bow->damageType : g.constant("DAM_POINT", 64);
+	for (int i = 0; i < 8; ++i) {
+		b->dmg[i] = bow->damage[i] + (am ? am->damage[i] : 0);
+		if (type & (1 << i)) b->dmg[i] += bow->damageTotal + (am ? am->damageTotal : 0);
+	}
+	const bool cross = (bow->flags & g.constant("ITEM_CROSSBOW", 1 << 20)) != 0;
+	b->hitChance = float(g.attributeOf(s, g.constant("ATR_DEXTERITY", 5))) / 100.0f;
+	b->critChance = float(s.talent[cross ? 4 : 3]) / 100.0f;
+	return true;
 }
 
 } // namespace g3

@@ -73,6 +73,15 @@ void App::talkUpdate(Input& in, float dt) {
 		}
 		if (_timeFade > 0.0f) _timeFade = max(_timeFade - dt, 0.0f);
 	}
+	// The scripts send the player's character somewhere (AI_Teleport): a teleport rune, a quest.
+	{
+		float to[3], yaw;
+		if (_npcs.takeHeroTeleport(to, yaw)) {
+			teleport({to[0], to[1] + _player.config.eyeHeight, to[2]});
+			_hero.setYaw(yaw);
+			++_magic.teleports;
+		}
+	}
 	// A chapter begins (IntroduceChapter): its card comes up.
 	{
 		const GameChapter& ch = _npcs.game().chapter();
@@ -89,6 +98,21 @@ void App::talkUpdate(Input& in, float dt) {
 			}
 		}
 		if (_chapterTime > 0.0f) _chapterTime -= dt;
+	}
+	// Effects the scripts set off (Wld_PlayEffect): at the character, a couple of seconds.
+	{
+		Game::Effect e;
+		while (_npcs.game().takeEffect(e)) {
+			const int heroAt = heroIndex();
+			Vec3 at = _player.feet;
+			float yaw = _hero.yaw();
+			if (e.npc >= 0 && e.npc != heroAt) {
+				const GameNpc& n = _npcs.game().npc(u32(e.npc));
+				at = {n.pos[0], n.pos[1], n.pos[2]};
+				yaw = n.yaw;
+			}
+			_particles.play(e.pfx, {at.x, at.y + 100.0f, at.z}, yaw, 2.0f);
+		}
 	}
 	// The diary's entries are "seen" once the diary has been looked at and left.
 	{

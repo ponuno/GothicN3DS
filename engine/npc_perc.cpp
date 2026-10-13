@@ -167,7 +167,16 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 	const World* before = _world;
 	_world = &world;
 	// The player.
-	if (_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer] && hero && sees(a, heroIndex, _heroLink.sneaking))
+	// (Perc_SetRange: a perception reaches as far as the scripts say - the reach of the senses, if they say nothing -
+	// and no further, whatever the eyes could see; as OpenGothic's perceptionProcess has it.)
+	const auto within = [&](int perc, const GameNpc& o) {
+		const float r = _game.perceptionRange(perc);
+		if (r < 0.0f) return true;
+		const float dx = o.pos[0] - n.pos[0], dy = o.pos[1] - n.pos[1], dz = o.pos[2] - n.pos[2];
+		return dx * dx + dy * dy + dz * dz <= r * r;
+	};
+	if (_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer] && hero && within(_percPlayer, *hero) &&
+	    sees(a, heroIndex, _heroLink.sneaking))
 		react(a, a.perc[_percPlayer], int(heroIndex), -1);
 	// The nearest enemy: anybody about it is hostile to, the player too.
 	const u32 enemyFn = _percEnemy >= 0 && _percEnemy < Game::PERC_TYPES ? a.perc[_percEnemy] : 0;
@@ -184,7 +193,7 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 			if (!o.placed || o.world != n.world || _game.hitPoints(o) <= 0) return;
 			const float dx = o.pos[0] - n.pos[0], dy = o.pos[1] - n.pos[1], dz = o.pos[2] - n.pos[2];
 			const float d2 = dx * dx + dy * dy + dz * dz;
-			if (d2 > range * range) return;
+			if (d2 > range * range || !within(_percEnemy, o)) return;
 			u32 at = count++;
 			for (; at > 0 && d2s[at - 1] > d2; --at) {
 				d2s[at] = d2s[at - 1];

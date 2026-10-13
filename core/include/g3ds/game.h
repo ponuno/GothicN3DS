@@ -154,7 +154,9 @@ struct WorldMobInfo {
 	u8 kind;       // MobKind
 	u8 rewind;
 	u16 reserved;
-	u32 reserved2, reserved3;
+	// Whose it is (oCMobInter: the owner's script instance, the owner guild's name, "GIL_OCF"); 0: nobody's.
+	// Older archives have 0 here.
+	u32 owner, ownerGuild;
 };
 static_assert(sizeof(WorldMobInfo) == 32, "WorldMobInfo layout");
 

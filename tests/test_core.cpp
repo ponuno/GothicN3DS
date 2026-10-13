@@ -22,6 +22,9 @@
 #include "pacer.h"
 #include "stereo.h"
 #include "readahead.h"
+#include "rooms.h"
+#include "triggers.h"
+#include "game.h"
 #include "reproject.h"
 #include "pak_writer.h"
 #include "rg_etc1.h"
@@ -5461,7 +5464,7 @@ func void Rtn_start_502() {
 		const auto said = [&](const char* text) { return r.report.find(text) != std::string::npos; };
 		if (getenv("G3_TRACE")) std::puts(r.report.c_str());
 		// Of the animations the scripts name each skeleton got the ones it has.
-		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 14 families more; fighting 105 "
+		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 14 families more; fighting 346 "
 		           "more; baked per skeleton: humans 67, scavenger 13, molerat 13"));
 		// ... and those of the things in the hands (drinking a potion; picking up: 3 + 3 of the 67).
 		CHECK(said("things in the hands: the scripts' items are used in 4 ways (FOOD, MEAT, POTION, POTIONFAST)"));
@@ -9824,6 +9827,24 @@ func void Rtn_start_503() {
 		stand(g.npc(b), 600.0f, 0.0f);
 		for (float tm = 0; tm < 0.7f; tm += dt) app.update(Input {}, dt);
 		CHECK(global("MM_ENEMY_SEEN") > seen);
+		// It goes after him; he runs, and it gives the chase up in the end (its clock goes on while he runs).
+		bool chasing = false, gaveUp = false;
+		for (float tm = 0; tm < 40.0f && !gaveUp; tm += dt) {
+			Input run1;
+			run1.moveZ = 1.0f;
+			// (Every second a pack-mate warns it: its state is asked for again, and the clock of the chase must not start anew.)
+			if (chasing && int(tm / dt) % 30 == 15) npcs.sendPerception("PERC_ASSESSWARN", hero, int(hero), -1);
+			app.update(run1, dt);
+			const NpcActor* q = npcs.actorOf(b);
+			const bool now = q && q->state == g.vm().find("ZS_MM_ATTACK");
+			chasing = chasing || now;
+			gaveUp = chasing && !now;
+			if (getenv("G3_TRACE") && int(tm / dt) % 30 == 0)
+				std::printf("   [chase %.0f] beast %s t%.1f | hero speed %.0f\n", double(tm), q ? npcs.stateName(q->state) : "-", q ? double(q->stateTime) : -1.0,
+				            double(app.hero().speed()));
+		}
+		CHECK(chasing);
+		CHECK(gaveUp);
 	}
 
 	// 4. A person does not fall on somebody with no quarrel with him (and does once there is one).
@@ -10255,6 +10276,256 @@ func void T_Fetch() {
 	            npcs.stats().itemsTaken, npcs.stats().itemsMissing);
 }
 
+static void testRooms() {
+	// Two rooms: a hut (two leaves, one flat over the floor) and a hall beside it; a box shared by nobody else.
+	std::vector<RoomBox> boxes;
+	const auto box = [&](float x0, float y0, float z0, float x1, float y1, float z1, u16 room) {
+		RoomBox b {};
+		b.bbMin[0] = x0, b.bbMin[1] = y0, b.bbMin[2] = z0, b.bbMax[0] = x1, b.bbMax[1] = y1, b.bbMax[2] = z1;
+		b.room = room;
+		boxes.push_back(b);
+	};
+	box(0, 0, 0, 500, 300, 500, 1);      // the hut
+	box(100, 0, 100, 200, 2, 200, 1);    // its floor alone (flat)
+	box(600, -50, 0, 3000, 600, 900, 2); // the hall
+	box(5000, 0, 5000, 5400, 2, 5400, 2); // a flat leaf of the hall far away
+	const char names[] = "HUT01\0OCC_HALL\0\0\0";
+	const u32 offsets[2] = {0, 6};
+	RoomsHeader h {};
+	h.magic = ROOMS_MAGIC;
+	h.version = ROOMS_VERSION;
+	h.roomCount = 2;
+	h.boxCount = u32(boxes.size());
+	h.nameBytes = 16;
+	std::vector<u8> blob(sizeof(h));
+	std::memcpy(blob.data(), &h, sizeof(h));
+	const u8* bp = reinterpret_cast<const u8*>(boxes.data());
+	blob.insert(blob.end(), bp, bp + boxes.size() * sizeof(RoomBox));
+	const u8* op = reinterpret_cast<const u8*>(offsets);
+	blob.insert(blob.end(), op, op + sizeof(offsets));
+	blob.insert(blob.end(), names, names + 16);
+	Rooms rooms;
+	CHECK(rooms.adopt(blob.data(), u32(blob.size())));
+	CHECK(rooms.count() == 2);
+	CHECK(rooms.roomAt({250, 0, 250}) == 1);
+	CHECK(rooms.roomAt({1000, 0, 500}) == 2);
+	CHECK(rooms.roomAt({5200, 0, 5200}) == 2); // (a flat leaf: found with room above it)
+	CHECK(rooms.roomAt({-100, 0, 250}) == 0);
+	CHECK(rooms.roomAt({250, 2000, 250}) == 0); // far above the roof: outside
+	CHECK(std::strcmp(rooms.name(1), "HUT01") == 0 && std::strcmp(rooms.name(2), "OCC_HALL") == 0 && rooms.name(0)[0] == 0);
+	CHECK(rooms.hash(1) == hashName("hut01") && rooms.hash(0) == 0);
+	// Damaged: refused.
+	blob[sizeof(h)] ^= 0xFF;
+	blob.resize(blob.size() - 4);
+	Rooms bad;
+	CHECK(!bad.adopt(blob.data(), u32(blob.size())));
+}
+
+static void testTriggers() {
+	// A gate (toggle) that, once open, triggers "AFTER", which opens a lift (trigger control); a trigger in the way
+	// that toggles the gate once when walked into; a world start that fires the first time only.
+	std::vector<char> names(1, '\0');
+	const auto name = [&](const char* n) {
+		const u32 at = u32(names.size());
+		names.insert(names.end(), n, n + std::strlen(n) + 1);
+		return at;
+	};
+	std::vector<WorldTrigger> list;
+	std::vector<MoverKey> keys;
+	std::vector<float> coll;
+	// A wall of its own space: x -w..w, y 0..h, at z = 0 (two triangles).
+	const auto wall = [&](WorldTrigger& t, float x0, float x1, float h) {
+		t.flags = u16(t.flags | TRGF_COLLIDES);
+		t.collFirst = u32(coll.size() / 9);
+		t.collCount = 2;
+		const float q[18] = {x0, 0, 0, x1, 0, 0, x1, h, 0, x0, 0, 0, x1, h, 0, x0, h, 0};
+		coll.insert(coll.end(), q, q + 18);
+	};
+	const auto mover = [&](const char* n, const char* target, u8 behavior, float speed, float x1, float y1) {
+		WorldTrigger t {};
+		t.kind = TRG_MOVER;
+		t.behavior = behavior;
+		t.flags = TRGF_START_ENABLED | TRGF_REACT_TRIGGER | TRGF_SEND_UNTRIGGER;
+		t.name = name(n);
+		t.target = target ? name(target) : 0;
+		t.visual = name("gate_mesh");
+		t.maxActivations = -1;
+		t.first = u32(keys.size());
+		t.count = 2;
+		t.lerp = 1;
+		t.speed = speed;
+		keys.push_back(MoverKey {{0, 0, 0}, {0, 0, 0, 1}});
+		keys.push_back(MoverKey {{x1, y1, 0}, {0, 0, 0, 1}});
+		if (y1 > 0.0f) wall(t, -100.0f, 100.0f, 300.0f); // (the gate is solid)
+		list.push_back(t);
+	};
+	mover("GATE", "AFTER", 0, 1.0f, 0, 300);
+	{
+		WorldTrigger t {};
+		t.kind = TRG_TRIGGER;
+		t.flags = TRGF_START_ENABLED | TRGF_REACT_TRIGGER;
+		t.name = name("AFTER");
+		t.target = name("LIFT");
+		t.maxActivations = -1;
+		list.push_back(t);
+	}
+	mover("LIFT", nullptr, 1, 0.5f, 100, 0);
+	{
+		WorldTrigger t {};
+		t.kind = TRG_TRIGGER;
+		t.flags = TRGF_START_ENABLED | TRGF_REACT_TOUCH | TRGF_RESPOND_PC;
+		t.target = name("GATE");
+		t.maxActivations = 1;
+		t.bbMin[0] = 900, t.bbMin[1] = -100, t.bbMin[2] = 900;
+		t.bbMax[0] = 1100, t.bbMax[1] = 200, t.bbMax[2] = 1100;
+		list.push_back(t);
+	}
+	{
+		WorldTrigger t {};
+		t.kind = TRG_WORLDSTART;
+		t.flags = TRGF_FIRE_ONCE;
+		t.target = name("STARTED");
+		t.maxActivations = -1;
+		list.push_back(t);
+	}
+	{
+		// A locked door at x = 2000, hinged at its left end, with a key and a lock of two turns.
+		WorldTrigger t {};
+		t.kind = TRG_DOOR;
+		t.flags = TRGF_START_ENABLED | TRGF_REACT_TRIGGER | TRGF_LOCKED;
+		t.name = name("DOOR_1");
+		t.visual = name("door_mesh");
+		t.target = name("ITKE_TEST");
+		t.sfx[0] = name("LR");
+		t.maxActivations = -1;
+		t.first = u32(keys.size());
+		t.count = 2;
+		keys.push_back(MoverKey {{2000, 0, 0}, {0, 0, 0, 1}});
+		keys.push_back(MoverKey {{-50, 0, 0}, {0, 0, 0, 1}});
+		wall(t, -50.0f, 50.0f, 200.0f);
+		list.push_back(t);
+	}
+	while (names.size() % 4) names.push_back('\0');
+	const auto blob = [&]() {
+		TriggersHeader h {};
+		h.magic = TRIGGERS_MAGIC;
+		h.version = TRIGGERS_VERSION;
+		h.count = u32(list.size());
+		h.keyCount = u32(keys.size());
+		h.nameBytes = u32(names.size());
+		h.collisionTris = u32(coll.size() / 9);
+		const size_t size = sizeof(h) + list.size() * sizeof(WorldTrigger) + keys.size() * sizeof(MoverKey) + coll.size() * 4 + names.size();
+		u8* b = static_cast<u8*>(std::malloc(size));
+		u8* p = b;
+		std::memcpy(p, &h, sizeof(h));
+		p += sizeof(h);
+		std::memcpy(p, list.data(), list.size() * sizeof(WorldTrigger));
+		p += list.size() * sizeof(WorldTrigger);
+		std::memcpy(p, keys.data(), keys.size() * sizeof(MoverKey));
+		p += keys.size() * sizeof(MoverKey);
+		std::memcpy(p, coll.data(), coll.size() * 4);
+		p += coll.size() * 4;
+		std::memcpy(p, names.data(), names.size());
+		return std::make_pair(b, u32(size));
+	};
+	Game game;
+	Triggers t;
+	auto b = blob();
+	CHECK(t.adopt(b.first, b.second, game));
+	CHECK(t.count() == 6 && t.stats().movers == 2 && t.stats().triggers == 3 && t.stats().doors == 1 && t.stats().solid == 2);
+	// The shut gate is a wall: a sphere in it is pushed out, a line through it is stopped, a ray finds its top.
+	{
+		Vec3 c = {0, 100, 10};
+		CHECK(t.pushSphere(c, 30.0f) && c.z >= 29.9f);
+		CHECK(t.segmentHits({0, 100, -200}, {0, 100, 200}) && !t.segmentHits({500, 100, -200}, {500, 100, 200}));
+		float y;
+		Vec3 n;
+		CHECK(!t.rayDown({0, 500, 0}, 1000.0f, y, n)); // (a wall standing up: nothing to stand on from above, only its edge)
+	}
+	CHECK(t.stats().unknown == 1); // ("STARTED": nobody of that name)
+	const Vec3 away = {5000, 0, 5000}, inBox = {1000, 0, 1000};
+	Quat r;
+	Vec3 p;
+	const auto step = [&](float seconds, Vec3 feet) {
+		for (float x = 0; x < seconds - 1e-4f; x += 0.05f) t.update(0.05f, feet, game);
+	};
+	step(0.5f, away);
+	CHECK(t.moverTransform(0, r, p) && std::fabs(p.y) < 0.01f && t.moverState(0) == 0);
+	// The gate opens (300 ms), then the lift (200 ms).
+	t.send("gate", false);
+	step(0.15f, away);
+	CHECK(t.moverTransform(0, r, p) && p.y > 100.0f && p.y < 200.0f && t.moverState(0) == 1);
+	step(0.3f, away);
+	CHECK(t.moverTransform(0, r, p) && std::fabs(p.y - 300.0f) < 0.01f && t.moverFrame(0) == 1);
+	{
+		// Up: the way under it is free.
+		Vec3 c = {0, 100, 10};
+		CHECK(!t.pushSphere(c, 30.0f) && !t.segmentHits({0, 100, -200}, {0, 100, 200}));
+	}
+	step(0.4f, away);
+	CHECK(t.moverTransform(2, r, p) && std::fabs(p.x - 100.0f) < 0.01f && t.moverFrame(2) == 1 && t.moverState(2) == 0);
+	// The lift closes on an untrigger; the gate does not (a toggle).
+	t.send("LIFT", true);
+	step(0.4f, away);
+	CHECK(t.moverTransform(2, r, p) && std::fabs(p.x) < 0.01f && t.moverFrame(2) == 0);
+	// Walked into: the gate toggles (closes) - once only.
+	step(0.1f, inBox);
+	step(0.5f, inBox);
+	CHECK(t.moverTransform(0, r, p) && std::fabs(p.y) < 0.01f && t.moverFrame(0) == 0);
+	step(0.1f, away);
+	step(0.6f, inBox);
+	CHECK(t.moverFrame(0) == 0 && t.moverState(0) == 0);
+	// The scripts' Wld_SendTrigger: through the game.
+	u32 kept = 0;
+	CHECK(game.triggerState(0, 0, kept) && (kept & 0xFFFF) == 0);
+	// (The gate, arriving closed, sent its target again: the lift went up once more - as OpenGothic's movers do.)
+	CHECK(game.triggerState(0, 2, kept) && (kept & 0xFFFF) == 1 && t.moverFrame(2) == 1);
+	t.send("GATE", false);
+	step(0.6f, away);
+	CHECK(t.moverFrame(0) == 1 && game.triggerState(0, 0, kept) && (kept & 0xFFFF) == 1);
+	// Entered again: the gate is where it was left (open), the world start does not fire again.
+	Triggers again;
+	b = blob();
+	CHECK(again.adopt(b.first, b.second, game));
+	CHECK(again.moverTransform(0, r, p) && std::fabs(p.y - 300.0f) < 0.01f && again.moverFrame(0) == 1);
+	CHECK(again.stats().unknown == 0);
+	// The door: locked (it does not open), then unlocked; opened from in front it swings away and is no wall then.
+	{
+		Triggers& d = again;
+		const u32 door = 5;
+		CHECK(d.doorNear({2000, 0, 150}, 3.14159265f) == int(door) && d.doorLocked(door));
+		CHECK(std::strcmp(d.doorKey(door), "ITKE_TEST") == 0 && std::strcmp(d.doorPick(door), "LR") == 0);
+		d.doorToggle(door, {2000, 0, 150});
+		CHECK(!d.doorOpen(door));
+		Vec3 c = {2000, 100, 10};
+		CHECK(d.pushSphere(c, 30.0f));
+		d.doorUnlock(door);
+		d.doorToggle(door, {2000, 0, 150});
+		CHECK(d.doorOpen(door) && !d.doorLocked(door));
+		for (int k = 0; k < 30; ++k) d.update(0.05f, {5000, 0, 5000}, game);
+		c = {2000, 100, 10};
+		CHECK(!d.pushSphere(c, 30.0f));
+		// It swung away from the opener (to -z) about its hinge at x 1950.
+		CHECK(d.moverTransform(door, r, p) && std::fabs(p.x - 1950.0f) < 1.0f && std::fabs(p.z + 50.0f) < 1.0f);
+		// Kept: unlocked and open.
+		CHECK(game.triggerState(0, door, kept) && (kept & 1u) && ((kept >> 29) & 1u));
+		// An inhabitant coming by a shut door: it opens, and shuts after it has gone.
+		d.doorToggle(door, {2000, 0, 150});
+		for (int k = 0; k < 30; ++k) d.update(0.05f, {5000, 0, 5000}, game);
+		CHECK(!d.doorOpen(door));
+		const Vec3 passer = {2000, 0, -100};
+		d.update(0.05f, {5000, 0, 5000}, game, &passer, 1);
+		CHECK(d.doorOpen(door));
+		for (int k = 0; k < 100; ++k) d.update(0.05f, {5000, 0, 5000}, game);
+		CHECK(!d.doorOpen(door));
+	}
+	// Damaged: refused.
+	b = blob();
+	b.first[sizeof(TriggersHeader)] = 99; // (a kind that does not exist)
+	Triggers bad;
+	CHECK(!bad.adopt(b.first, b.second, game));
+}
+
 int main(int argc, char** argv) {
 	gDir = argc > 1 ? argv[1] : ".";
 	const char* only = argc > 2 ? argv[2] : nullptr; // run the tests whose name contains this
@@ -10266,6 +10537,8 @@ int main(int argc, char** argv) {
 	             {"etc1 block decoder", testEtc1BlockDecoder},
 	             {"texture", testTexture},
 	             {"frame budget", testFrameBudget},
+	             {"rooms", testRooms},
+	             {"triggers", testTriggers},
 	             {"vertex cache", testVertexCache},
 	             {"chunker", testChunker},
 	             {"seams", testSeams},

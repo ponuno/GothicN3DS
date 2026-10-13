@@ -104,6 +104,8 @@ const int PERC_ASSESSTHREAT = 10;
 const int PERC_ASSESSFIGHTSOUND = 13;
 const int PERC_DRAWWEAPON = 24;
 const int BS_RUN = 3;
+const int BS_SWIM = 5;
+const int BS_JUMP = 8;
 const int BS_STUMBLE = 21;
 const int BS_UNCONSCIOUS = 22;
 const int BS_DEAD = 23;
@@ -630,12 +632,22 @@ func void B_GiveXP(var int add_xp) {
 // the enemy is down or gone.
 func void ZS_MM_Attack() {
 	Npc_PercEnable(self, PERC_ASSESSDAMAGE, B_MM_ReactToDamage);
+	Npc_PercEnable(self, PERC_ASSESSWARN, B_MM_AssessWarn);
 	AI_SetWalkmode(self, NPC_RUN);
 };
 func int ZS_MM_Attack_Loop() {
 	Npc_GetTarget(self);
 	if (Npc_IsDead(other) || Npc_IsInState(other, ZS_Unconscious)) { return LOOP_END; };
 	if (Npc_GetDistToNpc(self, other) > 2500) { return LOOP_END; };
+	// The chase is given up after a while of the enemy running (the original's AIV_MM_FollowTime):
+	// the clock goes on while the enemy is on the run, and starts anew whenever he is not.
+	var int bs;
+	bs = Npc_GetBodyState(other);
+	if (bs == BS_RUN || bs == BS_JUMP || bs == BS_SWIM) {
+		if (Npc_GetStateTime(self) > 10) { return LOOP_END; };
+	} else {
+		Npc_SetStateTime(self, 0);
+	};
 	AI_Attack(self);
 	return LOOP_CONTINUE;
 };
@@ -645,6 +657,11 @@ func void B_MM_AssessEnemy() {
 	mm_enemy_seen += 1;
 	Npc_SetTarget(self, other);
 	AI_StartState(self, ZS_MM_Attack, 0, "");
+};
+// A pack-mate's growl: the chase begins anew (the state is asked for again; its clock goes on).
+func void B_MM_AssessWarn() {
+	Npc_SetTarget(self, other);
+	AI_StartState(self, ZS_MM_Attack, 1, "");
 };
 var int mm_hurt;
 func void B_MM_ReactToDamage() {

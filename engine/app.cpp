@@ -71,11 +71,23 @@ bool App::init(const char* pakPath, const char* worldName) {
 		_particles.enterWorld(_pak, this->worldName(), _npcs.game());
 		_particles.setGate(emitterShown, &_world);
 		_chests.enterWorld(_pak, this->worldName(), _world.entryHash(), _npcs.game());
+		_triggers.enterWorld(_pak, this->worldName(), _npcs.game());
+	}
+	{
+		Triggers::Hooks th;
+		th.sound = triggerSoundThunk;
+		th.user = this;
+		_triggers.setHooks(th);
 	}
 	HeroLink link;
 	link.hit = heroHitThunk;
 	link.user = this;
 	_npcs.setHeroLink(link);
+	_world.setDynamic(&_triggers);
+	Npcs::ShotHook shots;
+	shots.fire = npcShotThunk;
+	shots.user = this;
+	_npcs.setShotHook(shots);
 	startSound();
 	startSpeech();
 	// The overlay (menus, the HUD): without it the game still runs.
@@ -124,6 +136,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	_npcs.leaveWorld();
 	chestEnd(true);
 	_loot.leaveWorld();
+	_triggers.leaveWorld();
 	_particles.leaveWorld();
 	_chests.leaveWorld();
 	_lootTarget = -1;
@@ -155,6 +168,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 		_particles.enterWorld(_pak, worldName(), _npcs.game());
 		_particles.setGate(emitterShown, &_world);
 		_chests.enterWorld(_pak, worldName(), _world.entryHash(), _npcs.game());
+		_triggers.enterWorld(_pak, worldName(), _npcs.game());
 	}
 	_portalLock = true;
 	++_switches;
@@ -409,6 +423,20 @@ void App::update(const Input& in, float dt) {
 	_npcs.update(_pak, _world, _player.eye(), _env.timeOfDay, dt);
 	const double tLoot0 = sys::timeMs();
 	if (_npcs.loaded()) _loot.update(_pak, _world, _npcs.game(), _player.eye());
+	if (_npcs.loaded()) {
+		// Riding a lift or a ferry: where the feet are on it before it moves, and after.
+		Vec3 rideLocal {0, 0, 0};
+		const int ride = _player.grounded && !_player.climbing ? _triggers.floorUnder(_player.feet, rideLocal) : -1;
+		Vec3 others[16];
+		u32 otherCount = 0;
+		for (u32 k = 0; k < _npcs.drawnCount() && otherCount < 16; ++k) others[otherCount++] = _npcs.drawnFeet(k);
+		_triggers.update(dt, _player.feet, _npcs.game(), others, otherCount);
+		if (ride >= 0) {
+			const Vec3 to = _triggers.fromLocal(ride, rideLocal);
+			const Vec3 d = to - _player.feet;
+			if (dot(d, d) < 200.0f * 200.0f) _player.feet = to; // (a jump of the mover is no ride)
+		}
+	}
 	const double tLoot1 = sys::timeMs();
 	_particles.setFadeStep(_world.fadeStep());
 	_particles.update(dt, _player.eye());
@@ -749,6 +777,7 @@ void App::render() {
 		_npcs.setFadeStep(_world.fadeStep());
 		_npcs.draw(viewProj, indoor ? indoorLight : sky.light);
 		_loot.draw(_cam.pos, indoor ? indoorLight : sky.light);
+		_triggers.draw(_pak, _world, _cam.pos, indoor ? indoorLight : sky.light, min(_world.drawReach() + 2000.0f, 20000.0f));
 		drawShowcase();
 		if (_heroVisible) {
 			_hero.draw();
@@ -935,6 +964,7 @@ void App::syncHeroNpc() {
 	// Running as the scripts see it (BS_RUN): on the move faster than a walk, whatever the
 	// animation (a blow taken on the run, a weapon in hand) - the pursuit's clock goes on.
 	link.running = _hero.role() == Hero::RUN || (_heroSpeed > 250.0f && !_hero.sneaking());
+	link.walking = !link.running && _heroSpeed > 40.0f;
 	link.jumping = _hero.body() == Hero::AIRBORNE || _hero.body() == Hero::TAKEOFF;
 	link.swimming = _player.swimming;
 	link.sneaking = _hero.sneaking();
@@ -1135,7 +1165,8 @@ void App::heroHit(u32 attacker) {
 	const float off = fabsf(wrapYaw(toAttacker - _hero.yaw()));
 	const bool front = off < 1.05f, fromBehind = off > 1.5708f;
 	const bool beast = a.weapon == WEAPON_FIST && g.guildOf(a) >= g.constant("GIL_SEPERATOR_HUM", 16);
-	if ((_hero.parrying() && front && !beast) || (_hero.dodging() && front)) {
+	// (An arrow or a spell is not parried.)
+	if (!g.spellStriking() && ((_hero.parrying() && front && !beast) || (_hero.dodging() && front))) {
 		(_hero.parrying() ? _fight.parried : _fight.dodged) += 1;
 		if (_hero.parrying()) _npcs.emitParry(u32(hi));
 		_npcs.sendPerception("PERC_ASSESSFIGHTSOUND", u32(hi), int(attacker), hi);
@@ -1406,6 +1437,11 @@ bool App::soundLocate(void* user, ScriptInstance* who, Vec3& pos) {
 }
 
 // Starts the sound engine on the scripts' machine and tells it of the world.
+void App::triggerSoundThunk(void* user, const char* name, Vec3 at) {
+	App& app = *static_cast<App*>(user);
+	app._sound.play(name, &at, 1.0f, 3000.0f);
+}
+
 void App::startSound() {
 	if (!_audio || !_npcs.loaded()) return;
 	// A few megabytes of samples at hand: the footsteps, the doors, the blows.

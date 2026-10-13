@@ -628,6 +628,7 @@ void App::itemsUpdate(Input& in, float dt) {
 				const i32 n = _loot.item(_job.loot).amount;
 				g.giveItems(u32(hi), _job.symbol, n);
 				++_itemStats.pickedUp;
+				_npcs.heroTook(_job.symbol, n); // (those about may see it: a theft)
 				if (n > 1) snprintf(buf, sizeof(buf), tr("Взято: %s ×%ld"), name, static_cast<long>(n));
 				else snprintf(buf, sizeof(buf), tr("Взято: %s"), name);
 				itemMessage(buf, false);
@@ -1445,6 +1446,15 @@ void App::drawItemHud() {
 			char line[80];
 			mobName(u32(_mobTarget), line, sizeof(line));
 			tag({m.pos[0], m.pos[1] + 90.0f, m.pos[2]}, line);
+		}
+	}
+	if (_doorTarget >= 0 && _lootTarget < 0 && _chestTarget < 0 && _chest.stage == CH_NONE) {
+		Quat r;
+		Vec3 p;
+		if (_triggers.moverTransform(u32(_doorTarget), r, p)) {
+			const bool open = _triggers.doorOpen(u32(_doorTarget));
+			tag({_player.feet.x + sinf(_hero.yaw()) * 80.0f, _player.feet.y + 150.0f, _player.feet.z + cosf(_hero.yaw()) * 80.0f},
+			    open ? tr("Закрыть дверь") : _triggers.doorLocked(u32(_doorTarget)) ? tr("Дверь (заперта)") : tr("Открыть дверь"));
 		}
 	}
 	if (_corpseTarget >= 0 && _lootTarget < 0 && _chestTarget < 0 && _chest.stage == CH_NONE) {

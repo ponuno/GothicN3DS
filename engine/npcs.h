@@ -25,6 +25,7 @@
 #include "game.h"
 #include "mobs.h"
 #include "model.h"
+#include "rooms.h"
 #include "talk.h"
 #include "waynet.h"
 #include "frame_budget.h"
@@ -74,6 +75,7 @@ struct NpcConfig {
 struct HeroLink {
 	bool prehit = false;   // a blow of the player's is on its way (the enemies' fight AI fends it off)
 	bool running = false;
+	bool walking = false;  // on the move, slower than a run: BS_WALK (BS_SNEAK if sneaking)
 	bool jumping = false;  // in the air (a jump, a fall): BS_JUMP
 	bool swimming = false; // in the water: BS_SWIM
 	bool sneaking = false; // the character creeps: creatures then see it only in front of them
@@ -318,6 +320,9 @@ struct NpcActor {
 	float drawAt = -1.0f;  // seconds into the draw where it changes hands
 	bool drawBack = false; // the weapon is being put away: its drawing plays backwards
 	bool hitFromBehind = false;
+	// A shot (a bow, a spell) under way: the clip, and when in it the arrow leaves or the spell goes off.
+	const Clip* shotClip = nullptr;
+	float shotAt = -1.0f;
 	// A thing in its hand (npc_items.cpp): AI_UseItemToState has it hold an
 	// apple, a bottle, a joint in a state of the item's scheme ("S_FOOD_S0"),
 	// which is then what it stands in (`stance` "FOOD_S0").
@@ -422,6 +427,13 @@ public:
 		void* user = nullptr;
 	};
 	void setSpeechHook(const SpeechHook& hook) { _speechHook = hook; }
+	// Arrows and spells of the inhabitants: the application flies them (as the player's own). `spell` < 0: an arrow
+	// (or a bolt) of the shooter's bow; else that spell at `level`. False if it could not.
+	struct ShotHook {
+		bool (*fire)(void* user, u32 shooter, int target, i32 spell, i32 level) = nullptr;
+		void* user = nullptr;
+	};
+	void setShotHook(const ShotHook& hook) { _shotHook = hook; }
 	// Somebody near is after the player's character in a fight state, with a weapon drawn or a beast (the music's
 	// "targeted": OpenGothic's WorldObjects::isTargetedBy).
 	bool targetsHero() const;
@@ -497,6 +509,22 @@ public:
 	// The thing of that kind a character would use now: the nearest free
 	// one it can see from where it stands (the scripts' Wld_IsMobAvailable,
 	// AI_UseMob), or -1.
+	// The scripts sent the player's character somewhere (AI_Teleport: a rune, a quest): where its feet go, once.
+	bool takeHeroTeleport(float pos[3], float& yaw);
+
+	// ---- rooms and owners (npc_world.cpp) ----
+	// The rooms of the world entered (none in an archive baked before them).
+	const Rooms& rooms() const { return _rooms; }
+	// The player's character takes a thing from the world: those about perceive a theft (PERC_ASSESSTHEFT,
+	// ITEM the thing, as OpenGothic's Npc::takeItem).
+	void heroTook(u32 itemSymbol, i32 amount);
+	// ... begins to use a thing of the world (Mobs' index; a chest, a bench, a door): PERC_ASSESSUSEMOB
+	// (OpenGothic's Interactive), and that thing is what Npc_IsDetectedMobOwnedByNpc asks about.
+	void heroUsesMob(int mob);
+	// Rooms entered and left by the player's character (PERC_ASSESSENTERROOM, OpenGothic's MoveAlgo) for the
+	// character's feet; NpcStats::roomsEntered counts them.
+	u32 roomsEntered() const { return _roomsEntered; }
+
 	int visibleMob(const World& world, u32 npc, const char* kind) {
 		const World* before = _world;
 		_world = &world;
@@ -589,6 +617,25 @@ private:
 	const Clip* weaponClip(NpcActor& a, const char* pattern);
 	void endFightState(NpcActor& a);
 	int nextTarget(const NpcActor& a, bool set);
+	// ---- ranged fighting: bows and spells (npc_fight.cpp) ----
+	ShotHook _shotHook;
+	bool rangedWeapon(const GameNpc& n) const { return n.weapon == WEAPON_BOW || n.weapon == WEAPON_CBOW || n.weapon == WEAPON_MAG; }
+	float rangedReach(const GameNpc& n) const;
+	bool startShot(NpcActor& a);
+	void fireShot(NpcActor& a);
+	static void xReadyRanged(ScriptVm& vm, void* user);
+	static void xEquipBestRanged(ScriptVm& vm, void* user);
+	static void xReadySpell(ScriptVm& vm, void* user);
+	static void xUnreadySpell(ScriptVm& vm, void* user);
+	static void xIsDrawingSpell(ScriptVm& vm, void* user);
+	static void xHasSpell(ScriptVm& vm, void* user);
+	static void xSpellIsScroll(ScriptVm& vm, void* user);
+	static void xSetSpellInfo(ScriptVm& vm, void* user);
+	u32 _shotsFired = 0, _spellsCast = 0;
+public:
+	u32 shotsFired() const { return _shotsFired; }
+	u32 spellsCast() const { return _spellsCast; }
+private:
 	static void xAttack(ScriptVm& vm, void* user);
 	static void xReadyMelee(ScriptVm& vm, void* user);
 	static void xDrawWeapon(ScriptVm& vm, void* user);
@@ -638,6 +685,29 @@ private:
 	static void xDistToItem(ScriptVm& vm, void* user);
 	i32 _bsItem = 14 | (1 << 15); // BS_ITEMINTERACT
 	i32 _bsTakeItem = 17;         // BS_TAKEITEM
+
+	// ---- rooms and owners, and the smaller functions of the scripts (npc_world.cpp) ----
+	void bindWorld();
+	void trackHeroRoom(Vec3 feet);
+	u16 roomOf(const float pos[3]) const;
+	int mobUsedBy(int npc) const;
+	Rooms _rooms;
+	int _heroMob = -1;
+	float _heroTeleport[4] = {0, 0, 0, 0};
+	bool _heroTeleportPending = false;
+	u32 _roomsEntered = 0;
+	u32 _roomCandidate = 0, _roomFrames = 0;
+	i32 _percEnterRoom = -1, _percTheft = -1, _percUseMob = -1;
+	static void xMobOwnedByNpc(ScriptVm& vm, void* user);
+	static void xMobOwnedByGuild(ScriptVm& vm, void* user);
+	static void xLookAtTarget(ScriptVm& vm, void* user);
+	static void xHasBodyFlag(ScriptVm& vm, void* user);
+	static void xNpcPlayAni(ScriptVm& vm, void* user);
+	static void xNpcStopAni(ScriptVm& vm, void* user);
+	static void xIsInRoutine(ScriptVm& vm, void* user);
+	static void xDetectNpcEx(ScriptVm& vm, void* user);
+	static void xHeightToItem(ScriptVm& vm, void* user);
+	static void xSetNpcsToState(ScriptVm& vm, void* user);
 
 	// ---- talks (npc_dialog.cpp) ----
 	void bindDialog();

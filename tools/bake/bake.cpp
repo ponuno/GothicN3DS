@@ -845,7 +845,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				infoAt[text] = where;
 				return where;
 			};
-			size_t infoNamed = 0, infoHidden = 0;
+			size_t infoNamed = 0, infoHidden = 0, mobOwned = 0;
 			size_t chestItems = 0, chestLocked = 0;
 			std::map<std::string, u32> byScheme;
 			size_t withoutSlots = 0;
@@ -906,6 +906,9 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 					info.condition = infoName(src.condition);
 					info.useItem = infoName(src.useItem);
 					info.target = infoName(src.target);
+					info.owner = infoName(src.owner);
+					info.ownerGuild = infoName(src.ownerGuild);
+					mobOwned += !src.owner.empty() || !src.ownerGuild.empty();
 					info.kind = u8(src.kind);
 					info.rewind = src.rewind ? 1 : 0;
 					infoNamed += info.focus != 0;
@@ -952,8 +955,9 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				append(iblob, mobInfos);
 				iblob.insert(iblob.end(), infoNames.begin(), infoNames.end());
 				pak.add("world/" + bw.name + "/mobinfo", ASSET_META, iblob);
-				line(format("things to use by the player: %zu have a name to show (he may use those), %zu have none (the inhabitants' only)",
-				            infoNamed, infoHidden));
+				line(format("things to use by the player: %zu have a name to show (he may use those), %zu have none (the inhabitants' only); "
+				            "%zu belong to somebody (a person or a guild)",
+				            infoNamed, infoHidden, mobOwned));
 			}
 			std::vector<std::pair<u32, std::string>> order;
 			for (const auto& [scheme, count] : byScheme) order.push_back({count, scheme});
@@ -975,6 +979,151 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				pak.add("world/" + bw.name + "/ambient", ASSET_META, ambient);
 				line(format("ambient sounds: %u placed in world '%s'", ah.count, bw.name.c_str()));
 			}
+		}
+
+		// ---- triggers and movers ----
+		if (!scene.triggers.empty()) {
+			std::vector<char> tnames(1, '\0'); // (offset 0: none)
+			std::map<std::string, u32> named;
+			const auto nameOf = [&](const std::string& n) -> u32 {
+				if (n.empty()) return 0;
+				auto it = named.find(n);
+				if (it != named.end()) return it->second;
+				const u32 at = u32(tnames.size());
+				tnames.insert(tnames.end(), n.begin(), n.end());
+				tnames.push_back('\0');
+				named.emplace(n, at);
+				return at;
+			};
+			std::vector<WorldTrigger> table;
+			std::vector<MoverKey> keys;
+			std::vector<TriggerTarget> targets;
+			std::vector<float> collision;
+			u32 counts[7] = {};
+			u32 locked = 0, solid = 0;
+			std::set<std::string> visuals;
+			for (const SrcTrigger& t : scene.triggers) {
+				WorldTrigger wt {};
+				wt.kind = u8(t.kind);
+				wt.behavior = u8(t.kind == TRG_LIST ? t.listMode : t.behavior);
+				wt.flags = u16((t.startEnabled ? TRGF_START_ENABLED : 0) | (t.sendUntrigger ? TRGF_SEND_UNTRIGGER : 0) |
+				              (t.reactTrigger ? TRGF_REACT_TRIGGER : 0) | (t.reactTouch ? TRGF_REACT_TOUCH : 0) |
+				              (t.respondPc ? TRGF_RESPOND_PC : 0) | (t.respondNpc ? TRGF_RESPOND_NPC : 0) | (t.fireOnce ? TRGF_FIRE_ONCE : 0) |
+				              (t.autoRotate ? TRGF_AUTO_ROTATE : 0));
+				wt.name = nameOf(t.name);
+				wt.target = nameOf(t.target);
+				wt.visual = nameOf(t.visual);
+				wt.maxActivations = t.maxActivations;
+				wt.retriggerDelay = t.retriggerDelay;
+				wt.fireDelay = t.fireDelay;
+				for (int a = 0; a < 3; ++a) wt.bbMin[a] = t.bbMin[a], wt.bbMax[a] = t.bbMax[a];
+				if (!t.collision.empty()) {
+					wt.flags = u16(wt.flags | TRGF_COLLIDES);
+					wt.collFirst = u32(collision.size() / 9);
+					wt.collCount = u32(t.collision.size() / 9);
+					collision.insert(collision.end(), t.collision.begin(), t.collision.end());
+					++solid;
+				}
+				if (t.kind == TRG_DOOR) {
+					wt.first = u32(keys.size());
+					wt.count = u16(t.keys.size());
+					for (const auto& k : t.keys) {
+						MoverKey mk {};
+						for (int a = 0; a < 3; ++a) mk.pos[a] = k[size_t(a)];
+						for (int a = 0; a < 4; ++a) mk.rot[a] = k[size_t(3 + a)];
+						keys.push_back(mk);
+					}
+					if (t.locked) wt.flags = u16(wt.flags | TRGF_LOCKED);
+					locked += t.locked;
+					wt.target = nameOf(t.key);
+					wt.sfx[0] = nameOf(t.pick);
+					if (!t.visual.empty()) visuals.insert(t.visual);
+				} else if (t.kind == TRG_MOVER) {
+					wt.first = u32(keys.size());
+					wt.count = u16(std::min<size_t>(t.keys.size(), 65535));
+					for (size_t k = 0; k < wt.count; ++k) {
+						MoverKey mk {};
+						for (int a = 0; a < 3; ++a) mk.pos[a] = t.keys[k][size_t(a)];
+						for (int a = 0; a < 4; ++a) mk.rot[a] = t.keys[k][size_t(3 + a)];
+						keys.push_back(mk);
+					}
+					wt.speedMode = u8(t.speedMode);
+					wt.lerp = u8(t.lerp);
+					wt.speed = t.speed;
+					wt.stayOpen = t.stayOpen;
+					const std::string* sfx[5] = {&t.sfxOpenStart, &t.sfxOpenEnd, &t.sfxCloseStart, &t.sfxCloseEnd, &t.sfxMoving};
+					for (int k = 0; k < 5; ++k) wt.sfx[k] = nameOf(*sfx[k]);
+					if (!t.visual.empty()) visuals.insert(t.visual);
+				} else if (t.kind == TRG_LIST) {
+					wt.first = u32(targets.size());
+					wt.count = u16(std::min<size_t>(t.list.size(), 65535));
+					for (size_t k = 0; k < wt.count; ++k) targets.push_back(TriggerTarget {nameOf(t.list[k].first), t.list[k].second});
+				}
+				if (t.kind >= 1 && t.kind <= 6) ++counts[t.kind];
+				table.push_back(wt);
+			}
+			while (tnames.size() % 4) tnames.push_back('\0');
+			TriggersHeader th {};
+			th.magic = TRIGGERS_MAGIC;
+			th.version = TRIGGERS_VERSION;
+			th.count = u32(table.size());
+			th.keyCount = u32(keys.size());
+			th.targetCount = u32(targets.size());
+			th.nameBytes = u32(tnames.size());
+			th.collisionTris = u32(collision.size() / 9);
+			std::vector<u8> blob(sizeof(th));
+			std::memcpy(blob.data(), &th, sizeof(th));
+			append(blob, table);
+			append(blob, keys);
+			append(blob, targets);
+			append(blob, collision);
+			blob.insert(blob.end(), tnames.begin(), tnames.end());
+			pak.add("world/" + bw.name + "/triggers", ASSET_META, blob);
+			u32 moving = 0;
+			for (const SrcTrigger& t : scene.triggers) moving += t.kind == TRG_MOVER && !t.visual.empty();
+			line(format("triggers: %u triggers, %u lists, %u script triggers, %u world starts, %u movers (%u drawn moving), %u doors (%u locked); "
+			            "%u solid (%zu triangles), %zu meshes; key rotations read %s: %u, %u the other way",
+			            counts[TRG_TRIGGER], counts[TRG_LIST], counts[TRG_SCRIPT], counts[TRG_WORLDSTART], counts[TRG_MOVER], moving,
+			            counts[TRG_DOOR], locked, solid, collision.size() / 9,
+			            visuals.size(), scene.moverConjugated >= scene.moverPlain ? "conjugated" : "as stored",
+			            std::max(scene.moverConjugated, scene.moverPlain), std::min(scene.moverConjugated, scene.moverPlain)));
+		}
+
+		// ---- the rooms (BSP sectors) ----
+		if (!scene.roomNames.empty() && !scene.roomBoxes.empty() && scene.roomNames.size() < 65535) {
+			std::vector<char> rnames;
+			std::vector<u32> offsets;
+			for (const std::string& n : scene.roomNames) {
+				offsets.push_back(u32(rnames.size()));
+				rnames.insert(rnames.end(), n.begin(), n.end());
+				rnames.push_back('\0');
+			}
+			while (rnames.size() % 4) rnames.push_back('\0');
+			std::vector<RoomBox> boxes;
+			for (const auto& b : scene.roomBoxes) {
+				RoomBox rb {};
+				for (int k = 0; k < 3; ++k) rb.bbMin[k] = b.bbMin[k], rb.bbMax[k] = b.bbMax[k];
+				rb.room = u16(b.room + 1);
+				boxes.push_back(rb);
+			}
+			RoomsHeader rh {};
+			rh.magic = ROOMS_MAGIC;
+			rh.version = ROOMS_VERSION;
+			rh.roomCount = u32(scene.roomNames.size());
+			rh.boxCount = u32(boxes.size());
+			rh.nameBytes = u32(rnames.size());
+			std::vector<u8> blob(sizeof(rh));
+			std::memcpy(blob.data(), &rh, sizeof(rh));
+			append(blob, boxes);
+			append(blob, offsets);
+			blob.insert(blob.end(), rnames.begin(), rnames.end());
+			pak.add("world/" + bw.name + "/rooms", ASSET_META, blob);
+			std::string list;
+			for (size_t i = 0; i < scene.roomNames.size() && i < 12; ++i) list += (i ? ", " : "") + scene.roomNames[i];
+			line(format("rooms: %zu (BSP sectors, %zu boxes): ", scene.roomNames.size(), boxes.size()) + list +
+			     (scene.roomNames.size() > 12 ? ", ..." : ""));
+		} else {
+			line("rooms: none in this world (no BSP sectors): nobody's house is told from the street");
 		}
 
 		// ---- the world's music zones ----

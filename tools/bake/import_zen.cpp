@@ -880,6 +880,199 @@ const std::vector<ObjectStats::TreeEmitter>& fireTree(const zenkit::Vfs& vfs, ze
 // Objects smaller than this (bounding radius, cm) are only drawn near the camera.
 const float kSmallRadius = 160.0f, kMediumRadius = 450.0f;
 
+// ---- triggers and movers ----
+
+namespace {
+
+void quatMul(const float a[4], const float b[4], float o[4]) {
+	o[0] = a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1];
+	o[1] = a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0];
+	o[2] = a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3];
+	o[3] = a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2];
+}
+
+void quatRotate(const float q[4], const float v[3], float o[3]) {
+	const float p[4] = {v[0], v[1], v[2], 0.0f};
+	const float c[4] = {-q[0], -q[1], -q[2], q[3]};
+	float t[4], r[4];
+	quatMul(q, p, t);
+	quatMul(t, c, r);
+	o[0] = r[0], o[1] = r[1], o[2] = r[2];
+}
+
+} // namespace
+
+// What a trigger or mover of the world is (OpenGothic's AbstractTrigger and its kinds). True if it is one; a mover
+// with a way to go (two keyframes or more) and a mesh is `dynamic`: it is drawn by the runtime, not baked in.
+// A mesh's triangles for colliding with (its own space), at most `max`.
+static void collisionOf(const FlatMesh& mesh, std::vector<float>& out, size_t max = 3000) {
+	for (const FlatSub& sub : mesh.subs) {
+		if (sub.material.noCollision || sub.material.water || sub.material.blend != SrcBlend::Opaque) continue;
+		for (size_t t = 0; t + 2 < sub.verts.size() && out.size() / 9 < max; t += 3)
+			for (int k = 0; k < 3; ++k)
+				for (int a = 0; a < 3; ++a) out.push_back(sub.verts[t + size_t(k)].pos[a]);
+	}
+}
+
+bool collectTrigger(const zenkit::VirtualObject& vob, SrcScene& scene, bool& dynamic, const std::function<FlatPtr(const std::string&)>& meshOf) {
+	using T = zenkit::VirtualObjectType;
+	dynamic = false;
+	SrcTrigger t;
+	t.name = upper(vob.vob_name);
+	const zenkit::Vec3 mn = vob.bbox.min, mx = vob.bbox.max;
+	const float lo[3] = {mn.x, mn.y, mn.z}, hi[3] = {mx.x, mx.y, mx.z};
+	for (int a = 0; a < 3; ++a) {
+		t.bbMin[a] = std::min(lo[a], hi[a]);
+		t.bbMax[a] = std::max(lo[a], hi[a]);
+	}
+	if (vob.type == T::zCTriggerWorldStart) {
+		const auto* w = dynamic_cast<const zenkit::VTriggerWorldStart*>(&vob);
+		if (!w || w->target.empty()) return false;
+		t.kind = TRG_WORLDSTART;
+		t.target = upper(w->target);
+		t.fireOnce = w->fire_once;
+		scene.triggers.push_back(t);
+		return true;
+	}
+	if (vob.type == T::oCMobDoor) {
+		// A door: drawn by the runtime, turned open about the end of its leaf nearest to its origin (the hinge),
+		// shut and solid at the start.
+		const auto* d = dynamic_cast<const zenkit::VDoor*>(&vob);
+		if (!d || !vob.show_visual || !vob.visual || vob.visual->name.empty()) return false;
+		const FlatPtr mesh = meshOf(upper(vob.visual->name));
+		if (!mesh || mesh->subs.empty()) return false;
+		t.kind = TRG_DOOR;
+		t.visual = stripExtension(vob.visual->name);
+		for (char& ch : t.visual) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+		t.locked = d->locked;
+		t.key = upper(d->key);
+		t.pick = upper(d->pick_string);
+		const zenkit::Vec3* c = vob.rotation.columns;
+		float rot[4];
+		quatFromColumns(c[0].x, c[0].y, c[0].z, c[1].x, c[1].y, c[1].z, c[2].x, c[2].y, c[2].z, rot);
+		t.keys.push_back({vob.position.x, vob.position.y, vob.position.z, rot[0], rot[1], rot[2], rot[3]});
+		float lo3[3] = {1e30f, 1e30f, 1e30f}, hi3[3] = {-1e30f, -1e30f, -1e30f};
+		for (const FlatSub& sub : mesh->subs)
+			for (const FlatVertex& v : sub.verts)
+				for (int a = 0; a < 3; ++a) lo3[a] = std::min(lo3[a], v.pos[a]), hi3[a] = std::max(hi3[a], v.pos[a]);
+		// The leaf lies along its longer horizontal side; the hinge is the end of it nearer the origin.
+		const int axis = (hi3[0] - lo3[0]) >= (hi3[2] - lo3[2]) ? 0 : 2;
+		t.pivot[0] = t.pivot[2] = 0.0f;
+		t.pivot[axis] = std::fabs(lo3[axis]) < std::fabs(hi3[axis]) ? lo3[axis] : hi3[axis];
+		t.pivot[2 - axis] = 0.5f * (lo3[2 - axis] + hi3[2 - axis]);
+		t.pivot[1] = lo3[1];
+		t.keys.push_back({t.pivot[0], t.pivot[1], t.pivot[2], 0, 0, 0, 1});
+		collisionOf(*mesh, t.collision);
+		t.reactTrigger = true;
+		t.startEnabled = true;
+		t.maxActivations = -1;
+		dynamic = true;
+		scene.triggers.push_back(t);
+		return true;
+	}
+	if (vob.type != T::zCTrigger && vob.type != T::zCTriggerList && vob.type != T::oCTriggerScript && vob.type != T::zCMover)
+		return false;
+	const auto* tr = dynamic_cast<const zenkit::VTrigger*>(&vob);
+	if (!tr) return false;
+	t.target = upper(tr->target);
+	t.startEnabled = tr->start_enabled;
+	t.sendUntrigger = tr->send_untrigger;
+	t.reactTrigger = tr->react_to_on_trigger;
+	t.reactTouch = tr->react_to_on_touch;
+	t.respondPc = tr->respond_to_pc;
+	t.respondNpc = tr->respond_to_npc;
+	t.maxActivations = tr->max_activation_count;
+	t.retriggerDelay = tr->retrigger_delay_sec;
+	t.fireDelay = tr->fire_delay_sec;
+	if (vob.type == T::zCTrigger) {
+		t.kind = TRG_TRIGGER;
+	} else if (vob.type == T::zCTriggerList) {
+		const auto* l = dynamic_cast<const zenkit::VTriggerList*>(&vob);
+		if (!l) return false;
+		t.kind = TRG_LIST;
+		t.listMode = int(l->mode);
+		for (const auto& x : l->targets)
+			if (!x.name.empty()) t.list.emplace_back(upper(x.name), x.delay);
+	} else if (vob.type == T::oCTriggerScript) {
+		const auto* sc = dynamic_cast<const zenkit::VTriggerScript*>(&vob);
+		if (!sc || sc->function.empty()) return false;
+		t.kind = TRG_SCRIPT;
+		t.target = upper(sc->function);
+	} else {
+		const auto* m = dynamic_cast<const zenkit::VMover*>(&vob);
+		if (!m) return false;
+		t.kind = TRG_MOVER;
+		// (OpenGothic: a mover counts its activations only to say "never" or "always".)
+		t.maxActivations = m->max_activation_count == 0 ? 0 : -1;
+		t.sendUntrigger = true; // (OpenGothic leaves a mover's at its default)
+		t.behavior = int(m->behavior);
+		t.lerp = m->lerp_mode == zenkit::MoverLerpType::LINEAR ? 1 : 0;
+		t.speedMode = int(m->speed_mode);
+		t.speed = m->speed;
+		t.stayOpen = m->stay_open_time_sec;
+		t.autoRotate = m->auto_rotate;
+		t.sfxOpenStart = upper(m->sfx_open_start);
+		t.sfxOpenEnd = upper(m->sfx_open_end);
+		t.sfxCloseStart = upper(m->sfx_close_start);
+		t.sfxCloseEnd = upper(m->sfx_close_end);
+		t.sfxMoving = upper(m->sfx_transitioning);
+		const bool hasMesh = vob.show_visual && vob.visual && !vob.visual->name.empty() && extensionOf(upper(vob.visual->name)) != "PFX" &&
+		                     extensionOf(upper(vob.visual->name)) != "TGA";
+		if (m->keyframes.size() >= 2) {
+			// The keyframes are the object's own transform at each key; the transform it is placed with may differ
+			// from the first key (OpenGothic's pos0 = placed * key0^-1, applied to every key). The files'
+			// rotations are read either way and the reading that puts key 0 nearer the placed rotation is taken.
+			const zenkit::Vec3* c = vob.rotation.columns;
+			float placedRot[4];
+			quatFromColumns(c[0].x, c[0].y, c[0].z, c[1].x, c[1].y, c[1].z, c[2].x, c[2].y, c[2].z, placedRot);
+			const zenkit::Quat& q0 = m->keyframes[0].rotation;
+			const float conj0[4] = {-q0.x, -q0.y, -q0.z, q0.w}, plain0[4] = {q0.x, q0.y, q0.z, q0.w};
+			const auto closeness = [&](const float q[4]) {
+				const float d = q[0] * placedRot[0] + q[1] * placedRot[1] + q[2] * placedRot[2] + q[3] * placedRot[3];
+				return std::fabs(d);
+			};
+			const bool conj = closeness(conj0) >= closeness(plain0);
+			++(conj ? scene.moverConjugated : scene.moverPlain);
+			const auto keyRot = [&](const zenkit::Quat& q, float out[4]) {
+				out[0] = conj ? -q.x : q.x;
+				out[1] = conj ? -q.y : q.y;
+				out[2] = conj ? -q.z : q.z;
+				out[3] = q.w;
+			};
+			float k0[4];
+			keyRot(q0, k0);
+			// pos0 = placed * key0^-1: its rotation and translation.
+			const float k0inv[4] = {-k0[0], -k0[1], -k0[2], k0[3]};
+			float r0[4];
+			quatMul(placedRot, k0inv, r0);
+			const float kp0[3] = {m->keyframes[0].position.x, m->keyframes[0].position.y, m->keyframes[0].position.z};
+			float rk[3];
+			quatRotate(r0, kp0, rk);
+			const float t0[3] = {vob.position.x - rk[0], vob.position.y - rk[1], vob.position.z - rk[2]};
+			for (const auto& k : m->keyframes) {
+				float kr[4], wr[4], wp[3];
+				keyRot(k.rotation, kr);
+				quatMul(r0, kr, wr);
+				const float kp[3] = {k.position.x, k.position.y, k.position.z};
+				quatRotate(r0, kp, wp);
+				t.keys.push_back({wp[0] + t0[0], wp[1] + t0[1], wp[2] + t0[2], wr[0], wr[1], wr[2], wr[3]});
+			}
+			if (hasMesh) {
+				t.visual = stripExtension(vob.visual->name);
+				for (char& ch : t.visual) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+				dynamic = true;
+				// Solid, as OpenGothic's MoveTrigger: when the world file says it collides.
+				if (vob.cd_static || vob.cd_dynamic)
+					if (const FlatPtr mesh = meshOf(upper(vob.visual->name))) collisionOf(*mesh, t.collision);
+			}
+		}
+	}
+	// (Nothing can be sent to a trigger without a name; one that is touched still works.)
+	if (t.name.empty() && t.kind != TRG_MOVER && !(t.reactTouch && (t.respondPc || t.respondNpc))) return false;
+	scene.triggers.push_back(t);
+	return true;
+}
+
 void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& vobs, const zenkit::Vfs& vfs,
                     zenkit::GameVersion version, std::map<std::string, FlatPtr>& cache, std::vector<ObjectInstance>& out,
                     ObjectStats& stats, SrcScene& scene) {
@@ -900,6 +1093,19 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 			// Spots are the free points of the people's routines.
 			if (vob->type == zenkit::VirtualObjectType::zCVobSpot)
 				scene.freePoints.push_back(SrcWayPoint {upper(vob->vob_name), {point.pos[0], point.pos[1], point.pos[2]}, point.yaw});
+		}
+		// Triggers and movers: a mover that moves is drawn by the runtime, not baked into the chunks.
+		{
+			bool dynamic = false;
+			const auto meshOf = [&](const std::string& visual) -> FlatPtr {
+				auto it = cache.find(visual);
+				if (it != cache.end()) return it->second;
+				std::string why;
+				FlatPtr mesh = loadVisual(vfs, visual, why);
+				cache.emplace(visual, mesh);
+				return mesh;
+			};
+			if (collectTrigger(*vob, scene, dynamic, meshOf) && dynamic) continue;
 		}
 		if (vob->type == zenkit::VirtualObjectType::oCMobLadder) {
 			SrcLadder ladder;
@@ -1205,6 +1411,8 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 			out.useItem = upper(inter->item);
 			out.target = inter->target;
 			out.rewind = inter->rewind;
+			out.owner = upper(inter->owner);
+			out.ownerGuild = upper(inter->owner_guild);
 			using T = zenkit::VirtualObjectType;
 			out.kind = vob.type == T::oCMobBed ? MOBKIND_BED
 			           : vob.type == T::oCMobFire ? MOBKIND_FIRE
@@ -3162,6 +3370,38 @@ bool importZenDialogue(std::shared_ptr<const ZenGame> game, SrcDialogue& dialogu
 	return false;
 }
 
+// The rooms: the BSP tree's sectors, each the boxes of its leaves. A leaf that two sectors claim is
+// nobody's (OpenGothic's World::roomAt asks for exactly one).
+static void collectRooms(const zenkit::BspTree& bsp, SrcScene& scene) {
+	std::map<u64, int> claims; // leaf node -> number of sectors, or -1 once two claim it
+	std::map<u64, u32> owner;
+	std::map<std::string, u32> byName;
+	for (const zenkit::BspSector& s : bsp.sectors) {
+		if (s.name.empty()) continue;
+		const std::string name = upper(s.name);
+		auto ins = byName.emplace(name, u32(scene.roomNames.size()));
+		if (ins.second) scene.roomNames.push_back(name);
+		for (u32 r : s.node_indices) {
+			if (r >= bsp.leaf_node_indices.size()) continue;
+			const u64 node = bsp.leaf_node_indices[r];
+			if (node >= bsp.nodes.size()) continue;
+			auto it = owner.find(node);
+			if (it == owner.end()) owner.emplace(node, ins.first->second);
+			else if (it->second != ins.first->second) claims[node] = -1;
+		}
+	}
+	for (const auto& [node, room] : owner) {
+		if (claims.count(node)) continue;
+		const zenkit::BspNode& n = bsp.nodes[size_t(node)];
+		SrcScene::RoomBoxSrc b;
+		b.bbMin[0] = n.bbox.min.x, b.bbMin[1] = n.bbox.min.y, b.bbMin[2] = n.bbox.min.z;
+		b.bbMax[0] = n.bbox.max.x, b.bbMax[1] = n.bbox.max.y, b.bbMax[2] = n.bbox.max.z;
+		if (!(b.bbMax[0] > b.bbMin[0] && b.bbMax[2] > b.bbMin[2])) continue;
+		b.room = room;
+		scene.roomBoxes.push_back(b);
+	}
+}
+
 void importZenWorld(std::shared_ptr<const ZenGame> game, const ZenImportOptions& opt, SrcScene& scene) {
 	const zenkit::VfsNode* node = game->vfs.find(opt.zenName);
 	if (!node) throw std::runtime_error("'" + opt.zenName + "' not found in the mounted archives");
@@ -3172,6 +3412,7 @@ void importZenWorld(std::shared_ptr<const ZenGame> game, const ZenImportOptions&
 	                      (version == zenkit::GameVersion::GOTHIC_1 ? "Gothic 1" : "Gothic 2") + ")");
 	appendMesh(world.world_mesh, opt, scene);
 	scene.indoor = world.world_bsp_tree.mode == zenkit::BspTreeType::INDOOR;
+	collectRooms(world.world_bsp_tree, scene);
 
 	// Way points first: named objects of the same name take precedence.
 	if (world.way_net) {

@@ -725,6 +725,60 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		}
 	}
 
+	// ---- those the scripts put in later ----
+	// A talk inserts a character (Wld_InsertNpc), a spell summons one (Wld_SpawnNpcRange): their looks are wanted
+	// too, or they stand there unseen. The instance is pushed as a number right before the call; every such number
+	// that names a character nobody has been made of yet is made here once, in no world, to read its look off.
+	{
+		std::set<u32> targets;
+		for (const char* n : {"WLD_INSERTNPC", "WLD_SPAWNNPCRANGE", "WLD_INSERTNPCANDRESPAWN"})
+			for (u32 i = 0; i < script.symbols.size(); ++i)
+				if (script.symbols[i].external && script.symbols[i].name == n) targets.insert(i);
+		std::set<u32> have, wanted;
+		for (u32 i = 0; i < game.npcCount(); ++i) have.insert(game.npc(i).symbol);
+		u32 recent[6] = {};
+		u32 recentCount = 0;
+		for (u32 at = 0; at < script.code.size();) {
+			const u8 op = script.code[at];
+			const u32 size = op == OP_PUSHVV ? 6u
+			                 : (op == OP_BL || op == OP_BE || op == OP_PUSHI || op == OP_PUSHV || op == OP_PUSHVI || op == OP_B ||
+			                    op == OP_BZ || op == OP_GMOVI)
+			                       ? 5u
+			                       : 1u;
+			if (at + size > script.code.size()) break;
+			u32 operand = 0;
+			if (size >= 5) std::memcpy(&operand, &script.code[at + 1], 4);
+			if (op == OP_PUSHI) {
+				recent[recentCount % 6] = operand;
+				++recentCount;
+			} else if (op == OP_BE) {
+				if (targets.count(operand))
+					for (u32 k = 0; k < 6 && k < recentCount; ++k) {
+						const u32 sym = recent[k];
+						if (sym < script.symbols.size() && script.symbols[sym].type == SCRIPT_INSTANCE && script.symbols[sym].isConst &&
+						    !have.count(sym))
+							wanted.insert(sym);
+					}
+				recentCount = 0;
+			} else if (op == OP_BL || op == OP_RSR) {
+				recentCount = 0;
+			}
+			at += size;
+		}
+		const u32 before = game.npcCount();
+		std::string list;
+		u32 made = 0;
+		for (u32 sym : wanted) {
+			if (game.probeNpc(sym) == SCRIPT_NONE) continue; // (not a character: an item, a number that happens to be one)
+			if (made < 12) list += (made ? ", " : "") + script.symbols[sym].name;
+			++made;
+		}
+		line(format("characters the scripts put in later (talks, summoning): %u kinds not in any world at the start, made to "
+		            "read their looks (%u characters before): ",
+		            made, before) +
+		     (list.empty() ? std::string("none") : list) + (made > 12 ? ", ..." : ""));
+	}
+
 	// ---- what they look like ----
 	std::map<u32, Look> looks;
 	for (u32 i = 0; i < game.npcCount(); ++i) {
@@ -823,6 +877,10 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	std::set<std::string> rigNames = aniNames;
 	size_t fightNames = 0;
 	for (const std::string& name : fightClipNames(false)) fightNames += rigNames.insert(name).second;
+	// Archers and mages among them: the bow and the magic stance, aiming, shooting, casting (what a skeleton does not
+	// declare is passed over - creatures have none of it).
+	for (const std::string& name : bowClipNames()) fightNames += rigNames.insert(name).second;
+	for (const std::string& name : magicClipNames()) fightNames += rigNames.insert(name).second;
 	// Things in the hands (AI_UseItem, AI_UseItemToState): the animations of
 	// every scheme the scripts' items have ("T_FOOD_STAND_2_S0", "S_FOOD_S0",
 	// "T_FOOD_RANDOM_1"), and picking a thing up from the ground (AI_TakeItem).
@@ -1198,6 +1256,11 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		for (u32 sym = 0; sym < game.vm().symbolCount(); ++sym)
 			if (game.isItem(sym))
 				if (const GameItemInfo* info = game.itemInfo(sym)) visuals.emplace(game.text(info->visual), 0u);
+		// The movers' meshes (gates, lifts) are drawn the same way: "model/item.<visual>", no picture.
+		std::set<std::string> moverOnly;
+		for (const auto& bw : worlds)
+			for (const SrcTrigger& t : bw.scene.triggers)
+				if ((t.kind == TRG_MOVER || t.kind == TRG_DOOR) && !t.visual.empty() && visuals.emplace(t.visual, 0u).second) moverOnly.insert(t.visual);
 		size_t baked = 0, itemTriangles = 0, icons = 0;
 		std::map<std::string, std::string> missing;
 		const u64 itemBytesBefore = pak.rawBytes(ASSET_MODEL), iconBytesBefore = pak.rawBytes(ASSET_META);
@@ -1211,7 +1274,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				}
 				m.clips.clear();
 				m.name = "item." + visual;
-				const std::vector<u8> icon = renderItemIcon(m, ITEMICON_SIZE);
+				const std::vector<u8> icon = moverOnly.count(visual) ? std::vector<u8>() : renderItemIcon(m, ITEMICON_SIZE);
 				if (!icon.empty()) {
 					pak.add("icon/" + visual, ASSET_META, icon);
 					++icons;

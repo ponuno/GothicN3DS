@@ -128,6 +128,7 @@ void App::mobEnd(bool hurried) {
 void App::mobUpdate(Input& in, float dt) {
 	const int hi = heroIndex();
 	_mobTarget = -1;
+	_doorTarget = -1;
 	if (_mobJob.stage == MJ_NONE) {
 		if (hi < 0 || !_hero.loaded() || _hero.down() || _hero.weapon() != WEAPON_NONE || _hero.drawing() || _job.stage != JOB_NONE ||
 		    _chest.stage != CH_NONE || _panel.open() || _player.swimming || _player.climbing || _hero.mantling() ||
@@ -136,6 +137,12 @@ void App::mobUpdate(Input& in, float dt) {
 		_mobTarget = mobNearest();
 		if (_mobTarget >= 0 && (in.confirm || in.attack)) {
 			if (mobStart(u32(_mobTarget))) in.confirm = in.attack = false;
+		}
+		// A door in front (and nobody to talk to there): A opens or shuts it.
+		_doorTarget = _mobTarget < 0 && _talkTarget < 0 ? _triggers.doorNear(_player.feet, _hero.yaw()) : -1;
+		if (_doorTarget >= 0 && (in.confirm || in.attack)) {
+			doorUse(u32(_doorTarget));
+			in.confirm = in.attack = false;
 		}
 		return;
 	}
@@ -159,6 +166,9 @@ void App::mobUpdate(Input& in, float dt) {
 			if (_hero.openMob(mobs.scheme(_mobJob.mob), mobs.mob(_mobJob.mob).states, _mobJob.slotKind)) {
 				_mobJob.stage = MJ_IN;
 				_mobJob.time = 0;
+				_npcs.heroUsesMob(int(_mobJob.mob)); // (PERC_ASSESSUSEMOB: whose bench, whose anvil)
+				// What it sets going (a lever's gate, a wheel's drawbridge): OpenGothic's Interactive::emitTriggerEvent.
+				if (mi.target) _triggers.send(mobs.infoText(mi.target), false);
 			} else {
 				itemMessage(tr("Сейчас нельзя"));
 				mobs.drop(u32(hi));

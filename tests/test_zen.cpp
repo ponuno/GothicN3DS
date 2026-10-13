@@ -1110,7 +1110,7 @@ void checkScripts(std::shared_ptr<const ZenGame> game, const fs::path& dir, bool
 	CHECK(said("SND_PLAY x1") && said("0 complaints, 0 calls given up"));
 	CHECK(said("5 characters with 4 different looks; models for 3 of them (3 characters): 2 skeletons with 10 animations"));
 	// The scripts name one animation, and the skeleton that has it got it.
-	CHECK(said("animations: the scripts name or imply 1, and using the things they name takes 6 families more; fighting 105 more; "
+	CHECK(said("animations: the scripts name or imply 1, and using the things they name takes 6 families more; fighting 346 more; "
 	           "baked per skeleton: "
 	           "fix_hero 5, fix_hero3 5"));
 	// The things to use reach the archive, and the report says which the scripts know.

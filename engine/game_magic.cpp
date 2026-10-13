@@ -3,6 +3,7 @@
 // drive casting with (Spell_ProcessMana and Spell_ProcessMana_Release). How OpenGothic runs it:
 // GameScript::invokeMana, spellDesc, spellVfx; Npc::beginCastSpell and tickCast.
 #include "game.h"
+#include "fight.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -149,6 +150,44 @@ void Game::xLastHitSpellCat(ScriptVm& vm, void* user) {
 	const GameNpc* n = g.npcOf(vm.popInstance());
 	const GameSpell* sp = n && n->lastHitSpell >= 0 ? g.spellInfo(n->lastHitSpell) : nullptr;
 	vm.pushInt(sp ? sp->spellType : 1);
+}
+
+u32 Game::spellItemOf(u32 npc, i32 spell) {
+	if (npc >= _npcCount || spell < 0) return SCRIPT_NONE;
+	const i32 rune = constant("ITEM_KAT_RUNE", 1 << 9);
+	for (u32 i = 0; i < _itemCount; ++i) {
+		const GameItem& st = _items[i];
+		if (st.npc != npc || st.count <= 0) continue;
+		const GameItemInfo* it = itemInfo(st.symbol);
+		if (it && (it->mainflag & rune) && it->spell == spell) return st.symbol;
+	}
+	return SCRIPT_NONE;
+}
+
+u8 Game::rangedModeOf(u32 npc, bool withAmmo) {
+	if (npc >= _npcCount || _npcs[npc].ranged == SCRIPT_NONE) return WEAPON_NONE;
+	const GameItemInfo* it = itemInfo(_npcs[npc].ranged);
+	if (!it) return WEAPON_NONE;
+	if (withAmmo && (it->munition < 0 || itemCount(npc, u32(it->munition)) <= 0)) return WEAPON_NONE;
+	return (it->flags & constant("ITEM_CROSSBOW", 1 << 20)) ? WEAPON_CBOW : WEAPON_BOW;
+}
+
+u32 Game::bestRanged(u32 npc) {
+	if (npc >= _npcCount) return SCRIPT_NONE;
+	const i32 far = constant("ITEM_KAT_FF", 1 << 2);
+	u32 best = SCRIPT_NONE;
+	i32 bestDamage = -1;
+	for (u32 i = 0; i < _itemCount; ++i) {
+		const GameItem& st = _items[i];
+		if (st.npc != npc || st.count <= 0) continue;
+		const GameItemInfo* it = itemInfo(st.symbol);
+		if (!it || !(it->mainflag & far)) continue;
+		if (it->damageTotal > bestDamage) {
+			bestDamage = it->damageTotal;
+			best = st.symbol;
+		}
+	}
+	return best;
 }
 
 } // namespace g3

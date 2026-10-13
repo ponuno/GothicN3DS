@@ -140,6 +140,113 @@ struct WorldLadder {
 };
 static_assert(sizeof(WorldLadder) == 24, "WorldLadder layout");
 
+// "world/<name>/rooms" (optional): the world's rooms - the sectors of its BSP
+// tree (a hut, a house, a hall), as the scripts know them by name
+// (Wld_AssignRoomToGuild, Wld_GetPlayerPortalGuild). A room is the boxes of
+// the BSP leaves that belong to it and to no other sector (OpenGothic's
+// World::roomAt); a point in none of them is outside.
+//   RoomsHeader | RoomBox[boxCount] | u32 nameOffset[roomCount] | char names[nameBytes] (padded to 4)
+// Rooms are numbered from 1 (0: outside); names are upper case.
+constexpr u32 ROOMS_MAGIC = fourcc('G', '3', 'R', 'M');
+constexpr u32 ROOMS_VERSION = 1;
+
+struct RoomsHeader {
+	u32 magic;
+	u32 version;
+	u32 roomCount;
+	u32 boxCount;
+	u32 nameBytes;
+	u32 reserved[3];
+};
+static_assert(sizeof(RoomsHeader) == 32, "RoomsHeader layout");
+
+struct RoomBox {
+	float bbMin[3];
+	float bbMax[3];
+	u16 room; // 1..roomCount
+	u16 reserved;
+};
+static_assert(sizeof(RoomBox) == 28, "RoomBox layout");
+
+// "world/<name>/triggers" (optional): the world's triggers and movers, as ZenGin (and OpenGothic's
+// world/triggers) has them. An event goes by name to every trigger of that name; a trigger sends its own on to
+// its target. A mover (a gate, a lift, a drawbridge) moves its mesh ("model/item.<visual>") between its
+// keyframes when it is triggered; it is no part of the chunks then.
+//   TriggersHeader | WorldTrigger[count] | MoverKey[keyCount] | TriggerTarget[targetCount] |
+//   float collision[collisionTris * 9] (version 2) | char names[nameBytes] (padded to 4)
+// A door (TRG_DOOR, version 2) has two keys: its place (closed), and in the second key's position the point it
+// turns about (its own space); its key item and combination are `target` and `sfx[0]`.
+constexpr u32 TRIGGERS_MAGIC = fourcc('G', '3', 'T', 'R');
+constexpr u32 TRIGGERS_VERSION = 2; // (1 is read too: no collision, no doors)
+
+enum TriggerKind : u8 {
+	TRG_TRIGGER = 1,    // zCTrigger: sends its target on (touched or triggered)
+	TRG_LIST = 2,       // zCTriggerList: several targets, with delays (all, the next, a random one)
+	TRG_SCRIPT = 3,     // oCTriggerScript: calls a script function (WorldTrigger::target)
+	TRG_WORLDSTART = 4, // zCTriggerWorldStart: sends its target when the world is entered
+	TRG_MOVER = 5,      // zCMover
+	TRG_DOOR = 6,       // oCMobDoor: the player opens and shuts it (and the inhabitants walking through)
+};
+
+enum TriggerFlags : u16 {
+	TRGF_START_ENABLED = 1 << 0,
+	TRGF_SEND_UNTRIGGER = 1 << 1,
+	TRGF_REACT_TRIGGER = 1 << 2,
+	TRGF_REACT_TOUCH = 1 << 3,
+	TRGF_RESPOND_PC = 1 << 4,
+	TRGF_RESPOND_NPC = 1 << 5,
+	TRGF_FIRE_ONCE = 1 << 6,   // a world start: only the first time the world is entered
+	TRGF_AUTO_ROTATE = 1 << 7, // a mover: turned along its way
+	TRGF_COLLIDES = 1 << 8,    // a mover or door: the player cannot pass through it (its triangles: collFirst, collCount)
+	TRGF_LOCKED = 1 << 9,      // a door: locked
+};
+
+struct TriggersHeader {
+	u32 magic;
+	u32 version;
+	u32 count;
+	u32 keyCount;
+	u32 targetCount;
+	u32 nameBytes;
+	u32 collisionTris; // version 2
+	u32 reserved;
+};
+static_assert(sizeof(TriggersHeader) == 32, "TriggersHeader layout");
+
+struct WorldTrigger {
+	u8 kind;      // TriggerKind
+	u8 behavior;  // a mover: 0 toggle, 1 trigger control, 2 open timed, 3 loop, 4 single keys; a list: 0 all, 1 next, 2 random
+	u16 flags;    // TriggerFlags
+	u32 name;     // offset into names (upper case)
+	u32 target;   // offset into names: the target (upper case), or the script function
+	u32 visual;   // offset into names: a mover's mesh (lower case, no extension), 0: none
+	i32 maxActivations; // -1: no limit
+	float retriggerDelay, fireDelay; // seconds
+	float bbMin[3], bbMax[3];
+	u32 first;    // a mover: its first key; a list: its first target
+	u16 count;    // ... and how many
+	u8 speedMode; // a mover: zenkit::MoverSpeedType
+	u8 lerp;      // a mover: 0 curve, 1 linear
+	float speed;  // a mover: cm per millisecond (rotations: see the runtime)
+	float stayOpen; // a mover: seconds an "open timed" one stays open
+	u32 sfx[5];   // a mover's sounds: open start, open end, close start, close end, moving (offsets; 0: none)
+	u32 collFirst; // its collision triangles (TRGF_COLLIDES)
+	u32 collCount;
+};
+static_assert(sizeof(WorldTrigger) == 96, "WorldTrigger layout");
+
+struct MoverKey {
+	float pos[3];
+	float rot[4]; // x y z w, rotating column vectors (world)
+};
+static_assert(sizeof(MoverKey) == 28, "MoverKey layout");
+
+struct TriggerTarget {
+	u32 name;    // offset into names
+	float delay; // seconds
+};
+static_assert(sizeof(TriggerTarget) == 8, "TriggerTarget layout");
+
 struct ChunkInfo {
 	float bbMin[3];
 	float bbMax[3];

@@ -6,6 +6,7 @@
 #include "hero.h"
 #include "inventory.h"
 #include "loot.h"
+#include "triggers.h"
 #include "particles.h"
 #include "shadows.h"
 #include "menu.h"
@@ -244,6 +245,7 @@ public:
 	u32 boltCount() const;
 	struct MagicStats {
 		u32 casts = 0;     // spells let go
+		u32 teleports = 0; // the scripts sent the player somewhere (AI_Teleport)
 		u32 bolts = 0;     // projectiles shot
 		u32 hits = 0;      // projectiles that struck somebody
 		u32 noMana = 0;    // casts refused for want of mana
@@ -363,6 +365,7 @@ private:
 		u8 level = 0;
 		u32 fx = 0;
 		u32 fxCollide = 0;
+		int owner = -1;           // who shot it (Game's index); -1: the player's character
 	};
 	static constexpr u32 MAX_BOLTS = 8;
 	// Bow and crossbow: A held aims, let go shoots (then reloads).
@@ -388,6 +391,10 @@ private:
 	void boltShoot(const GameSpell& sp, i32 spell, i32 level);
 	void boltUpdate(float dt);
 	void boltImpact(Bolt& b, int victim, Vec3 at);
+	// An inhabitant shoots (Npcs::ShotHook): an arrow of its bow (`spell` < 0) or a spell, at `target`.
+	static bool npcShotThunk(void* user, u32 shooter, int target, i32 spell, i32 level);
+	bool npcShot(u32 shooter, int target, i32 spell, i32 level);
+	Bolt* freeBolt();
 	Vec3 handPos() const;
 	u32 nextSpell(int dir) const;
 	Cast _cast;
@@ -557,6 +564,12 @@ private:
 	InventoryView _inv;
 	InventoryPanel _panel;
 	Loot _loot;
+	Triggers _triggers; // gates, lifts and the triggers that move them (triggers.h)
+	static void triggerSoundThunk(void* user, const char* name, Vec3 at);
+public:
+	const Triggers& triggers() const { return _triggers; }
+	Triggers& triggers() { return _triggers; }
+private:
 	Particles _particles;
 	Shadows _shadows;
 	int _lootTarget = -1;
@@ -574,6 +587,7 @@ private:
 		int corpse = -1;     // a dead character's index when it is a body that is searched (then `index` is unused)
 		bool shown = false;  // the chest page has been put up (closing it ends the use)
 		char news[64] = ""; // the lock page's line (a pick broke)
+		int door = -1;      // a door's lock being picked (Triggers' index), not a chest's
 	};
 	ChestJob _chest;
 	// The world's things the player uses (interact.cpp): benches, beds, the grindstone, fires, levers ...
@@ -591,6 +605,8 @@ private:
 	enum MobStage : u8 { MJ_NONE, MJ_GLIDE, MJ_IN, MJ_HELD, MJ_OUT };
 	MobJob _mobJob;
 	int _mobTarget = -1;
+	int _doorTarget = -1; // the door in front (Triggers' index), -1: none
+	void doorUse(u32 door);
 	void mobUpdate(Input& in, float dt);
 	int mobNearest() const;
 	bool mobStart(u32 mob);

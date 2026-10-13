@@ -595,6 +595,72 @@ func void ProbeHeight() { probe_height = Npc_GetHeightToNpc(self, self); };
 	CHECK(other.restore(source) && other.day() == 1);
 }
 
+// Summoned and inserted later: made at a character, kept in a save and made again by it; rooms of guilds.
+static void testLateAndRooms() {
+	SrcScript src;
+	compileDaedalus(std::string(syntheticScriptSource()), src);
+	ScriptBakeResult baked;
+	const std::vector<u8> image = bakeScript(src, baked);
+	SynthOptions so;
+	so.cells = 48;
+	SrcScene world;
+	buildSyntheticScene(so, world);
+	const Game::PointFinder find = [](void* user, const char* name, float pos[3], float& yaw) {
+		const SrcScene& scene = *static_cast<const SrcScene*>(user);
+		std::string up = name;
+		for (char& c : up) c = char(std::toupper(static_cast<unsigned char>(c)));
+		const auto it = scene.points.find(up);
+		if (it == scene.points.end()) return false;
+		std::copy_n(it->second.pos, 3, pos);
+		yaw = it->second.yaw;
+		return true;
+	};
+	const auto adopt = [&](Game& g) {
+		u8* blob = static_cast<u8*>(std::malloc(image.size()));
+		std::memcpy(blob, image.data(), image.size());
+		return g.adopt(blob, u32(image.size()));
+	};
+	Game game;
+	game.setQuiet(true);
+	CHECK(adopt(game));
+	game.enterWorld("WORLD", 8.0f, find, &world);
+	const u32 before = game.npcCount();
+	for (u32 i = 0; i < before; ++i) CHECK(!game.npc(i).late);
+	const u32 hero = game.heroIndex();
+	const float at[3] = {100.0f, 0.0f, 200.0f};
+	game.setHeroPlace(at, 0.0f);
+	const u32 molerat = game.vm().find("MOLERAT");
+	CHECK(molerat != SCRIPT_NONE);
+	const u32 first = game.spawnNear(molerat, hero, 2);
+	CHECK(first == before && game.npcCount() == before + 2);
+	if (first != before) return;
+	const GameNpc& m = game.npc(first);
+	CHECK(m.late && m.spawned && m.placed && m.world == game.currentWorld());
+	CHECK(std::fabs(m.pos[2] - 300.0f) < 1.0f && std::fabs(m.pos[0] - 100.0f) < 1.0f);
+	// A new minute: the summoned stays where it was put.
+	game.setTime(9.0f, find, &world);
+	CHECK(game.npc(first).placed && std::fabs(game.npc(first).pos[2] - 300.0f) < 1.0f);
+	// Rooms: the guild given to a room, -1 outside, GIL_NONE for a room nobody was given.
+	CHECK(game.roomGuild(0) == -1 && game.roomGuild(hashName("HUT")) == 0);
+	CHECK(!game.setRoom(hero, 0) && game.setRoom(hero, hashName("HUT")) && game.heroRoom() == hashName("HUT") && game.heroFormerRoom() == 0);
+	// A save keeps them; the loading game makes them again.
+	ByteSink sink;
+	game.save(sink);
+	CHECK(!sink.failed);
+	Game other;
+	other.setQuiet(true);
+	CHECK(adopt(other));
+	other.enterWorld("WORLD", 8.0f, find, &world);
+	CHECK(other.npcCount() == before);
+	ByteSource source(sink.data, sink.size);
+	CHECK(other.restore(source));
+	CHECK(other.npcCount() == before + 2);
+	if (other.npcCount() == before + 2) {
+		const GameNpc& r = other.npc(before);
+		CHECK(r.symbol == molerat && r.late && r.spawned && r.placed && std::fabs(r.pos[2] - 300.0f) < 1.0f);
+	}
+}
+
 // The game layer on the built-in script: who is where, wearing what.
 static void testGame() {
 	// The built-in script, plus a world whose start-up names a place nobody has.
@@ -923,7 +989,7 @@ int main(int argc, char** argv) {
 		const char* name;
 		void (*fn)();
 	} tests[] = {{"basics", testBasics}, {"compiler errors", testCompilerErrors}, {"objects", testObjects}, {"broken images", testBrokenImages}, {"synthetic script", testSyntheticScript},
-	             {"game", testGame}, {"docs and clock", testDocsAndClock},
+	             {"game", testGame}, {"docs and clock", testDocsAndClock}, {"late and rooms", testLateAndRooms},
 #ifdef G3DS_WITH_ZENKIT
 	             {"against the reference", testAgainstReference},
 #endif

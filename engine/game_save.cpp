@@ -16,6 +16,15 @@ namespace {
 
 constexpr u32 SAVE_VERSION = 1;
 constexpr u32 MAX_STRING_MEMBERS = 96;
+constexpr u32 LATE_MAGIC = 0x4554414Cu; // "LATE"
+
+// The flags at the end of a character's record (0 for a record of an older save).
+u8 lateFlags(const ByteSource& r) {
+	if (r.size < 5) return 0;
+	u32 magic;
+	memcpy(&magic, r.data + r.size - 5, 4);
+	return magic == LATE_MAGIC ? r.data[r.size - 1] : u8(0);
+}
 
 template <class T> bool growTo(T*& items, u32& cap, u32 need, u32 first) {
 	if (need <= cap) return true;
@@ -111,6 +120,9 @@ void Game::save(ByteSink& out) const {
 				}
 		for (i16 t : n.talent) r.u16v(u16(t));
 		for (i16 t : n.skill) r.u16v(u16(t));
+		// Last (an older save's record ends before it): made after the start-up, summoned.
+		r.u32v(LATE_MAGIC);
+		r.u8v(u8((n.late ? 1 : 0) | (n.spawned ? 2 : 0)));
 		out.block(r);
 	}
 
@@ -142,6 +154,20 @@ void Game::save(ByteSink& out) const {
 	out.u32v(_chapter.serial);
 	// The day (Wld_GetDay). After the chapter, so that a save without it still reads.
 	out.i32v(_day);
+	// The rooms' guilds (Wld_AssignRoomToGuild): after the day, for the same reason.
+	out.u32v(_roomGuildCount);
+	for (u32 i = 0; i < _roomGuildCount; ++i) {
+		out.u16v(_roomGuilds[i].world);
+		out.u32v(_roomGuilds[i].hash);
+		out.i32v(_roomGuilds[i].guild);
+	}
+	// What the worlds' triggers keep (gates open, triggers used up).
+	out.u32v(_triggerKeptCount);
+	for (u32 i = 0; i < _triggerKeptCount; ++i) {
+		out.u16v(_triggerKept[i].world);
+		out.u32v(_triggerKept[i].index);
+		out.u32v(_triggerKept[i].value);
+	}
 }
 
 bool Game::restore(ByteSource& in) {
@@ -165,6 +191,19 @@ bool Game::restore(ByteSource& in) {
 		ByteSource head = r; // (a copy: read the key, keep r whole)
 		const u32 symbol = head.u32v(), ordinal = head.u32v();
 		int found = -1;
+		const u8 flags = lateFlags(r);
+		if (flags & 1) {
+			// Made after the start-up: it is made again (the start-up does not).
+			const u32 made = addNpc(symbol, false);
+			if (made != SCRIPT_NONE) {
+				r.u32v();
+				r.u32v();
+				restoreNpc(made, r);
+				_npcs[made].late = true;
+				_npcs[made].spawned = (flags & 2) != 0;
+			}
+			continue;
+		}
 		u32 seen = 0;
 		for (u32 i = 0; i < _npcCount; ++i)
 			if (_npcs[i].symbol == symbol) {
@@ -230,6 +269,30 @@ bool Game::restore(ByteSource& in) {
 	if (c.serial < _chapter.serial) c.serial = _chapter.serial;
 	if (!in.bad) _chapter = c;
 	if (in.pos + 4 <= in.size) _day = in.i32v(); // (older saves end here)
+	if (in.pos + 4 <= in.size) {
+		const u32 rooms = in.u32v();
+		if (rooms <= 65536 && in.left() >= size_t(rooms) * 10 && growTo(_roomGuilds, _roomGuildCap, rooms, 64)) {
+			_roomGuildCount = 0;
+			for (u32 i = 0; i < rooms; ++i) {
+				RoomGuild r;
+				r.world = in.u16v();
+				r.hash = in.u32v();
+				r.guild = in.i32v();
+				_roomGuilds[_roomGuildCount++] = r;
+			}
+		}
+	}
+	if (in.pos + 4 <= in.size) {
+		const u32 kept = in.u32v();
+		if (kept <= (1u << 20) && in.left() >= size_t(kept) * 10) {
+			_triggerKeptCount = 0;
+			for (u32 i = 0; i < kept; ++i) {
+				const u16 world = in.u16v();
+				const u32 index = in.u32v(), value = in.u32v();
+				setTriggerState(world, index, value);
+			}
+		}
+	}
 	++_itemsVersion;
 	return !in.bad;
 }

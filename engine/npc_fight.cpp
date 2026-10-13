@@ -69,7 +69,13 @@ void Npcs::bindFight() {
 		ScriptVm::External fn;
 	} table[] = {{"AI_ATTACK", xAttack},
 	             {"AI_READYMELEEWEAPON", xReadyMelee},
-	             {"AI_READYRANGEDWEAPON", xReadyMelee}, // (no bows yet: the melee weapon)
+	             {"AI_READYRANGEDWEAPON", xReadyRanged},
+	             {"AI_READYSPELL", xReadySpell},
+	             {"AI_UNREADYSPELL", xUnreadySpell},
+	             {"NPC_ISDRAWINGSPELL", xIsDrawingSpell},
+	             {"NPC_HASSPELL", xHasSpell},
+	             {"NPC_GETACTIVESPELLISSCROLL", xSpellIsScroll},
+	             {"NPC_SETACTIVESPELLINFO", xSetSpellInfo},
 	             {"AI_DRAWWEAPON", xDrawWeapon},
 	             {"AI_REMOVEWEAPON", xRemoveWeapon},
 	             {"AI_EQUIPBESTMELEEWEAPON", xEquipBestMelee},
@@ -82,9 +88,202 @@ void Npcs::bindFight() {
 	             {"NPC_ISNEXTTARGETAVAILABLE", xIsNextTargetAvailable},
 	             {"AI_POINTATNPC", xNoAction},
 	             {"AI_STOPPOINTAT", xNoAction},
-	             {"AI_EQUIPBESTRANGEDWEAPON", xNoAction},
+	             {"AI_EQUIPBESTRANGEDWEAPON", xEquipBestRanged},
 	             {"AI_STOPAIM", xNoAction}};
 	for (const auto& e : table) vm.bind(e.name, e.fn, this);
+}
+
+// ---- bows and spells ----
+
+// How far a shot reaches (OpenGothic's FightAlgo::weaponRange: the reference bow range of the game, the magic
+// focus range).
+float Npcs::rangedReach(const GameNpc& n) const {
+	if (n.weapon == WEAPON_MAG) return 3500.0f;
+	return _game.isGothic2() ? 1500.0f : 2000.0f;
+}
+
+// Aim and shoot (a bow: "S_BOWSHOOT"; a spell: "T_MAGRUN_2_<letters>SHOOT"); the shot leaves part of the way in
+// (tickFight). A bow is reloaded after it.
+bool Npcs::startShot(NpcActor& a) {
+	GameNpc& n = _game.npcMut(a.npc);
+	const Clip* c = nullptr;
+	float share = 0.4f;
+	if (n.weapon == WEAPON_MAG) {
+		const GameSpell* sp = n.spell >= 0 ? _game.spellInfo(n.spell) : nullptr;
+		if (sp && sp->letters[0]) {
+			char name[40];
+			static const char* const kCastClips[4] = {"T_MAGRUN_2_%sSHOOT", "S_%sSHOOT", "T_MAGRUN_2_%sCAST", "S_%sCAST"};
+			for (const char* f : kCastClips) {
+				snprintf(name, sizeof(name), f, sp->letters);
+				if ((c = clip(a, name)) != nullptr) break;
+			}
+		}
+		share = 0.6f;
+	} else {
+		c = weaponClip(a, "S_%sSHOOT");
+		if (!c) c = weaponClip(a, "S_%sAIM");
+	}
+	const float length = c ? c->duration() : 0.6f;
+	if (c) {
+		a.anim.play(c, 0.1f);
+		a.carried = false;
+		a.shotClip = c;
+		a.shotAt = length * share;
+	} else {
+		fireShot(a); // (no animation for it: it goes off at once)
+	}
+	a.phase = NpcActor::PLAYING;
+	// The shot, and a pause to draw the next arrow / to gather the next spell.
+	float after = n.weapon == WEAPON_MAG ? 0.8f : 0.5f;
+	if (n.weapon != WEAPON_MAG)
+		if (const Clip* r = weaponClip(a, "T_%sRELOAD")) after = r->duration();
+	a.faiWait = length + after;
+	return true;
+}
+
+void Npcs::fireShot(NpcActor& a) {
+	GameNpc& n = _game.npcMut(a.npc);
+	const int target = n.target;
+	if (n.weapon == WEAPON_MAG) {
+		const GameSpell* sp = n.spell >= 0 ? _game.spellInfo(n.spell) : nullptr;
+		if (!sp) return;
+		// The scripts are asked as for the player (Spell_ProcessMana), quickly: the spell is charged as far as
+		// they let it (and its other effects - a summoning, a healing - happen there), mana is paid per point.
+		i32 invested = 0, level = 1;
+		bool cast = !sp->shoots; // (a spell that does its work through the scripts needs no projectile)
+		for (int k = 0; k < 16; ++k) {
+			const i32 code = _game.processMana(a.npc, target, invested, false);
+			const i32 mana = _game.attributeOf(n, 2);
+			if (mana > 0) _game.setAttribute(n, 2, mana - 1);
+			if (code == _game.constant("SPL_SENDCAST", 2)) {
+				cast = true;
+				break;
+			}
+			if (code == _game.constant("SPL_SENDSTOP", 3)) return;
+			if (code == _game.constant("SPL_NEXTLEVEL", 4)) ++level;
+			else if (code == _game.constant("SPL_DONTINVEST", 0)) {
+				cast = true;
+				break;
+			}
+			++invested;
+			if (_game.attributeOf(n, 2) <= 0) {
+				cast = true;
+				break;
+			}
+		}
+		if (!cast) return;
+		n.spellLevel = u8(level > 15 ? 15 : level);
+		++_spellsCast;
+		if (sp->shoots && _shotHook.fire) _shotHook.fire(_shotHook.user, a.npc, target, n.spell, level);
+		if (!sp->shoots && target >= 0 && u32(target) < _game.npcCount()) {
+			_game.npcMut(u32(target)).lastHitSpell = n.spell;
+			perceiveSingle(u32(target), "PERC_ASSESSMAGIC", int(a.npc));
+		}
+		// A scroll is used up.
+		const u32 item = _game.spellItemOf(a.npc, n.spell);
+		const GameItemInfo* it = item != SCRIPT_NONE ? _game.itemInfo(item) : nullptr;
+		if (it && (it->flags & _game.constant("ITEM_MULTI", 1 << 21))) _game.giveItems(a.npc, item, -1);
+		return;
+	}
+	const GameItemInfo* bow = n.ranged != SCRIPT_NONE ? _game.itemInfo(n.ranged) : nullptr;
+	if (!bow || bow->munition < 0 || _game.itemCount(a.npc, u32(bow->munition)) <= 0) return;
+	if (_shotHook.fire && _shotHook.fire(_shotHook.user, a.npc, target, -1, 0)) {
+		_game.giveItems(a.npc, u32(bow->munition), -1);
+		++_shotsFired;
+	}
+}
+
+// AI_ReadyRangedWeapon(npc): the bow or crossbow, if it has one and arrows for it; else the melee weapon.
+void Npcs::xReadyRanged(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const int who = self.npcFor(vm.popInstance());
+	NpcActor* a = who >= 0 ? self.actorByNpc(u32(who)) : nullptr;
+	if (!a || !self._cfg.alive) return;
+	NpcAction act;
+	act.kind = NPC_ACT_DRAW;
+	const u8 mode = self._game.rangedModeOf(u32(who), true);
+	act.i = mode != WEAPON_NONE ? mode : u8(WEAPON_NONE);
+	self.push(a, act);
+}
+
+void Npcs::xEquipBestRanged(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const int who = self.npcFor(vm.popInstance());
+	if (who < 0) return;
+	const u32 best = self._game.bestRanged(u32(who));
+	if (best != SCRIPT_NONE) self._game.equip(u32(who), best);
+}
+
+// AI_ReadySpell(npc, spell, mana): the magic stance with that spell (OpenGothic: aiReadySpell).
+void Npcs::xReadySpell(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const i32 mana = vm.popInt();
+	const i32 spell = vm.popInt();
+	const int who = self.npcFor(vm.popInstance());
+	NpcActor* a = who >= 0 ? self.actorByNpc(u32(who)) : nullptr;
+	if (!a || mana <= 0 || spell < 0 || !self._game.spellInfo(spell) || !self._cfg.alive) return;
+	GameNpc& n = self._game.npcMut(u32(who));
+	if (n.weapon == WEAPON_MAG) {
+		n.spell = i16(spell);
+		return;
+	}
+	NpcAction act;
+	act.kind = NPC_ACT_DRAW;
+	act.i = WEAPON_MAG;
+	act.fn = u32(spell + 1);
+	self.push(a, act);
+}
+
+void Npcs::xUnreadySpell(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const int who = self.npcFor(vm.popInstance());
+	NpcActor* a = who >= 0 ? self.actorByNpc(u32(who)) : nullptr;
+	if (!a || self._game.npc(u32(who)).weapon != WEAPON_MAG) return;
+	NpcAction act;
+	act.kind = NPC_ACT_UNDRAW;
+	self.push(a, act);
+}
+
+// Npc_IsDrawingSpell(npc): the rune (or scroll) in hand, its instance; 0 for none.
+void Npcs::xIsDrawingSpell(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const int who = self.npcFor(vm.popInstance());
+	i32 item = 0;
+	if (who >= 0) {
+		const GameNpc& n = self._game.npc(u32(who));
+		if (n.weapon == WEAPON_MAG && n.spell >= 0) {
+			const u32 it = self._game.spellItemOf(u32(who), n.spell);
+			if (it != SCRIPT_NONE) item = i32(it);
+		}
+	}
+	vm.pushInt(item);
+}
+
+void Npcs::xHasSpell(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const i32 spell = vm.popInt();
+	const int who = self.npcFor(vm.popInstance());
+	vm.pushInt(who >= 0 && self._game.spellItemOf(u32(who), spell) != SCRIPT_NONE);
+}
+
+void Npcs::xSpellIsScroll(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const int who = self.npcFor(vm.popInstance());
+	bool scroll = false;
+	if (who >= 0) {
+		const GameNpc& n = self._game.npc(u32(who));
+		const u32 it = n.spell >= 0 ? self._game.spellItemOf(u32(who), n.spell) : SCRIPT_NONE;
+		const GameItemInfo* info = it != SCRIPT_NONE ? self._game.itemInfo(it) : nullptr;
+		scroll = info && (info->flags & self._game.constant("ITEM_MULTI", 1 << 21));
+	}
+	vm.pushInt(scroll);
+}
+
+// Npc_SetActiveSpellInfo(npc, value): what a transforming spell becomes; not kept (no transforming here).
+void Npcs::xSetSpellInfo(ScriptVm& vm, void*) {
+	(void)vm.popInt();
+	(void)vm.popInstance();
+	vm.pushInt(0);
 }
 
 bool Npcs::loadFightAi(Pak& pak) {
@@ -320,6 +519,20 @@ bool Npcs::fetchMove(NpcActor& a) {
 		if (dist <= _game.meleeRange(tg, a.npc) && itFaces && focus) move = pick(itRuns ? FS_ENEMY_STORMPREHIT : FS_ENEMY_PREHIT);
 		if (move == FM_NONE && itRuns) move = pick(FS_ENEMY_PREHIT);
 	}
+	if (move == FM_NONE && rangedWeapon(n)) {
+		// A bow or a spell in hand (OpenGothic's FightAlgo: the "FK" situations, the far fight): within its reach and
+		// turned to the enemy, the table's moves for that; else those for out of reach. Without a table: closer, turn,
+		// shoot.
+		const float reach = rangedReach(n);
+		if (dist <= reach && focus) move = pick(FS_MY_FK_FOCUS);
+		if (move == FM_NONE) move = pick(FS_MY_G_FK_NOFOCUS);
+		// (A table of melee moves for the far fight: a blow is a shot, a parry or a hop is no use at a distance.)
+		if (move == FM_PARADE || move == FM_SIDEATTACK || move == FM_FRONTATTACK || move == FM_TRIPLEATTACK || move == FM_WHIRLATTACK ||
+		    move == FM_MASTERATTACK)
+			move = FM_ATTACK;
+		if (move == FM_NONE || (move == FM_RUN && dist <= reach * 0.8f) || ((move == FM_ATTACK) && dist > reach))
+			move = dist > reach ? FM_RUN : focus ? FM_ATTACK : FM_TURN;
+	}
 	if (move == FM_NONE && dist <= wRange) move = pick(focus ? (running ? FS_MY_W_RUNTO : FS_MY_W_FOCUS) : FS_MY_W_NOFOCUS);
 	if (move == FM_NONE && dist <= gRange && focus) move = pick(running ? FS_MY_G_RUNTO : FS_MY_G_FOCUS);
 	if (move == FM_NONE) move = pick(FS_MY_G_FK_NOFOCUS);
@@ -414,6 +627,11 @@ bool Npcs::doStep(NpcActor& a, const World& world, float dt) {
 			turn(a, toward, 6.0f, dt);
 			return false;
 		}
+		if (rangedWeapon(n)) {
+			if (a.phase == NpcActor::MOVING) stopWalking(a);
+			startShot(a);
+			return true;
+		}
 		const int kind = a.steps[a.stepAt] == STEP_ATTACKL ? 1 : a.steps[a.stepAt] == STEP_ATTACKR ? 2 : 0;
 		// A blow to the side is for one who is within reach.
 		if (kind != 0 && dist > wRange) return true;
@@ -441,7 +659,7 @@ bool Npcs::doStep(NpcActor& a, const World& world, float dt) {
 	case STEP_MOVE:
 	case STEP_TURN: {
 		// Close in until within reach of the weapon, and face it.
-		if (dist <= wRange) {
+		if (dist <= (rangedWeapon(n) ? rangedReach(n) * 0.8f : wRange)) {
 			if (a.phase == NpcActor::MOVING) stopWalking(a);
 			return turn(a, toward, 6.0f, dt) || inFocus(a, tg, 0.09f);
 		}
@@ -499,10 +717,25 @@ bool Npcs::beginFight(NpcActor& a, const World& world) {
 				return false; // (the attack itself on the next call)
 			}
 		}
+		// A bow without arrows, a spell not to be had (no mana): the melee weapon instead.
+		if (((n.weapon == WEAPON_BOW || n.weapon == WEAPON_CBOW) && _game.rangedModeOf(a.npc, true) == WEAPON_NONE) ||
+		    (n.weapon == WEAPON_MAG && (n.spell < 0 || !_game.spellInfo(n.spell)))) {
+			NpcAction again = act;
+			NpcAction draw;
+			draw.kind = NPC_ACT_DRAW;
+			draw.i = WEAPON_NONE;
+			pushFront(a, again);
+			pushFront(a, draw); // (the draw first: it puts the bow away and takes the melee weapon)
+			return true;
+		}
 		if (a.stepAt >= a.stepCount && !fetchMove(a)) return true;
 		return false;
 	case NPC_ACT_DRAW: {
 		u8 mode = u8(act.i);
+		if (mode == WEAPON_MAG && act.fn > 0) {
+			n.spell = i16(i32(act.fn) - 1);
+			n.spellLevel = 1;
+		}
 		if (mode == WEAPON_NONE) {
 			const GameItemInfo* w = n.melee != SCRIPT_NONE ? _game.itemInfo(n.melee) : nullptr;
 			const i32 twoHanded = _game.constant("ITEM_2HD_SWD", 1 << 16) | _game.constant("ITEM_2HD_AXE", 1 << 17);
@@ -522,6 +755,7 @@ bool Npcs::beginFight(NpcActor& a, const World& world) {
 		return false;
 	}
 	case NPC_ACT_UNDRAW:
+		if (n.weapon == WEAPON_MAG) n.spell = -1;
 		if (n.weapon == WEAPON_NONE) return true;
 		if (!startDraw(a, WEAPON_NONE)) return true;
 		a.phase = NpcActor::PLAYING;
@@ -705,6 +939,14 @@ void Npcs::tickFight(NpcActor& a, float dt) {
 			a.drawBack = false;
 			if (n.weapon == WEAPON_NONE) fallBack(a, 0.2f);
 			else fightIdle(a, 0.2f);
+		}
+	}
+	if (a.shotClip) {
+		if (c != a.shotClip || n.down != DOWN_NONE || !rangedWeapon(n)) {
+			a.shotClip = nullptr; // (struck, put away: it does not go off)
+		} else if (t >= a.shotAt && (!sameClip || a.animPrev < a.shotAt || a.anim.finished())) {
+			fireShot(a);
+			a.shotClip = nullptr;
 		}
 	}
 	if (a.blow.clip) {

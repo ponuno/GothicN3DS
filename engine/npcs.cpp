@@ -44,6 +44,7 @@ bool Npcs::load(Pak& pak) {
 	}
 	bindAi();
 	bindDialog();
+	bindWorld();
 	loadFightAi(pak);
 	_texts.load(pak); // (an archive baked without words simply has none: the lines are silent)
 	_stats.total = _game.npcCount();
@@ -184,6 +185,9 @@ void Npcs::enterWorld(Pak& pak, const World& world, const char* asset, Vec3 eye,
 	}
 	_net.load(pak, asset); // a world without paths: its people stand
 	_mobs.load(pak, asset); // ... and without things to use: they do without
+	_rooms.load(pak, asset); // ... and without rooms: no house is anybody's
+	_heroMob = -1;
+	_game.clearHeroRoom();
 
 	_pak = &pak;
 	_world = &world;
@@ -257,6 +261,7 @@ void Npcs::ground(NpcActor& a, const World& world, float above) {
 	n.pos[1] = y;
 	memcpy(a.light, light, sizeof(a.light));
 	a.grounded = true;
+	if (_rooms.count()) _game.setRoom(a.npc, _rooms.hash(roomOf(n.pos)));
 }
 
 void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
@@ -466,6 +471,7 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	const double tClock = sys::timeMs();
 	const float feet[3] = {eye.x, eye.y - 170.0f, eye.z};
 	_game.setHeroPlace(feet, _heroYaw);
+	trackHeroRoom({feet[0], feet[1], feet[2]});
 	select(pak, world, eye, _cfg.loadsPerFrame);
 	const double tSelect = sys::timeMs();
 	u32 actors = 0, walking = 0, looking = 0, fighting = 0;

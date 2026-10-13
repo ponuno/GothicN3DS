@@ -60,7 +60,7 @@ target_compile_options(g3script PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rt
 
 if (NOT G3DS_BAKER_ONLY)
 add_library(g3engine STATIC engine/world.cpp engine/app.cpp engine/collision.cpp engine/player.cpp engine/sky.cpp
-            engine/loader.cpp engine/readahead.cpp engine/pacer.cpp engine/model.cpp engine/hero.cpp engine/npcs.cpp engine/waynet.cpp engine/mobs.cpp engine/npc_ai.cpp engine/npc_perc.cpp engine/npc_dialog.cpp engine/dialog_text.cpp engine/app_talk.cpp engine/app_doc.cpp engine/app_magic.cpp engine/app_ranged.cpp engine/recorder.cpp
+            engine/loader.cpp engine/readahead.cpp engine/pacer.cpp engine/model.cpp engine/hero.cpp engine/npcs.cpp engine/waynet.cpp engine/mobs.cpp engine/rooms.cpp engine/npc_world.cpp engine/triggers.cpp engine/npc_ai.cpp engine/npc_perc.cpp engine/npc_dialog.cpp engine/dialog_text.cpp engine/app_talk.cpp engine/app_doc.cpp engine/app_magic.cpp engine/app_ranged.cpp engine/recorder.cpp
             engine/npc_fight.cpp engine/npc_items.cpp engine/ui.cpp engine/menu.cpp engine/settings.cpp engine/hud.cpp engine/inventory.cpp engine/panel.cpp engine/loot.cpp engine/particles.cpp engine/shadows.cpp engine/chests.cpp engine/containers.cpp engine/interact.cpp engine/trade.cpp engine/lang.cpp engine/sound.cpp engine/music.cpp engine/speech.cpp)
 target_include_directories(g3engine PUBLIC engine)
 target_link_libraries(g3engine PUBLIC g3core g3sys g3script)

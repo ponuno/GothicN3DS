@@ -401,6 +401,7 @@ i32 Npcs::heroBodyState() const {
 	if (_heroLink.swimming) return _game.constant("BS_SWIM", 5);
 	if (_heroLink.jumping) return _game.constant("BS_JUMP", 8);
 	if (_heroLink.running) return kBsRun;
+	if (_heroLink.walking) return _heroLink.sneaking ? _game.constant("BS_SNEAK", 2) : kBsWalk;
 	return kBsStand;
 }
 
@@ -690,6 +691,10 @@ void Npcs::startState(NpcActor& a, u32 fn, bool finalizeOld, const char* wp, boo
 	for (u32& p : a.perc) p = 0;
 	if (wp && *wp) _game.setWayPoint(n, wp);
 	a.state = fn;
+	// (The state's clock starts with the state - Npc_GetStateTime - and not with every start of its beginning:
+	// asked for again it begins anew, but its time goes on, as OpenGothic's startState has it. A beast
+	// warned by its pack or struck again used to start the clock of its chase anew each time, and never gave up.)
+	a.stateTime = 0;
 	a.mobFailed = -1;
 	const ScriptState* st = vm.stateOf(fn);
 	a.loopFn = st ? st->loop : SCRIPT_NONE;
@@ -725,7 +730,6 @@ void Npcs::tickState(NpcActor& a) {
 	}
 	if (!a.started) {
 		a.started = true;
-		a.stateTime = 0;
 		a.loopWait = 0;
 		invoke(a, a.state);
 		return;
@@ -1478,10 +1482,37 @@ void Npcs::xTeleport(ScriptVm& vm, void* user) {
 	Npcs& self = *static_cast<Npcs*>(user);
 	char name[64];
 	copyText(name, sizeof(name), vm.popString());
-	NpcActor* a = self.actorFor(vm.popInstance());
+	ScriptInstance* inst = vm.popInstance();
+	NpcActor* a = self.actorFor(inst);
 	NpcAction act;
 	act.kind = NPC_ACT_TELEPORT;
-	if (a && findPoint(&self, name, act.pos, act.pos[3])) self.push(a, act);
+	if (!findPoint(&self, name, act.pos, act.pos[3])) return;
+	if (a) {
+		self.push(a, act);
+		return;
+	}
+	// The player's character (a teleport rune, a quest) and whoever is not near: at once (OpenGothic runs the
+	// queue of everybody, the player's too).
+	const int who = self.npcFor(inst);
+	if (who < 0) return;
+	if (u32(who) == self._game.heroIndex()) {
+		memcpy(self._heroTeleport, act.pos, sizeof(self._heroTeleport));
+		self._heroTeleportPending = true;
+		return;
+	}
+	GameNpc& n = self._game.npcMut(u32(who));
+	memcpy(n.pos, act.pos, sizeof(n.pos));
+	n.yaw = act.pos[3];
+	n.placed = true;
+	++n.moved;
+}
+
+bool Npcs::takeHeroTeleport(float pos[3], float& yaw) {
+	if (!_heroTeleportPending) return false;
+	_heroTeleportPending = false;
+	memcpy(pos, _heroTeleport, 3 * sizeof(float));
+	yaw = _heroTeleport[3];
+	return true;
 }
 
 void Npcs::xClearQueue(ScriptVm& vm, void* user) {

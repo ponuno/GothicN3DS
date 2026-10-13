@@ -65,6 +65,7 @@ void Game::release() {
 	_timeSet = 0.0f;
 	_timeSetSerial = _timeSetTaken = 0;
 	_day = 0;
+	_effectFirst = _effectCount = 0;
 	for (GameDocument& d : _docs) docFree(d);
 	docFree(_docShown);
 	_chapter = GameChapter();
@@ -85,6 +86,14 @@ void Game::release() {
 	free(_items);
 	free(_drops);
 	_drops = nullptr;
+	free(_roomGuilds);
+	_roomGuilds = nullptr;
+	_roomGuildCount = _roomGuildCap = 0;
+	free(_triggerKept);
+	_triggerKept = nullptr;
+	_triggerKeptCount = _triggerKeptCap = 0;
+	_triggerFirst = _triggerCount = 0;
+	_heroRoom = _heroFormerRoom = 0;
 	for (u32 i = 0; i < _logTopicCount; ++i) free(_logTopics[i].name);
 	for (u32 i = 0; i < _logEntryCount; ++i) free(_logEntries[i].text);
 	free(_logTopics);
@@ -305,6 +314,7 @@ bool Game::bindAll() {
 	for (const auto& e : table) _vm.bind(e.name, e.fn, this);
 	bindDialogues();
 	bindItems();
+	bindExtra();
 
 	// The player's character exists before any world's start-up runs.
 	const u32 hero = _vm.find("PC_HERO");
@@ -697,7 +707,7 @@ void Game::xReturnMinusOne(ScriptVm& vm, void*) {
 void Game::xGetTrueGuild(ScriptVm& vm, void* user) {
 	Game& g = *static_cast<Game*>(user);
 	const GameNpc* n = g.npcOf(vm.popInstance());
-	vm.pushInt(n ? g.guildOf(*n) : 0);
+	vm.pushInt(n ? (n->trueGuild >= 0 ? n->trueGuild : g.guildOf(*n)) : 0);
 }
 
 void Game::xSetPercRange(ScriptVm& vm, void* user) {
@@ -776,7 +786,14 @@ const char* const* Game::lifeFunctions(u32& count) {
 	    "AI_OUTPUT",         "AI_PROCESSINFOS",    "AI_STOPPROCESSINFOS", "INFOMANAGER_HASFINISHED",
 	    // Things in the hands and in the world (npc_items.cpp).
 	    "AI_USEITEM",        "AI_USEITEMTOSTATE",  "AI_TAKEITEM",       "AI_GOTOITEM",       "WLD_DETECTITEM",   "NPC_CANSEEITEM",
-	    "NPC_GETDISTTOITEM"};
+	    "NPC_GETDISTTOITEM",
+	    // Rooms, owners and the smaller ones (npc_world.cpp).
+	    "NPC_ISDETECTEDMOBOWNEDBYNPC", "NPC_ISDETECTEDMOBOWNEDBYGUILD", "NPC_GETLOOKATTARGET", "NPC_HASBODYFLAG", "NPC_PLAYANI",
+	    "NPC_STOPANI", "NPC_ISINROUTINE", "WLD_DETECTNPCEX", "NPC_GETHEIGHTTOITEM", "AI_SETNPCSTOSTATE",
+	    // Bows and spells of the inhabitants (npc_fight.cpp).
+	    "AI_READYSPELL", "AI_UNREADYSPELL", "NPC_ISDRAWINGSPELL", "NPC_HASSPELL", "NPC_GETACTIVESPELLISSCROLL", "NPC_SETACTIVESPELLINFO",
+	    // Talks (npc_ai.cpp binds these by name).
+	    "AI_WAITMS", "NPC_SETREFUSETALK", "NPC_REFUSETALK"};
 	count = u32(sizeof(names) / sizeof(names[0]));
 	return names;
 }
@@ -803,6 +820,7 @@ u32 Game::addNpc(u32 symbol, bool hero) {
 	_npcs[index].symbol = symbol;
 	_npcs[index].world = _world;
 	_npcs[index].hero = hero;
+	_npcs[index].late = !hero && !_inStartup && _hero != SCRIPT_NONE;
 	_npcs[index].routineFirst = _routineCount;
 	inst->user = reinterpret_cast<void*>(size_t(index) + 1);
 	++_stats.npcs;
@@ -886,8 +904,10 @@ void Game::enterWorld(const char* script, float hours, PointFinder find, void* u
 		// Chance is the same whenever and wherever a world is first entered:
 		// the baker has to see what the console will.
 		_seed = h | 1u;
+		_inStartup = true;
 		if (index == 0) runIfPresent("STARTUP_", "GLOBAL");
 		runIfPresent("STARTUP_", script);
+		_inStartup = false;
 	}
 	runIfPresent("INIT_", "GLOBAL");
 	runIfPresent("INIT_", script);
@@ -946,6 +966,8 @@ void Game::settle(u32 index, PointFinder find, void* user) {
 		n.down = DOWN_NONE;
 		if (hitPoints(n) < 1) setAttribute(n, 0, 1);
 	}
+	// A summoned creature has no place in the world to go back to: it stays where it was left.
+	if (n.spawned && n.want == 0 && !n.routineCount) return;
 	placeNow(n, find, user);
 }
 

@@ -85,6 +85,14 @@ struct GameNpc {
 	// what struck it last.
 	i16 spell = -1, lastHitSpell = -1;
 	u8 spellLevel = 0;
+	// The room it stands in (hashName of the BSP sector's name, Rooms), 0: outside or not known.
+	u32 room = 0;
+	// Npc_SetTrueGuild: the guild it really belongs to (the player in another guild's armour); -1: its guild.
+	i32 trueGuild = -1;
+	// Made by Wld_SpawnNpcRange (a summoned creature): stands where it was put, not at a place of the world.
+	bool spawned = false;
+	// Made after its world's start-up (Wld_InsertNpc in a talk, a summoning): a saved game makes it again.
+	bool late = false;
 };
 
 // A spell as the scripts' C_Spell instance and spellFX arrays describe it (made once per kind).
@@ -390,6 +398,40 @@ public:
 	// scripts' Kapitel; 0 if they have none).
 	const GameChapter& chapter() const { return _chapter; }
 	i32 chapterNumber() const { return _kapitel != SCRIPT_NONE ? _vm.getInt(_kapitel) : 0; }
+	// ---- effects the scripts set off (Wld_PlayEffect) ----
+	// The particle effect (hashName of a C_PARTICLEFX instance) to show at a character, oldest first; false when none.
+	struct Effect {
+		u32 pfx;
+		int npc;
+	};
+	bool takeEffect(Effect& out);
+	// ---- triggers (Wld_SendTrigger, Wld_SendUntrigger), and what the world's triggers keep (triggers.h) ----
+	// The next event the scripts sent, oldest first: the name (upper case) and whether it is an untrigger.
+	bool takeTrigger(char* name, u32 size, bool& untrigger);
+	// A trigger's state in a world, kept in the save (`index`: its number in the world's table; 0xFFFFFFFF: the
+	// world's own, "started once"). False if none was kept.
+	bool triggerState(u16 world, u32 index, u32& value) const;
+	void setTriggerState(u16 world, u32 index, u32 value);
+	// ---- rooms (game_extra.cpp) ----
+	// The room a character stands in now (hashName of its name, 0: outside). For the player's character this is
+	// also where it was before (Wld_GetFormerPlayerPortalGuild); true if the player's room changed.
+	bool setRoom(u32 npc, u32 roomHash);
+	// The guild a room of the current world belongs to (Wld_AssignRoomToGuild): GIL_NONE (0) if none was given;
+	// -1 for outside (as OpenGothic answers for a place in no sector).
+	i32 roomGuild(u32 roomHash) const;
+	u32 heroRoom() const { return _heroRoom; }
+	void clearHeroRoom() {
+		_heroRoom = _heroFormerRoom = 0;
+		if (_hero != SCRIPT_NONE) _npcs[_hero].room = 0;
+	}
+	u32 heroFormerRoom() const { return _heroFormerRoom; }
+	u32 roomGuildCount() const { return _roomGuildCount; }
+	// Puts `count` characters of `symbol` around a character (Wld_SpawnNpcRange: a summoning); returns the first's
+	// index, or SCRIPT_NONE.
+	u32 spawnNear(u32 symbol, u32 nearNpc, u32 count);
+	// Makes a character only to read off its look (the baker: those the scripts put in later - summoned, inserted
+	// by a talk). It belongs to no world. SCRIPT_NONE if `symbol` is no character.
+	u32 probeNpc(u32 symbol);
 	// ---- saving (game_save.cpp) ----
 	// Everything the scripts and the engine changed since the start: script
 	// variables, the characters (members, place, routine, what they carry,
@@ -471,6 +513,13 @@ public:
 	// Spell_ProcessMana (or _Release) for `caster` with `invested` mana put in so far, and the target if any
 	// (-1: none): SPL_DONTINVEST .. SPL_NEXTLEVEL. The spell is the caster's `spell`.
 	i32 processMana(u32 caster, int target, i32 invested, bool release);
+	// The rune or scroll of spell `spell` a character carries (C_ITEM.SPELL), SCRIPT_NONE for none.
+	u32 spellItemOf(u32 npc, i32 spell);
+	// The bow or crossbow mode of a character's ranged weapon (WEAPON_BOW / WEAPON_CBOW), WEAPON_NONE if it has
+	// none, or no arrows (bolts) for it when `withAmmo`.
+	u8 rangedModeOf(u32 npc, bool withAmmo);
+	// The best bow or crossbow a character carries (the highest damage), SCRIPT_NONE for none.
+	u32 bestRanged(u32 npc);
 	// While set, the next blow dealt (Npcs::strike) is this spell's: `perLevel` damage times `level`, of
 	// the types of `type`, less the victim's protection. `id` -1 ends it.
 	void setSpellStrike(i32 id, i32 level) {
@@ -686,6 +735,47 @@ private:
 	u32 _messageFirst = 0, _messageCount = 0;
 	i32 _day = 0;
 	static void xGetDay(ScriptVm& vm, void* user);
+	void bindExtra();
+	struct RoomGuild {
+		u16 world;
+		u32 hash;
+		i32 guild;
+	};
+	RoomGuild* _roomGuilds = nullptr;
+	u32 _roomGuildCount = 0, _roomGuildCap = 0;
+	u32 _heroRoom = 0, _heroFormerRoom = 0;
+	bool _inStartup = false;
+	u32 _iOwner = SCRIPT_NONE;
+	static void xAssignRoomToGuild(ScriptVm& vm, void* user);
+	static void xPlayerPortalGuild(ScriptVm& vm, void* user);
+	static void xFormerPlayerPortalGuild(ScriptVm& vm, void* user);
+	static void xNpcPortalGuild(ScriptVm& vm, void* user);
+	static void xIsInPlayersRoom(ScriptVm& vm, void* user);
+	static void xOwnedByNpc(ScriptVm& vm, void* user);
+	static void xAiPrintScreen(ScriptVm& vm, void* user);
+	static void xSetTrueGuild(ScriptVm& vm, void* user);
+	static void xReturnFalse(ScriptVm& vm, void* user);
+	static void xReturnTrue(ScriptVm& vm, void* user);
+	static void xSpawnNpcRange(ScriptVm& vm, void* user);
+	static void xPlayEffect(ScriptVm& vm, void* user);
+	static void xSendTrigger(ScriptVm& vm, void* user);
+	static void xSendUntrigger(ScriptVm& vm, void* user);
+	struct TriggerEvent {
+		char name[48];
+		bool untrigger;
+	};
+	TriggerEvent _triggerEvents[16] = {};
+	u32 _triggerFirst = 0, _triggerCount = 0;
+	struct TriggerKept {
+		u16 world;
+		u32 index;
+		u32 value;
+	};
+	TriggerKept* _triggerKept = nullptr;
+	u32 _triggerKeptCount = 0, _triggerKeptCap = 0;
+	Effect _effects[8] = {};
+	u32 _effectFirst = 0, _effectCount = 0;
+	static void xRemoveNpc(ScriptVm& vm, void* user);
 	static void xGetHeightToNpc(ScriptVm& vm, void* user);
 	static void xHasRangedWeaponWithAmmo(ScriptVm& vm, void* user);
 	float _timeSet = 0.0f;

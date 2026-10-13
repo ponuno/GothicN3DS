@@ -1,4 +1,5 @@
 #include "world.h"
+#include "triggers.h"
 
 #include "readahead.h"
 
@@ -1168,6 +1169,18 @@ bool World::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, u8* lig
 			found = true;
 		}
 	}
+	// A lift's floor, a drawbridge, a shut door.
+	if (_dynamic) {
+		float y;
+		Vec3 n;
+		if (_dynamic->rayDown(from, from.y - best, y, n) && y >= best) {
+			hitY = y;
+			normal = n;
+			if (light) light[0] = light[1] = light[2] = 180, light[3] = 255;
+			if (group) *group = 0;
+			found = true;
+		}
+	}
 	return found;
 }
 
@@ -1200,6 +1213,7 @@ bool World::pushSphere(Vec3& center, float radius) const {
 			continue;
 		moved = _loaded[i].collider.pushSphere(center, radius) || moved;
 	}
+	if (_dynamic) moved = _dynamic->pushSphere(center, radius) || moved;
 	return moved;
 }
 
@@ -1212,7 +1226,7 @@ bool World::boxFree(const float mn[3], const float mx[3]) const {
 			continue;
 		if (!_loaded[i].collider.boxFree(mn, mx)) return false;
 	}
-	return true;
+	return !_dynamic || !_dynamic->boxTouches(mn, mx);
 }
 
 bool World::lineFree(Vec3 a, Vec3 b, float radius) const {

@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cctype>
 #include <cmath>
 #include <cstdarg>
@@ -212,6 +213,14 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		                       floating ? format(", %zu with no ground within 5 m below left where they are", floating).c_str() : "");
 	}
 	BakeResult result;
+	// Where the time goes (one line in the report): a lap is the time since the last one.
+	std::string lapText;
+	auto lapStart = std::chrono::steady_clock::now();
+	const auto lap = [&](const char* what) {
+		const auto now = std::chrono::steady_clock::now();
+		lapText += format("%s%s %.1f s", lapText.empty() ? "" : ", ", what, std::chrono::duration<double>(now - lapStart).count());
+		lapStart = now;
+	};
 	auto line = [&](const std::string& s) {
 		result.report += s + "\n";
 		if (!opt.quiet) std::puts(s.c_str());
@@ -260,6 +269,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		}
 	}
 
+	lap("sources");
 	// ---- textures (ETC1 encoding dominates the bake time, so fan it out) ----
 	{
 		std::atomic<size_t> next {0};
@@ -296,6 +306,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		if (!firstError.empty()) throw std::runtime_error("texture bake failed: " + firstError);
 	}
 
+	lap("world textures");
 	std::vector<std::string> missing;
 	u64 texels = 0, srcTexels = 0;
 	u32 alphaTextures = 0;
@@ -1069,6 +1080,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		line("WARNING: missing textures (drawn in the material's colour, or as a purple checker if it has none): " + list);
 	}
 
+	lap("worlds");
 	// ---- characters ----
 	// A character that cannot be baked is left out, with the reason in the
 	// report; the worlds are worth having without it.
@@ -1089,6 +1101,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		pak.add("meta/hero", ASSET_META, std::vector<u8>(hero.begin(), hero.end()));
 	}
 
+	lap("hero");
 	// ---- the scripts and the people they put into the worlds ----
 	// (Whatever goes wrong there, the worlds are worth having without it.)
 	try {
@@ -1096,6 +1109,8 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 	} catch (const std::exception& ex) {
 		line(std::string("WARNING: the scripts' part of the bake stopped: ") + ex.what());
 	}
+	lap("scripts and inhabitants");
+	line("time: " + lapText);
 
 	const std::string& start = worlds[0].name;
 	pak.add("meta/start", ASSET_META, std::vector<u8>(start.begin(), start.end()));

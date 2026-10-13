@@ -853,7 +853,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	std::map<u32, SrcModel> sources; // keyed by model hash; // bodies as baked, for their coarse versions (--npc-lod)
 	std::map<std::string, u32> problems; // reason -> looks
 	std::vector<LookEntry> entries;
-	size_t bodies = 0, heads = 0, triangles = 0, textures = 0, clipCount = 0;
+	size_t bodies = 0, heads = 0, triangles = 0, fullBodyTriangles = 0, textures = 0, clipCount = 0;
 	std::set<std::string> missingTextures;
 	const u64 modelsBefore = pak.rawBytes(ASSET_MODEL), clipsBefore = pak.rawBytes(ASSET_CLIP), texBefore = pak.rawBytes(ASSET_TEXTURE);
 
@@ -883,6 +883,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			const ModelBakeResult mr = bakeModel(m, quiet, pak, &shared);
 			++counter;
 			triangles += mr.triangles;
+			if (kind == "body") fullBodyTriangles += mr.triangles;
 			textures += mr.textures;
 			missingTextures.insert(mr.missingTextures.begin(), mr.missingTextures.end());
 			out = hashName(("model/" + m.name).c_str());
@@ -995,7 +996,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	for (const auto& r : rigs) rigCount += r.second.hash != 0;
 	result.looksBaked = entries.size();
 	result.npcModels = rigCount + bodies + heads + lowBodies;
-	if (lowBodies) line(format("coarse bodies (--npc-lod): %zu, %zu triangles", lowBodies, lowTriangles));
+	if (lowBodies) line(format("coarse bodies (--npc-lod): %zu, %zu triangles (the full bodies they stand in for: %zu)", lowBodies, lowTriangles, fullBodyTriangles));
 	u32 drawn = 0;
 	for (const auto& [key, l] : looks)
 		for (const LookEntry& e : entries)

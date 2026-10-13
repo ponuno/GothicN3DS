@@ -87,16 +87,14 @@ script image 14.30 MB; objects of the characters and items made by the start-up:
        1  PLAYVIDEO
 
 == the states of the characters (ZS_*): what they call ==
-407 states; 1823 functions are reached from them; 159 engine functions called, 124 carried out
+407 states; 1823 functions are reached from them; 159 engine functions called, 136 carried out
   functions reached from the states, in Ikarus: 108
   functions reached from the states, in LeGo: 12
   functions reached from the states, in the game / the mod: 1703
 -- engine functions the states call that this engine does not carry out, by the number of states that call them --
      299  NPC_GETLOOKATTARGET
       32  EXITGAME
-      16  WLD_GETDAY
       15  SND_PLAY
-      14  NPC_GETHEIGHTTONPC
       13  AI_WAITMS
       12  NPC_STOPANI
        9  NPC_SETREFUSETALK
@@ -110,25 +108,15 @@ script image 14.30 MB; objects of the characters and items made by the start-up:
        5  WLD_ISRAINING
        5  NPC_REFUSETALK
        3  WLD_PLAYEFFECT
-       3  MDL_REMOVEOVERLAYMDS
        2  WLD_SENDUNTRIGGER
-       1  DOC_SHOW
-       1  DOC_PRINTLINES
-       1  DOC_SETMARGINS
-       1  DOC_SETFONT
-       1  DOC_SETPAGE
-       1  DOC_SETPAGES
-       1  DOC_CREATE
        1  WLD_SENDTRIGGER
-       1  MDL_APPLYRANDOMANIFREQ
-       1  MDL_APPLYRANDOMANI
        1  SND_PLAY3D
        1  AI_UNREADYSPELL
        1  NPC_PLAYANI
        1  NPC_SETTRUEGUILD
        1  AI_WAITTILLEND
 
-== the talks: 6398 infos; the 24231 functions they run call 183 engine functions, 130 carried out ==
+== the talks: 6398 infos; the 24231 functions they run call 183 engine functions, 141 carried out ==
   functions run by the talks, in Ikarus: 139
   functions run by the talks, in LeGo: 46
   functions run by the talks, in the game / the mod: 24046
@@ -139,11 +127,9 @@ script image 14.30 MB; objects of the characters and items made by the start-up:
   PLAYVIDEO
   WLD_DETECTNPCEX
   NPC_ISINROUTINE
-  NPC_GETHEIGHTTONPC
   AI_WAITMS
   AI_WAITTILLEND
   AI_DROPITEM
-  NPC_HASRANGEDWEAPONWITHAMMO
   NPC_SETTRUEGUILD
   NPC_GETLOOKATTARGET
   NPC_HASBODYFLAG
@@ -162,9 +148,7 @@ script image 14.30 MB; objects of the characters and items made by the start-up:
   NPC_CANSEESOURCE
   NPC_ISDRAWINGSPELL
   MDL_APPLYOVERLAYMDSTIMED
-  MDL_REMOVEOVERLAYMDS
   MDL_STARTFACEANI
-  WLD_GETDAY
   WLD_ISRAINING
   WLD_PLAYEFFECT
   WLD_STOPEFFECT
@@ -174,13 +158,6 @@ script image 14.30 MB; objects of the characters and items made by the start-up:
   NPC_OWNEDBYNPC
   MOB_CREATEITEMS
   MOB_HASITEMS
-  DOC_CREATE
-  DOC_SETPAGES
-  DOC_SETPAGE
-  DOC_SETFONT
-  DOC_SETMARGINS
-  DOC_PRINTLINES
-  DOC_SHOW
   WLD_ASSIGNROOMTOGUILD
   WLD_GETPLAYERPORTALGUILD
   WLD_GETFORMERPLAYERPORTALGUILD

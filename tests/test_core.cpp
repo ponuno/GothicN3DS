@@ -8258,6 +8258,19 @@ static void testFarLayer() {
 	            redNear, redFar, skyDown, skyDownFar, farTrisDown);
 	CHECK(redNear == 0 && redFar > 40);
 	CHECK(skyDown > 2000 && skyDownFar < 10 && w.stats().farSeams > 0);
+	// Chunks at the draw distance dissolve out over the far layer instead of ending in a seam; off, none do.
+	{
+		bool anyEdge = false;
+		for (float z : {-3000.0f, -1500.0f, 0.0f, 1500.0f, 3000.0f}) {
+			look(300.0f, {0, 400, z}, 0.0f, -0.2f, redFar, skyFar);
+			anyEdge = anyEdge || w.stats().chunksEdgeFading > 0;
+		}
+		CHECK(anyEdge);
+		w.config().edgeFadeShare = 0.0f;
+		look(300.0f, {0, 400, 0}, 0.0f, -0.2f, redFar, skyFar);
+		CHECK(w.stats().chunksEdgeFading == 0);
+		w.config().edgeFadeShare = 0.3f;
+	}
 	// Farther draw distance: more of the world in full, less of the far layer.
 	w.config().farDistance = 30000.0f;
 	app.setDrawDistance(12000.0f);

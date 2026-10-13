@@ -38,6 +38,10 @@ struct StreamConfig {
 	// and the way back to the full chunk waits until it is this share of the distance (hysteresis: no flicker at the edge).
 	float lodFadeMs = 900.0f;
 	float lodHysteresis = 0.8f;
+	// With the far layer: a chunk within this share of the draw distance from its edge (at most edgeFadeMax cm) dissolves
+	// out as it nears it, the far layer showing through; 0: chunks and far layer meet at the draw distance, as before.
+	float edgeFadeShare = 0.3f;
+	float edgeFadeMax = 1500.0f;
 	u32 maxLoadsPerFrame = 2;      // chunks handed to the GPU per frame: bounds the upload hitch
 	u32 readAheadChunks = 4;       // chunks after those being read whose bytes are read ahead from the card (with a ReadAhead)
 	u32 maxInFlight = 2;           // chunks being read at once in the background (nearer wishes wait: what is read is still wanted when it arrives)
@@ -111,6 +115,7 @@ struct WorldStats {
 	u32 windyDrawCalls;  // of them: plants swaying (the vertex shader does more there)
 	u32 batchesCulled;   // batches of visible chunks skipped: out of view or too far for their size
 	u32 batchesMerged;   // batches that went out in the draw call of the one before them
+	u32 chunksEdgeFading; // chunks drawn dissolving at the draw distance (over the far layer)
 	u32 batchesFading;   // batches drawn dissolving in or out (each a draw call of its own)
 	u32 trianglesDrawn;
 	u32 trisByDetail[3]; // drawn: level geometry and large objects / medium / small (DetailClass)
@@ -252,6 +257,7 @@ private:
 		u32 slot; // position in _resident
 		u32 retryAt; // frame before which loading is not attempted again (out of memory)
 		u32 drawnFrame; // the last draw() that drew it: one that did not draw it the frame before shows its objects at once
+		u8 edgeShare = 255;   // 255: in full; less near the draw distance, with the far layer showing through
 		bool snapNow = false; // this frame's "shows its objects at once", kept for the second (swaying) pass over the chunk
 		u32 windBatches = 0;  // batches of swaying materials the first pass left for the second
 		u16 batchCount;
@@ -318,6 +324,7 @@ private:
 	void drawFar(const Frustum& view);
 	// Whether all of these chunks (of the far layer's chunk list) are drawn in full this frame.
 	bool farCovered(u32 firstChunk, u32 count) const;
+	float edgeBand() const { return _cfg.farDistance > _cfg.drawDistance && _cfg.edgeFadeShare > 0.0f && gfx::fadeSupported() ? min(_cfg.drawDistance * _cfg.edgeFadeShare, _cfg.edgeFadeMax) : 0.0f; }
 	void classify(const Loaded& l, u32 index, bool count);
 public:
 	// How far a dissolve gets this frame, 1..255 (255: all of it); worked out by draw(). Characters dissolve by it too.

@@ -1301,7 +1301,9 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 		l.windBatches = 0;
 		if (!blended) l.drawnFrame = _drawFrame;
 	}
-	u8 runShown = 255;
+	// The chunk as a whole may be dissolving at the draw distance: its batches share that, and merge as they would.
+	const u8 edge = blended ? u8(255) : l.edgeShare;
+	u8 runShown = edge;
 	// A culled stretch this short between two runs of a material is drawn
 	// along with them: a draw call costs the GPU about what 300 triangles do
 	// (measured on the console: ~25 us a draw, ~0.07 ms per 1000 triangles),
@@ -1397,6 +1399,12 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 			shown = u8(int(shown) * int(lodShare) / 255);
 			visible = visible && shown > 0;
 		}
+		// (Own dissolve and the chunk's together; `own` is what differs from the chunk's share.)
+		const bool own = shown != 255;
+		if (edge != 255 && !blended) {
+			shown = u8(int(shown) * int(edge) / 255);
+			visible = visible && shown > 0;
+		}
 		if (visible && _clusterState[c] == CLUSTER_PARTLY) visible = aabbInFrustum(_frustum, batch.bbMin, batch.bbMax);
 		if (visible && !blended) {
 			const u32 t = batch.indexCount / 3;
@@ -1414,7 +1422,7 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 				flush();
 			continue;
 		}
-		if (shown != 255) {
+		if (own || (edge != 255 && shown != edge)) {
 			// Dissolving: a draw call of its own.
 			flush();
 			runFirst = batch.firstIndex;
@@ -1422,7 +1430,7 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 			runMaterial = batch.material;
 			runShown = shown;
 			flush();
-			runShown = 255;
+			runShown = edge;
 			++_stats.batchesFading;
 			continue;
 		}
@@ -1438,11 +1446,13 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 		runMaterial = batch.material;
 	}
 	flush();
+	if (edge != 255) gfx::setFade(1.0f);
 	if (!blended) gfx::setFade(1.0f);
 }
 
 void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_stats.chunksDrawn = 0;
+	_stats.chunksEdgeFading = 0;
 	_stats.drawCalls = 0;
 	_stats.blendedDrawCalls = 0;
 	_stats.windyDrawCalls = 0;
@@ -1533,8 +1543,15 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	}
 	_visible = n;
 
+	const float band = edgeBand();
 	for (u32 k = 0; k < n; ++k) {
 		Loaded& l = _loaded[_order[k]];
+		l.edgeShare = 255;
+		if (band > 0.0f) {
+			const float left = _cfg.drawDistance - _orderKey[k];
+			if (left < band) l.edgeShare = u8(clamp(left / band, 0.0f, 1.0f) * 255.0f);
+		}
+		_stats.chunksEdgeFading += l.edgeShare != 255;
 		classify(l, _order[k], true);
 		drawBatches(l, false, 1);
 		++_stats.chunksDrawn;
@@ -1556,7 +1573,7 @@ bool World::farCovered(u32 firstChunk, u32 count) const {
 		const u32 c = _farRefs[firstChunk + k];
 		// What draw() draws: loaded, and within the draw distance. (Without farFillNear a chunk within the draw distance
 		// counts as drawn whether it is loaded or not: nothing coarse stands in for it.)
-		if (distanceTo(c, _camera) > _cfg.drawDistance) return false;
+		if (distanceTo(c, _camera) > _cfg.drawDistance - edgeBand()) return false;
 		if (!_loaded[c].mesh && _cfg.farFillNear) return false;
 	}
 	return true;

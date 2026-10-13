@@ -315,7 +315,8 @@ std::vector<u8> buildFarLayer(const SrcScene& scene, const std::vector<bool>& in
 		cutoutCell[i] = cells.of(g.first, g.second);
 	}
 	const u32 cellCount = u32(cells.cells.size());
-	auto crownBox = [](double size) { return std::max(size * 1.5, 400.0); };
+	// (Not bigger than 20 m whatever the cell: a crown for a whole coarse cell was a huge flat diamond.)
+	auto crownBox = [](double size) { return std::clamp(size * 1.5, 400.0, 2000.0); };
 	std::unordered_map<std::pair<u64, u64>, Crown, PairHash> crowns;
 	auto gather = [&](const Grid& grid) {
 		crowns.clear();
@@ -457,7 +458,7 @@ std::vector<u8> buildFarLayer(const SrcScene& scene, const std::vector<bool>& in
 			const u32 base = u32(pts.size());
 			// 0 top, 1 bottom, 2..5 round the middle (+x, +z, -x, -z).
 			const float off[6][3] = {{0, 1, 0}, {0, -1, 0}, {1, 0, 0}, {0, 0, 1}, {-1, 0, 0}, {0, 0, -1}};
-			const float shade[6] = {1.15f, 0.55f, 0.9f, 0.9f, 0.9f, 0.9f};
+			const float shade[6] = {1.3f, 0.7f, 1.02f, 1.02f, 1.02f, 1.02f};
 			for (int v = 0; v < 6; ++v) {
 				Point p;
 				for (int a = 0; a < 3; ++a) p.pos[a] = mid[a] + off[v][a] * half[a];

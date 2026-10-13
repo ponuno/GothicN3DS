@@ -970,13 +970,16 @@ void World::updateImmediate(u32 pending, Vec3 camera) {
 	u32 remaining = pending;
 	const u32 loads = min(pending, _cfg.maxLoadsPerFrame);
 	for (u32 n = 0; n < loads; ++n) {
+		if (_cfg.budget && !_cfg.budget->allow(_chunkCostMs, _refusedChunks)) break; // no time left in the frame
 		sortNearest(n, pending);
 		const u32 index = _order[n];
 		if (_stats.residentBytes + meshBytes(_chunks[index]) > budget() && !makeRoom(camera, _orderKey[n], meshBytes(_chunks[index]), 0)) {
 			countReject(index);
 			break; // everything else is farther away; try again next frame
 		}
+		const double tLoad = sys::timeMs();
 		const LoadStatus status = loadChunkNow(index);
+		_chunkCostMs = _chunkCostMs * 0.8f + float(sys::timeMs() - tLoad) * 0.2f;
 		if (status == LOAD_NO_MEMORY) {
 			// The budget said yes, the allocator said no (the memory is in pieces, or something else took it). Free
 			// the farthest chunk there is and try again next frame.
@@ -1016,13 +1019,19 @@ void World::updateBackground(u32 pending, Vec3 camera) {
 	LoadKind kind;
 	while (_loader.peek(kind)) {
 		if (kind == LOAD_CHUNK ? chunksDone >= _cfg.maxLoadsPerFrame : texturesDone >= _cfg.maxTextureLoadsPerFrame) break;
+		if (_cfg.budget && !_cfg.budget->allow(kind == LOAD_CHUNK ? _chunkCostMs : _textureCostMs,
+		                                       kind == LOAD_CHUNK ? _refusedChunks : _refusedTextures))
+			break; // no time left in the frame: it waits for the next
 		LoadResult r;
 		if (!_loader.poll(r)) break;
 		if (r.kind == LOAD_TEXTURE) {
 			++texturesDone;
+			const double tTex = sys::timeMs();
 			finishTexture(r);
+			_textureCostMs = _textureCostMs * 0.8f + float(sys::timeMs() - tTex) * 0.2f;
 			continue;
 		}
+		const double tChunk = sys::timeMs();
 		++chunksDone;
 		Loaded& l = _loaded[r.index];
 		l.requested = false;
@@ -1033,6 +1042,7 @@ void World::updateBackground(u32 pending, Vec3 camera) {
 			continue;
 		}
 		const LoadStatus status = finishChunk(r);
+		_chunkCostMs = _chunkCostMs * 0.8f + float(sys::timeMs() - tChunk) * 0.2f;
 		if (status == LOAD_OK) {
 			++_stats.loadsThisFrame;
 		} else if (status == LOAD_BAD_DATA) {

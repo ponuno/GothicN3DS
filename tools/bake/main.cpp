@@ -136,6 +136,8 @@ void usage() {
 	          "  --simplify-ratio-large R   a second, harder pass over the large objects (the class that is always drawn, the\n"
 	          "                     heaviest in the busiest scenes): R of their triangles kept (try 0.4; off by default);\n"
 	          "                     --simplify-error-large CM: the error allowed in that pass (default 8)\n"
+	          "  --no-vcache        keep the triangles of the batches in the order the chunker made them (by default they are\n"
+	          "                     reordered so that the GPU transforms fewer vertices)\n"
 	          "  --npc-lod          a second, coarse body for every character (about 30 %% of the triangles, no head): shown\n"
 	          "                     from afar and swapped for the full one with a dissolve as the player comes near, so\n"
 	          "                     characters can be shown further (menu: NPC distance); --npc-lod-ratio R (0.3), --npc-lod-error CM (6)\n"
@@ -272,6 +274,7 @@ int main(int argc, char** argv) {
 			else if (a == "--simplify-ratio-large") opt.simplify.ratioLarge = std::clamp(std::stof(value()), 0.1f, 0.95f);
 			else if (a == "--simplify-error-large") opt.simplify.maxErrorLarge = std::clamp(std::stof(value()), 0.5f, 50.0f);
 			else if (a == "--simplify-error") opt.simplify.maxError = std::clamp(std::stof(value()), 0.5f, 50.0f);
+			else if (a == "--no-vcache") opt.vertexCache = false;
 			else if (a == "--npc-lod") opt.npcLod = true;
 			else if (a == "--npc-lod-ratio") opt.npcLodSimplify.ratio = std::clamp(std::stof(value()), 0.05f, 0.8f);
 			else if (a == "--npc-lod-error") opt.npcLodSimplify.maxError = std::clamp(std::stof(value()), 0.5f, 30.0f);

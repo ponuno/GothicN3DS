@@ -278,6 +278,8 @@ int main(int, char**) {
 	g3::StreamConfig& stream = app.world().config();
 	stream.background = background;
 	stream.maxLoadsPerFrame = background ? 1 : 2;
+	stream.budget = &app.frameBudget();
+	app.npcs().config().budget = &app.frameBudget();
 	stream.clusterCulling = !wholeChunks;
 	if (!dissolve) stream.fadeMs = 0.0f;
 	// The card is read ahead on a thread of its own: 4 MB of models, textures, animations and chunks waiting
@@ -331,6 +333,8 @@ int main(int, char**) {
 	if (nobody || plainShader) app.npcs().config().maxShown = 0;
 	// Characters coming into range: one set going per frame, the models of those on their way read ahead.
 	app.npcs().config().startsPerFrame = 1;
+	app.npcs().config().reachFloor = 0.6f;  // in a heavy scene the crowd is shown no nearer than 60 % of its range
+	app.npcs().config().farTickEvery = 2;   // and those beyond 15 m are stepped every other frame
 	app.npcs().config().prefetchRange = 3000.0f; // (their models are read on the read-ahead's thread; the frame only builds them)
 	printf("loading...\n");
 	app.world().preload(app.camera().pos);
@@ -687,6 +691,11 @@ int main(int, char**) {
 		}
 		gfx::c3dSyncTopOnly(displayWritten && fabsf(refreshHz - 60.0f) > 1.5f);
 		const float periodMs = displayWritten ? 1000.0f / refreshHz : 16.7f;
+		// What this frame left of its period: loads (chunks, textures, models) only go ahead if they fit in what the last one left.
+		{
+			const float took = fs.overlapped ? max(fs.cpuMs + updateMs, fs.gpuMs) : fs.cpuMs + fs.gpuMs;
+			app.frameBudget().headroomMs = updateMs < 50.0f ? periodMs * float(interval) - took : 1.0e9f;
+		}
 		{
 			// Loads since the last frame (the counters of the inhabitants and of the world only grow).
 			static g3::u32 lastModels = 0, lastClips = 0, lastChunks = 0, lastEvict = 0;

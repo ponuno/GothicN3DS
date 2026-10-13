@@ -210,7 +210,7 @@ Npcs::Piece* Npcs::piece(Pak& pak, u32 hash, u32& loadsLeft) {
 			p.used = _frame;
 			if (!p.failed) return &p;
 			// Memory may have been short for a moment: another go every few seconds.
-			if (_frame - p.failedAt < 240 || loadsLeft == 0) return nullptr;
+			if (_frame - p.failedAt < 240 || loadsLeft == 0 || !loadFits()) return nullptr;
 			--loadsLeft;
 			p.failed = !p.model.loadEntry(pak, hash, &_pool, true);
 			p.failedAt = _frame;
@@ -221,7 +221,7 @@ Npcs::Piece* Npcs::piece(Pak& pak, u32 hash, u32& loadsLeft) {
 		if (p.used == _frame) continue;
 		if (!spare || (p.hash == 0 && spare->hash != 0) || (p.hash != 0 && spare->hash != 0 && p.used < spare->used)) spare = &p;
 	}
-	if (!spare || loadsLeft == 0) return nullptr;
+	if (!spare || loadsLeft == 0 || !loadFits()) return nullptr;
 	// (Nobody is drawn with it any more - but an actor waiting for another of
 	// its models may still be bound to it.)
 	for (NpcActor& a : _actors)
@@ -240,7 +240,9 @@ Npcs::Piece* Npcs::piece(Pak& pak, u32 hash, u32& loadsLeft) {
 	spare->model.release();
 	spare->hash = hash;
 	spare->used = _frame;
+	const double tLoad = sys::timeMs();
 	spare->failed = !spare->model.loadEntry(pak, hash, &_pool, true);
+	_pieceCostMs = _pieceCostMs * 0.8f + float(sys::timeMs() - tLoad) * 0.2f;
 	spare->failedAt = _frame;
 	++_stats.loads;
 	return spare->failed ? nullptr : spare;
@@ -451,7 +453,7 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	// pacer's detail scale: people shrinking to a dozen metres under load would
 	// appear right in front of the player.
 	const StreamConfig& sc = world.config();
-	_reach = min(_cfg.range, sc.drawDistance);
+	_reach = min(_cfg.range * clamp(sc.detailScale, clamp(_cfg.reachFloor, 0.1f, 1.0f), 1.0f), sc.drawDistance);
 	// The clock has moved on by a minute or more: so may the routines have.
 	float hoursPassed = 0;
 	if (fabsf(hours - _hours) >= 1.0f / 60.0f) {
@@ -469,7 +471,19 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	u32 actors = 0, walking = 0, looking = 0, fighting = 0;
 	for (NpcActor& a : _actors) {
 		if (!a.used || !a.ready) continue;
-		tick(a, world, dt, hoursPassed);
+		float stepDt = dt;
+		if (_cfg.farTickEvery > 1 && hoursPassed == 0.0f && a.dist2 > _cfg.farTickDistance * _cfg.farTickDistance &&
+		    _game.npc(a.npc).weapon == WEAPON_NONE && !talking()) {
+			a.tickDebt += dt;
+			// (Not all on the same frame.)
+			if ((_frame + a.npc) % _cfg.farTickEvery != 0) {
+				++actors;
+				continue;
+			}
+			stepDt = a.tickDebt;
+		}
+		a.tickDebt = 0.0f;
+		tick(a, world, stepDt, hoursPassed);
 		++actors;
 		walking += a.phase == NpcActor::MOVING;
 		looking += a.lookAt >= 0;

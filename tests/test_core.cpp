@@ -5,6 +5,7 @@
 #include "bake.h"
 #include "sound_bake.h"
 #include "chunker.h"
+#include "vcache.h"
 #include "daedalus.h"
 #include "display_timing.h"
 #include "font_bake.h"
@@ -392,6 +393,77 @@ static void testTexture() {
 		many.threads = 4;
 		CHECK(bakeTexture(noise, one, nullptr) == bakeTexture(noise, many, nullptr));
 	}
+}
+
+static void testFrameBudget() {
+	FrameBudget b;
+	u32 refused = 0;
+	// No limit by default.
+	CHECK(b.allow(50.0f, refused) && refused == 0);
+	// Time left: a job that fits goes, one that does not waits, but not for ever.
+	b.headroomMs = 3.0f;
+	CHECK(b.allow(2.0f, refused));
+	int waited = 0;
+	while (!b.allow(6.0f, refused) && waited < 100) ++waited;
+	CHECK(waited == int(b.maxRefusals));
+	CHECK(refused == 0);
+	// Over the period already: nothing goes until the refusals run out.
+	b.headroomMs = -5.0f;
+	waited = 0;
+	while (!b.allow(0.5f, refused) && waited < 100) ++waited;
+	CHECK(waited == int(b.maxRefusals));
+}
+
+static void testVertexCache() {
+	// A grid of 40 x 40 quads whose triangles come in a shuffled order: reordering keeps every triangle, its winding and the
+	// batch's range, and the vertex shader runs far fewer times.
+	const int n = 40;
+	BakedChunk c;
+	for (int y = 0; y <= n; ++y)
+		for (int x = 0; x <= n; ++x) {
+			WorldVertex v {};
+			v.x = i16(x);
+			v.y = i16(y);
+			c.vertices.push_back(v);
+		}
+	std::vector<std::array<u16, 3>> tris;
+	for (int y = 0; y < n; ++y)
+		for (int x = 0; x < n; ++x) {
+			const u16 a = u16(y * (n + 1) + x), b = u16(a + 1), d = u16(a + n + 1), e = u16(d + 1);
+			tris.push_back({a, d, b});
+			tris.push_back({b, d, e});
+		}
+	u32 seed = 7u;
+	for (size_t i = tris.size(); i > 1; --i) {
+		seed = seed * 1664525u + 1013904223u;
+		std::swap(tris[i - 1], tris[(seed >> 8) % i]);
+	}
+	// Two batches: the first 1000 triangles and the rest.
+	for (const auto& t : tris) c.indices.insert(c.indices.end(), t.begin(), t.end());
+	ChunkBatch b1 {}, b2 {};
+	b1.firstIndex = 0;
+	b1.indexCount = 3000;
+	b2.firstIndex = 3000;
+	b2.indexCount = u32(c.indices.size()) - 3000;
+	c.batches = {b1, b2};
+	const std::vector<u16> before = c.indices;
+	VertexCacheStats st;
+	optimizeVertexCache(c, &st);
+	CHECK(c.indices.size() == before.size());
+	CHECK(c.batches[0].firstIndex == 0 && c.batches[0].indexCount == 3000 && c.batches[1].firstIndex == 3000);
+	// The same triangles with the same corner order (a triangle may start at any corner? no: exactly as it was).
+	auto triSet = [](const std::vector<u16>& v, size_t from, size_t to) {
+		std::vector<std::array<u16, 3>> s;
+		for (size_t i = from; i < to; i += 3) s.push_back({v[i], v[i + 1], v[i + 2]});
+		std::sort(s.begin(), s.end());
+		return s;
+	};
+	CHECK(triSet(before, 0, 3000) == triSet(c.indices, 0, 3000));
+	CHECK(triSet(before, 3000, before.size()) == triSet(c.indices, 3000, c.indices.size()));
+	std::printf("  vertex cache: %.2f -> %.2f shader runs per triangle\n", st.missesBefore / double(st.triangles),
+	            st.missesAfter / double(st.triangles));
+	CHECK(st.missesAfter < st.missesBefore * 0.5);
+	CHECK(st.missesAfter / double(st.triangles) < 1.3);
 }
 
 static void testChunker() {
@@ -4735,6 +4807,11 @@ static void testInhabitants() {
 		app.world().config().detailScale = 0.1f;
 		app.update(Input {}, dt);
 		CHECK(npcs.stats().reach == 3000.0f);
+		// With a floor under load the reach shrinks to it and no further.
+		npcs.config().reachFloor = 0.6f;
+		app.update(Input {}, dt);
+		CHECK(fabsf(npcs.stats().reach - 1800.0f) < 0.01f);
+		npcs.config().reachFloor = 1.0f;
 		app.world().config().detailScale = 1.0f;
 		const float drawDistance = app.drawDistance();
 		app.setDrawDistance(2000.0f);
@@ -10049,6 +10126,8 @@ int main(int argc, char** argv) {
 	             {"pak", testPak},
 	             {"etc1 block decoder", testEtc1BlockDecoder},
 	             {"texture", testTexture},
+	             {"frame budget", testFrameBudget},
+	             {"vertex cache", testVertexCache},
 	             {"chunker", testChunker},
 	             {"seams", testSeams},
 	             {"math", testMath},

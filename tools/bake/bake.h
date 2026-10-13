@@ -52,6 +52,8 @@ struct BakeOptions {
 	ModelSimplifyOptions simplifyModels;
 	// --npc-lod: a second, coarse body for each character, shown beyond npcLodDistance and swapped for the full one when near.
 	bool npcLod = false;
+	// The triangles of every batch reordered for the vertex cache (--no-vcache: left as the chunker made them).
+	bool vertexCache = true;
 	ModelSimplifyOptions npcLodSimplify = {true, 0.3f, 6.0f, 60};
 };
 

@@ -31,11 +31,19 @@ APP_AUTHOR      := gothic3ds contributors
 #---------------------------------------------------------------------------------
 ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
-CFLAGS   := -g -Wall -O2 -mword-relocations -ffunction-sections $(ARCH)
+# -fno-math-errno: sqrtf and friends become the VFP's own instruction instead of a library call that sets errno
+# (nothing here reads errno). `make LTO=1` turns on -O3 and link-time optimisation (slower to build, to be measured).
+CFLAGS   := -g -Wall -O2 -fno-math-errno -mword-relocations -ffunction-sections $(ARCH)
 CFLAGS   += $(INCLUDE) -D__3DS__
 CXXFLAGS := $(CFLAGS) -Wextra -fno-rtti -fno-exceptions -std=gnu++17
 ASFLAGS  := -g $(ARCH)
 LDFLAGS   = -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
+
+ifeq ($(LTO),1)
+CFLAGS   += -O3 -flto
+CXXFLAGS += -O3 -flto
+LDFLAGS  += -O3 -flto
+endif
 
 LIBS     := -lcitro3d -lctru -lm
 LIBDIRS  := $(CTRULIB)

@@ -27,6 +27,7 @@
 #include "model.h"
 #include "talk.h"
 #include "waynet.h"
+#include "frame_budget.h"
 #include "world.h"
 
 #include <string.h>
@@ -36,7 +37,18 @@ namespace g3 {
 struct NpcConfig {
 	float range = 3000.0f; // cm: how far away a character is still shown (less under load, see update())
 	float lodDistance = 1800.0f; // cm: beyond this a character with a coarse body (--npc-lod) is drawn with it, nearer with the full one (0: always full)
+	// Under load (the pacer's detail scale below 1) characters are shown no nearer than this share of `range`: 1 keeps the
+	// whole range (people never shrink to a dozen metres and come into being in front of the player), less spares the
+	// loads and scripts of the crowd in a heavy scene (the console 0.6).
+	float reachFloor = 1.0f;
+	// Characters farther than farTickDistance (and not fighting or talking) are stepped every farTickEvery-th frame, with the
+	// time of those between: their scripts and animation cost a share of what they did (1: every frame; the console 2).
+	float farTickDistance = 1500.0f;
+	u32 farTickEvery = 1;
 	u32 maxShown = 12;     // at most this many, the nearest (up to 16)
+	// What the last frame left (platform-set): a model is read only if it fits, by the cost measured of the ones before.
+	// Null: no limit.
+	const FrameBudget* budget = nullptr;
 	u32 loadsPerFrame = 1; // models read from the archive per frame (each is a hitch)
 	u32 startsPerFrame = 0; // characters set going per frame (0: all at once): their first steps run scripts, and a crowd at once was a hitch (the console takes one)
 	float prefetchRange = 0.0f; // cm beyond the range: the models of those who will come into it are read in the frames with nothing else to load (0: not; the console 1500)
@@ -211,6 +223,7 @@ struct NpcActor {
 	NpcPiece* head = nullptr;
 	NpcPiece* low = nullptr; // the coarse body, if the look has one
 	bool far = false;        // beyond the distance of the coarse body (with hysteresis)
+	float tickDebt = 0;      // time of the frames its step was left out
 	u8 mix = 255;            // the share of the full body drawn, the rest is the coarse one
 	Animator anim;
 	bool fist = false;     // a creature: its animations are the "fist" ones (S_FISTRUN ...)
@@ -489,6 +502,9 @@ private:
 	static bool findPoint(void* self, const char* name, float pos[3], float& yaw);
 	const LookEntry* lookOf(const GameLook& look) const;
 	Piece* piece(Pak& pak, u32 hash, u32& loadsLeft);
+	bool loadFits() { return !_cfg.budget || _cfg.budget->allow(_pieceCostMs, _refusedPieces); }
+	float _pieceCostMs = 6.0f; // estimate of what reading one model takes, kept as they are timed
+	u32 _refusedPieces = 0;
 	void select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft);
 	void retire(NpcActor& a);
 	void ground(NpcActor& a, const World& world, float above);

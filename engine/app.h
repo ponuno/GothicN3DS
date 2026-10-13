@@ -106,6 +106,7 @@ public:
 	const Hero& hero() const { return _hero; }
 	// The characters the game's scripts put into the world; not loaded with
 	// an archive that has no scripts.
+	FrameBudget& frameBudget() { return _budget; } // what the last frame left for loads (set by the platform)
 	Npcs& npcs() { return _npcs; }
 	const Npcs& npcs() const { return _npcs; }
 	// True if the player steers a character (see Input); false with an
@@ -436,6 +437,7 @@ private:
 	World _world;
 	Player _player;
 	Hero _hero;
+	FrameBudget _budget;
 	Npcs _npcs;
 	Sky _sky;
 	Camera _cam;

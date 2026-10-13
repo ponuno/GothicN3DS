@@ -6,6 +6,7 @@
 #include "g3ds/pak.h"
 #include "collision.h"
 #include "g3ds/world.h"
+#include "frame_budget.h"
 #include "gfx.h"
 #include "loader.h"
 
@@ -42,6 +43,9 @@ struct StreamConfig {
 	// out as it nears it, the far layer showing through; 0: chunks and far layer meet at the draw distance, as before.
 	float edgeFadeShare = 0.3f;
 	float edgeFadeMax = 1500.0f;
+	// What the last frame left (platform-set): a chunk or texture is handed over only if it fits, by the cost measured of
+	// the ones before. Null: no limit.
+	const FrameBudget* budget = nullptr;
 	u32 maxLoadsPerFrame = 2;      // chunks handed to the GPU per frame: bounds the upload hitch
 	u32 readAheadChunks = 4;       // chunks after those being read whose bytes are read ahead from the card (with a ReadAhead)
 	u32 maxInFlight = 2;           // chunks being read at once in the background (nearer wishes wait: what is read is still wanted when it arrives)
@@ -324,6 +328,8 @@ private:
 	void drawFar(const Frustum& view);
 	// Whether all of these chunks (of the far layer's chunk list) are drawn in full this frame.
 	bool farCovered(u32 firstChunk, u32 count) const;
+	float _chunkCostMs = 2.0f, _textureCostMs = 0.8f; // estimates, kept as the loads are timed
+	u32 _refusedChunks = 0, _refusedTextures = 0;
 	float edgeBand() const { return _cfg.farDistance > _cfg.drawDistance && _cfg.edgeFadeShare > 0.0f && gfx::fadeSupported() ? min(_cfg.drawDistance * _cfg.edgeFadeShare, _cfg.edgeFadeMax) : 0.0f; }
 	void classify(const Loaded& l, u32 index, bool count);
 public:

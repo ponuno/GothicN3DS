@@ -1206,3 +1206,15 @@ draw call'ы почти бесплатны, всё держат вершины/�
 - Рантайм: чанк у границы дальности (последние `edgeFadeShare` = 30 % дальности, не больше `edgeFadeMax` = 15 м) растворяется (dither) и дальний слой виден сквозь него — вместо резкой смены. `Loaded::edgeShare`, `World::edgeBand()`, статистика `chunksEdgeFading`; все батчи чанка делят одну долю и сливаются в вызовы как обычно (без лишних draw call'ов). Дальний слой теперь рисуется и под этой полосой (`farCovered` — до `drawDistance − edgeBand`). Работает только при активном дальнем слое и поддержке растворения. Тест: в `far layer` (`chunksEdgeFading` > 0, при `edgeFadeShare = 0` — 0).
 - Бейкер (нужно перезапечь): ящик кроны не больше 20 м (было — без верхней границы: для грубой ячейки одна гигантская крона), и крона светлее (верх 1.3, бока 1.02, низ 0.7; было 1.15/0.9/0.55).
 - Не проверено на консоли: вид растворения у края, цена кадра (края добавляют перерисовку дальнего слоя под полосой). Если мешает — `edgeFadeShare = 0` возвращает прежнее поведение.
+
+## fix69 — жители в тяжёлой сцене: дальность под нагрузкой и редкий шаг дальних
+По видео (город, 30 fps, HUD): кадр 42–55 мс при цели 33; GPU 100–114 %; `upd n` (жители) в среднем 8–25 мс, худший 47–133 мс (`sel` 58–96, `tick` 30–44); `evicted` растёт; детальность пейсера 35 %.
+- `NpcConfig::reachFloor` (ядро 1.0 = как fix63; консоль 0.6): под нагрузкой дальность жителей не меньше этой доли `range` (раньше 0.4 → 12 м; в fix63 совсем без привязки — в тяжёлой сцене это, вероятно, добавило загрузок и скриптов).
+- `NpcConfig::farTickDistance` (1500 см) / `farTickEvery` (ядро 1; консоль 2): житель дальше 15 м, без оружия, не в разговоре и не в кадре с переходом часов шагает через кадр с накопленным временем (`NpcActor::tickDebt`), со сдвигом по номеру.
+- Не измерено на консоли. Остаётся: загрузка модели жителя на главном потоке (1 в кадр) даёт одиночные всплески; GPU в плотной сцене не укладывается в 33 мс даже при 35 % детали.
+
+## fix70 — vertex cache, compiler flags, frame-time load budget
+- Baker: `tools/bake/vcache.{h,cpp}` (Forsyth) reorders triangles inside each batch range before chunks are written; winding and batch ranges unchanged. `--no-vcache` disables. Needs a REBAKE to take effect. Test: ACMR 2.97 -> 1.14 on a grid.
+- Makefile: `-fno-math-errno` always; `make LTO=1` adds `-O3 -flto` (compile/link time up; measure on console, revert if unstable).
+- `engine/frame_budget.h` (FrameBudget): world chunk/texture loads and NPC piece loads are allowed only if their EMA cost fits in the headroom (period minus last frame time); after `maxRefusals` consecutive refusals the job goes anyway, so nothing starves. Wired in platform/3ds/main.cpp (`headroomMs` after `periodMs`). Test "frame budget".
+- Verified on PC only (ctest 6/6, check_3ds clean). Budget and flags unmeasured on console.

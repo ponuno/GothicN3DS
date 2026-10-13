@@ -99,6 +99,7 @@ set(G3DS_BAKE_SOURCES
     tools/bake/far_lod.cpp
     tools/bake/visibility.cpp
     tools/bake/lod.cpp
+    tools/bake/vcache.cpp
     tools/bake/model_simplify.cpp
     tools/bake/synth.cpp)
 

@@ -4,6 +4,7 @@
 #include "ground.h"
 #include "model_bake.h"
 #include "populate.h"
+#include "vcache.h"
 
 #include "g3ds/game.h"
 
@@ -659,6 +660,27 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			wh.bbMax[a] = -1e30f;
 		}
 
+		if (opt.vertexCache) {
+			VertexCacheStats vc;
+			std::mutex vcLock;
+			std::atomic<size_t> nextChunk {0};
+			const auto work = [&] {
+				VertexCacheStats mine;
+				for (size_t i = nextChunk.fetch_add(1); i < chunks.size(); i = nextChunk.fetch_add(1)) optimizeVertexCache(chunks[i], &mine);
+				std::lock_guard<std::mutex> g(vcLock);
+				vc.triangles += mine.triangles;
+				vc.missesBefore += mine.missesBefore;
+				vc.missesAfter += mine.missesAfter;
+			};
+			std::vector<std::thread> pool;
+			for (unsigned t = 1; t < std::max(1u, opt.threads); ++t) pool.emplace_back(work);
+			work();
+			for (std::thread& t : pool) t.join();
+			if (vc.triangles)
+				line(format("vertex cache order: %llu triangles; vertex shader runs per triangle %.2f -> %.2f (16-entry FIFO)",
+				            static_cast<unsigned long long>(vc.triangles), vc.missesBefore / double(vc.triangles),
+				            vc.missesAfter / double(vc.triangles)));
+		}
 		std::vector<ChunkInfo> infos;
 		std::vector<u8> tiers;
 		int gx0 = 1 << 30, gx1 = -(1 << 30), gz0 = 1 << 30, gz1 = -(1 << 30);

@@ -59,6 +59,7 @@ bool gStereoWanted = false, gStereoOn = false, gStereoFrame = false;
 u32 gUiEyeBase = 0; // the quads of the eyes before this one in the frame
 bool gSuper = false;       // supersampling in use: the target is 480x800 and the display transfer averages 2x2
 bool gSuperWanted = false; // asked for before init()
+bool gSuperLightWanted = false, gSuperLight = false; // ... as the light kind (480x400, averaged in pairs along the 480 only)
 bool gWideWanted = false, gWide = false; // wide screen (800x240): asked for before init(), and whether the screen took it
 DVLB_s* gDvlb = nullptr;
 shaderProgram_s gProgram;     // the full shader (entry `main`); with the classic, plain and fade ones the only program
@@ -368,14 +369,21 @@ static bool makeTarget(bool super) {
 	// 480x800 averaged in pairs along the 480 only (the same memory as the ordinary smoothing, the picture twice as fine
 	// across to begin with).
 	const int longSide = gWide ? 800 : 400;
-	if (super) {
+	gSuperLight = false;
+	if (super && gSuperLightWanted && !gWide) {
+		// The light kind: twice the pixels (not four times) - the picture twice as fine along the 480 (the screen's height) only.
+		gTarget = C3D_RenderTargetCreate(480, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
+		gSuper = gTarget != nullptr;
+		gSuperLight = gSuper;
+	}
+	if (super && !gTarget) {
 		gTarget = C3D_RenderTargetCreate(480, 800, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 		gSuper = gTarget != nullptr;
 	}
 	if (!gTarget) gTarget = C3D_RenderTargetCreate(240, longSide, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 	if (!gTarget) return false;
 	C3D_RenderTargetSetOutput(gTarget, GFX_TOP, GFX_LEFT,
-	                          gSuper ? (DISPLAY_TRANSFER_FLAGS | GX_TRANSFER_SCALING(gWide ? GX_TRANSFER_SCALE_X : GX_TRANSFER_SCALE_XY)) : DISPLAY_TRANSFER_FLAGS);
+	                          gSuper ? (DISPLAY_TRANSFER_FLAGS | GX_TRANSFER_SCALING(gWide || gSuperLight ? GX_TRANSFER_SCALE_X : GX_TRANSFER_SCALE_XY)) : DISPLAY_TRANSFER_FLAGS);
 	// The right eye: the screen's own size too (not together with the smoothing: that does not fit into VRAM twice).
 	gTargetR = nullptr;
 	if (gStereoWanted && !gSuper && !gWide) {
@@ -564,6 +572,7 @@ void shutdown() {
 	gWide = false;
 	gStereoOn = gStereoFrame = false;
 	gSuper = false;
+	gSuperLight = false;
 	gReady = false;
 }
 
@@ -1156,8 +1165,20 @@ void c3dSetWide(bool on) {
 bool c3dWide() { return gWide; }
 
 void c3dSetSupersample(bool on) {
-	if (!gReady) gSuperWanted = on; // (only before init(): the target is not rebuilt while frames are in flight)
+	if (!gReady) {
+		gSuperWanted = on; // (only before init(): the target is not rebuilt while frames are in flight)
+		gSuperLightWanted = false;
+	}
 }
+
+void c3dSetSupersampleMode(int mode) {
+	if (!gReady) {
+		gSuperWanted = mode != 0;
+		gSuperLightWanted = mode == 1;
+	}
+}
+
+bool c3dSupersampleLight() { return gSuperLight; }
 
 bool c3dSupersample() { return gSuper; }
 void c3dSetDoubleDraws(bool on) { gDoubleDraws = on; }

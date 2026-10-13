@@ -698,6 +698,22 @@ static void testStereo(const std::string& pak) {
 		gfx::shutdown();
 		CHECK(mock3ds::counters().linearBlocks == 0);
 	}
+	// The light smoothing: a 480x400 target averaged in pairs (twice the pixels, not four times).
+	for (int classic = 0; classic < 2; ++classic) {
+		mock3ds::reset();
+		gfx::c3dSetClassicFrames(classic != 0);
+		gfx::c3dSetSupersampleMode(1);
+		CHECK(gfx::init() && gfx::c3dSupersample() && gfx::c3dSupersampleLight());
+		CHECK(mock3ds::counters().outputWidth == 480u && mock3ds::counters().outputScaling == 1u);
+		gfx::shutdown();
+		mock3ds::reset();
+		gfx::c3dSetSupersampleMode(2);
+		CHECK(gfx::init() && gfx::c3dSupersample() && !gfx::c3dSupersampleLight() && mock3ds::counters().outputScaling == 2u);
+		gfx::shutdown();
+		gfx::c3dSetSupersampleMode(0);
+	}
+	gfx::c3dSetClassicFrames(false);
+	CHECK(mock3ds::violations() == 0);
 	// Not together with the smoothing: no second eye, and nothing breaks.
 	mock3ds::reset();
 	gfx::c3dSetStereo(true);

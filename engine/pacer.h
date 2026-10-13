@@ -48,6 +48,13 @@ struct PacerConfig {
 	// Half rate (30 fps). Loads are still shares of one 60 Hz refresh.
 	float halfHigh = 1.80f;  // load above which detail is taken away even here
 	float halfLow = 1.60f;   // load below which it is given back
+	// At half rate, too, the objects are not all there is: with them at their minimum and the frame still over,
+	// the world's own distance shortens (the steady 30 used to stay at 20 fps in a square it could not fit);
+	// far over, along with the objects. It is given back, before the objects, while there is room.
+	float halfDistOver = 1.85f;     // load above which (objects gone) the distance shortens
+	float halfDistParallel = 2.4f;  // load above which it shortens along with the objects
+	float halfDistStep = 0.015f;    // most taken away in a frame
+	float halfDistRecover = 0.0025f; // given back per frame while the load is below halfLow
 	float leaveHalf = 0.80f; // load below which full rate returns straight away
 	u32 leaveFrames = 60;    // consecutive light frames before that
 	float probeBelow = 1.30f; // load at full detail below which it is worth asking whether 60 fps would fit with less

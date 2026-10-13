@@ -19,6 +19,7 @@ enum FrameRateMode : u8 {
 	FRAMES_30,   // always a steady 30 (more detail, smoother under load)
 	FRAMES_FREE, // each frame goes out at the first refresh after it is done: 30..60, never held to a steady 30
 	FRAMES_40,   // the screen itself runs at 40 Hz and every frame has 25 ms (needs the display timing; otherwise as 60)
+	FRAMES_30F,  // a steady 30 whose screen follows the frame: 26..30 Hz, so a frame a little over 33 ms is shown when it is ready (needs the display timing; otherwise as the steady 30)
 	FRAME_MODES
 };
 
@@ -87,7 +88,7 @@ struct Settings {
 	// Version 11: simplified far geometry (data baked with --lod): 0 off, then from 25 / 40 / 60 m a chunk lies in view.
 	u8 farGeometry = 2;
 	// Version 12: smoothing of edges (supersampling: the picture drawn at twice the size each way and shrunk): 0 off, 1 on.
-	u8 antialias = 0;
+	u8 antialias = 0; // 0 off, 1 light (twice the pixels, along one axis), 2 full (four times; before version 18 this was 1)
 	// Version 13: the top screen's refresh rate follows the frame (experimental, writes the screen controller's timing):
 	// 0 off (60 Hz), 1 between 45 and 60 Hz, 2 up to 72, 3 up to 80.
 	u8 refresh = 0;

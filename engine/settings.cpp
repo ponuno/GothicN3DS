@@ -23,7 +23,7 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 13: the screen's refresh rate follows the frame.
 // 14: the old picture turned sideways when a refresh has no new one.
 // 15: reading ahead.
-constexpr u32 SETTINGS_VERSION = 17;
+constexpr u32 SETTINGS_VERSION = 18;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -111,8 +111,9 @@ void Settings::sanitize() {
 	if (farLayer > 3) farLayer = 0;
 	if (farGeometry > 3) farGeometry = 2;
 	if (refresh > 5) refresh = 0;
+	if (antialias > 2) antialias = 0;
 	gfxPlus = gfxPresetOf();
-	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier, &visibility, &antialias, &reproject, &readAhead, &farFill};
+	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier, &visibility, &reproject, &readAhead, &farFill};
 	if (stereo > 2) stereo = 0;
 	for (u8* f : flags) *f = *f ? 1 : 0;
 }
@@ -176,6 +177,7 @@ bool Settings::load(const char* path) {
 	memcpy(&s, bytes, min<u32>(h.size, sizeof(Settings)));
 	if (h.version < 2) s.scheme = CONTROLS_CLASSIC;
 	if (h.version < 3) s.report = 0;
+	if (h.version < 18 && s.antialias == 1) s.antialias = 2; // (the old "on" is the full smoothing)
 	s.sanitize();
 	*this = s;
 	return true;

@@ -21,6 +21,9 @@ void c3dSetFillTest(bool on);
 // display-transfer unit as it goes to the screen. Call before init(); if the bigger buffers do not fit into VRAM
 // the picture stays as it was (c3dSupersample() says which).
 void c3dSetSupersample(bool on);
+// 0 off, 1 light (480x400, averaged in pairs: twice the pixels), 2 full (480x800, 2x2: four times). Before init() only.
+void c3dSetSupersampleMode(int mode);
+bool c3dSupersampleLight();
 bool c3dSupersample();
 // Stereo 3D: the scene is drawn twice a frame, once for each eye (gfx::stereoSet switches it on and off while the
 // game runs, with the 3D slider). Call before init(): the right eye's target and bigger command buffers are made there.

@@ -266,7 +266,7 @@ int main(int, char**) {
 	gfx::c3dSetDoubleDraws((startKeys & KEY_START) != 0); // hold START at start: every draw twice
 	gfx::c3dSetFillTest(halfPicture); // hold ZR at start: half the pixels, the same triangles
 	gfx::c3dSetFadeShader(dissolve);
-	gfx::c3dSetSupersample(settings.antialias != 0); // (a change in the menu counts after a restart)
+	gfx::c3dSetSupersampleMode(settings.antialias); // (a change in the menu counts after a restart)
 	// The top screen: wide (800x240) or stereo 3D (the same, after a restart; the 3D not together with the smoothing). The wide
 	// one wins if asked for; with the smoothing it is smoothed up and down only (across, it is twice as fine as it was).
 	gfx::c3dSetWide(settings.wideScreen());
@@ -356,8 +356,8 @@ int main(int, char**) {
 	const auto pace = [&]() {
 		const g3::Settings& st = app.settings();
 		pacer.cfg.minDetail = st.minDetail(); // (steady: too heavy means 30 fps, the objects stay)
-		pacer.cfg.halfOnly = st.frameRate == g3::FRAMES_30;
-		pacer.cfg.freeRate = st.frameRate == g3::FRAMES_FREE || (st.frameRate == g3::FRAMES_40 && displayOk) || (st.refreshHold() && displayOk);
+		pacer.cfg.halfOnly = st.frameRate == g3::FRAMES_30 || (st.frameRate == g3::FRAMES_30F && !displayOk);
+		pacer.cfg.freeRate = st.frameRate == g3::FRAMES_FREE || (st.frameRate == g3::FRAMES_40 && displayOk) || (st.frameRate == g3::FRAMES_30F && displayOk) || (st.refreshHold() && displayOk);
 		// Leaving a mode (the steady 30 above all) starts the pacer afresh: its half rate must not outlive the setting.
 		if (st.frameRate != pacedMode) {
 			pacedMode = st.frameRate;
@@ -630,9 +630,11 @@ int main(int, char**) {
 		// 3DS: 28% + 97% gave 20.9 ms, which is 125% of 16.7 ms.)
 		const bool lock40 = displayOk && app.settings().frameRate == g3::FRAMES_40;
 		// "Hold 72/80": the detail is kept to that rate's frame time (12.5 ms at 80), the screen follows the frame.
-		const bool hold = !lock40 && displayOk && app.settings().refreshHold() && interval == 1 && !menu.isOpen();
+		// "Exactly 30, floating": every frame has 33 ms, and the screen runs at 26..30 Hz as the frame needs.
+		const bool lock30 = displayOk && app.settings().frameRate == g3::FRAMES_30F;
+		const bool hold = !lock40 && !lock30 && displayOk && app.settings().refreshHold() && interval == 1 && !menu.isOpen();
 		const gfx::FrameStats fs = gfx::frameStats();
-		const float load = (fs.overlapped ? max(fs.cpuMs + updateMs, fs.gpuMs) : fs.cpuMs + fs.gpuMs) * (lock40 ? 0.04f : hold ? app.settings().refreshMaxHz() * 0.001f : 0.06f);
+		const float load = (fs.overlapped ? max(fs.cpuMs + updateMs, fs.gpuMs) : fs.cpuMs + fs.gpuMs) * (lock40 ? 0.04f : lock30 ? 0.03f : hold ? app.settings().refreshMaxHz() * 0.001f : 0.06f);
 		// The view turning faster than about 60 degrees a second: what comes
 		// into view comes and goes, so no objects are given back meanwhile.
 		float turn = app.camera().yaw - lastYaw;
@@ -663,6 +665,18 @@ int main(int, char**) {
 			// The steady 40: the screen itself at 40 Hz, every frame has 25 ms; frames the pacer cannot fit still come at 40.
 			if (!displayWritten || fabsf(refreshHz - 40.0f) > 0.7f) {
 				const float made = g3::display::set(40.0f);
+				if (made > 0.0f) {
+					refreshHz = made;
+					displayWritten = true;
+				}
+			}
+		} else if (lock30) {
+			// The screen follows the frame, between 26 and 30 Hz: quick to slow down, slow to speed up.
+			const float need = fs.overlapped ? max(fs.cpuMs + updateMs, fs.gpuMs) : fs.cpuMs + fs.gpuMs;
+			if (updateMs < 50.0f) refreshNeed = need > refreshNeed ? need : refreshNeed * 0.92f + need * 0.08f;
+			const float wantHz = clamp(1000.0f / (refreshNeed * 1.06f + 0.5f), 26.0f, 30.0f);
+			if (!displayWritten || fabsf(wantHz - refreshHz) > 0.4f) {
+				const float made = g3::display::set(wantHz);
 				if (made > 0.0f) {
 					refreshHz = made;
 					displayWritten = true;
@@ -803,7 +817,7 @@ int main(int, char**) {
 				reportLine("cmd%3.0f%% x%lu g+ao%3d%c w%d%c%2lu sh%d/%lu%s%s%s", double(fs.commandBufferUse * 100.0f),
 				     static_cast<unsigned long>(fs.drawsDropped), int(st.occlusion), app.world().hasOcclusion() ? ' ' : '-', int(st.wind),
 				     app.world().hasWind() ? ' ' : '-', static_cast<unsigned long>(ws.windyDrawCalls), int(st.shadows),
-				     static_cast<unsigned long>(app.shadows().stats().drawn), app.gfxRelief() ? " R" : "", gfx::c3dSupersample() ? " AA" : "", gfx::stereoActive() ? " 3D" : gfx::c3dWide() ? " W" : "");
+				     static_cast<unsigned long>(app.shadows().stats().drawn), app.gfxRelief() ? " R" : "", gfx::c3dSupersampleLight() ? " AA1" : gfx::c3dSupersample() ? " AA" : "", gfx::stereoActive() ? " 3D" : gfx::c3dWide() ? " W" : "");
 			}
 			// (Chunks in memory: the world's own + those of medium and small objects, of all; wanted and not there: the same.)
 			// (RP: the re-projection, when asked for: columns of the last move and refreshes that showed the old picture

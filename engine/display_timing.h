@@ -30,11 +30,11 @@ inline bool pdcKnown(const PdcTiming& t) {
 	return ht >= 250 && ht <= 600 && vt >= 380 && vt <= 0xFFF && end > start && end - start == 240 && start < ht && end <= ht + 1;
 }
 
-// `base` with the refresh rate nearest `hz` (30 .. 90). Returns the rate it makes; 0 if `base` is not known.
+// `base` with the refresh rate nearest `hz` (24 .. 90). Returns the rate it makes; 0 if `base` is not known.
 inline float pdcTimingFor(const PdcTiming& base, float hz, PdcTiming& out) {
 	out = base;
 	if (!pdcKnown(base)) return 0.0f;
-	if (hz < 30.0f) hz = 30.0f;
+	if (hz < 24.0f) hz = 24.0f;
 	if (hz > 90.0f) hz = 90.0f;
 	const u32 ht = base.reg[0] & 0xFFFu, vt = base.reg[9] & 0xFFFu;
 	if (hz <= pdcRefresh(base)) {

@@ -2275,6 +2275,25 @@ static void testPacer() {
 		CHECK(t.detailScale() > held + 0.05f);
 	}
 
+	{
+		// The steady 30: a square that does not fit even without the small objects. The distance goes (the objects first),
+		// settles where the frame fits (below halfHigh), and comes back once the scene is light.
+		auto cost2 = [&](float scene, const FramePacer& q) { return scene * (0.6f + 0.4f * q.detailScale()) * (0.5f + 0.5f * q.distanceScale()); };
+		FramePacer h30;
+		h30.cfg.halfOnly = true;
+		for (int f = 0; f < 1500; ++f) h30.update(cost2(2.8f, h30));
+		const float dist = h30.distanceScale();
+		CHECK(h30.interval() == 2 && h30.detailScale() <= h30.cfg.minDetail + 0.001f && dist < 0.95f && dist >= h30.cfg.minDistance);
+		CHECK(cost2(2.8f, h30) < h30.cfg.halfHigh + 0.1f);
+		for (int f = 0; f < 1500; ++f) h30.update(cost2(1.2f, h30));
+		CHECK(h30.distanceScale() == 1.0f && h30.detailScale() == 1.0f);
+		// A scene that fits changes nothing.
+		FramePacer fit;
+		fit.cfg.halfOnly = true;
+		for (int f = 0; f < 600; ++f) fit.update(cost2(1.5f, fit));
+		CHECK(fit.distanceScale() == 1.0f && fit.detailScale() == 1.0f);
+	}
+
 	// A view that needs 105% at full detail. The pacer finds a detail level
 	// that fits and stays at 60 fps, without hunting.
 	float worst = 0, lowest = 1, highest = 0;
@@ -7885,7 +7904,7 @@ static void testDisplayTiming() {
 	}
 	// Out of range is held to 30..90, and what is not the top screen's is not touched.
 	PdcTiming t;
-	CHECK(pdcTimingFor(base, 500.0f, t) < 91.0f && pdcTimingFor(base, 1.0f, t) > 29.0f);
+	CHECK(pdcTimingFor(base, 500.0f, t) < 91.0f && pdcTimingFor(base, 1.0f, t) > 23.0f && pdcTimingFor(base, 1.0f, t) < 25.0f);
 	PdcTiming odd = base;
 	odd.reg[0] = 0x20;
 	CHECK(!pdcKnown(odd) && pdcTimingFor(odd, 72.0f, t) == 0.0f && t.reg[0] == 0x20);

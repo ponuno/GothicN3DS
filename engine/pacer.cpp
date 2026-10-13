@@ -84,9 +84,9 @@ void FramePacer::update(float frameLoad, bool turning) {
 		return;
 	}
 
-	// Half rate: there is twice the time now (and the whole distance again).
-	_dist = min(_dist + 0.01f, 1.0f);
+	// Half rate: there is twice the time now. While it is finding out whether 60 fps would fit, the whole distance is back.
 	if (_probing) {
+		_dist = min(_dist + 0.01f, 1.0f);
 		// Take the objects away, quickly but not at once, and see what is left.
 		if (_detail > cfg.minDetail + 0.001f) {
 			_detail = max(_detail - 0.04f, cfg.minDetail);
@@ -106,11 +106,21 @@ void FramePacer::update(float frameLoad, bool turning) {
 		return;
 	}
 
-	if (_load > cfg.halfHigh)
-		_detail -= clamp((_load - cfg.halfHigh) * 0.5f, 0.01f, 0.08f);
-	else if (_load < cfg.halfLow)
-		_detail += cfg.recover;
+	if (_load > cfg.halfHigh) {
+		if (_detail > cfg.minDetail + 0.001f) {
+			_detail -= clamp((_load - cfg.halfHigh) * 0.5f, 0.01f, 0.08f);
+			if (_load > cfg.halfDistParallel) _dist -= clamp((_load - cfg.halfDistParallel) * 0.05f, 0.001f, 0.01f);
+		} else if (_load > cfg.halfDistOver) {
+			_dist -= clamp((_load - cfg.halfDistOver) * 0.1f, 0.002f, cfg.halfDistStep);
+		}
+	} else if (_load < cfg.halfLow) {
+		if (_dist < 1.0f)
+			_dist += cfg.halfDistRecover;
+		else
+			_detail += cfg.recover;
+	}
 	_detail = clamp(_detail, cfg.minDetail, 1.0f);
+	_dist = clamp(_dist, cfg.minDistance, 1.0f);
 
 	if (cfg.halfOnly) return; // (no way back to full rate, and nothing to find out)
 	// A scene this light needs no second thought.

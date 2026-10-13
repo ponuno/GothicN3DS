@@ -33,9 +33,12 @@ const char* const kDensity[] = {"100 %", "75 %", "50 %"};
 const char* const kDensityNotes[] = {"Все кусты, камни и мусор", "Каждый четвёртый мелкий предмет убран",
                                      "Каждый второй мелкий предмет убран"};
 const char* const kNpcRange[] = {"20 м", "30 м", "45 м"};
-const char* const kFrames[] = {"60 (30 под нагрузкой)", "Ровно 30", "Свободно до 60", "Ровно 40"};
+const char* const kFrames[] = {"60 (30 под нагрузкой)", "Ровно 30", "Свободно до 60", "Ровно 40", "Плавающие 30"};
 const char* const kFrameNotes[] = {"60, а при перегрузке ровные 30", "Всегда 30: больше деталей, нет рывков",
-                                   "Кадр выходит, как только готов (30–60)", "Экран 40 Гц, на кадр 25 мс (опыт)"};
+                                   "Кадр выходит, как только готов (30–60)", "Экран 40 Гц, на кадр 25 мс (опыт)",
+                                   "Экран 26–30 Гц, поздний кадр не ждёт"};
+const char* const kAntialias[] = {"Выкл", "Лёгкое", "Полное"};
+const char* const kAntialiasNotes[] = {"Без сглаживания", "Вдвое больше пикселей; после перезапуска", "Вчетверо больше пикселей; после перезапуска"};
 const char* const kSchemes[] = {"Консольная", "Классическая"};
 const char* const kSchemeNotes[] = {"Стик ведёт туда, куда указывает на экране", "Как в оригинале: камера всегда за спиной"};
 const char* const kBottom[] = {"Инвентарь", "Отчёт"};
@@ -74,7 +77,7 @@ const Item kGraphics[] = {
     {"Жители вдали", CHOICE, &Settings::npcDistance, kNpcRange, 3, 0, 0, nullptr, 0, "Как далеко видны жители и звери", nullptr},
     {"Купол Барьера", TOGGLE, &Settings::barrier, nullptr, 0, 0, 0, nullptr, 0, "Сияние неба и гул, если есть в данных", nullptr},
     {"Плавное появление", TOGGLE, &Settings::dissolve, nullptr, 0, 0, 0, nullptr, 0, "Вступит в силу после перезапуска", nullptr},
-    {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 4, 0, 0, nullptr, 0, nullptr, kFrameNotes},
+    {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 5, 0, 0, nullptr, 0, nullptr, kFrameNotes},
     {"Экран", CHOICE, &Settings::stereo, kScreen, 3, 0, 0, nullptr, 0, "Ползунок 3D или 800x240; после перезапуска", nullptr},
     {"Графика+", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GFX_PLUS, "Затенение углов, листва, тени, даль", nullptr},
     {"Сбросить графику", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_RESET_GRAPHICS, "Вернуть значения по умолчанию", nullptr},
@@ -111,7 +114,7 @@ const Item kGfxPlus[] = {
     {"Дальняя геометрия", CHOICE, &Settings::farGeometry, kFarGeometry, 4, 0, 0, nullptr, 0, "Упрощённые дальние чанки (мир с --lod)", nullptr},
     {"Частота экрана", CHOICE, &Settings::refresh, kRefresh, 6, 0, 0, nullptr, 0, "Экран подстраивается под кадр (опыт)", nullptr},
     {"Доворот кадра", TOGGLE, &Settings::reproject, nullptr, 0, 0, 0, nullptr, 0, "Старый кадр довёрнут, пока ждём новый", nullptr},
-    {"Сглаживание", TOGGLE, &Settings::antialias, nullptr, 0, 0, 0, nullptr, 0, "Края без лесенки; после перезапуска", nullptr},
+    {"Сглаживание", CHOICE, &Settings::antialias, kAntialias, 3, 0, 0, nullptr, 0, nullptr, kAntialiasNotes},
     {"Видимость", TOGGLE, &Settings::visibility, nullptr, 0, 0, 0, nullptr, 0, "Не рисовать скрытое стенами (мир с --vis)", nullptr},
 };
 const Item kDebug[] = {

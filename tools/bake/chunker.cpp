@@ -330,8 +330,9 @@ struct CellBuilder {
 
 	static u8 classOf(const WorkTri& t) { return (t.detail & 3) < DETAIL_COUNT ? u8(t.detail & 3) : u8(DETAIL_COUNT - 1); }
 	static u8 layerOf(const WorkTri& t) { return u8((t.detail >> 2) & 3); }
-	// What a batch is told by: the class and the layer.
-	static u8 detailOf(const WorkTri& t) { return u8(classOf(t) | (layerOf(t) << 2)); }
+	static u8 bandOf(const WorkTri& t) { return classOf(t) == DETAIL_SMALL ? u8((t.detail >> 4) & 3) : u8(0); }
+	// What a batch is told by: the class, the layer and the size band.
+	static u8 detailOf(const WorkTri& t) { return u8(classOf(t) | (layerOf(t) << 2) | (bandOf(t) << 4)); }
 
 	void build(Group& g) {
 		std::vector<u32>& tris = g.tris;
@@ -393,7 +394,8 @@ struct CellBuilder {
 		auto sortKey = [&](u32 t) {
 			const WorkTri& tri = work[t];
 			const u32 m = u32(remap[tri.material]);
-			return (u64(order[m]) << 40) | (u64(classOf(tri)) << 32) | (u64(m) << 10) | (u64(clusterId(t)) << 2) | layerOf(tri);
+			return (u64(order[m]) << 40) | (u64(classOf(tri)) << 32) | (u64(m) << 12) | (u64(clusterId(t)) << 4) | (u64(layerOf(tri)) << 2) |
+			       bandOf(tri);
 		};
 		std::stable_sort(tris.begin(), tris.end(), [&](u32 a, u32 b) { return sortKey(a) < sortKey(b); });
 

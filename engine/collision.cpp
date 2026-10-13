@@ -95,7 +95,9 @@ bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const
 				const WorldVertex& c0 = vertices[v];
 				const WorldVertex& c1 = vertices[indices[batches[b].firstIndex + i + 1]];
 				const WorldVertex& c2 = vertices[indices[batches[b].firstIndex + i + 2]];
-				group[n / 3] = materials[batches[b].material].group;
+				// (Bit 7: one sees through it - a cut-out or blended material; segmentBlocked lets the eye through.)
+				const u16 mf = materials[batches[b].material].flags;
+				group[n / 3] = u8((materials[batches[b].material].group & 0x7Fu) | ((mf & (MATF_ALPHA_TEST | MATF_TRANSLUCENT)) ? 0x80u : 0u));
 				u8* l = light + size_t(n / 3) * 4;
 				l[0] = u8((u32(c0.r) + c1.r + c2.r) / 3);
 				l[1] = u8((u32(c0.g) + c1.g + c2.g) / 3);
@@ -253,7 +255,7 @@ bool ChunkCollider::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal,
 		if (n.y < 0) n = n * -1.0f;
 		normal = n;
 		if (lightOut && light) memcpy(lightOut, light + size_t(tri) * 4, 4);
-		if (groupOut && group) *groupOut = group[tri];
+		if (groupOut && group) *groupOut = u8(group[tri] & 0x7Fu);
 	}
 	if (found) hitY = origin[1] + best * scale;
 	return found;
@@ -318,6 +320,94 @@ bool ChunkCollider::pushSphere(Vec3& center, float radius) const {
 	}
 	if (moved) center = {origin[0] + c.x * scale, origin[1] + c.y * scale, origin[2] + c.z * scale};
 	return moved;
+}
+
+bool ChunkCollider::segmentBlocked(Vec3 from, Vec3 to) const {
+	if (!triangleCount) return false;
+	const float inv = 1.0f / scale;
+	// In grid units across (x, z); y in local units.
+	const float ax = ((from.x - origin[0]) * inv - float(gridX0)) / cellSize, az = ((from.z - origin[2]) * inv - float(gridZ0)) / cellSize;
+	const float bx = ((to.x - origin[0]) * inv - float(gridX0)) / cellSize, bz = ((to.z - origin[2]) * inv - float(gridZ0)) / cellSize;
+	const float ay = (from.y - origin[1]) * inv, by = (to.y - origin[1]) * inv;
+	const float dx = bx - ax, dz = bz - az, dy = by - ay;
+	// The part of the segment over the grid (slabs in x and z).
+	float t0 = 0.0f, t1 = 1.0f;
+	auto clip = [&](float p, float d, float hi) {
+		if (d > -1e-9f && d < 1e-9f) return p >= 0.0f && p < hi;
+		float ta = (0.0f - p) / d, tb = (hi - p) / d;
+		if (ta > tb) {
+			const float s = ta;
+			ta = tb;
+			tb = s;
+		}
+		t0 = max(t0, ta);
+		t1 = min(t1, tb);
+		return t0 <= t1;
+	};
+	if (!clip(ax, dx, float(gridW)) || !clip(az, dz, float(gridH))) return false;
+	{
+		u32 lo, hi;
+		if (!levels(min(ay + dy * t0, ay + dy * t1), max(ay + dy * t0, ay + dy * t1), lo, hi)) return false;
+	}
+	++gStats.queries;
+	// The segment in local units, for the triangle tests (Moeller-Trumbore, both sides).
+	const Vec3 o = {(from.x - origin[0]) * inv, ay, (from.z - origin[2]) * inv};
+	const Vec3 dir = {(to.x - from.x) * inv, dy, (to.z - from.z) * inv};
+	const u32 triMask = MAX_TRIANGLES - 1, levelMask = LEVELS - 1;
+	// Cell by cell along it (Amanatides & Woo).
+	const float sx = ax + dx * t0, sz = az + dz * t0;
+	i32 cx = clamp<i32>(i32(floorf(sx)), 0, i32(gridW) - 1), cz = clamp<i32>(i32(floorf(sz)), 0, i32(gridH) - 1);
+	const i32 stepX = dx > 0 ? 1 : -1, stepZ = dz > 0 ? 1 : -1;
+	const float big = 1e30f;
+	const float deltaX = (dx > 1e-9f || dx < -1e-9f) ? fabsf(1.0f / dx) : big;
+	const float deltaZ = (dz > 1e-9f || dz < -1e-9f) ? fabsf(1.0f / dz) : big;
+	float nextX = deltaX >= big ? big : t0 + (dx > 0 ? (float(cx + 1) - sx) : (sx - float(cx))) * deltaX;
+	float nextZ = deltaZ >= big ? big : t0 + (dz > 0 ? (float(cz + 1) - sz) : (sz - float(cz))) * deltaZ;
+	float t = t0;
+	for (u32 guard = 0; guard < gridW + gridH + 2; ++guard) {
+		const float tEnd = min(min(nextX, nextZ), t1);
+		const float y0 = ay + dy * t, y1 = ay + dy * tEnd;
+		u32 qLo, qHi;
+		if (levels(min(y0, y1), max(y0, y1), qLo, qHi)) {
+			const u32 cell = u32(cz) * gridW + u32(cx);
+			gStats.items += cellStart[cell + 1] - cellStart[cell];
+			for (u32 i = cellStart[cell]; i < cellStart[cell + 1]; ++i) {
+				const u32 item = cellItems[i];
+				if (((item >> ITEM_TRI_BITS) & levelMask) > qHi || (item >> (ITEM_TRI_BITS + LEVEL_BITS)) < qLo) continue;
+				const u32 tri = item & triMask;
+				if (group && (group[tri] & 0x80u)) continue; // one sees through it
+				++gStats.tests;
+				const u16* tv = triangles + tri * 3;
+				const Vec3 a = localVertex(positions, tv[0]), b = localVertex(positions, tv[1]), c = localVertex(positions, tv[2]);
+				const Vec3 e1 = b - a, e2 = c - a;
+				const Vec3 pv = cross(dir, e2);
+				const float det = dot(e1, pv);
+				if (det > -1e-6f && det < 1e-6f) continue; // along the triangle's plane
+				const float invDet = 1.0f / det;
+				const Vec3 tv0 = o - a;
+				const float u = dot(tv0, pv) * invDet;
+				if (u < 0.0f || u > 1.0f) continue;
+				const Vec3 qv = cross(tv0, e1);
+				const float v = dot(dir, qv) * invDet;
+				if (v < 0.0f || u + v > 1.0f) continue;
+				const float hit = dot(e2, qv) * invDet;
+				// (Not at the very ends: the eye and the point looked at may touch a surface.)
+				if (hit > 1e-3f && hit < 1.0f - 1e-3f) return true;
+			}
+		}
+		if (tEnd >= t1) break;
+		t = tEnd;
+		if (nextX < nextZ) {
+			cx += stepX;
+			nextX += deltaX;
+			if (cx < 0 || cx >= i32(gridW)) break;
+		} else {
+			cz += stepZ;
+			nextZ += deltaZ;
+			if (cz < 0 || cz >= i32(gridH)) break;
+		}
+	}
+	return false;
 }
 
 bool ChunkCollider::boxFree(const float mn[3], const float mx[3]) const {

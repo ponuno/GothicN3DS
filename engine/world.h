@@ -27,6 +27,11 @@ struct StreamConfig {
 	// How many of the four thinning layers of the small objects are drawn (4: all; the rest of the
 	// bushes, stones and litter is left out for a sparser, lighter picture).
 	u8 smallLayers = 4;
+	// Small objects by size (worlds baked with size bands, g3ds/world.h sizeBandOf): a band is drawn only as far as
+	// its smallest things are still this many pixels across on the screen (a 15 cm cup: about 16 m; 0: off, by the
+	// class alone). `focalPx`: pixels per radian of the picture's middle (240 high, 60 degrees: 208).
+	float sizePixels = 4.0f;
+	float focalPx = 208.0f;
 	// What is drawn goes this much farther out than it comes in (1.1: 10%
 	// farther), so that an object at its distance does not come and go with
 	// every step and every sway of the camera.
@@ -118,6 +123,7 @@ struct WorldStats {
 	u32 blendedDrawCalls;
 	u32 windyDrawCalls;  // of them: plants swaying (the vertex shader does more there)
 	u32 batchesCulled;   // batches of visible chunks skipped: out of view or too far for their size
+	u32 sizeCulled;      // of them: small objects nearer than their class's distance, but too small to be seen there
 	u32 batchesMerged;   // batches that went out in the draw call of the one before them
 	u32 chunksEdgeFading; // chunks drawn dissolving at the draw distance (over the far layer)
 	u32 batchesFading;   // batches drawn dissolving in or out (each a draw call of its own)
@@ -209,6 +215,10 @@ public:
 	// line from `a` to `b` (a sphere stepped along it): who stands at `a`
 	// sees `b`. Only loaded chunks count.
 	bool lineFree(Vec3 a, Vec3 b, float radius = 8.0f) const;
+	// True if something solid one cannot see through stands between `a` and `b` (a thin line, not a sphere):
+	// walls, roofs, the ground and big objects of the loaded chunks of the world itself (not those of medium and
+	// small objects, nor leaves, fences or glass), and shut doors and gates. For telling who is hidden from the eye.
+	bool sightBlocked(Vec3 a, Vec3 b) const;
 	// What moves and is solid (gates, lifts, shut doors: triggers.h) - asked by these queries too; null: nothing.
 	void setDynamic(const class Triggers* dynamic) { _dynamic = dynamic; }
 	// Highest water surface under `from`, no lower than from.y - maxDrop.
@@ -237,6 +247,7 @@ private:
 		u16 material;
 		u8 detail;
 		u8 layer; // of the small objects: 0..3, see StreamConfig::smallLayers
+		u8 band;  // of the small objects: how big they are, 0..3 (g3ds/world.h sizeBandOf; StreamConfig::sizePixels)
 		u8 cluster;
 		u8 lodMode; // BatchLod: drawn near, far or either way (a chunk with stand-ins; see StreamConfig::lodDistance)
 		u8 shown; // smaller classes: how much of it is drawn, 0..255 (dissolving in between; see StreamConfig::fadeMs)
@@ -332,6 +343,12 @@ private:
 	bool farCovered(u32 firstChunk, u32 count) const;
 	float _chunkCostMs = 2.0f, _textureCostMs = 0.8f; // estimates, kept as the loads are timed
 	u32 _refusedChunks = 0, _refusedTextures = 0;
+	// How far a batch of a smaller class is drawn now (its class, the pacer's scale, and for small objects their size).
+	float detailReach(const Batch& b) const {
+		float limit = _cfg.detailDistance[b.detail] * _cfg.detailScale;
+		if (b.band && _cfg.sizePixels > 0.0f) limit = min(limit, 2.0f * sizeBandRadius(b.band) * _cfg.focalPx / _cfg.sizePixels);
+		return limit;
+	}
 	float edgeBand() const { return _cfg.farDistance > _cfg.drawDistance && _cfg.edgeFadeShare > 0.0f && gfx::fadeSupported() ? min(_cfg.drawDistance * _cfg.edgeFadeShare, _cfg.edgeFadeMax) : 0.0f; }
 	void classify(const Loaded& l, u32 index, bool count);
 public:

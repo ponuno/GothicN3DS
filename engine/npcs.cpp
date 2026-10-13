@@ -517,10 +517,15 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	_world = nullptr;
 }
 
-void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
+void Npcs::draw(const Mat4& viewProj, const float dayLight[3], const World* world, Vec3 eye) {
 	_stats.shown = _stats.culled = _stats.triangles = _stats.drawCalls = 0;
+	_stats.hidden = _stats.sightRays = 0;
+	_stats.sightMs = 0;
 	_drawnCount = 0;
+	++_drawFrame;
 	if (!loaded()) return;
+	const bool lookBehindWalls = world && _cfg.hideOccluded;
+	double sightTime = 0;
 	const Frustum frustum = frustumFromViewProj(viewProj);
 	for (NpcActor& a : _actors) {
 		if (!a.used) continue;
@@ -556,6 +561,46 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 		if (!aabbInFrustum(frustum, mn, mx)) {
 			++_stats.culled;
 			continue;
+		}
+		// Behind a wall? Thin lines from the eye to the head, the chest, its sides and the knees: hidden if every
+		// one of them meets something solid on the way. One seen is looked at again only every few frames (being
+		// drawn a little longer costs little); one hidden, every frame (coming out from behind a corner it shows at once).
+		if (lookBehindWalls) {
+			const float hx = feet.x - eye.x, hz = feet.z - eye.z;
+			const float flat2 = hx * hx + hz * hz;
+			if (flat2 < _cfg.hiddenNear * _cfg.hiddenNear) {
+				a.occluded = false;
+			} else if (a.occluded || a.occlusionFrame == 0 || _drawFrame - a.occlusionFrame >= max<u32>(_cfg.hiddenRecheck, 1)) {
+				const double t0 = sys::timeMs();
+				const float top = max(bh.bbMax[1], 60.0f) * grow;
+				const float flat = sqrtf(flat2);
+				const float side = max(a.bodyRadius, 25.0f);
+				const Vec3 across = {-hz / flat * side, 0.0f, hx / flat * side};
+				const Vec3 chest = {feet.x, feet.y + top * 0.6f, feet.z};
+				const Vec3 points[5] = {chest, {feet.x, feet.y + top * 0.9f, feet.z}, chest + across, chest - across,
+				                        {feet.x, feet.y + top * 0.25f, feet.z}};
+				bool seen = false;
+				for (int k = 0; k < 5 && !seen; ++k) {
+					++_stats.sightRays;
+					seen = !world->sightBlocked(eye, points[k]);
+				}
+				a.occluded = !seen;
+				a.occlusionFrame = _drawFrame;
+				sightTime += sys::timeMs() - t0;
+			}
+			if (a.occluded) {
+				++_stats.hidden;
+				// (The pose is still worked out, as for one drawn: what asks for it - the report, the tests - sees it move on.)
+				a.anim.evaluate();
+				// Still somebody standing there (the triggers ask who is where), only not drawn, nor its shadow.
+				if (n.down == DOWN_NONE && a.shown > 127 && _drawnCount < ACTORS) {
+					_drawnFeet[_drawnCount] = feet;
+					_drawnRadius[_drawnCount] = clamp((reach - 40.0f) * 0.9f, 38.0f, 160.0f);
+					_drawnHidden[_drawnCount] = true;
+					++_drawnCount;
+				}
+				continue;
+			}
 		}
 		a.anim.evaluate();
 		float light[3];
@@ -608,12 +653,14 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3]) {
 		if (n.down == DOWN_NONE && a.shown > 127 && _drawnCount < ACTORS) {
 			_drawnFeet[_drawnCount] = feet;
 			_drawnRadius[_drawnCount] = clamp((reach - 40.0f) * 0.9f, 38.0f, 160.0f);
+			_drawnHidden[_drawnCount] = false;
 			// (The body's own width: the rest pose's arms take a share of the box.)
 			a.bodyRadius = clamp((reach - 40.0f) * 0.55f, 22.0f, 90.0f);
 			++_drawnCount;
 		}
 	}
 	gfx::setFade(1.0f);
+	_stats.sightMs = float(sightTime);
 }
 
 } // namespace g3

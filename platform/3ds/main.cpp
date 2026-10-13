@@ -797,8 +797,9 @@ int main(int, char**) {
 			     static_cast<unsigned long>(ws.trisByDetail[1]), static_cast<unsigned long>(ws.trisByDetail[2]),
 			     static_cast<unsigned long>(ws.trisByDist[0]), static_cast<unsigned long>(ws.trisByDist[1]),
 			     static_cast<unsigned long>(ws.trisByDist[2]));
-			reportLine("lod %2lu cl %5lu tris  pacer %s%s%s%s", static_cast<unsigned long>(ws.lodChunks),
-			     static_cast<unsigned long>(ws.lodTriangles), pacing ? "on" : "off", fs.overlapped ? " ovl" : "",
+			// (sz: batches of small objects left out for their size: within their class's distance, too small there.)
+			reportLine("lod %2lu cl %5lu sz%4lu pacer %s%s%s%s", static_cast<unsigned long>(ws.lodChunks),
+			     static_cast<unsigned long>(ws.lodTriangles), static_cast<unsigned long>(ws.sizeCulled), pacing ? "on" : "off", fs.overlapped ? " ovl" : "",
 			     app.settings().objects == g3::OBJECTS_STEADY ? " ST" : app.settings().objects == g3::OBJECTS_BALANCED ? " BAL" : "",
 			     halfPicture ? " HALF" : (startKeys & KEY_START) ? " DBL" : "");
 			// ... and the far layer: its triangles and draw calls ('-': not in data.pak, bake with --far-lod;
@@ -889,9 +890,10 @@ int main(int, char**) {
 			if (npcs.loaded()) {
 				const g3::NpcStats& ns = npcs.stats();
 				const g3::ScriptStats& vs = npcs.game().vm().stats();
-				reportLine("npcs %2lu/%2lu in %2.0f m of %4lu%s", static_cast<unsigned long>(ns.shown),
+				// (oc: in view but hidden behind walls, not drawn; the time the lines of sight took.)
+				reportLine("npcs %2lu/%2lu in %2.0f m of %4lu%s oc%lu %.1fms", static_cast<unsigned long>(ns.shown),
 				     static_cast<unsigned long>(ns.near), double(ns.reach / 100.0f), static_cast<unsigned long>(ns.here),
-				     nobody ? " OFF" : "");
+				     nobody ? " OFF" : "", static_cast<unsigned long>(ns.hidden), double(ns.sightMs));
 				// (it: things lying about - taken / all of this world, drawn, looks without a model.)
 				const g3::LootStats& ls = app.loot().stats();
 				reportLine("ntri %5lu m%2lu w%lu n%lu it%lu/%lu d%lu x%lu", static_cast<unsigned long>(ns.triangles),

@@ -143,6 +143,14 @@ float Settings::smallObjectsCm() const {
 	}
 }
 
+float Settings::objectPixels() const {
+	switch (objects) {
+	case OBJECTS_BALANCED: return 5.0f;
+	case OBJECTS_STEADY: return 4.0f;
+	default: return 6.0f;
+	}
+}
+
 float Settings::minDetail() const {
 	switch (objects) {
 	case OBJECTS_BALANCED: return 0.7f;

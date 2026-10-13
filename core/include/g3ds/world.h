@@ -285,7 +285,17 @@ struct ChunkBatch {
 };
 static_assert(sizeof(ChunkBatch) == 24, "ChunkBatch layout");
 
-// ChunkBatch::detail: bits 0-1 the DetailClass, 2-3 the layer of small objects, 6-7 which of a chunk's two
+// ChunkBatch::detail bits 4-5: how big the small objects of the batch are (g3ds-bake, by their bounding radius):
+// band 0 60 cm and more, 1 from 30, 2 from 15, 3 less. The runtime draws a band only as far as its smallest things
+// are still a few pixels across (StreamConfig::sizePixels); band 0 - and everything of an older archive, where the
+// bits are 0 - as far as its class. Other classes have band 0.
+constexpr u32 SIZE_BANDS = 4;
+inline u8 sizeBandOf(float radiusCm) { return radiusCm >= 60.0f ? 0 : radiusCm >= 30.0f ? 1 : radiusCm >= 15.0f ? 2 : 3; }
+// The least radius of a band, cm (band 3: about the middle of what it holds; band 0: none, it is not limited).
+inline float sizeBandRadius(u8 band) { return band == 1 ? 30.0f : band == 2 ? 15.0f : band == 3 ? 8.0f : 0.0f; }
+inline u8 batchSizeBand(u8 detail) { return u8((detail >> 4) & 3u); }
+
+// ChunkBatch::detail: bits 0-1 the DetailClass, 2-3 the layer of small objects, 4-5 their size band, 6-7 which of a chunk's two
 // pictures the batch belongs to (g3ds-bake --lod): a chunk close to the camera is drawn with its ordinary
 // batches, one farther away with simplified stand-ins for some of them.
 enum BatchLod : u8 {

@@ -23,7 +23,7 @@ struct SrcVertex {
 struct SrcTriangle {
 	SrcVertex v[3]; // counter-clockwise when seen from the front
 	u32 material;
-	u8 detail = 0; // DetailClass (bits 0-1): how far away the triangle is still drawn; bits 2-3: its thinning layer (small objects only)
+	u8 detail = 0; // DetailClass (bits 0-1): how far away the triangle is still drawn; bits 2-3: its thinning layer, 4-5: its size band (small objects only; g3ds/world.h sizeBandOf)
 };
 
 enum class SrcBlend : u8 {

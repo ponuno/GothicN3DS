@@ -117,6 +117,8 @@ struct Settings {
 	// Draw distances of medium and small objects, cm (StreamConfig::detailDistance).
 	float mediumObjectsCm() const;
 	float smallObjectsCm() const;
+	// How many pixels across the smallest objects of a size band still are where it stops (StreamConfig::sizePixels).
+	float objectPixels() const;
 	// The least the pacer may take the objects down to (FramePacer minDetail).
 	float minDetail() const;
 	// Of the four thinning layers of the small objects, how many are drawn.

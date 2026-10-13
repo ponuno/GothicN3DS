@@ -794,7 +794,7 @@ void App::render() {
 		_world.draw(viewProj, _cam.pos, u32(u64(_clock * 1000.0)));
 		const float indoorLight[3] = {1, 1, 1};
 		_npcs.setFadeStep(_world.fadeStep());
-		_npcs.draw(viewProj, indoor ? indoorLight : sky.light);
+		_npcs.draw(viewProj, indoor ? indoorLight : sky.light, &_world, _cam.pos);
 		_loot.draw(_cam.pos, indoor ? indoorLight : sky.light);
 		_triggers.draw(_pak, _world, _cam.pos, indoor ? indoorLight : sky.light, min(_world.drawReach() + 2000.0f, 20000.0f));
 		drawShowcase();
@@ -815,7 +815,8 @@ void App::render() {
 		if (_settings.shadows != SHADOWS_OFF) {
 			if (_heroVisible && _hero.loaded()) _shadows.add(_hero.feet(), 48.0f);
 			if (_settings.shadows == SHADOWS_ALL && !_gfxRelief)
-				for (u32 i = 0; i < _npcs.drawnCount(); ++i) _shadows.add(_npcs.drawnFeet(i), _npcs.drawnRadius(i));
+				for (u32 i = 0; i < _npcs.drawnCount(); ++i)
+					if (_npcs.drawnVisible(i)) _shadows.add(_npcs.drawnFeet(i), _npcs.drawnRadius(i));
 			_shadows.draw(_world, _cam.pos, indoor ? 0.7f : 0.6f);
 		}
 		_world.drawBlended();
@@ -1288,6 +1289,8 @@ void App::applySettings() {
 	cfg.detailDistance[DETAIL_MEDIUM] = _settings.mediumObjectsCm();
 	cfg.detailDistance[DETAIL_SMALL] = _settings.smallObjectsCm();
 	cfg.smallLayers = _settings.smallLayers();
+	cfg.sizePixels = _settings.objectPixels();
+	cfg.focalPx = float(gfx::SCREEN_H) * 0.5f / tanf(_cam.fovY * 0.5f);
 	cfg.visibility = _settings.visibility != 0;
 	cfg.lodDistance = _settings.lodDistanceCm();
 	cfg.occlusion = _settings.occlusionStrength();

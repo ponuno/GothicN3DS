@@ -72,6 +72,13 @@ struct NpcConfig {
 	// inhabitants, they through each other and through him; those that leave the way net (fighting, fleeing,
 	// going to somebody) do not walk through walls either. The dead and the knocked out lie in nobody's way.
 	bool bodies = true;
+	// Hidden behind walls: an inhabitant in view whom thin lines from the eye to its head, chest, sides and knees all
+	// meet a wall, a roof or the ground on the way (World::sightBlocked) is not drawn. Nearer than `hiddenNear`, cm,
+	// everybody is drawn. One who was seen is looked at again every `hiddenRecheck` frames; one hidden, every frame
+	// (so that nobody comes out from behind a corner late).
+	bool hideOccluded = true;
+	float hiddenNear = 400.0f;
+	u32 hiddenRecheck = 3;
 };
 
 // What the inhabitants need of the player's character in a fight, and how
@@ -99,6 +106,9 @@ struct NpcStats {
 	u32 noModel = 0;   // near, their look has no models in the archive
 	u32 models = 0;    // models in memory
 	u32 triangles = 0; // drawn in the last frame
+	u32 hidden = 0;    // in view, but behind a wall: not drawn (NpcConfig::hideOccluded)
+	u32 sightRays = 0; // lines looked along for that in the last frame
+	float sightMs = 0; // ... and how long it took
 	u32 drawCalls = 0;
 	u32 loads = 0;     // models read since the start
 	u32 textures = 0;  // textures in memory, and their size
@@ -340,6 +350,9 @@ struct NpcActor {
 	float slump = 0.0f;
 	// How wide its body is for colliding, cm (from its model, once drawn; a person's until then).
 	float bodyRadius = 30.0f;
+	// Hidden behind walls (NpcConfig::hideOccluded): as last looked at, and the frame that was.
+	bool occluded = false;
+	u32 occlusionFrame = 0;
 };
 
 class Npcs {
@@ -365,8 +378,9 @@ public:
 	// Once per frame: the clock, who is near, whose models are still to
 	// read, and a step of everybody's life. `eye` is the player's.
 	void update(Pak& pak, const World& world, Vec3 eye, float hours, float dt);
-	// Call in PASS_WORLD. `dayLight` as for the world (1 1 1 indoors).
-	void draw(const Mat4& viewProj, const float dayLight[3]);
+	// Call in PASS_WORLD. `dayLight` as for the world (1 1 1 indoors). With `world`, those hidden from `eye` behind
+	// its walls are left out (NpcConfig::hideOccluded).
+	void draw(const Mat4& viewProj, const float dayLight[3], const World* world = nullptr, Vec3 eye = {0, 0, 0});
 	// How far a dissolve gets this frame (World::fadeStep(); 255: they come and go at once).
 	void setFadeStep(int step) { _fadeStep = step < 1 ? 1 : step > 255 ? 255 : step; }
 	// Whose models and archive the weapons in their hands are drawn from.
@@ -391,6 +405,8 @@ public:
 	u32 drawnCount() const { return _drawnCount; }
 	Vec3 drawnFeet(u32 i) const { return _drawnFeet[i]; }
 	float drawnRadius(u32 i) const { return _drawnRadius[i]; }
+	// Whether it was drawn, or (in view, but behind a wall) only counted for its feet.
+	bool drawnVisible(u32 i) const { return !_drawnHidden[i]; }
 	const NpcActor& actor(u32 i) const { return _actors[i]; }
 	// What an actor is doing, in a word (for reports).
 	const char* doing(const NpcActor& a) const;
@@ -908,6 +924,8 @@ private:
 	NpcActor _actors[ACTORS];
 	Vec3 _drawnFeet[ACTORS] = {};
 	float _drawnRadius[ACTORS] = {};
+	bool _drawnHidden[ACTORS] = {};
+	u32 _drawFrame = 0;
 	u32 _drawnCount = 0;
 	class Loot* _heldLoot = nullptr;
 	class ReadAhead* _ahead = nullptr;

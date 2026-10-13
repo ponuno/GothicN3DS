@@ -20,7 +20,7 @@ struct ChunkCollider {
 	// looking at a single vertex.
 	u32* cellItems = nullptr;
 	u8* light = nullptr;      // 4 per triangle: its baked light (r g b) and daylight weight
-	u8* group = nullptr;      // 1 per triangle: the material group (what a step on it sounds like)
+	u8* group = nullptr;      // 1 per triangle: the material group (what a step on it sounds like); bit 7: one sees through it
 	u32 vertexCount = 0, triangleCount = 0;
 	float origin[3] = {0, 0, 0};
 	float scale = 1.0f;    // world = origin + local * scale
@@ -45,6 +45,9 @@ struct ChunkCollider {
 	bool rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, u8* lightOut = nullptr, u8* groupOut = nullptr) const;
 	// Moves the sphere out of any triangle it overlaps. True if it was moved.
 	bool pushSphere(Vec3& center, float radius) const;
+	// True if a triangle one cannot see through (not a cut-out, not blended) crosses the segment between its ends:
+	// what stands at `from` does not see `to` along it.
+	bool segmentBlocked(Vec3 from, Vec3 to) const;
 	// True if no triangle's bounds reach into the box (so nothing in it can
 	// be hit; the reverse does not hold).
 	bool boxFree(const float mn[3], const float mx[3]) const;

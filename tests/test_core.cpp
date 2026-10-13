@@ -6961,6 +6961,143 @@ static void testThinning() {
 	CHECK(all == none + 16 && three == none + 12 && two == none + 8);
 }
 
+// Small objects by size (fix84): a band is drawn only as far as its things are a few pixels across.
+static void testSizeBands() {
+	CHECK(sizeBandOf(160.0f) == 0 && sizeBandOf(45.0f) == 1 && sizeBandOf(20.0f) == 2 && sizeBandOf(5.0f) == 3);
+	CHECK(batchSizeBand(u8(DETAIL_SMALL | (2 << 2) | (3 << 4) | (1 << 6))) == 3);
+	SrcScene scene;
+	scene.materials.resize(2);
+	scene.materials[0].name = "floor";
+	scene.materials[0].hasColor = true;
+	scene.materials[1].name = "cup";
+	scene.materials[1].hasColor = true;
+	scene.materials[1].color[0] = 200;
+	const float f[4][3] = {{-3000, 0, -3000}, {3000, 0, -3000}, {3000, 0, 3000}, {-3000, 0, 3000}};
+	addQuad(scene, f[3], f[2], f[1], f[0], 0);
+	// (band, distance ahead): the bands' reach at 4 pixels is about 31, 16 and 8 m.
+	const int things[5][2] = {{0, 2600}, {2, 800}, {2, 2600}, {3, 200}, {3, 1600}};
+	for (int i = 0; i < 5; ++i) {
+		const float x = -200.0f + 100.0f * float(i), z = float(things[i][1]);
+		const float c[4][3] = {{x - 20, 0, z}, {x + 20, 0, z}, {x + 20, 40, z}, {x - 20, 40, z}};
+		const size_t first = scene.triangles.size();
+		addQuad(scene, c[0], c[1], c[2], c[3], 1);
+		addQuad(scene, c[1], c[0], c[3], c[2], 1);
+		for (size_t t = first; t < scene.triangles.size(); ++t) scene.triangles[t].detail = u8(DETAIL_SMALL | (things[i][0] << 4));
+	}
+	scene.spawnPos[1] = 150.0f;
+	scene.hasSpawn = true;
+	const std::string path = gDir + "/bands.pak";
+	bakeScenePak(scene, path, "t", 8000.0f);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), "t"));
+	World& w = app.world();
+	app.player().flying = true;
+	app.camera().yaw = 0;
+	app.teleport({0, 150, 0});
+	w.preload(app.camera().pos);
+	auto drawn = [&](float pixels) {
+		w.config().sizePixels = pixels;
+		w.config().focalPx = 208.0f;
+		w.config().detailDistance[DETAIL_SMALL] = 6000.0f;
+		w.config().fadeMs = 0.0f;
+		for (int i = 0; i < 3; ++i) {
+			app.update(Input {}, 1.0f / 30.0f);
+			app.render();
+		}
+		return w.stats().trianglesDrawn;
+	};
+	const u32 all = drawn(0.0f), banded = drawn(4.0f), floorOnly = all - 20;
+	const u32 cut = w.stats().sizeCulled;
+	std::printf("  size bands: %u triangles without, %u with (%u batches left out for their size)\n", all, banded, cut);
+	// Off: all five things (4 triangles each). On: the big one far, the 15-30 cm one near, the tiny one very near.
+	CHECK(banded == floorOnly + 12 && cut >= 2); // (a thing can lie in two clusters: two batches)
+}
+
+// Lines of sight (fix84): ChunkCollider::segmentBlocked against a wall, the ground and a cut-out, and against a
+// brute force over every triangle for random segments.
+static void testSight() {
+	std::vector<WorldVertex> verts;
+	std::vector<u16> idx;
+	auto vert = [&](int x, int y, int z) {
+		WorldVertex v {};
+		v.x = i16(x);
+		v.y = i16(y);
+		v.z = i16(z);
+		v.w = 1;
+		verts.push_back(v);
+		return u16(verts.size() - 1);
+	};
+	auto quad = [&](u16 a, u16 b, u16 c, u16 d) {
+		for (u16 i : {a, b, c, a, c, d}) idx.push_back(i);
+	};
+	// Batch 0: the ground (x, z -4000..4000 at y 0) and a wall at z = 0, x -500..500, y 0..400. Batch 1: a fence
+	// (cut-out) at z = 1000, the same size.
+	quad(vert(-4000, 0, -4000), vert(-4000, 0, 4000), vert(4000, 0, 4000), vert(4000, 0, -4000));
+	quad(vert(-500, 0, 0), vert(-500, 400, 0), vert(500, 400, 0), vert(500, 0, 0));
+	const u32 solidCount = u32(idx.size());
+	quad(vert(-500, 0, 1000), vert(-500, 400, 1000), vert(500, 400, 1000), vert(500, 0, 1000));
+	ChunkHeader h {};
+	h.magic = CHUNK_MAGIC;
+	h.batchCount = 2;
+	h.vertexCount = u16(verts.size());
+	h.indexCount = u32(idx.size());
+	h.posScale = 1.0f;
+	ChunkBatch batches[2] {};
+	batches[0].indexCount = solidCount;
+	batches[1].material = 1;
+	batches[1].firstIndex = solidCount;
+	batches[1].indexCount = u32(idx.size()) - solidCount;
+	WorldMaterial materials[2] {};
+	materials[0].frameCount = materials[1].frameCount = 1;
+	materials[0].group = 3;
+	materials[1].flags = MATF_ALPHA_TEST;
+	ChunkCollider col;
+	CHECK(col.build(h, batches, verts.data(), idx.data(), materials, MATF_NO_COLLISION, 0));
+	CHECK(col.segmentBlocked({0, 100, -300}, {0, 100, 300}));     // through the wall
+	CHECK(col.segmentBlocked({0, 100, 300}, {0, 100, -300}));     // ... the other way
+	CHECK(!col.segmentBlocked({800, 100, -300}, {800, 100, 300})); // beside it
+	CHECK(!col.segmentBlocked({0, 600, -300}, {0, 600, 300}));     // over it
+	CHECK(!col.segmentBlocked({0, 100, -300}, {0, 100, -10}));     // short of it
+	CHECK(col.segmentBlocked({-3000, 150, -2500}, {2500, 150, 2900})); // across many cells, through it
+	CHECK(col.segmentBlocked({0, 100, -300}, {0, -100, -100}));    // into the ground
+	CHECK(!col.segmentBlocked({0, 100, 700}, {0, 100, 1300}));     // through the fence: one sees through it
+	{
+		// rayDown still tells the ground's group (bit 7 is the see-through mark, not part of it).
+		float y = 0;
+		Vec3 n;
+		u8 g = 0;
+		CHECK(col.rayDown({1000, 200, 1500}, 500, y, n, nullptr, &g) && g == 3);
+	}
+	// Random segments against every solid triangle.
+	std::mt19937 rng(84);
+	std::uniform_real_distribution<float> u(-4500.0f, 4500.0f), uy(-200.0f, 900.0f);
+	int agree = 0, blocked = 0;
+	for (int i = 0; i < 2000; ++i) {
+		const Vec3 a = {u(rng), uy(rng), u(rng)}, b = {u(rng), uy(rng), u(rng)};
+		bool hit = false;
+		for (u32 t = 0; t + 2 < solidCount && !hit; t += 3) {
+			const Vec3 p0 = {float(verts[idx[t]].x), float(verts[idx[t]].y), float(verts[idx[t]].z)};
+			const Vec3 p1 = {float(verts[idx[t + 1]].x), float(verts[idx[t + 1]].y), float(verts[idx[t + 1]].z)};
+			const Vec3 p2 = {float(verts[idx[t + 2]].x), float(verts[idx[t + 2]].y), float(verts[idx[t + 2]].z)};
+			const Vec3 d = b - a, e1 = p1 - p0, e2 = p2 - p0, pv = cross(d, e2);
+			const float det = dot(e1, pv);
+			if (std::fabs(det) < 1e-6f) continue;
+			const Vec3 tv = a - p0;
+			const float uu = dot(tv, pv) / det;
+			if (uu < 0 || uu > 1) continue;
+			const Vec3 qv = cross(tv, e1);
+			const float vv = dot(d, qv) / det, tt = dot(e2, qv) / det;
+			hit = vv >= 0 && uu + vv <= 1 && tt > 1e-3f && tt < 1.0f - 1e-3f;
+		}
+		agree += col.segmentBlocked(a, b) == hit;
+		blocked += hit;
+	}
+	std::printf("  sight: %d of 2000 random segments agree with the brute force (%d blocked)\n", agree, blocked);
+	CHECK(agree >= 1995 && blocked > 200);
+	col.release();
+}
+
 // Graphics+ (G1-G3): the baker's ambient occlusion and plant marks, what the chunker writes into the vertices,
 // and the shadows under the characters with the way they give way under load.
 static void testGfxPlus() {
@@ -10690,6 +10827,8 @@ int main(int argc, char** argv) {
              {"lamp light", testLampLight},
 	             {"detail fade", testDetailFade},
              {"thinning", testThinning},
+             {"size bands", testSizeBands},
+             {"sight", testSight},
 	             {"collision", testCollision},
 	             {"model", testModel},
 	             {"hero", testHero},

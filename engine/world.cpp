@@ -318,6 +318,7 @@ LoadStatus World::finishChunk(LoadResult& r) {
 		dst.material = src.material;
 		dst.detail = (src.detail & 3) < DETAIL_COUNT ? u8(src.detail & 3) : u8(DETAIL_COUNT - 1);
 		dst.layer = u8((src.detail >> 2) & 3);
+		dst.band = dst.detail == DETAIL_SMALL ? batchSizeBand(src.detail) : u8(0);
 		dst.cluster = src.cluster;
 		dst.lodMode = batchLod(src.detail);
 		l.hasLod = l.hasLod || dst.lodMode == BATCH_LOD_FAR_ONLY;
@@ -1245,6 +1246,21 @@ bool World::lineFree(Vec3 a, Vec3 b, float radius) const {
 	return true;
 }
 
+bool World::sightBlocked(Vec3 a, Vec3 b) const {
+	const float mn[3] = {min(a.x, b.x), min(a.y, b.y), min(a.z, b.z)};
+	const float mx[3] = {max(a.x, b.x), max(a.y, b.y), max(a.z, b.z)};
+	for (u32 k = 0; k < _stats.chunksLoaded; ++k) {
+		const u32 i = _resident[k];
+		if (chunkTier(i) != 0) continue; // medium and small objects: they hide too little of a person
+		const ChunkInfo& ci = _chunks[i];
+		if (mx[0] < ci.bbMin[0] || mn[0] > ci.bbMax[0] || mx[1] < ci.bbMin[1] || mn[1] > ci.bbMax[1] || mx[2] < ci.bbMin[2] ||
+		    mn[2] > ci.bbMax[2])
+			continue;
+		if (_loaded[i].collider.segmentBlocked(a, b)) return true;
+	}
+	return _dynamic && _dynamic->segmentHits(a, b);
+}
+
 const WorldPortal* World::portalAt(Vec3 p) const {
 	for (u32 i = 0; i < _hdr.portalCount; ++i) {
 		const WorldPortal& q = _portals[i];
@@ -1397,13 +1413,17 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 		if (batch.detail != DETAIL_ALWAYS && _clusterState[c] != CLUSTER_OUT) {
 			// Too far for its size? Mostly the box's distance says so already.
 			// What is drawn goes a little farther out than it comes in.
-			const float limit = _cfg.detailDistance[batch.detail] * _cfg.detailScale;
+			const float limit = detailReach(batch);
 			const float reach = batch.shown ? limit * _cfg.detailHysteresis : limit;
 			bool inRange = true;
 			if ((batch.detail == DETAIL_SMALL && batch.layer >= _cfg.smallLayers) || _clusterNear[c] > reach)
 				inRange = false;
 			else if (_clusterFar[c] > reach)
 				inRange = aabbDistance(batch.bbMin, batch.bbMax, _camera) <= reach;
+			// (Counted where the size alone keeps it away: within its class's distance, beyond its band's.)
+			if (!inRange && batch.band && batch.shown == 0 && _clusterNear[c] <= _cfg.detailDistance[batch.detail] * _cfg.detailScale &&
+			    !(batch.detail == DETAIL_SMALL && batch.layer >= _cfg.smallLayers))
+				++_stats.sizeCulled;
 			const int target = inRange ? 255 : 0;
 			if (snap)
 				batch.shown = u8(target);
@@ -1415,7 +1435,7 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 			visible = shown > 0;
 		} else if (batch.detail != DETAIL_ALWAYS) {
 			// Out of view: in or out at once, by the nearest point of the box.
-			const float limit = _cfg.detailDistance[batch.detail] * _cfg.detailScale;
+			const float limit = detailReach(batch);
 			const bool thinned = batch.detail == DETAIL_SMALL && batch.layer >= _cfg.smallLayers;
 			batch.shown = !thinned && _clusterNear[c] <= (batch.shown ? limit * _cfg.detailHysteresis : limit) ? 255 : 0;
 		}
@@ -1481,6 +1501,7 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_stats.blendedDrawCalls = 0;
 	_stats.windyDrawCalls = 0;
 	_stats.batchesCulled = 0;
+	_stats.sizeCulled = 0;
 	_stats.batchesMerged = 0;
 	_stats.batchesFading = 0;
 	_stats.trianglesDrawn = 0;

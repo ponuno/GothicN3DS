@@ -1484,6 +1484,15 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 	std::map<std::string, u32> materialIndex; // everything that affects drawing -> scene material
 	u32 unlit = 0;
 	u64 detailCount[DETAIL_COUNT] = {0, 0, 0};
+	// For the report: what the objects cost, by size band (small ones) and mesh by mesh.
+	u64 bandObjects[SIZE_BANDS] = {0, 0, 0, 0}, bandTriangles[SIZE_BANDS] = {0, 0, 0, 0}, classTriangles[DETAIL_COUNT] = {0, 0, 0};
+	struct MeshCost {
+		u64 copies = 0;
+		size_t triangles = 0;
+		float radius = 0;
+		u8 detail = 0;
+	};
+	std::map<std::string, MeshCost> meshCost;
 	// Plants (vertex_fx.h): by the object's name, else by a part's material or texture.
 	std::map<std::string, u32> plantsByName, plantsByPart;
 	u32 plantKinds[4] = {0, 0, 0, 0};
@@ -1517,7 +1526,23 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 		// Small things are told apart in four thinning layers (by where they stand, so that every
 		// baking gives the same picture): the menu may leave the last ones out (World::StreamConfig::smallLayers).
 		const u32 spot = u32(int(vob.position.x)) * 73856093u ^ u32(int(vob.position.y)) * 19349663u ^ u32(int(vob.position.z)) * 83492791u;
-		const u8 layered = detail == DETAIL_SMALL ? u8(detail | (((spot >> 9) & 3u) << 2)) : detail;
+		// ... and by how big they are (size bands: the smaller, the nearer they are drawn; g3ds/world.h sizeBandOf).
+		const u8 band = detail == DETAIL_SMALL ? sizeBandOf(inst.mesh->radius) : u8(0);
+		const u8 layered = detail == DETAIL_SMALL ? u8(detail | (((spot >> 9) & 3u) << 2) | (band << 4)) : detail;
+		{
+			size_t tris = 0;
+			for (const FlatSub& sub : inst.mesh->subs) tris += sub.verts.size() / 3;
+			classTriangles[detail] += tris;
+			if (detail == DETAIL_SMALL) {
+				++bandObjects[band];
+				bandTriangles[band] += tris;
+			}
+			MeshCost& mc = meshCost[visualName.empty() ? inst.mesh->source : visualName];
+			++mc.copies;
+			mc.triangles = tris;
+			mc.radius = inst.mesh->radius;
+			mc.detail = detail;
+		}
 
 		for (const FlatSub& sub : inst.mesh->subs) {
 			SrcMaterial sm = sub.material;
@@ -1638,6 +1663,34 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 	scene.notes.push_back("objects by size: " + std::to_string(detailCount[DETAIL_ALWAYS]) + " large, " +
 	                      std::to_string(detailCount[DETAIL_MEDIUM]) + " medium, " + std::to_string(detailCount[DETAIL_SMALL]) +
 	                      " small");
+	{
+		auto num = [](u64 v) { return std::to_string(v); };
+		scene.notes.push_back("object triangles by class (before --simplify): " + num(classTriangles[DETAIL_ALWAYS]) + " large, " +
+		                      num(classTriangles[DETAIL_MEDIUM]) + " medium, " + num(classTriangles[DETAIL_SMALL]) + " small");
+		static const char* kBand[SIZE_BANDS] = {"60 cm and more", "30-60 cm", "15-30 cm", "under 15 cm"};
+		std::string bands = "small objects by size (radius; band: objects, triangles): ";
+		for (u32 b = 0; b < SIZE_BANDS; ++b)
+			bands += std::string(b ? "; " : "") + kBand[b] + ": " + num(bandObjects[b]) + ", " + num(bandTriangles[b]);
+		scene.notes.push_back(bands + " (bands 1-3 are drawn only as far as they are a few pixels across)");
+		// The meshes that cost the most, triangles times copies: what is worth simplifying or swapping first.
+		static const char* kClass[DETAIL_COUNT] = {"large", "medium", "small"};
+		for (u8 cls : {u8(DETAIL_SMALL), u8(DETAIL_MEDIUM), u8(DETAIL_ALWAYS)}) {
+			std::vector<std::pair<u64, std::string>> list;
+			for (const auto& [name, mc] : meshCost)
+				if (mc.detail == cls) list.emplace_back(u64(mc.triangles) * mc.copies, name);
+			if (list.empty()) continue;
+			std::sort(list.begin(), list.end(), [](const auto& a, const auto& b) { return a.first > b.first || (a.first == b.first && a.second < b.second); });
+			std::string line = std::string("heaviest ") + kClass[cls] + " objects (triangles x copies = all, radius):";
+			for (size_t i = 0; i < list.size() && i < 20; ++i) {
+				const MeshCost& mc = meshCost[list[i].second];
+				char buf[200];
+				std::snprintf(buf, sizeof(buf), "\n  %s %zu x %llu = %llu, %.0f cm", list[i].second.c_str(), mc.triangles,
+				              static_cast<unsigned long long>(mc.copies), static_cast<unsigned long long>(list[i].first), double(mc.radius));
+				line += buf;
+			}
+			scene.notes.push_back(line);
+		}
+	}
 	if (stats.emitters || stats.fireEmitters)
 		scene.notes.push_back("particle effects: " + std::to_string(stats.emitters) + " placed by the world, " +
 		                      std::to_string(stats.fireEmitters) + " from fire places' trees" +

@@ -146,6 +146,22 @@ bool Hero::load(Pak& pak) {
 	                                                     "S_JUMPUPMID",         "T_JUMPUPMID_2_STAND", "T_STAND_2_JUMPUP", "S_JUMPUP",
 	                                                     "T_JUMP_2_HANG",       "S_HANG",      "T_HANG_2_STAND"};
 	for (int k = 0; k < CLIMB_CLIPS; ++k) _climb[k] = _model.clip(kClimbNames[k]);
+	// The ladder's stretches in turn (the scheme LADDER, states S0, S1, ...); the run of them that the model has.
+	_ladderCount = 0;
+	for (int k = 0; k < LADDER_CLIPS; ++k) {
+		char ladderName[48];
+		snprintf(ladderName, sizeof(ladderName), "T_LADDER_S%d_2_S%d", k, k + 1);
+		const Clip* c = _model.clip(ladderName);
+		if (!c) break;
+		_ladder[_ladderCount] = c;
+		_ladderRise[_ladderCount] = c->rise() >= 20.0f ? c->rise() : 0.0f;
+		++_ladderCount;
+	}
+	// (Clips that carry no height of their own: each is taken for a stretch of a rung's worth.)
+	bool anyRise = false;
+	for (int k = 0; k < _ladderCount; ++k) anyRise = anyRise || _ladderRise[k] > 0.0f;
+	for (int k = 0; k < _ladderCount; ++k)
+		if (!anyRise || _ladderRise[k] <= 0.0f) _ladderRise[k] = anyRise ? _ladderRise[0] : 75.0f;
 	_spine[0] = _model.findNode(hashName("BIP01 SPINE"));
 	_spine[1] = _model.findNode(hashName("BIP01 SPINE1"));
 	_spine[2] = _model.findNode(hashName("BIP01 SPINE2"));
@@ -177,6 +193,9 @@ void Hero::release() {
 	memset(_jumpBack, 0, sizeof(_jumpBack));
 	memset(_parryClip, 0, sizeof(_parryClip));
 	memset(_climb, 0, sizeof(_climb));
+	memset(_ladder, 0, sizeof(_ladder));
+	_ladderCount = 0;
+	_ladderOn = false;
 	_jumpUp = false;
 	_mantle = Mantle();
 	_takeoff = nullptr;
@@ -206,6 +225,7 @@ void Hero::reset(Vec3 feet, float yaw) {
 	_blow.reset();
 	_reel = nullptr;
 	_use = Use();
+	_ladderOn = false;
 	if (loaded()) {
 		_body = GROUNDED;
 		_roleNow = _down ? DOWN : IDLE;
@@ -658,35 +678,67 @@ bool Hero::pickUp(float seconds, float moment) {
 
 // ---- a chest ----
 
-bool Hero::openMob(const char* scheme) {
+bool Hero::openMob(const char* scheme, int states, int slotKind) {
 	if (!loaded() || !scheme || !*scheme || _down || _reel || _body != GROUNDED || _weapon != WEAPON_NONE || drawing() || usingItem()) return false;
 	const Clip* cur = _anim.current();
 	if (_blow.clip && cur == _blow.clip) return false;
 	_use = Use();
 	_sneak = false;
-	char name[64];
-	const auto find = [&](const char* pattern) {
-		snprintf(name, sizeof(name), pattern, scheme);
-		return _model.clip(name);
+	states = clamp(states, 0, 16);
+	// The clip of one step of using the thing, -1 being standing by it: "T_BENCH_S0_2_S1",
+	// "S_BENCH_S1"; from a place in front of it or behind it the model's own names have that in
+	// them first ("T_BEDHIGH_FRONT_STAND_2_S0"), as OpenGothic's Interactive::animNpc looks.
+	const char* const tags[2] = {slotKind == 1 ? "_FRONT" : slotKind == 2 ? "_BACK" : "", ""};
+	const auto step = [&](int from, int to) -> const Clip* {
+		char a[12], b[12], name[96];
+		snprintf(a, sizeof(a), from < 0 ? "STAND" : "S%d", from);
+		snprintf(b, sizeof(b), to < 0 ? "STAND" : "S%d", to);
+		for (int k = 0; k < 2; ++k) {
+			if (k == 1 && !tags[0][0]) break;
+			if (from == to) snprintf(name, sizeof(name), "S_%.40s%s_%s", scheme, tags[k], a);
+			else snprintf(name, sizeof(name), "T_%.40s%s_%s_2_%s", scheme, tags[k], a, b);
+			if (const Clip* c = _model.clip(name)) return c;
+		}
+		return nullptr;
 	};
-	const Clip* in = find("T_%s_STAND_2_S0");
-	const Clip* lid = find("T_%s_S0_2_S1");
+	const Clip* in = step(-1, 0);
 	// A body is searched with the original's own animation (the scripts play it for
 	// the people who rob the dead: B_AssessBody, "T_PLUNDER"): one clip, bending down and up.
-	if (strcmp(scheme, "CORPSE") == 0) {
+	const bool corpse = strcmp(scheme, "CORPSE") == 0;
+	if (corpse) {
 		in = _model.clip("T_PLUNDER");
-		lid = nullptr;
+		states = 0;
 		if (in) _use.openAt = in->duration() * 0.55f;
 	}
 	_use.nIn = _use.nOut = 0;
-	if (in) _use.seqIn[_use.nIn++] = in;
-	if (in && lid) _use.seqIn[_use.nIn++] = lid;
-	const Clip* back = find("T_%s_S1_2_S0");
-	const Clip* away = find("T_%s_S0_2_STAND");
-	if (!away) away = find("T_%s_S1_2_STAND");
-	if (in && lid && back) _use.seqOut[_use.nOut++] = back;
-	if (in && away) _use.seqOut[_use.nOut++] = away;
-	_use.hold = lid ? find("S_%s_S1") : find("S_%s_S0");
+	int top = 0; // the state the thing is used in
+	if (in) {
+		_use.seqIn[_use.nIn++] = in;
+		// The steps up through the states (one that has no clip of its own is simply passed).
+		for (int k = 0; k < states; ++k) {
+			if (const Clip* c = step(k, k + 1)) {
+				_use.seqIn[_use.nIn++] = c;
+				top = k + 1;
+			}
+		}
+		// The way out: the steps back down, then up to standing - from the lowest state that has a
+		// step to standing of its own, if the first does not.
+		const bool plain = step(0, -1) != nullptr;
+		int direct = plain ? 0 : -1;
+		for (int k = top; !plain && k > 0; --k)
+			if (step(k, -1)) {
+				direct = k;
+				break;
+			}
+		for (int k = top; k > 0; --k) {
+			if (k == direct) break;
+			if (const Clip* c = step(k, k - 1)) _use.seqOut[_use.nOut++] = c;
+		}
+		if (direct >= 0) _use.seqOut[_use.nOut++] = step(direct, -1);
+	}
+	// Held in the highest state that has a pose of its own.
+	_use.hold = nullptr;
+	for (int k = top; k >= 0 && !_use.hold; --k) _use.hold = step(k, k);
 	_use.phase = USE_MOB_IN;
 	_use.stoopHold = _use.nIn == 0;
 	_use.at2 = 0;
@@ -884,7 +936,7 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 	// In a jump the body goes where the take-off sent it, as in the original: no turning
 	// (and so no steering of the leap by the take-off animation's root motion) until it lands.
 	const bool inJump = _body == TAKEOFF || (_body == AIRBORNE && _jumping);
-	const bool locked = _down || _reel || (_blow.clip && _anim.current() == _blow.clip) || drawing() || usingItem() || _body == MANTLE || inJump;
+	const bool locked = _down || _reel || player.climbing || (_blow.clip && _anim.current() == _blow.clip) || drawing() || usingItem() || _body == MANTLE || inJump;
 	float turnRate = 0;
 	if (in.steer) {
 		// Towards a heading, as fast as a body turns (the console scheme).
@@ -898,7 +950,7 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 		turnRate = step / dt;
 	} else {
 		turnRate = clamp(in.moveX, -1.0f, 1.0f) * kTurnSpeed + clamp(in.lookX, -1.0f, 1.0f) * kLookTurnSpeed;
-		if (locked && (_down || usingItem() || _body == MANTLE || inJump)) turnRate = 0;
+		if (locked && (_down || usingItem() || _body == MANTLE || inJump || player.climbing)) turnRate = 0;
 		_yaw = wrapAngle(_yaw + turnRate * dt);
 	}
 	const bool turning = fabsf(turnRate) >= kTurnAnimSpeed;
@@ -906,6 +958,11 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 	const int r = row();
 
 	// ---- which animation ----
+	if (_ladderOn && !player.climbing) {
+		// Off the ladder: the legs take over again.
+		_ladderOn = false;
+		_forceNext = true;
+	}
 	const Clip* cur = _anim.current();
 	const bool force = _forceNext;
 	_forceNext = false;
@@ -983,8 +1040,8 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 			if (parryNow) {
 				_roleNow = PARRY;
 			} else if (player.climbing) {
-				go(idle, force);
-				_roleNow = IDLE;
+				ladderTick(player);
+				_roleNow = CLIMB;
 			} else if (jumpPressed && !busy && !wading && groundLedge && groundLedge->found && beginMantle(*groundLedge, player, true)) {
 				// A ledge ahead in reach: up onto it, as the original climbs.
 				_roleNow = CLIMB;
@@ -1177,6 +1234,11 @@ void Hero::updatePose(float dt) {
 		_drawn.pos[0].y -= max(_takeoff->motion(_anim.time()).y, 0.0f);
 		return;
 	}
+	if (_ladderOn && _anim.current() && _anim.current()->rise() > 1.0f) {
+		// The body is up the ladder by the controller; the clip's own way up must not lift the pose again.
+		_drawn.pos[0].y -= _anim.current()->motion(_anim.time()).y;
+		return;
+	}
 	if (_exitTime < 0.2f) {
 		// The body stands on the ledge already; the pose it fades from has the root where the climb's
 		// clip left it (up to 1.5 m higher). Take that out as the fade goes, or the hero rises and drops.
@@ -1205,6 +1267,35 @@ void Hero::updatePose(float dt) {
 		for (int k = 0; k < 3; ++k) _model.turnNodeAbout(_drawn, _spine[k], across, kBend[k] * _stoop);
 		_model.turnNodeAbout(_drawn, _headNode, across, -0.3f * _stoop);
 	}
+}
+
+// ---- a ladder ----
+
+// The climbing pose for this frame. The body's height is the controller's; the
+// animation is put at the place that height has on the ladder: the stretch of
+// rungs it is at, and how far through it. Climbing up plays the clips forward,
+// down backwards, and standing still holds the pose - the hands stay on the
+// rungs they hold. Without the clips (an older data.pak) the legs stand.
+void Hero::ladderTick(const Player& player) {
+	if (_ladderCount == 0) {
+		go(_walkMode ? ST_WALK : ST_RUN, _forceNext);
+		return;
+	}
+	if (!_ladderOn) {
+		_ladderOn = true;
+		_ladderY0 = player.feet.y;
+		_sneak = false;
+	}
+	float cycle = 0;
+	for (int k = 0; k < _ladderCount; ++k) cycle += _ladderRise[k];
+	float h = fmodf(player.feet.y - _ladderY0, cycle);
+	if (h < 0.0f) h += cycle;
+	int at = 0;
+	for (; at + 1 < _ladderCount && h >= _ladderRise[at]; ++at) h -= _ladderRise[at];
+	const Clip* c = _ladder[at];
+	if (_anim.current() != c) _anim.play(c, 0.08f);
+	_anim.setRate(0.0f);
+	_anim.seek(clamp(h / _ladderRise[at], 0.0f, 1.0f) * c->duration(), 0.0f);
 }
 
 // ---- climbing onto a ledge ----

@@ -124,6 +124,14 @@ public:
 		float height = 0;
 	};
 	const LedgeStats& ledgeStats() const { return _ledgeStats; }
+	// Caught on a ladder out of the air (stepping off its top, a jump at it): the way the
+	// character should face to climb it - towards the wall it leans on. True once per catch.
+	bool takeLadderTurn(float& yaw) {
+		if (!_turnPending) return false;
+		_turnPending = false;
+		yaw = _turnYaw;
+		return true;
+	}
 	// An animation is putting the body (Drive::place) this frame.
 	bool placedByAnimation() const { return _mantle; }
 	// False until the ground under the spawn point has been found.
@@ -167,6 +175,9 @@ private:
 	bool _placed = false;
 	bool _blocked = false; // the last horizontal move ran into something
 	bool _letGo = false;   // jumped off a ladder: do not grab it again before landing
+	bool _turnPending = false; // see takeLadderTurn()
+	float _turnYaw = 0;
+	bool wallDirection(const World& world, float& yaw) const;
 	bool _mantle = false;  // put by an animation this frame (Drive::place)
 	Vec3 _carry {0, 0, 0}; // driven: the horizontal velocity the body keeps in the air
 	// Sliding down a slope too steep to stand on: the lowest the feet have

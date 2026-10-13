@@ -2,12 +2,16 @@
 // here can play; what plays instead are tracks the player has rendered from
 // it, one WAV file per theme, baked into "music.pak" (g3ds/sound.h).
 //
-// Which theme is up to the world, as in the original: each music zone of a
-// world (zCZoneMusic; the highest priority of those the listener is in, else
-// the world's default) names a theme - "OC" plays OC_DAY_STD by day and OC_NGT_STD
-// by night, and in danger or a fight the _THR and _FIG ones, if the scripts
-// have them. The scripts' C_MUSICTHEME instance says which file that is.
-// Changing from one theme to another fades out and then in.
+// Which theme is up to the world, as in OpenGothic (WorldSound::tickSoundZone):
+// each music zone of a world (zCZoneMusic) names a theme - "OC" plays OC_DAY_STD
+// by day (4:00 to 21:00) and OC_NGT_STD by night; while an enemy is after the
+// player the _THR ones (no weapon in hand) or the _FGT ones (weapon drawn).
+// The zone is the one the listener is in and stays in as long as it is inside
+// it, else the last zone of the list that holds him, else the world's default.
+// What is not there is looked for in the default zone, by day instead of
+// night, as _STD instead of _FGT / _THR. The scripts' C_MUSICTHEME instance
+// says which file the theme is. Changing from one theme to another fades out
+// and then in (the original changes at the next bar; a render cannot).
 //
 // The track is read from the card piece by piece by a worker thread and
 // handed to the platform's stream in buffers of about a second.
@@ -43,6 +47,9 @@ public:
 	void setVolume(float volume) { _volume = clamp(volume, 0.0f, 1.0f); }
 	float volume() const { return _volume; }
 
+	// A theme that belongs to no zone (SYS_MENU while the menu is up, SYS_LOADING): played instead of the world's
+	// until it is taken off (null or ""), then the world's comes back.
+	void setSystemTheme(const char* name);
 	// The zones of a world ("world/oldmine" -> "world/oldmine/music").
 	void enterWorld(Pak& pak, const char* worldAsset);
 	// Every frame. `hours`: the time of day.
@@ -66,9 +73,10 @@ private:
 	// One chunk of the track in flight between the loading thread and the stream.
 	enum SlotState : u8 { SLOT_EMPTY, SLOT_READY, SLOT_QUEUED };
 
-	int zoneAt(Vec3 p) const;
+	int zoneAt(Vec3 p);
 	u32 resolve(const char* name, float& volume);
-	u32 choose(const char* zone, float hours, MusicSituation situation, char* nameOut, u32 size, float& volume);
+	u32 choose(const char* zone, const char* defaultZone, bool day, MusicSituation situation, char* nameOut, u32 size, float& volume);
+	u32 tryTheme(const char* zone, bool day, const char* sit, char* nameOut, u32 size, float& volume);
 	bool startTrack(u32 entryHash, float volume);
 	void stopTrack();
 	void feed();
@@ -86,6 +94,12 @@ private:
 	Resolved _resolved[THEMES];
 	MusicZone* _zones = nullptr;
 	u32 _zoneCount = 0;
+	int _zoneIdx = -1;      // the zone the listener is in (kept while he is inside it)
+	int _defaultIdx = -1;   // the world's default zone
+	char _system[32] = "";  // setSystemTheme
+	float _sinceChoice = 0; // seconds since the theme was last chosen
+	float _fadeOutLen = 1.2f, _fadeInLen = 1.5f;
+	MusicSituation _situation = MUSIC_CALM;
 
 	// What is wanted and what is playing.
 	u32 _key = 0xFFFFFFFFu; // zone, day/night and situation the wanted theme was chosen for

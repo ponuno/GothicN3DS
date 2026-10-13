@@ -14,6 +14,9 @@ float set(float hz);
 // without (the menu, 30 fps) nothing is remembered, so a later resume() leaves the system's timing alone.
 void restore(bool pausing = false);
 void resume();
+// Never faster than the system's own rate (slower is still allowed): the wide screen (800x240) has twice the pixels per line to fetch,
+// and a shorter line gives coloured stripes there.
+void limitToBase(bool on);
 float current();
 // 0 ok, otherwise the failure (for the screen of numbers): 1 read, 2 not the top screen's registers, 3 write.
 int failure();

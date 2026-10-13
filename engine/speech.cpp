@@ -1,5 +1,6 @@
 #include "speech.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,7 +9,7 @@ namespace g3 {
 
 bool Speech::init(const char* speechPakPath, AudioOut* out) {
 	shutdown();
-	if (!out || out->channels() <= u32(CHANNEL) || !speechPakPath) return false;
+	if (!out || out->channels() <= _channel || !speechPakPath) return false;
 	// "…/speech.pak", then "…/speech2.pak" ...
 	char path[320];
 	for (u32 k = 0; k < MAX_PAKS; ++k) {
@@ -35,7 +36,7 @@ bool Speech::init(const char* speechPakPath, AudioOut* out) {
 }
 
 void Speech::shutdown() {
-	if (_out && _ready) _out->stop(CHANNEL);
+	if (_out && _ready) _out->stop(_channel);
 	for (u32 i = 0; i < 2; ++i) {
 		if (_block[i] && _out) _out->freeSamples(_block[i]);
 		_block[i] = nullptr;
@@ -48,14 +49,15 @@ void Speech::shutdown() {
 }
 
 void Speech::stop() {
-	if (_ready) _out->stop(CHANNEL);
+	if (_ready) _out->stop(_channel);
 }
 
-bool Speech::playing() const { return _ready && _out->playing(CHANNEL); }
+bool Speech::playing() const { return _ready && _out->playing(_channel); }
 
-float Speech::play(u32 lineHash, float gain) {
+float Speech::play(u32 lineHash, float gain, float pan, bool takeOver) {
 	if (!_ready) return 0.0f;
-	_out->stop(CHANNEL);
+	const bool busy = !takeOver && playing();
+	if (!busy) _out->stop(_channel);
 	Pak* pak = nullptr;
 	const PakEntry* e = nullptr;
 	for (u32 k = 0; k < _pakCount && !e; ++k)
@@ -78,6 +80,10 @@ float Speech::play(u32 lineHash, float gain) {
 	}
 	const float seconds = float(h.frames) / float(h.rate);
 	const float level = clamp(gain, 0.0f, 1.0f) * _volume;
+	if (busy) { // (the one sounding keeps its memory)
+		free(blob);
+		return seconds;
+	}
 	// The block used before the last one is surely silent by now.
 	_cur ^= 1u;
 	if (_block[_cur]) {
@@ -103,7 +109,10 @@ float Speech::play(u32 lineHash, float gain) {
 	_out->publishSamples(pcm, bytes);
 	_block[_cur] = pcm;
 	_blockBytes[_cur] = bytes;
-	_out->start(CHANNEL, pcm, h.frames, h.rate, false, level, level, 1.0f);
+	// Equal power across the ears (the sound engine's way).
+	const float angle = (clamp(pan, -1.0f, 1.0f) + 1.0f) * (3.14159265f * 0.25f);
+	_out->start(_channel, pcm, h.frames, h.rate, false, clamp(level * cosf(angle) * 1.4142135f, 0.0f, 1.0f),
+	            clamp(level * sinf(angle) * 1.4142135f, 0.0f, 1.0f), 1.0f);
 	++_played;
 	return seconds;
 }

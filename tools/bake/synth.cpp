@@ -657,7 +657,7 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 		scene.ambient.push_back(hum);
 	}
 	{
-		// The whole world is one music zone: TEST_DAY_STD by day, TEST_NGT_STD at night, TEST_FIG in a fight.
+		// The whole world is one music zone: TEST_DAY_STD by day, TEST_NGT_STD at night, TEST_DAY_FGT in a fight by day.
 		SrcMusicZone zone;
 		zone.name = "TEST";
 		zone.isDefault = true;

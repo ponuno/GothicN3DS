@@ -131,6 +131,30 @@ void Player::unstick(const World& world, float dt) {
 	// (Nothing anywhere near: the edge of the loaded world. Wait for it.)
 }
 
+// The direction of the nearest wall within reach at the height of the chest: the
+// ladder leans on it and is climbed facing it.
+bool Player::wallDirection(const World& world, float& yaw) const {
+	const float reach = config.radius + 70.0f;
+	float best = reach + 1.0f;
+	for (int k = 0; k < 16; ++k) {
+		const float a = float(k) * (6.2831853f / 16.0f);
+		const Vec3 dir = {sinf(a), 0, cosf(a)};
+		const Vec3 from = {feet.x, feet.y + 100.0f, feet.z};
+		if (world.lineFree(from, from + dir * reach, 6.0f)) continue;
+		float lo = 0.0f, hi = reach;
+		for (int i = 0; i < 5; ++i) {
+			const float mid = 0.5f * (lo + hi);
+			if (world.lineFree(from, from + dir * mid, 6.0f)) lo = mid;
+			else hi = mid;
+		}
+		if (hi < best - 1.0f) {
+			best = hi;
+			yaw = a;
+		}
+	}
+	return best <= reach;
+}
+
 bool Player::climb(const World& world, const Input& in, float dt) {
 	const PlayerConfig& cfg = config;
 	float y;
@@ -158,8 +182,10 @@ bool Player::climb(const World& world, const Input& in, float dt) {
 			// to land at its top.
 			return false;
 		}
-		// Otherwise: caught in mid-air, which is also the way down from the top.
+		// Otherwise: caught in mid-air, which is also the way down from the top. The character
+		// climbs facing the wall the ladder leans on (stepping off the top, he faced away from it).
 		climbing = true;
+		_turnPending = wallDirection(world, _turnYaw);
 	} else if (in.moveZ > 0.1f && !_blocked) {
 		// Nothing in the way any more: this is the top. Stay level and walk
 		// on until there is floor underfoot.

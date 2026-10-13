@@ -4374,6 +4374,24 @@ static void testSpeech() {
 	CHECK(audio.liveBlocks() <= 2);
 	speech.shutdown();
 	CHECK(audio.liveBlocks() == 0 && !speech.ready());
+	// What the world says has a reader and a channel of its own: from the side it comes from, and a line that is
+	// sounding is not cut by the next, which is only measured (its speaker still waits it out).
+	{
+		HostAudio wa;
+		Speech world(Speech::WORLD_CHANNEL);
+		CHECK(world.init((dir + "/speech.pak").c_str(), &wa));
+		CHECK(world.play(hashName("DIA_Thorus_Hello_09_00"), 1.0f, -1.0f, false) > 1.95f);
+		CHECK(wa.startedCount() == 1 && wa.last().channel == u32(Speech::WORLD_CHANNEL));
+		CHECK(wa.leftOf(Speech::WORLD_CHANNEL) > 0.7f && wa.rightOf(Speech::WORLD_CHANNEL) < 0.05f);
+		const float second = world.play(hashName("DIA_Thorus_Job_15_00"), 1.0f, 0.0f, false);
+		CHECK(second > 0.55f && second < 0.65f && wa.startedCount() == 1 && world.playing());
+		wa.advance(5.0f);
+		CHECK(!world.playing());
+		CHECK(world.play(hashName("DIA_Thorus_Job_15_00"), 1.0f, 1.0f, false) > 0.55f && wa.startedCount() == 2);
+		CHECK(wa.rightOf(Speech::WORLD_CHANNEL) > 0.7f && wa.leftOf(Speech::WORLD_CHANNEL) < 0.05f);
+		world.shutdown();
+		CHECK(wa.liveBlocks() == 0);
+	}
 }
 
 static void testMusic() {
@@ -4389,7 +4407,8 @@ static void testMusic() {
 	};
 	writeTone("TEST_DAY_STD.wav", 0.05);
 	writeTone("test_ngt_std.WAV", 0.08);
-	writeTone("TEST_FIG.wav", 0.11);
+	writeTone("TEST_DAY_FGT.wav", 0.11);
+	writeTone("TEST_MENU.wav", 0.2);
 
 	SrcScript script;
 	buildSyntheticScript(script);
@@ -4424,7 +4443,7 @@ static void testMusic() {
 	PakWriter writer;
 	bakeWorlds(worlds, models, scripts, bo, writer);
 	CHECK(writer.has("world/world/music"));
-	CHECK(musicPak.has("music/test_day_std") && musicPak.has("music/test_ngt_std") && musicPak.has("music/test_fig"));
+	CHECK(musicPak.has("music/test_day_std") && musicPak.has("music/test_ngt_std") && musicPak.has("music/test_day_fgt") && musicPak.has("music/test_menu"));
 	CHECK(!writer.has("music/test_day_std")); // (the tracks are not in data.pak)
 	const std::string sub = gDir + "/music_game";
 	fs::create_directories(sub);
@@ -4458,12 +4477,36 @@ static void testMusic() {
 		CHECK(music.level() < 0.9f || std::string(music.theme()) == "TEST_NGT_STD");
 		run(4.0f, {0, 0, 0}, 23.0f, MUSIC_CALM);
 		CHECK(std::string(music.theme()) == "TEST_NGT_STD" && music.level() > 0.99f);
-		// A fight has a theme of its own.
+		// A fight has a theme of its own - by day (this world has none for the night: the calm one goes on, as in
+		// OpenGothic's search, which tries the hour before the situation).
 		run(5.0f, {0, 0, 0}, 23.0f, MUSIC_FIGHT);
-		CHECK(std::string(music.theme()) == "TEST_FIG");
+		CHECK(std::string(music.theme()) == "TEST_NGT_STD");
+		run(5.0f, {0, 0, 0}, 12.0f, MUSIC_FIGHT);
+		CHECK(std::string(music.theme()) == "TEST_DAY_FGT");
+		// A threat (nothing in the hand) has no theme here either: the fight's is the next.
+		run(5.0f, {0, 0, 0}, 12.0f, MUSIC_CALM);
+		CHECK(std::string(music.theme()) == "TEST_DAY_STD");
+		run(5.0f, {0, 0, 0}, 12.0f, MUSIC_THREAT);
+		CHECK(std::string(music.theme()) == "TEST_DAY_FGT");
+		// Day is from 4:00 to 21:00.
+		run(5.0f, {0, 0, 0}, 3.5f, MUSIC_CALM);
+		CHECK(std::string(music.theme()) == "TEST_NGT_STD");
+		run(5.0f, {0, 0, 0}, 4.5f, MUSIC_CALM);
+		CHECK(std::string(music.theme()) == "TEST_DAY_STD");
+		run(5.0f, {0, 0, 0}, 20.5f, MUSIC_CALM);
+		CHECK(std::string(music.theme()) == "TEST_DAY_STD");
+		run(5.0f, {0, 0, 0}, 21.5f, MUSIC_CALM);
+		CHECK(std::string(music.theme()) == "TEST_NGT_STD");
+		// The menu has a theme of its own, and the world's comes back after it.
+		music.setSystemTheme("SYS_MENU");
+		run(5.0f, {0, 0, 0}, 12.0f, MUSIC_CALM);
+		CHECK(std::string(music.theme()) == "SYS_MENU" && audio.streamIsOpen());
+		music.setSystemTheme(nullptr);
+		run(5.0f, {0, 0, 0}, 12.0f, MUSIC_CALM);
+		CHECK(std::string(music.theme()) == "TEST_DAY_STD");
 		// Volume 0: silence, the stream closes.
 		music.setVolume(0.0f);
-		run(3.0f, {0, 0, 0}, 23.0f, MUSIC_FIGHT);
+		run(3.0f, {0, 0, 0}, 12.0f, MUSIC_FIGHT);
 		CHECK(!audio.streamIsOpen() && std::string(music.theme()).empty());
 		music.setVolume(0.6f);
 		run(4.0f, {0, 0, 0}, 12.0f, MUSIC_CALM);
@@ -5418,7 +5461,7 @@ func void Rtn_start_502() {
 		const auto said = [&](const char* text) { return r.report.find(text) != std::string::npos; };
 		if (getenv("G3_TRACE")) std::puts(r.report.c_str());
 		// Of the animations the scripts name each skeleton got the ones it has.
-		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 8 families more; fighting 105 "
+		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 14 families more; fighting 105 "
 		           "more; baked per skeleton: humans 67, scavenger 13, molerat 13"));
 		// ... and those of the things in the hands (drinking a potion; picking up: 3 + 3 of the 67).
 		CHECK(said("things in the hands: the scripts' items are used in 4 ways (FOOD, MEAT, POTION, POTIONFAST)"));
@@ -5835,6 +5878,21 @@ func void Rtn_start_502() {
 			// looks at him.
 			const SrcWayPoint& post = wayPoint("CAMP_GATE_GUARD_L");
 			const u32 perceivedBefore = npcs.stats().perceived;
+			// (What he says is a line of his voice, said in the world: it is asked for at his place.)
+			static u32 saidHash = 0, saidWho = 0xFFFFFFFFu;
+			static int saidBy = -1;
+			saidWho = thorus;
+			saidHash = 0;
+			Npcs::SpeechHook listen;
+			listen.say = [](void*, u32 hash, int who, bool) -> float {
+				if (u32(who) == saidWho) {
+					saidHash = hash;
+					saidBy = who;
+				}
+				return 0.5f;
+			};
+			npcs.setSpeechHook(listen);
+			const u32 saidBefore = npcs.stats().linesSaid;
 			app.teleport({post.pos[0] + 300.0f, post.pos[1] + 170.0f, post.pos[2] + 400.0f});
 			run(3.0f, thorus, nullptr);
 			const NpcActor* t = npcs.actorOf(thorus);
@@ -5842,6 +5900,14 @@ func void Rtn_start_502() {
 			CHECK(t && t->lookAt == int(heroIndex) && std::string(t->said) == "$WHATDOYOUWANT" && npcs.stats().perceived > perceivedBefore);
 			if (t) std::printf("       the guard looks at the player: head %.2f rad round, %.2f down\n", double(t->headYaw), double(t->headPitch));
 			CHECK(t && t->headYaw > 0.4f && t->headYaw < 0.8f && t->state == zsGuard);
+			// $WHATDOYOUWANT of his voice is the line "SVM_<voice>_WHATDOYOUWANT"; it was said where he stands (the other guard, who also saw the player, said his own).
+			{
+				const i32 voice = game.npcInt(game.npc(thorus), game.vm().findMember("C_NPC", "VOICE"));
+				char want[48];
+				std::snprintf(want, sizeof(want), "SVM_%d_WHATDOYOUWANT", int(voice));
+				CHECK(voice > 0 && saidHash == hashName(want) && saidBy == int(thorus));
+				CHECK(npcs.stats().linesSaid > saidBefore && npcs.stats().linesHeard >= 1);
+			}
 			CHECK(j && j->lookAt == int(thorus) && npcs.stats().looking >= 2);
 			// ... the head is turned in the pose that is drawn (the rig's head bone).
 			app.render();
@@ -8861,6 +8927,60 @@ static void testParticles() {
 // the money neither bought nor sold, what is worn kept, the purse short; B ends the trade and the menu is back.
 // The things of the world the player uses: only those the world named show a prompt; a bench
 // holds him until he lets go, a thing with a script runs it (when its condition allows).
+// The console's controls on a ladder: the stick up climbs, the stick down climbs down - the character keeps
+// facing the ladder and does not turn away from it (as it does when steered towards a heading).
+static void testLadderSteering() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/ladder_steer.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.hero().loaded()) return;
+	app.settings().scheme = CONTROLS_CONSOLE;
+	app.settings().immortal = 1;
+	app.applySettings();
+	app.npcs().game().setQuiet(true);
+	const float dt = 1.0f / 30.0f;
+	Input next;
+	next.nextWorld = true;
+	app.update(next, dt);
+	for (int i = 0; i < 60; ++i) app.update(Input {}, dt);
+	const Player& pl = app.player();
+	app.camera().yaw = 0;
+	app.teleport({-1200.0f, 175.0f, 3000.0f});
+	for (int i = 0; i < 60; ++i) app.update(Input {}, dt);
+	CHECK(pl.grounded && !pl.climbing);
+	bool climbed = false;
+	float highest = 0;
+	for (int i = 0; i < 90 && pl.feet.y < 120.0f; ++i) {
+		Input in;
+		in.moveZ = 1.0f; // the stick pushed away from the camera
+		app.update(in, dt);
+		climbed = climbed || pl.climbing;
+		highest = std::max(highest, pl.feet.y);
+	}
+	std::printf("  ladder (console): up to %.0f cm, climbing %d, facing %.2f\n", double(highest), int(pl.climbing), double(app.hero().yaw()));
+	CHECK(climbed && highest > 100.0f);
+	// Part of the way up: the stick pulled back goes down, still facing the wall.
+	if (!pl.climbing) return;
+	const float up = pl.feet.y;
+	for (int i = 0; i < 20; ++i) {
+		Input in;
+		in.moveZ = -1.0f;
+		app.update(in, dt);
+	}
+	std::printf("  ladder (console): down from %.0f to %.0f cm, facing %.2f\n", double(up), double(pl.feet.y), double(app.hero().yaw()));
+	CHECK(pl.feet.y < up - 40.0f);
+	CHECK(std::fabs(app.hero().yaw()) < 0.2f);
+	for (int i = 0; i < 90 && !pl.grounded; ++i) {
+		Input in;
+		in.moveZ = -1.0f;
+		app.update(in, dt);
+	}
+	CHECK(pl.grounded && std::fabs(pl.feet.y) < 0.5f && !pl.climbing);
+}
+
 static void testMobUse() {
 	std::vector<BakeWorld> worlds;
 	const std::string path = gDir + "/mobuse.pak";
@@ -10176,6 +10296,7 @@ int main(int argc, char** argv) {
 	             {"inventory", testInventory},
              {"chests", testChests},
              {"mob use", testMobUse},
+             {"ladder steering", testLadderSteering},
              {"trade", testTrade},
              {"teach", testTeach},
              {"particles", testParticles},

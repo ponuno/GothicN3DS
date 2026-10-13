@@ -18,6 +18,7 @@ PdcTiming gBase, gNow;
 bool gReady = false, gModified = false;
 int gFailure = 0;
 float gHz = 0.0f;
+bool gLimitToBase = false;
 float gWanted = 0.0f; // the rate to put back after a pause (0: none)
 
 bool write(const PdcTiming& t, const PdcTiming& from) {
@@ -59,6 +60,7 @@ bool init() {
 
 float set(float hz) {
 	if (!gReady) return 0.0f;
+	if (gLimitToBase && hz > pdcRefresh(gBase)) hz = pdcRefresh(gBase);
 	PdcTiming next;
 	const float made = pdcTimingFor(gBase, hz, next);
 	if (made <= 0.0f) return 0.0f;
@@ -94,6 +96,7 @@ void resume() {
 	if (gReady && hz > 0.0f && fabsf(hz - pdcRefresh(gBase)) > 0.01f) set(hz);
 }
 
+void limitToBase(bool on) { gLimitToBase = on; }
 float current() { return gHz; }
 int failure() { return gFailure; }
 

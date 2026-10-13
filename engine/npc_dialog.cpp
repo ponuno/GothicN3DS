@@ -66,6 +66,7 @@ void Npcs::flushSpeech() {
 }
 
 void Npcs::tickSpeech(float dt) {
+	if (_overlayBarrier > 0.0f) _overlayBarrier = max(0.0f, _overlayBarrier - dt);
 	if (_say.active) {
 		_say.time += dt;
 		if (_say.time >= _say.total) {
@@ -126,32 +127,61 @@ void Npcs::tickSpeech(float dt) {
 	}
 }
 
-void Npcs::xOutput(ScriptVm& vm, void* user) {
-	Npcs& self = *static_cast<Npcs*>(user);
-	const u32 hash = hashName(vm.popString());
-	(void)vm.popInstance(); // (whom it is said to: the player's character or the one talked to)
-	ScriptInstance* const speakerInst = vm.popInstance();
-	const int speaker = self.npcFor(speakerInst);
-	if (speaker < 0 || !self._cfg.alive) return;
-	const bool hero = self._game.npc(u32(speaker)).hero;
-	NpcActor* a = hero ? nullptr : self.actorFor(speakerInst);
+// Whether this speaker's words belong to the player's talk (shown and spoken in turn): the player's character
+// and the one it is talking to. Anybody else speaks in the world.
+bool Npcs::talkLineOf(int speaker) const {
+	if (speaker < 0 || u32(speaker) >= _game.npcCount()) return false;
+	if (_game.npc(u32(speaker)).hero) return true;
+	return _talk.processing && _talk.npc == speaker;
+}
+
+void Npcs::queueTalkLine(ScriptInstance* speakerInst, u32 hash) {
+	const int speaker = npcFor(speakerInst);
+	if (speaker < 0 || !_cfg.alive) return;
+	const bool hero = _game.npc(u32(speaker)).hero;
+	NpcActor* a = hero ? nullptr : actorFor(speakerInst);
 	if (!hero && !a) return; // out of sight, unheard
-	if (self._speechCount >= SPEECH) {
-		++self._stats.queueFull;
+	if (_speechCount >= SPEECH) {
+		++_stats.queueFull;
 		return;
 	}
-	const u32 id = self._speechNext++;
+	const u32 id = _speechNext++;
 	if (a) {
 		NpcAction act;
 		act.kind = NPC_ACT_OUTPUT;
 		act.i = i32(id);
-		if (!self.push(a, act)) {
-			--self._speechNext;
+		if (!push(a, act)) {
+			--_speechNext;
 			return;
 		}
 	}
-	self._speech[(self._speechHead + self._speechCount) % SPEECH] = SpeechStep {hash, speaker, id};
-	++self._speechCount;
+	_speech[(_speechHead + _speechCount) % SPEECH] = SpeechStep {hash, speaker, id};
+	++_speechCount;
+}
+
+// A line said where its speaker stands, outside the player's talk (OpenGothic: GameScript::GlobalOutput). It sounds
+// from the speaker, shows no subtitle, and the speaker is busy as long as the recording lasts. `svm`: the phrase
+// ("$WHATDOYOUWANT"), else `hash` is the line.
+bool Npcs::queueWorldLine(ScriptInstance* speakerInst, int target, u32 hash, const char* svm) {
+	if (!_cfg.alive) return false;
+	NpcActor* a = actorFor(speakerInst);
+	if (!a) return false; // out of sight, unheard
+	NpcAction act;
+	act.kind = NPC_ACT_SAY;
+	act.i = target;
+	act.hash = hash;
+	act.order = _sayOrder++;
+	if (svm) copyText(act.text, sizeof(act.text), svm);
+	return push(a, act);
+}
+
+void Npcs::xOutput(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const u32 hash = hashName(vm.popString());
+	const int target = self.npcFor(vm.popInstance());
+	ScriptInstance* const speakerInst = vm.popInstance();
+	if (self.talkLineOf(self.npcFor(speakerInst))) self.queueTalkLine(speakerInst, hash);
+	else self.queueWorldLine(speakerInst, target, hash, nullptr);
 }
 
 // ---- the talk ----

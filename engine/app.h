@@ -76,6 +76,8 @@ public:
 	const Music& music() const { return _music; }
 	Speech& speech() { return _speech; }
 	const Speech& speech() const { return _speech; }
+	Speech& chatter() { return _chatter; }
+	const Speech& chatter() const { return _chatter; }
 	Sound& sound() { return _sound; }
 	const Sound& sound() const { return _sound; }
 	// While update() is not called (the pause menu): lets sounds that ran out go and keeps the volume current.
@@ -221,6 +223,7 @@ public:
 	// In a fight: a weapon in hand, a blow less than 5 s ago, or an enemy
 	// close by that is after the character.
 	bool heroInCombat() const;
+	MusicSituation musicSituation(float dt);
 	// Rings and the amulet worn (SCRIPT_NONE for none).
 	u32 ring(int i) const { return i >= 0 && i < 2 ? _rings[i] : SCRIPT_NONE; }
 	u32 amulet() const { return _amulet; }
@@ -400,6 +403,8 @@ private:
 	float speechBegin(u32 lineHash, int speaker, bool hero);
 	static float speechPlayThunk(void* user, u32 lineHash, int speaker, bool hero);
 	static void speechStopThunk(void* user);
+	float chatterBegin(u32 lineHash, int speaker, bool overlay);
+	static float chatterThunk(void* user, u32 lineHash, int speaker, bool overlay);
 	static void soundEventThunk(void* user, const ClipSfxEvent& event, int npc);
 	// The fight's sounds by name ("CS_IAM_ME_FL|CS_IAM"): the first the scripts know, at character `npc`.
 	void namedSound(const char* names, int npc, float gain);
@@ -434,6 +439,8 @@ private:
 	Sound _sound;
 	Music _music;
 	Speech _speech;
+	float _musicScan = 0, _musicHold = 0; // (musicSituation)
+	Speech _chatter {Speech::WORLD_CHANNEL}; // what the world says, outside the player's talk
 	World _world;
 	Player _player;
 	Hero _hero;
@@ -579,6 +586,7 @@ private:
 		float yawFrom = 0, yawTo = 0;
 		bool stay = false;   // held until the player lets go (a bed, a bench)
 		bool ran = false;    // its state function has run
+		u8 slotKind = 0;     // the place used (MobSlotKind): which "_FRONT" / "_BACK" animations
 	};
 	enum MobStage : u8 { MJ_NONE, MJ_GLIDE, MJ_IN, MJ_HELD, MJ_OUT };
 	MobJob _mobJob;

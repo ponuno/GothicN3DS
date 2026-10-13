@@ -805,8 +805,16 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				++usedCount;
 			} else {
 				unused += (unused.empty() ? "" : ", ") + scheme;
+				// (The player's character uses things the scripts never name - a lever, the grindstone - by
+				// their own scheme: its animations are needed all the same.)
+				aniNames.insert("T_" + scheme + "_*");
+				aniNames.insert("S_" + scheme + "_*");
 			}
 		}
+		// A ladder is climbed with the scheme LADDER ("T_LADDER_S0_2_S1"): the worlds' ladders are not among their
+		// things to use, so it is asked for by name.
+		aniNames.insert("T_LADDER_*");
+		aniNames.insert("S_LADDER_*");
 		if (!there.empty())
 			line(format("things to use: the worlds have %zu kinds; the scripts name %zu of them: ", there.size(), usedCount) +
 			     (used.empty() ? "none" : used) + (unused.empty() ? "" : "; not named: " + unused));

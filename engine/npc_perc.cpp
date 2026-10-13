@@ -389,22 +389,80 @@ void Npcs::xStopLookAt(ScriptVm& vm, void* user) {
 // AI_StopLookAt or look elsewhere.
 void Npcs::xQuickLook(ScriptVm& vm, void* user) { xLookAtNpc(vm, user); }
 
-void Npcs::xOutputSvm(ScriptVm& vm, void* user) {
-	Npcs& self = *static_cast<Npcs*>(user);
-	NpcAction act;
-	act.kind = NPC_ACT_SAY;
-	copyText(act.text, sizeof(act.text), vm.popString());
-	act.i = self.npcFor(vm.popInstance());
-	self.push(self.actorFor(vm.popInstance()), act);
+// "$WHATDOYOUWANT" for the voice 3 is the string SVM_3 has in WHATDOYOUWANT, "SVM_3_WHATDOYOUWANT": the name of the
+// recording and of the line's text. (OpenGothic: SvmDefinitions::find.) Remembered: finding a member takes a look at
+// every symbol of the scripts.
+bool Npcs::svmLine(u32 npc, const char* phrase, char* out, u32 size) {
+	if (!out || !size) return false;
+	out[0] = 0;
+	if (!phrase || !*phrase || npc >= _game.npcCount()) return false;
+	if (phrase[0] != '$') {
+		copyText(out, size, phrase);
+		return true;
+	}
+	ScriptVm& vm = _game.vm();
+	const i32 voice = _game.npcInt(_game.npc(npc), vm.findMember("C_NPC", "VOICE"));
+	if (voice < 0) return false;
+	const u32 key = hashName(phrase + 1);
+	for (const SvmMemo& m : _svmMemo)
+		if (m.used && m.voice == u32(voice) && m.phraseHash == key) {
+			copyText(out, size, m.line);
+			return out[0] != 0;
+		}
+	char inst[24];
+	snprintf(inst, sizeof(inst), "SVM_%d", int(voice));
+	const u32 sym = vm.find(inst);
+	const u32 member = vm.findMember("C_SVM", phrase + 1);
+	char line[sizeof(SvmMemo::line)] = "";
+	if (sym != SCRIPT_NONE && member != SCRIPT_NONE && vm.symbol(sym).type == SCRIPT_INSTANCE) {
+		if (ScriptInstance* svm = vm.create(sym)) {
+			copyText(line, sizeof(line), vm.getString(member, 0, svm));
+			vm.destroy(svm);
+		}
+	}
+	SvmMemo& m = _svmMemo[_svmMemoNext++ % SVM_MEMO];
+	m.used = true;
+	m.voice = u32(voice);
+	m.phraseHash = key;
+	copyText(m.line, sizeof(m.line), line);
+	copyText(out, size, line);
+	return out[0] != 0;
 }
 
-// The same said in passing, without waiting for it to be said.
+void Npcs::xOutputSvm(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	char phrase[40];
+	copyText(phrase, sizeof(phrase), vm.popString()); // (the machine runs on below: the string would not last)
+	const int target = self.npcFor(vm.popInstance());
+	ScriptInstance* const speakerInst = vm.popInstance();
+	const int speaker = self.npcFor(speakerInst);
+	if (speaker < 0) return;
+	if (self.talkLineOf(speaker)) {
+		// In the player's talk: shown and heard like any line of it.
+		char line[44];
+		if (self.svmLine(u32(speaker), phrase, line, sizeof(line))) self.queueTalkLine(speakerInst, hashName(line));
+	} else if (phrase[0] == '$') {
+		self.queueWorldLine(speakerInst, target, 0, phrase);
+	} else if (phrase[0]) {
+		self.queueWorldLine(speakerInst, target, hashName(phrase), nullptr);
+	}
+}
+
+// The same said in passing, without waiting for it to be said. One at a time in the world (OpenGothic: svmBarrier).
 void Npcs::xOutputSvmOverlay(ScriptVm& vm, void* user) {
 	Npcs& self = *static_cast<Npcs*>(user);
-	char text[24];
-	copyText(text, sizeof(text), vm.popString());
+	char phrase[40];
+	copyText(phrase, sizeof(phrase), vm.popString());
 	(void)vm.popInstance();
-	if (NpcActor* a = self.actorFor(vm.popInstance())) copyText(a->said, sizeof(a->said), text);
+	ScriptInstance* const speakerInst = vm.popInstance();
+	const int speaker = self.npcFor(speakerInst);
+	if (speaker < 0 || !self._cfg.alive || self._overlayBarrier > 0.0f) return;
+	if (NpcActor* a = self.actorFor(speakerInst)) copyText(a->said, sizeof(a->said), phrase);
+	char line[44];
+	if (!self.svmLine(u32(speaker), phrase, line, sizeof(line)) || !self._speechHook.say) return;
+	const float seconds = self._speechHook.say(self._speechHook.user, hashName(line), speaker, true);
+	if (seconds > 0.0f) self._overlayBarrier = seconds;
+	++self._stats.linesSaid;
 }
 
 void Npcs::xCanSeeNpcFreeLos(ScriptVm& vm, void* user) {

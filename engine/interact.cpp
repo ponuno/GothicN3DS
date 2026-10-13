@@ -98,7 +98,9 @@ bool App::mobStart(u32 mob) {
 	const float from[3] = {_player.feet.x, _player.feet.y, _player.feet.z};
 	float pos[3], yaw;
 	const WorldMob& m = mobs.mob(mob);
-	if (mobs.place(mob, from, pos, yaw) >= 0) {
+	const int slot = mobs.place(mob, from, pos, yaw);
+	if (slot >= 0) {
+		_mobJob.slotKind = mobs.slot(mob, u32(slot)).kind;
 		const Vec3 to = {pos[0], _player.feet.y, pos[2]};
 		const float dx = to.x - _player.feet.x, dz = to.z - _player.feet.z;
 		if (dx * dx + dz * dz < 160.0f * 160.0f &&
@@ -154,7 +156,7 @@ void App::mobUpdate(Input& in, float dt) {
 		_player.feet.z = _mobJob.from.z + (_mobJob.to.z - _mobJob.from.z) * e;
 		_hero.setYaw(angleBetween(_mobJob.yawFrom, _mobJob.yawTo, e));
 		if (t >= 1.0f) {
-			if (_hero.openMob(mobs.scheme(_mobJob.mob))) {
+			if (_hero.openMob(mobs.scheme(_mobJob.mob), mobs.mob(_mobJob.mob).states, _mobJob.slotKind)) {
 				_mobJob.stage = MJ_IN;
 				_mobJob.time = 0;
 			} else {
@@ -191,9 +193,12 @@ void App::mobUpdate(Input& in, float dt) {
 		}
 		if (_mobJob.stage == MJ_HELD) {
 			// A thing that does its work lets go of him at once; a place to be at, when he asks.
+			// (As in the original, where the character stays in the last state until he is let go - a bench, a bed,
+			// the anvil's hammering, whatever has a pose to stay in; a thing with none - a lever - lets go of him.)
 			const bool leave = in.confirm || fabsf(in.moveX) > 0.6f || fabsf(in.moveZ) > 0.6f || in.jump;
-			if (!_mobJob.stay && _mobJob.time > 0.4f) mobEnd(false);
-			else if (_mobJob.stay && _mobJob.time > 0.5f && leave) {
+			const bool stay = _mobJob.stay || _hero.mobHolds();
+			if (!stay && _mobJob.time > 0.4f) mobEnd(false);
+			else if (stay && _mobJob.time > 0.5f && leave) {
 				in.confirm = false;
 				mobEnd(false);
 			}

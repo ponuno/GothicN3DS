@@ -335,6 +335,7 @@ void App::setDistanceScale(float scale) {
 }
 
 void App::shutdown() {
+	_chatter.shutdown();
 	_speech.shutdown();
 	_music.shutdown();
 	_sound.shutdown();
@@ -481,6 +482,10 @@ void App::update(const Input& in, float dt) {
 		}
 		const Drive drive = _hero.control(heroIn, _player, dt, grab ? &ledge : nullptr, ground.found ? &ground : nullptr, wall);
 		_player.update(_world, heroIn, _hero.yaw(), 0.0f, dt, &drive);
+		{
+			float ladderYaw;
+			if (_player.takeLadderTurn(ladderYaw)) _hero.setYaw(ladderYaw);
+		}
 		fallCheck();
 		const SkyColors sky = skyColors();
 		const float indoorLight[3] = {1, 1, 1};
@@ -521,7 +526,8 @@ void App::update(const Input& in, float dt) {
 	_sound.setListener(_cam.pos, _cam.yaw);
 	_sound.update(dt, _env.timeOfDay);
 	barrierHum();
-	_music.update(dt, _cam.pos, _env.timeOfDay, heroInCombat() ? MUSIC_FIGHT : MUSIC_CALM);
+	_music.setSystemTheme(nullptr);
+	_music.update(dt, _cam.pos, _env.timeOfDay, musicSituation(dt));
 	_times.stream = float(t1 - t0);
 	_times.npcs = float(t2 - t1);
 	_times.script = _npcs.stats().scriptMs;
@@ -802,6 +808,8 @@ Input App::steerInput(const Input& in, float dt) {
 	_lookIdle = (fabsf(in.lookX) > 0.1f || fabsf(in.lookY) > 0.1f) ? 0.0f : _lookIdle + dt;
 	_steerLag = 0;
 	if (_scheme == CONTROLS_CLASSIC) {
+		// On a ladder the character does not turn: forward is up and back is down.
+		if (_player.climbing) h.moveX = h.lookX = 0;
 		if (thirdPerson()) _camElevation = clamp(_camElevation - tilt * 60.0f * dt, -45.0f, 60.0f);
 		else _eyePitch = clamp(_eyePitch + tilt * 1.8f * dt, -1.4f, 1.4f);
 		// Locked on with a weapon in hand: the character keeps facing the
@@ -821,7 +829,7 @@ Input App::steerInput(const Input& in, float dt) {
 		// Through the eyes: the second stick turns the character, the first
 		// one walks and steps aside.
 		_eyePitch = clamp(_eyePitch + tilt * 1.8f * dt, -1.4f, 1.4f);
-		h.lookX = in.lookX * (0.5f + 0.1f * float(_settings.cameraSpeed));
+		h.lookX = _player.climbing ? 0.0f : in.lookX * (0.5f + 0.1f * float(_settings.cameraSpeed));
 		h.moveX = 0;
 		h.strafe = in.moveX > 0.5f ? 1.0f : in.moveX < -0.5f ? -1.0f : 0.0f;
 		return h;
@@ -840,6 +848,16 @@ Input App::steerInput(const Input& in, float dt) {
 		_orbitYaw = wrapYaw(_orbitYaw + clamp(wrapYaw(toward - _orbitYaw), -4.0f * dt, 4.0f * dt));
 	} else {
 		_orbitYaw = wrapYaw(_orbitYaw + in.lookX * speed);
+	}
+	if (_player.climbing) {
+		// On a ladder the stick says up or down - as the camera sees it, towards the wall or away from it - and
+		// the character stays facing the ladder (it must not turn away to go down it, which it does when steered).
+		float up = 0.0f;
+		if (m > 0.2f) up = m * cosf(wrapYaw(_orbitYaw + atan2f(x, z) - heroYaw));
+		h.steer = false;
+		h.moveX = h.lookX = 0;
+		h.moveZ = fabsf(up) >= 0.3f ? up : 0.0f;
+		return h;
 	}
 	if (combat) {
 		const float toward = atan2f(t->pos[0] - _player.feet.x, t->pos[2] - _player.feet.z);
@@ -1232,6 +1250,7 @@ void App::applySettings() {
 	_sound.setVolume(float(_settings.soundVolume) / 10.0f);
 	_music.setVolume(float(_settings.musicVolume) / 10.0f);
 	_speech.setVolume(float(_settings.voiceVolume) / 10.0f);
+	_chatter.setVolume(float(_settings.voiceVolume) / 10.0f);
 	const bool third = !_settings.firstPerson;
 	if (third != _thirdPerson) {
 		_thirdPerson = third;
@@ -1496,9 +1515,12 @@ void App::startSpeech() {
 	snprintf(slash ? slash + 1 : path, sizeof(path) - (slash ? u32(slash + 1 - path) : 0), "speech.pak");
 	if (!_speech.init(path, _audio)) return;
 	_speech.setVolume(float(_settings.voiceVolume) / 10.0f);
+	// (A second reader of the same archives for what the world says: it has a channel of its own.)
+	if (_chatter.init(path, _audio)) _chatter.setVolume(float(_settings.voiceVolume) / 10.0f);
 	Npcs::SpeechHook hook;
 	hook.play = &App::speechPlayThunk;
 	hook.stop = &App::speechStopThunk;
+	hook.say = &App::chatterThunk;
 	hook.user = this;
 	_npcs.setSpeechHook(hook);
 }
@@ -1523,9 +1545,51 @@ float App::speechBegin(u32 lineHash, int speaker, bool hero) {
 	return _speech.play(lineHash, gain);
 }
 
+float App::chatterThunk(void* user, u32 lineHash, int speaker, bool overlay) {
+	return static_cast<App*>(user)->chatterBegin(lineHash, speaker, overlay);
+}
+
+// A line said in the world: from where its speaker stands, as loud as the distance allows (OpenGothic: the dialogue
+// sound has a range of 20 m, heard within that and a little more), more on the side it comes from. Returns how
+// long it is, 0 if it has no recording, -1 if the speaker is too far to hear.
+float App::chatterBegin(u32 lineHash, int speaker, bool overlay) {
+	(void)overlay;
+	if (speaker < 0 || !_npcs.loaded()) return -1.0f;
+	const GameNpc& n = _npcs.game().npc(u32(speaker));
+	const float dx = n.pos[0] - _cam.pos.x, dy = n.pos[1] - _cam.pos.y, dz = n.pos[2] - _cam.pos.z;
+	const float d = sqrtf(dx * dx + dy * dy + dz * dz);
+	if (d > 2800.0f) return -1.0f;
+	if (!_chatter.ready()) return 0.0f;
+	const float gain = d <= 800.0f ? 1.0f : 1.0f - (d - 800.0f) / 2000.0f;
+	const float flat = sqrtf(dx * dx + dz * dz);
+	float pan = 0.0f;
+	if (flat > 1.0f) pan = (dx * cosf(_cam.yaw) - dz * sinf(_cam.yaw)) / flat;
+	pan *= clamp(flat / 250.0f, 0.0f, 1.0f);
+	// (A line already sounding is not cut by another: this one is only measured, so its speaker still waits it out.)
+	return _chatter.play(lineHash, gain, pan, false);
+}
+
+// The menu (and the screens between worlds) have a theme of their own, as in the original (the scripts'
+// SYS_MENU / SYS_LOADING); without it in the scripts the world's goes on.
 void App::soundIdle(float dt) {
 	_sound.update(dt, _env.timeOfDay);
+	_music.setSystemTheme("SYS_MENU");
 	_music.update(dt, _cam.pos, _env.timeOfDay, MUSIC_CALM);
+}
+
+// OpenGothic (WorldSound::tickSoundZone): while something that is after the hero has a weapon drawn and attacks, the
+// music is the threat's with nothing in the hero's hand and the fight's with a weapon drawn; the hero lying dead
+// counts. Otherwise the calm one, whatever he holds. Held for a few seconds so that a pause in a fight is no end of it.
+MusicSituation App::musicSituation(float dt) {
+	_musicScan -= dt;
+	if (_musicHold > 0.0f) _musicHold -= dt;
+	if (_musicScan <= 0.0f) {
+		_musicScan = 0.5f;
+		if (_hero.loaded() && _hero.down()) _musicHold = 3.0f;
+		else if (_npcs.loaded() && _npcs.targetsHero()) _musicHold = 3.0f;
+	}
+	if (_musicHold <= 0.0f) return MUSIC_CALM;
+	return _hero.weapon() == WEAPON_NONE ? MUSIC_THREAT : MUSIC_FIGHT;
 }
 
 } // namespace g3

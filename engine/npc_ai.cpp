@@ -7,6 +7,7 @@
 #include "npcs.h"
 
 #include "fight.h"
+#include "ui.h"
 #include "sys.h"
 
 #include <limits.h>
@@ -1034,9 +1035,10 @@ bool Npcs::begin(NpcActor& a, const World& world) {
 		a.lookAt = act.i;
 		return true;
 	case NPC_ACT_SAY:
-		// No voices and no subtitles yet: the time it takes to say it.
-		copyName(a.said, sizeof(a.said), act.text);
-		a.wait = 1.4f;
+		// Said when the other's earlier lines are (carryOn); until then the wait is how long it may be held up.
+		if (act.text[0]) copyName(a.said, sizeof(a.said), act.text);
+		a.wait = 6.0f;
+		act.started = false;
 		a.phase = NpcActor::WAITING;
 		return false;
 	case NPC_ACT_OUTPUT:
@@ -1061,6 +1063,48 @@ bool Npcs::begin(NpcActor& a, const World& world) {
 	default:
 		return true;
 	}
+}
+
+// Whether the one a line is said to has no line of its own that was given earlier and is still to be said.
+bool Npcs::sayMayStart(NpcActor& a, const NpcAction& act) const {
+	if (act.i < 0 || u32(act.i) == a.npc) return true;
+	for (const NpcActor& o : _actors) {
+		if (!o.used || o.npc != u32(act.i)) continue;
+		if (o.action.kind == NPC_ACT_SAY && o.action.order < act.order) return false;
+		for (u32 k = 0; k < o.queueCount; ++k) {
+			const NpcAction& q = o.queue[(o.queueHead + k) % NpcActor::QUEUE];
+			if (q.kind == NPC_ACT_SAY && q.order < act.order) return false;
+		}
+	}
+	return true;
+}
+
+// The line begins: it sounds from where the speaker stands. Returns how long the speaker is busy with it.
+float Npcs::saySpeak(NpcActor& a, NpcAction& act) {
+	++_stats.linesSaid;
+	u32 hash = act.hash;
+	if (!hash) {
+		char line[44];
+		if (!svmLine(a.npc, act.text, line, sizeof(line))) return 0.0f;
+		hash = hashName(line);
+	}
+	float seconds = 0.0f;
+	if (_speechHook.say) seconds = _speechHook.say(_speechHook.user, hash, int(a.npc), false);
+	if (seconds < 0.0f) return 0.0f; // out of earshot: not worth waiting for
+	if (seconds > 0.0f) {
+		++_stats.linesHeard;
+		return seconds + 0.2f;
+	}
+	// No recording: as long as it takes to read, or a moment if the words are not known either.
+	const char* raw = _texts.find(hash);
+	if (raw && *raw) {
+		char text[200];
+		scriptText(raw, text, sizeof(text));
+		u32 glyphs = 0;
+		for (const char* p = text; utf8Next(p);) ++glyphs;
+		return clamp(1.2f + 0.055f * float(glyphs), 1.8f, 9.0f);
+	}
+	return 1.4f;
 }
 
 // Goes on with the action in hand. True once it is done.
@@ -1129,10 +1173,26 @@ bool Npcs::carryOn(NpcActor& a, const World& world, float dt) {
 		if (u32(act.i) >= _speechDone && speechPending(u32(act.i))) return false;
 		a.phase = NpcActor::IDLE;
 		return true;
+	case NPC_ACT_SAY:
+		// Lines go one after the other, whoever speaks (OpenGothic: the order id): not before the one it is said to
+		// has said what was given earlier. Held up for 6 s at most.
+		if (!act.started) {
+			if (!sayMayStart(a, act) && (a.wait -= dt) > 0.0f) return false;
+			act.started = true;
+			a.wait = saySpeak(a, act);
+			if (a.wait <= 0.0f) {
+				a.phase = NpcActor::IDLE;
+				return true;
+			}
+			return false;
+		}
+		a.wait -= dt;
+		if (a.wait > 0.0f) return false;
+		a.phase = NpcActor::IDLE;
+		return true;
 	case NPC_ACT_PLAY_ANI:
 	case NPC_ACT_STAND_UP:
 	case NPC_ACT_WAIT:
-	case NPC_ACT_SAY:
 		a.wait -= dt;
 		if (a.wait > 0.0f) return false;
 		a.phase = NpcActor::IDLE;

@@ -180,7 +180,8 @@ The original Gothic music is in the DirectMusic format, which the 3DS cannot pla
    build-dmrender/dmrender ~/music_src ~/music_wavs
    ```
    (The `.mod` archives in `Data/`, such as `KM_Music.mod`, are included automatically.)
-3. Listen to a file or two in Windows: `\\wsl$\Ubuntu\home\YOUR_NAME\music_wavs`.
+3. The render is exactly one cycle of the theme: the ring-out of the last notes is mixed into its beginning, so that the theme loops without a gap (`--no-fold` keeps the old tail at the end; WAVs rendered with an older `dmrender` have a short silence at every loop: render them again).
+4. Listen to a file or two in Windows: `\\wsl$\Ubuntu\home\YOUR_NAME\music_wavs`.
 
 If the program prints `cannot load` for a theme, its `.sty` or `.dls` was not found; other themes are not affected.
 

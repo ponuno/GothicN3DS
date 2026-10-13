@@ -457,7 +457,7 @@ static void testSyntheticScript() {
 	const std::vector<u8> image = bakeScript(src, baked);
 	std::printf("       %s", baked.report.c_str());
 	// (Eight classes: the spells' C_Spell, their visual effects' CFx_Base and C_ParticleFXEmitKey, and the five: the particle effects' C_ParticleFX, the fight AI's C_FightAI, the sounds' C_SFX and the music's C_MUSICTHEME are in scripts of their own, as in the game.)
-	CHECK(baked.hashClashes == 0 && baked.classes == 8 && baked.instances >= 12 && baked.externals >= 25);
+	CHECK(baked.hashClashes == 0 && baked.classes == 9 && baked.instances >= 12 && baked.externals >= 25);
 	// The fight AI tables, that script of their own, bake into "script/fight".
 	{
 		SrcScript fight;

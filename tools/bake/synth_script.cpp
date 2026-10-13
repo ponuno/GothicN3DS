@@ -191,6 +191,32 @@ class C_NPC {
 	var int    lp;
 };
 
+// The words the characters say in passing (the original's SVM.d): one instance for each voice, named like the recordings.
+class C_SVM {
+	var string WHATDOYOUWANT;
+	var string GREETINGS;
+};
+instance SVM_15 (C_SVM) {
+	WHATDOYOUWANT = "SVM_15_WHATDOYOUWANT";
+	GREETINGS = "SVM_15_GREETINGS";
+};
+instance SVM_9 (C_SVM) {
+	WHATDOYOUWANT = "SVM_9_WHATDOYOUWANT";
+	GREETINGS = "SVM_9_GREETINGS";
+};
+instance SVM_7 (C_SVM) {
+	WHATDOYOUWANT = "SVM_7_WHATDOYOUWANT";
+	GREETINGS = "SVM_7_GREETINGS";
+};
+instance SVM_2 (C_SVM) {
+	WHATDOYOUWANT = "SVM_2_WHATDOYOUWANT";
+	GREETINGS = "SVM_2_GREETINGS";
+};
+instance SVM_3 (C_SVM) {
+	WHATDOYOUWANT = "SVM_3_WHATDOYOUWANT";
+	GREETINGS = "SVM_3_GREETINGS";
+};
+
 class C_ITEM {
 	var int    id;
 	var string name, nameid;
@@ -1829,8 +1855,13 @@ instance TEST_NGT_STD (C_MUSICTHEME) {
 	loop = 1;
 };
 
-instance TEST_FIG (C_MUSICTHEME) {
-	file = "TEST_FIG.sgt";
+instance TEST_DAY_FGT (C_MUSICTHEME) {
+	file = "TEST_DAY_FGT.sgt";
+	loop = 1;
+};
+
+instance SYS_MENU (C_MUSICTHEME) {
+	file = "TEST_MENU.sgt";
 	loop = 1;
 };
 )DAEDALUS";

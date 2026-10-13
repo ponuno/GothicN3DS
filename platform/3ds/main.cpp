@@ -296,7 +296,9 @@ int main(int, char**) {
 		ok = false;
 	}
 	// The screen's refresh rate (only read here; written when the menu asks for it).
-	const bool displayOk = ok && g3::display::init();
+	// The wide screen (800x240) does not take the changed timing at all (stripes at 80 Hz, and the 40 Hz and floating 30 do not work either):
+	// there the screen stays as the system has it, and the modes that need the timing run as without it.
+	const bool displayOk = ok && !gfx::c3dWide() && g3::display::init();
 	if (!ok) {
 		printf("\nPress START to exit.\n");
 		waitForStart();
@@ -999,6 +1001,9 @@ int main(int, char**) {
 		app.sound().writeReport(sf);
 		app.music().writeReport(sf);
 		app.speech().writeReport(sf);
+		if (app.chatter().ready())
+			fprintf(sf, "world voices: played %u, lines without a recording %u (quarrels, greetings, talk between characters)\n",
+			        unsigned(app.chatter().played()), unsigned(app.chatter().missing()));
 		fclose(sf);
 	}
 	app.shutdown();

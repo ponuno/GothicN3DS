@@ -139,6 +139,8 @@ struct NpcStats {
 	u32 infosTold = 0;    // infos the player has chosen or been told
 	u32 lines = 0;        // lines said (AI_Output)
 	u32 linesMissing = 0; // ... of which the archive has no words for
+	u32 linesSaid = 0;    // lines said in the world, outside a talk (AI_OutputSVM, AI_Output of a character in a state)
+	u32 linesHeard = 0;   // ... of which had a recording to play
 	u32 talksAborted = 0; // talks cut short (the character was hurt, walked off ...)
 	u32 trades = 0;       // times the wares came up (a talk went on to trade)
 	// Things.
@@ -166,7 +168,8 @@ enum NpcActionKind : u8 {
 	NPC_ACT_TELEPORT,   // pos (xyz, yaw)
 	NPC_ACT_USE_MOB,    // text: the kind of thing ("BENCH"); i: the state to take it to, -1: leave it
 	NPC_ACT_LOOK,       // i: character to look at, -1: straight ahead again
-	NPC_ACT_SAY,        // i: character spoken to or -1; text: what (an SVM name, "$WHATDOYOUWANT")
+	NPC_ACT_SAY,        // a line said in the world, outside a talk with the player: i: character spoken to or -1;
+	                    // hash: the line (AI_Output), or text: an SVM phrase ("$WHATDOYOUWANT"); order
 	NPC_ACT_OUTPUT,     // i: the line's number among the lines said (AI_Output): done when it has been said
 	NPC_ACT_PROCESS_INFOS, // the talk begins (AI_ProcessInfos)
 	NPC_ACT_STOP_INFOS, // the talk ends once what is said has been said (AI_StopProcessInfos)
@@ -190,6 +193,9 @@ struct NpcAction {
 	i32 i = 0;
 	float f = 0;
 	u32 fn = 0;
+	u32 hash = 0;   // NPC_ACT_SAY: hashName() of the line's name (0: text names it, "$WHATDOYOUWANT")
+	u32 order = 0;  // NPC_ACT_SAY: the line's number among all the lines the scripts have given (who speaks first)
+	bool started = false; // NPC_ACT_SAY: the line has begun
 	union {
 		char text[32];
 		float pos[4];
@@ -406,12 +412,19 @@ public:
 	void emitDraw(u32 npc, u8 from, u8 to, u32 weaponItem); // "DRAWSOUND_ME"/"_WO", "UNDRAWSOUND_..."
 	// The voices: `play` is told a line (hashName of its name) is begun by a character (-1: nobody known; `hero`:
 	// the player's) and returns how many seconds the recording lasts, 0 if it has none; `stop` ends it early.
+	// `say`: a line spoken in the world (a quarrel, a greeting, two guards talking), not in the player's talk: it
+	// sounds from the speaker's place. Returns the seconds it lasts, 0 if there is no recording, and -1 if the speaker
+	// is too far to be heard (nobody waits for it then). `overlay`: said in passing (AI_OutputSVM_Overlay).
 	struct SpeechHook {
 		float (*play)(void* user, u32 lineHash, int speaker, bool hero) = nullptr;
 		void (*stop)(void* user) = nullptr;
+		float (*say)(void* user, u32 lineHash, int speaker, bool overlay) = nullptr;
 		void* user = nullptr;
 	};
 	void setSpeechHook(const SpeechHook& hook) { _speechHook = hook; }
+	// Somebody near is after the player's character in a fight state, with a weapon drawn or a beast (the music's
+	// "targeted": OpenGothic's WorldObjects::isTargetedBy).
+	bool targetsHero() const;
 	// Which way the player's character faces (the scripts and the fight AI look at it).
 	void setHeroYaw(float yaw) { _heroYaw = yaw; }
 	// A perception for one actor only (PERC_ASSESSTHREAT: the player aims at it).
@@ -640,6 +653,25 @@ private:
 	void flushSpeech();
 	NpcActor* actorByNpc(u32 npc);
 	static void xOutput(ScriptVm& vm, void* user);
+	// A line of the player's talk (shown, spoken in turn) / of the world (said where its speaker stands).
+	void queueTalkLine(ScriptInstance* speakerInst, u32 hash);
+	bool queueWorldLine(ScriptInstance* speakerInst, int target, u32 hash, const char* svm);
+	bool talkLineOf(int speaker) const;
+	// The name of the line behind an SVM phrase for a character's voice ("$WHATDOYOUWANT" -> "SVM_3_WHATDOYOUWANT"),
+	// the phrase itself if it has no "$". False if the voice has none.
+	bool svmLine(u32 npc, const char* phrase, char* out, u32 size);
+	bool sayMayStart(NpcActor& a, const NpcAction& act) const;
+	float saySpeak(NpcActor& a, NpcAction& act);
+	struct SvmMemo {
+		u32 voice = 0, phraseHash = 0;
+		char line[44] = "";
+		bool used = false;
+	};
+	enum { SVM_MEMO = 32 };
+	SvmMemo _svmMemo[SVM_MEMO];
+	u32 _svmMemoNext = 0;
+	u32 _sayOrder = 1;       // the next line's number
+	float _overlayBarrier = 0; // seconds until another phrase in passing may be said (one at a time, as OpenGothic)
 	static void xProcessInfos(ScriptVm& vm, void* user);
 	static void xStopProcessInfos(ScriptVm& vm, void* user);
 	static void xInfoManagerHasFinished(ScriptVm& vm, void* user);

@@ -162,9 +162,16 @@ public:
 	// and the lid's "T_<SCHEME>_S0_2_S1"; bent over without them) and stays
 	// at it, `mobOpen()` from the moment the lid is up, until closeMob() lets
 	// it stand again. The same conditions as useItem.
-	bool openMob(const char* scheme);
+	// `states`: how many states the thing goes through after the first (S0): the
+	// steps are played up to the last and back (WorldMob::states), the way
+	// OpenGothic's Interactive::implTick walks them. `slotKind`: MOB_SLOT_FRONT /
+	// MOB_SLOT_BACK, the place the character stands at ("T_BEDHIGH_FRONT_..."
+	// is tried before "T_BEDHIGH_...").
+	bool openMob(const char* scheme, int states = 1, int slotKind = 0);
 	bool mobOpen() const { return _use.phase == USE_MOB_HOLD && !_use.release; }
 	void closeMob();
+	// There is a pose that is kept while it is in use (a looping "S_<SCHEME>_S1").
+	bool mobHolds() const { return _use.hold != nullptr && _use.hold->loops(); }
 	bool atMob() const { return _use.phase == USE_MOB_IN || _use.phase == USE_MOB_HOLD || _use.phase == USE_MOB_OUT; }
 	// How far the character is bent over (for the tests).
 	float stoop() const { return _stoop; }
@@ -231,6 +238,17 @@ private:
 	enum { CLIMB_LOW_IN, CLIMB_LOW, CLIMB_LOW_OUT, CLIMB_MID_IN, CLIMB_MID, CLIMB_MID_OUT, CLIMB_UP_IN, CLIMB_UP, CLIMB_HANG_IN, CLIMB_HANG,
 	       CLIMB_HANG_OUT, CLIMB_CLIPS };
 	const Clip* _climb[CLIMB_CLIPS] = {};
+	// A ladder, as the model script has it for the scheme LADDER: "T_LADDER_S0_2_S1"
+	// and on, one for each stretch of rungs. The controller moves the body; the
+	// animation is scrubbed by the height climbed (up plays it forward, down back),
+	// so the hands and feet never slide on the rungs.
+	enum { LADDER_CLIPS = 8 };
+	const Clip* _ladder[LADDER_CLIPS] = {};
+	float _ladderRise[LADDER_CLIPS] = {};
+	int _ladderCount = 0;
+	bool _ladderOn = false;
+	float _ladderY0 = 0;
+	void ladderTick(const Player& player);
 	enum { MANTLE_STEPS = 5 };
 	struct Mantle {
 		const Clip* seq[MANTLE_STEPS] = {}; // the climb's clips in turn (none: the jump's pose is held)
@@ -274,6 +292,7 @@ private:
 	bool _down = false;
 	const Clip* _parryClip[ROWS] = {};
 	// Using an item.
+	enum { MOB_STEPS = 20 };
 	enum UsePhase : u8 { USE_NONE, USE_IN, USE_HOLD, USE_OUT, USE_TIMED, USE_MOB_IN, USE_MOB_HOLD, USE_MOB_OUT };
 	struct Use {
 		const Clip* in = nullptr;
@@ -286,8 +305,8 @@ private:
 		float holdFor = 0.3f; // seconds the hold is kept
 		bool stoop = false; // no animation for it: bends over instead (a thing from the ground)
 		// A chest: the clips to its open lid and the clips back.
-		const Clip* seqIn[3] = {};
-		const Clip* seqOut[3] = {};
+		const Clip* seqIn[MOB_STEPS] = {};
+		const Clip* seqOut[MOB_STEPS] = {};
 		u8 nIn = 0, nOut = 0, at2 = 0;
 		float time2 = 0;      // seconds on the way out, without clips
 		bool release = false; // closed: on the way back

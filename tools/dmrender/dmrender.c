@@ -2,12 +2,17 @@
 // and DLS banks) to WAV files, for the baker's --music-dir (music.pak).
 // Uses GothicKit's dmusic (https://github.com/GothicKit/dmusic).
 //
-//   dmrender MUSIC_DIR OUT_DIR [--rate 44100] [--cycles 1] [--tail 2.0] [--verbose] [THEME.sgt ...]
+//   dmrender MUSIC_DIR OUT_DIR [--rate 44100] [--cycles 1] [--tail 2.0] [--no-fold] [--verbose] [THEME.sgt ...]
 //
 // MUSIC_DIR holds the game's music files (extracted from Music.vdf, or
 // _work/Data/Music loose): .sgt, .sty, .dls, in any letter case. Without
 // theme names every .sgt there is rendered. Each comes out as OUT_DIR/<stem>.wav
-// (16-bit stereo), `cycles` times the segment's length plus `tail` seconds.
+// (16-bit stereo), `cycles` times the segment's length.
+//
+// The game plays a theme round and round, and the notes of its last bars ring on into the first ones. So the
+// render goes on `tail` seconds past the end, and that tail is mixed into the beginning (the file is then
+// exactly `cycles` segments long, and its end runs into its start without a gap or a click). --no-fold keeps
+// the tail at the end as it was.
 #include <dmusic.h>
 
 #include <ctype.h>
@@ -123,7 +128,7 @@ static int writeWav(const char* path, const float* pcm, size_t frames, uint32_t 
 	return 1;
 }
 
-static int renderOne(DmLoader* loader, const char* theme, const char* outDir, uint32_t rate, double cycles, double tail) {
+static int renderOne(DmLoader* loader, const char* theme, const char* outDir, uint32_t rate, double cycles, double tail, int fold) {
 	DmSegment* segment = NULL;
 	const DmResult loaded = DmLoader_getSegment(loader, theme, &segment);
 	if (loaded != DmResult_SUCCESS) {
@@ -153,14 +158,29 @@ static int renderOne(DmLoader* loader, const char* theme, const char* outDir, ui
 				DmPerformance_renderPcm(perf, pcm + at * 2, n * 2, DmRender_FLOAT | DmRender_STEREO);
 				at += n;
 			}
+			// The ring-out past the end goes onto the beginning, the file is cut where the music comes round.
+			size_t outFrames = frames;
+			if (fold) {
+				size_t body = (size_t) (DmSegment_getLength(segment) * cycles * rate);
+				if (body > 0 && body < frames) {
+					const size_t tailFrames = frames - body;
+					// (A tail longer than the music itself would wrap more than once.)
+					for (size_t i = 0; i < tailFrames; ++i) {
+						const size_t to = i % body;
+						pcm[to * 2] += pcm[(body + i) * 2];
+						pcm[to * 2 + 1] += pcm[(body + i) * 2 + 1];
+					}
+					outFrames = body;
+				}
+			}
 			char stem[256];
 			snprintf(stem, sizeof(stem), "%s", theme);
 			char* dot = strrchr(stem, '.');
 			if (dot) *dot = 0;
 			char path[2048];
 			snprintf(path, sizeof(path), "%s/%s.wav", outDir, stem);
-			ok = writeWav(path, pcm, frames, rate);
-			if (ok) printf("%s -> %s (%.1f s)\n", theme, path, seconds);
+			ok = writeWav(path, pcm, outFrames, rate);
+			if (ok) printf("%s -> %s (%.1f s)\n", theme, path, (double) outFrames / rate);
 			else fprintf(stderr, "%s: cannot write %s\n", theme, path);
 			free(pcm);
 		}
@@ -172,7 +192,7 @@ static int renderOne(DmLoader* loader, const char* theme, const char* outDir, ui
 
 int main(int argc, char** argv) {
 	if (argc < 3) {
-		fprintf(stderr, "usage: dmrender MUSIC_DIR OUT_DIR [--rate HZ] [--cycles N] [--tail SECONDS] [THEME.sgt ...]\n");
+		fprintf(stderr, "usage: dmrender MUSIC_DIR OUT_DIR [--rate HZ] [--cycles N] [--tail SECONDS] [--no-fold] [THEME.sgt ...]\n");
 		return 2;
 	}
 	snprintf(gDir, sizeof(gDir), "%s", argv[1]);
@@ -181,10 +201,11 @@ int main(int argc, char** argv) {
 	double cycles = 1.0, tail = 2.0;
 	const char* names[4096];
 	int count = 0;
-	int verbose = 0;
+	int verbose = 0, fold = 1;
 	for (int i = 3; i < argc; ++i) {
 		if (!strcmp(argv[i], "--rate") && i + 1 < argc) rate = (uint32_t) strtoul(argv[++i], NULL, 10);
 		else if (!strcmp(argv[i], "--cycles") && i + 1 < argc) cycles = atof(argv[++i]);
+		else if (!strcmp(argv[i], "--no-fold")) fold = 0;
 		else if (!strcmp(argv[i], "--verbose")) verbose = gVerbose = 1;
 		else if (!strcmp(argv[i], "--tail") && i + 1 < argc) tail = atof(argv[++i]);
 		else if (count < 4096) names[count++] = argv[i];
@@ -211,9 +232,9 @@ int main(int argc, char** argv) {
 			const size_t n = strlen(gFiles[i].name);
 			if (n > 4 && equalNoCase(gFiles[i].name + n - 4, ".sgt")) names[count++] = gFiles[i].name;
 		}
-		for (int i = 0; i < count; ++i) (renderOne(loader, names[i], outDir, rate, cycles, tail) ? ++done : ++failed);
+		for (int i = 0; i < count; ++i) (renderOne(loader, names[i], outDir, rate, cycles, tail, fold) ? ++done : ++failed);
 	} else {
-		for (int i = 0; i < count; ++i) (renderOne(loader, names[i], outDir, rate, cycles, tail) ? ++done : ++failed);
+		for (int i = 0; i < count; ++i) (renderOne(loader, names[i], outDir, rate, cycles, tail, fold) ? ++done : ++failed);
 	}
 	printf("dmrender: %d rendered, %d failed\n", done, failed);
 	DmLoader_release(loader);

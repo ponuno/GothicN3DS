@@ -17,6 +17,12 @@ void copyStr(char* dst, u32 size, const char* src) {
 }
 
 constexpr float FADE_OUT = 1.2f, FADE_IN = 1.5f;
+// Into or out of danger the change is quick (the original changes at the next bar, with a fill or a break).
+constexpr float FADE_OUT_FAST = 0.4f, FADE_IN_FAST = 0.6f;
+// A change of theme is looked for at most this often (OpenGothic: every five seconds).
+constexpr float CHOICE_EVERY = 1.0f;
+// By day: OpenGothic's gtime(4,0) <= time <= gtime(21,0).
+constexpr float DAY_BEGINS = 4.0f, DAY_ENDS = 21.0f;
 
 } // namespace
 
@@ -36,6 +42,10 @@ bool Music::init(const char* musicPakPath, ScriptVm* vm, AudioOut* out, bool thr
 	_key = 0xFFFFFFFFu;
 	_wanted = _current = 0;
 	_gain = 0;
+	_system[0] = 0;
+	_zoneIdx = _defaultIdx = -1;
+	_sinceChoice = 0;
+	_situation = MUSIC_CALM;
 	_themeName[0] = _zoneName[0] = 0;
 	_lock = sys::mutexCreate();
 	_wake = sys::signalCreate();
@@ -83,6 +93,7 @@ void Music::enterWorld(Pak& pak, const char* worldAsset) {
 	free(_zones);
 	_zones = nullptr;
 	_zoneCount = 0;
+	_zoneIdx = _defaultIdx = -1;
 	_key = 0xFFFFFFFFu;
 	_zoneName[0] = 0;
 	if (!_ready || !worldAsset) return;
@@ -103,38 +114,36 @@ void Music::enterWorld(Pak& pak, const char* worldAsset) {
 	if (_zones) {
 		memcpy(_zones, blob + sizeof(MusicZonesHeader), h.count * sizeof(MusicZone));
 		_zoneCount = h.count;
-		for (u32 i = 0; i < _zoneCount; ++i) _zones[i].name[sizeof(_zones[i].name) - 1] = 0;
+		for (u32 i = 0; i < _zoneCount; ++i) {
+			_zones[i].name[sizeof(_zones[i].name) - 1] = 0;
+			if (_zones[i].isDefault && _defaultIdx < 0) _defaultIdx = int(i);
+		}
 	}
 	free(blob);
 }
 
-int Music::zoneAt(Vec3 p) const {
-	int best = -1, def = -1;
-	for (u32 i = 0; i < _zoneCount; ++i) {
-		const MusicZone& z = _zones[i];
-		if (z.isDefault) {
-			if (def < 0) def = int(i);
-			continue;
-		}
-		if (p.x < z.bbMin[0] || p.x > z.bbMax[0] || p.y < z.bbMin[1] || p.y > z.bbMax[1] || p.z < z.bbMin[2] || p.z > z.bbMax[2])
-			continue;
-		if (z.ellipsoid) {
-			float d = 0;
-			const float pp[3] = {p.x, p.y, p.z};
-			for (int k = 0; k < 3; ++k) {
-				const float c = (z.bbMin[k] + z.bbMax[k]) * 0.5f, r = (z.bbMax[k] - z.bbMin[k]) * 0.5f;
-				if (r <= 0.0f) {
-					d = 2.0f;
-					break;
-				}
-				const float t = (pp[k] - c) / r;
-				d += t * t;
-			}
-			if (d > 1.0f) continue;
-		}
-		if (best < 0 || z.priority > _zones[best].priority) best = int(i);
-	}
-	return best >= 0 ? best : def;
+// OpenGothic: the zone he is in stays as long as he is inside it; else the last of the zones that hold him; else
+// the default one. (A zone is its box: the original's priority and ellipsoids are not looked at.)
+int Music::zoneAt(Vec3 p) {
+	const auto inside = [&](const MusicZone& z) {
+		return !z.isDefault && z.bbMin[0] <= p.x && p.x < z.bbMax[0] && z.bbMin[1] <= p.y && p.y < z.bbMax[1] && z.bbMin[2] <= p.z &&
+		       p.z < z.bbMax[2];
+	};
+	if (_zoneIdx >= 0 && u32(_zoneIdx) < _zoneCount && inside(_zones[_zoneIdx])) return _zoneIdx;
+	int found = -1;
+	for (u32 i = 0; i < _zoneCount; ++i)
+		if (inside(_zones[i])) found = int(i);
+	_zoneIdx = found >= 0 ? found : _defaultIdx;
+	return _zoneIdx;
+}
+
+void Music::setSystemTheme(const char* name) {
+	char next[sizeof(_system)];
+	copyStr(next, sizeof(next), name);
+	if (strcmp(next, _system) == 0) return;
+	copyStr(_system, sizeof(_system), next);
+	_key = 0xFFFFFFFEu; // (chosen again at once)
+	_sinceChoice = CHOICE_EVERY;
 }
 
 // ---- themes ----
@@ -179,36 +188,51 @@ u32 Music::resolve(const char* name, float& volume) {
 	return 0;
 }
 
-u32 Music::choose(const char* zone, float hours, MusicSituation situation, char* nameOut, u32 size, float& volume) {
-	static const char* const kSit[3] = {"STD", "THR", "FIG"};
-	const bool day = hours >= 6.0f && hours < 19.0f;
-	const char* tods[2] = {day ? "DAY" : "NGT", day ? nullptr : "NIGHT"};
+u32 Music::tryTheme(const char* zone, bool day, const char* sit, char* nameOut, u32 size, float& volume) {
 	char name[96];
-	const int sits = situation == MUSIC_CALM ? 1 : 2;
-	for (int s = 0; s < sits; ++s) {
-		const char* sit = s == 0 ? kSit[situation] : kSit[MUSIC_CALM];
-		for (const char* tod : tods) {
-			if (!tod) continue;
-			snprintf(name, sizeof(name), "%s_%s_%s", zone, tod, sit);
+	snprintf(name, sizeof(name), "%s_%s_%s", zone, day ? "DAY" : "NGT", sit);
+	if (const u32 e = resolve(name, volume)) {
+		copyStr(nameOut, size, name);
+		return e;
+	}
+	if (_triedCount < u32(TRIED)) {
+		bool seen = false;
+		for (u32 i = 0; i < _triedCount; ++i) seen |= strcmp(_tried[i], name) == 0;
+		if (!seen) copyStr(_tried[_triedCount++], sizeof(_tried[0]), name);
+	}
+	return 0;
+}
+
+// OpenGothic's search: the zone's own themes, then the default zone's; by the hour, then by day; the situation,
+// then (for a threat) the fight's, then the calm one.
+u32 Music::choose(const char* zone, const char* defaultZone, bool day, MusicSituation situation, char* nameOut, u32 size, float& volume) {
+	static const char* const kSit[3] = {"STD", "THR", "FGT"};
+	const char* sits[3] = {kSit[situation], situation == MUSIC_THREAT ? kSit[MUSIC_FIGHT] : kSit[MUSIC_CALM], kSit[MUSIC_CALM]};
+	const char* zones[2] = {zone, defaultZone};
+	for (const char* z : zones) {
+		if (!z || !*z) continue;
+		for (int d = 0; d < 2; ++d) {
+			const bool dayTry = d == 0 ? day : true;
+			if (d == 1 && day) break;
+			for (const char* sit : sits)
+				if (const u32 e = tryTheme(z, dayTry, sit, nameOut, size, volume)) return e;
+		}
+	}
+	// What a game of its own may have instead: "OC_STD", "OC_FGT", "OC".
+	for (const char* z : zones) {
+		if (!z || !*z) continue;
+		char name[96];
+		for (const char* sit : sits) {
+			snprintf(name, sizeof(name), "%s_%s", z, sit);
 			if (const u32 e = resolve(name, volume)) {
 				copyStr(nameOut, size, name);
 				return e;
 			}
-			if (_triedCount < u32(TRIED)) {
-				bool seen = false;
-				for (u32 i = 0; i < _triedCount; ++i) seen |= strcmp(_tried[i], name) == 0;
-				if (!seen) copyStr(_tried[_triedCount++], sizeof(_tried[0]), name);
-			}
 		}
-		snprintf(name, sizeof(name), "%s_%s", zone, sit);
-		if (const u32 e = resolve(name, volume)) {
-			copyStr(nameOut, size, name);
+		if (const u32 e = resolve(z, volume)) {
+			copyStr(nameOut, size, z);
 			return e;
 		}
-	}
-	if (const u32 e = resolve(zone, volume)) {
-		copyStr(nameOut, size, zone);
-		return e;
 	}
 	nameOut[0] = 0;
 	return 0;
@@ -344,30 +368,53 @@ void Music::work() {
 
 void Music::update(float dt, Vec3 listener, float hours, MusicSituation situation) {
 	if (!_ready) return;
+	_sinceChoice += dt;
+	const bool day = hours >= DAY_BEGINS && hours <= DAY_ENDS;
 	// Which theme.
-	const int zone = zoneAt(listener);
-	const bool day = hours >= 6.0f && hours < 19.0f;
-	const u32 key = u32(zone + 1) | (day ? 0x10000u : 0u) | (u32(situation) << 17);
-	if (key != _key && _volume > 0.0f) {
+	u32 key;
+	int zone = -1;
+	if (_system[0]) {
+		key = 0x80000000u | (hashName(_system) & 0x7FFFFFFFu);
+	} else {
+		zone = zoneAt(listener);
+		key = u32(zone + 1) | (day ? 0x10000u : 0u) | (u32(situation) << 17);
+	}
+	if (key != _key && _volume > 0.0f && (_sinceChoice >= CHOICE_EVERY || _key == 0xFFFFFFFFu)) {
 		_key = key;
-		if (zone >= 0) {
+		_sinceChoice = 0;
+		// Into or out of danger: quick; the rest of the changes slowly.
+		const bool danger = situation != _situation && !_system[0];
+		_fadeOutLen = danger ? FADE_OUT_FAST : FADE_OUT;
+		_fadeInLen = danger ? FADE_IN_FAST : FADE_IN;
+		_situation = situation;
+		char name[48] = "";
+		float vol = 1.0f;
+		if (_system[0]) {
+			_zoneName[0] = 0;
+			_wanted = resolve(_system, vol);
+			copyStr(name, sizeof(name), _system);
+			_wantedVolume = vol;
+		} else if (zone >= 0) {
 			copyStr(_zoneName, sizeof(_zoneName), _zones[zone].name);
-			char name[48];
-			float vol = 1.0f;
-			_wanted = choose(_zones[zone].name, hours, situation, name, sizeof(name), vol);
-			_wantedVolume = vol * (_zones[zone].volume ? float(_zones[zone].volume) / 255.0f : 1.0f);
-			if (_wanted != _current) copyStr(_themeName, sizeof(_themeName), name);
+			const char* defName = _defaultIdx >= 0 && _defaultIdx != zone ? _zones[_defaultIdx].name : nullptr;
+			_wanted = choose(_zones[zone].name, defName, day, situation, name, sizeof(name), vol);
+			_wantedVolume = vol; // (the zone's own volume is not used: OpenGothic does not either)
 		} else {
 			_zoneName[0] = 0;
 			_wanted = 0;
 		}
+		if (_wanted != _current) copyStr(_themeName, sizeof(_themeName), name);
 	}
-	if (_volume <= 0.0f) _wanted = 0;
+	if (_volume <= 0.0f) {
+		_wanted = 0;
+		_key = 0xFFFFFFFEu; // (when the volume comes back the theme is chosen again at once)
+		_sinceChoice = CHOICE_EVERY;
+	}
 
 	// Fade.
 	if (_wanted != _current) {
 		if (_current && _gain > 0.0f) {
-			_gain = max(0.0f, _gain - dt / FADE_OUT);
+			_gain = max(0.0f, _gain - dt / _fadeOutLen);
 		} else {
 			stopTrack();
 			_current = 0;
@@ -379,7 +426,7 @@ void Music::update(float dt, Vec3 listener, float hours, MusicSituation situatio
 			if (!_wanted) _themeName[0] = 0;
 		}
 	} else if (_current) {
-		_gain = min(1.0f, _gain + dt / FADE_IN);
+		_gain = min(1.0f, _gain + dt / _fadeInLen);
 	}
 
 	if (_open) {

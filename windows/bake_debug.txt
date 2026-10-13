@@ -1,173 +1,98 @@
 Gothic 3DS: bake_debug.txt (--debug)
-script: GOTHIC.DAT (from an archive)
+script: GOTHIC.DAT
 
-world 'archolos_mainland' (STARTUP_ARCHOLOS_MAINLAND): 1638108 instructions, 144 complaints, 0 calls given up, 211 calls of engine functions nobody carries out, 9894 uses of members of no object; 1979 characters
-world 'archolos_sewers' (STARTUP_ARCHOLOS_SEWERS): 136265 instructions, 2 complaints, 0 calls given up, 0 calls of engine functions nobody carries out, 5780 uses of members of no object; 65 characters
-world 'archolos_silvermine' (STARTUP_ARCHOLOS_SILVERMINE): 114604 instructions, 2 complaints, 0 calls given up, 0 calls of engine functions nobody carries out, 5780 uses of members of no object; 63 characters
-world 'archolos_volfzacke' (STARTUP_ARCHOLOS_VOLFZACKE): 109992 instructions, 2 complaints, 0 calls given up, 0 calls of engine functions nobody carries out, 5780 uses of members of no object; 61 characters
+world 'world' (STARTUP_WORLD): 268879 instructions, 0 complaints, 0 calls given up, 1134 calls of engine functions nobody carries out, 4 uses of members of no object; 1030 characters
+world 'orctempel' (STARTUP_ORCTEMPEL): 30915 instructions, 0 complaints, 0 calls given up, 8 calls of engine functions nobody carries out, 4 uses of members of no object; 87 characters
+world 'oldmine' (STARTUP_OLDMINE): 36100 instructions, 0 complaints, 0 calls given up, 1 calls of engine functions nobody carries out, 2 uses of members of no object; 95 characters
+world 'orcgraveyard' (STARTUP_ORCGRAVEYARD): 17835 instructions, 0 complaints, 0 calls given up, 1 calls of engine functions nobody carries out, 2 uses of members of no object; 24 characters
+world 'freemine' (STARTUP_FREEMINE): 23068 instructions, 0 complaints, 0 calls given up, 1 calls of engine functions nobody carries out, 2 uses of members of no object; 39 characters
 
-== the start-up scripts, all worlds: 2128609 instructions, 150 complaints, 0 calls given up, 27234 uses of members of no object ==
-script image 14.30 MB; objects of the characters and items made by the start-up: 8567, 2.14 MB; strings made 0.16 MB
+== the start-up scripts, all worlds: 406555 instructions, 0 complaints, 0 calls given up, 14 uses of members of no object ==
+script image 2.32 MB; objects of the characters and items made by the start-up: 2814, 0.81 MB; strings made 0.07 MB
 
 -- complaints in the order they FIRST happened (the first is where things began to go wrong; later ones may follow from it) --
-  1. a member was used without an object in ZERROR_SETTEMPLEVEL  (x2, library: the game / the mod)
-  2. a member was used without an object in ZERROR_RESTORELEVEL  (x1, library: the game / the mod)
-  3. a member was used without an object in _HT_CREATEPTR  (x237, library: the game / the mod)
-  4. a member was used without an object in _HT_HAS  (x71, library: the game / the mod)
-  5. division by zero in _HT_HAS  (x71, library: the game / the mod)
-  6. a member was used without an object in _HT_INSERT  (x553, library: the game / the mod)
-  7. division by zero in _HT_INSERT  (x79, library: the game / the mod)
-  8. a member was used without an object in CC_REGISTER  (x34, library: the game / the mod)
-  9. a member was used without an object in CONCATSTRINGS  (x81, library: the game / the mod)
- 10. a member was used without an object in LOCALS  (x256, library: LeGo)
- 11. a member was used without an object in STR_STARTSWITH  (x96, library: the game / the mod)
- 12. a member was used without an object in SB_INITBUFFER  (x6976, library: the game / the mod)
- 13. a member was used without an object in SBW  (x8448, library: the game / the mod)
- 14. a member was used without an object in SBC  (x10208, library: the game / the mod)
- 15. a member was used without an object in STR_LEN  (x5, library: the game / the mod)
- 16. a member was used without an object in STR_TOCHAR  (x4, library: the game / the mod)
- 17. a member was used without an object in STR_TOINT  (x4, library: the game / the mod)
- 18. a member was used without an object in _PM_TOCLASS  (x5, library: the game / the mod)
- 19. a member was used without an object in _VIEWPTR_CREATEINTOPTR  (x2, library: the game / the mod)
- 20. a member was used without an object in VIEWPTR_SETCOLOR  (x1, library: the game / the mod)
- 21. a member was used without an object in VIEWPTR_SETALPHA  (x3, library: the game / the mod)
- 22. a member was used without an object in VIEWPTR_OPEN  (x8, library: the game / the mod)
- 23. a member was used without an object in _^  (x2, library: the game / the mod)
- 24. a member was used without an object in SIGHTSCALING_APPLYSOMESETTINGS  (x1, library: the game / the mod)
- 25. a member was used without an object in _FF_CREATE  (x32, library: LeGo)
- 26. a member was used without an object in TIMER  (x4, library: the game / the mod)
- 27. a member was used without an object in LIST_FORFS  (x4, library: LeGo)
- 28. a member was used without an object in SBRAW  (x128, library: the game / the mod)
- 29. a member was used without an object in SB_TOSTRING  (x4, library: the game / the mod)
- 30. a member was used without an object in SB_CLEAR  (x16, library: the game / the mod)
- 31. a member was used without an object in INIT_ITEMGROUPS_MEAT  (x16, library: the game / the mod)
- 32. a member was used without an object in RESTORENPCNAMES  (x32, library: the game / the mod)
+  1. a member was used without an object in PRINTDEBUGNPC  (x7, library: the game / the mod)
+  2. a member was used without an object in CONCATSTRINGS  (x7, library: the game / the mod)
 
 -- complaints by how often (all, up to 400 kinds) --
-   10208  a member was used without an object in SBC
-    8448  a member was used without an object in SBW
-    6976  a member was used without an object in SB_INITBUFFER
-     553  a member was used without an object in _HT_INSERT
-     256  a member was used without an object in LOCALS
-     237  a member was used without an object in _HT_CREATEPTR
-     128  a member was used without an object in SBRAW
-      96  a member was used without an object in STR_STARTSWITH
-      81  a member was used without an object in CONCATSTRINGS
-      79  division by zero in _HT_INSERT
-      71  division by zero in _HT_HAS
-      71  a member was used without an object in _HT_HAS
-      34  a member was used without an object in CC_REGISTER
-      32  a member was used without an object in _FF_CREATE
-      32  a member was used without an object in RESTORENPCNAMES
-      16  a member was used without an object in SB_CLEAR
-      16  a member was used without an object in INIT_ITEMGROUPS_MEAT
-       8  a member was used without an object in VIEWPTR_OPEN
-       5  a member was used without an object in _PM_TOCLASS
-       5  a member was used without an object in STR_LEN
-       4  a member was used without an object in TIMER
-       4  a member was used without an object in STR_TOINT
-       4  a member was used without an object in STR_TOCHAR
-       4  a member was used without an object in SB_TOSTRING
-       4  a member was used without an object in LIST_FORFS
-       3  a member was used without an object in VIEWPTR_SETALPHA
-       2  a member was used without an object in _^
-       2  a member was used without an object in _VIEWPTR_CREATEINTOPTR
-       2  a member was used without an object in ZERROR_SETTEMPLEVEL
-       1  a member was used without an object in ZERROR_RESTORELEVEL
-       1  a member was used without an object in VIEWPTR_SETCOLOR
-       1  a member was used without an object in SIGHTSCALING_APPLYSOMESETTINGS
+       7  a member was used without an object in PRINTDEBUGNPC
+       7  a member was used without an object in CONCATSTRINGS
 -- complaints by library (by the function's name) --
-     292  LeGo
-   27092  the game / the mod
+      14  the game / the mod
 
 -- engine functions the start-up called that this engine does not carry out (every one: they return 0 / an empty string) --
-     195  WLD_ASSIGNROOMTOGUILD
-      12  WLD_SETOBJECTROUTINE
-       3  WLD_SETMOBROUTINE
+     792  WLD_SETOBJECTROUTINE
+     324  WLD_ASSIGNROOMTOGUILD
+      21  WLD_SETMOBROUTINE
+       6  NPC_PERCENABLE
+       1  SND_PLAY
        1  PLAYVIDEO
 
 == the states of the characters (ZS_*): what they call ==
-407 states; 1823 functions are reached from them; 159 engine functions called, 136 carried out
-  functions reached from the states, in Ikarus: 108
-  functions reached from the states, in LeGo: 12
-  functions reached from the states, in the game / the mod: 1703
+180 states; 709 functions are reached from them; 146 engine functions called, 123 carried out
+  functions reached from the states, in the game / the mod: 709
 -- engine functions the states call that this engine does not carry out, by the number of states that call them --
-     299  NPC_GETLOOKATTARGET
-      32  EXITGAME
-      15  SND_PLAY
-      13  AI_WAITMS
-      12  NPC_STOPANI
-       9  NPC_SETREFUSETALK
-       9  NPC_HASBODYFLAG
-       8  NPC_ISINPLAYERSROOM
-       8  WLD_GETPLAYERPORTALGUILD
-       7  MDL_STARTFACEANI
-       7  NPC_ISDRAWINGSPELL
-       7  AI_READYSPELL
-       5  NPC_GETPORTALGUILD
-       5  WLD_ISRAINING
-       5  NPC_REFUSETALK
-       3  WLD_PLAYEFFECT
-       2  WLD_SENDUNTRIGGER
-       1  WLD_SENDTRIGGER
-       1  SND_PLAY3D
-       1  AI_UNREADYSPELL
+      14  AI_UNREADYSPELL
+      10  NPC_HASSPELL
+      10  AI_READYSPELL
+       8  NPC_HASNEWS
+       6  NPC_OWNEDBYNPC
+       6  NPC_HASBODYFLAG
+       5  NPC_ISWAYBLOCKED
+       4  SND_PLAY
+       4  AI_WAITMS
+       2  WLD_GETPLAYERPORTALGUILD
+       2  WLD_DETECTNPCEX
+       2  NPC_GETNEWSVICTIM
+       2  NPC_MEMORYENTRY
+       1  WLD_PLAYEFFECT
+       1  MDL_STARTFACEANI
+       1  AI_SHOOTAT
+       1  AI_AIMAT
+       1  AI_LOOKAT
        1  NPC_PLAYANI
        1  NPC_SETTRUEGUILD
-       1  AI_WAITTILLEND
+       1  NPC_GETGUILDATTITUDE
+       1  NPC_DELETENEWS
+       1  NPC_GETNEWSOFFENDER
 
-== the talks: 6398 infos; the 24231 functions they run call 183 engine functions, 141 carried out ==
-  functions run by the talks, in Ikarus: 139
-  functions run by the talks, in LeGo: 46
-  functions run by the talks, in the game / the mod: 24046
+== the talks: 1538 infos; the 3979 functions they run call 163 engine functions, 132 carried out ==
+  functions run by the talks, in the game / the mod: 3979
 -- engine functions the talks call that this engine does not carry out --
-  AI_PRINTSCREEN
-  EXITGAME
-  EXITSESSION
   PLAYVIDEO
-  WLD_DETECTNPCEX
+  NPC_MEMORYENTRY
+  NPC_HASNEWS
+  NPC_GETNEWSOFFENDER
+  NPC_GETNEWSVICTIM
+  NPC_DELETENEWS
   NPC_ISINROUTINE
   AI_WAITMS
   AI_WAITTILLEND
-  AI_DROPITEM
   NPC_SETTRUEGUILD
-  NPC_GETLOOKATTARGET
   NPC_HASBODYFLAG
-  NPC_STOPANI
-  NPC_PLAYANI
   NPC_ISDETECTEDMOBOWNEDBYNPC
-  AI_AIMAT
-  AI_SHOOTAT
+  NPC_ISDETECTEDMOBOWNEDBYGUILD
+  AI_POINTAT
   AI_READYSPELL
   AI_UNREADYSPELL
+  NPC_HASSPELL
   NPC_REFUSETALK
   NPC_SETREFUSETALK
-  AI_SND_PLAY
   SND_PLAY
-  SND_PLAY3D
+  SND_ISSOURCENPC
   NPC_CANSEESOURCE
-  NPC_ISDRAWINGSPELL
-  MDL_APPLYOVERLAYMDSTIMED
   MDL_STARTFACEANI
-  WLD_ISRAINING
-  WLD_PLAYEFFECT
-  WLD_STOPEFFECT
-  WLD_REMOVEITEM
+  WLD_SETOBJECTROUTINE
   WLD_SENDTRIGGER
   WLD_SENDUNTRIGGER
   NPC_OWNEDBYNPC
-  MOB_CREATEITEMS
-  MOB_HASITEMS
-  WLD_ASSIGNROOMTOGUILD
+  TA_BEGINOVERLAY
+  TA_ENDOVERLAY
   WLD_GETPLAYERPORTALGUILD
   WLD_GETFORMERPLAYERPORTALGUILD
-  NPC_ISINPLAYERSROOM
-  NPC_GETPORTALGUILD
 
 == the scripts by library (functions by the name's start) ==
-     266  Ikarus (e.g. MEM_CHECKVERSION)
-     151  LeGo (e.g. TIMER_SETPAUSE)
-   37420  the game / the mod (e.g. RESERVED_FUNC_INT_01)
-317 engine functions are named by the script (the engine has no code for those it lacks: they return 0 / an empty string)
+    6029  the game / the mod (e.g. PRINTDEBUGS)
+291 engine functions are named by the script (the engine has no code for those it lacks: they return 0 / an empty string)
 Where the Ikarus/LeGo/Union libraries read or write the game's memory (MEM_*, ASM_*, CALL_*), this machine has no such memory:
 the complaints above are that. What depends on them (hooks, FF_* timers, LeGo's screen) does not work; the plain game script does.

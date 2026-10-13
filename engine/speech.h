@@ -15,9 +15,10 @@ namespace g3 {
 
 class Speech {
 public:
-	enum { CHANNEL = 15 };
+	// The channel of the player's talk; what the world says (a second Speech) has the one before the last.
+	enum { CHANNEL = 15, WORLD_CHANNEL = 14 };
 
-	Speech() = default;
+	explicit Speech(u32 channel = CHANNEL) : _channel(channel) {}
 	~Speech() { shutdown(); }
 	Speech(const Speech&) = delete;
 	Speech& operator=(const Speech&) = delete;
@@ -36,7 +37,9 @@ public:
 	// Plays the recording of the line named by hashName(). `gain` 0..1 (distance: the dialogue's
 	// business). Returns its length in seconds, or 0 if there is none (or it is muted: then the
 	// length is still returned, so that the subtitle stays up as long as the line is).
-	float play(u32 lineHash, float gain);
+	// `pan` -1..1 (left to right). `takeOver` false: a line that is still sounding is left alone and the new one is
+	// only measured (a second quarrel in a street does not cut the first).
+	float play(u32 lineHash, float gain, float pan = 0.0f, bool takeOver = true);
 	// Silence (the line is skipped, the talk is over).
 	void stop();
 	bool playing() const;
@@ -48,6 +51,7 @@ public:
 	void writeReport(FILE* f) const;
 
 private:
+	u32 _channel = CHANNEL;
 	AudioOut* _out = nullptr;
 	bool _ready = false;
 	float _volume = 0.8f;

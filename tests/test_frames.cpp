@@ -602,6 +602,53 @@ static void testSupersample(const std::string& pak) {
 	gfx::c3dSetSupersample(false);
 }
 
+// The wide screen (800x240): a 240x800 target, or 480x800 averaged along the 480 only when smoothed; no second eye; in both
+// frame orders; a console without the wide mode keeps the ordinary screen; and the screen is put back at the end.
+static void testWide(const std::string& pak) {
+	for (int mode = 0; mode < 4; ++mode) {
+		const bool classic = (mode & 1) != 0, super = (mode & 2) != 0;
+		mock3ds::reset();
+		gfx::c3dSetClassicFrames(classic);
+		gfx::c3dSetSupersample(super);
+		gfx::c3dSetStereo(true); // (asked for as well: the wide screen wins)
+		gfx::c3dSetWide(true);
+		CHECK(gfx::init() && gfx::c3dWide() && gfxIsWide() && !gfx::stereoAvailable());
+		const mock3ds::Counters& c = mock3ds::counters();
+		CHECK(c.outputWidth == (super ? 480u : 240u) && c.outputHeight == 800u && c.outputScaling == (super ? 1u : 0u));
+		gfx::stereoSet(true);
+		CHECK(!gfx::stereoActive());
+		App app;
+		CHECK(app.init(pak.c_str(), nullptr));
+		app.skipChapters();
+		app.setDrawDistance(6000.0f);
+		app.world().preload(app.camera().pos);
+		app.setStereo(0.8f);
+		for (int f = 0; f < 8; ++f) {
+			app.update(Input {}, 1.0f / 30.0f);
+			app.render();
+		}
+		CHECK(c.framesShown >= 8 && c.framesShownRight == 0 && c.rightDraws == 0);
+		CHECK(mock3ds::violations() == 0);
+		app.shutdown();
+		gfx::shutdown();
+		CHECK(!gfxIsWide() && mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
+	}
+	// No wide mode on this console: the ordinary screen, as asked for nothing.
+	mock3ds::reset();
+	mock3ds::setWideSupported(false);
+	gfx::c3dSetSupersample(false);
+	gfx::c3dSetStereo(false);
+	gfx::c3dSetWide(true);
+	CHECK(gfx::init() && !gfx::c3dWide());
+	CHECK(mock3ds::counters().outputWidth == 240u && mock3ds::counters().outputHeight == 400u);
+	gfx::shutdown();
+	gfx::c3dSetWide(false);
+	gfx::c3dSetStereo(false);
+	gfx::c3dSetSupersample(false);
+	gfx::c3dSetClassicFrames(false);
+	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
+}
+
 // Stereo 3D by two renders: the left and the right target, both copied to the screen every frame, the right one drawn into
 // with its own draw calls; one frame list, in both frame orders; and nothing of it while the slider is down.
 static void testStereo(const std::string& pak) {
@@ -1168,6 +1215,8 @@ int main(int argc, char** argv) {
 	testClassicShader(pak);
 	testSupersample(pak);
 	testStereo(pak);
+	std::printf("[ RUN ] the wide screen\n");
+	testWide(pak);
 	std::printf("[ RUN ] the fallback shader without characters\n");
 	testPlainShader(pak);
 	std::printf("[ RUN ] the overlay\n");

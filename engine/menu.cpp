@@ -44,6 +44,7 @@ const char* const kLanguages[] = {"Русский", "English", "Polski", "Deutsc
 const char* const kGfxPresets[] = {"Выкл", "Баланс", "Максимум", "Свой"};
 const char* const kGfxPresetNotes[] = {"Всё выключено, как раньше", "Затенение, листва, тень героя, даль 250 м", "Всё на полную",
                                        "Значения изменены вручную"};
+const char* const kScreen[] = {"Обычный", "3D", "Широкий 800x240"};
 const char* const kWind[] = {"Нет", "Слабое", "Обычное", "Сильное"};
 const char* const kShadows[] = {"Выкл", "Герой", "Все рядом"};
 const char* const kRefresh[] = {"Выкл", "45–60 Гц", "45–72 Гц", "45–80 Гц", "Держать 72", "Держать 80"};
@@ -74,7 +75,7 @@ const Item kGraphics[] = {
     {"Купол Барьера", TOGGLE, &Settings::barrier, nullptr, 0, 0, 0, nullptr, 0, "Сияние неба и гул, если есть в данных", nullptr},
     {"Плавное появление", TOGGLE, &Settings::dissolve, nullptr, 0, 0, 0, nullptr, 0, "Вступит в силу после перезапуска", nullptr},
     {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 4, 0, 0, nullptr, 0, nullptr, kFrameNotes},
-    {"3D-режим", TOGGLE, &Settings::stereo, nullptr, 0, 0, 0, nullptr, 0, "Ползунок 3D; две отрисовки; после перезапуска", nullptr},
+    {"Экран", CHOICE, &Settings::stereo, kScreen, 3, 0, 0, nullptr, 0, "Ползунок 3D или 800x240; после перезапуска", nullptr},
     {"Графика+", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GFX_PLUS, "Затенение углов, листва, тени, даль", nullptr},
     {"Сбросить графику", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_RESET_GRAPHICS, "Вернуть значения по умолчанию", nullptr},
 };

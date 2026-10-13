@@ -26,6 +26,11 @@ bool c3dSupersample();
 // game runs, with the 3D slider). Call before init(): the right eye's target and bigger command buffers are made there.
 // Not together with the smoothing (gfx::stereoAvailable() says whether it is there).
 void c3dSetStereo(bool on);
+// The wide top screen: 800x240 (the picture twice as fine across; the interface is drawn the size it was). Call before
+// init(). Rules out stereo 3D; with the smoothing the picture is smoothed up and down only. c3dWide() says whether the
+// screen is wide (a console without the wide mode stays as it was).
+void c3dSetWide(bool on);
+bool c3dWide();
 // Wait only for the top screen's refresh (the bottom one stays at 60 Hz, and citro3d's own sync waits for both:
 // a top screen set faster than 60 Hz would be held to 60 frames).
 void c3dSyncTopOnly(bool on);

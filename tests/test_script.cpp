@@ -510,7 +510,7 @@ static void testSyntheticScript() {
 		CHECK(r.ran && r.differ == 0 && r.objected == 0 && r.stateSame);
 		// (The 18 things of the inventory's test items - and the chests' key and pick - are made once each too; the 8 are the
 		// dialogues' conditions and the functions they run that the reference interpreter checks as well.)
-		CHECK(r.runs == 1 + 4 + 4 + 2 + 18 + 8 && r.same == r.runs && r.calls > 60);
+		CHECK(r.runs == 1 + 4 + 4 + 2 + 18 + 8 + 4 && r.same == r.runs && r.calls > 60);
 	}
 #endif
 }

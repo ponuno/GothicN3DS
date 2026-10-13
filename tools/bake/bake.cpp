@@ -763,7 +763,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			std::vector<WorldMob> mobs;
 			std::vector<MobSlot> slots;
 			std::vector<WorldChest> chests;
-			std::vector<WorldMobInfo> infos;
+			std::vector<WorldMobInfo> mobInfos;
 			std::string infoNames(1, '\0');
 			std::map<std::string, u32> infoAt;
 			const auto infoName = [&](const std::string& text) -> u32 {
@@ -841,7 +841,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 					info.rewind = src.rewind ? 1 : 0;
 					infoNamed += info.focus != 0;
 					infoHidden += info.focus == 0;
-					infos.push_back(info);
+					mobInfos.push_back(info);
 				}
 				mobs.push_back(m);
 			}
@@ -871,16 +871,16 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				pak.add("world/" + bw.name + "/chests", ASSET_META, cblob);
 				chestNote = format("containers: %zu (%zu locked), with %zu stacks of things inside", chests.size(), chestLocked, chestItems);
 			}
-			if (!infos.empty()) {
+			if (!mobInfos.empty()) {
 				while (infoNames.size() % 4) infoNames.push_back('\0');
 				MobInfoHeader ih {};
 				ih.magic = MOBINFO_MAGIC;
 				ih.version = MOBINFO_VERSION;
-				ih.count = u32(infos.size());
+				ih.count = u32(mobInfos.size());
 				ih.nameBytes = u32(infoNames.size());
 				std::vector<u8> iblob(sizeof(ih));
 				std::memcpy(iblob.data(), &ih, sizeof(ih));
-				append(iblob, infos);
+				append(iblob, mobInfos);
 				iblob.insert(iblob.end(), infoNames.begin(), infoNames.end());
 				pak.add("world/" + bw.name + "/mobinfo", ASSET_META, iblob);
 				line(format("things to use by the player: %zu have a name to show (he may use those), %zu have none (the inhabitants' only)",

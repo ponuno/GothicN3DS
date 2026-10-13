@@ -100,8 +100,12 @@ struct Settings {
 	u8 reproject = 0;
 	// Version 15: the cache that reads models, textures, animations and chunks ahead (readahead.h): 0 off, 1 on.
 	u8 readAhead = 1;
-	// Version 16: stereo 3D (the scene drawn for each eye, by the console's 3D slider; after a restart): 0 off, 1 on.
+	// Version 16: the top screen's mode (after a restart): 0 the ordinary 400x240, 1 stereo 3D (the scene drawn for each
+	// eye, by the console's 3D slider), 2 wide (800x240: twice the pixels across, and the 3D slider does nothing).
+	// (Called stereo for the file's sake: it began as the 3D switch, and 0 and 1 mean what they did.)
 	u8 stereo = 0;
+	bool stereo3D() const { return stereo == 1; }
+	bool wideScreen() const { return stereo == 2; }
 	// Version 17: the far layer fills in, within the draw distance, for chunks not loaded yet (0: it is only drawn beyond it).
 	u8 farFill = 0;
 	float lodDistanceCm() const;

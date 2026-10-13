@@ -112,7 +112,8 @@ void Settings::sanitize() {
 	if (farGeometry > 3) farGeometry = 2;
 	if (refresh > 5) refresh = 0;
 	gfxPlus = gfxPresetOf();
-	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier, &visibility, &antialias, &reproject, &readAhead, &stereo, &farFill};
+	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier, &visibility, &antialias, &reproject, &readAhead, &farFill};
+	if (stereo > 2) stereo = 0;
 	for (u8* f : flags) *f = *f ? 1 : 0;
 }
 

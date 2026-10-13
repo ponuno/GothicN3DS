@@ -30,6 +30,14 @@ static inline void GPUCMD_SetBuffer(u32* adr, u32 size, u32 offset) {
 
 void gfxSet3D(bool enable);
 bool gfxIs3D(void);
+typedef s32 Result;
+#define R_SUCCEEDED(res) ((res) >= 0)
+enum { CFG_MODEL_3DS = 0, CFG_MODEL_3DSXL = 1, CFG_MODEL_N3DS = 2, CFG_MODEL_2DS = 3 };
+Result cfguInit(void);
+void cfguExit(void);
+Result CFGU_GetSystemModel(u8* model);
+void gfxSetWide(bool enable);
+bool gfxIsWide(void);
 
 void* linearAlloc(size_t size);
 void linearFree(void* mem);
@@ -44,7 +52,7 @@ void osTickCounterUpdate(TickCounter* c);
 double osTickCounterRead(const TickCounter* c);
 
 enum { GX_CMDLIST_FLUSH = BIT(1) };
-enum { GX_TRANSFER_FMT_RGBA8 = 0, GX_TRANSFER_FMT_RGB8 = 1, GX_TRANSFER_SCALE_NO = 0, GX_TRANSFER_SCALE_XY = 2 };
+enum { GX_TRANSFER_FMT_RGBA8 = 0, GX_TRANSFER_FMT_RGB8 = 1, GX_TRANSFER_SCALE_NO = 0, GX_TRANSFER_SCALE_X = 1, GX_TRANSFER_SCALE_XY = 2 };
 #define GX_BUFFER_DIM(w, h) (((h) << 16) | ((w) & 0xFFFF))
 #define GX_TRANSFER_FLIP_VERT(x) ((x) << 0)
 #define GX_TRANSFER_OUT_TILED(x) ((x) << 1)

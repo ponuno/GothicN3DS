@@ -1302,8 +1302,8 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 			// Whole repeats are dropped in integers, so the scroll stays smooth
 			// however long the game has been running.
 			const u32 period = 4096u * 1000u; // scroll units * ms per repeat
-			const u32 phase = u32((u64(ms) * u32(m.scroll[a] < 0 ? -m.scroll[a] : m.scroll[a])) % period);
-			const float f = float(phase) / float(period);
+			const u32 scrollPhase = u32((u64(ms) * u32(m.scroll[a] < 0 ? -m.scroll[a] : m.scroll[a])) % period);
+			const float f = float(scrollPhase) / float(period);
 			offset[a] = m.scroll[a] < 0 ? 1.0f - f : f;
 		}
 		gfx::setMaterial(_tex[u32(m.texture) + frame].tex, m.flags, float(m.opacity) * (1.0f / 255.0f), offset[0], offset[1]);

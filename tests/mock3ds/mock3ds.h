@@ -18,6 +18,9 @@ struct Counters {
 	unsigned drawOutsideFrame;    // a draw call with no command buffer set
 	unsigned submittedNotStart;   // a command list that does not begin at the start of its buffer
 	unsigned submittedUncleared;  // a frame was submitted without clearing the target first
+	unsigned badOutput;           // a target linked to the top screen whose size (and scaling) does not fit the screen mode
+	unsigned wide3D;              // stereo 3D switched on while the screen is wide
+	unsigned outputHeight;        // the linked (left) target's height
 	// Plain counts.
 	unsigned framesSubmitted;     // command lists handed to the GPU
 	unsigned framesShown;         // render target copied to the screen
@@ -44,6 +47,8 @@ void reset();
 double nowMs();
 // Makes linearAlloc fail once `bytes` are allocated (0 = never).
 void setLinearLimit(size_t bytes);
+// A console without the wide mode (the 2DS): gfxSetWide(true) does nothing.
+void setWideSupported(bool on);
 
 // ---- the vertex shader ----
 //

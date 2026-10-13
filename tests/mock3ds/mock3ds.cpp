@@ -41,7 +41,7 @@ bool gClearedSinceSubmit = false;
 C3D_RenderTarget* gLinked = nullptr;
 C3D_RenderTarget* gLinkedR = nullptr;
 C3D_RenderTarget* gDrawingOn = nullptr; // the target the last C3D_SetFrameBuf / C3D_FrameDrawOn chose
-bool g3D = false;
+bool g3D = false, gWide = false, gWideSupported = true;
 C3D_Tex* gBoundTex = nullptr;
 C3D_BufInfo gBufInfo {};
 C3D_AttrInfo gAttrInfo {};
@@ -419,7 +419,7 @@ Counters& counters() {
 unsigned violations() {
 	return gCount.wroteBusyBuffer + gCount.wroteOutside + gCount.freedInUse + gCount.submittedFreed + gCount.submittedBusy +
 	       gCount.clearedBusy + gCount.badFree + gCount.drawOutsideFrame + gCount.submittedNotStart +
-	       gCount.submittedUncleared;
+	       gCount.submittedUncleared + gCount.badOutput + gCount.wide3D;
 }
 void reset() {
 	gBoundEntry = 0;
@@ -427,10 +427,13 @@ void reset() {
 	gDrawingOn = nullptr;
 	gLinkedR = nullptr;
 	g3D = false;
+	gWide = false;
+	gWideSupported = true;
 	gBuffersSeen.clear();
 }
 double nowMs() { return gNow; }
 void setLinearLimit(size_t bytes) { gLinearLimit = bytes; }
+void setWideSupported(bool on) { gWideSupported = on; }
 
 void setDrawHook(DrawHook hook, void* user) {
 	gDrawHook = hook;
@@ -734,12 +737,24 @@ void C3D_RenderTargetDelete(C3D_RenderTarget* target) {
 	free(target);
 }
 void C3D_RenderTargetSetOutput(C3D_RenderTarget* target, gfxScreen_t, gfx3dSide_t side, u32 flags) {
+	if (target) {
+		// The screen is 240 x 400, or 240 x 800 when wide; a bigger target must be taken down by the transfer along the
+		// axes it is bigger on (libctru: the dimensions given are the bigger ones).
+		const unsigned scaling = (flags >> 24) & 3;
+		const unsigned w = target->frameBuf.width, h = target->frameBuf.height, screenH = gWide ? 800 : 400;
+		const bool ok = scaling == 0 ? (w == 240 && h == screenH)
+		                : scaling == GX_TRANSFER_SCALE_X ? (w == 480 && h == screenH)
+		                : scaling == GX_TRANSFER_SCALE_XY ? (w == 480 && h == screenH * 2)
+		                : false;
+		if (!ok) ++gCount.badOutput;
+	}
 	if (side == GFX_RIGHT) {
 		gLinkedR = target;
 		if (target) target->linked = true;
 		return;
 	}
 	gCount.outputWidth = target ? target->frameBuf.width : 0;
+	gCount.outputHeight = target ? target->frameBuf.height : 0;
 	gCount.outputScaling = (flags >> 24) & 3;
 	gLinked = target;
 	if (target) target->linked = true;
@@ -751,7 +766,20 @@ void C3D_FrameBufClear(C3D_FrameBuf*, C3D_ClearBits, u32, u32) {
 void C3D_SetFrameBuf(C3D_FrameBuf* fb) { gDrawingOn = gLinkedR && fb == &gLinkedR->frameBuf ? gLinkedR : gLinked; }
 void gfxSet3D(bool enable) {
 	if (g3D != enable) ++gCount.switches3D;
+	if (enable && gWide) ++gCount.wide3D;
 	g3D = enable;
+}
+void gfxSetWide(bool enable) {
+	if (enable && !gWideSupported) ++gCount.badOutput; // (the old 2DS: not to be asked)
+	gWide = enable;
+	if (enable) g3D = false; // (libctru: the two do not go together)
+}
+bool gfxIsWide(void) { return gWide; }
+Result cfguInit(void) { return 0; }
+void cfguExit(void) {}
+Result CFGU_GetSystemModel(u8* model) {
+	*model = gWideSupported ? CFG_MODEL_N3DS : CFG_MODEL_2DS;
+	return 0;
 }
 bool gfxIs3D(void) { return g3D; }
 void C3D_SetViewport(u32, u32, u32, u32) {}

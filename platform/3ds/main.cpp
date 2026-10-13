@@ -267,7 +267,10 @@ int main(int, char**) {
 	gfx::c3dSetFillTest(halfPicture); // hold ZR at start: half the pixels, the same triangles
 	gfx::c3dSetFadeShader(dissolve);
 	gfx::c3dSetSupersample(settings.antialias != 0); // (a change in the menu counts after a restart)
-	gfx::c3dSetStereo(settings.stereo != 0 && settings.antialias == 0); // (the same; not together with the smoothing)
+	// The top screen: wide (800x240) or stereo 3D (the same, after a restart; the 3D not together with the smoothing). The wide
+	// one wins if asked for; with the smoothing it is smoothed up and down only (across, it is twice as fine as it was).
+	gfx::c3dSetWide(settings.wideScreen());
+	gfx::c3dSetStereo(settings.stereo3D() && settings.antialias == 0);
 
 	App& app = gApp;
 	// Chunks are read, unpacked and given their collision grids on a worker
@@ -385,7 +388,7 @@ int main(int, char**) {
 		hidScanInput();
 		// Stereo 3D: the 3D slider decides, between frames (0: one picture as usual).
 		{
-			const float slider = app.settings().stereo ? osGet3DSliderState() : 0.0f;
+			const float slider = app.settings().stereo3D() ? osGet3DSliderState() : 0.0f;
 			gfx::stereoSet(slider > 0.02f && gfx::stereoAvailable());
 			app.setStereo(gfx::stereoActive() ? slider : 0.0f);
 		}
@@ -791,7 +794,7 @@ int main(int, char**) {
 				reportLine("cmd%3.0f%% x%lu g+ao%3d%c w%d%c%2lu sh%d/%lu%s%s%s", double(fs.commandBufferUse * 100.0f),
 				     static_cast<unsigned long>(fs.drawsDropped), int(st.occlusion), app.world().hasOcclusion() ? ' ' : '-', int(st.wind),
 				     app.world().hasWind() ? ' ' : '-', static_cast<unsigned long>(ws.windyDrawCalls), int(st.shadows),
-				     static_cast<unsigned long>(app.shadows().stats().drawn), app.gfxRelief() ? " R" : "", gfx::c3dSupersample() ? " AA" : "", gfx::stereoActive() ? " 3D" : "");
+				     static_cast<unsigned long>(app.shadows().stats().drawn), app.gfxRelief() ? " R" : "", gfx::c3dSupersample() ? " AA" : "", gfx::stereoActive() ? " 3D" : gfx::c3dWide() ? " W" : "");
 			}
 			// (Chunks in memory: the world's own + those of medium and small objects, of all; wanted and not there: the same.)
 			// (RP: the re-projection, when asked for: columns of the last move and refreshes that showed the old picture

@@ -59,6 +59,7 @@ bool gStereoWanted = false, gStereoOn = false, gStereoFrame = false;
 u32 gUiEyeBase = 0; // the quads of the eyes before this one in the frame
 bool gSuper = false;       // supersampling in use: the target is 480x800 and the display transfer averages 2x2
 bool gSuperWanted = false; // asked for before init()
+bool gWideWanted = false, gWide = false; // wide screen (800x240): asked for before init(), and whether the screen took it
 DVLB_s* gDvlb = nullptr;
 shaderProgram_s gProgram;     // the full shader (entry `main`); with the classic, plain and fade ones the only program
 shaderProgram_s gProgramFast; // the fast shader (entry `fastmain` of the same binary), when gMvpShader
@@ -363,16 +364,21 @@ void reap() {
 static bool makeTarget(bool super) {
 	gSuper = false;
 	gTarget = nullptr;
+	// Wide: the screen is 800 across (the target's height; it is turned), so the target is 240x800, and the smoothing
+	// 480x800 averaged in pairs along the 480 only (the same memory as the ordinary smoothing, the picture twice as fine
+	// across to begin with).
+	const int longSide = gWide ? 800 : 400;
 	if (super) {
 		gTarget = C3D_RenderTargetCreate(480, 800, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 		gSuper = gTarget != nullptr;
 	}
-	if (!gTarget) gTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
+	if (!gTarget) gTarget = C3D_RenderTargetCreate(240, longSide, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 	if (!gTarget) return false;
-	C3D_RenderTargetSetOutput(gTarget, GFX_TOP, GFX_LEFT, gSuper ? (DISPLAY_TRANSFER_FLAGS | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_XY)) : DISPLAY_TRANSFER_FLAGS);
+	C3D_RenderTargetSetOutput(gTarget, GFX_TOP, GFX_LEFT,
+	                          gSuper ? (DISPLAY_TRANSFER_FLAGS | GX_TRANSFER_SCALING(gWide ? GX_TRANSFER_SCALE_X : GX_TRANSFER_SCALE_XY)) : DISPLAY_TRANSFER_FLAGS);
 	// The right eye: the screen's own size too (not together with the smoothing: that does not fit into VRAM twice).
 	gTargetR = nullptr;
-	if (gStereoWanted && !gSuper) {
+	if (gStereoWanted && !gSuper && !gWide) {
 		gTargetR = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 		if (gTargetR) C3D_RenderTargetSetOutput(gTargetR, GFX_TOP, GFX_RIGHT, DISPLAY_TRANSFER_FLAGS);
 	}
@@ -387,7 +393,21 @@ bool init() {
 	// With overlapped frames citro3d's own buffer only ever holds empty frames.
 	// (Stereo: the frame is written down twice, so the buffers and the overlay's quads are twice as big. Made even if
 	// the right-eye target is not, which only costs the memory; not with the smoothing, which rules stereo out.)
-	const bool twice = gStereoWanted && !gSuperWanted;
+	// (The wide screen takes the top screen's place; the two do not go together.)
+	gWide = false;
+	if (gWideWanted) {
+		// (The old 2DS has no wide screen, and libctru would not say so: it stays as it was.)
+		u8 model = 0;
+		if (R_SUCCEEDED(cfguInit())) {
+			CFGU_GetSystemModel(&model);
+			cfguExit();
+		}
+		if (model != CFG_MODEL_2DS) {
+			gfxSetWide(true);
+			gWide = gfxIsWide();
+		}
+	}
+	const bool twice = gStereoWanted && !gSuperWanted && !gWide;
 	kOwnBufferWords = kOwnBufferWordsMono * (twice ? 2u : 1u);
 	gUiCapacity = UI_MAX_QUADS * (twice ? 2u : 1u);
 	gStereoOn = gStereoFrame = false;
@@ -540,6 +560,8 @@ void shutdown() {
 	gTarget = nullptr;
 	gTargetR = nullptr;
 	if (gStereoOn) gfxSet3D(false);
+	if (gWide) gfxSetWide(false);
+	gWide = false;
 	gStereoOn = gStereoFrame = false;
 	gSuper = false;
 	gReady = false;
@@ -1126,6 +1148,12 @@ void c3dSetClassicFrames(bool classic) {
 }
 
 void c3dSetFillTest(bool on) { gFillTest = on; }
+
+void c3dSetWide(bool on) {
+	if (!gReady) gWideWanted = on; // (only before init(): the targets are made there)
+}
+
+bool c3dWide() { return gWide; }
 
 void c3dSetSupersample(bool on) {
 	if (!gReady) gSuperWanted = on; // (only before init(): the target is not rebuilt while frames are in flight)

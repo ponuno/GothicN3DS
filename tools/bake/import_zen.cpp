@@ -2,6 +2,7 @@
 // (meshes, models in their rest pose, decals), portals and all textures
 // straight from a Gothic installation through ZenKit. Nothing from the game
 // is redistributed; the user bakes their own copy.
+#include "g3ds/game.h"
 #include "g3ds/model.h"
 #include "fight_clips.h"
 #include "font_bake.h"

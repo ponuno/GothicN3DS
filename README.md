@@ -17,7 +17,7 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, it
   - baked ambient occlusion in the vertices (`g3ds-bake --ao low|high`);
   - trees, bushes and grass swaying in the vertex shader (`--wind`);
   - round shadows under the hero and townsfolk;
-  - **far layer** (`--far-lod`): a coarse, simplified copy of the whole world drawn beyond the draw distance (250 / 400 / 600 m) and over chunks that did not fit in memory. Only checked on PC so far; it costs about 1.5–2 MB of linear memory on the console.
+  - **far layer** (`--far-lod`): a coarse, simplified copy of the whole world drawn beyond the draw distance (250 / 400 / 600 m) and over chunks that did not fit in memory.
   - Under load the foliage stops swaying and shadows stay on the hero alone before objects start to disappear.
 - The world's memory budget on the 3DS adapts to the free linear memory (it used to be a hard 20 MB).
 

@@ -49,13 +49,7 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, it
 - The `g3ds-host` host build: the same renderer on PC for debugging; `ctest` tests (6 suites), the console-code check `scripts/check_3ds.sh`.
 - Interface in four languages.
 
-- **Rooms and owners:** houses and huts are the world's BSP sectors; walking into somebody's house, picking things up in front of people and using somebody's chest or bench are perceived by the inhabitants the way the scripts say (`PERC_ASSESSENTERROOM`, `PERC_ASSESSTHEFT`, `PERC_ASSESSUSEMOB`, portal guilds, mob and item owners). Summoning (`Wld_SpawnNpcRange`) works, and characters the scripts insert later get their models baked and are kept in saves.
-- **Archers and mages among the inhabitants** shoot arrows and cast spells (fire bolts, fireballs) by the fight AI's far-fight tables; their shots can hit the player.
-
-- **Triggers and mechanisms:** gates, lifts and drawbridges (`zCMover`) move when a lever, a trigger zone, a world start or the scripts (`Wld_SendTrigger`) set them going; script triggers call their functions; teleport runes work. Shut gates block the way and lifts carry the player.
-- **Doors** open and shut (A), locked ones want their key or a lock pick; the inhabitants open them as they pass.
-
-**Not there yet:** transformations, weather. Details and measurements: [`docs/HANDOFF.md`](docs/HANDOFF.md), [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/TECHNICAL.md`](docs/TECHNICAL.md). Next for Graphics+: sky with clouds, height fog, a smooth transition to the far layer and more (the plan is at the end of `docs/HANDOFF.md`).
+**Not there yet:** some triggers and mechanisms (doors, lifts), summoning and transformations, weather. Details and measurements: [`docs/HANDOFF.md`](docs/HANDOFF.md), [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/TECHNICAL.md`](docs/TECHNICAL.md). Next for Graphics+: sky with clouds, height fog, a smooth transition to the far layer and more (the plan is at the end of `docs/HANDOFF.md`).
 
 **Status.** Much of this has been verified on a real New 3DS (60 fps, world, townsfolk, AI), but the latest rounds (combat, magic, climbing, Archolos memory, the far layer) have only been checked on PC and are waiting for a test on the console. The project licence has not been chosen yet; third-party code: [`third_party/README.md`](third_party/README.md).
 

@@ -55,9 +55,12 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, it
 
 ## Quick start
 
-1. Windows, baking the data only: three `.exe` files from Releases plus `Gothic3DS-Baker.exe`, see [`windows/README.md`](windows/README.md).
-2. Full build (3DS program, music, SD card): the guide below.
-3. How it works and detailed controls: [`docs/TECHNICAL.md`](docs/TECHNICAL.md).
+1. Download every file from the release
+2. Run Gothic3DS-Baker.exe and choose your original game folder(Gothic 1,2)
+3. Check every box(It should be fine for original games)
+4. Run Bake
+5. Put all baked files and 3dsx and smdh files to your N3DS sd card(3ds/gothic3ds)
+6. Run through Homebrew Launcher
 
 ---
 

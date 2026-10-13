@@ -1479,7 +1479,8 @@ bool hasNote(const SrcScene& scene, const char* text) {
 
 void checkScene(const SrcScene& scene, bool flipped, bool withObjects) {
 	const int objectTriangles = withObjects ? kObjectTriangles : 0;
-	CHECK(int(scene.triangles.size()) == expectedTriangles() + objectTriangles);
+	// (The door is no part of the world's triangles since fix82: it moves, a trigger with a mesh of its own.)
+	CHECK(int(scene.triangles.size()) == expectedTriangles() + objectTriangles - (withObjects ? kBoxTriangles : 0));
 	// Objects add one material per distinct look: the box texture with and
 	// without collision, the skinned part's texture, and the blended decal.
 	CHECK(scene.materials.size() == size_t(MAT_COUNT + (withObjects ? 4 : 0)));
@@ -1600,17 +1601,16 @@ void checkObjects(const SrcScene& scene) {
 		CHECK(b.triangles == kBoxTriangles);
 		CHECK(b.flux > 0); // the inside-out source mesh was repaired
 	}
-	// The door is a box like the others, but never solid.
+	// The door is a box like the others, but not baked into the world (fix82): a trigger that opens, with its mesh.
 	int doorTriangles = 0;
-	for (const SrcTriangle& t : scene.triangles) {
-		if (t.material < MAT_COUNT || !near2(t, kDoorAt)) continue;
-		++doorTriangles;
-		CHECK(scene.materials[t.material].noCollision);
-	}
-	CHECK(doorTriangles == kBoxTriangles);
-	CHECK(hasNote(scene, "objects: 7 placed from 3 meshes"));
+	for (const SrcTriangle& t : scene.triangles) doorTriangles += t.material >= MAT_COUNT && near2(t, kDoorAt);
+	CHECK(doorTriangles == 0);
+	int doors = 0;
+	for (const SrcTrigger& tr : scene.triggers) doors += tr.kind == TRG_DOOR && tr.visual == "fix_box";
+	CHECK(doors == 1);
+	CHECK(hasNote(scene, "objects: 6 placed from 3 meshes"));
 	CHECK(hasNote(scene, "winding flipped"));
-	CHECK(hasNote(scene, "3 without collision")); // box C, the door and the decal
+	CHECK(hasNote(scene, "2 without collision")); // box C and the decal
 	CHECK(hasNote(scene, "2 object visuals not found: HUMANS.MDS, MISSING.3DS"));
 	CHECK(hasNote(scene, "particle effects: 1 placed by the world"));
 	CHECK(hasNote(scene, "lightmaps: 1 triangles, 1 lit") || hasNote(scene, "lightmaps: 2 triangles, 2 lit"));
@@ -1649,7 +1649,7 @@ void checkModels(const SrcScene& scene) {
 		}
 		CHECK(rigid == kBoxTriangles && skinned == 1);
 	}
-	CHECK(hasNote(scene, "4 meshes, 2 models in rest pose, 0 morph meshes, 1 decals"));
+	CHECK(hasNote(scene, "3 meshes, 2 models in rest pose, 0 morph meshes, 1 decals"));
 	CHECK(hasNote(scene, "models: 2 skinned parts; rest pose within 0.0 cm"));
 }
 
@@ -2097,7 +2097,8 @@ int main(int argc, char** argv) {
 			CHECK(second.ladders.empty());
 			// The things to use: the four fire places (of a kind named after
 			// their models' first word, without places to stand at) and the bed.
-			CHECK(second.mobs.size() == 6 && scene.mobs.size() == 1 && scene.mobs[0].scheme == "FIX" && scene.mobs[0].slots.empty());
+			// (The first world's only one was the door: since fix82 a trigger, not a thing to use.)
+			CHECK(second.mobs.size() == 6 && scene.mobs.empty());
 			{
 				const SrcMob* bed = nullptr;
 				u32 fires = 0;
@@ -2131,7 +2132,7 @@ int main(int argc, char** argv) {
 			// texture -, not the .MDM a script of that name left behind.
 			CHECK(hasNote(second, "FIX_HIGH2.ASC x1, fire FIRETREE_LAMP.ZEN at BIP01 FIRE <- FIX_HIGH2.MDL [script: tree FIX_GATE]"));
 			for (const std::string& n : second.notes)
-				if (n.find("FIX_HIGH2.ASC") != std::string::npos) CHECK(n.find("FIX_GRASS.TGA") == std::string::npos && n.find("12 tris FIX_FENCE.TGA") != std::string::npos);
+				if (n.find("FIX_HIGH2.ASC") != std::string::npos && n.find("fire places") != std::string::npos) CHECK(n.find("FIX_GRASS.TGA") == std::string::npos && n.find("12 tris FIX_FENCE.TGA") != std::string::npos);
 			CHECK(hasNote(second, "FIX_LAMP.MDS x1, fire FIRETREE_LAMP.ZEN at BIP01 FIRE <- FIX_LAMP.MDL [script: tree FIX_GATE without its mesh]"));
 			CHECK(hasNote(second, "FIX_LAMP2.MDS x1, fire FIRETREE_LAMP.ZEN at BIP01 FIRE <- FIX_GATE.MDM + FIX_MILL.MDL"));
 			CHECK(hasNote(second, "FIX_LAMP3.MDS x2, fire FIRETREE_LAMP.ZEN at BIP01 FIRE <- FIX_GATE.MDM + FIX_GATE.MDH"));

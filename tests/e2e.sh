@@ -137,7 +137,7 @@ if [ "$mode" = synth ]; then
 	grep -q "the scripts name 4 of them: BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: CHESTBIG" "$out/info.txt" || fail "the things the scripts use were not reported"
 	grep -q "  BENCH: T_BENCH_STAND_2_S0 0.40s ->S_BENCH_S0 root +0 +0 -36 (carries)" "$out/info.txt" || fail "what using the things looks like was not reported"
 	grep -q "clusters: the chunks are cut into .* boxes of 10 m" "$out/info.txt" || fail "the chunks were not cut into clusters"
-	grep -q "fighting 105 more; baked per skeleton: humans 67" "$out/info.txt" || fail "the fight animations were not baked"
+	grep -q "fighting 346 more; baked per skeleton: humans 67" "$out/info.txt" || fail "the fight animations were not baked"
 	grep -q "things in the hands: the scripts. items are used in 4 ways (FOOD, MEAT, POTION, POTIONFAST)" "$out/info.txt" || fail "the animations of the things in the hands were not asked for"
 	grep -q "S_1HATTACK 1.88s 3 blows" "$out/info.txt" || fail "the blows of an attack were not baked"
 fi
@@ -166,9 +166,9 @@ if [ "$mode" = zen ]; then
 	# The check must catch a deliberately inverted bake.
 	"$bake" world --game "$fixture/game" --zen FIXTURE.ZEN --flip -o "$out/flipped.pak" | grep -q "inside out" \
 		|| fail "winding check missed an inverted world"
-	# 514 world triangles plus the objects: four boxes, two models, a decal.
-	grep -q "590 triangles in, 590 out" "$out/info.txt" || fail "world bake lost triangles"
-	grep -q "objects: 7 placed" "$out/info.txt" || fail "objects were not baked"
+	# 514 world triangles plus the objects: three boxes, two models, a decal (the fourth box is the door: a trigger since fix82).
+	grep -q "578 triangles in, 578 out" "$out/info.txt" || fail "world bake lost triangles"
+	grep -q "objects: 6 placed" "$out/info.txt" || fail "objects were not baked"
 	grep -q "ladders: 1" "$out/info.txt" || fail "the ladder was not baked"
 	grep -q "indoor world: no sky, background colour 30 20 10" "$out/info.txt" || fail "the second world is not indoor"
 	grep -q "2 models in rest pose" "$out/info.txt" || fail "models were not baked"

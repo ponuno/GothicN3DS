@@ -2,6 +2,7 @@
 
 #include "game.h"
 #include "gfx.h"
+#include "readahead.h"
 #include "world.h"
 
 #include <stdlib.h>
@@ -82,6 +83,7 @@ void Loot::enterWorld(Pak& pak, const char* worldName, u32 worldHash, Game& game
 		it.model = NOT_TRIED;
 		it.taken = it.symbol == SCRIPT_NONE || wasTaken(_world, i);
 		it.lit = false;
+		it.wait = 0;
 		_stats.taken += it.taken;
 	}
 	_stats.count = _count;
@@ -124,10 +126,20 @@ void Loot::update(Pak& pak, const World& world, Game& game, Vec3 eye) {
 			if (known || _lookCount >= LOOKS) return;
 			char name[96];
 			snprintf(name, sizeof(name), "model/item.%s", game.text(visual));
+			const u32 entry = hashName(name);
+			if (_ahead && _ahead->running() && _ahead->enabled() && it.wait < 120) {
+				// Wished from the read-ahead's thread; built here when it is there (the frame never waits for the card).
+				_ahead->request(entry);
+				if (!_ahead->has(entry)) {
+					++it.wait;
+					it.model = NOT_TRIED;
+					return;
+				}
+			}
 			Look& look = _looks[_lookCount];
 			look.visual = visual;
 			loadedOne = true;
-			const bool ok = look.model.loadEntry(pak, hashName(name), &_pool) && look.model.hasMesh();
+			const bool ok = look.model.loadEntry(pak, entry, &_pool) && look.model.hasMesh();
 			if (!ok) look.model.release();
 			it.model = ok ? u16(_lookCount) : NO_MODEL;
 			++_lookCount;

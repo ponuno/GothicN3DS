@@ -584,6 +584,14 @@ private:
 	static bool findPoint(void* self, const char* name, float pos[3], float& yaw);
 	const LookEntry* lookOf(const GameLook& look) const;
 	Piece* piece(Pak& pak, u32 hash, u32& loadsLeft);
+	// fix89: with a read-ahead a model is only built once its bytes are waiting in memory (it is wished first); the card
+	// is read on the frame's thread only for one that has not come after a while (a wish refused or let go).
+	bool bytesReady(u32 hash);
+	struct Wish {
+		u32 hash = 0, since = 0;
+	};
+	Wish _wishes[32];
+	u32 _wishNext = 0;
 	void warmMeshes(Pak& pak);
 	bool loadFits() { return !_cfg.budget || _cfg.budget->allow(_pieceCostMs, _refusedPieces); }
 	float _pieceCostMs = 6.0f; // estimate of what reading one model takes, kept as they are timed

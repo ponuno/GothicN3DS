@@ -239,6 +239,22 @@ void Npcs::enterWorld(Pak& pak, const World& world, const char* asset, Vec3 eye,
 
 // A model by its archive entry, read now if `loadsLeft` allows. Null if it
 // is not in memory (yet) or cannot be used.
+bool Npcs::bytesReady(u32 hash) {
+	if (!_ahead || !_ahead->running() || !_ahead->enabled()) return true;
+	if (_ahead->has(hash)) {
+		for (Wish& w : _wishes)
+			if (w.hash == hash) w = Wish();
+		return true;
+	}
+	_ahead->request(hash);
+	for (Wish& w : _wishes)
+		if (w.hash == hash) return _frame - w.since >= 90; // (3 s at 30 fps: then it is read here after all)
+	Wish& w = _wishes[_wishNext++ % 32];
+	w.hash = hash;
+	w.since = _frame;
+	return false;
+}
+
 Npcs::Piece* Npcs::piece(Pak& pak, u32 hash, u32& loadsLeft) {
 	if (!hash) return nullptr;
 	Piece* spare = nullptr;
@@ -260,7 +276,7 @@ Npcs::Piece* Npcs::piece(Pak& pak, u32 hash, u32& loadsLeft) {
 		if (p.used == _frame) continue;
 		if (!spare || (p.hash == 0 && spare->hash != 0) || (p.hash != 0 && spare->hash != 0 && p.used < spare->used)) spare = &p;
 	}
-	if (!spare || loadsLeft == 0 || !loadFits()) return nullptr;
+	if (!spare || loadsLeft == 0 || !loadFits() || !bytesReady(hash)) return nullptr;
 	// (Nobody is drawn with it any more - but an actor waiting for another of
 	// its models may still be bound to it.)
 	for (NpcActor& a : _actors)

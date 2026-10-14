@@ -26,6 +26,7 @@ bool App::init(const char* pakPath, const char* worldName) {
 		_ahead.attach(_pak);
 		_world.setReadAhead(&_ahead);
 		_npcs.setReadAhead(&_ahead);
+		_loot.setReadAhead(&_ahead);
 	}
 	char start[64] = "world";
 	if (worldName && *worldName) {

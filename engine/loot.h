@@ -25,6 +25,7 @@ struct LootItem {
 	u16 model;        // into the model cache; NO_MODEL until loaded (or none to be had)
 	bool taken;
 	bool lit;         // `light` is the ground's
+	u8 wait;          // frames its model's bytes have been waited for (fix89: read ahead, not on the frame's thread)
 	float light[3];   // the baked light of the floor under it (before the time of day)
 	float sky;        // how much of the sky that floor sees (the time of day's share)
 };
@@ -42,6 +43,9 @@ struct LootStats {
 class Loot {
 public:
 	static constexpr u16 NO_MODEL = 0xFFFF, NOT_TRIED = 0xFFFE;
+	// With a read-ahead (readahead.h) the models of things lying about are read on its thread; the frame builds them
+	// once their bytes are there (and reads them itself only after a wait, if they never came).
+	void setReadAhead(class ReadAhead* ahead) { _ahead = ahead; }
 	Loot() = default;
 	~Loot() { release(); }
 	Loot(const Loot&) = delete;
@@ -90,6 +94,7 @@ public:
 	const LootStats& stats() const { return _stats; }
 
 private:
+	class ReadAhead* _ahead = nullptr;
 	struct Taken {
 		u32 world;
 		u32 index;

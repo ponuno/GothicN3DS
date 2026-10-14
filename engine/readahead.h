@@ -35,7 +35,7 @@ struct ReadAheadStats {
 
 class ReadAhead {
 public:
-	static constexpr u32 QUEUE = 48;
+	static constexpr u32 QUEUE = 96; // per queue: the urgent ones (models, meshes, textures, chunks) and the rest (animations)
 	static constexpr u32 SLOTS = 64;
 	static constexpr u32 CLIP_NAMES = 64;
 
@@ -88,7 +88,7 @@ private:
 	bool readOne();
 	bool queuedLocked(u32 hash) const;
 	Slot* findLocked(u32 hash);
-	void pushLocked(u32 hash);
+	void pushLocked(u32 hash, bool low = false);
 	void storeLocked(u32 hash, u8* blob, u32 size);
 	void freeSlotLocked(Slot& s);
 	void chain(const PakEntry& e, const u8* blob);
@@ -110,6 +110,8 @@ private:
 
 	u32 _queue[QUEUE];
 	u32 _qHead = 0, _qCount = 0;
+	u32 _lowQueue[QUEUE];
+	u32 _lHead = 0, _lCount = 0; // animations: read when nothing urgent waits (fix89)
 	Slot _slots[SLOTS];
 	u32 _bytes = 0, _stamp = 0;
 	u32 _clipNames[CLIP_NAMES];

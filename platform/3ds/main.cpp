@@ -154,7 +154,7 @@ static void flushHitches() {
 
 static void startHitchLog(const char* what) {
 	if (FILE* f = fopen(kHitchPath, "w")) {
-		fprintf(f, "# gothic3ds fix89 hitches: %s\n", what);
+		fprintf(f, "# gothic3ds fix90 hitches: %s\n", what);
 		fclose(f);
 	}
 	gHitchCount = 0;

@@ -20,7 +20,7 @@ bool ReadAhead::start(const char* pakPath, u32 budget, bool threaded) {
 	stop();
 	if (!pakPath || !pakPath[0] || budget < 64 * 1024 || !_pak.open(pakPath)) return false;
 	_budget = budget;
-	_qHead = _qCount = 0;
+	_qHead = _qCount = _lHead = _lCount = 0;
 	_bytes = _stamp = 0;
 	_clipCount = _clipNext = 0;
 	_stats = ReadAheadStats();
@@ -95,17 +95,28 @@ ReadAhead::Slot* ReadAhead::findLocked(u32 hash) {
 bool ReadAhead::queuedLocked(u32 hash) const {
 	for (u32 i = 0; i < _qCount; ++i)
 		if (_queue[(_qHead + i) % QUEUE] == hash) return true;
+	for (u32 i = 0; i < _lCount; ++i)
+		if (_lowQueue[(_lHead + i) % QUEUE] == hash) return true;
 	return false;
 }
 
-void ReadAhead::pushLocked(u32 hash) {
-	if (!hash || _qCount == QUEUE || queuedLocked(hash)) return;
+void ReadAhead::pushLocked(u32 hash, bool low) {
+	if (!hash || queuedLocked(hash)) return;
 	if (Slot* s = findLocked(hash)) {
 		s->stamp = ++_stamp;
 		return;
 	}
-	_queue[(_qHead + _qCount) % QUEUE] = hash;
-	++_qCount;
+	// A full queue lets the oldest wish go: what is wished now matters more than what was wished when the player was
+	// somewhere else (before, a full queue refused the new ones and the old ones were read first).
+	u32* q = low ? _lowQueue : _queue;
+	u32& head = low ? _lHead : _qHead;
+	u32& count = low ? _lCount : _qCount;
+	if (count == QUEUE) {
+		head = (head + 1) % QUEUE;
+		--count;
+	}
+	q[(head + count) % QUEUE] = hash;
+	++count;
 	++_stats.requests;
 }
 
@@ -174,7 +185,7 @@ void ReadAhead::chain(const PakEntry& e, const u8* blob) {
 		ModelClipRef ref;
 		memcpy(&ref, blob + refsAt + u64(i) * sizeof(ModelClipRef), sizeof(ref));
 		if (!wantedClipLocked(ref.nameHash)) continue;
-		pushLocked(ref.entryHash);
+		pushLocked(ref.entryHash, true);
 		++clips;
 	}
 	unlock();
@@ -182,13 +193,20 @@ void ReadAhead::chain(const PakEntry& e, const u8* blob) {
 
 bool ReadAhead::readOne() {
 	lock();
-	if (_qCount == 0) {
+	if (_qCount == 0 && _lCount == 0) {
 		unlock();
 		return false;
 	}
-	const u32 hash = _queue[_qHead];
-	_qHead = (_qHead + 1) % QUEUE;
-	--_qCount;
+	u32 hash;
+	if (_qCount > 0) {
+		hash = _queue[_qHead];
+		_qHead = (_qHead + 1) % QUEUE;
+		--_qCount;
+	} else {
+		hash = _lowQueue[_lHead];
+		_lHead = (_lHead + 1) % QUEUE;
+		--_lCount;
+	}
 	const bool have = findLocked(hash) != nullptr;
 	unlock();
 	if (have || !_enabled) return true;
@@ -216,9 +234,9 @@ bool ReadAhead::pump() { return _running && !_thread && readOne(); }
 void ReadAhead::request(u32 entryHash) {
 	if (!_running || !_enabled) return;
 	lock();
-	const u32 before = _qCount;
+	const u32 before = _stats.requests;
 	pushLocked(entryHash);
-	const bool added = _qCount != before;
+	const bool added = _stats.requests != before;
 	unlock();
 	if (added && _thread) sys::signalWake(_wake);
 }
@@ -246,7 +264,7 @@ void ReadAhead::clear() {
 	lock();
 	for (Slot& s : _slots)
 		if (s.blob) freeSlotLocked(s);
-	_qHead = _qCount = 0;
+	_qHead = _qCount = _lHead = _lCount = 0;
 	unlock();
 }
 
@@ -254,7 +272,7 @@ ReadAheadStats ReadAhead::stats() {
 	lock();
 	ReadAheadStats s = _stats;
 	s.bytes = _bytes;
-	s.queued = _qCount;
+	s.queued = _qCount + _lCount;
 	s.entries = 0;
 	for (const Slot& x : _slots) s.entries += x.blob != nullptr;
 	unlock();

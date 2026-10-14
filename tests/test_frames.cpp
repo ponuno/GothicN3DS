@@ -913,6 +913,21 @@ static void testDefaultShader(const std::string& pak) {
 		app.world().config().wind = 2.0f;
 		app.world().config().waves = 22.0f;
 		app.world().preload(app.camera().pos);
+		// Rain: the ground gets wet and puddles are laid where the ground is open and flat.
+		app.weather().configure(WEATHER_RAIN, true);
+		app.weather().settle();
+		unsigned puddled = 0, rippled = 0;
+		for (int f = 0; f < 6; ++f) {
+			Input in;
+			app.update(in, 1.0f / 30.0f);
+			app.render();
+			puddled = std::max(puddled, app.puddles().drawn());
+			rippled = std::max(rippled, app.ripples().drawn());
+		}
+		std::printf("  rain: %s, %u puddles, %u rings on water in view\n", app.world().indoor() ? "indoors" : "outdoors", puddled, rippled);
+		CHECK(app.world().indoor() || puddled > 0);
+		app.weather().configure(WEATHER_CLEAR, true);
+		app.weather().settle();
 		unsigned switches = 0, frames = 0;
 		for (int f = 0; f < 50; ++f) {
 			Input in;

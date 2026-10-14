@@ -164,8 +164,15 @@ void usage() {
 	          "  --light-static     also the lamps the world's own compiled light has (otherwise those are left out)\n"
 	          "  --water-light N    the water's own light, 0..255 (default 200): the same blue-green tone all over it,\n"
 	          "                     not the patches of the source mesh's vertex light; 0: keep the source's light\n"
+	          "  --water-texture S  the water's texture: made here (default: soft caustics; S = made) or the game's (S = original)\n"
+	          "  --water-color R,G,B  the colour of that texture (default 92,140,156)\n"
+	          "  --water-shore S    colour by depth and foam in the fine water, 0..1 (default 1; needs --water-grid)\n"
+	          "  --wet-shore S      the ground at the water's edge darker (wet sand), 0..1 (default 1)\n"
+	          "  --canopy S         the ground under trees and bushes darker, 0..1 (default 0.3); --canopy-reach M: how far up\n"
+	          "                     a plant still shades (default 18)\n"
 	          "  --water-grid M     cut the water along the shores into a grid of M metres (try 2; 0 = off, the default), fine\n"
 	          "                     enough for the game's \"Waves on the water\" setting to lift it; the open water stays coarse\n"
+	          "  --river-width M    water narrower than this stays calm: rivers, ponds (default 40; 0: waves everywhere)\n"
 	          "  --water-reach M    how far from the shore line the fine water goes, metres (default 32; a multiple of 16 cells)\n"
 	          "  --far-lod          Graphics+: a coarse copy of the world drawn beyond the draw distance and where\n"
 	          "                     chunks are not loaded yet (far layer; about 1.5-2 MB on the console)\n"
@@ -310,7 +317,21 @@ int main(int argc, char** argv) {
 			else if (a == "--light-cell") opt.light.cell = std::clamp(std::stof(value()), 0.2f, 10.0f) * 100.0f;
 			else if (a == "--light-static") opt.light.statics = true;
 			else if (a == "--water-light") opt.waterLight = u8(std::clamp(std::stoi(value()), 0, 255));
+			else if (a == "--water-texture") opt.waterTexture = value() != "original";
+			else if (a == "--water-color") {
+				const std::string v = value();
+				int r, g, b;
+				if (std::sscanf(v.c_str(), "%d,%d,%d", &r, &g, &b) != 3) throw std::runtime_error("--water-color wants R,G,B");
+				opt.waterColor[0] = u8(std::clamp(r, 0, 255));
+				opt.waterColor[1] = u8(std::clamp(g, 0, 255));
+				opt.waterColor[2] = u8(std::clamp(b, 0, 255));
+			}
+			else if (a == "--water-shore") opt.waterShore = std::clamp(std::stof(value()), 0.0f, 1.0f);
+			else if (a == "--wet-shore") opt.wetShore = std::clamp(std::stof(value()), 0.0f, 1.0f);
+			else if (a == "--canopy") opt.canopy = std::clamp(std::stof(value()), 0.0f, 1.0f);
+			else if (a == "--canopy-reach") opt.canopyReach = std::clamp(std::stof(value()), 2.0f, 60.0f) * 100.0f;
 			else if (a == "--water-grid") opt.waterGrid = std::clamp(std::stof(value()), 0.0f, 50.0f) * 100.0f;
+			else if (a == "--river-width") opt.riverWidth = std::clamp(std::stof(value()), 0.0f, 500.0f) * 100.0f;
 			else if (a == "--water-reach") opt.waterReach = std::clamp(std::stof(value()), 1.0f, 500.0f) * 100.0f;
 			else if (a == "--vis") opt.vis.enabled = true;
 			else if (a == "--vis-high") opt.vis.high = true;

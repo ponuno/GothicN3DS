@@ -5,6 +5,8 @@
 #include "model_bake.h"
 #include "populate.h"
 #include "vcache.h"
+#include "water_texture.h"
+#include "ground_fx.h"
 
 #include "g3ds/game.h"
 
@@ -349,6 +351,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 	std::vector<TexJob> jobs;
 	std::map<std::string, size_t> jobIndex;                 // pak name -> job
 	std::map<std::string, std::vector<std::string>> frames; // base pak name -> pak names of all frames
+	std::set<std::string> waterNames; // pak names of the textures water uses
 	auto addJob = [&](const std::string& source, size_t world) {
 		const std::string name = texturePakName(source);
 		if (jobIndex.emplace(name, jobs.size()).second) {
@@ -373,6 +376,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			const std::string& tex = scene.materials[i].texture;
 			if (!used[w][i] || tex.empty()) continue;
 			const std::string base = addJob(tex, w);
+			if (scene.materials[i].water) waterNames.insert(base);
 			if (frames.count(base)) continue;
 			std::vector<std::string>& list = frames[base];
 			list.push_back(base);
@@ -382,6 +386,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				SrcImage probe;
 				if (next.empty() || !scene.loadTexture(next, probe)) break;
 				list.push_back(addJob(next, w));
+				if (scene.materials[i].water) waterNames.insert(list.back());
 			}
 		}
 	}
@@ -401,7 +406,10 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				try {
 					SrcImage img;
 					bool found;
-					{
+					if (opt.waterTexture && waterNames.count(jobs[i].pakName)) {
+						img = makeWaterTexture(opt.waterColor);
+						found = true;
+					} else {
 						std::lock_guard<std::mutex> g(loadLock);
 						const SrcScene& scene = worlds[jobs[i].world].scene;
 						found = scene.loadTexture && scene.loadTexture(jobs[i].source, img);
@@ -508,9 +516,11 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		u32 blended = 0, animated = 0, scrolling = 0, water = 0;
 		// "Graphics+": which materials sway, and what each does for the occlusion.
 		std::vector<bool> windy(scene.materials.size(), false);
+		std::vector<char> plantMaterial(scene.materials.size(), 0); // what the importer marked as plants (kept even without --wind)
 		u64 swayingCorners = 0;
 		for (SrcTriangle& t : bw.scene.triangles)
 			for (SrcVertex& v : t.v) {
+				if (v.wind && t.material < plantMaterial.size()) plantMaterial[t.material] = 1;
 				if (!opt.wind) v.wind = 0;
 				if (!v.wind || t.material >= windy.size()) continue;
 				windy[t.material] = true;
@@ -630,6 +640,18 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			for (SrcTriangle& t : bw.scene.triangles)
 				for (SrcVertex& v : t.v) v.rgba[3] = 0;
 		applyWaterLight(bw.scene, opt.waterLight);
+		// Colour of the ground: wet at the water's edge, in the shade of plants (before the lamps and the occlusion use it).
+		{
+			GroundFxStats groundFx;
+			if (!scene.indoor) {
+				bakeWetShore(bw.scene, opt.wetShore, groundFx);
+				bakeCanopy(bw.scene, plantMaterial, opt.canopy, opt.canopyReach, opt.threads, groundFx);
+			}
+			if (groundFx.wetCorners || groundFx.shadedCorners)
+				line(format("ground colour: %llu corners by the water darkened, %llu under plants (%llu rays)",
+				            static_cast<unsigned long long>(groundFx.wetCorners), static_cast<unsigned long long>(groundFx.shadedCorners),
+				            static_cast<unsigned long long>(groundFx.rays)));
+		}
 		if (opt.probe) probeScene(bw.scene, opt.probeAt, opt.probeRadius, "as imported", line);
 		AoStats ao;
 		if (opt.ao.level != AO_OFF) bakeOcclusion(bw.scene, aoMaterials, opt.ao, ao);
@@ -647,6 +669,8 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		const bool waterGrid = opt.waterGrid > 0.0f && water > 0;
 		if (waterGrid) {
 			chunkerOpt.water.cell = opt.waterGrid;
+			chunkerOpt.water.riverWidth = opt.riverWidth;
+			chunkerOpt.water.shore = opt.waterShore;
 			chunkerOpt.water.reachTiles = std::max(1, int(std::lround(opt.waterReach / (opt.waterGrid * float(chunkerOpt.water.cellsPerTile)))));
 		}
 		chunkerOpt.vertexFx = opt.ao.level != AO_OFF || hasWind || waterGrid;

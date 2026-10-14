@@ -75,3 +75,45 @@
 - fix116 (baker only): дробление AO (--ao-extra) и lightmap (--lightmap-extra) выключено по умолчанию (0); включается флагами. Клин лечится fix115 (упрощение), дробление было не нужно.
 - fix117: **волны на воде** (опция, Графика+ → «Волны на воде»: Нет/Слабые/Обычные/Сильные = 0/10/22/40 см гребня; `Settings::waves`, Settings v20, `StreamConfig::waves`). Бейкер: `--water-grid M` (рекомендую 2) режет водные треугольники по общей сетке x/z (`subdivideWater`, сетка внутри bbox суши + 20 м, дальше крайние ячейки бесконечные; стыки без T-junction; треугольник в одной ячейке не трогается), флаг мира `WORLDF_WATER_GRID` (1<<5; без него рантайм волн не рисует). Шейдер: `world_full.v.pica` — блок `ifu wavy` (две волны A: (0.8,0.6) 10 м, 0.12 цикл/с; B: (0.35,-0.937) 6.5 м, 0.18 цикл/с; кривая 4x(1−|x|); высота 0.7A+0.3B вверх; затенение по уклону; сдвиг UV по волне). Униформы `wave` (фазы A/B, высота, сила тени) и bool `wavy`; константы упёрлись в 96 регистров (wkB лежит в `noiseScale.zw`). Полный вход вырос до 110 инструкций (фаст — 19, без изменений); волновая вода рисуется полным входом (`gfx_c3d.cpp`: `gWavy`, `setWaveUniform`). Фазы считает CPU (`gfx::wavePhaseAt`, double). Коллизия воды плоская (волны только визуальные). Под нагрузкой (`setGfxRelief`) волны выключаются как ветер. `shaders`: пересобраны picasso (собран из devkitPro/picasso; на нетронутых исходниках даёт тот же `world_fast_shbin.h` бит в бит). Хост: `g3ds-host --waves N`. Тесты: `water grid` (core), фреймы обновлены (регистры 4+1+5+78+1+1+1+1+4, вход main < 120). **Не проверено на консоли:** стоимость (вершинный шейдер воды ×число вершин), вид вживую. Нужен перепёк с `--water-grid 2`.
 - fix118: разбор bake.log пользователя (Archolos): fix117 `--water-grid 2` порезал **всё море** (+8,1 млн треугольников, сцена 10,1→18,3 млн) и сломал дальнюю воду (слой «Дальний план» строился из плотной воды); волны на консоли «никакой разницы» — вероятная причина: пейсер (`setGfxRelief`) выключал волны как ветер под нагрузкой (в Archolos почти всегда `R`). Переделано: (1) разбивка перенесена из сцены в чанкер (`tools/bake/water_grid.{h,cpp}`, `ChunkerOptions::water`) — дальний слой, видимость, AO, свет, упрощение видят воду как была; (2) режется только вода у берегов: плитки 16×16 ячеек (32 м), «берег» = плитка, где земля/объект пересекает уровень воды (±50 см), плюс `--water-reach M` (по умолчанию 32 м = 1 плитка) вокруг; остальное море крупными кусками (сборка в супер-плитки 8×8); T-стыки заделывает штатный Sealer; (3) вес волны на вершину в `SrcVertex::wind` → `WorldVertex::w` старший байт (0..127): 0 на границе плотной воды и во всей грубой воде, 1 с `fade` (24 м) внутрь; шейдер умножает высоту/тень/сдвиг UV на вес (CPU делит на 127: `wave.zw`, `wc.w`); (4) вода мира с WORLDF_WATER_GRID всегда рисуется полным входом шейдера (быстрый читал бы весь w как затенение: чёрная вода) — `ChunkFx::waterGrid`, `gChunkWaterGrid`; (5) волны больше не выключаются пейсером; (6) нижний экран: строка `waves N[-] <вызовов> dc <треугольников> tri` (`-` — нет в data.pak), хост: `--waves N` печатает то же. Тесты: `water grid` (core) переписан; frames: эталон волн в хуке сверяет исполняемый шейдер (612 вершин, подъём до 22 см), uniform `wave`/`wavy`. Нужен перепёк. Проверить на консоли строку `waves` в отчёте: если `dc 0` при воде в кадре — волны не доходят до отрисовки.
+
+## fix119 — calm rivers
+Waves looked wrong on rivers (fine at sea). `WaterGrid` (tools/bake/water_grid.cpp) now computes an "openness" per 2 m cell of the fine water:
+distance to the nearest bank (ground/object crossing the water level), then the max within a window (0.8 x `--river-width`).
+Weight is multiplied by smoothstep((open - 0.25w)/(0.6w - 0.25w)); `--river-width M` (default 40 m, 0 = waves everywhere).
+Baker-only change: no shader/runtime change, a re-bake is needed. Tested in `testWaterGrid` (sea keeps waves, 8 m channel 0, 120 m water waves).
+Possible follow-up: small ripples instead of fully flat rivers, flow-scrolling UV.
+
+## fix120 - weather and wet ground
+New `engine/weather.h/.cpp` (+ `weather_flag.h`): states clear / cloudy / rain / thunderstorm / snow, automatic schedule
+(clear -> cloudy -> rain -> storm ...) or forced. Clouds, rain, snow and ground wetness are separate amounts that follow the wanted
+weather over ~12 s (wet ground dries in ~150 s). `App::skyColors()` applies it outdoors (greyer/darker sky+fog colour, dimmer
+`dayLight` = also wet-ground look, since baked outdoor vertices have a=255 and lightmapped/indoor a=0), fog distance scaled by
+`fogScale()`, storm lightning flashes (no thunder sound yet). Rain/snow = 1px streaks / flakes through `Ui::rect` at the start of
+`drawOverlay` (max 220 quads). `WLD_ISRAINING` now returns the weather (`weatherRaining()`).
+Settings v21: `weather` (0 auto,1 clear,2 cloudy,3 rain,4 storm,5 snow), `wetGround` toggle; both on Debug > "Мир и время". 4-language strings added.
+Test `weather` in test_core. UNTESTED ON CONSOLE. The original game's own weather data was NOT consulted (OpenGothic has none).
+Known: `frames` test fails on the waves check (`wavedVertices > 20`, got 0) in the unmodified fix119.1 tree too (probably calm rivers vs test data).
+Possible follow-ups: rain/thunder sounds, ripples/splashes, sheen on horizontal surfaces (needs baker flag, w bit 15), godrays.
+
+## fix121 - water texture, puddles
+- Baker: `tools/bake/water_texture.cpp`: procedural seamless caustic water texture (128x128, alpha ~165..235) replaces the game's for every
+  water material (all frames). `--water-texture original` keeps the game's; `--water-color R,G,B` (default 92,140,156). The far layer
+  average follows. Needs a re-bake (can go in `bake_args.txt`). Test in `testWeather` (seam check).
+- Runtime: `engine/puddles.h/.cpp`: puddles on open flat ground (grid cells of 4.2 m, hash picks ~1/3; `World::rayDown` twice per cell, cached
+  16x16, 4 asks/frame; no puddle if a surface lies under the topmost hit = roof/floor, or slope). Size follows `Weather::wet()`, rings
+  while raining. Drawn in PASS_BLEND before the shadows, only if `Settings::wetGround`. Colour = sky horizon * 0.62.
+- host: `g3ds-host --weather N` for screenshots. UNTESTED ON CONSOLE (extra draw calls: 1 + up to 4 per frame while wet).
+- `frames` test still fails on the waves check as in fix119.1 (not from this change).
+
+## fix122 - shore colour, foam, wet sand, canopy shade, rain rings on water
+Baker (re-bake needed; all default on, each `0` = off):
+- `--water-shore S` (water_grid.cpp `shoreColour`): in the FINE water only (needs `--water-grid`), corners get colour by depth
+  (ground sampled with `GroundSampler`, depth/400 cm smoothstep): shallow = T*(1.06,1.26,1.10) turquoise, deep = T (the coarse water's tone, so
+  no seam at the fine region's border); depth < 50 cm (or ground up to 3 m above the level) fades 70 % to white = foam. Foam width is ~ the grid cell.
+- `--wet-shore S` (`tools/bake/ground_fx.cpp` `bakeWetShore`): opaque ground corners with water within 1.2/2.8 m (8-dir ring) or below it, up to 90 cm
+  above the level, lose up to 45 % of rgb. Corner-based: as soft as the ground mesh is dense.
+- `--canopy S` / `--canopy-reach M` (`bakeCanopy`): 7 rays up (28 deg cone) from every flat ground corner into the plants' triangles
+  (`plantMaterial` = materials the importer marked, kept even without --wind); up to 45 % darker. Corner-based too (the old `--ao-cell` cutting is off).
+Runtime: `Ripples` (engine/puddles.cpp): rings on water near the camera while raining (`World::waterBelow`, cells of 4 m cached, <=80 rings,
+4 opacity levels = 4 draw calls), drawn after `_world.drawBlended()`. Tests `shore` and extended `weather`. UNTESTED ON CONSOLE / on a real world.
+The `frames` test still fails on the waves check as before.

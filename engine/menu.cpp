@@ -53,6 +53,7 @@ const char* const kWaves[] = {"Нет", "Слабые", "Обычные", "Си�
 const char* const kShadows[] = {"Выкл", "Герой", "Все рядом"};
 const char* const kRefresh[] = {"Выкл", "45–60 Гц", "45–72 Гц", "45–80 Гц", "Держать 72", "Держать 80"};
 const char* const kFarGeometry[] = {"Выкл", "25 м", "40 м", "60 м"};
+const char* const kWeather[] = {"Авто", "Ясно", "Облачно", "Дождь", "Гроза", "Снег"};
 const char* const kLodFade[] = {"Сразу", "Быстро", "Плавно"};
 const char* const kFarLayer[] = {"Выкл", "250 м", "400 м", "600 м"};
 const char* const kFarLayerNotes[] = {"Дальше дальности прорисовки — туман", "Упрощённый мир до 250 м",
@@ -143,6 +144,8 @@ const Item kDebugWorld[] = {
     {"Время +1 час", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_HOUR, nullptr, nullptr},
     {"Дальний план вблизи", TOGGLE, &Settings::farFill, nullptr, 0, 0, 0, nullptr, 0, "Затычка на месте незагруженных чанков", nullptr},
     {"Смена LOD", CHOICE, &Settings::lodFade, kLodFade, 3, 0, 0, nullptr, 0, "Смена дальних чанков (рябь)", nullptr},
+    {"Погода", CHOICE, &Settings::weather, kWeather, 6, 0, 0, nullptr, 0, "Авто: меняется сама; иначе держится", nullptr},
+    {"Мокрая земля", TOGGLE, &Settings::wetGround, nullptr, 0, 0, 0, nullptr, 0, "В дождь свет на улице темнее", nullptr},
     {"Чтение наперёд", TOGGLE, &Settings::readAhead, nullptr, 0, 0, 0, nullptr, 0, "Модели и чанки читаются с карты заранее", nullptr},
 };
 #undef NONE

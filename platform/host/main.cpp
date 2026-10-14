@@ -24,6 +24,7 @@ static void usage() {
 	     "  --still             keep the camera still\n"
 	     "  --walk              walk on the ground with collision instead of flying\n"
 	     "  --first-person      look through the character's eyes (default with a baked character: third person)\n"
+	     "  --weather N         0 auto, 1 clear, 2 cloudy, 3 rain, 4 storm, 5 snow (settled from the first frame)\n"
 	     "  --time H            time of day in hours (default: 13)\n"
 	     "  --no-cull           draw back faces too (winding check)\n"
 	     "  --budget-mb N       world memory budget (default: 24)\n"
@@ -162,6 +163,7 @@ int main(int argc, char** argv) {
 	int frames = 300, shots = 4;
 	bool still = false, cull = true, walk = false, firstPerson = false;
 	float timeOfDay = 13.0f, toTime = -1.0f;
+	int weatherMode = 1;
 	bool standing = false, who = false, wholeChunks = false;
 	bool console = false, fight = false, sword = false, inventory = false, pickup = false;
 	int menuPage = -1;
@@ -183,6 +185,7 @@ int main(int argc, char** argv) {
 		else if (arg("--stats")) statsPath = argv[++i];
 		else if (arg("--stream")) streamMode = argv[++i];
 		else if (arg("--detail")) detailSpec = argv[++i];
+		else if (arg("--weather")) weatherMode = atoi(argv[++i]);
 		else if (arg("--time")) timeOfDay = float(atof(argv[++i]));
 		else if (arg("--to-time")) toTime = float(atof(argv[++i]));
 		else if (arg("--slope-probe")) probeSpec = argv[++i];
@@ -262,6 +265,8 @@ int main(int argc, char** argv) {
 		return 2;
 	}
 	app.environment().timeOfDay = timeOfDay;
+	app.weather().configure(u8(weatherMode), true);
+	app.weather().settle();
 	app.npcs().config().alive = !standing;
 	app.setThirdPerson(!firstPerson);
 	if (console) app.setScheme(CONTROLS_CONSOLE);

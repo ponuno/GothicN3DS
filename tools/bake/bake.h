@@ -45,11 +45,22 @@ struct BakeOptions {
 	// brightness (0..255) instead of what the source mesh has (big polygons, lightmapped per corner: patches of very
 	// different brightness). 0 keeps the source's light.
 	u8 waterLight = 200;
+	// The water's texture made here (--water-texture, on; "original" keeps the game's) in this colour (--water-color).
+	// Colour by depth and foam in the fine water (--water-shore S, 0..1; needs --water-grid), wet ground at the water's edge
+	// (--wet-shore S) and the shade of plants on the ground (--canopy S, rays up to --canopy-reach M); 0 switches each off.
+	float waterShore = 1.0f;
+	float wetShore = 1.0f;
+	float canopy = 0.3f;
+	float canopyReach = 1800.0f;
+	bool waterTexture = true;
+	u8 waterColor[3] = {92, 140, 156};
 	// The water cut into a grid of this many cm along the shores (--water-grid; 0: not cut): fine enough for the runtime's
 	// waves to lift it corner by corner (WORLDF_WATER_GRID; see water_grid.h). `waterReach`: how far from the shore line
 	// (cm, in whole tiles of 16 cells, at least one) the fine water goes (--water-reach).
 	float waterGrid = 0.0f;
 	float waterReach = 3200.0f;
+	// cm: water narrower than this (rivers, ponds) gets no waves (--river-width; 0: waves everywhere).
+	float riverWidth = 4000.0f;
 	// The light of the world's lamps (torches, fire places) baked into the vertices (--lights, light_bake.h).
 	LightOptions light;
 	// The far layer (G10, --far-lod): a coarse copy of the world drawn beyond the draw distance.

@@ -20,6 +20,10 @@
 #include "loader.h"
 #include "ui_font.h"
 #include "waynet.h"
+#include "weather.h"
+#include "ground_fx.h"
+#include "puddles.h"
+#include "water_texture.h"
 #include "model_bake.h"
 #include "pacer.h"
 #include "stereo.h"
@@ -264,6 +268,42 @@ static void testWaterGrid() {
 		last = w;
 	}
 	CHECK(monotone && last == 0);
+	// rivers: with riverWidth the sea keeps its waves, a narrow channel between two banks gets none, a wide one does
+	{
+		WaterGridOptions ro = opt;
+		ro.riverWidth = 4000.0f;
+		WaterGrid sea(scene, ro);
+		std::vector<SrcTriangle> seaPieces;
+		for (int i = 0; i < 2; ++i) sea.cut(scene.triangles[size_t(i)], seaPieces);
+		int full = 0;
+		for (const SrcTriangle& t : seaPieces)
+			for (int k = 0; k < 3; ++k) full += t.v[k].wind == 127;
+		CHECK(full > 20);
+		auto channel = [&](float half, bool river) {
+			scene.triangles.clear();
+			const float len = 6000.0f, bank = 1000.0f;
+			// water, and a bank each side sloping through the level at z = +-half
+			tri(1, -len, 0, -half - 200, len, 0, -half - 200, -len, 0, half + 200);
+			tri(1, len, 0, -half - 200, len, 0, half + 200, -len, 0, half + 200);
+			for (int side = -1; side <= 1; side += 2) {
+				const float in = side * (half - 100), out = side * (half + bank);
+				tri(0, -len, -100, in, len, -100, in, -len, 300, out);
+				tri(0, len, -100, in, len, 300, out, -len, 300, out);
+			}
+			WaterGridOptions o = opt;
+			o.riverWidth = river ? 4000.0f : 0.0f;
+			WaterGrid g(scene, o);
+			std::vector<SrcTriangle> out;
+			for (int i = 0; i < 2; ++i) g.cut(scene.triangles[size_t(i)], out);
+			int top = 0;
+			for (const SrcTriangle& t : out)
+				for (int k = 0; k < 3; ++k) top = std::max<int>(top, t.v[k].wind);
+			return top;
+		};
+		CHECK(channel(400.0f, false) > 60);  // (without the option a small channel gets waves)
+		CHECK(channel(400.0f, true) == 0);   // a 8 m wide river: calm
+		CHECK(channel(6000.0f, true) > 60);  // a 120 m wide water: waves
+	}
 }
 
 static void testHash() {
@@ -9022,6 +9062,184 @@ static void testSharedMeshes() {
 	gfx::shutdown();
 }
 
+static void testShore() {
+	SrcScene scene;
+	scene.materials.resize(3);
+	scene.materials[1].water = true;
+	scene.materials[2].noCollision = true; // a plant
+	auto tri = [&](u32 m, float x0, float y0, float z0, float x1, float y1, float z1, float x2, float y2, float z2) {
+		SrcTriangle t {};
+		t.material = m;
+		const float p[3][3] = {{x0, y0, z0}, {x1, y1, z1}, {x2, y2, z2}};
+		for (int k = 0; k < 3; ++k) {
+			for (int a = 0; a < 3; ++a) t.v[k].pos[a] = p[k][a];
+			t.v[k].rgba[0] = t.v[k].rgba[1] = t.v[k].rgba[2] = 180;
+			t.v[k].rgba[3] = 255;
+		}
+		scene.triangles.push_back(t);
+	};
+	tri(1, -20000, 0, -20000, 20000, 0, -20000, -20000, 0, 20000);
+	tri(1, 20000, 0, -20000, 20000, 0, 20000, -20000, 0, 20000);
+	// ground tilting up out of the sea (front faces up: the winding of the water grid test's ground)
+	tri(0, 0, -300, 0, 2000, 300, 0, 0, 300, 2000);
+	tri(0, 2000, 300, 0, 2000, 300, 2000, 0, 300, 2000);
+	// Depth colour and foam.
+	WaterGridOptions opt;
+	opt.cell = 200.0f;
+	opt.shore = 1.0f;
+	WaterGrid grid(scene, opt);
+	CHECK(grid.active());
+	std::vector<SrcTriangle> pieces;
+	for (int i = 0; i < 2; ++i) grid.cut(scene.triangles[size_t(i)], pieces);
+	int lo = 255, hi = 0, bright = 0;
+	for (const SrcTriangle& t : pieces)
+		for (int k = 0; k < 3; ++k) {
+			lo = std::min<int>(lo, t.v[k].rgba[0]);
+			hi = std::max<int>(hi, t.v[k].rgba[1]);
+			bright += t.v[k].rgba[0] > 230;
+		}
+	CHECK(lo == 180 && hi > 215 && bright > 0); // deep water keeps its tone; the shallows are lighter; foam is nearly white
+	// Wet ground: the corner at the water's level darkens, one 3 m up does not.
+	GroundFxStats st;
+	bakeWetShore(scene, 1.0f, st);
+	const SrcTriangle& ground = scene.triangles[2];
+	CHECK(st.wetCorners > 0);
+	// (corner 0 is at y -300 under the sea, corner 1 at y 300 on dry land)
+	CHECK(ground.v[0].rgba[0] < 130 && ground.v[1].rgba[0] == 180);
+	// Canopy: a plant over one corner of a flat ground shades that corner only.
+	SrcScene c;
+	c.materials.resize(3);
+	c.materials[2].noCollision = true;
+	auto ctri = [&](u32 m, float x0, float y0, float z0, float x1, float y1, float z1, float x2, float y2, float z2) {
+		SrcTriangle t {};
+		t.material = m;
+		const float p[3][3] = {{x0, y0, z0}, {x1, y1, z1}, {x2, y2, z2}};
+		for (int k = 0; k < 3; ++k) {
+			for (int a = 0; a < 3; ++a) t.v[k].pos[a] = p[k][a];
+			t.v[k].rgba[0] = t.v[k].rgba[1] = t.v[k].rgba[2] = 200;
+			t.v[k].rgba[3] = 255;
+		}
+		c.triangles.push_back(t);
+	};
+	ctri(0, 0, 0, 0, 3000, 0, 0, 0, 0, 3000);          // ground, facing up
+	ctri(2, -200, 500, -200, -200, 500, 400, 400, 500, -200); // leaves over the corner (0, 0, 0)
+	std::vector<char> plant = {0, 0, 1};
+	GroundFxStats cs;
+	bakeCanopy(c, plant, 1.0f, 1800.0f, 1, cs);
+	CHECK(cs.shadedCorners >= 1 && c.triangles[0].v[0].rgba[0] < 185 && c.triangles[0].v[1].rgba[0] == 200 && c.triangles[0].v[2].rgba[0] == 200);
+	// None of it with strength 0.
+	SrcScene d = c;
+	for (SrcVertex& v : d.triangles[0].v) v.rgba[0] = 200;
+	bakeCanopy(d, plant, 0.0f, 1800.0f, 1, cs);
+	CHECK(d.triangles[0].v[0].rgba[0] == 200);
+}
+
+static void testWeather() {
+	// Clear: nothing changes. Rain: after a while it is raining, the sky greys, the light dims, the ground wets.
+	const SkyColors day = skyColorsAt(12.0f);
+	Weather w;
+	w.configure(WEATHER_CLEAR, true);
+	for (int i = 0; i < 200; ++i) w.update(0.1f);
+	SkyColors c = day;
+	w.apply(c);
+	CHECK(c.zenith[2] == day.zenith[2] && c.light[0] == day.light[0] && w.fogScale() == 1.0f && !weatherRaining());
+	w.configure(WEATHER_RAIN, true);
+	w.update(0.1f);
+	CHECK(w.rain() > 0.0f && w.rain() < 0.1f); // not at once
+	for (int i = 0; i < 400; ++i) w.update(0.1f);
+	CHECK(w.rain() == 0.6f && w.raining() && weatherRaining() && w.wet() > 0.5f);
+	c = day;
+	w.apply(c);
+	CHECK(c.light[0] < day.light[0] * 0.85f && c.zenith[2] < day.zenith[2] && w.fogScale() < 0.85f);
+	// Greyer: the zenith's blue lead over red shrinks.
+	CHECK(int(c.zenith[2]) - int(c.zenith[0]) < int(day.zenith[2]) - int(day.zenith[0]));
+	// Wet ground off: the same sky, brighter light.
+	Weather dry;
+	dry.configure(WEATHER_RAIN, false);
+	for (int i = 0; i < 600; ++i) dry.update(0.1f);
+	SkyColors d = day;
+	dry.apply(d);
+	CHECK(d.light[0] > c.light[0] && dry.wet() > 0.5f);
+	// It dries slowly after the rain.
+	w.configure(WEATHER_CLEAR, true);
+	for (int i = 0; i < 300; ++i) w.update(0.1f);
+	CHECK(w.rain() == 0.0f && !weatherRaining() && w.wet() > 0.3f);
+	for (int i = 0; i < 2000; ++i) w.update(0.1f);
+	CHECK(w.wet() == 0.0f);
+	// Storm: flashes sometimes; snow: streaks, no wet ground.
+	Weather st;
+	st.configure(WEATHER_STORM, true);
+	float peak = 0;
+	for (int i = 0; i < 3000; ++i) {
+		st.update(0.1f);
+		if (st.flash() > peak) peak = st.flash();
+	}
+	CHECK(peak > 0.9f && st.rain() == 1.0f);
+	Weather sn;
+	sn.configure(WEATHER_SNOW, true);
+	for (int i = 0; i < 400; ++i) sn.update(0.1f);
+	WeatherStreak buf[240];
+	const int ns = sn.streaks(3.0, buf, 240, 400, 240);
+	CHECK(ns > 50 && sn.wet() == 0.0f && sn.rain() == 0.0f);
+	for (int i = 0; i < ns; ++i) CHECK(buf[i].x >= -8 && buf[i].x < 410 && buf[i].y >= -20 && buf[i].y <= 240);
+	CHECK(st.streaks(1.0, buf, 240, 400, 240) > 100 && sn.streaks(1.0, buf, 10, 400, 240) == 10);
+	// Automatic: over a long time it visits rain and clear.
+	Weather au;
+	au.configure(WEATHER_AUTO, true);
+	bool sawRain = false, sawClear = false;
+	for (int i = 0; i < 36000; ++i) {
+		au.update(0.5f);
+		sawRain |= au.kind() == WEATHER_RAIN || au.kind() == WEATHER_STORM;
+		sawClear |= au.kind() == WEATHER_CLEAR;
+	}
+	CHECK(sawRain && sawClear);
+	// Puddles: the same cell always gives the same puddle, about a third of the cells have one, small and flat.
+	{
+		int have = 0, total = 0;
+		for (int iz = -20; iz < 20; ++iz)
+			for (int ix = -20; ix < 20; ++ix) {
+				float x, z, rx, rz, a, th, x2, z2;
+				const bool p = Puddles::cellPuddle(ix, iz, x, z, rx, rz, a, th);
+				CHECK(p == Puddles::cellPuddle(ix, iz, x2, z2, rx, rz, a, th));
+				++total;
+				if (!p) continue;
+				++have;
+				CHECK(x >= float(ix) * Puddles::CELL && x < float(ix + 1) * Puddles::CELL && z >= float(iz) * Puddles::CELL && z < float(iz + 1) * Puddles::CELL);
+				CHECK(rx >= 60.0f && rx < 400.0f && rz >= 60.0f && th > 0.0f && th < 0.6f);
+			}
+		CHECK(have > total / 5 && have < total / 2);
+	}
+	{
+		int have = 0;
+		for (int i = 0; i < 400; ++i) {
+			float fx, fz, ph, per;
+			if (!Ripples::cellRing(i % 20, i / 20, 0, fx, fz, ph, per)) continue;
+			++have;
+			CHECK(fx > 0.0f && fx < 1.0f && fz > 0.0f && fz < 1.0f && ph >= 0.0f && ph < 1.0f && per >= 0.9f && per < 1.8f);
+		}
+		CHECK(have > 250 && have < 380);
+	}
+	// The made water texture tiles: the step across the seam is no bigger than a step inside.
+	{
+		const unsigned char col[3] = {92, 140, 156};
+		const SrcImage w = makeWaterTexture(col, 64);
+		CHECK(w.width == 64 && w.rgba.size() == 64u * 64u * 4u);
+		int inside = 0, seam = 0;
+		for (int y = 0; y < 64; ++y)
+			for (int k = 0; k < 4; ++k) {
+				inside = std::max(inside, std::abs(int(w.rgba[size_t(y * 64 + 31) * 4 + size_t(k)]) - int(w.rgba[size_t(y * 64 + 32) * 4 + size_t(k)])));
+				seam = std::max(seam, std::abs(int(w.rgba[size_t(y * 64) * 4 + size_t(k)]) - int(w.rgba[size_t(y * 64 + 63) * 4 + size_t(k)])));
+				seam = std::max(seam, std::abs(int(w.rgba[size_t(y) * 4 + size_t(k)]) - int(w.rgba[size_t(63 * 64 + y) * 4 + size_t(k)])));
+			}
+		CHECK(seam <= inside + 12 && w.rgba[3] >= 120);
+	}
+	Settings s;
+	s.weather = 9;
+	s.wetGround = 7;
+	s.sanitize();
+	CHECK(s.weather == 0 && s.wetGround == 1);
+}
+
 static void testSimplify() {
 	testSimplifyWorld();
 	testSimplifySteepLight();
@@ -11508,6 +11726,8 @@ int main(int argc, char** argv) {
 	             {"visibility floors", testVisibilityFloors},
 	             {"visibility rooms", testVisibilityRooms},
 	             {"lod", testLod},
+             {"shore", testShore},
+             {"weather", testWeather},
              {"simplify", testSimplify},
              {"displaytiming", testDisplayTiming},
              {"reproject", testReproject},

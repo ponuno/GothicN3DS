@@ -113,6 +113,9 @@ struct Settings {
 	u8 lodFade = 1;
 	// Version 20: waves on the water: 0 still, 1 gentle, 2 normal, 3 strong (data baked with --water-grid).
 	u8 waves = 0;
+	// Version 21: weather (WeatherMode, weather.h: 0 automatic) and the wet look of the ground in rain (0 off, 1 on).
+	u8 weather = 0;
+	u8 wetGround = 1;
 	float waveHeightCm() const { return waves == 1 ? 10.0f : waves == 2 ? 22.0f : waves == 3 ? 40.0f : 0.0f; }
 	float lodFadeMs() const { return lodFade == 0 ? 1.0f : lodFade == 2 ? 900.0f : 350.0f; }
 	float lodDistanceCm() const;

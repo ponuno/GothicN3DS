@@ -361,6 +361,8 @@ void App::shutdown() {
 	_loot.release();
 	_particles.release();
 	_shadows.release();
+	_puddles.release();
+	_ripples.release();
 	_chests.release();
 	_pictures.release();
 	_showModel.release();
@@ -395,6 +397,7 @@ void App::update(const Input& in, float dt) {
 	if (_env.dayLength > 0) _env.timeOfDay += dt * 24.0f / _env.dayLength;
 	while (_env.timeOfDay >= 24.0f) _env.timeOfDay -= 24.0f;
 	while (_env.timeOfDay < 0.0f) _env.timeOfDay += 24.0f;
+	_weather.update(dt);
 
 	if (in.nextWorld) {
 		// Debug: the next world asset in the archive, at its start point.
@@ -801,9 +804,10 @@ void App::render() {
 	fd.fovY = _cam.fovY;
 	fd.zNear = _cam.zNear;
 	fd.zFar = _cam.zFar;
-	fd.fogStart = _env.fogStart;
-	fd.fogEnd = _env.fogEnd;
 	const bool indoor = _world.indoor();
+	const float fogScale = indoor ? 1.0f : _weather.fogScale();
+	fd.fogStart = _env.fogStart * fogScale;
+	fd.fogEnd = _env.fogEnd * fogScale;
 	for (int i = 0; i < 3; ++i) {
 		fd.fogColor[i] = fd.clearColor[i] = indoor ? _world.header().fogColor[i] : sky.horizon[i];
 		fd.dayLight[i] = sky.light[i];
@@ -877,6 +881,9 @@ void App::render() {
 		const double r5 = sys::timeMs();
 		gfx::setPass(gfx::PASS_BLEND);
 		// Graphics+: shadows on the ground, before the water (which then covers those under it).
+		if (!indoor && _settings.wetGround && _weather.wet() > 0.12f) {
+			_puddles.draw(_world, _cam.pos, _weather.wet(), _weather.rain(), sky.horizon, _clock);
+		}
 		_shadows.begin();
 		if (_settings.shadows != SHADOWS_OFF) {
 			if (_heroVisible && _hero.loaded()) _shadows.add(_hero.feet(), 48.0f);
@@ -886,6 +893,7 @@ void App::render() {
 			_shadows.draw(_world, _cam.pos, indoor ? 0.7f : 0.6f);
 		}
 		_world.drawBlended();
+		if (!indoor && _weather.rain() > 0.1f) _ripples.draw(_world, _cam.pos, _weather.rain(), sky.horizon, _clock, _wavesWanted * 0.5f);
 		_particles.draw(d.view, _cam.pos, indoor ? indoorLight : sky.light);
 		drawOverlay();
 		const double r6 = sys::timeMs();
@@ -1374,6 +1382,7 @@ void App::applySettings() {
 	setLanguage(_settings.language);
 	_ahead.setEnabled(_settings.readAhead != 0);
 	_env.dayLength = _settings.dayLengthSeconds();
+	_weather.configure(_settings.weather, _settings.wetGround != 0);
 	NpcConfig& nc = _npcs.config();
 	nc.range = _settings.npcRangeCm();
 	nc.perceive = _settings.perception != 0;

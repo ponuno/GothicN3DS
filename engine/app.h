@@ -9,6 +9,7 @@
 #include "triggers.h"
 #include "particles.h"
 #include "shadows.h"
+#include "puddles.h"
 #include "menu.h"
 #include "npcs.h"
 #include "panel.h"
@@ -17,6 +18,7 @@
 #include "recorder.h"
 #include "settings.h"
 #include "sky.h"
+#include "weather.h"
 #include "sound.h"
 #include "music.h"
 #include "speech.h"
@@ -117,6 +119,9 @@ public:
 
 	Camera& camera() { return _cam; }
 	Environment& environment() { return _env; }
+	Weather& weather() { return _weather; }
+	const Puddles& puddles() const { return _puddles; }
+	const Ripples& ripples() const { return _ripples; }
 	Player& player() { return _player; }
 	const Hero& hero() const { return _hero; }
 	// The characters the game's scripts put into the world; not loaded with
@@ -150,7 +155,11 @@ public:
 	// Stereo 3D: the console's 3D slider, 0..1 (0 or a backend without a second eye: drawn once, as usual).
 	void setStereo(float strength) { _stereo = strength; }
 	ReadAhead& readAhead() { return _ahead; }
-	SkyColors skyColors() const { return skyColorsAt(_env.timeOfDay); }
+	SkyColors skyColors() const {
+		SkyColors c = skyColorsAt(_env.timeOfDay);
+		if (!_world.indoor()) _weather.apply(c);
+		return c;
+	}
 	const char* error() const { return _error; }
 	// Name of the current world asset ("world/oldmine"), for display.
 	const char* worldName() const;
@@ -470,6 +479,7 @@ private:
 	FrameBudget _budget;
 	Npcs _npcs;
 	Sky _sky;
+	Weather _weather;
 	Camera _cam;
 	Environment _env;
 	const char* _error = "";
@@ -590,6 +600,8 @@ public:
 private:
 	Particles _particles;
 	Shadows _shadows;
+	Puddles _puddles;
+	Ripples _ripples;
 	int _lootTarget = -1;
 	// The chests.
 	Chests _chests;

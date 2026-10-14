@@ -2,6 +2,7 @@
 // weight per corner that fades the waves out towards the coarse water beyond. See WaterGrid.
 #pragma once
 #include "g3ds/base.h"
+#include "ground.h"
 #include "scene.h"
 
 #include <cstdint>
@@ -16,6 +17,13 @@ struct WaterGridOptions {
 	int cellsPerTile = 16;  // a tile is this many cells on an edge: the unit of "near a shore"
 	int reachTiles = 1;     // water this many tiles from a shore tile is cut as well (at least 1)
 	float fade = 2400.0f;   // cm: the waves' weight rises from 0 at the edge of the cut water to 1 this far in (<= a tile)
+	// cm: water narrower than this (rivers, ponds) is left calm. Its "openness" - the greatest distance from a bank
+	// within 0.8 x this of a point - decides: below a quarter of it no waves, above 0.6 of it the full ones. 0: off.
+	float riverWidth = 0.0f;
+	// 0..1: the water's colour by depth and the foam at the shore, in the fine water's vertices (0: off). Shallow water is
+	// lighter and greener than the deep (which is the colour the coarse water has, so the two meet); where the water is
+	// less than 50 cm deep, or the ground over it is within 3 m of the level, it fades towards white.
+	float shore = 0.0f;
 };
 
 struct WaterGridStats {
@@ -48,9 +56,14 @@ private:
 	int clampTile(int axis, int t) const { return t < _lo[axis] ? _lo[axis] : t > _hi[axis] ? _hi[axis] : t; }
 	bool fine(int ix, int iz) const { return _fine.count(key(ix, iz)) != 0; }
 	float weightAt(float x, float z) const;
+	float openness(float x, float z) const;
+	void buildOpenness(const SrcScene& scene, const std::unordered_map<uint64_t, std::pair<float, float>>& level,
+	                   const std::unordered_set<uint64_t>& shore);
 	void emit(const Poly& poly, bool dense, std::vector<SrcTriangle>& out, const SrcTriangle& proto);
 	void cutTile(const Poly& poly, int ix, int iz, std::vector<SrcTriangle>& out, const SrcTriangle& proto);
 
+	void shoreColour(SrcVertex& v) const;
+	GroundSampler _ground;
 	WaterGridOptions _opt;
 	bool _active = false;
 	float _tile = 0.0f;
@@ -58,6 +71,7 @@ private:
 	std::unordered_set<uint64_t> _fine;
 	std::unordered_set<uint64_t> _fineSuper; // 8 x 8 tiles
 	std::unordered_set<uint64_t> _water;     // the tiles with water in them
+	std::unordered_map<uint64_t, float> _open; // per cell of the fine water: its openness (cm), see riverWidth
 	WaterGridStats _stats;
 };
 

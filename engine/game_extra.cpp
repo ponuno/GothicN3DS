@@ -1,6 +1,7 @@
 // Small engine functions of the scripts, as OpenGothic's GameScript has them: the day, the height between two
 // characters, a bow with arrows.
 #include "game.h"
+#include "weather_flag.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -136,6 +137,10 @@ void Game::xSetTrueGuild(ScriptVm& vm, void* user) {
 	if (n >= 0) g._npcs[n].trueGuild = guild;
 	vm.pushInt(0);
 }
+
+namespace {
+void xIsRaining(ScriptVm& vm, void*) { vm.pushInt(weatherRaining() ? 1 : 0); }
+} // namespace
 
 void Game::xReturnFalse(ScriptVm& vm, void*) { vm.pushInt(0); }
 void Game::xReturnTrue(ScriptVm& vm, void*) { vm.pushInt(1); }
@@ -324,7 +329,7 @@ void Game::bindExtra() {
 	             {"WLD_SENDTRIGGER", xSendTrigger},
 	             {"WLD_SENDUNTRIGGER", xSendUntrigger},
 	             // No weather here (OpenGothic: always dry); the language functions only answer yes.
-	             {"WLD_ISRAINING", xReturnFalse},
+	             {"WLD_ISRAINING", xIsRaining},
 	             {"GAME_INITENGLISH", xReturnTrue},
 	             {"GAME_INITGERMAN", xReturnTrue}};
 	for (const auto& e : table) _vm.bind(e.name, e.fn, this);

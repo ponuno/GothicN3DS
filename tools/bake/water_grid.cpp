@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <queue>
 
 namespace g3 {
 
@@ -139,7 +140,169 @@ WaterGrid::WaterGrid(const SrcScene& scene, const WaterGridOptions& opt) : _opt(
 	}
 	_stats.fineTiles = u32(_fine.size());
 	for (const auto& kv : level) _water.insert(kv.first);
+	if (_opt.riverWidth > 0.0f && !_fine.empty()) buildOpenness(scene, level, shore);
 	_active = !_fine.empty();
+	if (_active && _opt.shore > 0.0f) _ground.build(scene, scene.triangles.size(), true);
+}
+
+// Openness of the fine water, cell by cell: the distance to the nearest bank (the line where ground or an object crosses
+// the water's level), then the greatest of those within a window around. A river's middle is half its width from the
+// banks, so the whole cross-section gets about half its width; open water gets the window's size.
+void WaterGrid::buildOpenness(const SrcScene& scene, const std::unordered_map<uint64_t, std::pair<float, float>>& level,
+                              const std::unordered_set<uint64_t>& shore) {
+	const float cell = _opt.cell;
+	const float reach = _opt.riverWidth * 0.8f;
+	const int win = std::max(1, int(std::lround(reach / cell)));
+	auto cellKey = [&](int cx, int cz) { return key(cx, cz); };
+	auto unkey = [](uint64_t k, int& a, int& b) {
+		a = int(uint32_t(k >> 32)) - (1 << 30);
+		b = int(uint32_t(k & 0xFFFFFFFFu)) - (1 << 30);
+	};
+	// The water cells of the fine tiles: a cell whose middle lies in a water triangle.
+	std::unordered_set<uint64_t> waterCells;
+	const int cpt = _opt.cellsPerTile;
+	for (const SrcTriangle& t : scene.triangles) {
+		if (!isWater(scene, t)) continue;
+		float mn[2] = {kInf, kInf}, mx[2] = {-kInf, -kInf};
+		for (const SrcVertex& v : t.v) {
+			mn[0] = std::min(mn[0], v.pos[0]);
+			mx[0] = std::max(mx[0], v.pos[0]);
+			mn[1] = std::min(mn[1], v.pos[2]);
+			mx[1] = std::max(mx[1], v.pos[2]);
+		}
+		const float ax = t.v[0].pos[0], az = t.v[0].pos[2];
+		const float d1x = t.v[1].pos[0] - ax, d1z = t.v[1].pos[2] - az, d2x = t.v[2].pos[0] - ax, d2z = t.v[2].pos[2] - az;
+		const float det = d1x * d2z - d2x * d1z;
+		if (std::fabs(det) < 1e-3f) continue;
+		auto tileCells = [&](int ix, int iz) {
+			for (int i = 0; i < cpt; ++i)
+				for (int j = 0; j < cpt; ++j) {
+					const int cx = ix * cpt + i, cz = iz * cpt + j;
+					const float px = (float(cx) + 0.5f) * cell - ax, pz = (float(cz) + 0.5f) * cell - az;
+					const float u = (px * d2z - d2x * pz) / det, v = (d1x * pz - px * d1z) / det;
+					if (u >= 0.0f && v >= 0.0f && u + v <= 1.0f) waterCells.insert(cellKey(cx, cz));
+				}
+		};
+		const int x0 = tileOf(mn[0]), x1 = tileOf(mx[0]), z0 = tileOf(mn[1]), z1 = tileOf(mx[1]);
+		if (double(x1 - x0 + 1) * double(z1 - z0 + 1) <= double(_fine.size())) {
+			for (int ix = x0; ix <= x1; ++ix)
+				for (int iz = z0; iz <= z1; ++iz)
+					if (fine(ix, iz)) tileCells(ix, iz);
+		} else {
+			for (uint64_t k : _fine) {
+				int ix, iz;
+				unkey(k, ix, iz);
+				if (ix >= x0 && ix <= x1 && iz >= z0 && iz <= z1) tileCells(ix, iz);
+			}
+		}
+	}
+	// The banks: where a ground or object triangle crosses the water's level, sampled along the crossing.
+	std::unordered_map<uint64_t, float> dist;
+	using Item = std::pair<float, uint64_t>;
+	std::priority_queue<Item, std::vector<Item>, std::greater<Item>> open;
+	auto bank = [&](float x, float z) {
+		const uint64_t k = cellKey(int(std::floor(x / cell)), int(std::floor(z / cell)));
+		if (!waterCells.count(k)) return;
+		if (dist.emplace(k, 0.0f).second) open.push({0.0f, k});
+	};
+	for (const SrcTriangle& t : scene.triangles) {
+		if (isWater(scene, t)) continue;
+		float mn[3] = {kInf, kInf, kInf}, mx[3] = {-kInf, -kInf, -kInf};
+		for (const SrcVertex& v : t.v)
+			for (int a = 0; a < 3; ++a) {
+				mn[a] = std::min(mn[a], v.pos[a]);
+				mx[a] = std::max(mx[a], v.pos[a]);
+			}
+		const int x0 = tileOf(mn[0]), x1 = tileOf(mx[0]), z0 = tileOf(mn[2]), z1 = tileOf(mx[2]);
+		if (x1 - x0 > 64 || z1 - z0 > 64 || x1 < _lo[0] || x0 > _hi[0] || z1 < _lo[1] || z0 > _hi[1]) continue;
+		for (int ix = x0; ix <= x1; ++ix)
+			for (int iz = z0; iz <= z1; ++iz) {
+				if (!shore.count(key(ix, iz))) continue;
+				auto it = level.find(key(ix, iz));
+				if (it == level.end()) continue;
+				const float L = 0.5f * (it->second.first + it->second.second);
+				float pts[3][2];
+				int n = 0;
+				for (int e = 0; e < 3 && n < 3; ++e) {
+					const SrcVertex& a = t.v[e];
+					const SrcVertex& b = t.v[(e + 1) % 3];
+					const float sa = a.pos[1] - L, sb = b.pos[1] - L;
+					if ((sa < 0.0f) == (sb < 0.0f) && sa != 0.0f && sb != 0.0f) continue;
+					const float f = sa == sb ? 0.0f : sa / (sa - sb);
+					pts[n][0] = a.pos[0] + (b.pos[0] - a.pos[0]) * f;
+					pts[n][1] = a.pos[2] + (b.pos[2] - a.pos[2]) * f;
+					++n;
+				}
+				if (n < 2) continue;
+				const float dx = pts[1][0] - pts[0][0], dz = pts[1][1] - pts[0][1];
+				const int steps = std::min(4000, int(std::ceil(std::sqrt(dx * dx + dz * dz) / (cell * 0.5f))) + 1);
+				for (int s = 0; s <= steps; ++s) {
+					const float f = float(s) / float(steps);
+					const float x = pts[0][0] + dx * f, z = pts[0][1] + dz * f;
+					if (tileOf(x) == ix && tileOf(z) == iz) bank(x, z);
+				}
+			}
+	}
+	// Distance to the nearest bank through the water cells, up to the window's reach.
+	while (!open.empty()) {
+		const Item cur = open.top();
+		open.pop();
+		auto it = dist.find(cur.second);
+		if (it == dist.end() || cur.first > it->second) continue;
+		int cx, cz;
+		unkey(cur.second, cx, cz);
+		for (int dx = -1; dx <= 1; ++dx)
+			for (int dz = -1; dz <= 1; ++dz) {
+				if (!dx && !dz) continue;
+				const uint64_t k = cellKey(cx + dx, cz + dz);
+				if (!waterCells.count(k)) continue;
+				const float nd = cur.first + cell * (dx && dz ? 1.4142f : 1.0f);
+				if (nd > reach) continue;
+				auto ins = dist.emplace(k, nd);
+				if (ins.second || nd < ins.first->second) {
+					ins.first->second = nd;
+					open.push({nd, k});
+				}
+			}
+	}
+	for (uint64_t k : waterCells)
+		if (!dist.count(k)) dist.emplace(k, reach);
+	// The greatest distance within the window (a square, as two passes).
+	std::unordered_map<uint64_t, float> pass;
+	pass.reserve(dist.size());
+	for (const auto& kv : dist) {
+		int cx, cz;
+		unkey(kv.first, cx, cz);
+		float best = 0.0f;
+		for (int d = -win; d <= win; ++d) {
+			auto it = dist.find(cellKey(cx + d, cz));
+			if (it != dist.end()) best = std::max(best, it->second);
+		}
+		pass.emplace(kv.first, best);
+	}
+	_open.reserve(pass.size());
+	for (const auto& kv : pass) {
+		int cx, cz;
+		unkey(kv.first, cx, cz);
+		float best = 0.0f;
+		for (int d = -win; d <= win; ++d) {
+			auto it = pass.find(cellKey(cx, cz + d));
+			if (it != pass.end()) best = std::max(best, it->second);
+		}
+		_open.emplace(kv.first, best);
+	}
+}
+
+float WaterGrid::openness(float x, float z) const {
+	if (_open.empty()) return kInf;
+	const int cx = int(std::floor(x / _opt.cell)), cz = int(std::floor(z / _opt.cell));
+	float best = -1.0f;
+	for (int dx = -1; dx <= 0; ++dx)
+		for (int dz = -1; dz <= 0; ++dz) {
+			auto it = _open.find(key(cx + dx, cz + dz));
+			if (it != _open.end()) best = std::max(best, it->second);
+		}
+	return best < 0.0f ? kInf : best;
 }
 
 float WaterGrid::weightAt(float x, float z) const {
@@ -152,7 +315,36 @@ float WaterGrid::weightAt(float x, float z) const {
 			const float d = distToRect(x, z, float(ix + dx) * _tile, float(iz + dz) * _tile, float(ix + dx + 1) * _tile, float(iz + dz + 1) * _tile);
 			best = std::min(best, d);
 		}
-	return best / _opt.fade;
+	float w = best / _opt.fade;
+	if (_opt.riverWidth > 0.0f) {
+		// (rivers and ponds: calm, with a smooth step between)
+		const float a = _opt.riverWidth * 0.25f, b = _opt.riverWidth * 0.6f;
+		const float f = std::clamp((openness(x, z) - a) / (b - a), 0.0f, 1.0f);
+		w *= f * f * (3.0f - 2.0f * f);
+	}
+	return w;
+}
+
+void WaterGrid::shoreColour(SrcVertex& v) const {
+	// How deep the water is at the corner: its level less the highest ground at or under it (a ground that rises more than
+	// 3 m over the level is land: the water there is hidden, and counts as "no depth").
+	const float level = v.pos[1];
+	u8 rgba[4];
+	float top = 0;
+	float depth = 4000.0f;
+	if (_ground.sample(v.pos[0], level + 300.0f, v.pos[2], rgba, &top)) depth = level - top;
+	const float k = std::clamp(depth / 400.0f, 0.0f, 1.0f);
+	const float deepK = k * k * (3.0f - 2.0f * k); // 0 shallow .. 1 deep
+	static const float kShallow[3] = {1.06f, 1.26f, 1.10f}; // turquoise: more green than the deep water's tone
+	const float s = std::min(_opt.shore, 1.0f);
+	float foam = 1.0f - std::clamp((depth + 20.0f) / 70.0f, 0.0f, 1.0f); // white by the shore, gone from 50 cm
+	foam *= 0.7f * s;
+	for (int c = 0; c < 3; ++c) {
+		const float base = float(v.rgba[c]);
+		float col = base * (1.0f + (kShallow[c] - 1.0f) * (1.0f - deepK) * s);
+		col += (255.0f - col) * foam;
+		v.rgba[c] = u8(std::clamp(col, 0.0f, 255.0f) + 0.5f);
+	}
 }
 
 void WaterGrid::emit(const Poly& poly, bool dense, std::vector<SrcTriangle>& out, const SrcTriangle& proto) {
@@ -169,6 +361,8 @@ void WaterGrid::emit(const Poly& poly, bool dense, std::vector<SrcTriangle>& out
 		const float cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
 		if (cx * cx + cy * cy + cz * cz < 1e-4f) continue;
 		for (SrcVertex& v : piece.v) v.wind = dense ? u8(std::lround(127.0f * weightAt(v.pos[0], v.pos[2]))) : u8(0);
+		if (dense && _opt.shore > 0.0f)
+			for (SrcVertex& v : piece.v) shoreColour(v);
 		out.push_back(piece);
 	}
 }

@@ -418,6 +418,30 @@ void App::update(const Input& in, float dt) {
 
 	// Stream first, so the chunks the player is about to stand on are there.
 	// Around the player, not the camera: the camera may be behind a wall.
+	// The things the player may use (a bench, a bed, a barrel) within a few steps: the chunks they stand in come first.
+	if (_npcs.loaded() && _npcs.mobs().loaded() && (_wantMobFrame++ % 10) == 0) {
+		const Mobs& mobs = _npcs.mobs();
+		const Vec3 pf = _player.feet;
+		float best[kWantMobs];
+		_wantMobCount = 0;
+		for (u32 i = 0; i < mobs.count(); ++i) {
+			const WorldMob& m = mobs.mob(i);
+			const float dx = m.pos[0] - pf.x, dz = m.pos[2] - pf.z;
+			const float d2 = dx * dx + dz * dz;
+			if (d2 > 2500.0f * 2500.0f || !mobs.forPlayer(i)) continue;
+			u32 at = _wantMobCount < kWantMobs ? _wantMobCount++ : kWantMobs;
+			if (at == kWantMobs) { // (full: replaces the farthest, if this one is nearer)
+				u32 far = 0;
+				for (u32 k = 1; k < kWantMobs; ++k)
+					if (best[k] > best[far]) far = k;
+				if (best[far] <= d2) continue;
+				at = far;
+			}
+			best[at] = d2;
+			_wantMobs[at] = {m.pos[0], m.pos[1], m.pos[2]};
+		}
+	}
+	for (u32 i = 0; i < _wantMobCount; ++i) _world.wantAt(_wantMobs[i]);
 	const double t0 = sys::timeMs();
 	_world.update(_player.eye());
 	const double t1 = sys::timeMs();

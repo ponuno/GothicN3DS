@@ -773,7 +773,7 @@ int main(int, char**) {
 				const g3::Vec3 e = app.player().eye();
 				++gHitchTotal;
 				snprintf(gHitchLines[gHitchCount++], sizeof(gHitchLines[0]),
-				         "f%lu %.1fms cpu%.1f gpu%.1f upd%.1f | w%.1f n%.1f s%.1f p%.1f c%.1f l%.1f | clk%.1f sel%.1f tick%.1f | mdl%lu clip%lu chunk%+ld ev%lu pend%lu | tr%lu %.0f %.0f %.0f | nu%.1f t%.1f x%.1f hc%.1f m%.1f b%.1f f%.1f o%.1f | msh%lu rd%lu hit%lu | ld%.0f wk%.0f gr%.0f ra%lu/%lu iv%d hz%.0f k2:%d | lr%.0f ll%.0f | fl%lu nm%lu bad%lu rj%lu\n",
+				         "f%lu %.1fms cpu%.1f gpu%.1f upd%.1f | w%.1f n%.1f s%.1f p%.1f c%.1f l%.1f | clk%.1f sel%.1f tick%.1f | mdl%lu clip%lu chunk%+ld ev%lu pend%lu | tr%lu %.0f %.0f %.0f | nu%.1f t%.1f x%.1f hc%.1f m%.1f b%.1f f%.1f o%.1f | msh%lu rd%lu hit%lu | ld%.0f wk%.0f gr%.0f ra%lu/%lu iv%d hz%.0f k2:%d | lr%.0f ll%.0f | fl%lu nm%lu nj%lu bad%lu rj%lu hu%.0f\n",
 				         static_cast<unsigned long>(frame), double(fs.frameMs), double(fs.cpuMs), double(fs.gpuMs), double(updateMs), double(ut.stream),
 				         double(ut.npcs), double(ut.script), double(ut.player), double(ut.camera), double(ut.loot), double(nst.clockMs),
 				         double(nst.selectMs), double(nst.tickMs), static_cast<unsigned long>(dModels), static_cast<unsigned long>(dClips),
@@ -784,8 +784,8 @@ int main(int, char**) {
 				         static_cast<unsigned long>(nst.meshReads), static_cast<unsigned long>(nst.meshHits), double(nst.loadMs), double(nst.wakeMs),
 				         double(nst.groundMs), static_cast<unsigned long>(raStats.hits), static_cast<unsigned long>(raStats.misses), interval,
 				         double(displayWritten ? refreshHz : 60.0f), g3::sys::workersOnSecondCore() ? 1 : 0, double(app.loot().stats().rayMs), double(app.loot().stats().loadMs),
-				         static_cast<unsigned long>(wst.inFlight), static_cast<unsigned long>(wst.allocRejects), static_cast<unsigned long>(wst.loadFailures),
-				         static_cast<unsigned long>(wst.budgetRejects));
+				         static_cast<unsigned long>(wst.inFlight), static_cast<unsigned long>(wst.allocRejects), static_cast<unsigned long>(wst.allocJobs), static_cast<unsigned long>(wst.loadFailures),
+				         static_cast<unsigned long>(wst.budgetRejects), double(mallinfo().uordblks) / 1048576.0);
 				if (gHitchCount >= kHitchBatch) flushHitches();
 			}
 		}

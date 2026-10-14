@@ -462,6 +462,9 @@ private:
 	float _musicScan = 0, _musicHold = 0; // (musicSituation)
 	Speech _chatter {Speech::WORLD_CHANNEL}; // what the world says, outside the player's talk
 	World _world;
+	static constexpr u32 kWantMobs = 8;
+	Vec3 _wantMobs[kWantMobs];
+	u32 _wantMobCount = 0, _wantMobFrame = 0;
 	Player _player;
 	Hero _hero;
 	FrameBudget _budget;

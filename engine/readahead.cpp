@@ -209,7 +209,7 @@ bool ReadAhead::readOne() {
 	}
 	const bool have = findLocked(hash) != nullptr;
 	unlock();
-	if (have || !_enabled) return true;
+	if (have || !_enabled || sys::timeMs() < _pauseUntil) return true;
 	const PakEntry* e = _pak.find(hash);
 	if (!e || !worthIt(e->type) || e->size == 0 || e->size > _budget / 2) return true;
 	const double t0 = sys::timeMs();
@@ -232,7 +232,7 @@ bool ReadAhead::readOne() {
 bool ReadAhead::pump() { return _running && !_thread && readOne(); }
 
 void ReadAhead::request(u32 entryHash) {
-	if (!_running || !_enabled) return;
+	if (!_running || !_enabled || sys::timeMs() < _pauseUntil) return;
 	lock();
 	const u32 before = _stats.requests;
 	pushLocked(entryHash);
@@ -257,6 +257,16 @@ void ReadAhead::noteClip(u32 nameHash) {
 		_clipNext = (_clipNext + 1) % CLIP_NAMES;
 		if (_clipCount < CLIP_NAMES) ++_clipCount;
 	}
+	unlock();
+}
+
+void ReadAhead::relieve(u32 ms) {
+	if (!_running) return;
+	lock();
+	for (Slot& s : _slots)
+		if (s.blob) freeSlotLocked(s);
+	_qHead = _qCount = _lHead = _lCount = 0;
+	_pauseUntil = sys::timeMs() + double(ms);
 	unlock();
 }
 

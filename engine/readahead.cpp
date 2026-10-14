@@ -12,7 +12,7 @@ namespace {
 // What is worth reading ahead: what the game reads in the middle of a frame.
 bool worthIt(u16 type) { return type == ASSET_MODEL || type == ASSET_TEXTURE || type == ASSET_CLIP || type == ASSET_CHUNK; }
 
-constexpr u32 kMaxClipsPerModel = 12;
+constexpr u32 kMaxClipsPerModel = 24;
 
 } // namespace
 
@@ -328,9 +328,13 @@ void* ReadAhead::takeHook(void* self, const PakEntry& e) {
 			r->_bytes -= s->size;
 			*s = Slot();
 			++r->_stats.hits;
+			if (e.type == ASSET_CLIP) ++r->_stats.clipHits;
 		}
 	}
-	if (!out) ++r->_stats.misses;
+	if (!out) {
+		++r->_stats.misses;
+		if (e.type == ASSET_CLIP) ++r->_stats.clipMisses;
+	}
 	r->unlock();
 	return out;
 }

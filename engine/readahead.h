@@ -31,13 +31,15 @@ struct ReadAheadStats {
 	u32 entries = 0;     // waiting now
 	u32 bytes = 0;       // ... their size
 	u32 queued = 0;      // wishes not yet read
+	u32 clipHits = 0;    // of hits/misses: the animations (fix98)
+	u32 clipMisses = 0;
 };
 
 class ReadAhead {
 public:
 	static constexpr u32 QUEUE = 96; // per queue: the urgent ones (models, meshes, textures, chunks) and the rest (animations)
-	static constexpr u32 SLOTS = 64;
-	static constexpr u32 CLIP_NAMES = 64;
+	static constexpr u32 SLOTS = 128;
+	static constexpr u32 CLIP_NAMES = 192; // (fix98: 64 names forgot the animations of the many states the town goes through)
 
 	ReadAhead() = default;
 	~ReadAhead() { stop(); }

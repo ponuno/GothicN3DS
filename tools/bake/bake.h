@@ -50,11 +50,13 @@ struct BakeOptions {
 	// Fewer triangles in everything (--simplify): the world's meshes in place (lod.h) and the characters' (model_simplify.h).
 	SimplifyOptions simplify;
 	ModelSimplifyOptions simplifyModels;
+	// The inhabitants' bodies and heads keep their mesh in an entry of its own, shared by those that differ in their textures only.
+	bool sharedMeshes = false;
 	// --npc-lod: a second, coarse body for each character, shown beyond npcLodDistance and swapped for the full one when near.
 	bool npcLod = false;
 	// The triangles of every batch reordered for the vertex cache (--no-vcache: left as the chunker made them).
 	bool vertexCache = true;
-	ModelSimplifyOptions npcLodSimplify = {true, 0.3f, 6.0f, 60};
+	ModelSimplifyOptions npcLodSimplify = {true, 0.3f, 6.0f, 60, true};
 };
 
 struct BakeWorld {

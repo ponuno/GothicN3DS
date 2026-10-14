@@ -6,6 +6,10 @@
 //   ModelHeader | ModelNode[nodeCount] | ModelPart[partCount] |
 //   ModelClipRef[clipCount] | ModelBlend[blendCount] |
 //   WorldVertex[vertexCount] | u16[indexCount]
+// With MODELF_SHARED_MESH (fix88, the inhabitants' bodies and heads) the vertices and indices are not
+// in the model but in an entry of their own, "mesh/<key>" (MeshHeader | WorldVertex[] | u16[], hash in
+// ModelHeader::reserved): bodies and heads that differ only in their textures name the same mesh, which
+// is read, checked and put on the GPU once.
 // A clip ("anim/<model>/<clip>") is a table of sampled node transforms, and
 // for a clip that carries the character somewhere, where it carries it:
 //   ClipHeader | u8 trackNode[trackCount] (padded to 4) |
@@ -41,6 +45,11 @@ namespace g3 {
 constexpr u32 MODEL_MAGIC = fourcc('G', '3', 'M', 'D');
 constexpr u32 CLIP_MAGIC = fourcc('G', '3', 'A', 'N');
 constexpr u32 MODEL_VERSION = 2;
+constexpr u16 MODELF_SHARED_MESH = 1; // ModelHeader::flags: the mesh is the entry ModelHeader::reserved names
+constexpr u32 MESH_MAGIC = fourcc('G', '3', 'M', 'S');
+constexpr u32 MESH_VERSION = 1;
+// "meta/hotmeshes" (ASSET_META): the meshes most inhabitants wear, most worn first; the engine keeps them in memory.
+constexpr u32 HOTMESH_MAGIC = fourcc('G', '3', 'H', 'M');
 constexpr u32 CLIP_VERSION = 2;
 
 constexpr u32 MODEL_MAX_NODES = 96;
@@ -61,9 +70,26 @@ struct ModelHeader {
 	float bbMin[3]; // rest pose
 	float bbMax[3];
 	u32 blendCount;
-	u32 reserved;
+	u32 reserved; // MODELF_SHARED_MESH: the pak entry hash of the mesh
 };
 static_assert(sizeof(ModelHeader) == 64, "ModelHeader layout");
+
+// A shared mesh ("mesh/<key>", ASSET_MODEL): the vertices and indices of one or more models.
+struct MeshHeader {
+	u32 magic;
+	u32 version;
+	u32 vertexCount;
+	u32 indexCount;
+};
+static_assert(sizeof(MeshHeader) == 16, "MeshHeader layout");
+inline u32 meshBlobSize(u32 vertexCount, u32 indexCount) {
+	return u32(sizeof(MeshHeader)) + vertexCount * 16u + ((indexCount * 2u + 3u) & ~3u);
+}
+
+struct HotMeshHeader {
+	u32 magic;
+	u32 count; // u32 entry hashes follow
+};
 
 struct ModelNode {
 	i16 parent; // -1 for a root; parents come before their children
@@ -195,8 +221,8 @@ inline u32 clipSfxSize(u32 count) { return CLIP_SFX_BLOCK_HEAD + count * u32(siz
 
 inline u32 modelBlobSize(const ModelHeader& h) {
 	return u32(sizeof(ModelHeader)) + h.nodeCount * u32(sizeof(ModelNode)) + h.partCount * u32(sizeof(ModelPart)) +
-	       h.clipCount * u32(sizeof(ModelClipRef)) + h.blendCount * u32(sizeof(ModelBlend)) + h.vertexCount * 16u +
-	       ((h.indexCount * 2u + 3u) & ~3u);
+	       h.clipCount * u32(sizeof(ModelClipRef)) + h.blendCount * u32(sizeof(ModelBlend)) +
+	       ((h.flags & MODELF_SHARED_MESH) ? 0u : h.vertexCount * 16u + ((h.indexCount * 2u + 3u) & ~3u));
 }
 
 // "meta/camera": the game's own camera set-ups (its CAMERA.DAT), baked so the

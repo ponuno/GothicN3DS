@@ -696,6 +696,10 @@ void World::freeVis() {
 	free(_visBlob);
 	free(_visBase);
 	free(_visAllHidden);
+	free(_visViewersOwned);
+	_visViewersOwned = nullptr;
+	_visFirst = _visCount = 0;
+	_visPick = -1;
 	_visBlob = nullptr;
 	_visBase = nullptr;
 	_visAllHidden = nullptr;
@@ -717,7 +721,7 @@ void World::loadVis() {
 	if (!blob) return;
 	VisHeader h;
 	memcpy(&h, blob, sizeof(h));
-	bool ok = h.magic == VIS_MAGIC && h.version == VIS_VERSION && h.chunkCount == _hdr.chunkCount && h.viewerCount > 0 &&
+	bool ok = h.magic == VIS_MAGIC && (h.version == VIS_VERSION || h.version == VIS_VERSION_OLD) && h.chunkCount == _hdr.chunkCount && h.viewerCount > 0 &&
 	          h.viewerCount < (1u << 24) && h.chunkCount < (1u << 24) && h.bitCount < 0xFFFFFFE0u && h.cellSize > 0.0f &&
 	          h.radius > 0.0f && h.radius < 1.0e7f && u64(e->size) == u64(visBlobSize(h));
 	if (ok) {
@@ -730,14 +734,29 @@ void World::loadVis() {
 		p += size_t(h.chunkCount) + visPad(h.chunkCount);
 		_visOrder = reinterpret_cast<const u32*>(p);
 		p += size_t(h.chunkCount) * 4;
-		_visViewers = reinterpret_cast<const VisViewer*>(p);
-		p += size_t(h.viewerCount) * sizeof(VisViewer);
+		if (h.version == VIS_VERSION_OLD) {
+			// One row per cell, whatever the height: the same rows with a range that holds every height.
+			const VisViewer* old = reinterpret_cast<const VisViewer*>(p);
+			p += size_t(h.viewerCount) * sizeof(VisViewer);
+			_visViewersOwned = static_cast<VisViewer2*>(malloc(size_t(h.viewerCount) * sizeof(VisViewer2)));
+			ok = _visViewersOwned != nullptr;
+			for (u32 i = 0; ok && i < h.viewerCount; ++i)
+				_visViewersOwned[i] = VisViewer2 {old[i].x, old[i].z, old[i].bitOffset, -1.0e30f, 1.0e30f};
+			_visViewers = _visViewersOwned;
+		} else {
+			_visViewers = reinterpret_cast<const VisViewer2*>(p);
+			p += size_t(h.viewerCount) * sizeof(VisViewer2);
+		}
 		_visBits = reinterpret_cast<const u32*>(p);
 		for (u32 i = 0; ok && i < h.chunkCount; ++i) ok = _visOrder[i] < h.chunkCount;
 		for (u32 i = 0; ok && i < h.viewerCount; ++i) {
-			ok = _visViewers[i].bitOffset <= h.bitCount;
-			if (ok && i > 0)
-				ok = _visViewers[i - 1].z < _visViewers[i].z || (_visViewers[i - 1].z == _visViewers[i].z && _visViewers[i - 1].x < _visViewers[i].x);
+			ok = _visViewers[i].bitOffset <= h.bitCount && _visViewers[i].yMin <= _visViewers[i].yMax;
+			if (ok && i > 0) {
+				const VisViewer2& a = _visViewers[i - 1];
+				const VisViewer2& b = _visViewers[i];
+				// (sorted by cell, and by height within a cell)
+				ok = a.z < b.z || (a.z == b.z && (a.x < b.x || (a.x == b.x && a.yMin <= b.yMin)));
+			}
 		}
 	}
 	_visBase = ok ? static_cast<u32*>(malloc(size_t(h.chunkCount) * 4 + 4)) : nullptr;
@@ -762,25 +781,46 @@ void World::updateVisibility(Vec3 camera) {
 		return;
 	}
 	const int cx = int(floorf(camera.x / _vis.cellSize)), cz = int(floorf(camera.z / _vis.cellSize));
-	if (_visHave && cx == _visCellNowX && cz == _visCellNowZ) {
+	if (!_visHave || cx != _visCellNowX || cz != _visCellNowZ) {
+		_visHave = true;
+		_visCellNowX = cx;
+		_visCellNowZ = cz;
+		_visPick = -1;
+		_visRow = false;
+		_visFirst = _visCount = 0;
+		// The rows of the cell: the cells are sorted by z, then x (and by height).
+		u32 lo = 0, hi = _vis.viewerCount;
+		while (lo < hi) {
+			const u32 mid = (lo + hi) / 2;
+			const VisViewer2& v = _visViewers[mid];
+			if (v.z < cz || (v.z == cz && v.x < cx))
+				lo = mid + 1;
+			else
+				hi = mid;
+		}
+		u32 end = lo;
+		while (end < _vis.viewerCount && _visViewers[end].z == cz && _visViewers[end].x == cx) ++end;
+		_visFirst = lo;
+		_visCount = end - lo;
+	}
+	if (_visCount == 0) return;
+	// The floor: the row in use while the camera's height is still in its range (floors overlap a little: no change
+	// back and forth at the edge), else the first row whose range holds it.
+	int pick = -1;
+	if (_visPick >= 0 && camera.y >= _visViewers[_visPick].yMin && camera.y < _visViewers[_visPick].yMax) {
+		pick = _visPick;
+	} else {
+		for (u32 i = _visFirst; i < _visFirst + _visCount && pick < 0; ++i)
+			if (camera.y >= _visViewers[i].yMin && camera.y < _visViewers[i].yMax) pick = int(i);
+	}
+	if (pick == _visPick) {
 		_stats.visRow = _visRow;
 		return;
 	}
-	_visHave = true;
-	_visCellNowX = cx;
-	_visCellNowZ = cz;
+	_visPick = pick;
 	_visRow = false;
-	// The row: the cells are sorted by z, then x.
-	u32 lo = 0, hi = _vis.viewerCount;
-	while (lo < hi) {
-		const u32 mid = (lo + hi) / 2;
-		const VisViewer& v = _visViewers[mid];
-		if (v.z < cz || (v.z == cz && v.x < cx))
-			lo = mid + 1;
-		else
-			hi = mid;
-	}
-	if (lo >= _vis.viewerCount || _visViewers[lo].z != cz || _visViewers[lo].x != cx) return;
+	if (pick < 0) return; // (no floor of the cell is near the camera: everything is drawn)
+	const u32 lo = u32(pick);
 	for (u32 i = 0; i < _vis.chunkCount; ++i) {
 		_visBase[i] = 0xFFFFFFFFu;
 		_visAllHidden[i] = 0;

@@ -605,11 +605,24 @@ static float cameraRoom(const World& world, Vec3 from, Vec3 dir, float range, fl
 	const float mn[3] = {min(from.x, to.x) - radius, min(from.y, to.y) - radius, min(from.z, to.z) - radius};
 	const float mx[3] = {max(from.x, to.x) + radius, max(from.y, to.y) + radius, max(from.z, to.z) + radius};
 	if (world.boxFree(mn, mx)) return range;
-	const int steps = max(int(range / 22.0f) + 1, 2);
+	// Steps of 1.5 radii (a wall between two of them touches the nearer sphere, as in World::lineFree), then the
+	// step with the wall in it is halved a few times: about half the probes of the old 22 cm steps (fix88; this
+	// was ~7 ms in tunnels and narrow streets).
+	const float stepLen = max(radius * 1.5f, 8.0f);
+	const int steps = max(int(range / stepLen) + 1, 2);
 	for (int s = 1; s <= steps; ++s) {
 		const float d = range * float(s) / float(steps);
 		Vec3 probe = from + dir * d;
-		if (world.pushSphere(probe, radius)) return range * float(s - 1) / float(steps);
+		if (world.pushSphere(probe, radius)) {
+			float lo = range * float(s - 1) / float(steps), hi = d;
+			for (int i = 0; i < 3; ++i) {
+				const float mid = (lo + hi) * 0.5f;
+				Vec3 p = from + dir * mid;
+				if (world.pushSphere(p, radius)) hi = mid;
+				else lo = mid;
+			}
+			return lo;
+		}
 	}
 	return range;
 }

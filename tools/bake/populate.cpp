@@ -7,6 +7,7 @@
 
 #include "game.h"
 #include "g3ds/game.h"
+#include "g3ds/model.h"
 #include "g3ds/math.h"
 #include "g3ds/item_view.h"
 #include "item_icon.h"
@@ -908,6 +909,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	std::vector<std::string> mobClipNotes;
 	BakeOptions quiet = opt;
 	quiet.quiet = true;
+	quiet.sharedMeshes = true; // (fix88) bodies and heads that differ in their textures only share one mesh entry
 	ModelBakeShared shared;
 	struct Rig {
 		SrcModel model; // kept: bodies are checked against its skeleton
@@ -918,6 +920,9 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	std::map<std::string, u32> bySignature;
 	std::map<u32, SrcModel> sources; // keyed by model hash; // bodies as baked, for their coarse versions (--npc-lod)
 	std::map<std::string, u32> problems; // reason -> looks
+	std::map<u32, u32> meshOfModel;      // model hash -> its shared mesh entry
+	std::map<u32, size_t> meshSize;      // mesh entry -> bytes
+	size_t meshModels = 0;               // models that use a shared mesh
 	std::vector<LookEntry> entries;
 	size_t bodies = 0, heads = 0, triangles = 0, fullBodyTriangles = 0, textures = 0, clipCount = 0;
 	std::set<std::string> missingTextures;
@@ -949,6 +954,11 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			const ModelBakeResult mr = bakeModel(m, quiet, pak, &shared);
 			++counter;
 			triangles += mr.triangles;
+			if (mr.meshEntry) {
+				++meshModels;
+				meshOfModel[hashName(("model/" + m.name).c_str())] = mr.meshEntry;
+				meshSize[mr.meshEntry] = mr.meshBytes;
+			}
 			if (kind == "body") fullBodyTriangles += mr.triangles;
 			textures += mr.textures;
 			missingTextures.insert(mr.missingTextures.begin(), mr.missingTextures.end());
@@ -981,6 +991,11 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			m.name += ".lo";
 			const ModelBakeResult mr = bakeModel(m, coarse, pak, &shared);
 			lowTriangles += mr.triangles;
+			if (mr.meshEntry) {
+				++meshModels;
+				meshOfModel[hashName(("model/" + m.name).c_str())] = mr.meshEntry;
+				meshSize[mr.meshEntry] = mr.meshBytes;
+			}
 			++lowBodies;
 			out = hashName(("model/" + m.name).c_str());
 		} catch (const std::exception&) {
@@ -1057,6 +1072,46 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	std::memcpy(blob.data(), &lh, sizeof(lh));
 	if (!entries.empty()) std::memcpy(blob.data() + sizeof(lh), entries.data(), entries.size() * sizeof(LookEntry));
 	pak.add("meta/looks", ASSET_META, blob);
+
+	// The meshes most of the people wear (fix88): the engine reads them when a world is entered and keeps them, so that
+	// whoever comes into range wears a mesh that is already in memory. By the characters that wear them, most first, as
+	// many as fit a budget.
+	if (!meshSize.empty()) {
+		std::map<u32, u32> uses; // mesh entry -> characters
+		std::map<u32, const LookEntry*> byKey;
+		for (const LookEntry& e : entries) byKey[e.key] = &e;
+		for (const auto& [key, l] : looks) {
+			const auto it = byKey.find(key);
+			if (it == byKey.end()) continue;
+			for (u32 model : {it->second->body, it->second->head, it->second->bodyLow}) {
+				const auto m = meshOfModel.find(model);
+				if (m != meshOfModel.end()) uses[m->second] += l.users;
+			}
+		}
+		std::vector<std::pair<u32, u32>> ranked; // (characters, mesh entry)
+		for (const auto& [mesh, n] : uses)
+			if (n >= 2) ranked.push_back({n, mesh});
+		std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) { return a.first != b.first ? a.first > b.first : a.second < b.second; });
+		const size_t budget = 3u << 20;
+		size_t bytes = 0, charactersCovered = 0, charactersAll = 0;
+		for (const auto& [mesh, n] : uses) charactersAll += n;
+		std::vector<u32> hot;
+		for (const auto& [n, mesh] : ranked) {
+			if (hot.size() >= 200 || bytes + meshSize[mesh] > budget) continue;
+			hot.push_back(mesh);
+			bytes += meshSize[mesh];
+			charactersCovered += n;
+		}
+		std::vector<u8> hotBlob(sizeof(HotMeshHeader) + hot.size() * sizeof(u32));
+		const HotMeshHeader hh {HOTMESH_MAGIC, u32(hot.size())};
+		std::memcpy(hotBlob.data(), &hh, sizeof(hh));
+		if (!hot.empty()) std::memcpy(hotBlob.data() + sizeof(hh), hot.data(), hot.size() * sizeof(u32));
+		pak.add("meta/hotmeshes", ASSET_META, hotBlob);
+		size_t totalBytes = 0;
+		for (const auto& [mesh, size] : meshSize) totalBytes += size;
+		line(format("shared meshes: %zu models share %zu meshes (%.2f MB); the engine keeps the %zu most worn (%.2f MB) in memory: they dress %zu of %zu body and head places",
+		            meshModels, meshSize.size(), double(totalBytes) / 1048576.0, hot.size(), double(bytes) / 1048576.0, charactersCovered, charactersAll));
+	}
 
 	// ---- overlays (Mdl_ApplyOverlayMds: the militia's walk, the mage's, a learnt fight talent's blows) ----
 	// Of every skeleton the inhabitants have, and of the player's (humans): the overlays the game has that the

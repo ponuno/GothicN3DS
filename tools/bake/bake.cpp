@@ -604,9 +604,9 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				const std::string visName = "world/" + bw.name + "/vis";
 				pak.add(visName, ASSET_META, vis);
 				wh.visEntry = hashName(visName.c_str());
-				line(format("visibility (--vis%s): %u cells, %llu places looked from, %llu clusters in the rows of which %llu (%.0f%%) hidden, "
+				line(format("visibility (--vis%s): %u rows in %u cells (%u cells with more than one floor), %llu places looked from, %llu clusters in the rows of which %llu (%.0f%%) hidden, "
 				            "%.1f M rays in %.1f s, radius %.0f m, near %.0f m; %.2f MB",
-				            opt.vis.high ? "-high" : "", vs.viewers, static_cast<unsigned long long>(vs.samples),
+				            opt.vis.high ? "-high" : "", vs.viewers, vs.cells, vs.multiFloorCells, static_cast<unsigned long long>(vs.samples),
 				            static_cast<unsigned long long>(vs.targets), static_cast<unsigned long long>(vs.hidden),
 				            vs.targets ? 100.0 * double(vs.hidden) / double(vs.targets) : 0.0, double(vs.rays) / 1e6, vs.seconds,
 				            double(vs.radius) / 100.0, double(opt.vis.nearAlways) / 100.0, double(vs.bytes) / MB));
@@ -648,10 +648,13 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			} else {
 				line("far geometry (--lod): nothing to simplify");
 			}
-			line(format("  of %u chunks: %u hold only medium or small objects, %u have fewer than %u simplifiable triangles, %u would shrink "
-			            "by less than 10%%; %llu simplifiable triangles in the rest",
-			            ls.candidates, ls.notTierZero, ls.tooFew, opt.lod.minTriangles, ls.tooLittle,
+			line(format("  of %u chunks: %u of medium or small objects left alone (--no-lod-objects), %u have too few simplifiable triangles "
+			            "(%u for the large, %u for objects), %u would shrink by too little; %llu simplifiable triangles in the rest",
+			            ls.candidates, ls.notTierZero, ls.tooFew, opt.lod.minTriangles, opt.lod.minObjectTriangles, ls.tooLittle,
 			            static_cast<unsigned long long>(ls.simplifiable)));
+			if (opt.lod.objects)
+				line(format("  chunks of medium and small objects with a stand-in (kept %.0f%% of the triangles of what they replace): %u, +%.2f MB",
+				            100.0 * double(opt.lod.ratioObjects), ls.objectChunks, double(ls.objectBytes) / MB));
 		}
 		std::memcpy(wh.fogColor, scene.fogColor, sizeof(wh.fogColor));
 		wh.triangleCount = u32(cs.outputTriangles);

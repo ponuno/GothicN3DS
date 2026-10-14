@@ -135,7 +135,11 @@ static const char* kHitchPath = "sdmc:/3ds/gothic3ds/hitches.txt";
 // The log of dropped frames: a line for every frame that took well over a refresh, with where the time went. Kept
 // in memory and written to the card in batches (and at the end), so that the writing itself does not make the
 // hitches it is there to find.
-static char gHitchLines[48][300];
+// (fix88: the file is made new at every start, with a line saying which run it is; a batch is 160 lines and goes
+// to the card only when it is full, when the game ends, or in the pause menu - the old 48 lines at 200-300 ms each
+// were hitches of their own, and the file grew from run to run.)
+static const int kHitchBatch = 160;
+static char gHitchLines[kHitchBatch][300];
 static int gHitchCount = 0;
 static unsigned long gHitchTotal = 0;
 
@@ -146,6 +150,15 @@ static void flushHitches() {
 		fclose(f);
 	}
 	gHitchCount = 0;
+}
+
+static void startHitchLog(const char* what) {
+	if (FILE* f = fopen(kHitchPath, "w")) {
+		fprintf(f, "# gothic3ds fix88 hitches: %s\n", what);
+		fclose(f);
+	}
+	gHitchCount = 0;
+	gHitchTotal = 0;
 }
 
 
@@ -330,6 +343,12 @@ int main(int, char**) {
 	if (standing) settings.life = 0;
 	app.settings() = settings;
 	app.applySettings();
+	{
+		char what[160];
+		snprintf(what, sizeof(what), "preset %d, draw %d m, objects %d, life %d, shader %s", int(settings.gfxPresetOf()),
+		         int(settings.drawMetres), int(settings.objects), int(settings.life), plainShader ? "plain" : "normal");
+		startHitchLog(what);
+	}
 	if (plainShader) app.setThirdPerson(false); // (no character is drawn; for this run only, the menu keeps its setting)
 	app.setStatePath(kStatePath);
 	if (nobody || plainShader) app.npcs().config().maxShown = 0;
@@ -404,6 +423,12 @@ int main(int, char**) {
 		if (gSuspended) {
 			gSuspended = false;
 			if (!menu.isOpen()) menu.open();
+		}
+		{
+			// The menu stands still anyway: the hitch log goes to the card now, not in the middle of play.
+			static bool menuWas = false;
+			if (menu.isOpen() && !menuWas) flushHitches();
+			menuWas = menu.isOpen();
 		}
 		// START+SELECT held for a second: out at once (for testing).
 		leaveHeld = (held & KEY_START) && (held & KEY_SELECT) ? leaveHeld + 1.0f / 60.0f : 0.0f;
@@ -746,15 +771,16 @@ int main(int, char**) {
 				const g3::Vec3 e = app.player().eye();
 				++gHitchTotal;
 				snprintf(gHitchLines[gHitchCount++], sizeof(gHitchLines[0]),
-				         "f%lu %.1fms cpu%.1f gpu%.1f upd%.1f | w%.1f n%.1f s%.1f p%.1f c%.1f l%.1f | clk%.1f sel%.1f tick%.1f | mdl%lu clip%lu chunk%+ld ev%lu pend%lu | tr%lu %.0f %.0f %.0f | nu%.1f t%.1f x%.1f hc%.1f m%.1f b%.1f f%.1f o%.1f\n",
+				         "f%lu %.1fms cpu%.1f gpu%.1f upd%.1f | w%.1f n%.1f s%.1f p%.1f c%.1f l%.1f | clk%.1f sel%.1f tick%.1f | mdl%lu clip%lu chunk%+ld ev%lu pend%lu | tr%lu %.0f %.0f %.0f | nu%.1f t%.1f x%.1f hc%.1f m%.1f b%.1f f%.1f o%.1f | msh%lu rd%lu hit%lu\n",
 				         static_cast<unsigned long>(frame), double(fs.frameMs), double(fs.cpuMs), double(fs.gpuMs), double(updateMs), double(ut.stream),
 				         double(ut.npcs), double(ut.script), double(ut.player), double(ut.camera), double(ut.loot), double(nst.clockMs),
 				         double(nst.selectMs), double(nst.tickMs), static_cast<unsigned long>(dModels), static_cast<unsigned long>(dClips),
 				         static_cast<long>(dChunks), static_cast<unsigned long>(dEvict), static_cast<unsigned long>(wst.chunksPending),
 				         static_cast<unsigned long>(wst.trianglesDrawn), double(e.x), double(e.y), double(e.z), double(ut.npcUpdate),
 				         double(ut.triggers), double(ut.particles), double(ut.heroControl), double(ut.heroMove), double(ut.heroBodies),
-				         double(ut.heroFollow), double(ut.heroRest));
-				if (gHitchCount >= 48) flushHitches();
+				         double(ut.heroFollow), double(ut.heroRest), static_cast<unsigned long>(nst.meshes),
+				         static_cast<unsigned long>(nst.meshReads), static_cast<unsigned long>(nst.meshHits));
+				if (gHitchCount >= kHitchBatch) flushHitches();
 			}
 		}
 		if (fs.frameMs > 0.0f) {

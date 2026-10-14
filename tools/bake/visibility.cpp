@@ -27,8 +27,10 @@ struct ChunkVis {
 	u32 firstBox = 0; // into the flat list of boxes
 };
 
-struct Sample {
+// A place a character in the cell may have its eyes at, and the height of the floor under it.
+struct Place {
 	V3 p;
+	float floorY;
 };
 
 inline V3 frontNormalOf(const Tri& t) { return cross(t.e1, t.e2) * -1.0f; }
@@ -48,7 +50,7 @@ struct Shared {
 };
 
 // The places a character in the cell may have its eyes at.
-void viewingPlaces(const Shared& sh, int cx, int cz, std::vector<V3>& out) {
+void viewingPlaces(const Shared& sh, int cx, int cz, std::vector<Place>& out) {
 	out.clear();
 	const int n = sh.opt.high ? 3 : 2;
 	const float fr3[3] = {0.1f, 0.5f, 0.9f}, fr2[2] = {0.1f, 0.9f};
@@ -70,8 +72,8 @@ void viewingPlaces(const Shared& sh, int cx, int cz, std::vector<V3>& out) {
 				const V3 nrm = frontNormalOf(*tri);
 				const bool up = nrm.y > 0.5f * length(nrm);
 				if ((up || top) && lastLevel - hy >= 200.0f) {
-					out.push_back(V3 {x, hy + 170.0f, z});
-					if (top) out.push_back(V3 {x, hy + 450.0f, z}); // (the camera behind a character, or one who jumps)
+					out.push_back({V3 {x, hy + 170.0f, z}, hy});
+					if (top) out.push_back({V3 {x, hy + 450.0f, z}, hy}); // (the camera behind a character, or one who jumps)
 					lastLevel = hy;
 					++levels;
 				}
@@ -91,7 +93,7 @@ void viewingPlaces(const Shared& sh, int cx, int cz, std::vector<V3>& out) {
 	if (highest > -1e29f)
 		for (int iz = 0; iz < n; ++iz)
 			for (int ix = 0; ix < n; ++ix)
-				out.push_back(V3 {(float(cx) + (n == 3 ? fr3[ix] : fr2[ix])) * sh.cellSize, highest + 450.0f, (float(cz) + (n == 3 ? fr3[iz] : fr2[iz])) * sh.cellSize});
+				out.push_back({V3 {(float(cx) + (n == 3 ? fr3[ix] : fr2[ix])) * sh.cellSize, highest + 450.0f, (float(cz) + (n == 3 ? fr3[iz] : fr2[iz])) * sh.cellSize}, highest});
 }
 
 // Whether the segment from `s` to the point `p` meets something solid before it gets there (a few cm short:
@@ -120,14 +122,15 @@ bool blockedTo(const Shared& sh, V3 s, V3 p, Occluders& oc) {
 	return true;
 }
 
-bool visibleFrom(const Shared& sh, const std::vector<V3>& places, std::vector<Occluders>& cache, u32 box, int cx, int cz) {
+bool visibleFrom(const Shared& sh, const std::vector<V3>& places, std::vector<Occluders>& cache, u32 box, int cx, int cz, float eyeLo, float eyeHi) {
 	const Box& b = (*sh.boxes)[box];
 	if (b.empty()) return true;
 	// Whatever is near the cell - not near one of its few places: the camera can be anywhere in it - is visible.
 	{
 		const float x0 = float(cx) * sh.cellSize, x1 = x0 + sh.cellSize, z0 = float(cz) * sh.cellSize, z1 = z0 + sh.cellSize;
 		const float dx = std::max({b.mn[0] - x1, x0 - b.mx[0], 0.0f}), dz = std::max({b.mn[2] - z1, z0 - b.mx[2], 0.0f});
-		if (std::sqrt(dx * dx + dz * dz) <= sh.opt.nearAlways) return true;
+		// (and not too far above or below the eyes of this floor: the street under a bridge is not near the bridge's deck)
+		if (std::sqrt(dx * dx + dz * dz) <= sh.opt.nearAlways && b.mx[1] >= eyeLo - sh.opt.nearHeight && b.mn[1] <= eyeHi + sh.opt.nearHeight) return true;
 	}
 	const u32 first = (*sh.pointStart)[box], last = (*sh.pointStart)[box + 1];
 	if (first == last) return true; // (nothing to aim at: say nothing)
@@ -263,51 +266,95 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 		k = e;
 	}
 
-	// ---- one row per cell ----
+	// ---- one row per floor of each cell ----
 	struct Row {
 		int x, z;
+		float yMin, yMax;      // the camera heights this row is for
 		std::vector<u32> bits; // packed
 		u32 count = 0;
 		u64 hidden = 0, samples = 0;
 	};
 	std::vector<std::pair<int, int>> cells; // (z, x), ascending
 	for (const auto& kv : sh.cellRange) cells.push_back(kv.first);
-	std::vector<Row> rows(cells.size());
+	std::vector<std::vector<Row>> cellRows(cells.size());
 	const int reach = int(std::ceil(opt.radius / cellSize)) + 1;
 	std::atomic<size_t> next {0};
 	auto worker = [&]() {
-		std::vector<V3> places;
+		std::vector<Place> places;
 		for (;;) {
 			const size_t r = next.fetch_add(1);
 			if (r >= cells.size()) return;
-			Row& row = rows[r];
-			row.z = cells[r].first;
-			row.x = cells[r].second;
-			viewingPlaces(sh, row.x, row.z, places);
-			row.samples = places.size();
-			std::vector<Occluders> cache(places.size());
-			std::vector<u8> bitsOut;
-			for (int dz = -reach; dz <= reach; ++dz)
-				for (int dx = -reach; dx <= reach; ++dx) {
-					const float gx = float(std::max(std::abs(dx) - 1, 0)) * cellSize, gz = float(std::max(std::abs(dz) - 1, 0)) * cellSize;
-					if (std::sqrt(gx * gx + gz * gz) > opt.radius) continue;
-					auto it = sh.cellRange.find({row.z + dz, row.x + dx});
-					if (it == sh.cellRange.end()) continue;
-					for (u32 k = it->second.first; k < it->second.second; ++k) {
-						const ChunkVis& c = cv[order[k]];
-						for (u32 cl = 0; cl < c.clusters; ++cl) {
-							// A row with no places (no ground in the cell) shows everything.
-							const bool vis = places.empty() || visibleFrom(sh, places, cache, c.firstBox + cl, row.x, row.z);
-							bitsOut.push_back(vis ? 1 : 0);
-							row.hidden += !vis;
+			std::vector<Row>& out = cellRows[r];
+			const int cz = cells[r].first, cx = cells[r].second;
+			viewingPlaces(sh, cx, cz, places);
+			if (places.empty()) {
+				Row row;
+				row.x = cx;
+				row.z = cz;
+				row.yMin = -1.0e30f;
+				row.yMax = 1.0e30f;
+				row.count = 0xFFFFFFFFu; // (marked: no row - no ground in the cell, everything is drawn)
+				out.push_back(std::move(row));
+				continue;
+			}
+			// The floors of the cell: heights closer together than levelGap are one (a slope, a stair), and each floor
+			// is seen from its own places.
+			struct Level {
+				float top, bottom;
+				std::vector<V3> eyes;
+				float eyeLo = 1e30f, eyeHi = -1e30f;
+			};
+			std::vector<float> heights;
+			for (const Place& pl : places) heights.push_back(pl.floorY);
+			std::sort(heights.begin(), heights.end(), [](float a, float b) { return a > b; });
+			std::vector<Level> levels;
+			for (float f : heights) {
+				if (levels.empty() || levels.back().bottom - f > opt.levelGap)
+					levels.push_back(Level {f, f, {}, 1e30f, -1e30f});
+				else
+					levels.back().bottom = f;
+			}
+			for (const Place& pl : places)
+				for (Level& lv : levels)
+					if (pl.floorY <= lv.top + 0.01f && pl.floorY >= lv.bottom - 0.01f) {
+						lv.eyes.push_back(pl.p);
+						lv.eyeLo = std::min(lv.eyeLo, pl.p.y);
+						lv.eyeHi = std::max(lv.eyeHi, pl.p.y);
+						break;
+					}
+			for (size_t li = levels.size(); li-- > 0;) { // (the lowest floor first: rows are sorted by height)
+				const Level& lv = levels[li];
+				Row row;
+				row.x = cx;
+				row.z = cz;
+				// The floor above claims the heights from a metre under its own floor; the ranges overlap by a little
+				// more than that, so that a camera at the edge does not change rows with every step.
+				row.yMin = li + 1 < levels.size() ? lv.bottom - 250.0f : lv.bottom - 1500.0f;
+				row.yMax = li > 0 ? levels[li - 1].bottom + 50.0f : 1.0e30f;
+				row.samples = lv.eyes.size();
+				std::vector<Occluders> cache(lv.eyes.size());
+				std::vector<u8> bitsOut;
+				for (int dz = -reach; dz <= reach; ++dz)
+					for (int dx = -reach; dx <= reach; ++dx) {
+						const float gx = float(std::max(std::abs(dx) - 1, 0)) * cellSize, gz = float(std::max(std::abs(dz) - 1, 0)) * cellSize;
+						if (std::sqrt(gx * gx + gz * gz) > opt.radius) continue;
+						auto it = sh.cellRange.find({cz + dz, cx + dx});
+						if (it == sh.cellRange.end()) continue;
+						for (u32 k = it->second.first; k < it->second.second; ++k) {
+							const ChunkVis& c = cv[order[k]];
+							for (u32 cl = 0; cl < c.clusters; ++cl) {
+								const bool vis = lv.eyes.empty() || visibleFrom(sh, lv.eyes, cache, c.firstBox + cl, cx, cz, lv.eyeLo, lv.eyeHi);
+								bitsOut.push_back(vis ? 1 : 0);
+								row.hidden += !vis;
+							}
 						}
 					}
-				}
-			row.count = u32(bitsOut.size());
-			row.bits.assign((bitsOut.size() + 31) / 32, 0u);
-			for (size_t i = 0; i < bitsOut.size(); ++i)
-				if (bitsOut[i]) row.bits[i >> 5] |= 1u << (i & 31);
-			if (places.empty()) row.count = 0xFFFFFFFFu; // (marked: no row)
+				row.count = u32(bitsOut.size());
+				row.bits.assign((bitsOut.size() + 31) / 32, 0u);
+				for (size_t i = 0; i < bitsOut.size(); ++i)
+					if (bitsOut[i]) row.bits[i >> 5] |= 1u << (i & 31);
+				out.push_back(std::move(row));
+			}
 		}
 	};
 	const unsigned threads = std::max(1u, opt.threads);
@@ -317,32 +364,44 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 	for (std::thread& t : pool) t.join();
 
 	// ---- the table ----
-	std::vector<VisViewer> viewers;
+	std::vector<VisViewer2> viewers;
 	std::vector<u32> bits;
 	u64 totalBits = 0;
-	for (const Row& row : rows) {
-		stats.samples += row.samples;
-		if (row.count == 0xFFFFFFFFu || row.count == 0) continue;
-		if (totalBits > 0xFFFFFFF0ull - row.count) break; // (more than a table can hold)
-		VisViewer v {};
-		v.x = i16(row.x);
-		v.z = i16(row.z);
-		v.bitOffset = u32(totalBits);
-		viewers.push_back(v);
-		// Rows begin on whatever bit the last one ended on: append bit by bit.
-		bits.resize((totalBits + row.count + 31) / 32, 0u);
-		for (u32 i = 0; i < row.count; ++i)
-			if (row.bits[i >> 5] & (1u << (i & 31))) {
-				const u64 b = totalBits + i;
-				bits[b >> 5] |= 1u << (b & 31);
-			}
-		totalBits += row.count;
-		stats.hidden += row.hidden;
+	for (const std::vector<Row>& cellList : cellRows) {
+		u32 floorsOfCell = 0;
+		for (const Row& row : cellList) {
+			stats.samples += row.samples;
+			if (row.count == 0xFFFFFFFFu || row.count == 0) continue;
+			if (totalBits > 0xFFFFFFF0ull - row.count) break; // (more than a table can hold)
+			VisViewer2 v {};
+			v.x = i16(row.x);
+			v.z = i16(row.z);
+			v.bitOffset = u32(totalBits);
+			v.yMin = row.yMin;
+			v.yMax = row.yMax;
+			viewers.push_back(v);
+			// Rows begin on whatever bit the last one ended on: append bit by bit.
+			bits.resize((totalBits + row.count + 31) / 32, 0u);
+			for (u32 i = 0; i < row.count; ++i)
+				if (row.bits[i >> 5] & (1u << (i & 31))) {
+					const u64 b = totalBits + i;
+					bits[b >> 5] |= 1u << (b & 31);
+				}
+			totalBits += row.count;
+			stats.hidden += row.hidden;
+			++floorsOfCell;
+		}
+		stats.cells += floorsOfCell > 0;
+		stats.multiFloorCells += floorsOfCell > 1;
 	}
 	stats.viewers = u32(viewers.size());
 	stats.targets = totalBits;
 	if (viewers.empty()) return {};
-	std::sort(viewers.begin(), viewers.end(), [](const VisViewer& a, const VisViewer& b) { return a.z != b.z ? a.z < b.z : a.x < b.x; });
+	std::sort(viewers.begin(), viewers.end(), [](const VisViewer2& a, const VisViewer2& b) {
+		if (a.z != b.z) return a.z < b.z;
+		if (a.x != b.x) return a.x < b.x;
+		return a.yMin < b.yMin;
+	});
 
 	VisHeader h {};
 	h.magic = VIS_MAGIC;
@@ -371,7 +430,7 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 	put(counts.data(), counts.size());
 	p += visPad(h.chunkCount);
 	put(order.data(), order.size() * 4);
-	put(viewers.data(), viewers.size() * sizeof(VisViewer));
+	put(viewers.data(), viewers.size() * sizeof(VisViewer2));
 	put(bits.data(), bits.size() * 4);
 	stats.bytes = u32(out.size());
 	stats.rays = sh.rays.load();

@@ -18,6 +18,7 @@ struct ModelSimplifyOptions {
 	float ratio = 0.65f;     // triangles to keep, of what is simplified
 	float maxError = 0.8f;   // cm: how far (mean, over the planes around a vertex) a collapse may move the surface
 	u32 minTriangles = 160;  // a part with fewer is left alone (hands, small pieces of armour, teeth)
+	bool synthesize = false; // where no vertex fits, make one (the coarse far bodies, --npc-lod); else only the source's are used
 };
 
 struct ModelSimplifyStats {

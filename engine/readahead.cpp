@@ -163,6 +163,7 @@ void ReadAhead::chain(const PakEntry& e, const u8* blob) {
 	const u64 refsAt = partsAt + u64(h.partCount) * sizeof(ModelPart);
 	if (refsAt + u64(h.clipCount) * sizeof(ModelClipRef) > e.size) return;
 	lock();
+	if ((h.flags & MODELF_SHARED_MESH) && h.reserved) pushLocked(h.reserved);
 	for (u32 i = 0; i < h.partCount; ++i) {
 		ModelPart part;
 		memcpy(&part, blob + partsAt + u64(i) * sizeof(ModelPart), sizeof(part));

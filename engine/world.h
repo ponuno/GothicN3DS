@@ -357,6 +357,19 @@ public:
 	// Whether what stands at `p` (a torch, a fire place) is drawn just now: its chunk is in memory, within the draw distance,
 	// and a small object that near is within its distance. `chunk` is the caller's cache (start it at -2).
 	bool pointShown(Vec3 p, Vec3 eye, int& chunk, bool wasOn) const;
+	// The row of the visibility table for a camera at `camera` (it is looked up while drawing; this is for tests and
+	// reports): the floor of the camera's cell in use, or -1 (no row: everything is drawn).
+	int visibilityFloor(Vec3 camera) {
+		updateVisibility(camera);
+		return _visRow ? _visPick - int(_visFirst) : -1;
+	}
+	// Which clusters of chunk `chunk` the row in use hides, as bits (cluster 0 = bit 0; at most 32); `total` is how many it has.
+	u32 hiddenClusters(u32 chunk, u32& total) const {
+		total = _visRow && _visBase && chunk < _vis.chunkCount ? _visClusters[chunk] : 0u;
+		u32 bits = 0;
+		for (u32 cl = 0; cl < total && cl < 32; ++cl) bits |= u32(visHidden(chunk, cl)) << cl;
+		return bits;
+	}
 private:
 	const class Triggers* _dynamic = nullptr;
 	void loadVis();
@@ -452,7 +465,10 @@ private:
 	const i16* _visCellZ = nullptr;
 	const u8* _visClusters = nullptr;
 	const u32* _visOrder = nullptr;
-	const VisViewer* _visViewers = nullptr;
+	const VisViewer2* _visViewers = nullptr; // (of a version 1 table: made from it, _visViewersOwned)
+	VisViewer2* _visViewersOwned = nullptr;
+	u32 _visFirst = 0, _visCount = 0; // the rows of the camera's cell, and the one in use:
+	int _visPick = -1;
 	const u32* _visBits = nullptr;
 	u32* _visBase = nullptr;   // per chunk: the first bit of its clusters in the camera's row, or 0xFFFFFFFF (not in it)
 	u8* _visAllHidden = nullptr; // per chunk: every cluster of it is hidden from the camera's cell

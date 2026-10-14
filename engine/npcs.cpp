@@ -76,6 +76,7 @@ void Npcs::release() {
 	}
 	_overlayCount = 0;
 	_pool.release();
+	_meshes.release();
 	_net.release();
 	_mobs.release();
 	_game.release();
@@ -154,13 +155,38 @@ void Npcs::leaveWorld() {
 		p.used = 0;
 		p.failed = false;
 	}
+	_meshes.release();
 	_clipBytes = 0;
 	_stats.clipBytes = 0;
+}
+
+// The meshes most of the world's people wear ("meta/hotmeshes", most worn first) are read now and kept: whoever comes
+// into range afterwards wears one of them from memory, and only the textures have to be read.
+void Npcs::warmMeshes(Pak& pak) {
+	const PakEntry* e = pak.find("meta/hotmeshes");
+	if (!e || e->size < sizeof(HotMeshHeader) || e->size > (1u << 20)) return;
+	u8* blob = static_cast<u8*>(pak.readAlloc(*e));
+	if (!blob) return;
+	HotMeshHeader h;
+	memcpy(&h, blob, sizeof(h));
+	if (h.magic == HOTMESH_MAGIC && e->size == sizeof(h) + size_t(h.count) * sizeof(u32)) {
+		const double t0 = sys::timeMs();
+		u32 warmed = 0;
+		for (u32 i = 0; i < h.count; ++i) {
+			u32 hash;
+			memcpy(&hash, blob + sizeof(h) + size_t(i) * sizeof(u32), sizeof(hash));
+			warmed += _meshes.warm(pak, hash);
+		}
+		_stats.meshesWarmed = warmed;
+		_stats.warmMs = float(sys::timeMs() - t0);
+	}
+	free(blob);
 }
 
 void Npcs::enterWorld(Pak& pak, const World& world, const char* asset, Vec3 eye, float hours) {
 	if (!loaded()) return;
 	leaveWorld();
+	warmMeshes(pak);
 	free(_points);
 	_points = nullptr;
 	_pointCount = 0;
@@ -223,7 +249,7 @@ Npcs::Piece* Npcs::piece(Pak& pak, u32 hash, u32& loadsLeft) {
 			// Memory may have been short for a moment: another go every few seconds.
 			if (_frame - p.failedAt < 240 || loadsLeft == 0 || !loadFits()) return nullptr;
 			--loadsLeft;
-			p.failed = !p.model.loadEntry(pak, hash, &_pool, true);
+			p.failed = !p.model.loadEntry(pak, hash, &_pool, true, &_meshes);
 			p.failedAt = _frame;
 			++_stats.loads;
 			return p.failed ? nullptr : &p;
@@ -252,7 +278,7 @@ Npcs::Piece* Npcs::piece(Pak& pak, u32 hash, u32& loadsLeft) {
 	spare->hash = hash;
 	spare->used = _frame;
 	const double tLoad = sys::timeMs();
-	spare->failed = !spare->model.loadEntry(pak, hash, &_pool, true);
+	spare->failed = !spare->model.loadEntry(pak, hash, &_pool, true, &_meshes);
 	_pieceCostMs = _pieceCostMs * 0.8f + float(sys::timeMs() - tLoad) * 0.2f;
 	spare->failedAt = _frame;
 	++_stats.loads;
@@ -554,6 +580,10 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 	_stats.models = models;
 	_stats.textures = _pool.count();
 	_stats.textureBytes = _pool.bytes();
+	_stats.meshes = _meshes.count();
+	_stats.meshBytes = _meshes.bytes();
+	_stats.meshHits = _meshes.hits();
+	_stats.meshReads = _meshes.reads();
 	_stats.clipBytes = _clipBytes;
 }
 

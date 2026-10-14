@@ -410,14 +410,17 @@ private:
 enum class Result { Done, NotTierZero, TooFew, TooLittle, Other };
 
 Result simplifyChunk(BakedChunk& c, const std::vector<WorldMaterial>& materials, const LodOptions& opt, u64& before, u64& after, u64& simplifiable) {
-	if (c.tier != 0) return Result::NotTierZero;
+	const bool objects = c.tier != 0;
+	if (objects && !opt.objects) return Result::NotTierZero;
 	if (c.vertices.empty() || c.vertices.size() > 65535) return Result::Other;
-	// Which batches are simplified: opaque world triangles of the class that is always drawn.
+	// Which batches are simplified: opaque world triangles of the class that is always drawn (chunks of objects: of
+	// their own classes).
 	std::vector<bool> take(c.batches.size(), false);
 	std::vector<Tri> tris;
 	for (size_t b = 0; b < c.batches.size(); ++b) {
 		const ChunkBatch& cb = c.batches[b];
-		if ((cb.detail & 3) != DETAIL_ALWAYS || batchLod(cb.detail) != BATCH_LOD_BOTH || cb.material >= materials.size()) continue;
+		const bool classFits = objects ? (cb.detail & 3) != DETAIL_ALWAYS : (cb.detail & 3) == DETAIL_ALWAYS;
+		if (!classFits || batchLod(cb.detail) != BATCH_LOD_BOTH || cb.material >= materials.size()) continue;
 		const u16 bad = MATF_ALPHA_TEST | MATF_BLEND | MATF_ADD | MATF_WATER | MATF_WIND;
 		if (materials[cb.material].flags & bad) continue;
 		take[b] = true;
@@ -426,10 +429,11 @@ Result simplifyChunk(BakedChunk& c, const std::vector<WorldMaterial>& materials,
 			for (int k = 0; k < 3; ++k) t.v[k] = c.indices[cb.firstIndex + i + k];
 			t.material = cb.material;
 			t.cluster = cb.cluster;
+			t.group = u8(cb.detail & 0x3Fu);
 			tris.push_back(t);
 		}
 	}
-	if (tris.size() < opt.minTriangles) return Result::TooFew;
+	if (tris.size() < (objects ? opt.minObjectTriangles : opt.minTriangles)) return Result::TooFew;
 	simplifiable += tris.size();
 	// Vertices that something not simplified also uses stay.
 	std::vector<bool> usedOutside(c.vertices.size(), false);
@@ -439,9 +443,9 @@ Result simplifyChunk(BakedChunk& c, const std::vector<WorldMaterial>& materials,
 		for (u32 i = 0; i < cb.indexCount; ++i) usedOutside[c.indices[cb.firstIndex + i]] = true;
 	}
 	const u32 initial = u32(tris.size());
-	Simplifier simp(c, std::move(tris), usedOutside, opt.maxError);
-	simp.run(u32(double(initial) * double(opt.ratio)));
-	if (simp.alive() > u32(double(initial) * 0.9)) return Result::TooLittle; // not worth a second picture
+	Simplifier simp(c, std::move(tris), usedOutside, objects ? (c.tier == 1 ? opt.maxErrorMedium : opt.maxErrorSmall) : opt.maxError);
+	simp.run(u32(double(initial) * double(objects ? opt.ratioObjects : opt.ratio)));
+	if (simp.alive() > u32(double(initial) * (objects ? 0.8 : 0.9))) return Result::TooLittle; // not worth a second picture
 
 	// The vertices the stand-in needed that the chunk did not have.
 	c.vertices.insert(c.vertices.end(), simp.added().begin(), simp.added().end());
@@ -452,16 +456,20 @@ Result simplifyChunk(BakedChunk& c, const std::vector<WorldMaterial>& materials,
 		if (t.alive) kept.push_back(&t);
 	std::stable_sort(kept.begin(), kept.end(), [](const Tri* l, const Tri* r) {
 		if (l->material != r->material) return l->material < r->material;
-		return l->cluster < r->cluster;
+		if (l->cluster != r->cluster) return l->cluster < r->cluster;
+		return l->group < r->group;
 	});
 	std::vector<ChunkBatch> added;
 	std::vector<u16> indices = c.indices;
 	for (size_t i = 0; i < kept.size();) {
 		size_t e = i;
-		while (e < kept.size() && kept[e]->material == kept[i]->material && kept[e]->cluster == kept[i]->cluster) ++e;
+		while (e < kept.size() && kept[e]->material == kept[i]->material && kept[e]->cluster == kept[i]->cluster &&
+		       kept[e]->group == kept[i]->group)
+			++e;
 		ChunkBatch nb {};
 		nb.material = kept[i]->material;
-		nb.detail = withBatchLod(DETAIL_ALWAYS, BATCH_LOD_FAR_ONLY);
+		// (the class, layer and size band of the batch it stands in for: it is drawn as far as that is)
+		nb.detail = withBatchLod(kept[i]->group, BATCH_LOD_FAR_ONLY);
 		nb.cluster = kept[i]->cluster;
 		nb.firstIndex = u32(indices.size());
 		nb.indexCount = u32(e - i) * 3;
@@ -623,7 +631,7 @@ void buildLods(std::vector<BakedChunk>& chunks, const std::vector<WorldMaterial>
 	std::atomic<size_t> next {0};
 	struct Part {
 		u32 chunks = 0, candidates = 0, notTier = 0, few = 0, little = 0;
-		u64 before = 0, after = 0, bytes = 0, simplifiable = 0;
+		u64 before = 0, after = 0, bytes = 0, simplifiable = 0, objectChunks = 0, objectBytes = 0;
 	};
 	const unsigned threads = std::max(1u, opt.threads);
 	std::vector<Part> parts(threads);
@@ -639,6 +647,11 @@ void buildLods(std::vector<BakedChunk>& chunks, const std::vector<WorldMaterial>
 				++parts[id].chunks;
 				parts[id].bytes += (c.indices.size() - indices0) * sizeof(u16) + (c.batches.size() - batches0) * sizeof(ChunkBatch) +
 				                          (c.vertices.size() - vertices0) * sizeof(WorldVertex);
+				if (c.tier != 0) {
+					++parts[id].objectChunks;
+					parts[id].objectBytes += (c.indices.size() - indices0) * sizeof(u16) + (c.batches.size() - batches0) * sizeof(ChunkBatch) +
+					                         (c.vertices.size() - vertices0) * sizeof(WorldVertex);
+				}
 				break;
 			case Result::NotTierZero: ++parts[id].notTier; break;
 			case Result::TooFew: ++parts[id].few; break;
@@ -661,6 +674,8 @@ void buildLods(std::vector<BakedChunk>& chunks, const std::vector<WorldMaterial>
 		stats.trianglesBefore += p.before;
 		stats.trianglesAfter += p.after;
 		stats.extraBytes += p.bytes;
+		stats.objectChunks += u32(p.objectChunks);
+		stats.objectBytes += p.objectBytes;
 	}
 	stats.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 }

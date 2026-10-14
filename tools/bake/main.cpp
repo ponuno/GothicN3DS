@@ -145,6 +145,9 @@ void usage() {
 	          "                     triangles, same vertices; menu: Graphics+ -> Far geometry; adds ~10 %% to the chunks)\n"
 	          "  --lod-ratio R      triangles kept of what is simplified (default 0.6); --lod-error CM: how far a\n"
 	          "                     collapse may move the surface (default 30)\n"
+	          "  --no-lod-objects   with --lod: no stand-ins for the chunks of medium and small objects (crates, bushes, ...;\n"
+	          "                     by default they get them too: 40 %% of the triangles, drawn as far as the objects are);\n"
+	          "                     --lod-objects-ratio R (0.4)\n"
 	          "  --vis              Graphics+: bake which parts of the world are hidden from which place (walls, hills),\n"
 	          "                     so the game need not draw them (menu: Graphics+ -> Visibility; minutes to bake)\n"
 	          "  --vis-radius M     how far from a cell the table goes, metres (default 150); --vis-near M: nothing\n"
@@ -280,6 +283,8 @@ int main(int argc, char** argv) {
 			else if (a == "--npc-lod-error") opt.npcLodSimplify.maxError = std::clamp(std::stof(value()), 0.5f, 30.0f);
 			else if (a == "--simplify-no-characters") opt.simplifyModels.enabled = false;
 			else if (a == "--lod") opt.lod.enabled = true;
+			else if (a == "--no-lod-objects") opt.lod.objects = false;
+			else if (a == "--lod-objects-ratio") opt.lod.ratioObjects = std::clamp(std::stof(value()), 0.1f, 0.9f);
 			else if (a == "--lod-ratio") opt.lod.ratio = std::clamp(std::stof(value()), 0.1f, 0.9f);
 			else if (a == "--lod-error") opt.lod.maxError = std::clamp(std::stof(value()), 1.0f, 500.0f);
 			else if (a == "--lights") opt.light.enabled = true;

@@ -13,6 +13,9 @@ struct ModelBakeResult {
 	std::string report;
 	size_t parts = 0, vertices = 0, triangles = 0, clips = 0, textures = 0;
 	size_t largestPalette = 0;
+	u32 meshEntry = 0;    // sharedMeshes: the pak entry of the mesh (0: the model carries its own)
+	size_t meshBytes = 0; // ... and its size
+	bool meshNew = false; // ... this model made the entry (else it found it)
 	std::vector<std::string> missingTextures;
 };
 

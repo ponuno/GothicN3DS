@@ -160,8 +160,6 @@ void Clip::sample(float time, Pose& pose) const {
 	}
 }
 
-// ---- Model ----
-
 // ---- TexturePool ----
 
 gfx::Texture* TexturePool::acquire(Pak& pak, u32 entryHash) {
@@ -169,9 +167,19 @@ gfx::Texture* TexturePool::acquire(Pak& pak, u32 entryHash) {
 	for (u32 i = 0; i < _count; ++i)
 		if (_slots[i].hash == entryHash) {
 			++_slots[i].users;
+			_slots[i].stamp = ++_clock;
 			return _slots[i].texture;
 		}
-	if (_count == CAPACITY) return nullptr;
+	if (_count == CAPACITY) {
+		// Room: the texture that nobody has used for longest goes.
+		int victim = -1;
+		for (u32 i = 0; i < _count; ++i)
+			if (_slots[i].users == 0 && (victim < 0 || _slots[i].stamp < _slots[victim].stamp)) victim = int(i);
+		if (victim < 0) return nullptr;
+		gfx::textureDestroy(_slots[victim].texture);
+		_bytes -= _slots[victim].bytes;
+		_slots[victim] = _slots[--_count];
+	}
 	const PakEntry* te = pak.find(entryHash);
 	if (!te || te->type != ASSET_TEXTURE || te->size < sizeof(TexHeader)) return nullptr;
 	u8* tb = static_cast<u8*>(pak.readAlloc(*te));
@@ -181,7 +189,7 @@ gfx::Texture* TexturePool::acquire(Pak& pak, u32 entryHash) {
 	gfx::Texture* texture = texValidate(th, te->size - u32(sizeof(TexHeader))) ? gfx::textureCreate(th, tb + sizeof(TexHeader)) : nullptr;
 	free(tb);
 	if (!texture) return nullptr;
-	_slots[_count++] = Slot {entryHash, 1, th.dataSize, texture};
+	_slots[_count++] = Slot {entryHash, 1, th.dataSize, texture, ++_clock};
 	_bytes += th.dataSize;
 	return texture;
 }
@@ -190,11 +198,8 @@ void TexturePool::drop(gfx::Texture* texture) {
 	if (!texture) return;
 	for (u32 i = 0; i < _count; ++i) {
 		if (_slots[i].texture != texture) continue;
-		if (--_slots[i].users == 0) {
-			gfx::textureDestroy(texture);
-			_bytes -= _slots[i].bytes;
-			_slots[i] = _slots[--_count];
-		}
+		if (_slots[i].users > 0) --_slots[i].users;
+		_slots[i].stamp = ++_clock;
 		return;
 	}
 }
@@ -203,6 +208,129 @@ void TexturePool::release() {
 	for (u32 i = 0; i < _count; ++i) gfx::textureDestroy(_slots[i].texture);
 	_count = 0;
 	_bytes = 0;
+}
+
+// ---- MeshPool ----
+
+bool meshFitsParts(const WorldVertex* vertices, const u16* indices, u32 vertexCount, u32 indexCount, const ModelPart* parts, u32 partCount) {
+	for (u32 i = 0; i < indexCount; ++i)
+		if (indices[i] >= vertexCount) return false;
+	// A vertex must not point past its part's palette.
+	for (u32 i = 0; i < partCount; ++i) {
+		if (parts[i].firstIndex > indexCount || parts[i].indexCount > indexCount - parts[i].firstIndex) return false;
+		for (u32 k = 0; k < parts[i].indexCount; ++k) {
+			const WorldVertex& v = vertices[indices[parts[i].firstIndex + k]];
+			if (!(v.r % 3 == 0 && v.g % 3 == 0 && u32(v.r) / 3 < parts[i].boneCount && u32(v.g) / 3 < parts[i].boneCount)) return false;
+		}
+	}
+	return true;
+}
+
+MeshPool::Slot* MeshPool::find(u32 hash) {
+	for (u32 i = 0; i < _count; ++i)
+		if (_slots[i].hash == hash) return &_slots[i];
+	return nullptr;
+}
+
+// Lets the meshes nobody uses go, the longest unused first, until `room` more bytes fit in the idle budget
+// (and a slot is free).
+void MeshPool::evictIdle(u32 room) {
+	while (_count > 0 && (_count == CAPACITY || _idleBytes + room > _idleBudget)) {
+		int victim = -1;
+		for (u32 i = 0; i < _count; ++i)
+			if (_slots[i].users == 0 && !_slots[i].pinned && (victim < 0 || _slots[i].stamp < _slots[victim].stamp)) victim = int(i);
+		if (victim < 0) return;
+		gfx::meshDestroy(_slots[victim].mesh);
+		_bytes -= _slots[victim].bytes;
+		_idleBytes -= _slots[victim].bytes;
+		_slots[victim] = _slots[--_count];
+	}
+}
+
+gfx::Mesh* meshFromEntry(Pak& pak, u32 entryHash, const ModelPart* parts, u32 partCount, u32 vertexCount, u32 indexCount, u32* vertexOut,
+                         u32* indexOut) {
+	const PakEntry* e = pak.find(entryHash);
+	if (!e || e->type != ASSET_MODEL || e->size < sizeof(MeshHeader)) return nullptr;
+	u8* blob = static_cast<u8*>(pak.readAlloc(*e));
+	if (!blob) return nullptr;
+	MeshHeader mh;
+	memcpy(&mh, blob, sizeof(mh));
+	gfx::Mesh* mesh = nullptr;
+	bool ok = mh.magic == MESH_MAGIC && mh.version == MESH_VERSION && mh.vertexCount > 0 && mh.vertexCount <= 65535 &&
+	          mh.indexCount > 0 && mh.indexCount % 3 == 0 && e->size == meshBlobSize(mh.vertexCount, mh.indexCount) &&
+	          (!vertexCount || (mh.vertexCount == vertexCount && mh.indexCount == indexCount));
+	if (ok) {
+		const WorldVertex* vertices = reinterpret_cast<const WorldVertex*>(blob + sizeof(MeshHeader));
+		const u16* indices = reinterpret_cast<const u16*>(vertices + mh.vertexCount);
+		ok = meshFitsParts(vertices, indices, mh.vertexCount, mh.indexCount, parts, partCount);
+		if (ok) mesh = gfx::meshCreate(vertices, mh.vertexCount, indices, mh.indexCount);
+	}
+	free(blob);
+	if (mesh) {
+		if (vertexOut) *vertexOut = mh.vertexCount;
+		if (indexOut) *indexOut = mh.indexCount;
+	}
+	return mesh;
+}
+
+gfx::Mesh* MeshPool::make(Pak& pak, u32 entryHash, const ModelPart* parts, u32 partCount, u32 vertexCount, u32 indexCount, bool pin) {
+	u32 vc = 0, ic = 0;
+	gfx::Mesh* mesh = meshFromEntry(pak, entryHash, parts, partCount, vertexCount, indexCount, &vc, &ic);
+	if (!mesh) return nullptr;
+	const u32 bytes = vc * 16u + ic * 2u;
+	evictIdle(0);
+	if (_count == CAPACITY) {
+		gfx::meshDestroy(mesh);
+		return nullptr;
+	}
+	_slots[_count++] = Slot {entryHash, pin ? 0u : 1u, bytes, vc, ic, ++_clock, pin, mesh};
+	_bytes += bytes;
+	++_reads;
+	return mesh;
+}
+
+gfx::Mesh* MeshPool::acquire(Pak& pak, u32 entryHash, u32 vertexCount, u32 indexCount, const ModelPart* parts, u32 partCount) {
+	if (!entryHash) return nullptr;
+	if (Slot* s = find(entryHash)) {
+		if (s->vertexCount != vertexCount || s->indexCount != indexCount) return nullptr;
+		// (parts that do not fit the mesh are caught by the model's own bounds check on its part table)
+		if (s->users == 0 && !s->pinned) _idleBytes -= s->bytes;
+		++s->users;
+		s->stamp = ++_clock;
+		++_hits;
+		return s->mesh;
+	}
+	return make(pak, entryHash, parts, partCount, vertexCount, indexCount, false);
+}
+
+bool MeshPool::warm(Pak& pak, u32 entryHash) {
+	if (Slot* s = find(entryHash)) {
+		if (!s->pinned) {
+			if (s->users == 0) _idleBytes -= s->bytes;
+			s->pinned = true;
+		}
+		return true;
+	}
+	return make(pak, entryHash, nullptr, 0, 0, 0, true) != nullptr;
+}
+
+void MeshPool::drop(gfx::Mesh* mesh) {
+	if (!mesh) return;
+	for (u32 i = 0; i < _count; ++i) {
+		if (_slots[i].mesh != mesh) continue;
+		if (_slots[i].users > 0 && --_slots[i].users == 0 && !_slots[i].pinned) {
+			_idleBytes += _slots[i].bytes;
+			_slots[i].stamp = ++_clock;
+			evictIdle(0);
+		}
+		return;
+	}
+}
+
+void MeshPool::release() {
+	for (u32 i = 0; i < _count; ++i) gfx::meshDestroy(_slots[i].mesh);
+	_count = 0;
+	_bytes = _idleBytes = 0;
 }
 
 // ---- Model ----
@@ -295,7 +423,7 @@ u32 Model::dropClip(int i) {
 	return bytes;
 }
 
-bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool, bool lazyClips) {
+bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool, bool lazyClips, MeshPool* meshes) {
 	release();
 	const PakEntry* e = pak.find(entryHash);
 	if (!e || e->type != ASSET_MODEL || e->size < sizeof(ModelHeader)) return false;
@@ -307,7 +435,10 @@ bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool, bool lazyClips
 	          _h.nodeCount <= MODEL_MAX_NODES && _h.vertexCount <= 65535 && _h.indexCount % 3 == 0 &&
 	          _h.blendCount <= 4096 && e->size == modelBlobSize(_h) &&
 	          // Without a mesh there are no parts either, but then there are clips.
-	          (_h.vertexCount > 0 ? _h.indexCount > 0 : (_h.partCount == 0 && _h.indexCount == 0 && _h.clipCount > 0));
+	          (_h.vertexCount > 0 ? _h.indexCount > 0 : (_h.partCount == 0 && _h.indexCount == 0 && _h.clipCount > 0)) &&
+	          // (a shared mesh needs its entry named, and the model has no mesh of its own)
+	          (!(_h.flags & MODELF_SHARED_MESH) || (_h.reserved != 0 && _h.vertexCount > 0));
+	const bool shared = ok && (_h.flags & MODELF_SHARED_MESH) != 0;
 	const u8* p = blob + sizeof(ModelHeader);
 	if (ok) {
 		_nodes = static_cast<ModelNode*>(malloc(size_t(_h.nodeCount) * sizeof(ModelNode)));
@@ -332,8 +463,10 @@ bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool, bool lazyClips
 		p += size_t(_h.clipCount) * sizeof(ModelClipRef);
 		memcpy(_blends, p, size_t(_h.blendCount) * sizeof(ModelBlend));
 		p += size_t(_h.blendCount) * sizeof(ModelBlend);
-		vertices = reinterpret_cast<const WorldVertex*>(p); // 4-byte aligned: every table before is
-		indices = reinterpret_cast<const u16*>(vertices + _h.vertexCount);
+		if (!shared) {
+			vertices = reinterpret_cast<const WorldVertex*>(p); // 4-byte aligned: every table before is
+			indices = reinterpret_cast<const u16*>(vertices + _h.vertexCount);
+		}
 		// Parents come first, parts stay inside the buffers, palettes inside the skeleton.
 		for (u32 i = 0; ok && i < _h.nodeCount; ++i) ok = _nodes[i].parent < i16(i) && _nodes[i].parent >= -1;
 		for (u32 i = 0; ok && i < _h.partCount; ++i) {
@@ -342,15 +475,26 @@ bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool, bool lazyClips
 			     part.indexCount <= _h.indexCount - part.firstIndex;
 			for (u32 b = 0; ok && b < part.boneCount; ++b) ok = part.bones[b] < _h.nodeCount;
 		}
-		for (u32 i = 0; ok && i < _h.indexCount; ++i) ok = indices[i] < _h.vertexCount;
-		// A vertex must not point past its part's palette.
-		for (u32 i = 0; ok && i < _h.partCount; ++i)
-			for (u32 k = 0; ok && k < _parts[i].indexCount; ++k) {
-				const WorldVertex& v = vertices[indices[_parts[i].firstIndex + k]];
-				ok = v.r % 3 == 0 && v.g % 3 == 0 && u32(v.r) / 3 < _parts[i].boneCount && u32(v.g) / 3 < _parts[i].boneCount;
-			}
+		if (!shared) {
+			for (u32 i = 0; ok && i < _h.indexCount; ++i) ok = indices[i] < _h.vertexCount;
+			// A vertex must not point past its part's palette.
+			for (u32 i = 0; ok && i < _h.partCount; ++i)
+				for (u32 k = 0; ok && k < _parts[i].indexCount; ++k) {
+					const WorldVertex& v = vertices[indices[_parts[i].firstIndex + k]];
+					ok = v.r % 3 == 0 && v.g % 3 == 0 && u32(v.r) / 3 < _parts[i].boneCount && u32(v.g) / 3 < _parts[i].boneCount;
+				}
+		}
 	}
-	if (ok && _h.vertexCount) {
+	if (ok && shared) {
+		// The mesh is an entry of its own: from the pool (read once, whoever wears it), or for this model alone.
+		if (meshes) {
+			_mesh = meshes->acquire(pak, _h.reserved, _h.vertexCount, _h.indexCount, _parts, _h.partCount);
+			if (_mesh) _meshPool = meshes;
+		} else {
+			_mesh = meshFromEntry(pak, _h.reserved, _parts, _h.partCount, _h.vertexCount, _h.indexCount, nullptr, nullptr);
+		}
+		ok = _mesh != nullptr;
+	} else if (ok && _h.vertexCount) {
 		_mesh = gfx::meshCreate(vertices, _h.vertexCount, indices, _h.indexCount);
 		ok = _mesh != nullptr;
 	}
@@ -405,7 +549,12 @@ void Model::release() {
 				gfx::textureDestroy(t);
 		}
 	}
-	if (_mesh) gfx::meshDestroy(_mesh);
+	if (_mesh) {
+		if (_meshPool)
+			_meshPool->drop(_mesh);
+		else
+			gfx::meshDestroy(_mesh);
+	}
 	if (_clips)
 		for (u32 i = 0; i < _h.clipCount; ++i) _clips[i].release();
 	free(_clips);
@@ -426,6 +575,7 @@ void Model::release() {
 	_clipRefs = nullptr;
 	_mesh = nullptr;
 	_pool = nullptr;
+	_meshPool = nullptr;
 	_textureBytes = 0;
 	_h = {};
 }

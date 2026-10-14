@@ -113,6 +113,10 @@ struct NpcStats {
 	u32 loads = 0;     // models read since the start
 	u32 textures = 0;  // textures in memory, and their size
 	u32 textureBytes = 0;
+	u32 meshes = 0, meshBytes = 0; // shared meshes in memory (fix88), and their size
+	u32 meshHits = 0, meshReads = 0; // asked for and found in memory / read from the archive
+	u32 meshesWarmed = 0;           // the most worn ones read at the start
+	float warmMs = 0;
 	// Life.
 	u32 actors = 0;       // characters living their day right now
 	u32 walking = 0;      // of them on their way somewhere
@@ -577,6 +581,7 @@ private:
 	static bool findPoint(void* self, const char* name, float pos[3], float& yaw);
 	const LookEntry* lookOf(const GameLook& look) const;
 	Piece* piece(Pak& pak, u32 hash, u32& loadsLeft);
+	void warmMeshes(Pak& pak);
 	bool loadFits() { return !_cfg.budget || _cfg.budget->allow(_pieceCostMs, _refusedPieces); }
 	float _pieceCostMs = 6.0f; // estimate of what reading one model takes, kept as they are timed
 	u32 _refusedPieces = 0;
@@ -920,6 +925,7 @@ private:
 	char* _stateNames = nullptr; // "script/states"
 	u32 _stateNamesSize = 0;
 	TexturePool _pool;
+	MeshPool _meshes;
 	Piece _pieces[PIECES];
 	NpcActor _actors[ACTORS];
 	Vec3 _drawnFeet[ACTORS] = {};

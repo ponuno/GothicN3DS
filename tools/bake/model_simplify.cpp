@@ -52,7 +52,7 @@ const double kWeightTolerance = 0.2;
 // a place to a vertex at another one that fits.
 class Mesh {
 public:
-	Mesh(const SrcModelPart& part, float maxError) : _maxErr2(double(maxError) * double(maxError)) {
+	Mesh(const SrcModelPart& part, float maxError, bool synthesize) : _maxErr2(double(maxError) * double(maxError)), _synth(synthesize) {
 		std::map<std::vector<float>, u32> weld;
 		std::map<std::vector<float>, u32> places;
 		for (const SrcSkinVertex& v : part.verts) {
@@ -127,6 +127,7 @@ public:
 
 private:
 	double _maxErr2;
+	bool _synth;
 	std::vector<SrcSkinVertex> _verts;
 	std::vector<u32> _corner; // three per triangle
 	std::vector<bool> _alive;
@@ -205,7 +206,7 @@ private:
 	// The vertex at place `to` that triangle `t` (with a corner at `from`) could use instead of its own corner, or -1.
 	// The texture coordinates and the normal are those the triangle's own mapping carries to `to`; the bones and
 	// their weights are the corner's own, so the skinning stays what it was.
-	int chooseVertex(u32 t, u32 from, u32 to) const {
+	int chooseVertex(u32 t, u32 from, u32 to, SrcSkinVertex* made = nullptr) const {
 		int fk = -1;
 		for (int k = 0; k < 3; ++k)
 			if (_pid[_corner[t * 3 + k]] == from) fk = k;
@@ -249,6 +250,20 @@ private:
 				best = int(cand);
 			}
 		}
+		if (best < 0 && _synth) {
+			// (--npc-lod, far away: no vertex there fits, so one is made - the triangle's own mapping carried to
+			// the place, with the bones and weights of the corner it replaces.)
+			if (made) {
+				*made = A;
+				for (int i = 0; i < 3; ++i) {
+					made->pos[i] = float(_pos[to].x * (i == 0) + _pos[to].y * (i == 1) + _pos[to].z * (i == 2));
+					made->normal[i] = float(wantN[i] / nl);
+				}
+				made->uv[0] = float(wantUv[0]);
+				made->uv[1] = float(wantUv[1]);
+			}
+			return -2;
+		}
 		return best;
 	}
 
@@ -282,7 +297,7 @@ private:
 			const double l0 = std::sqrt(dot(n0, n0)), l1 = std::sqrt(dot(n1, n1));
 			if (l1 < 1e-9 || l0 < 1e-12) return false;
 			if (dot(n0, n1) < 0.3 * l0 * l1) return false;
-			if (chooseVertex(t, from, to) < 0) return false;
+			if (chooseVertex(t, from, to) == -1) return false;
 		}
 		return true;
 	}
@@ -304,7 +319,14 @@ private:
 					list.erase(std::remove(list.begin(), list.end(), t), list.end());
 				}
 			} else {
-				const int pick = chooseVertex(t, from, to);
+				SrcSkinVertex made;
+				int pick = chooseVertex(t, from, to, &made);
+				if (pick == -2) {
+					pick = int(_verts.size());
+					_verts.push_back(made);
+					_pid.push_back(to);
+					_vertsAt[to].push_back(u32(pick));
+				}
 				for (int k = 0; k < 3; ++k)
 					if (_pid[_corner[t * 3 + k]] == from) _corner[t * 3 + k] = u32(pick);
 				_inc[to].push_back(t);
@@ -329,7 +351,7 @@ void simplifyModelParts(std::vector<SrcModelPart>& parts, const std::vector<bool
 		if ((i < skip.size() && skip[i]) || part.material.blend != SrcBlend::Opaque || part.verts.size() % 3) continue;
 		const u32 triangles = u32(part.verts.size() / 3);
 		if (triangles < opt.minTriangles) continue;
-		Mesh mesh(part, opt.maxError);
+		Mesh mesh(part, opt.maxError, opt.synthesize);
 		const u32 initial = mesh.count();
 		mesh.run(u32(double(initial) * double(opt.ratio)));
 		if (mesh.count() > u32(double(initial) * 0.97)) continue;

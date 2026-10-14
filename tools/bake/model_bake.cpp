@@ -198,15 +198,38 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 	u64 uvClamped = 0, blended = 0;
 	// Source parts that draw the same way are one group; a group is cut
 	// wherever its triangles need more bones than one draw call can address.
-	std::map<std::pair<u32, u16>, std::vector<const SrcModelPart*>> groups;
-	for (const SrcModelPart& part : (*srcParts)) {
-		const u32 tex = part.material.texture.empty() ? 0 : textureHash[part.material.texture];
-		u16 flags = 0;
-		if (tex == 0) flags |= MATF_NO_TEXTURE;
-		if (tex && textureAlpha[part.material.texture]) flags |= MATF_ALPHA_TEST;
-		groups[{tex, flags}].push_back(&part);
+	struct Group {
+		u32 tex;
+		u16 flags;
+		std::vector<const SrcModelPart*> parts;
+	};
+	std::vector<Group> groupList;
+	{
+		std::map<std::pair<u32, u16>, std::vector<const SrcModelPart*>> groups;
+		// (A shared mesh must not depend on which textures a look wears: groups go in the order their parts come
+		// in the source, not in the order of the textures' hashes - then bodies and heads that differ in their
+		// textures only are the same mesh, byte for byte.)
+		std::map<std::pair<std::string, u16>, size_t> firstSeen;
+		for (const SrcModelPart& part : (*srcParts)) {
+			const u32 tex = part.material.texture.empty() ? 0 : textureHash[part.material.texture];
+			u16 flags = 0;
+			if (tex == 0) flags |= MATF_NO_TEXTURE;
+			if (tex && textureAlpha[part.material.texture]) flags |= MATF_ALPHA_TEST;
+			if (opt.sharedMeshes) {
+				const auto key = std::make_pair(part.material.texture, flags);
+				auto it = firstSeen.find(key);
+				if (it == firstSeen.end()) {
+					it = firstSeen.emplace(key, groupList.size()).first;
+					groupList.push_back({tex, flags, {}});
+				}
+				groupList[it->second].parts.push_back(&part);
+			} else {
+				groups[{tex, flags}].push_back(&part);
+			}
+		}
+		for (auto& g : groups) groupList.push_back({g.first.first, g.first.second, std::move(g.second)});
 	}
-	for (const auto& group : groups) {
+	for (const Group& group : groupList) {
 		// Triangles sorted by their lowest bone: neighbours in the skeleton end
 		// up in the same palette.
 		struct Tri {
@@ -214,7 +237,7 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 			int low;
 		};
 		std::vector<Tri> tris;
-		for (const SrcModelPart* part : group.second)
+		for (const SrcModelPart* part : group.parts)
 			for (size_t i = 0; i + 2 < part->verts.size(); i += 3) {
 				int low = 1 << 30;
 				for (size_t k = 0; k < 3; ++k)
@@ -228,8 +251,8 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 		std::map<VertexKey, u16> lookup;
 		auto begin = [&]() {
 			cur = ModelPart {};
-			cur.texture = group.first.first;
-			cur.flags = group.first.second;
+			cur.texture = group.tex;
+			cur.flags = group.flags;
 			cur.firstIndex = u32(indices.size());
 			slotOf.clear();
 			lookup.clear();
@@ -485,14 +508,51 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 	mh.uvScale = WORLD_UV_SCALE;
 	std::memcpy(mh.bbMin, mn, sizeof(mn));
 	std::memcpy(mh.bbMax, mx, sizeof(mx));
+	// A shared mesh (the inhabitants' bodies and heads): the vertices, the indices, the parts' places in them
+	// and palettes - not their textures - are the key; what has the same key is the same entry, made once.
+	if (opt.sharedMeshes && !vertices.empty()) {
+		u64 key = 1469598103934665603ull; // FNV-1a
+		const auto mix = [&key](const void* data, size_t size) {
+			const u8* b = static_cast<const u8*>(data);
+			for (size_t i = 0; i < size; ++i) key = (key ^ b[i]) * 1099511628211ull;
+		};
+		mix(&mh.posScale, sizeof(mh.posScale));
+		mix(vertices.data(), vertices.size() * sizeof(WorldVertex));
+		mix(indices.data(), indices.size() * sizeof(u16));
+		for (const ModelPart& part : parts) {
+			ModelPart bare = part;
+			bare.texture = 0;
+			bare.flags = 0;
+			mix(&bare, sizeof(bare));
+		}
+		char meshName[40];
+		std::snprintf(meshName, sizeof(meshName), "mesh/%016llx", static_cast<unsigned long long>(key));
+		if (!pak.has(meshName)) {
+			std::vector<u8> mesh;
+			append(mesh, MeshHeader {MESH_MAGIC, MESH_VERSION, mh.vertexCount, mh.indexCount});
+			for (const WorldVertex& v : vertices) append(mesh, v);
+			for (u16 i : indices) append(mesh, i);
+			while (mesh.size() % 4) mesh.push_back(0);
+			if (mesh.size() != meshBlobSize(mh.vertexCount, mh.indexCount)) throw std::logic_error("mesh layout");
+			pak.add(meshName, ASSET_MODEL, mesh);
+			result.meshNew = true;
+		}
+		mh.flags |= MODELF_SHARED_MESH;
+		mh.reserved = hashName(meshName);
+		result.meshEntry = mh.reserved;
+		result.meshBytes = meshBlobSize(mh.vertexCount, mh.indexCount);
+	}
+	const bool sharedMesh = (mh.flags & MODELF_SHARED_MESH) != 0;
 	std::vector<u8> blob;
 	append(blob, mh);
 	for (const ModelNode& node : nodes) append(blob, node);
 	for (const ModelPart& part : parts) append(blob, part);
 	for (const ModelClipRef& ref : clipRefs) append(blob, ref);
 	for (const ModelBlend& e : blends) append(blob, e);
-	for (const WorldVertex& v : vertices) append(blob, v);
-	for (u16 i : indices) append(blob, i);
+	if (!sharedMesh) {
+		for (const WorldVertex& v : vertices) append(blob, v);
+		for (u16 i : indices) append(blob, i);
+	}
 	while (blob.size() % 4) blob.push_back(0);
 	if (blob.size() != modelBlobSize(mh)) throw std::logic_error("model layout");
 	pak.add("model/" + lowerName(model.name), ASSET_MODEL, blob);

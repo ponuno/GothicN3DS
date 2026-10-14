@@ -19,13 +19,23 @@ struct LodOptions {
 	float ratio = 0.6f;        // triangles to keep, of what is simplified
 	float maxError = 30.0f;    // cm: how far (mean, over the planes around a vertex) a collapse may move the surface
 	u32 minTriangles = 48;     // a chunk with fewer simplifiable triangles is left alone
+	// Chunks of medium and small objects (tiers 1 and 2) get stand-ins too (fix88): crates, mushrooms, bushes and the
+	// like are most of the triangles within the draw distance, and a 750-triangle crate 25 m away needs a few dozen.
+	// The stand-in keeps the batch's class, layer and size band, so it is drawn exactly as far as the full batch.
+	bool objects = true;
+	float ratioObjects = 0.4f;
+	float maxErrorMedium = 10.0f; // cm (the objects are small: the error is held to a fraction of their size)
+	float maxErrorSmall = 5.0f;
+	u32 minObjectTriangles = 200;
 	unsigned threads = 1;
 };
 
 struct LodStats {
 	u32 chunks = 0;           // chunks that got a stand-in
 	u32 candidates = 0;       // chunks looked at
-	u32 notTierZero = 0;      // ... of them chunks of medium or small objects
+	u32 notTierZero = 0;      // ... of them chunks of medium or small objects (left alone with objects = false)
+	u32 objectChunks = 0;     // ... chunks of medium or small objects that got a stand-in
+	u64 objectBytes = 0;
 	u32 tooFew = 0;           // ... too few simplifiable triangles (opaque world triangles of the always-drawn class)
 	u32 tooLittle = 0;        // ... simplified too little to be worth a second picture
 	u64 simplifiable = 0;     // triangles that could be simplified, all chunks

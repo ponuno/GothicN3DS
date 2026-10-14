@@ -65,8 +65,8 @@ private:
 	u32 _bytes = 0;
 };
 
-// Textures several models share: each is loaded once and freed when the last
-// model using it goes.
+// Textures several models share: each is loaded once. One no model uses any more stays (the inhabitants
+// come and go, and the same faces and skins come back) until the room is wanted for another.
 class TexturePool {
 public:
 	TexturePool() = default;
@@ -83,16 +83,66 @@ public:
 	u32 bytes() const { return _bytes; }
 
 private:
-	enum { CAPACITY = 96 };
+	enum { CAPACITY = 192 };
 	struct Slot {
 		u32 hash;
 		u32 users;
 		u32 bytes;
 		gfx::Texture* texture;
+		u32 stamp; // when it was last asked for or let go
 	};
 	Slot _slots[CAPACITY] = {};
-	u32 _count = 0, _bytes = 0;
+	u32 _count = 0, _bytes = 0, _clock = 0;
 };
+
+// The meshes of models that share one (MODELF_SHARED_MESH): each is read, checked and put on the GPU once,
+// whoever wears it. A mesh nobody uses any more stays, up to a budget, the longest unused going first; the
+// ones the world's people wear most are warmed at the start and stay for good (engine/npcs.cpp).
+class MeshPool {
+public:
+	MeshPool() = default;
+	~MeshPool() { release(); }
+	MeshPool(const MeshPool&) = delete;
+	MeshPool& operator=(const MeshPool&) = delete;
+
+	// The mesh of pak entry `entryHash` for a model with these parts (their palettes are checked against it
+	// when the mesh is made); null if it is missing, broken or does not fit. Every acquire needs its drop.
+	gfx::Mesh* acquire(Pak& pak, u32 entryHash, u32 vertexCount, u32 indexCount, const ModelPart* parts, u32 partCount);
+	// Reads the mesh and keeps it for good (until release()); true if it is there.
+	bool warm(Pak& pak, u32 entryHash);
+	void drop(gfx::Mesh* mesh);
+	void release();
+	void setIdleBudget(u32 bytes) { _idleBudget = bytes; }
+	u32 count() const { return _count; }
+	u32 bytes() const { return _bytes; }
+	u32 hits() const { return _hits; }
+	u32 reads() const { return _reads; }
+
+private:
+	enum { CAPACITY = 256 };
+	struct Slot {
+		u32 hash;
+		u32 users;
+		u32 bytes;
+		u32 vertexCount, indexCount;
+		u32 stamp;
+		bool pinned;
+		gfx::Mesh* mesh;
+	};
+	Slot* find(u32 hash);
+	gfx::Mesh* make(Pak& pak, u32 entryHash, const ModelPart* parts, u32 partCount, u32 vertexCount, u32 indexCount, bool pin);
+	void evictIdle(u32 room);
+	Slot _slots[CAPACITY] = {};
+	u32 _count = 0, _bytes = 0, _idleBytes = 0, _clock = 0, _idleBudget = 6u << 20, _hits = 0, _reads = 0;
+};
+
+// The mesh of a shared-mesh entry, read and put on the GPU (null if it is missing, broken or does not fit the parts: vertexCount
+// and indexCount of 0 ask for no check of the sizes). The caller owns it.
+gfx::Mesh* meshFromEntry(Pak& pak, u32 entryHash, const ModelPart* parts, u32 partCount, u32 vertexCount, u32 indexCount, u32* vertexOut,
+                         u32* indexOut);
+
+// The mesh a model's parts and palettes fit: the vertices follow bones of the part's palette, the indices stay inside.
+bool meshFitsParts(const WorldVertex* vertices, const u16* indices, u32 vertexCount, u32 indexCount, const ModelPart* parts, u32 partCount);
 
 class Model {
 public:
@@ -110,7 +160,8 @@ public:
 	// With `lazyClips` no clip is read now: each is read when fetch() first
 	// asks for it (a model of a world's people has hundreds, of which a
 	// place needs a few).
-	bool loadEntry(Pak& pak, u32 entryHash, TexturePool* pool = nullptr, bool lazyClips = false);
+	// A model with a shared mesh gets it through `meshes` (which must outlive the model), else reads it for itself.
+	bool loadEntry(Pak& pak, u32 entryHash, TexturePool* pool = nullptr, bool lazyClips = false, MeshPool* meshes = nullptr);
 	void release();
 	bool loaded() const { return _nodes != nullptr; }
 	bool hasMesh() const { return _mesh != nullptr; }
@@ -193,6 +244,7 @@ private:
 	gfx::Mesh* _mesh = nullptr;
 	gfx::Texture** _textures = nullptr; // per part; shared pointers are freed once
 	TexturePool* _pool = nullptr;       // where the textures come from, if not our own
+	MeshPool* _meshPool = nullptr;      // ... and the mesh
 	u32 _textureBytes = 0;
 };
 

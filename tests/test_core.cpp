@@ -7632,6 +7632,88 @@ static void testVisibility() {
 	}
 }
 
+// A cell with two floors has a row for each, chosen by the camera's height: what the upper deck hides from the street is
+// not what it hides from the deck itself (fix88).
+static void testVisibilityFloors() {
+	SrcScene scene;
+	scene.materials.resize(2);
+	scene.materials[0].name = "deck";
+	scene.materials[1].name = "crate";
+	for (SrcMaterial& m : scene.materials) {
+		m.hasColor = true;
+		m.color[0] = 120;
+	}
+	// Two decks, 20 m apart, over 3 x 1 cells; crates on the upper one in the last cell.
+	for (const float y : {0.0f, 2000.0f})
+		for (int cx = 0; cx < 3; ++cx) {
+			const float x0 = float(cx) * 4000.0f;
+			const float f[4][3] = {{x0, y, 0}, {x0 + 4000, y, 0}, {x0 + 4000, y, 4000}, {x0, y, 4000}};
+			addQuad(scene, f[0], f[1], f[2], f[3], 0); // (facing up: a floor to stand on)
+		}
+	for (int i = 0; i < 6; ++i) {
+		const float x = 9000.0f + float(i % 3) * 600.0f, z = 1000.0f + float(i / 3) * 900.0f;
+		const size_t first = scene.triangles.size();
+		addBlock(scene, x, x + 200.0f, z, z + 200.0f, 150.0f);
+		for (size_t t = first; t < scene.triangles.size(); ++t) {
+			scene.triangles[t].material = 1;
+			for (SrcVertex& v : scene.triangles[t].v) v.pos[1] += 2000.0f;
+		}
+	}
+	scene.spawnPos[0] = 1000.0f;
+	scene.spawnPos[1] = 170.0f;
+	scene.spawnPos[2] = 1000.0f;
+	scene.hasSpawn = true;
+	const std::string path = gDir + "/visfloors.pak";
+	{
+		std::vector<BakeWorld> worlds(1);
+		worlds[0].name = "f";
+		worlds[0].scene = scene;
+		BakeOptions opt;
+		opt.chunker.chunkSize = 4000.0f;
+		opt.tex.maxSize = 32;
+		opt.tex.quality = 0;
+		opt.threads = 2;
+		opt.quiet = true;
+		opt.vis.enabled = true;
+		opt.vis.threads = 2;
+		opt.vis.nearAlways = 100.0f;
+		PakWriter pak;
+		bakeWorlds(worlds, opt, pak);
+		pak.write(path);
+	}
+	gfx::init();
+	Pak pak;
+	CHECK(pak.open(path.c_str()));
+	World w;
+	CHECK(w.open(&pak, "f"));
+	CHECK(w.hasVisibility());
+	w.config().visibility = true;
+	for (int i = 0; i < 4; ++i) w.update({1000.0f, 170.0f, 1000.0f});
+	CHECK(w.visibilityActive());
+	// The chunk of the last cell.
+	u32 chunk = 0xFFFFFFFFu;
+	for (u32 i = 0; i < w.header().chunkCount; ++i)
+		if (w.chunkInfo(i).bbMax[0] > 11000.0f && w.chunkInfo(i).bbMin[0] > 7000.0f) chunk = i;
+	CHECK(chunk != 0xFFFFFFFFu);
+	const int street = w.visibilityFloor({1000.0f, 170.0f, 1000.0f});
+	u32 total = 0;
+	const u32 hiddenFromStreet = w.hiddenClusters(chunk, total);
+	const int deck = w.visibilityFloor({1000.0f, 2170.0f, 1000.0f});
+	u32 total2 = 0;
+	const u32 hiddenFromDeck = w.hiddenClusters(chunk, total2);
+	std::printf("  visibility floors: street row %d hides %08x, deck row %d hides %08x of %u clusters\n", street, hiddenFromStreet, deck,
+	            hiddenFromDeck, total);
+	CHECK(street >= 0 && deck >= 0 && street != deck && total == total2 && total >= 3);
+	CHECK(hiddenFromStreet != hiddenFromDeck); // (one table row for both floors could not tell them apart)
+	CHECK(hiddenFromStreet != 0 && hiddenFromDeck != 0);
+	// Back at the street, the same row; a camera far under the lowest floor has none (everything is drawn).
+	CHECK(w.visibilityFloor({1000.0f, 300.0f, 1000.0f}) == street);
+	CHECK(w.visibilityFloor({1000.0f, -9000.0f, 1000.0f}) == -1);
+	// At the edge between the floors the row in use stays while it still holds the camera.
+	const int a = w.visibilityFloor({1000.0f, 1900.0f, 1000.0f});
+	CHECK(w.visibilityFloor({1000.0f, 1800.0f, 1000.0f}) == a && w.visibilityFloor({1000.0f, 1900.0f, 1000.0f}) == a);
+}
+
 // ---- simplified stand-ins for far chunks (--lod) ----
 
 static SrcScene hillScene(bool jitter = false) {
@@ -7812,9 +7894,154 @@ static void testLodWith(bool jitter) {
 }
 
 
+// Closed balls of one detail class: crates and mushrooms, which are most of the triangles a scene has.
+static SrcScene ballScene(u8 detail, int balls) {
+	SrcScene scene;
+	scene.materials.resize(2);
+	scene.materials[0].name = "floor";
+	scene.materials[1].name = "stuff";
+	for (SrcMaterial& m : scene.materials) {
+		m.hasColor = true;
+		m.color[0] = 90;
+	}
+	addPatch(scene, 20.0f, 0.0f, 20.0f, 3960.0f, 0, DETAIL_ALWAYS);
+	const int rings = 10, around = 16;
+	for (int b = 0; b < balls; ++b) {
+		const float cx = 300.0f + float(b % 10) * 300.0f, cz = 300.0f + float(b / 10) * 300.0f, r = 40.0f;
+		auto point = [&](int ring, int a) {
+			SrcVertex v {};
+			const float pitch = 3.14159265f * float(ring) / float(rings), yaw = 6.2831853f * float(a % around) / float(around);
+			v.pos[0] = cx + r * std::sin(pitch) * std::cos(yaw);
+			v.pos[1] = r + r * std::cos(pitch);
+			v.pos[2] = cz + r * std::sin(pitch) * std::sin(yaw);
+			v.uv[0] = float(a) / float(around);
+			v.uv[1] = float(ring) / float(rings);
+			v.rgba[0] = v.rgba[1] = v.rgba[2] = 200;
+			v.rgba[3] = 255;
+			return v;
+		};
+		for (int ring = 0; ring < rings; ++ring)
+			for (int a = 0; a < around; ++a) {
+				SrcTriangle t1, t2;
+				t1.material = t2.material = 1;
+				t1.detail = t2.detail = detail;
+				t1.v[0] = point(ring, a);
+				t1.v[1] = point(ring + 1, a);
+				t1.v[2] = point(ring + 1, a + 1);
+				t2.v[0] = point(ring, a);
+				t2.v[1] = point(ring + 1, a + 1);
+				t2.v[2] = point(ring, a + 1);
+				// (the poles: one triangle of each pair is a sliver)
+				if (ring > 0) scene.triangles.push_back(t1);
+				if (ring < rings - 1) scene.triangles.push_back(t2);
+			}
+	}
+	scene.spawnPos[0] = scene.spawnPos[2] = 2000.0f;
+	scene.spawnPos[1] = 150.0f;
+	scene.hasSpawn = true;
+	return scene;
+}
+
+// Chunks of medium and small objects get stand-ins too, and keep their class: drawn as far as the full batches are.
+static void testLodObjects() {
+	for (const u8 detail : {u8(DETAIL_MEDIUM), u8(DETAIL_SMALL)}) {
+		const SrcScene scene = ballScene(detail, 40);
+		ChunkerOptions co;
+		co.chunkSize = 4000.0f;
+		co.splitDetail = true;
+		ChunkerStats cs;
+		const std::vector<BakedChunk> built = buildChunks(scene, {0, 0}, {0, 0}, co, cs);
+		WorldMaterial mat {};
+		const std::vector<WorldMaterial> materials = {mat, mat};
+		for (const bool objects : {false, true}) {
+			std::vector<BakedChunk> chunks = built;
+			LodOptions lo;
+			lo.enabled = true;
+			lo.objects = objects;
+			lo.threads = 2;
+			LodStats ls;
+			buildLods(chunks, materials, lo, ls);
+			u64 full = 0, far = 0;
+			u32 objectChunks = 0;
+			for (const BakedChunk& c : chunks) {
+				if (c.tier == 0) continue;
+				bool has = false;
+				for (const ChunkBatch& b : c.batches) {
+					const u8 lod = batchLod(b.detail);
+					if (lod == BATCH_LOD_FULL_ONLY) full += b.indexCount / 3;
+					if (lod == BATCH_LOD_FAR_ONLY) {
+						far += b.indexCount / 3;
+						has = true;
+						CHECK((b.detail & 3) == detail); // (the class of what it stands in for)
+					}
+				}
+				objectChunks += has;
+			}
+			std::printf("  lod of %s objects%s: %u chunks, %llu -> %llu triangles\n", detail == DETAIL_MEDIUM ? "medium" : "small",
+			            objects ? "" : " (off)", objectChunks, static_cast<unsigned long long>(full), static_cast<unsigned long long>(far));
+			if (!objects) {
+				CHECK(objectChunks == 0 && ls.objectChunks == 0 && ls.notTierZero > 0);
+			} else {
+				CHECK(objectChunks >= 1 && ls.objectChunks == objectChunks && full > 0 && far > 0 && far * 10 < full * 7);
+				for (const BakedChunk& c : chunks) {
+					CHECK(c.header.batchCount == c.batches.size() && c.header.indexCount == c.indices.size());
+					for (size_t i = 0; i < c.indices.size(); ++i) CHECK(c.indices[i] < c.vertices.size());
+				}
+			}
+		}
+	}
+}
+
+// ... and in the engine: far from the camera the stand-ins are drawn in place of the objects.
+static void testLodObjectsInEngine() {
+	const SrcScene scene = ballScene(DETAIL_MEDIUM, 40);
+	const std::string path = gDir + "/lod_objects.pak";
+	{
+		std::vector<BakeWorld> worlds(1);
+		worlds[0].name = "h";
+		worlds[0].scene = scene;
+		BakeOptions opt;
+		opt.chunker.chunkSize = 4000.0f;
+		opt.chunker.splitDetail = true;
+		opt.tex.maxSize = 32;
+		opt.tex.quality = 0;
+		opt.threads = 2;
+		opt.quiet = true;
+		opt.lod.enabled = true;
+		PakWriter pak;
+		bakeWorlds(worlds, opt, pak);
+		pak.write(path);
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), "h"));
+	World& w = app.world();
+	CHECK((w.header().flags & WORLDF_LOD) != 0);
+	w.config().fadeMs = 0.0f;
+	app.setDrawDistance(20000.0f);
+	app.player().flying = true;
+	app.camera().yaw = 0.7f;
+	app.camera().pitch = -0.4f;
+	auto drawn = [&](float lod) {
+		w.config().lodDistance = lod;
+		app.teleport({300.0f, 900.0f, 300.0f});
+		w.preload(app.camera().pos);
+		for (int i = 0; i < 6; ++i) {
+			app.update(Input {}, 1.0f / 30.0f);
+			app.render();
+		}
+		return w.stats().trianglesDrawn;
+	};
+	const u32 full = drawn(0.0f), far = drawn(1.0f);
+	std::printf("  lod of objects in the engine: %u triangles drawn, %u with stand-ins\n", full, far);
+	CHECK(full > 0 && far > 0 && far < full);
+}
+
 static void testLod() {
 	testLodWith(false);
 	testLodWith(true);
+	testLodObjects();
+	testLodObjectsInEngine();
 }
 
 // ---- fewer triangles in everything (--simplify) ----
@@ -8052,6 +8279,35 @@ static void testSimplifyModel() {
 		hi = std::max(hi, v.pos[1]);
 	}
 	CHECK(lo == 0.0f && hi == 400.0f);
+
+	// Bones that change every ring (a body at its joints) leave no vertex of the source to collapse onto; the
+	// coarse far bodies (synthesize) make one there, the ordinary --simplify does not (fix88).
+	{
+		SrcModelPart joints = tubePart(100, 16, true);
+		for (size_t i = 0; i < joints.verts.size(); ++i) {
+			SrcSkinVertex& v = joints.verts[i];
+			const int block = int(v.pos[1] / 4.0f);
+			v.bone[0] = block % 7;
+			v.bone[1] = (block + 1) % 7;
+			v.weight1 = 0.5f;
+			v.uv[0] += 0.003f * float(int(v.pos[1]) % 3); // (a mapping that is not linear)
+		}
+		size_t counts[2];
+		for (int synth = 0; synth < 2; ++synth) {
+			std::vector<SrcModelPart> p = {joints};
+			ModelSimplifyOptions o;
+			o.enabled = true;
+			o.ratio = 0.3f;
+			o.maxError = 6.0f;
+			o.synthesize = synth != 0;
+			ModelSimplifyStats st;
+			simplifyModelParts(p, {false}, o, st);
+			counts[synth] = p[0].verts.size() / 3;
+			CHECK(p[0].verts.size() % 3 == 0);
+		}
+		std::printf("  simplify far bodies: %zu triangles of %zu without new vertices, %zu with\n", counts[0], joints.verts.size() / 3, counts[1]);
+		CHECK(counts[1] < counts[0] && counts[1] * 10 < (joints.verts.size() / 3) * 5);
+	}
 
 	// Through the model baker: fewer triangles in the archive, the same skeleton.
 	SrcModel m;
@@ -8378,9 +8634,118 @@ static void testReadAhead() {
 	}
 }
 
+// Models that differ in their textures only name one mesh (fix88): made once, read and put on the GPU once.
+static void testSharedMeshes() {
+	SrcNode root, child;
+	root.name = "ROOT";
+	child.name = "BONE";
+	child.parent = 0;
+	child.pos[1] = 200.0f;
+	const auto make = [&](const char* name, int rings, const char* texture) {
+		SrcModel m;
+		m.name = name;
+		m.nodes = {root, child};
+		m.parts = {tubePart(rings, 16, true)};
+		m.parts[0].material.texture = texture; // (no picture to load: the part is baked untextured, and the same mesh)
+		return m;
+	};
+	BakeOptions shared;
+	shared.quiet = true;
+	shared.sharedMeshes = true;
+	BakeOptions plain;
+	plain.quiet = true;
+	PakWriter writer, writerPlain;
+	const ModelBakeResult a = bakeModel(make("a", 20, "SKIN_A.TGA"), shared, writer);
+	const ModelBakeResult b = bakeModel(make("b", 20, "SKIN_B.TGA"), shared, writer);
+	const ModelBakeResult c = bakeModel(make("c", 30, "SKIN_A.TGA"), shared, writer);
+	bakeModel(make("a", 20, "SKIN_A.TGA"), plain, writerPlain);
+	CHECK(a.meshEntry != 0 && a.meshEntry == b.meshEntry && c.meshEntry != a.meshEntry);
+	CHECK(a.meshNew && !b.meshNew && c.meshNew);
+	CHECK(writer.rawBytes(ASSET_MODEL) < writerPlain.rawBytes(ASSET_MODEL) * 3); // 3 models + 2 meshes against 1 whole
+	const std::string path = gDir + "/sharedmeshes.pak";
+	writer.write(path);
+
+	gfx::init();
+	{
+		Pak pak;
+		CHECK(pak.open(path.c_str()));
+		const int base = gfx::memStats().meshCount;
+		MeshPool pool;
+		{
+			Model ma, mb, mc;
+			CHECK(ma.loadEntry(pak, hashName("model/a"), nullptr, true, &pool));
+			CHECK(mb.loadEntry(pak, hashName("model/b"), nullptr, true, &pool));
+			CHECK(mc.loadEntry(pak, hashName("model/c"), nullptr, true, &pool));
+			CHECK(ma.hasMesh() && mb.hasMesh() && mc.hasMesh() && ma.triangles() == 640 && mc.triangles() == 960);
+			CHECK(pool.count() == 2 && pool.reads() == 2 && pool.hits() == 1);
+			CHECK(gfx::memStats().meshCount == base + 2); // (the same GPU mesh for a and b)
+		}
+		// Nobody wears them: they stay (the same people come back), and are found again.
+		CHECK(pool.count() == 2 && gfx::memStats().meshCount == base + 2);
+		{
+			Model ma;
+			CHECK(ma.loadEntry(pak, hashName("model/a"), nullptr, true, &pool));
+			CHECK(pool.reads() == 2 && pool.hits() == 2);
+		}
+		// With no room to spare an unused mesh goes, the longest unused first.
+		pool.setIdleBudget(1);
+		{
+			Model mc;
+			CHECK(mc.loadEntry(pak, hashName("model/c"), nullptr, true, &pool));
+		}
+		CHECK(pool.count() <= 1);
+		pool.release();
+		CHECK(gfx::memStats().meshCount == base);
+		// Warmed meshes stay however little room there is.
+		MeshPool warm;
+		warm.setIdleBudget(1);
+		CHECK(warm.warm(pak, a.meshEntry) && !warm.warm(pak, hashName("model/a")));
+		{
+			Model ma;
+			CHECK(ma.loadEntry(pak, hashName("model/a"), nullptr, true, &warm));
+			CHECK(warm.hits() == 1 && warm.reads() == 1);
+		}
+		CHECK(warm.count() == 1);
+		warm.release();
+		// Without a pool the model reads its mesh for itself, and gives it back.
+		{
+			Model ma;
+			CHECK(ma.loadEntry(pak, hashName("model/a")) && ma.hasMesh());
+			CHECK(gfx::memStats().meshCount == base + 1);
+		}
+		CHECK(gfx::memStats().meshCount == base);
+	}
+	// A mesh that is missing: the model is not used, and nothing is left behind.
+	{
+		Pak full;
+		CHECK(full.open(path.c_str()));
+		const PakEntry* me = full.find("model/a");
+		CHECK(me != nullptr);
+		PakWriter noMesh;
+		if (me) {
+			u8* raw = static_cast<u8*>(full.readAlloc(*me));
+			CHECK(raw != nullptr);
+			if (raw) noMesh.add("model/a", ASSET_MODEL, std::vector<u8>(raw, raw + me->size));
+			free(raw);
+		}
+		const std::string npath = gDir + "/nomesh.pak";
+		noMesh.write(npath);
+		Pak pak;
+		CHECK(pak.open(npath.c_str()));
+		const int base = gfx::memStats().meshCount;
+		MeshPool pool;
+		Model m;
+		CHECK(!m.loadEntry(pak, hashName("model/a"), nullptr, true, &pool) && !m.loaded());
+		CHECK(!m.loadEntry(pak, hashName("model/a")) && !m.loaded());
+		CHECK(gfx::memStats().meshCount == base && pool.count() == 0);
+	}
+	gfx::shutdown();
+}
+
 static void testSimplify() {
 	testSimplifyWorld();
 	testSimplifyModel();
+	testSharedMeshes();
 }
 
 static void testFarLayer() {
@@ -10857,6 +11222,7 @@ int main(int argc, char** argv) {
 	             {"far layer", testFarLayer},
 	             {"chunk tiers", testChunkTiers},
 	             {"visibility", testVisibility},
+	             {"visibility floors", testVisibilityFloors},
 	             {"lod", testLod},
              {"simplify", testSimplify},
              {"displaytiming", testDisplayTiming},

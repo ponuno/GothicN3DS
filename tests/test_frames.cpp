@@ -177,8 +177,9 @@ struct ShaderCheck {
 	// Where the shader in use keeps its uniforms (world_fade/world.v.pica: the defaults; world_full/fast.v.pica:
 	// the combined matrix takes fewer registers) and which program a draw call may be drawn by.
 	int locChunk = 8, locParams = 9, locDayDelta = 10, locTexOffset = 11, locBones = 13, locFx = 91;
-	bool twoEntries = false; // the fast shader: entry 1 draws the static world, entry 0 characters and what sways
-	unsigned fastDraws = 0, fullDraws = 0, wrongEntry = 0, swayOnFast = 0;
+	bool twoEntries = false; // the fast shader: entry 1 (2 with the dissolve) draws the static world, 3 characters, 0 what sways
+	unsigned fadeBit = 2;    // the bool register of `fading` (b1 in world_fade.v.pica, b2 in the default shader)
+	unsigned fastDraws = 0, fullDraws = 0, skinDraws = 0, wrongEntry = 0, swayOnFast = 0;
 	unsigned occludedVertices = 0, swayedVertices = 0, windyDraws = 0;
 	double worstSway = 0; // cm: the farthest a corner was moved
 	unsigned fadedVertices = 0;
@@ -233,10 +234,11 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 	          locBones = sc.locBones, locFx = sc.locFx; // checked in the tests of each shader
 	const bool skinned = call.bools & 1;
 	const bool windy = (call.bools & sc.windyBit) != 0;
+	const bool fastEntry = call.entry == 1 || call.entry == 2, skinEntry = call.entry == 3;
 	if (sc.twoEntries) {
-		// Characters and swaying materials need the full shader; the fast one has no branches for them.
-		(call.entry == 1 ? sc.fastDraws : sc.fullDraws) += 1;
-		sc.wrongEntry += call.entry == 1 && (skinned || windy);
+		// Characters have their own entry; swaying materials need the full shader; the fast one has no branches for them.
+		(fastEntry ? sc.fastDraws : skinEntry ? sc.skinDraws : sc.fullDraws) += 1;
+		sc.wrongEntry += (fastEntry && (skinned || windy)) || (skinEntry && !skinned);
 	}
 	const float* fx = call.uniforms[locFx];
 	if (windy) ++sc.windyDraws;
@@ -281,7 +283,7 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 
 		if (sc.checkFade && !skinned && !sky) {
 			mock3ds::DrawCall faded = call;
-			faded.bools = u16(call.bools | 2u);
+			faded.bools = u16(call.bools | sc.fadeBit);
 			mock3ds::ShadedVertex f;
 			if (!mock3ds::shadeVertex(faded, index, f, false)) {
 				++sc.failed;
@@ -305,7 +307,9 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 		if (other) {
 			// Somebody else: the two bones of the palette this draw call came
 			// with, weighted, at the place it came with.
-			const double p[3] = {double(v.x) * double(chunk[3]), double(v.y) * double(chunk[3]), double(v.z) * double(chunk[3])};
+			// (The characters' entry has the position step and the place in the rows already: world_skin.v.pica.)
+			const double step = skinEntry ? 1.0 : double(chunk[3]);
+			const double p[3] = {double(v.x) * step, double(v.y) * step, double(v.z) * step};
 			const u32 s0 = v.r / 3u, s1 = v.g / 3u;
 			if (v.r % 3 || v.g % 3 || s0 >= MODEL_PALETTE || s1 >= MODEL_PALETTE) {
 				++sc.unexpected;
@@ -317,7 +321,7 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 				const float* r1 = call.uniforms[locBones + int(s1) * 3 + k];
 				const double a = double(r0[0]) * p[0] + double(r0[1]) * p[1] + double(r0[2]) * p[2] + double(r0[3]);
 				const double b = double(r1[0]) * p[0] + double(r1[1]) * p[1] + double(r1[2]) * p[2] + double(r1[3]);
-				world[k] = double(sc.anchor[k]) + double(chunk[k]) + a + (b - a) * w;
+				world[k] = double(sc.anchor[k]) + (skinEntry ? 0.0 : double(chunk[k])) + a + (b - a) * w;
 				wantColor[k] = double(got.color[k]);
 			}
 			++sc.otherVertices;
@@ -342,7 +346,9 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 			mock3ds::DrawCall plain = call;
 			plain.bools = 0;
 			mock3ds::ShadedVertex asWorld;
-			if (mock3ds::shadeVertex(plain, index, asWorld, false))
+			if (skinEntry)
+				++sc.movedBySwitch; // (an entry of its own: no switch to compare with)
+			else if (mock3ds::shadeVertex(plain, index, asWorld, false))
 				sc.movedBySwitch += std::fabs(asWorld.position[0] - got.position[0]) + std::fabs(asWorld.position[1] - got.position[1]) > 1e-3f;
 		} else {
 			const double q[3] = {double(v.x), double(v.y), double(v.z)};
@@ -429,32 +435,40 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 static void testShader(const std::string& pak) {
 	mock3ds::reset();
 	gfx::c3dSetClassicFrames(false);
-	gfx::c3dSetFadeShader(true); // the shader with the dissolve: world.v.pica and then some
-	CHECK(gfx::init() && gfx::fadeSupported());
-	// The binary is the one picasso assembled from world_fade.v.pica, and the
+	gfx::c3dSetFadeShader(true); // the dissolve: since fix85 the default shader's entries with it (fadefast, skinmain)
+	CHECK(gfx::init() && gfx::fadeSupported() && gfx::c3dFastShader());
+	// The binary is the one picasso assembled from world_full/fast/fastfade/skin.v.pica, and the
 	// backend found every uniform in it.
 	std::printf("  shader: %u instructions, %u of 96 float registers%s%s\n", mock3ds::shaderInstructions(),
 	            mock3ds::shaderFloatRegisters(), *mock3ds::shaderProblem() ? "; PROBLEM: " : "", mock3ds::shaderProblem());
 	CHECK(!*mock3ds::shaderProblem());
-	// (projection, modelView, five vectors, the palette, Graphics+; two constants)
-	CHECK(mock3ds::shaderFloatRegisters() == 4 + 4 + 5 + MODEL_PALETTE * 3 + 1 + 2 && mock3ds::shaderFloatRegisters() <= 96);
+	// (mvp, fogRow, five vectors, the palette, fx, lightK, aoK; two constants)
+	CHECK(mock3ds::shaderFloatRegisters() == 4 + 1 + 5 + MODEL_PALETTE * 3 + 1 + 1 + 1 + 2 && mock3ds::shaderFloatRegisters() <= 96);
 	shaderProgram_s probe;
 	shaderProgramInit(&probe);
 	shaderProgramSetVsh(&probe, nullptr);
-	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "chunk") == 8);
-	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "params") == 9);
-	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "dayDelta") == 10);
-	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "texOffset") == 11);
-	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "bones") == 13);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "chunk") == 5);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "params") == 6);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "dayDelta") == 7);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "texOffset") == 8);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "bones") == 10);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "skinned") == 0x68);
-	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fading") == 0x69);
-	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fx") == 91);
-	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "windy") == 0x6A);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "windy") == 0x69);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fading") == 0x6A);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fx") == 88);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "nonsense") < 0);
 
 	ShaderCheck sc;
 	sc.checkFade = true;
-	sc.windyBit = 4;
+	sc.windyBit = 2;
+	sc.fadeBit = 4;
+	sc.locChunk = 5;
+	sc.locParams = 6;
+	sc.locDayDelta = 7;
+	sc.locTexOffset = 8;
+	sc.locBones = 10;
+	sc.locFx = 88;
+	sc.twoEntries = true;
 	// 1. The game as it runs: the world around a walking, turning character,
 	// in the evening (the time of day tints the light).
 	{
@@ -518,6 +532,9 @@ static void testShader(const std::string& pak) {
 		std::printf("  Graphics+: %u world vertices darkened by their occlusion, %u swayed in %u draw calls (at most %.1f cm)\n",
 		            sc.occludedVertices, sc.swayedVertices, sc.windyDraws, sc.worstSway);
 		CHECK(sc.occludedVertices > 1000 && sc.swayedVertices > 50 && sc.windyDraws > 0 && sc.worstSway > 0.5 && sc.worstSway < 40.0);
+		// The static world by the fast entry with the dissolve, the characters by theirs.
+		std::printf("  entries: %u draws fast, %u characters', %u full\n", sc.fastDraws, sc.skinDraws, sc.fullDraws);
+		CHECK(sc.fastDraws > 50 && sc.skinDraws >= sc.skinnedDraws && sc.wrongEntry == 0 && sc.swayOnFast == 0);
 		app.shutdown();
 	}
 
@@ -538,6 +555,13 @@ static void testShader(const std::string& pak) {
 		const float yaw = 2.2f, light[3] = {0.9f, 0.5f, 0.25f};
 
 		ShaderCheck cc;
+		cc.locChunk = 5;
+		cc.locParams = 6;
+		cc.locDayDelta = 7;
+		cc.locTexOffset = 8;
+		cc.locBones = 10;
+		cc.locFx = 88;
+		cc.windyBit = 2;
 		gfx::FrameDesc fd {};
 		const Vec3 eye = {420.0f, 260.0f, -330.0f};
 		fd.view = viewLH(eye, -0.8f, -0.2f);
@@ -564,7 +588,7 @@ static void testShader(const std::string& pak) {
 		CHECK(cc.skinnedVertices > 200 && cc.blendedVertices > 100 && cc.behind == 0);
 		CHECK(cc.movedBySwitch > cc.skinnedVertices * 9 / 10);
 		CHECK(cc.worstSkinPx < 0.02 && cc.worstGpuSkinPx < 0.25 && cc.worstColor < 1e-4 && cc.worstDepth < 1e-3);
-		CHECK(cc.highestBoneRegister == 13 + MODEL_PALETTE * 3 - 1); // a full palette was used
+		CHECK(cc.highestBoneRegister == 10 + MODEL_PALETTE * 3 - 1); // a full palette was used
 		chain.release();
 		p.close();
 	}
@@ -788,10 +812,14 @@ static void testDefaultShader(const std::string& pak) {
 	std::printf("  default shader: %u entry points, %u and %u instructions of %u, %u of 96 float registers%s%s\n", mock3ds::shaderEntries(),
 	            mock3ds::shaderEntryInstructions(0), mock3ds::shaderEntryInstructions(1), mock3ds::shaderInstructions(),
 	            mock3ds::shaderFloatRegisters(), *mock3ds::shaderProblem() ? "; PROBLEM: " : "", mock3ds::shaderProblem());
-	CHECK(!*mock3ds::shaderProblem() && mock3ds::shaderEntries() == 2);
-	// (mvp, fogRow, five vectors, the palette, fx, lightK, aoK; one constant)
-	CHECK(mock3ds::shaderFloatRegisters() == 4 + 1 + 5 + MODEL_PALETTE * 3 + 1 + 1 + 1 + 1);
-	CHECK(mock3ds::shaderEntryInstructions(1) <= 20 && mock3ds::shaderEntryInstructions(0) < 63);
+	CHECK(!*mock3ds::shaderProblem() && mock3ds::shaderEntries() == 4);
+	// (mvp, fogRow, five vectors, the palette, fx, lightK, aoK; two constants)
+	CHECK(mock3ds::shaderFloatRegisters() == 4 + 1 + 5 + MODEL_PALETTE * 3 + 1 + 1 + 1 + 2);
+	// main, fastmain, fadefast (with the dissolve: 3 more), skinmain (both ways of the dissolve counted)
+	std::printf("  entries: %u, %u, %u and %u instructions\n", mock3ds::shaderEntryInstructions(0), mock3ds::shaderEntryInstructions(1),
+	            mock3ds::shaderEntryInstructions(2), mock3ds::shaderEntryInstructions(3));
+	CHECK(mock3ds::shaderEntryInstructions(1) <= 20 && mock3ds::shaderEntryInstructions(0) < 70);
+	CHECK(mock3ds::shaderEntryInstructions(2) <= 28 && mock3ds::shaderEntryInstructions(3) <= 32);
 	shaderProgram_s probe;
 	shaderProgramInit(&probe);
 	shaderProgramSetVsh(&probe, nullptr);
@@ -861,7 +889,7 @@ static void testDefaultShader(const std::string& pak) {
 		            sc.skinnedDraws, sc.skinnedVertices, sc.worstSkinPx, sc.sharedPoints, sc.splitPoints, switches, frames);
 		CHECK(sc.worldDraws > 50 && sc.worldVertices > 5000 && sc.skinnedDraws >= 7 && sc.skinnedVertices > 500 && sc.blendedVertices > 50);
 		CHECK(sc.failed == 0 && sc.unexpected == 0);
-		CHECK(sc.fastDraws > 50 && sc.fullDraws >= sc.skinnedDraws && sc.wrongEntry == 0 && sc.swayOnFast == 0);
+		CHECK(sc.fastDraws > 50 && sc.skinDraws >= sc.skinnedDraws && sc.wrongEntry == 0 && sc.swayOnFast == 0);
 		CHECK(sc.worstWorldPx < 0.02 && sc.worstSkinPx < 0.02);
 		CHECK(sc.worstGpuWorldPx < 0.25 && sc.worstGpuSkinPx < 0.25 && sc.worstGpuSkyPx < 0.75);
 		CHECK(sc.worstDepth < 1e-3 && sc.worstColor < 1e-4 && sc.worstTex < 1e-3);

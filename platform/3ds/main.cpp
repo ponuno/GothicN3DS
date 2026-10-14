@@ -878,10 +878,11 @@ int main(int, char**) {
 				static const char* const kRoles[g3::Hero::ROLE_COUNT] = {"stand", "run",   "walk",  "back", "step",
 				                                                         "turn",  "jump",  "fall",  "swim", "float",
 				                                                         "attack", "parry", "hit", "down", "draw", "use", "climb"};
-				// F: the fast shader; C: the classic one (ZL+ZR at start); D: with the dissolve; sw: changes of program in the frame.
+				// F: the fast shader; E: the fast shader with the dissolve (fix85); C: the classic one (ZL+ZR at start); D: the old
+				// dissolve shader; sw: changes of program in the frame.
 				reportLine("hero %-5s %3.0f cm/s %s%s cam %s %c sw%lu", kRoles[hero.role()], double(hero.speed()),
 				     hero.walking() ? "walk " : "", app.thirdPerson() ? "3rd" : "1st", app.cameraSet().fromGame ? "game" : "own",
-				     gfx::c3dFastShader() ? 'F' : classicShader ? 'C' : 'D', static_cast<unsigned long>(fs.programSwitches));
+				     gfx::c3dFastShader() ? (dissolve ? 'E' : 'F') : classicShader ? 'C' : 'D', static_cast<unsigned long>(fs.programSwitches));
 			} else {
 				reportLine("hero: none in data.pak");
 			}

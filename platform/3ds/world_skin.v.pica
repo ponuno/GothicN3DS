@@ -1,0 +1,82 @@
+; The characters' vertex shader (PICA200, assembled with picasso): entry `skinmain`, DVLE 3 of
+; world_fast_shbin.h. What `main` (world_full.v.pica) does for a skinned vertex, without its branches and with
+; less arithmetic: the CPU has already put the position step and the origin (relative to the eye's lattice point)
+; into the bone rows (gfx_c3d.cpp, drawSkinned), so a bone row times (position, 1) - one dph - is the place
+; relative to that lattice point. About 24 instructions a vertex where `main` runs some 36.
+; Declares the same uniforms in the same order as the other entries, so they share locations.
+
+.fvec mvp[4]        ; projection x modelView (worked out on the CPU), rows
+.fvec fogRow        ; fog factor before clamping = dp4(fogRow, position relative to the lattice point)
+.fvec chunk         ; (not used here)
+.fvec params        ; x = uv scale, y = 1/255
+.fvec dayDelta      ; (not used here)
+.fvec texOffset     ; xy = texture scroll offset (zw must be 0)
+.fvec skinLight     ; xyz = light on the character
+.fvec bones[78]     ; 26 bones, three rows each: model position (quantised) -> place relative to the lattice point
+.fvec fx            ; (not used here)
+.fvec lightK        ; (not used here)
+.fvec aoK           ; (not used here)
+.bool skinned
+.bool windy
+.bool fading        ; the dissolve: texture coordinate 1 is the place on the screen
+
+.constf consts(0.0, 1.0, 0.0, 0.0)
+.constf noiseScale(15.0, 25.0, 0.0, 0.0)
+.alias zero consts.xxxx
+.alias one  consts.yyyy
+
+.out outpos position
+.out outtc0 texcoord0
+.out outclr color
+.out outtc1 texcoord1
+
+.alias inpos v0
+.alias intc  v1
+.alias inclr v2
+
+.entry skinmain
+.proc skinmain
+	; r6, r7 = the place as each of the two bones puts it (the vertex brings the rows' offsets: slot * 3)
+	mova a0.xy, inclr.xy
+	dph r6.x, inpos, bones[a0.x]
+	dph r6.y, inpos, bones[a0.x+1]
+	dph r6.z, inpos, bones[a0.x+2]
+	dph r7.x, inpos, bones[a0.y]
+	dph r7.y, inpos, bones[a0.y+1]
+	dph r7.z, inpos, bones[a0.y+2]
+	; r0 = r6 + (r7 - r6) * weight
+	add r7.xyz, r7.xyz, -r6.xyz
+	mul r8.x, params.y, inclr.z
+	mad r0.xyz, r7.xyz, r8.xxx, r6.xyz
+	mov r0.w, one
+
+	dp4 r6.x, mvp[0], r0
+	dp4 r6.y, mvp[1], r0
+	dp4 r6.z, mvp[2], r0
+	dp4 r6.w, mvp[3], r0
+	mov outpos, r6
+
+	ifu fading
+		rcp r7.x, r6.w
+		mul r7.xy, r6.xy, r7.xx
+		mul r7.xy, noiseScale.xy, r7.xy
+		mov r7.zw, zero
+		mov outtc1, r7
+	.else
+		mov outtc1, zero
+	.end
+
+	mul r2, params.xxxx, intc
+	add outtc0, texOffset, r2
+
+	; fog factor, clamped, straight into the alpha
+	dp4 r3.x, fogRow, r0
+	max r3.x, zero, r3.x
+	min outclr.w, one, r3.x
+
+	; light * shade
+	mul r4.x, params.y, inclr.w
+	mul outclr.xyz, skinLight.xyz, r4.xxx
+
+	end
+.end

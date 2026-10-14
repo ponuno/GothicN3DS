@@ -25,14 +25,17 @@
 .fvec aoK           ; x = occlusion strength / 256: the fast shader's occlusion term
 .bool skinned
 .bool windy
+.bool fading        ; the dissolve (gfx::setFade): texture coordinate 1 is the place on the screen
 
 .constf consts(0.0, 1.0, 0.00390625, 0.00125) ; 0, 1, 1/256, k = 1/800 cm (gfx.h WIND_WAVE_PER_CM)
+.constf noiseScale(15.0, 25.0, 0.0, 0.0) ; texels of the 8x8 noise per unit of x and y on the screen (as world_fade.v.pica)
 .alias zero consts.xxxx
 .alias one  consts.yyyy
 
 .out outpos position
 .out outtc0 texcoord0
 .out outclr color
+.out outtc1 texcoord1
 
 .alias inpos v0
 .alias intc  v1
@@ -85,10 +88,22 @@
 	; relative to the eye's lattice point
 	add r0.xyz, chunk.xyz, r0.xyz
 
-	dp4 outpos.x, mvp[0], r0
-	dp4 outpos.y, mvp[1], r0
-	dp4 outpos.z, mvp[2], r0
-	dp4 outpos.w, mvp[3], r0
+	dp4 r6.x, mvp[0], r0
+	dp4 r6.y, mvp[1], r0
+	dp4 r6.z, mvp[2], r0
+	dp4 r6.w, mvp[3], r0
+	mov outpos, r6
+
+	; the dissolve: where on the screen, in texels of the noise (see world_fade.v.pica)
+	ifu fading
+		rcp r7.x, r6.w
+		mul r7.xy, r6.xy, r7.xx
+		mul r7.xy, noiseScale.xy, r7.xy
+		mov r7.zw, zero
+		mov outtc1, r7
+	.else
+		mov outtc1, zero
+	.end
 
 	mul r2, params.xxxx, intc
 	add r2, texOffset, r2

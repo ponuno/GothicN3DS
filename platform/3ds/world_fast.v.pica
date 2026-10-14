@@ -27,6 +27,7 @@
 .fvec aoK           ; x = occlusion strength / 256: the fast shader's occlusion term
 .bool skinned
 .bool windy
+.bool fading
 
 .constf consts(0.0, 1.0, 0.0, 0.0)
 .alias zero consts.xxxx

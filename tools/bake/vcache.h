@@ -19,6 +19,9 @@ struct VertexCacheStats {
 // Reorders the triangles of every batch of `chunk` (the same triangles, the same winding, the same index range).
 void optimizeVertexCache(BakedChunk& chunk, VertexCacheStats* stats = nullptr, unsigned cacheSize = 16);
 
+// The same for one run of indices of any mesh (a character's part): `vertexCount` is more than any index in it.
+void optimizeIndexRange(u16* indices, u32 count, size_t vertexCount, unsigned cacheSize = 16);
+
 // Vertex shader runs for `count` indices in a FIFO cache of `cacheSize` entries.
 u64 countCacheMisses(const u16* indices, size_t count, unsigned cacheSize);
 

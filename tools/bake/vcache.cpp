@@ -135,6 +135,14 @@ u64 countCacheMisses(const u16* indices, size_t count, unsigned cacheSize) {
 	return misses;
 }
 
+void optimizeIndexRange(u16* indices, u32 count, size_t vertexCount, unsigned cacheSize) {
+	count -= count % 3;
+	if (count < 9) return;
+	std::vector<u32> localOf(vertexCount + 1, 0), stampOf(vertexCount + 1, 0);
+	u32 stamp = 0;
+	reorder(indices, count / 3, localOf, stampOf, stamp, cacheSize);
+}
+
 void optimizeVertexCache(BakedChunk& chunk, VertexCacheStats* stats, unsigned cacheSize) {
 	std::vector<u32> localOf(chunk.vertices.size() + 1, 0), stampOf(chunk.vertices.size() + 1, 0);
 	u32 stamp = 0;

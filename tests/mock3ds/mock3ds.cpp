@@ -48,7 +48,7 @@ C3D_AttrInfo gAttrInfo {};
 C3D_TexEnv gTexEnv[6];
 const int kMaxEntries = 4; // DVLEs of one shader binary
 DVLE_s gDvle[kMaxEntries];
-DVLB_s gDvlb {gDvle};
+DVLB_s gDvlb {0, gDvle};
 shaderInstance_s gShader[kMaxEntries];
 int gBoundEntry = 0; // the DVLE of the program C3D_BindProgram bound last
 
@@ -156,6 +156,7 @@ void parseShader(const u32* file, u32 bytes) {
 		}
 	}
 	gSh.entries = int(entries);
+	gDvlb.numDVLE = entries;
 	gSh.loaded = true;
 }
 

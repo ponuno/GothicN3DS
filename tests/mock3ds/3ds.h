@@ -88,6 +88,7 @@ struct DVLE_s {
 	int unused;
 };
 struct DVLB_s {
+	u32 numDVLE;
 	DVLE_s* DVLE;
 };
 struct shaderInstance_s {

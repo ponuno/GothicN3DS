@@ -78,7 +78,7 @@ struct NpcConfig {
 	// (so that nobody comes out from behind a corner late).
 	bool hideOccluded = true;
 	float hiddenNear = 400.0f;
-	u32 hiddenRecheck = 3;
+	u32 hiddenRecheck = 6;
 };
 
 // What the inhabitants need of the player's character in a fight, and how

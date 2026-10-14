@@ -63,8 +63,9 @@ bool gSuperLightWanted = false, gSuperLight = false; // ... as the light kind (4
 bool gWideWanted = false, gWide = false; // wide screen (800x240): asked for before init(), and whether the screen took it
 DVLB_s* gDvlb = nullptr;
 shaderProgram_s gProgram;     // the full shader (entry `main`); with the classic, plain and fade ones the only program
-shaderProgram_s gProgramFast; // the fast shader (entry `fastmain` of the same binary), when gMvpShader
-bool gProgramReady = false, gProgramFastReady = false;
+shaderProgram_s gProgramFast; // the fast shader (entry `fastmain` of the same binary, `fadefast` with the dissolve), when gMvpShader
+shaderProgram_s gProgramSkin; // the characters' shader (entry `skinmain`), when gMvpShader
+bool gProgramReady = false, gProgramFastReady = false, gProgramSkinReady = false;
 bool gReady = false; // C3D_Init succeeded
 int gLocProjection = -1, gLocModelView = -1, gLocChunk = -1, gLocParams = -1, gLocDayDelta = -1, gLocTexOffset = -1;
 int gLocSkinLight = -1, gLocBones = -1, gLocSkinned = -1, gLocFading = -1;
@@ -72,9 +73,10 @@ int gLocFx = -1, gLocWindy = -1; // Graphics+ (not in the plain shader)
 // The shader with the combined matrix (world_full / world_fast.v.pica): mvp and fogRow stand for projection and
 // modelView, lightK and aoK are the fast entry's own forms of dayDelta and the occlusion strength.
 int gLocMvp = -1, gLocFogRow = -1, gLocLightK = -1, gLocAoK = -1;
-bool gMvpShader = false;     // in use (not with the plain, fade or classic shader)
+bool gMvpShader = false;     // in use (not with the plain or classic shader; with the dissolve since fix85)
 bool gClassicShader = false; // asked for: the shader of earlier versions (world.v.pica), projection and view apart
-bool gOnFast = false;        // the fast entry is the bound program
+enum BoundProgram { PROGRAM_FULL, PROGRAM_FAST, PROGRAM_SKIN };
+int gBound = PROGRAM_FULL;   // which entry is the bound program
 float gViewDepthRow[4] = {0, 0, 1, 0}; // modelView's third row: the fog is worked out from it
 u32 gProgramSwitches = 0;    // this frame's changes of the program
 bool gSkinned = false; // last value of the shader's `skinned` switch
@@ -308,13 +310,16 @@ void setDayDelta(float x, float y, float z) {
 	if (gMvpShader) C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocLightK, x / 65025.0f, y / 65025.0f, z / 65025.0f, 0.0f);
 }
 
-// The fast entry draws the static world, the full one characters and what sways.
-void useProgram(bool fast) {
-	if (!gMvpShader || fast == gOnFast) return;
-	gOnFast = fast;
-	C3D_BindProgram(fast ? &gProgramFast : &gProgram);
+// The fast entry draws the static world, the skin entry the characters, the full one what sways.
+void bindProgram(int which) {
+	if (!gMvpShader || which == gBound) return;
+	if (which == PROGRAM_SKIN && !gProgramSkinReady) which = PROGRAM_FULL;
+	if (which == gBound) return;
+	gBound = which;
+	C3D_BindProgram(which == PROGRAM_FAST ? &gProgramFast : which == PROGRAM_SKIN ? &gProgramSkin : &gProgram);
 	++gProgramSwitches;
 }
+void useProgram(bool fast) { bindProgram(fast ? PROGRAM_FAST : PROGRAM_FULL); }
 
 // The GPU executes a frame's command list after C3D_FrameEnd returns, so
 // memory a draw call referenced must outlive that frame. Destroyed resources
@@ -429,30 +434,50 @@ bool init() {
 	if (!makeTarget(gSuperWanted)) return false;
 
 	gMvpShader = false;
-	gOnFast = false;
-	// The two-entry shader first; if it cannot be had (or its entries disagree about where the uniforms are)
-	// the shader of earlier versions takes over.
-	if (!gPlainShader && !gFadeShader && !gClassicShader) {
+	gBound = PROGRAM_FULL;
+	// The four-entry shader first (full, fast, fast with the dissolve, characters); if it cannot be had (or its
+	// entries disagree about where the uniforms are) the shader of earlier versions takes over. With the dissolve
+	// the fast entry is `fadefast`, which also gives the noise its place on the screen (before fix85 the dissolve
+	// meant world_fade.v.pica for everything: about 36 instructions a world vertex instead of 22).
+	if (!gPlainShader && !gClassicShader) {
 		gDvlb = DVLB_ParseFile(reinterpret_cast<u32*>(world_fast_shbin), world_fast_shbin_size);
-		if (gDvlb) {
+		if (gDvlb && gDvlb->numDVLE >= 4) {
 			shaderProgramInit(&gProgram);
 			shaderProgramSetVsh(&gProgram, &gDvlb->DVLE[0]);
 			shaderProgramInit(&gProgramFast);
-			shaderProgramSetVsh(&gProgramFast, &gDvlb->DVLE[1]);
+			shaderProgramSetVsh(&gProgramFast, &gDvlb->DVLE[gFadeShader ? 2 : 1]);
+			shaderProgramInit(&gProgramSkin);
+			shaderProgramSetVsh(&gProgramSkin, &gDvlb->DVLE[3]);
 			static const char* const kShared[] = {"mvp", "fogRow", "chunk", "params", "dayDelta", "texOffset", "lightK", "aoK", "fx"};
+			static const char* const kSkin[] = {"mvp", "fogRow", "params", "texOffset", "skinLight", "bones", "fading"};
 			gMvpShader = true;
 			for (const char* name : kShared) {
 				const int a = shaderInstanceGetUniformLocation(gProgram.vertexShader, name);
 				gMvpShader = gMvpShader && a >= 0 && a == shaderInstanceGetUniformLocation(gProgramFast.vertexShader, name);
 			}
+			if (gFadeShader) {
+				const int a = shaderInstanceGetUniformLocation(gProgram.vertexShader, "fading");
+				gMvpShader = gMvpShader && a >= 0 && a == shaderInstanceGetUniformLocation(gProgramFast.vertexShader, "fading");
+			}
+			bool skinOk = gMvpShader;
+			for (const char* name : kSkin) {
+				const int a = shaderInstanceGetUniformLocation(gProgram.vertexShader, name);
+				skinOk = skinOk && a >= 0 && a == shaderInstanceGetUniformLocation(gProgramSkin.vertexShader, name);
+			}
 			if (gMvpShader) {
 				gProgramFastReady = true;
+				gProgramSkinReady = skinOk;
+				if (!skinOk) shaderProgramFree(&gProgramSkin);
 			} else {
 				shaderProgramFree(&gProgram);
 				shaderProgramFree(&gProgramFast);
+				shaderProgramFree(&gProgramSkin);
 				DVLB_Free(gDvlb);
 				gDvlb = nullptr;
 			}
+		} else if (gDvlb) {
+			DVLB_Free(gDvlb);
+			gDvlb = nullptr;
 		}
 	}
 	if (!gMvpShader) {
@@ -548,6 +573,7 @@ void shutdown() {
 		gLocFading = gLocFx = gLocWindy = -1;
 		if (gProgramReady) shaderProgramFree(&gProgram);
 		if (gProgramFastReady) shaderProgramFree(&gProgramFast);
+		if (gProgramSkinReady) shaderProgramFree(&gProgramSkin);
 		if (gDvlb) DVLB_Free(gDvlb);
 	}
 	// (Only ever allocated after citro3d was up, and freed after it is down:
@@ -562,8 +588,9 @@ void shutdown() {
 	free(gDeadMeshes.items);
 	gDeadTextures = {};
 	gDeadMeshes = {};
-	gProgramReady = gProgramFastReady = false;
-	gMvpShader = gOnFast = false;
+	gProgramReady = gProgramFastReady = gProgramSkinReady = false;
+	gMvpShader = false;
+	gBound = PROGRAM_FULL;
 	gDvlb = nullptr;
 	gTarget = nullptr;
 	gTargetR = nullptr;
@@ -747,7 +774,7 @@ static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target) {
 	// this: the GPU still worked on what it cut away.)
 	if (gFillTest) C3D_SetViewport(0, 0, target->frameBuf.width, target->frameBuf.height / 2);
 	C3D_BindProgram(&gProgram);
-	gOnFast = false;
+	gBound = PROGRAM_FULL;
 
 	// Mtx_PerspTilt handles the sideways screen and PICA's -1..0 depth range.
 	C3D_Mtx proj;
@@ -956,17 +983,34 @@ void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin) 
 		++gDropped;
 		return;
 	}
-	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, skin.origin[0] - gAnchor[0], skin.origin[1] - gAnchor[1],
-	              skin.origin[2] - gAnchor[2], skin.posScale);
+	const float off[3] = {skin.origin[0] - gAnchor[0], skin.origin[1] - gAnchor[1], skin.origin[2] - gAnchor[2]};
 	setParams(skin.uvScale);
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocSkinLight, skin.light[0], skin.light[1], skin.light[2], 0.0f);
-	for (u32 b = 0; b < skin.boneCount; ++b) {
-		const float* row = skin.bones + b * 12;
-		for (int r = 0; r < 3; ++r)
-			C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocBones + int(b) * 3 + r, row[r * 4], row[r * 4 + 1], row[r * 4 + 2], row[r * 4 + 3]);
+	if (gProgramSkinReady) {
+		// The characters' entry: the position step and the origin go into the rows, so that one dph per row
+		// gives the place relative to the lattice point (world_skin.v.pica).
+		const float s = skin.posScale;
+		for (u32 b = 0; b < skin.boneCount; ++b) {
+			const float* row = skin.bones + b * 12;
+			for (int r = 0; r < 3; ++r)
+				C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocBones + int(b) * 3 + r, row[r * 4] * s, row[r * 4 + 1] * s, row[r * 4 + 2] * s,
+				              row[r * 4 + 3] + off[r]);
+		}
+		// (chunk and the `skinned` switch are not read by this entry; they are kept as the full entry has them, for
+		// whoever looks at the uniforms - the PC tests - and so that a later full-entry draw finds them in order.)
+		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, off[0], off[1], off[2], skin.posScale);
+		setSkinned(true);
+		bindProgram(PROGRAM_SKIN);
+	} else {
+		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, off[0], off[1], off[2], skin.posScale);
+		for (u32 b = 0; b < skin.boneCount; ++b) {
+			const float* row = skin.bones + b * 12;
+			for (int r = 0; r < 3; ++r)
+				C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocBones + int(b) * 3 + r, row[r * 4], row[r * 4 + 1], row[r * 4 + 2], row[r * 4 + 3]);
+		}
+		setSkinned(true);
+		useProgram(false);
 	}
-	setSkinned(true);
-	useProgram(false);
 	if (m != gBoundMesh) {
 		C3D_SetBufInfo(&m->buf);
 		gBoundMesh = m;

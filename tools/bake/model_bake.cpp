@@ -1,4 +1,5 @@
 #include "model_bake.h"
+#include "vcache.h"
 
 #include "g3ds/math.h"
 #include "g3ds/model.h"
@@ -288,6 +289,17 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 		flush();
 	}
 
+	// The triangles of every part in the order the GPU's vertex cache likes (they were sorted by their bones,
+	// which scatters neighbours): the same triangles, the same winding, the same range of each part.
+	u64 cacheBefore = 0, cacheAfter = 0;
+	for (const ModelPart& p : parts) {
+		if (p.firstIndex + p.indexCount > indices.size()) continue;
+		u16* idx = indices.data() + p.firstIndex;
+		cacheBefore += countCacheMisses(idx, p.indexCount, 16);
+		optimizeIndexRange(idx, p.indexCount, vertices.size(), 16);
+		cacheAfter += countCacheMisses(idx, p.indexCount, 16);
+	}
+
 	// ---- clips ----
 	std::vector<ModelClipRef> clipRefs;
 	std::vector<std::string> clipNotes;
@@ -490,9 +502,10 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 	result.triangles = indices.size() / 3;
 	result.clips = clipRefs.size();
 	line(format("skeleton: %zu nodes; mesh: %zu triangles, %zu vertices (%.0f%% follow two bones), %zu draw calls, "
-	            "largest palette %zu of %u bones",
+	            "largest palette %zu of %u bones; vertex shader runs per triangle %.2f -> %.2f (16-entry FIFO)",
 	            n, result.triangles, result.vertices, vertices.empty() ? 0.0 : 100.0 * double(blended) / double(triangles * 3),
-	            parts.size(), result.largestPalette, MODEL_PALETTE));
+	            parts.size(), result.largestPalette, MODEL_PALETTE, result.triangles ? double(cacheBefore) / double(result.triangles) : 0.0,
+	            result.triangles ? double(cacheAfter) / double(result.triangles) : 0.0));
 	line(format("size: %.0f x %.0f x %.0f cm, feet at y = %.1f, position step %.4f cm", double(mx[0] - mn[0]),
 	            double(mx[1] - mn[1]), double(mx[2] - mn[2]), double(mn[1]), double(posScale)));
 	{

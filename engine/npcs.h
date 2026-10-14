@@ -137,6 +137,9 @@ struct NpcStats {
 	float scriptMs = 0;   // milliseconds the last update() spent inside the scripts' functions
 	float clockMs = 0;    // ... setting the world's clock on (the routines of everybody)
 	float selectMs = 0;   // ... choosing and making the actors (models, grounding)
+	float loadMs = 0;     // ... of it: models built (fix89: for finding what a hitch is made of)
+	float wakeMs = 0;     // ... of it: new characters' first steps (scripts)
+	float groundMs = 0;   // ... of it: characters put on the ground
 	float tickMs = 0;     // ... in the actors' own steps
 	// Perception.
 	u32 perceived = 0;    // reactions called since the start (the player seen, an enemy, a passive perception)

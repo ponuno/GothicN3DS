@@ -249,7 +249,9 @@ Npcs::Piece* Npcs::piece(Pak& pak, u32 hash, u32& loadsLeft) {
 			// Memory may have been short for a moment: another go every few seconds.
 			if (_frame - p.failedAt < 240 || loadsLeft == 0 || !loadFits()) return nullptr;
 			--loadsLeft;
+			const double tRetry = sys::timeMs();
 			p.failed = !p.model.loadEntry(pak, hash, &_pool, true, &_meshes);
+			_stats.loadMs += float(sys::timeMs() - tRetry);
 			p.failedAt = _frame;
 			++_stats.loads;
 			return p.failed ? nullptr : &p;
@@ -279,7 +281,9 @@ Npcs::Piece* Npcs::piece(Pak& pak, u32 hash, u32& loadsLeft) {
 	spare->used = _frame;
 	const double tLoad = sys::timeMs();
 	spare->failed = !spare->model.loadEntry(pak, hash, &_pool, true, &_meshes);
-	_pieceCostMs = _pieceCostMs * 0.8f + float(sys::timeMs() - tLoad) * 0.2f;
+	const float loadedMs = float(sys::timeMs() - tLoad);
+	_pieceCostMs = _pieceCostMs * 0.8f + loadedMs * 0.2f;
+	_stats.loadMs += loadedMs;
 	spare->failedAt = _frame;
 	++_stats.loads;
 	return spare->failed ? nullptr : spare;
@@ -334,6 +338,7 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 	float key[ACTORS], dist2[ACTORS];
 	u32 count = 0;
 	_stats.here = _stats.near = _stats.waiting = _stats.noModel = 0;
+	_stats.loadMs = _stats.wakeMs = _stats.groundMs = 0.0f;
 	_stats.reach = _reach;
 	u32 startsLeft = _cfg.startsPerFrame;
 	// Those about to come into range, nearest first: their models are read ahead (see below).
@@ -537,7 +542,11 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 			a->rig = rig;
 			a->anim.bind(rig ? &rig->model : nullptr);
 			a->idle = nullptr;
-			if (rig) wake(*a);
+			if (rig) {
+				const double tWake = sys::timeMs();
+				wake(*a);
+				_stats.wakeMs += float(sys::timeMs() - tWake);
+			}
 		}
 		a->body = body;
 		a->head = head;
@@ -549,7 +558,11 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 			a->movedSeen = n.moved;
 			a->grounded = false;
 		}
-		if (!a->grounded) ground(*a, world, 150.0f);
+		if (!a->grounded) {
+			const double tGround = sys::timeMs();
+			ground(*a, world, 150.0f);
+			_stats.groundMs += float(sys::timeMs() - tGround);
+		}
 	}
 	// A frame with a load to spare reads the models of those who are about to come: by the time they are in range
 	// they are in memory, and the frame they appear in is no longer the one with the archive read in it.

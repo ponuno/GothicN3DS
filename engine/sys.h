@@ -14,6 +14,8 @@ struct Signal;
 // Null if the platform cannot start a thread; the caller then does the work
 // itself.
 Thread* threadStart(void (*entry)(void*), void* arg);
+// True if the worker threads run on the second application core (New 3DS only).
+bool workersOnSecondCore();
 void threadJoin(Thread* t); // waits for `entry` to return and frees `t`
 
 Mutex* mutexCreate();

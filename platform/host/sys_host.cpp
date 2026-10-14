@@ -30,6 +30,8 @@ static void* trampoline(void* p) {
 	return nullptr;
 }
 
+bool workersOnSecondCore() { return false; }
+
 Thread* threadStart(void (*entry)(void*), void* arg) {
 	Thread* t = static_cast<Thread*>(calloc(1, sizeof(Thread)));
 	if (!t) return nullptr;

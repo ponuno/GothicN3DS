@@ -27,6 +27,9 @@ static void trampoline(void* p) {
 	t->entry(t->arg);
 }
 
+static bool gWorkersOnCore2 = false;
+bool workersOnSecondCore() { return gWorkersOnCore2; }
+
 Thread* threadStart(void (*entry)(void*), void* arg) {
 	Thread* t = static_cast<Thread*>(calloc(1, sizeof(Thread)));
 	if (!t) return nullptr;
@@ -38,7 +41,18 @@ Thread* threadStart(void (*entry)(void*), void* arg) {
 	s32 priority = 0x30;
 	svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
 	priority = priority < 0x3E ? priority + 1 : 0x3F;
-	t->handle = ::threadCreate(trampoline, t, 64 * 1024, priority, -2, false);
+	// New 3DS: the second application core (2) is free for the game; the workers (loader, read-ahead, sound, music)
+	// run there for real instead of in the main thread's gaps. If it cannot be had (an old 3DS, or the system says
+	// no) they stay on the main thread's core as before. (fix89; not tried on the console yet.)
+	t->handle = nullptr;
+	bool isNew = false;
+	if (R_SUCCEEDED(APT_CheckNew3DS(&isNew)) && isNew) {
+		s32 spare = 0x30;
+		svcGetThreadPriority(&spare, CUR_THREAD_HANDLE);
+		t->handle = ::threadCreate(trampoline, t, 64 * 1024, spare < 0x3E ? spare + 1 : 0x3F, 2, false);
+		if (t->handle) gWorkersOnCore2 = true;
+	}
+	if (!t->handle) t->handle = ::threadCreate(trampoline, t, 64 * 1024, priority, -2, false);
 	if (!t->handle) {
 		free(t);
 		return nullptr;

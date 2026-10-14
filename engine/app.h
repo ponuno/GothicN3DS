@@ -59,6 +59,18 @@ struct UpdateTimes {
 	float player = 0; // the character: steering, walls, ground
 	float camera = 0; // finding the camera a place
 	float loot = 0;   // the things lying about (inside `npcs`): their light, their models
+	// Finer (fix86), for the report: of `npcs` - the inhabitants' own update, the triggers, the particles;
+	// of `player` - steering (ledges, overlays, Hero::control), the move (Player::update), the bodies in the way,
+	// the character's pose (Hero::follow), the rest (spells, arrows, the recorder, portals).
+	float npcUpdate = 0, triggers = 0, particles = 0;
+	float heroControl = 0, heroMove = 0, heroBodies = 0, heroFollow = 0, heroRest = 0;
+};
+
+// Where render() spent the CPU's time (issuing draw calls), ms (fix86): the world's opaque pass, the
+// inhabitants, the things lying about with the movers, the player's character, the rest (sky, shadows,
+// water, particles, the overlay).
+struct RenderTimes {
+	float world = 0, npcs = 0, things = 0, hero = 0, rest = 0;
 };
 
 class App {
@@ -151,6 +163,7 @@ public:
 	// True while the camera is below a water surface.
 	bool underwater() const { return _underwater; }
 	const UpdateTimes& times() const { return _times; }
+	const RenderTimes& renderTimes() const { return _renderTimes; }
 	// The last five seconds of the character controller, frame by frame.
 	const MoveRecorder& moves() const { return _moves; }
 
@@ -475,6 +488,7 @@ private:
 	float _camElevation = 0;   // degrees the player has tilted the view away from the script's elevation
 	float _eyePitch = 0;       // first person with a character: looking up and down
 	UpdateTimes _times;
+	RenderTimes _renderTimes;
 	MoveRecorder _moves;
 	Settings _settings;
 	Menu _menu;

@@ -422,7 +422,9 @@ void App::update(const Input& in, float dt) {
 	const double t1 = sys::timeMs();
 	_npcs.update(_pak, _world, _player.eye(), _env.timeOfDay, dt);
 	const double tLoot0 = sys::timeMs();
+	_times.npcUpdate = float(tLoot0 - t1);
 	if (_npcs.loaded()) _loot.update(_pak, _world, _npcs.game(), _player.eye());
+	const double tTrig0 = sys::timeMs();
 	if (_npcs.loaded()) {
 		// Riding a lift or a ferry: where the feet are on it before it moves, and after.
 		Vec3 rideLocal {0, 0, 0};
@@ -441,6 +443,9 @@ void App::update(const Input& in, float dt) {
 	_particles.setFadeStep(_world.fadeStep());
 	_particles.update(dt, _player.eye());
 	const double t2 = sys::timeMs();
+	_times.triggers = float(tLoot1 - tTrig0);
+	_times.particles = float(t2 - tLoot1);
+	double tCtl = t2, tMove = t2, tBodies = t2, tFollow = t2; // (the character's parts; all t2 without one)
 
 	const bool wasFlying = _player.flying;
 	const bool steered = _hero.loaded() && !wasFlying && !in.toggleFly;
@@ -515,7 +520,9 @@ void App::update(const Input& in, float dt) {
 			_hero.setOverlays(worn, count);
 		}
 		const Drive drive = _hero.control(heroIn, _player, dt, grab ? &ledge : nullptr, ground.found ? &ground : nullptr, wall);
+		tCtl = sys::timeMs();
 		_player.update(_world, heroIn, _hero.yaw(), 0.0f, dt, &drive);
+		tMove = sys::timeMs();
 		// The inhabitants' bodies are in the way (not while climbing, using a thing, or lying).
 		if (_npcs.loaded() && !_player.climbing && !_player.swimming && _mobJob.stage == MJ_NONE && _chest.stage == CH_NONE && !_hero.down()) {
 			Vec3 feet = _player.feet;
@@ -534,9 +541,11 @@ void App::update(const Input& in, float dt) {
 			if (_player.takeLadderTurn(ladderYaw)) _hero.setYaw(ladderYaw);
 		}
 		fallCheck();
+		tBodies = sys::timeMs();
 		const SkyColors sky = skyColors();
 		const float indoorLight[3] = {1, 1, 1};
 		_hero.follow(_player, _world, _world.indoor() ? indoorLight : sky.light, dt);
+		tFollow = sys::timeMs();
 		if (_hero.blowLanded() && _hero.weapon() != WEAPON_MAG && _hero.weapon() != WEAPON_BOW && _hero.weapon() != WEAPON_CBOW) heroBlow();
 		magicUpdate(dt);
 		rangedUpdate(dt);
@@ -580,6 +589,11 @@ void App::update(const Input& in, float dt) {
 	_times.script = _npcs.stats().scriptMs;
 	_times.loot = float(tLoot1 - tLoot0);
 	_times.player = float(t3 - t2);
+	_times.heroControl = float(tCtl - t2);
+	_times.heroMove = float(tMove - tCtl);
+	_times.heroBodies = float(tBodies - tMove);
+	_times.heroFollow = float(tFollow - tBodies);
+	_times.heroRest = float(t3 - max(tFollow, max(tBodies, max(tMove, tCtl))));
 	_times.camera = float(sys::timeMs() - t3);
 }
 
@@ -783,7 +797,9 @@ void App::render() {
 		eyeDesc[1].eye = r.pos;
 		eyeDesc[1].view = viewLH(r.pos, r.yaw, _cam.pitch);
 	}
+	_renderTimes = RenderTimes {};
 	const auto drawEye = [&](const gfx::FrameDesc& d) {
+		const double r0 = sys::timeMs();
 		if (!indoor) {
 			gfx::setPass(gfx::PASS_SKY);
 			_sky.draw(_cam.pos, _cam.zFar * 0.5f, sky, _settings.barrier ? 1.0f : 0.0f, float(_clock));
@@ -791,13 +807,17 @@ void App::render() {
 		gfx::setPass(gfx::PASS_WORLD);
 		const Mat4 viewProj = mul(proj, fd.view);
 		_viewProj = viewProj;
+		const double r1 = sys::timeMs();
 		_world.draw(viewProj, _cam.pos, u32(u64(_clock * 1000.0)));
+		const double r2 = sys::timeMs();
 		const float indoorLight[3] = {1, 1, 1};
 		_npcs.setFadeStep(_world.fadeStep());
 		_npcs.draw(viewProj, indoor ? indoorLight : sky.light, &_world, _cam.pos);
+		const double r3 = sys::timeMs();
 		_loot.draw(_cam.pos, indoor ? indoorLight : sky.light);
 		_triggers.draw(_pak, _world, _cam.pos, indoor ? indoorLight : sky.light, min(_world.drawReach() + 2000.0f, 20000.0f));
 		drawShowcase();
+		const double r4 = sys::timeMs();
 		if (_heroVisible) {
 			_hero.draw();
 			drawArrows(_hero.light());
@@ -809,6 +829,7 @@ void App::render() {
 				_loot.drawRanged(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
 				                 hn->ranged, _hero.feet(), _hero.light());
 		}
+		const double r5 = sys::timeMs();
 		gfx::setPass(gfx::PASS_BLEND);
 		// Graphics+: shadows on the ground, before the water (which then covers those under it).
 		_shadows.begin();
@@ -822,6 +843,12 @@ void App::render() {
 		_world.drawBlended();
 		_particles.draw(d.view, _cam.pos, indoor ? indoorLight : sky.light);
 		drawOverlay();
+		const double r6 = sys::timeMs();
+		_renderTimes.world += float(r2 - r1);
+		_renderTimes.npcs += float(r3 - r2);
+		_renderTimes.things += float(r4 - r3);
+		_renderTimes.hero += float(r5 - r4);
+		_renderTimes.rest += float((r1 - r0) + (r6 - r5));
 	};
 	gfx::frameBegin(eyeDesc[0]);
 	drawEye(eyeDesc[0]);

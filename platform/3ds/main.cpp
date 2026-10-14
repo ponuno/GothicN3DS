@@ -135,7 +135,7 @@ static const char* kHitchPath = "sdmc:/3ds/gothic3ds/hitches.txt";
 // The log of dropped frames: a line for every frame that took well over a refresh, with where the time went. Kept
 // in memory and written to the card in batches (and at the end), so that the writing itself does not make the
 // hitches it is there to find.
-static char gHitchLines[48][220];
+static char gHitchLines[48][300];
 static int gHitchCount = 0;
 static unsigned long gHitchTotal = 0;
 
@@ -376,6 +376,7 @@ int main(int, char**) {
 	int reportLines = 0;
 	u32 lastStateCalls = 0;
 	g3::UpdateTimes partSum;               // where update() spent its time, summed over a report
+	g3::RenderTimes drawSum;               // where render() spent the CPU's time, summed over a report (fix86)
 	g3::UpdateTimes partWorst;             // ... and the worst frame of each part
 	float lootWorst = 0.0f;
 	float npcClockWorst = 0.0f, npcSelectWorst = 0.0f, npcTickWorst = 0.0f; // of the inhabitants' part: clock / choosing / steps
@@ -588,6 +589,15 @@ int main(int, char**) {
 				partSum.script += ut.script;
 				partSum.player += ut.player;
 				partSum.camera += ut.camera;
+				partSum.loot += ut.loot;
+				partSum.npcUpdate += ut.npcUpdate;
+				partSum.triggers += ut.triggers;
+				partSum.particles += ut.particles;
+				partSum.heroControl += ut.heroControl;
+				partSum.heroMove += ut.heroMove;
+				partSum.heroBodies += ut.heroBodies;
+				partSum.heroFollow += ut.heroFollow;
+				partSum.heroRest += ut.heroRest;
 				lootWorst = max(lootWorst, ut.loot);
 				npcClockWorst = max(npcClockWorst, app.npcs().stats().clockMs);
 				npcSelectWorst = max(npcSelectWorst, app.npcs().stats().selectMs);
@@ -618,6 +628,14 @@ int main(int, char**) {
 			}
 
 			app.render();
+			{
+				const g3::RenderTimes& rt = app.renderTimes();
+				drawSum.world += rt.world;
+				drawSum.npcs += rt.npcs;
+				drawSum.things += rt.things;
+				drawSum.hero += rt.hero;
+				drawSum.rest += rt.rest;
+			}
 		} // (not in the menu)
 
 		// The re-projection's side: the picture just handed to the GPU was drawn for this view.
@@ -728,12 +746,14 @@ int main(int, char**) {
 				const g3::Vec3 e = app.player().eye();
 				++gHitchTotal;
 				snprintf(gHitchLines[gHitchCount++], sizeof(gHitchLines[0]),
-				         "f%lu %.1fms cpu%.1f gpu%.1f upd%.1f | w%.1f n%.1f s%.1f p%.1f c%.1f l%.1f | clk%.1f sel%.1f tick%.1f | mdl%lu clip%lu chunk%+ld ev%lu pend%lu | tr%lu %.0f %.0f %.0f\n",
+				         "f%lu %.1fms cpu%.1f gpu%.1f upd%.1f | w%.1f n%.1f s%.1f p%.1f c%.1f l%.1f | clk%.1f sel%.1f tick%.1f | mdl%lu clip%lu chunk%+ld ev%lu pend%lu | tr%lu %.0f %.0f %.0f | nu%.1f t%.1f x%.1f hc%.1f m%.1f b%.1f f%.1f o%.1f\n",
 				         static_cast<unsigned long>(frame), double(fs.frameMs), double(fs.cpuMs), double(fs.gpuMs), double(updateMs), double(ut.stream),
 				         double(ut.npcs), double(ut.script), double(ut.player), double(ut.camera), double(ut.loot), double(nst.clockMs),
 				         double(nst.selectMs), double(nst.tickMs), static_cast<unsigned long>(dModels), static_cast<unsigned long>(dClips),
 				         static_cast<long>(dChunks), static_cast<unsigned long>(dEvict), static_cast<unsigned long>(wst.chunksPending),
-				         static_cast<unsigned long>(wst.trianglesDrawn), double(e.x), double(e.y), double(e.z));
+				         static_cast<unsigned long>(wst.trianglesDrawn), double(e.x), double(e.y), double(e.z), double(ut.npcUpdate),
+				         double(ut.triggers), double(ut.particles), double(ut.heroControl), double(ut.heroMove), double(ut.heroBodies),
+				         double(ut.heroFollow), double(ut.heroRest));
 				if (gHitchCount >= 48) flushHitches();
 			}
 		}
@@ -767,8 +787,15 @@ int main(int, char**) {
 			     double(partWorst.npcs), double(partSum.script / 30.0f), double(partWorst.script),
 			     double(partSum.player / 30.0f), double(partWorst.player), double(partSum.camera / 30.0f),
 			     double(partWorst.camera));
-			reportLine("collide %3lu queries %5lu tris", static_cast<unsigned long>(collQueries / 30),
-			     static_cast<unsigned long>(collTests / 30));
+			// (fix86, averages, ms) n: the inhabitants' update, loot, triggers, particles; p: steering, move, bodies, pose, rest;
+			// then the CPU's draw-call time: world, inhabitants, things and movers, hero, the rest. The collision line went.
+			reportLine("n u%.1f l%.1f t%.1f x%.1f p c%.1f m%.1f b%.1f f%.1f o%.1f", double(partSum.npcUpdate / 30.0f),
+			     double(partSum.loot / 30.0f), double(partSum.triggers / 30.0f), double(partSum.particles / 30.0f),
+			     double(partSum.heroControl / 30.0f), double(partSum.heroMove / 30.0f), double(partSum.heroBodies / 30.0f),
+			     double(partSum.heroFollow / 30.0f), double(partSum.heroRest / 30.0f));
+			reportLine("drw w%.1f n%.1f t%.1f h%.1f o%.1f col%lu/%lu", double(drawSum.world / 30.0f), double(drawSum.npcs / 30.0f),
+			     double(drawSum.things / 30.0f), double(drawSum.hero / 30.0f), double(drawSum.rest / 30.0f),
+			     static_cast<unsigned long>(collQueries / 30), static_cast<unsigned long>(collTests / 30));
 			reportLine("loader %-6s job %5.1f ms  fly %lu",
 			     !app.world().backgroundStreaming() ? "off" : app.world().workerThread() ? "thread" : "inline",
 			     double(app.world().takeWorstLoadMs()), static_cast<unsigned long>(ws.chunksInFlight));
@@ -975,6 +1002,7 @@ int main(int, char**) {
 			updateAccum = 0.0f;
 			updateWorst = 0.0f;
 			partSum = g3::UpdateTimes();
+			drawSum = g3::RenderTimes();
 			partWorst = g3::UpdateTimes();
 			npcClockWorst = npcSelectWorst = npcTickWorst = lootWorst = 0.0f;
 			collQueries = collTests = 0;

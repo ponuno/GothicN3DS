@@ -182,7 +182,9 @@ void pipeline(std::wstring game, bool music, bool gfxPlus, bool lod, bool simpli
 		std::wstring cmd = bake + L" world --game \"" + gameShort + L"\" -o \"" + outShort + L"data.pak\" --no-script-check";
 		if (haveMusic) cmd += L" --music-dir \"" + shortPath(wavs) + L"\"";
 		// Graphics+ in the data: corner shading, swaying plants, far layer and visibility table (switched on in the game's menu, Graphics -> Graphics+).
-		if (gfxPlus) cmd += L" --ao low --wind --far-lod --vis";
+		// Swaying plants are always baked (the game's menu switches them on: Graphics+ -> Foliage sway), costing about 10 % more vertices.
+		cmd += L" --wind";
+		if (gfxPlus) cmd += L" --ao low --far-lod --vis";
 		// A finer far view (Graphics+ -> Far layer): more triangles and finer cells, about 2.5 times the memory of the default.
 		// Sharper textures: the longest edge 256 instead of 128 (about 4 times the texture memory and a bigger data.pak).
 		if (tex256) cmd += L" --max-tex 256";
@@ -394,7 +396,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
 	gBrowse = make(L"BUTTON", L"Browse...", BS_PUSHBUTTON, 610, 29, 90, 26, ID_BROWSE);
 	gMusic = make(L"BUTTON", L"Also bake the music (10-30 minutes more)", BS_AUTOCHECKBOX, 12, 62, 290, 22, ID_MUSIC);
 	SendMessageW(gMusic, BM_SETCHECK, BST_CHECKED, 0);
-	gGfxPlus = make(L"BUTTON", L"Graphics+: shading, plants, far layer, visibility", BS_AUTOCHECKBOX, 306, 62, 296, 22, ID_GFXPLUS);
+	gGfxPlus = make(L"BUTTON", L"Graphics+: shading, far layer, visibility", BS_AUTOCHECKBOX, 306, 62, 296, 22, ID_GFXPLUS);
 	gVoices = make(L"BUTTON", L"Bake the voices (speech.pak)", BS_AUTOCHECKBOX, 12, 84, 290, 22, ID_VOICES);
 	SendMessageW(gVoices, BM_SETCHECK, BST_CHECKED, 0);
 	gDebug = make(L"BUTTON", L"Debug report (bake_debug.txt)", BS_AUTOCHECKBOX, 306, 84, 296, 22, ID_DEBUG);

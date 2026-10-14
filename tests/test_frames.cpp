@@ -377,12 +377,12 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 				sc.worstSway = std::max(sc.worstSway, std::hypot(double(fx[0]) * wave, double(fx[1]) * wave));
 				++sc.swayedVertices;
 			}
-			// The water's waves (world_full.v.pica): two waves 4 x (1 - |x|), lift by 0.7 A + 0.3 B, the slopes light it, the
+			// The water's waves (world_full.v.pica): two waves of one swell 4 x (1 - |x|), lift by 0.7 A + 0.3 B, the slopes light it, the
 			// texture slides; all per step of the corner's weight (w's high byte), the uniform holds them per step.
 			double waveShade = 1.0, shiftU = 0.0, shiftV = 0.0;
 			if (sc.wavyBit && (call.bools & sc.wavyBit) && sway > 0) {
 				const float* wv = call.uniforms[sc.locWave];
-				const double k[2][2] = {{0.0008, 0.0006}, {0.000538, -0.001442}};
+				const double k[2][2] = {{0.00057143, 0.00042857}, {0.00070144, 0.00086167}};
 				double ws[2], sl[2];
 				for (int a = 0; a < 2; ++a) {
 					const double u = double(wv[a]) + k[a][0] * p[0] + k[a][1] * p[2];
@@ -419,7 +419,7 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 		if (!skinned && sc.wavyBit && (call.bools & sc.wavyBit) && vertexWind(v.w) > 0) {
 			// (the wave's texture slide, as above)
 			const float* wv = call.uniforms[sc.locWave];
-			const double k[2][2] = {{0.0008, 0.0006}, {0.000538, -0.001442}};
+			const double k[2][2] = {{0.00057143, 0.00042857}, {0.00070144, 0.00086167}};
 			double chunkP[3] = {double(chunk[3]) * double(v.x), double(chunk[3]) * double(v.y), double(chunk[3]) * double(v.z)};
 			double ws[2];
 			for (int a = 0; a < 2; ++a) {
@@ -916,16 +916,17 @@ static void testDefaultShader(const std::string& pak) {
 		// Rain: the ground gets wet and puddles are laid where the ground is open and flat.
 		app.weather().configure(WEATHER_RAIN, true);
 		app.weather().settle();
-		unsigned puddled = 0, rippled = 0;
+		unsigned puddled = 0, rippled = 0, drops = 0;
 		for (int f = 0; f < 6; ++f) {
 			Input in;
 			app.update(in, 1.0f / 30.0f);
 			app.render();
 			puddled = std::max(puddled, app.puddles().drawn());
-			rippled = std::max(rippled, app.ripples().drawn());
+			rippled = std::max(rippled, app.rain().rings());
+			drops = std::max(drops, app.rain().drops());
 		}
-		std::printf("  rain: %s, %u puddles, %u rings on water in view\n", app.world().indoor() ? "indoors" : "outdoors", puddled, rippled);
-		CHECK(app.world().indoor() || puddled > 0);
+		std::printf("  rain: %s, %u puddles, %u splashes, %u drops in view\n", app.world().indoor() ? "indoors" : "outdoors", puddled, rippled, drops);
+		CHECK(app.world().indoor() || (puddled > 0 && drops > 20));
 		app.weather().configure(WEATHER_CLEAR, true);
 		app.weather().settle();
 		unsigned switches = 0, frames = 0;
@@ -1314,6 +1315,7 @@ int main(int argc, char** argv) {
 	bo.ao.level = AO_LOW; // Graphics+ in the data: the shaders' occlusion and wind are checked
 	bo.wind = true;
 	bo.waterGrid = 200.0f; // (the water cut along the shores, for the waves)
+	bo.riverWidth = 0.0f; // (and everywhere: the test world's water is a narrow stream, which the default leaves calm)
 	std::vector<SrcModel> models(2);
 	buildSyntheticActor(models[0]);
 	buildChainModel(models[1], 60);

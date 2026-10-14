@@ -109,11 +109,11 @@ struct ChunkFx {
 // The water's two waves (world_full.v.pica has the same numbers): directions (x, z) and wavelengths, cm; speed in
 // waves a second.
 constexpr float WAVE_A_DIR[2] = {0.8f, 0.6f};
-constexpr float WAVE_A_CM = 1000.0f;
-constexpr float WAVE_A_SPEED = 0.12f;
-constexpr float WAVE_B_DIR[2] = {0.35f, -0.937f};
-constexpr float WAVE_B_CM = 650.0f;
-constexpr float WAVE_B_SPEED = 0.18f;
+constexpr float WAVE_A_CM = 1400.0f;
+constexpr float WAVE_A_SPEED = 0.07f;
+constexpr float WAVE_B_DIR[2] = {0.6313f, 0.7755f}; // 14 degrees off A: one swell
+constexpr float WAVE_B_CM = 900.0f;
+constexpr float WAVE_B_SPEED = 0.10f;
 // The phase (0..1) of wave A (which = 0) or B (1) at `origin` at time `seconds`; in double, as windPhaseAt.
 inline float wavePhaseAt(const float origin[3], double seconds, int which) {
 	const float* d = which ? WAVE_B_DIR : WAVE_A_DIR;
@@ -122,6 +122,30 @@ inline float wavePhaseAt(const float origin[3], double seconds, int which) {
 	double t = seconds * speed + (double(origin[0]) * double(d[0]) + double(origin[2]) * double(d[1])) / cm;
 	t -= floor(t);
 	return float(t);
+}
+// How the waves lift the water at (x, z) at time `seconds`, as the vertex shader does: the height (cm) at full weight and
+// 1 for the crest `height`; and the slope there (cm of height per cm along x and z) - `weight` 0..1 of the corner's share.
+inline void waveSurfaceAt(float x, float z, double seconds, float height, float weight, float& lift, float& slopeX, float& slopeZ) {
+	lift = slopeX = slopeZ = 0.0f;
+	const float mix[2] = {0.7f, 0.3f};
+	for (int k = 0; k < 2; ++k) {
+		const float* d = k ? WAVE_B_DIR : WAVE_A_DIR;
+		const double cm = k ? double(WAVE_B_CM) : double(WAVE_A_CM);
+		const double speed = k ? double(WAVE_B_SPEED) : double(WAVE_A_SPEED);
+		double t = seconds * speed + (double(x) * double(d[0]) + double(z) * double(d[1])) / cm;
+		t -= floor(t);
+		const float xs = float(t + t - 1.0);
+		const float edge = 1.0f - (xs < 0 ? -xs : xs);
+		lift += mix[k] * 4.0f * xs * edge;
+		// d(4 x (1 - |x|))/dx = 4 - 8 |x|; dx/dt = 2; dt/dposition = direction / wavelength
+		const float dw = mix[k] * (4.0f - 8.0f * (xs < 0 ? -xs : xs)) * 2.0f / float(cm);
+		slopeX += dw * d[0];
+		slopeZ += dw * d[1];
+	}
+	const float s = height * weight;
+	lift *= s;
+	slopeX *= s;
+	slopeZ *= s;
 }
 // The wave travels along x + z: one wave per this many cm.
 constexpr float WIND_WAVE_CM = 800.0f;

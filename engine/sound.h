@@ -83,6 +83,8 @@ public:
 	void stopAll();
 	// The handle's sound is sounding.
 	bool playing(u32 handle) const;
+	// Changes the gain of a sound already playing (a loop that swells and fades).
+	void setHandleGain(u32 handle, float gain);
 	// Does a sound of this name exist (an instance of C_SFX, or a sample of that name)?
 	bool knows(const char* name);
 

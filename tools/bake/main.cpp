@@ -165,6 +165,7 @@ void usage() {
 	          "  --water-light N    the water's own light, 0..255 (default 200): the same blue-green tone all over it,\n"
 	          "                     not the patches of the source mesh's vertex light; 0: keep the source's light\n"
 	          "  --water-texture S  the water's texture: made here (default: soft caustics; S = made) or the game's (S = original)\n"
+	          "  --water-alpha N    how opaque the made water is, 0..255 (default 110; lower = more see-through)\n"
 	          "  --water-color R,G,B  the colour of that texture (default 92,140,156)\n"
 	          "  --water-shore S    colour by depth and foam in the fine water, 0..1 (default 1; needs --water-grid)\n"
 	          "  --wet-shore S      the ground at the water's edge darker (wet sand), 0..1 (default 1)\n"
@@ -318,6 +319,7 @@ int main(int argc, char** argv) {
 			else if (a == "--light-static") opt.light.statics = true;
 			else if (a == "--water-light") opt.waterLight = u8(std::clamp(std::stoi(value()), 0, 255));
 			else if (a == "--water-texture") opt.waterTexture = value() != "original";
+			else if (a == "--water-alpha") opt.waterAlpha = u8(std::clamp(std::stoi(value()), 0, 255));
 			else if (a == "--water-color") {
 				const std::string v = value();
 				int r, g, b;

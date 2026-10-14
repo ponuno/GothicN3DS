@@ -407,4 +407,6 @@ const Entry kEntries[] = {
     {{"Мокрая земля", "Wet ground", "Mokra ziemia", "Nasser Boden"}},
     {{"Авто: меняется сама; иначе держится", "Auto: changes by itself; otherwise holds", "Auto: zmienia się sama; inaczej trwa", "Auto: wechselt selbst; sonst bleibt es"}},
     {{"В дождь свет на улице темнее", "Outdoor light is darker in rain", "W deszczu światło na dworze jest ciemniejsze", "Im Regen ist das Licht draußen dunkler"}},
+    {{"Лучи света", "Light rays", "Promienie światła", "Lichtstrahlen"}},
+    {{"Столбы света в тенях (днём, в ясно)", "Light beams in shade (clear days)", "Słupy światła w cieniu (w dzień)", "Lichtsäulen im Schatten (tagsüber)"}},
 };

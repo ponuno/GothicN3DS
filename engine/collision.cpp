@@ -47,12 +47,13 @@ void ChunkCollider::release() {
 	free(cellItems);
 	free(light);
 	free(group);
+	free(vertexWeight);
 	*this = ChunkCollider {};
 }
 
 u32 ChunkCollider::bytes() const {
 	if (!positions) return 0;
-	return vertexCount * 6 + triangleCount * (6 + (light ? 4u : 0u) + (group ? 1u : 0u)) + (gridW * gridH + 1) * 4 +
+	return vertexCount * 6 + triangleCount * (6 + (light ? 4u : 0u) + (group ? 1u : 0u)) + vertexCount * (vertexWeight ? 1u : 0u) + (gridW * gridH + 1) * 4 +
 	       (cellStart ? cellStart[gridW * gridH] : 0) * 4;
 }
 
@@ -114,6 +115,16 @@ bool ChunkCollider::build(const ChunkHeader& h, const ChunkBatch* batches, const
 		return false;
 	}
 	vertexCount = used;
+	// Water carrying the waves' weights (a fine grid, g3ds-bake --water-grid): kept per vertex, for the height and the slope
+	// of the waves at a point (the rain's rings lie on them).
+	if (flagMask & MATF_WATER) {
+		bool any = false;
+		for (u32 i = 0; i < h.vertexCount && !any; ++i) any = remap[i] != unused && vertexWind(vertices[i].w) != 0;
+		if (any) vertexWeight = static_cast<u8*>(malloc(size_t(used) + 1));
+		if (vertexWeight)
+			for (u32 i = 0; i < h.vertexCount; ++i)
+				if (remap[i] != unused) vertexWeight[remap[i]] = vertexWind(vertices[i].w);
+	}
 	for (u32 i = 0; i < h.vertexCount; ++i) {
 		if (remap[i] == unused) continue;
 		i16* p = positions + size_t(remap[i]) * 3;
@@ -213,7 +224,7 @@ static inline Vec3 localVertex(const i16* positions, u16 index) {
 	return {float(p[0]), float(p[1]), float(p[2])};
 }
 
-bool ChunkCollider::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, u8* lightOut, u8* groupOut) const {
+bool ChunkCollider::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, u8* lightOut, u8* groupOut, float* waveWeightOut) const {
 	if (!triangleCount) return false;
 	// Work in the chunk's quantised space; the scale is uniform, so shapes keep.
 	const float inv = 1.0f / scale;
@@ -256,6 +267,7 @@ bool ChunkCollider::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal,
 		normal = n;
 		if (lightOut && light) memcpy(lightOut, light + size_t(tri) * 4, 4);
 		if (groupOut && group) *groupOut = u8(group[tri] & 0x7Fu);
+		if (waveWeightOut) *waveWeightOut = vertexWeight ? (w0 * float(vertexWeight[t[0]]) + w1 * float(vertexWeight[t[1]]) + w2 * float(vertexWeight[t[2]])) * (1.0f / 127.0f) : 0.0f;
 	}
 	if (found) hitY = origin[1] + best * scale;
 	return found;

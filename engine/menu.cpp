@@ -146,6 +146,7 @@ const Item kDebugWorld[] = {
     {"Смена LOD", CHOICE, &Settings::lodFade, kLodFade, 3, 0, 0, nullptr, 0, "Смена дальних чанков (рябь)", nullptr},
     {"Погода", CHOICE, &Settings::weather, kWeather, 6, 0, 0, nullptr, 0, "Авто: меняется сама; иначе держится", nullptr},
     {"Мокрая земля", TOGGLE, &Settings::wetGround, nullptr, 0, 0, 0, nullptr, 0, "В дождь свет на улице темнее", nullptr},
+    {"Лучи света", TOGGLE, &Settings::godRays, nullptr, 0, 0, 0, nullptr, 0, "Столбы света в тенях (днём, в ясно)", nullptr},
     {"Чтение наперёд", TOGGLE, &Settings::readAhead, nullptr, 0, 0, 0, nullptr, 0, "Модели и чанки читаются с карты заранее", nullptr},
 };
 #undef NONE

@@ -407,7 +407,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 					SrcImage img;
 					bool found;
 					if (opt.waterTexture && waterNames.count(jobs[i].pakName)) {
-						img = makeWaterTexture(opt.waterColor);
+						img = makeWaterTexture(opt.waterColor, 128, opt.waterAlpha);
 						found = true;
 					} else {
 						std::lock_guard<std::mutex> g(loadLock);

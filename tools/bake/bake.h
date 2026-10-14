@@ -54,6 +54,7 @@ struct BakeOptions {
 	float canopyReach = 1800.0f;
 	bool waterTexture = true;
 	u8 waterColor[3] = {92, 140, 156};
+	u8 waterAlpha = 110; // --water-alpha: how opaque that texture is (0..255; lower = more see-through)
 	// The water cut into a grid of this many cm along the shores (--water-grid; 0: not cut): fine enough for the runtime's
 	// waves to lift it corner by corner (WORLDF_WATER_GRID; see water_grid.h). `waterReach`: how far from the shore line
 	// (cm, in whole tiles of 16 cells, at least one) the fine water goes (--water-reach).

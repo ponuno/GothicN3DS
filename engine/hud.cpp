@@ -11,12 +11,6 @@ namespace g3 {
 void App::drawOverlay() {
 	if (!_ui.ready()) return;
 	const bool menuOpen = _menu.isOpen();
-	// Rain and snow: streaks over the picture, outdoors only (the weather's amounts are not zero only then, as they follow).
-	if (!_world.indoor() && (_weather.rain() > 0.02f || _weather.snow() > 0.02f)) {
-		WeatherStreak st[240];
-		const int n = _weather.streaks(_clock, st, 240, gfx::SCREEN_W, gfx::SCREEN_H);
-		for (int i = 0; i < n; ++i) _ui.rect(st[i].x, st[i].y, st[i].x + st[i].w, st[i].y + st[i].h, st[i].rgba);
-	}
 	const int W = gfx::SCREEN_W, H = gfx::SCREEN_H;
 	const Game* game = _npcs.loaded() ? &_npcs.game() : nullptr;
 	const bool character = _hero.loaded() && !_player.flying;

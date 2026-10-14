@@ -86,6 +86,7 @@ void Weather::update(float dt) {
 		if (_thunderIn <= 0.0f) {
 			_flash = 1.0f;
 			_echo = 0.18f;
+			_thunderDelay = 0.4f + rnd() * 2.6f;
 			_thunderIn = 6.0f + rnd() * 16.0f;
 		}
 	}

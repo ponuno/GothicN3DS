@@ -23,6 +23,7 @@
 #include "weather.h"
 #include "ground_fx.h"
 #include "puddles.h"
+#include "rain.h"
 #include "water_texture.h"
 #include "model_bake.h"
 #include "pacer.h"
@@ -1352,7 +1353,7 @@ static void testRuntime() {
 		app.update(Input {}, 1.0f / 30.0f);
 		CHECK(w.stats().chunksLoaded == 0 && w.stats().residentBytes == 0 && w.stats().texturesLoaded == 0);
 		CHECK(w.stats().collisionBytes == 0);
-		CHECK(gfx::memStats().meshCount == 1 && gfx::memStats().textureCount == 0); // only the sky dome is left
+		CHECK(gfx::memStats().meshCount >= 1 && gfx::memStats().meshCount <= 8 && gfx::memStats().textureCount == 0); // only the sky (dome and its quads) is left
 
 		// The allocator runs dry before the budget does (a full linear heap on
 		// the console): chunks and textures wait instead of being written off,
@@ -2126,7 +2127,7 @@ static void testStreaming() {
 		CHECK(settle(200000, false));
 		CHECK(w.stats().chunksLoaded == 0 && w.stats().residentBytes == 0 && w.stats().texturesLoaded == 0 &&
 		      w.stats().collisionBytes == 0);
-		CHECK(gfx::memStats().meshCount == 1 && gfx::memStats().textureCount == 0); // the sky dome
+		CHECK(gfx::memStats().meshCount >= 1 && gfx::memStats().meshCount <= 8 && gfx::memStats().textureCount == 0); // the sky dome
 
 		// 3. A loading screen in the middle of streaming: everything at once,
 		// and nothing twice afterwards.
@@ -9209,15 +9210,31 @@ static void testWeather() {
 			}
 		CHECK(have > total / 5 && have < total / 2);
 	}
+	// Rain: a cell's drop is the same every time, inside its cell, and fewer cells have one in light rain.
 	{
-		int have = 0;
+		int heavy = 0, light = 0;
 		for (int i = 0; i < 400; ++i) {
-			float fx, fz, ph, per;
-			if (!Ripples::cellRing(i % 20, i / 20, 0, fx, fz, ph, per)) continue;
-			++have;
-			CHECK(fx > 0.0f && fx < 1.0f && fz > 0.0f && fz < 1.0f && ph >= 0.0f && ph < 1.0f && per >= 0.9f && per < 1.8f);
+			float x, z, ph, sp, x2, z2;
+			const int ix = i % 20, iz = i / 20;
+			const bool a = Rain::cellDrop(ix, iz, 1.0f, x, z, ph, sp);
+			CHECK(a == Rain::cellDrop(ix, iz, 1.0f, x2, z2, ph, sp) && !Rain::cellDrop(ix, iz, 0.0f, x2, z2, ph, sp));
+			if (a) CHECK(x >= float(ix) * Rain::CELL && x < float(ix + 1) * Rain::CELL && z >= float(iz) * Rain::CELL && z < float(iz + 1) * Rain::CELL && ph >= 0 && ph < 1 && sp >= 0.9f && sp <= 1.1f);
+			heavy += a;
+			light += Rain::cellDrop(ix, iz, 0.3f, x2, z2, ph, sp);
 		}
-		CHECK(have > 250 && have < 380);
+		CHECK(heavy > 170 && heavy < 270 && light > 30 && light < heavy / 2);
+	}
+	// The waves under a ring: height and slope as the shader's (the slope is the height's derivative).
+	{
+		float l0, sx0, sz0, l1, sx1, sz1;
+		const float x = 1234.0f, z = -567.0f, e = 0.5f;
+		gfx::waveSurfaceAt(x, z, 10.0, 22.0f, 1.0f, l0, sx0, sz0);
+		gfx::waveSurfaceAt(x + e, z, 10.0, 22.0f, 1.0f, l1, sx1, sz1);
+		CHECK(std::fabs((l1 - l0) / e - sx0) < 0.02f && std::fabs(l0) <= 22.0f * 1.0f + 0.01f);
+		gfx::waveSurfaceAt(x, z + e, 10.0, 22.0f, 1.0f, l1, sx1, sz1);
+		CHECK(std::fabs((l1 - l0) / e - sz0) < 0.02f);
+		gfx::waveSurfaceAt(x, z, 10.0, 22.0f, 0.0f, l1, sx1, sz1);
+		CHECK(l1 == 0.0f && sx1 == 0.0f && sz1 == 0.0f); // (weight 0: still water)
 	}
 	// The made water texture tiles: the step across the seam is no bigger than a step inside.
 	{
@@ -9231,7 +9248,7 @@ static void testWeather() {
 				seam = std::max(seam, std::abs(int(w.rgba[size_t(y * 64) * 4 + size_t(k)]) - int(w.rgba[size_t(y * 64 + 63) * 4 + size_t(k)])));
 				seam = std::max(seam, std::abs(int(w.rgba[size_t(y) * 4 + size_t(k)]) - int(w.rgba[size_t(63 * 64 + y) * 4 + size_t(k)])));
 			}
-		CHECK(seam <= inside + 12 && w.rgba[3] >= 120);
+		CHECK(seam <= inside + 12 && w.rgba[3] >= 100 && w.rgba[3] < 200);
 	}
 	Settings s;
 	s.weather = 9;

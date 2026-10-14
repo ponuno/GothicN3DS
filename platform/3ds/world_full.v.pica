@@ -30,11 +30,11 @@
 .bool wavy          ; Graphics+: the water's waves (world_full.v.pica only)
 
 .constf consts(0.0, 1.0, 0.00390625, 0.00125) ; 0, 1, 1/256, k = 1/800 cm (gfx.h WIND_WAVE_PER_CM)
-.constf noiseScale(15.0, 25.0, 0.000538, -0.001442) ; zw: wave B's kB per cm (the 96 constant registers are full); texels of the 8x8 noise per unit of x and y on the screen (as world_fade.v.pica)
-; Water waves (gfx.h WAVE_*): two travelling waves, A along (0.8, 0.6) with a wavelength of 10 m and B along
-; (0.35, -0.937) with 6.5 m; the same smooth curve as the wind's, w = 4 x (1 - |x|) in -1..1, x = 2 fract(u) - 1.
+.constf noiseScale(15.0, 25.0, 0.00070144, 0.00086167) ; zw: wave B's kB per cm (the 96 constant registers are full); texels of the 8x8 noise per unit of x and y on the screen (as world_fade.v.pica)
+; Water waves (gfx.h WAVE_*): two travelling waves of one swell, A along (0.8, 0.6) with a wavelength of 14 m and B along
+; (0.6313, 0.7755) (14 degrees off A) with 9 m, so that they run together in long crests, not in bumps; the same smooth curve as the wind's, w = 4 x (1 - |x|) in -1..1, x = 2 fract(u) - 1.
 .constf wc(4.0, 0.7, 0.3, 0.000118110)    ; 4, height share of A, of B, texture shift (repeats) per unit of w and step of weight (0.015 / 127)
-.constf wkA(0.0008, 0.0006, 0.6, 0.4)     ; per cm along x and z; zw: how the slopes of A and B light the surface
+.constf wkA(0.00057143, 0.00042857, 0.6, 0.4)     ; per cm along x and z; zw: how the slopes of A and B light the surface
 .alias zero consts.xxxx
 .alias one  consts.yyyy
 

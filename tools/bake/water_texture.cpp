@@ -28,7 +28,7 @@ double caustic(double u, double v) {
 
 } // namespace
 
-SrcImage makeWaterTexture(const unsigned char color[3], int size) {
+SrcImage makeWaterTexture(const unsigned char color[3], int size, int alpha) {
 	SrcImage img;
 	img.width = img.height = size;
 	img.rgba.resize(size_t(size) * size_t(size) * 4);
@@ -45,7 +45,7 @@ SrcImage makeWaterTexture(const unsigned char color[3], int size) {
 				const double base = double(color[k]) * body;
 				p[k] = (unsigned char)std::clamp(base + (255.0 - base) * c * 0.65, 0.0, 255.0);
 			}
-			p[3] = (unsigned char)std::clamp(165.0 + 70.0 * c + 15.0 * swell, 0.0, 255.0);
+			p[3] = (unsigned char)std::clamp(double(alpha) + 70.0 * c + 15.0 * swell, 0.0, 255.0);
 		}
 	return img;
 }

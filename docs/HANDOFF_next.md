@@ -103,7 +103,7 @@ Possible follow-ups: rain/thunder sounds, ripples/splashes, sheen on horizontal 
   16x16, 4 asks/frame; no puddle if a surface lies under the topmost hit = roof/floor, or slope). Size follows `Weather::wet()`, rings
   while raining. Drawn in PASS_BLEND before the shadows, only if `Settings::wetGround`. Colour = sky horizon * 0.62.
 - host: `g3ds-host --weather N` for screenshots. UNTESTED ON CONSOLE (extra draw calls: 1 + up to 4 per frame while wet).
-- `frames` test still fails on the waves check as in fix119.1 (not from this change).
+- (the `frames` waves failure is fixed in fix122.1: the test world bake needs `riverWidth = 0`.)
 
 ## fix122 - shore colour, foam, wet sand, canopy shade, rain rings on water
 Baker (re-bake needed; all default on, each `0` = off):
@@ -116,4 +116,17 @@ Baker (re-bake needed; all default on, each `0` = off):
   (`plantMaterial` = materials the importer marked, kept even without --wind); up to 45 % darker. Corner-based too (the old `--ao-cell` cutting is off).
 Runtime: `Ripples` (engine/puddles.cpp): rings on water near the camera while raining (`World::waterBelow`, cells of 4 m cached, <=80 rings,
 4 opacity levels = 4 draw calls), drawn after `_world.drawBlended()`. Tests `shore` and extended `weather`. UNTESTED ON CONSOLE / on a real world.
-The `frames` test still fails on the waves check as before.
+The `frames` waves check was failing since fix119 (calm rivers): fixed in the test (bake with `riverWidth = 0`) in fix122.1.
+
+## fix123 - real 3D rain, swell waves, puddle look, water opacity
+- `engine/rain.h/.cpp` (replaces the screen streaks and `Ripples`): drops are thin quads standing in the world round the camera (cells of 1.3 m,
+  radius 17 m, <=380 drops, 1 draw call), falling at 10 m/s onto what is under them (cached `World::rayDown` / `waterBelow` per cell; none under a roof).
+  Splashes: small rings on the ground, wider rings on water lying on the WAVES (`gfx::waveSurfaceAt` = height + slope as the shader; the water collider
+  now keeps per-vertex wave weights, `ChunkCollider::vertexWeight`, `World::waterBelow(..., &weight)`). Snow = slow swaying flakes. Draw: after the water.
+- Waves are one swell now: B runs 14 deg off A, wavelengths 14 m / 9 m, slower (gfx.h WAVE_*; `world_full.v.pica` constants wkA / noiseScale.zw changed,
+  `world_fast_shbin.h` rebuilt with picasso built from github.com/devkitPro/picasso: the old header's binary content was reproduced identically first).
+  `test_frames` k tables updated.
+- Puddles: wet dark patch + sky-coloured sheen + bright rings (3 per puddle).
+- `--water-alpha N` (default 110): the made water texture is more see-through.
+- fix124: небо (облака, солнце/луна, звёзды, свечение; `engine/sky.*`), лучи света (`engine/godrays.*`, Settings v22 `godRays`, меню «Лучи света»; перепёк не нужен), звук дождя/грома (`App::weatherSound`, `Sound::setHandleGain`, `Weather::takeThunder`; имена SFX угаданы списками — если тихо, пришлите отчёт Sound::writeReport со списком имён). Колыхание листвы: пейсер раньше гасил ветер при любом снижении детализации (`heavy`), теперь только при 30 fps (`App::setWindRelief`); нужен `--wind` в пекаре и «Колыхание листвы» ≠ Выкл в меню. Тесты: счётчик мешей неба ≤8.
+- fix125: сила ветра от погоды (`Weather::windScale`: ясно 0,55, облачно ~0,85, дождь/снег ~1,0, гроза 1,9; `StreamConfig::windWeather`, в помещении 1); `--wind` в окне-пекаре теперь всегда (галочка Graphics+ управляет остальным: ao, far-lod, vis). Нужен перепёк у тех, кто пёк без --wind.

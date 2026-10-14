@@ -556,6 +556,14 @@ void Sound::stop(u32 handle) {
 	release(v);
 }
 
+void Sound::setHandleGain(u32 handle, float gain) {
+	const u32 vi = (handle & 0xFFu);
+	if (!ready() || vi == 0 || vi > u32(VOICES)) return;
+	Voice& v = _voices[vi - 1];
+	if (!v.active || v.serial != u16(handle >> 8)) return;
+	v.gain = clamp(gain, 0.0f, 1.0f);
+}
+
 void Sound::stopAll() {
 	if (!ready()) return;
 	for (u32 i = 0; i < u32(VOICES); ++i)

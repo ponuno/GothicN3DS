@@ -48,37 +48,4 @@ private:
 	u32 _drawn = 0;
 };
 
-// Rain on water: rings spreading on the water's surface near the camera (World::waterBelow, kept per cell). Drawn in
-// PASS_BLEND after the water, so that the water does not cover them.
-class Ripples {
-public:
-	static constexpr u32 MAX = 80;
-	static constexpr float RANGE = 2200.0f;
-	static constexpr float CELL = 400.0f;
-	Ripples() = default;
-	~Ripples() { release(); }
-	Ripples(const Ripples&) = delete;
-	Ripples& operator=(const Ripples&) = delete;
-	// `rain` 0..1; `lift`: cm above the water's level the rings are laid (waves lift the water: half their height).
-	void draw(const World& world, Vec3 camera, float rain, const u8 sky[3], double seconds, float lift);
-	void release();
-	u32 drawn() const { return _drawn; }
-	// Whether cell (ix, iz) has a ring, where in it (0..1) and its phase offset (0..1): the same for the same cell.
-	static bool cellRing(int ix, int iz, int which, float& fx, float& fz, float& phase, float& period);
-
-private:
-	struct Cell {
-		int ix = 0, iz = 0;
-		u8 state = 0; // 0 not asked, 1 no water, 2 water
-		float retryAt = 0, y = 0;
-	};
-	static constexpr int GRID = 16;
-	static constexpr u32 MESHES = 3;
-	Cell _cells[GRID * GRID] = {};
-	gfx::Texture* _texture = nullptr;
-	gfx::Mesh* _meshes[MESHES] = {};
-	u32 _meshTurn = 0;
-	u32 _drawn = 0;
-};
-
 } // namespace g3

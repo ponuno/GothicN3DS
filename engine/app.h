@@ -10,6 +10,8 @@
 #include "particles.h"
 #include "shadows.h"
 #include "puddles.h"
+#include "rain.h"
+#include "godrays.h"
 #include "menu.h"
 #include "npcs.h"
 #include "panel.h"
@@ -121,7 +123,8 @@ public:
 	Environment& environment() { return _env; }
 	Weather& weather() { return _weather; }
 	const Puddles& puddles() const { return _puddles; }
-	const Ripples& ripples() const { return _ripples; }
+	const Rain& rain() const { return _rain; }
+	const GodRays& godRays() const { return _godRays; }
 	Player& player() { return _player; }
 	const Hero& hero() const { return _hero; }
 	// The characters the game's scripts put into the world; not loaded with
@@ -145,6 +148,8 @@ public:
 	// still and only the player's character keeps a shadow, until there is
 	// room again. The occlusion costs nothing in the frame and stays.
 	void setGfxRelief(bool heavy);
+	void setWindRelief(bool halved);
+	bool windRelief() const { return _windRelief; }
 	bool gfxRelief() const { return _gfxRelief; }
 	const Shadows& shadows() const { return _shadows; }
 	World& world() { return _world; }
@@ -487,6 +492,12 @@ private:
 	u32 _barrierHum = 0;     // the Barrier's hum playing (a Sound handle)
 	const char* _barrierName = nullptr; // the scripts' name of it, found once (null: none)
 	bool _barrierSearched = false;
+	void weatherSound(float dt);
+	u32 _rainLoop = 0;                  // the rain's sound playing
+	const char* _rainName = nullptr;    // the scripts' name of it (null: none)
+	const char* _thunderName = nullptr;
+	bool _weatherSoundSearched = false;
+	float _thunderWait = -1.0f;         // seconds until the thunder is heard (<0: none)
 	float _fps = 60.0f;      // frames per second, smoothed (the counter of Settings::showFps)
 	u32 _switches = 0;
 	bool _portalLock = false; // just arrived: ignore portals until the player has left their boxes
@@ -494,6 +505,7 @@ private:
 	bool _thirdPerson = true; // wanted; see thirdPerson()
 	bool _heroVisible = false;
 	bool _gfxRelief = false;
+	bool _windRelief = false;
 	float _wavesWanted = 0.0f; // the water's waves as set (cm; StreamConfig::waves is 0 while relieved)
 	float _windWanted = 0.0f; // Graphics+ wind as set (StreamConfig::wind is 0 while relieved)
 	CameraSet _cams = defaultCameraSet();
@@ -601,7 +613,8 @@ private:
 	Particles _particles;
 	Shadows _shadows;
 	Puddles _puddles;
-	Ripples _ripples;
+	Rain _rain;
+	GodRays _godRays;
 	int _lootTarget = -1;
 	// The chests.
 	Chests _chests;

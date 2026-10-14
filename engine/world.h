@@ -94,6 +94,7 @@ struct StreamConfig {
 	// up to 2). Nothing of either in a world baked without it (WORLDF_AO,
 	// WORLDF_WIND): hasOcclusion(), hasWind().
 	float occlusion = 0.0f;
+	float windWeather = 1.0f; // the weather's say on the wind (Weather::windScale), 1 indoors
 	float wind = 0.0f;
 	// Waves on the water (gfx::ChunkFx::waveHeight): how high the crest lifts the surface, cm; 0 still. Only in a
 	// world baked with a fine water grid (hasWaterGrid()).
@@ -235,7 +236,11 @@ public:
 	// What moves and is solid (gates, lifts, shut doors: triggers.h) - asked by these queries too; null: nothing.
 	void setDynamic(const class Triggers* dynamic) { _dynamic = dynamic; }
 	// Highest water surface under `from`, no lower than from.y - maxDrop.
-	bool waterBelow(Vec3 from, float maxDrop, float& surfaceY) const;
+	// `waveWeight`, if given, receives how much of the waves lifts the water there (0..1; 0 where it is still).
+	bool waterBelow(Vec3 from, float maxDrop, float& surfaceY, float* waveWeight = nullptr) const;
+	// The waves as drawn now: the time they run on (seconds) and the crest height (cm; 0 = still).
+	double waveSeconds() const { return _windSeconds; }
+	float waveHeight() const { return _waveHeight; }
 
 	// The portal whose box contains `p`, or null.
 	const WorldPortal* portalAt(Vec3 p) const;

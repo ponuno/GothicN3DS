@@ -1308,7 +1308,7 @@ bool World::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, u8* lig
 	return found;
 }
 
-bool World::waterBelow(Vec3 from, float maxDrop, float& surfaceY) const {
+bool World::waterBelow(Vec3 from, float maxDrop, float& surfaceY, float* waveWeight) const {
 	bool found = false;
 	float best = from.y - maxDrop;
 	for (u32 k = 0; k < _stats.chunksLoaded; ++k) {
@@ -1318,8 +1318,10 @@ bool World::waterBelow(Vec3 from, float maxDrop, float& surfaceY) const {
 		if (from.x < ci.bbMin[0] || from.x > ci.bbMax[0] || from.z < ci.bbMin[2] || from.z > ci.bbMax[2]) continue;
 		float y;
 		Vec3 n;
-		if (_loaded[i].water.rayDown(from, from.y - best, y, n) && y >= best) {
+		float weight = 0.0f;
+		if (_loaded[i].water.rayDown(from, from.y - best, y, n, nullptr, nullptr, &weight) && y >= best) {
 			best = y;
+			if (waveWeight) *waveWeight = weight;
 			surfaceY = y;
 			found = true;
 		}
@@ -1736,7 +1738,7 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	if (hasWind() && _cfg.wind > 0.0f) {
 		const double t = _windSeconds;
 		const float gust = 0.75f + 0.25f * float(sin(t * 0.31) * sin(t * 0.17 + 1.3));
-		const float push = clamp(_cfg.wind, 0.0f, 2.0f) * WORLD_WIND_UNIT * gust;
+		const float push = clamp(_cfg.wind * _cfg.windWeather, 0.0f, 3.4f) * WORLD_WIND_UNIT * gust;
 		_windX = push * 0.8f;
 		_windZ = push * 0.6f;
 	}

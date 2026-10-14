@@ -178,6 +178,8 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	_barrierSearched = false;
 	_barrierName = nullptr;
 	_barrierHum = 0;
+	_rainLoop = 0;
+	_thunderWait = -1.0f;
 	_music.enterWorld(_pak, worldName());
 	return true;
 }
@@ -362,7 +364,8 @@ void App::shutdown() {
 	_particles.release();
 	_shadows.release();
 	_puddles.release();
-	_ripples.release();
+	_rain.release();
+	_godRays.release();
 	_chests.release();
 	_pictures.release();
 	_showModel.release();
@@ -398,6 +401,7 @@ void App::update(const Input& in, float dt) {
 	while (_env.timeOfDay >= 24.0f) _env.timeOfDay -= 24.0f;
 	while (_env.timeOfDay < 0.0f) _env.timeOfDay += 24.0f;
 	_weather.update(dt);
+	_world.config().windWeather = _world.indoor() ? 1.0f : _weather.windScale();
 
 	if (in.nextWorld) {
 		// Debug: the next world asset in the archive, at its start point.
@@ -610,6 +614,7 @@ void App::update(const Input& in, float dt) {
 	_sound.setListener(_cam.pos, _cam.yaw);
 	_sound.update(dt, _env.timeOfDay);
 	barrierHum();
+	weatherSound(dt);
 	_music.setSystemTheme(nullptr);
 	_music.update(dt, _cam.pos, _env.timeOfDay, musicSituation(dt));
 	_times.stream = float(t1 - t0);
@@ -844,6 +849,7 @@ void App::render() {
 		const double r0 = sys::timeMs();
 		if (!indoor) {
 			gfx::setPass(gfx::PASS_SKY);
+			_sky.setScene(SkyScene {_env.timeOfDay, _weather.cloud(), _weather.rain(), _weather.flash()});
 			_sky.draw(_cam.pos, _cam.zFar * 0.5f, sky, _settings.barrier ? 1.0f : 0.0f, float(_clock));
 		}
 		gfx::setPass(gfx::PASS_WORLD);
@@ -893,7 +899,17 @@ void App::render() {
 			_shadows.draw(_world, _cam.pos, indoor ? 0.7f : 0.6f);
 		}
 		_world.drawBlended();
-		if (!indoor && _weather.rain() > 0.1f) _ripples.draw(_world, _cam.pos, _weather.rain(), sky.horizon, _clock, _wavesWanted * 0.5f);
+		if (!indoor && _settings.godRays && !_underwater) {
+			float sunDir[3];
+			Sky::sunDirection(_env.timeOfDay, sunDir);
+			const float el = sunDir[1];
+			const float low = clamp((el - 0.03f) / 0.09f, 0.0f, 1.0f), high = 1.0f - clamp((el - 0.55f) / 0.25f, 0.0f, 1.0f);
+			const float clear = clamp(1.0f - _weather.cloud() * 1.3f, 0.0f, 1.0f) * (1.0f - clamp(_weather.rain() * 2.0f, 0.0f, 1.0f));
+			const float warm = clamp(1.0f - el * 2.5f, 0.0f, 1.0f);
+			const float tint[3] = {255.0f, 235.0f - 55.0f * warm, 190.0f - 80.0f * warm};
+			_godRays.draw(_world, _cam.pos, sunDir, low * high * clear, tint, _clock);
+		}
+		if (!indoor && (_weather.rain() > 0.03f || _weather.snow() > 0.03f)) _rain.draw(_world, _cam.pos, _weather.rain(), _weather.snow(), sky.light, _clock);
 		_particles.draw(d.view, _cam.pos, indoor ? indoorLight : sky.light);
 		drawOverlay();
 		const double r6 = sys::timeMs();
@@ -1376,7 +1392,7 @@ void App::applySettings() {
 	cfg.lodDistance = _settings.lodDistanceCm();
 	cfg.occlusion = _settings.occlusionStrength();
 	_windWanted = _settings.windStrength();
-	cfg.wind = _gfxRelief ? 0.0f : _windWanted;
+	cfg.wind = _windRelief ? 0.0f : _windWanted;
 	_wavesWanted = _settings.waveHeightCm();
 	cfg.waves = _wavesWanted;
 	setLanguage(_settings.language);
@@ -1403,7 +1419,12 @@ void App::applySettings() {
 
 void App::setGfxRelief(bool heavy) {
 	_gfxRelief = heavy;
-	_world.config().wind = heavy ? 0.0f : _windWanted;
+}
+
+// The plants stand still only when the pacer has halved the frame rate; fewer objects alone no longer stop them.
+void App::setWindRelief(bool halved) {
+	_windRelief = halved;
+	_world.config().wind = halved ? 0.0f : _windWanted;
 }
 
 // The names the Barrier's sound could have in the scripts (the first the sound script knows is used).
@@ -1425,6 +1446,44 @@ void App::barrierHum() {
 		return;
 	}
 	if (!_barrierHum || !_sound.playing(_barrierHum)) _barrierHum = _sound.play(_barrierName, nullptr, 0.4f);
+}
+
+void App::weatherSound(float dt) {
+	if (!_weatherSoundSearched && _sound.ready()) {
+		_weatherSoundSearched = true;
+		static const char* const kRain[] = {"RAIN_LOOP", "AMB_RAIN", "AMBIENT_RAIN", "RAIN", "REGEN_LOOP", "REGEN", "RAIN_01", "RAIN_A1", "WEATHER_RAIN"};
+		static const char* const kThunder[] = {"THUNDER", "THUNDER_01", "THUNDER_A1", "THUNDER_1", "AMB_THUNDER", "DONNER", "THUNDER_LOUD", "WEATHER_THUNDER"};
+		for (const char* n : kRain)
+			if (_sound.knows(n)) {
+				_rainName = n;
+				break;
+			}
+		for (const char* n : kThunder)
+			if (_sound.knows(n)) {
+				_thunderName = n;
+				break;
+			}
+	}
+	float delay = 0;
+	if (_weather.takeThunder(delay)) _thunderWait = delay;
+	if (_thunderWait >= 0.0f) {
+		_thunderWait -= dt;
+		if (_thunderWait < 0.0f) {
+			if (_thunderName && !_world.indoor()) _sound.play(_thunderName, nullptr, 0.9f);
+			else if (_thunderName) _sound.play(_thunderName, nullptr, 0.35f);
+			_thunderWait = -1.0f;
+		}
+	}
+	// Snow falls silently; the rain is heard in proportion, muffled indoors.
+	const float amount = _weather.rain() * (_world.indoor() ? 0.3f : 1.0f);
+	if (!_rainName || amount < 0.02f) {
+		if (_rainLoop) _sound.stop(_rainLoop);
+		_rainLoop = 0;
+		return;
+	}
+	const float gain = 0.15f + 0.65f * amount;
+	if (!_rainLoop || !_sound.playing(_rainLoop)) _rainLoop = _sound.play(_rainName, nullptr, gain);
+	else _sound.setHandleGain(_rainLoop, gain);
 }
 
 void App::toast(const char* text, float seconds) {

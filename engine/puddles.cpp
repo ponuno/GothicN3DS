@@ -81,7 +81,7 @@ void Puddles::draw(const World& world, Vec3 camera, float wet, float rain, const
 		_texture = gfx::uiTextureCreate(kTexW, kTexH, coverage, true);
 		if (!_texture) return;
 	}
-	constexpr u32 QUADS = MAX * 2; // puddles, then rings
+	constexpr u32 QUADS = MAX * 4; // the wet patches, the sheens, then the rings
 	if (!_meshes[0]) {
 		static u16 indices[QUADS * 6];
 		for (u32 q = 0; q < QUADS; ++q) {
@@ -156,10 +156,17 @@ void Puddles::draw(const World& world, Vec3 camera, float wet, float rain, const
 	static WorldVertex verts[QUADS * 4];
 	u32 puddleQuads = 0;
 	u32 ringQuads[kRingLevels] = {};
-	static WorldVertex rings[kRingLevels][MAX * 4];
-	u8 colour[3];
-	for (int k = 0; k < 3; ++k) colour[k] = u8(float(sky[k]) * 0.62f);
-	auto put = [&](WorldVertex* out, const Cell& c, float rx, float rz, float lift, float u0, float u1) {
+	static WorldVertex rings[kRingLevels][MAX * 2 * 4];
+	static WorldVertex sheen[MAX * 4];
+	// Three layers, as a wet street looks: the ground darker round the puddle (wet), the water itself in the sky's colour
+	// (it mirrors it, lighter than the dark wet ground), and bright rings where drops fall in.
+	u8 wetColour[3], sheenColour[3], ringColour[3];
+	for (int k = 0; k < 3; ++k) {
+		wetColour[k] = u8(float(sky[k]) * 0.22f);
+		sheenColour[k] = u8(min(255.0f, float(sky[k]) * 0.80f + 28.0f));
+		ringColour[k] = u8(min(255.0f, float(sky[k]) * 0.5f + 150.0f));
+	}
+	auto put = [&](WorldVertex* out, const Cell& c, float rx, float rz, float lift, float u0, float u1, const u8* colour) {
 		static const float corner[4][2] = {{-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
 		const float ca = cosf(c.angle), sa = sinf(c.angle);
 		for (int k = 0; k < 4; ++k) {
@@ -184,14 +191,16 @@ void Puddles::draw(const World& world, Vec3 camera, float wet, float rain, const
 		const float s = grow * fade;
 		if (s < 0.05f) continue;
 		const float lift = 1.5f + picks[i].dist * 0.003f;
-		put(verts + puddleQuads * 4, c, c.rx * s, c.rz * s, lift, 0, 512);
+		// (the wet patch is wider than the water, and the sheen a little smaller than the shape)
+		put(verts + puddleQuads * 4, c, c.rx * s * 1.35f, c.rz * s * 1.35f, lift, 0, 512, wetColour);
+		put(sheen + puddleQuads * 4, c, c.rx * s * 0.92f, c.rz * s * 0.92f, lift + 0.6f, 0, 512, sheenColour);
 		++puddleQuads;
 		if (rain > 0.1f && s > 0.6f) {
 			// A ring growing from a spot in the puddle, and fading as it widens; a second one half a turn later.
-			for (int k = 0; k < 2; ++k) {
+			for (int k = 0; k < 3; ++k) {
 				const unsigned h = mix(unsigned(c.ix) * 31u + unsigned(c.iz) * 17u + unsigned(k) * 1013u);
-				const float period = 1.1f + 0.5f * unit(h);
-				float t = float(seconds) / period + unit(h >> 8) + float(k) * 0.5f;
+				const float period = 0.8f + 0.5f * unit(h);
+				float t = float(seconds) / period + unit(h >> 8) + float(k) * 0.33f;
 				const unsigned turn = unsigned(floorf(t));
 				t -= floorf(t);
 				const unsigned hh = mix(h + turn);
@@ -199,20 +208,23 @@ void Puddles::draw(const World& world, Vec3 camera, float wet, float rain, const
 				const float a = unit(hh) * 6.2831853f, d = sqrtf(unit(hh >> 5)) * 0.55f;
 				spot.x = c.x + cosf(a) * d * c.rx * s;
 				spot.z = c.z + sinf(a) * d * c.rz * s;
-				const float r = 8.0f + 38.0f * t;
-				const float alpha = rain * (1.0f - t) * (1.0f - t);
+				const float r = (10.0f + 0.5f * min(c.rx, c.rz) * s) * t + 6.0f;
+				const float alpha = min(1.0f, rain * 1.4f) * (1.0f - t) * (1.0f - t);
 				const int lv = int(alpha * float(kRingLevels) + 0.5f);
 				if (lv <= 0) continue;
 				const int level = min(lv, kRingLevels) - 1;
 				spot.angle = 0;
-				put(rings[level] + ringQuads[level] * 4, spot, r, r, lift + 0.5f, 512, 1024);
+				put(rings[level] + ringQuads[level] * 4, spot, r, r, lift + 1.2f, 512, 1024, ringColour);
 				++ringQuads[level];
 			}
 		}
 	}
 	if (puddleQuads == 0) return;
-	// One mesh: the puddles first, then the rings of each level.
+	// One mesh: the wet patches, the sheens, then the rings of each level.
 	u32 total = puddleQuads;
+	memcpy(verts + total * 4, sheen, puddleQuads * 4 * sizeof(WorldVertex));
+	const u32 sheenFirst = total;
+	total += puddleQuads;
 	u32 first[kRingLevels];
 	for (int l = 0; l < kRingLevels; ++l) {
 		first[l] = total;
@@ -224,158 +236,17 @@ void Puddles::draw(const World& world, Vec3 camera, float wet, float rain, const
 	_meshTurn = (_meshTurn + 1) % MESHES;
 	gfx::meshUpdate(mesh, verts, total * 4);
 	gfx::setChunkTransform(origin, kPosScale, 1.0f / 1024.0f);
-	gfx::setMaterial(_texture, MATF_BLEND, clamp(0.35f + 0.35f * wet, 0.0f, 0.7f));
+	gfx::setMaterial(_texture, MATF_BLEND, clamp(0.25f + 0.30f * wet, 0.0f, 0.55f));
 	gfx::draw(mesh, 0, puddleQuads * 6);
+	gfx::setMaterial(_texture, MATF_BLEND, clamp(0.28f + 0.27f * wet, 0.0f, 0.55f));
+	gfx::draw(mesh, sheenFirst * 6, puddleQuads * 6);
 	for (int l = 0; l < kRingLevels; ++l) {
 		if (!ringQuads[l]) continue;
-		gfx::setMaterial(_texture, MATF_BLEND, 0.5f * float(l + 1) / float(kRingLevels));
+		gfx::setMaterial(_texture, MATF_BLEND, 0.8f * float(l + 1) / float(kRingLevels));
 		gfx::draw(mesh, first[l] * 6, ringQuads[l] * 6);
 	}
 	_drawn = puddleQuads;
 }
 
-
-// ---- rain on water ----
-
-bool Ripples::cellRing(int ix, int iz, int which, float& fx, float& fz, float& phase, float& period) {
-	const unsigned h = mix(unsigned(ix) * 83492791u ^ unsigned(iz) * 2654435761u ^ unsigned(which) * 40503u ^ 0xA5A5u);
-	if (unit(h) > 0.8f) return false;
-	fx = 0.1f + 0.8f * unit(mix(h + 1u));
-	fz = 0.1f + 0.8f * unit(mix(h + 2u));
-	phase = unit(mix(h + 3u));
-	period = 0.9f + 0.9f * unit(mix(h + 4u));
-	return true;
-}
-
-void Ripples::release() {
-	for (gfx::Mesh*& m : _meshes) {
-		if (m) gfx::meshDestroy(m);
-		m = nullptr;
-	}
-	if (_texture) gfx::textureDestroy(_texture);
-	_texture = nullptr;
-	for (Cell& c : _cells) c = Cell {};
-	_drawn = 0;
-}
-
-void Ripples::draw(const World& world, Vec3 camera, float rain, const u8 sky[3], double seconds, float lift) {
-	_drawn = 0;
-	if (!(rain > 0.1f)) return;
-	constexpr int kSize = 32;
-	if (!_texture) {
-		static u8 coverage[kSize * kSize];
-		const float c = float(kSize - 1) * 0.5f;
-		for (int y = 0; y < kSize; ++y)
-			for (int x = 0; x < kSize; ++x) {
-				const float dx = (float(x) - c) / c, dy = (float(y) - c) / c;
-				const float r = sqrtf(dx * dx + dy * dy);
-				float a = clamp(1.0f - fabsf(r - 0.74f) / 0.18f, 0.0f, 1.0f);
-				coverage[y * kSize + x] = u8(a * a * 255.0f + 0.5f);
-			}
-		_texture = gfx::uiTextureCreate(kSize, kSize, coverage, true);
-		if (!_texture) return;
-	}
-	constexpr u32 QUADS = MAX * 2;
-	if (!_meshes[0]) {
-		static u16 indices[QUADS * 6];
-		for (u32 q = 0; q < QUADS; ++q) {
-			const u16 b = u16(q * 4);
-			const u16 quad[6] = {b, u16(b + 1), u16(b + 2), u16(b + 2), u16(b + 1), u16(b + 3)};
-			memcpy(indices + q * 6, quad, sizeof(quad));
-		}
-		static WorldVertex blank[QUADS * 4];
-		for (gfx::Mesh*& m : _meshes) {
-			m = gfx::meshCreate(blank, QUADS * 4, indices, QUADS * 6);
-			if (!m) {
-				release();
-				return;
-			}
-		}
-	}
-	const int cx = int(floorf(camera.x / CELL)), cz = int(floorf(camera.z / CELL));
-	const int reach = int(RANGE / CELL) + 1;
-	int budget = 6;
-	const float origin[3] = {floorf(camera.x), floorf(camera.y), floorf(camera.z)};
-	static WorldVertex rings[kRingLevels][MAX * 4];
-	u32 count[kRingLevels] = {};
-	u32 total = 0;
-	u8 colour[3];
-	for (int k = 0; k < 3; ++k) colour[k] = u8(min(255.0f, float(sky[k]) * 0.4f + 190.0f));
-	for (int dz = -reach; dz <= reach; ++dz)
-		for (int dx = -reach; dx <= reach; ++dx) {
-			const int ix = cx + dx, iz = cz + dz;
-			Cell& c = _cells[(unsigned(iz) & (GRID - 1)) * GRID + (unsigned(ix) & (GRID - 1))];
-			if (c.ix != ix || c.iz != iz) {
-				c = Cell {};
-				c.ix = ix;
-				c.iz = iz;
-			}
-			if (c.state == 0 || (c.state == 1 && float(seconds) > c.retryAt)) {
-				if (budget <= 0) continue;
-				--budget;
-				float y;
-				c.state = 1;
-				c.retryAt = float(seconds) + 4.0f;
-				if (world.waterBelow({(float(ix) + 0.5f) * CELL, camera.y + 1200.0f, (float(iz) + 0.5f) * CELL}, 6000.0f, y)) {
-					c.state = 2;
-					c.y = y;
-				}
-			}
-			if (c.state != 2) continue;
-			for (int which = 0; which < 2; ++which) {
-				float fx, fz, phase, period;
-				if (!cellRing(ix, iz, which, fx, fz, phase, period)) continue;
-				const float px = (float(ix) + fx) * CELL, pz = (float(iz) + fz) * CELL;
-				const float ddx = px - camera.x, ddz = pz - camera.z;
-				const float dist = sqrtf(ddx * ddx + ddz * ddz);
-				if (dist > RANGE) continue;
-				float t = float(seconds) / period + phase;
-				const unsigned turn = unsigned(floorf(t));
-				t -= floorf(t);
-				// A new ring starts at a new place in the cell each turn.
-				const unsigned hh = mix(unsigned(ix) * 31u + unsigned(iz) * 17u + unsigned(which) * 7u + turn * 1013u);
-				const float ox = (unit(hh) - 0.5f) * CELL * 0.8f, oz = (unit(hh >> 7) - 0.5f) * CELL * 0.8f;
-				const float r = (18.0f + 85.0f * t) * (1.0f + dist * 0.0004f);
-				const float alpha = rain * (1.0f - t) * (1.0f - t) * (1.0f - smooth((dist - RANGE * 0.7f) / (RANGE * 0.3f)));
-				const int lv = int(alpha * float(kRingLevels) + 0.5f);
-				if (lv <= 0 || total >= QUADS) continue;
-				const int level = min(lv, kRingLevels) - 1;
-				if (count[level] >= MAX) continue;
-				WorldVertex* o = rings[level] + count[level] * 4;
-				static const float corner[4][2] = {{-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
-				for (int k = 0; k < 4; ++k) {
-					WorldVertex& v = o[k];
-					v.x = i16(clamp((px + ox + corner[k][0] * r - origin[0]) / kPosScale, -32000.0f, 32000.0f));
-					v.y = i16(clamp((c.y + lift + 2.0f + dist * 0.003f - origin[1]) / kPosScale, -32000.0f, 32000.0f));
-					v.z = i16(clamp((pz + oz + corner[k][1] * r - origin[2]) / kPosScale, -32000.0f, 32000.0f));
-					v.w = 0;
-					v.u = i16(corner[k][0] < 0 ? 0 : 1024);
-					v.v = i16(corner[k][1] < 0 ? 0 : 1024);
-					v.r = colour[0]; v.g = colour[1]; v.b = colour[2];
-					v.a = 0;
-				}
-				++count[level];
-				++total;
-			}
-		}
-	if (total == 0) return;
-	static WorldVertex verts[QUADS * 4];
-	u32 at = 0, first[kRingLevels];
-	for (int l = 0; l < kRingLevels; ++l) {
-		first[l] = at;
-		memcpy(verts + at * 4, rings[l], count[l] * 4 * sizeof(WorldVertex));
-		at += count[l];
-	}
-	gfx::Mesh* mesh = _meshes[_meshTurn];
-	_meshTurn = (_meshTurn + 1) % MESHES;
-	gfx::meshUpdate(mesh, verts, at * 4);
-	gfx::setChunkTransform(origin, kPosScale, 1.0f / 1024.0f);
-	for (int l = 0; l < kRingLevels; ++l) {
-		if (!count[l]) continue;
-		gfx::setMaterial(_texture, MATF_BLEND, 0.85f * float(l + 1) / float(kRingLevels));
-		gfx::draw(mesh, first[l] * 6, count[l] * 6);
-	}
-	_drawn = at;
-}
 
 } // namespace g3

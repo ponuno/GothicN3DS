@@ -604,9 +604,11 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				const std::string visName = "world/" + bw.name + "/vis";
 				pak.add(visName, ASSET_META, vis);
 				wh.visEntry = hashName(visName.c_str());
-				line(format("visibility (--vis%s): %u rows in %u cells (%u cells with more than one floor), %llu places looked from, %llu clusters in the rows of which %llu (%.0f%%) hidden, "
+				line(format("visibility (--vis%s): %u rows in %u cells (%u cells with more than one floor; %u rows of rooms, %u clusters lie wholly inside a room), "
+				            "%llu places looked from, %llu clusters in the rows of which %llu (%.0f%%) hidden, "
 				            "%.1f M rays in %.1f s, radius %.0f m, near %.0f m; %.2f MB",
-				            opt.vis.high ? "-high" : "", vs.viewers, vs.cells, vs.multiFloorCells, static_cast<unsigned long long>(vs.samples),
+				            opt.vis.high ? "-high" : "", vs.viewers, vs.cells, vs.multiFloorCells, vs.roomRows, vs.roomClusters,
+				            static_cast<unsigned long long>(vs.samples),
 				            static_cast<unsigned long long>(vs.targets), static_cast<unsigned long long>(vs.hidden),
 				            vs.targets ? 100.0 * double(vs.hidden) / double(vs.targets) : 0.0, double(vs.rays) / 1e6, vs.seconds,
 				            double(vs.radius) / 100.0, double(opt.vis.nearAlways) / 100.0, double(vs.bytes) / MB));

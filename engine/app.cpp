@@ -822,6 +822,8 @@ void App::render() {
 		const Mat4 viewProj = mul(proj, fd.view);
 		_viewProj = viewProj;
 		const double r1 = sys::timeMs();
+		// (The room the player's character is in picks the row of the visibility table: fix91.)
+		_world.setCameraRoom(_npcs.rooms().roomAt(_player.feet));
 		_world.draw(viewProj, _cam.pos, u32(u64(_clock * 1000.0)));
 		const double r2 = sys::timeMs();
 		const float indoorLight[3] = {1, 1, 1};

@@ -4,7 +4,8 @@
 //
 // From a few places in the cell, at the eye heights a character has there (on every floor a ray down
 // from the sky finds, on foot and at the height of the camera behind it), rays go to the corners and
-// the middle of each cluster's box. Each floor of a cell has a row of its own (fix88), chosen by the camera's height. A cluster is hidden if every one of them meets a wall, a roof, the
+// the middle of each cluster's box. Each floor of a cell has a row of its own (fix88), chosen by the camera's height; and
+// each room whose middle is in the cell (fix91), chosen by the room the camera is in. A cluster is hidden if every one of them meets a wall, a roof, the
 // ground on the way - and is not near (nothing within `near` is ever hidden). Only what is opaque and
 // belongs to the world itself blocks: glass, water, leaves, fences and small objects do not.
 #pragma once
@@ -31,7 +32,9 @@ struct VisOptions {
 struct VisStats {
 	u32 viewers = 0;     // rows (cells with several floors have several)
 	u32 cells = 0;       // cells with a row
-	u32 multiFloorCells = 0; // ... of them with more than one floor
+	u32 multiFloorCells = 0; // ... of them with more than one floor (outside)
+	u32 roomRows = 0;    // rows of rooms: a camera in a room has its own (fix91)
+	u32 roomClusters = 0; // clusters that lie wholly inside a room: not "near" to anybody outside it
 	u64 targets = 0;     // bits in all (clusters looked at, over all cells)
 	u64 hidden = 0;      // of them hidden
 	u64 rays = 0;

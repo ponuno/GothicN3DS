@@ -154,7 +154,7 @@ static void flushHitches() {
 
 static void startHitchLog(const char* what) {
 	if (FILE* f = fopen(kHitchPath, "w")) {
-		fprintf(f, "# gothic3ds fix90 hitches: %s\n", what);
+		fprintf(f, "# gothic3ds fix91 hitches: %s\n", what);
 		fclose(f);
 	}
 	gHitchCount = 0;
@@ -356,6 +356,7 @@ int main(int, char**) {
 	app.npcs().config().startsPerFrame = 1;
 	app.npcs().config().reachFloor = 0.6f;  // in a heavy scene the crowd is shown no nearer than 60 % of its range
 	app.npcs().config().farTickEvery = 2;   // and those beyond 15 m are stepped every other frame
+	app.npcs().config().poseHidden = false; // (fix91: no pose for those behind walls farther than 8 m)
 	app.npcs().config().prefetchRange = 3000.0f; // (their models are read on the read-ahead's thread; the frame only builds them)
 	printf("loading...\n");
 	app.world().preload(app.camera().pos);
@@ -772,7 +773,7 @@ int main(int, char**) {
 				const g3::Vec3 e = app.player().eye();
 				++gHitchTotal;
 				snprintf(gHitchLines[gHitchCount++], sizeof(gHitchLines[0]),
-				         "f%lu %.1fms cpu%.1f gpu%.1f upd%.1f | w%.1f n%.1f s%.1f p%.1f c%.1f l%.1f | clk%.1f sel%.1f tick%.1f | mdl%lu clip%lu chunk%+ld ev%lu pend%lu | tr%lu %.0f %.0f %.0f | nu%.1f t%.1f x%.1f hc%.1f m%.1f b%.1f f%.1f o%.1f | msh%lu rd%lu hit%lu | ld%.0f wk%.0f gr%.0f ra%lu/%lu iv%d hz%.0f k2:%d\n",
+				         "f%lu %.1fms cpu%.1f gpu%.1f upd%.1f | w%.1f n%.1f s%.1f p%.1f c%.1f l%.1f | clk%.1f sel%.1f tick%.1f | mdl%lu clip%lu chunk%+ld ev%lu pend%lu | tr%lu %.0f %.0f %.0f | nu%.1f t%.1f x%.1f hc%.1f m%.1f b%.1f f%.1f o%.1f | msh%lu rd%lu hit%lu | ld%.0f wk%.0f gr%.0f ra%lu/%lu iv%d hz%.0f k2:%d | lr%.0f ll%.0f\n",
 				         static_cast<unsigned long>(frame), double(fs.frameMs), double(fs.cpuMs), double(fs.gpuMs), double(updateMs), double(ut.stream),
 				         double(ut.npcs), double(ut.script), double(ut.player), double(ut.camera), double(ut.loot), double(nst.clockMs),
 				         double(nst.selectMs), double(nst.tickMs), static_cast<unsigned long>(dModels), static_cast<unsigned long>(dClips),
@@ -782,7 +783,7 @@ int main(int, char**) {
 				         double(ut.heroFollow), double(ut.heroRest), static_cast<unsigned long>(nst.meshes),
 				         static_cast<unsigned long>(nst.meshReads), static_cast<unsigned long>(nst.meshHits), double(nst.loadMs), double(nst.wakeMs),
 				         double(nst.groundMs), static_cast<unsigned long>(raStats.hits), static_cast<unsigned long>(raStats.misses), interval,
-				         double(displayWritten ? refreshHz : 60.0f), g3::sys::workersOnSecondCore() ? 1 : 0);
+				         double(displayWritten ? refreshHz : 60.0f), g3::sys::workersOnSecondCore() ? 1 : 0, double(app.loot().stats().rayMs), double(app.loot().stats().loadMs));
 				if (gHitchCount >= kHitchBatch) flushHitches();
 			}
 		}

@@ -79,6 +79,11 @@ struct NpcConfig {
 	bool hideOccluded = true;
 	float hiddenNear = 400.0f;
 	u32 hiddenRecheck = 6;
+	// fix91: one whom the player cannot see (the same lines, to its head and chest) is not read from the archive at all
+	// until he can be seen or comes within `hiddenNear` (his models would only be built to be left out); and the pose of
+	// one hidden farther than 8 m is not worked out unless `poseHidden` (the report and the tests want it; the console not).
+	bool skipHiddenLoads = true;
+	bool poseHidden = true;
 };
 
 // What the inhabitants need of the player's character in a fight, and how
@@ -360,6 +365,9 @@ struct NpcActor {
 	// Hidden behind walls (NpcConfig::hideOccluded): as last looked at, and the frame that was.
 	bool occluded = false;
 	u32 occlusionFrame = 0;
+	// select(): looked at with no models yet - hidden from the eye (fix91), and the frame that was.
+	bool unseen = false;
+	u32 unseenFrame = 0;
 };
 
 class Npcs {

@@ -396,7 +396,8 @@ inline u32 farBlobSize(const FarHeader& h) {
 // farther than `radius`, and everything in a cell the table has no row for, is drawn as usual.
 // The estimate leans to "visible": what is near, or not certainly hidden, is marked visible.
 constexpr u32 VIS_MAGIC = fourcc('G', '3', 'V', 'S');
-constexpr u32 VIS_VERSION = 2;     // fix88: a cell has a row per floor (VisViewer2); version 1 (one row per cell) is still read
+constexpr u32 VIS_VERSION = 3;     // fix91: and a row per room (VisViewer3); version 2 (a row per floor) and 1 (one per cell) are still read
+constexpr u32 VIS_VERSION_FLOORS = 2;
 constexpr u32 VIS_VERSION_OLD = 1;
 
 struct VisHeader {
@@ -428,6 +429,18 @@ struct VisViewer2 {
 };
 static_assert(sizeof(VisViewer2) == 16, "VisViewer2 layout");
 
+// Version 3: a row may also be for a room (fix91; 1.. as in "world/<name>/rooms", 0: outside): the camera in a room uses
+// the room's row (by height, as above); outside, a row of room 0. What lies wholly inside a room is not "near" to anybody
+// outside it, so a house's inside is drawn from the street only where the rays reach it. A camera in a room that has no
+// row in its cell has none: everything is drawn. Sorted by z, x, room, yMin.
+struct VisViewer3 {
+	i16 x, z;
+	u32 bitOffset;
+	float yMin, yMax;
+	u32 room;
+};
+static_assert(sizeof(VisViewer3) == 20, "VisViewer3 layout");
+
 // The blob: VisHeader | i16 cellX[chunkCount] | i16 cellZ[chunkCount] | u8 clusters[chunkCount] (clusters in
 // the chunk; 0: none) | padding to 4 | u32 order[chunkCount] (chunks sorted by cellZ, cellX, number) |
 // VisViewer[viewerCount] (sorted by z, x; version 2: VisViewer2, and by yMin within a cell) | u32 bits[ceil(bitCount / 32)].
@@ -437,7 +450,7 @@ static_assert(sizeof(VisViewer2) == 16, "VisViewer2 layout");
 inline u32 visPad(u32 n) { return (4u - (n & 3u)) & 3u; }
 inline u32 visBlobSize(const VisHeader& h) {
 	return u32(sizeof(VisHeader)) + h.chunkCount * 4u + h.chunkCount + visPad(h.chunkCount) + h.chunkCount * 4u +
-	       h.viewerCount * u32(h.version >= 2 ? sizeof(VisViewer2) : sizeof(VisViewer)) + ((h.bitCount + 31u) / 32u) * 4u;
+	       h.viewerCount * u32(h.version >= 3 ? sizeof(VisViewer3) : h.version == 2 ? sizeof(VisViewer2) : sizeof(VisViewer)) + ((h.bitCount + 31u) / 32u) * 4u;
 }
 
 inline u32 chunkBlobSize(u32 batches, u32 vertices, u32 indices) {

@@ -422,9 +422,29 @@ float World::headLeadFor(u32 index, Vec3 camera) const {
 	return room > 0.0f ? min(_cfg.headLead * dot * _headStrength, room) : 0.0f;
 }
 
+bool World::wanted(const ChunkInfo& ci, const Vec3* list, u32 count) const {
+	for (u32 i = 0; i < count; ++i)
+		if (list[i].x > ci.bbMin[0] - 150.0f && list[i].x < ci.bbMax[0] + 150.0f && list[i].z > ci.bbMin[2] - 150.0f &&
+		    list[i].z < ci.bbMax[2] + 150.0f && list[i].y > ci.bbMin[1] - 300.0f && list[i].y < ci.bbMax[1] + 300.0f)
+			return true;
+	return false;
+}
+
+void World::wantAt(Vec3 p) const {
+	if (_wantNowCount < 16) _wantNow[_wantNowCount++] = p;
+}
+
+// False while a chunk around `p` is still to come (it was listed as missing by the last update()).
+bool World::settledAt(Vec3 p) const {
+	for (u32 k = 0; k < _missingCount; ++k)
+		if (!_loaded[_missing[k]].mesh && wanted(_chunks[_missing[k]], &p, 1)) return false;
+	return true;
+}
+
 float World::priority(u32 index, float d, Vec3 camera) const {
 	const u32 tier = chunkTier(index);
 	float key = d + _cfg.tierBias[tier < DETAIL_COUNT ? tier : 0u];
+	if (_wantPrevCount && wanted(_chunks[index], _wantPrev, _wantPrevCount)) key -= 4000.0f; // (before the rest, buildings aside)
 	if (_headStrength > 0.0f) {
 		const ChunkInfo& ci = _chunks[index];
 		const float vx = (ci.bbMin[0] + ci.bbMax[0]) * 0.5f - camera.x, vz = (ci.bbMin[2] + ci.bbMax[2]) * 0.5f - camera.z;
@@ -654,6 +674,9 @@ void World::update(Vec3 camera) {
 	_stats.loadsThisFrame = 0;
 	if (!_pak) return;
 	++_frame;
+	for (u32 i = 0; i < _wantNowCount; ++i) _wantPrev[i] = _wantNow[i];
+	_wantPrevCount = _wantNowCount;
+	_wantNowCount = 0;
 	const u32 pending = collectPending(camera);
 	if (_loader.running() && !_immediate)
 		updateBackground(pending, camera);
@@ -661,9 +684,11 @@ void World::update(Vec3 camera) {
 		updateImmediate(pending, camera);
 	{
 		u32 missing = 0, missingDetail = 0;
+		_missingCount = 0;
 		for (u32 k = 0; k < pending; ++k) {
 			const u32 i = _order[k];
 			if (_loaded[i].mesh) continue;
+			if (!_loaded[i].failed && _missingCount < 256) _missing[_missingCount++] = i;
 			++missing;
 			missingDetail += chunkTier(i) != 0;
 		}
@@ -721,7 +746,7 @@ void World::loadVis() {
 	if (!blob) return;
 	VisHeader h;
 	memcpy(&h, blob, sizeof(h));
-	bool ok = h.magic == VIS_MAGIC && (h.version == VIS_VERSION || h.version == VIS_VERSION_OLD) && h.chunkCount == _hdr.chunkCount && h.viewerCount > 0 &&
+	bool ok = h.magic == VIS_MAGIC && (h.version == VIS_VERSION || h.version == VIS_VERSION_FLOORS || h.version == VIS_VERSION_OLD) && h.chunkCount == _hdr.chunkCount && h.viewerCount > 0 &&
 	          h.viewerCount < (1u << 24) && h.chunkCount < (1u << 24) && h.bitCount < 0xFFFFFFE0u && h.cellSize > 0.0f &&
 	          h.radius > 0.0f && h.radius < 1.0e7f && u64(e->size) == u64(visBlobSize(h));
 	if (ok) {
@@ -734,28 +759,38 @@ void World::loadVis() {
 		p += size_t(h.chunkCount) + visPad(h.chunkCount);
 		_visOrder = reinterpret_cast<const u32*>(p);
 		p += size_t(h.chunkCount) * 4;
-		if (h.version == VIS_VERSION_OLD) {
-			// One row per cell, whatever the height: the same rows with a range that holds every height.
-			const VisViewer* old = reinterpret_cast<const VisViewer*>(p);
-			p += size_t(h.viewerCount) * sizeof(VisViewer);
-			_visViewersOwned = static_cast<VisViewer2*>(malloc(size_t(h.viewerCount) * sizeof(VisViewer2)));
+		_visRooms = h.version >= VIS_VERSION;
+		if (h.version == VIS_VERSION_OLD || h.version == VIS_VERSION_FLOORS) {
+			// Older tables: the same rows as of the outside (room 0); version 1 with a range that holds every height.
+			const bool one = h.version == VIS_VERSION_OLD;
+			const u8* rowsAt = p;
+			p += size_t(h.viewerCount) * (one ? sizeof(VisViewer) : sizeof(VisViewer2));
+			_visViewersOwned = static_cast<VisViewer3*>(malloc(size_t(h.viewerCount) * sizeof(VisViewer3)));
 			ok = _visViewersOwned != nullptr;
-			for (u32 i = 0; ok && i < h.viewerCount; ++i)
-				_visViewersOwned[i] = VisViewer2 {old[i].x, old[i].z, old[i].bitOffset, -1.0e30f, 1.0e30f};
+			for (u32 i = 0; ok && i < h.viewerCount; ++i) {
+				if (one) {
+					const VisViewer o = reinterpret_cast<const VisViewer*>(rowsAt)[i];
+					_visViewersOwned[i] = VisViewer3 {o.x, o.z, o.bitOffset, -1.0e30f, 1.0e30f, 0u};
+				} else {
+					VisViewer2 o;
+					memcpy(&o, rowsAt + size_t(i) * sizeof(VisViewer2), sizeof(o));
+					_visViewersOwned[i] = VisViewer3 {o.x, o.z, o.bitOffset, o.yMin, o.yMax, 0u};
+				}
+			}
 			_visViewers = _visViewersOwned;
 		} else {
-			_visViewers = reinterpret_cast<const VisViewer2*>(p);
-			p += size_t(h.viewerCount) * sizeof(VisViewer2);
+			_visViewers = reinterpret_cast<const VisViewer3*>(p);
+			p += size_t(h.viewerCount) * sizeof(VisViewer3);
 		}
 		_visBits = reinterpret_cast<const u32*>(p);
 		for (u32 i = 0; ok && i < h.chunkCount; ++i) ok = _visOrder[i] < h.chunkCount;
 		for (u32 i = 0; ok && i < h.viewerCount; ++i) {
-			ok = _visViewers[i].bitOffset <= h.bitCount && _visViewers[i].yMin <= _visViewers[i].yMax;
+			ok = _visViewers[i].bitOffset <= h.bitCount && _visViewers[i].yMin <= _visViewers[i].yMax && _visViewers[i].room < 65536u;
 			if (ok && i > 0) {
-				const VisViewer2& a = _visViewers[i - 1];
-				const VisViewer2& b = _visViewers[i];
-				// (sorted by cell, and by height within a cell)
-				ok = a.z < b.z || (a.z == b.z && (a.x < b.x || (a.x == b.x && a.yMin <= b.yMin)));
+				const VisViewer3& a = _visViewers[i - 1];
+				const VisViewer3& b = _visViewers[i];
+				// (sorted by cell, then room, and by height within it)
+				ok = a.z < b.z || (a.z == b.z && (a.x < b.x || (a.x == b.x && (a.room < b.room || (a.room == b.room && a.yMin <= b.yMin)))));
 			}
 		}
 	}
@@ -792,7 +827,7 @@ void World::updateVisibility(Vec3 camera) {
 		u32 lo = 0, hi = _vis.viewerCount;
 		while (lo < hi) {
 			const u32 mid = (lo + hi) / 2;
-			const VisViewer2& v = _visViewers[mid];
+			const VisViewer3& v = _visViewers[mid];
 			if (v.z < cz || (v.z == cz && v.x < cx))
 				lo = mid + 1;
 			else
@@ -804,14 +839,17 @@ void World::updateVisibility(Vec3 camera) {
 		_visCount = end - lo;
 	}
 	if (_visCount == 0) return;
-	// The floor: the row in use while the camera's height is still in its range (floors overlap a little: no change
-	// back and forth at the edge), else the first row whose range holds it.
+	// The row: of the room the camera is in (a table before version 3 has only rows of the outside), and of the floor: the
+	// row in use while the camera's height is still in its range (floors overlap a little: no change back and forth at
+	// the edge), else the first row whose range holds it. A camera in a room that has no row here: none (all is drawn).
+	const u32 room = _visRooms ? u32(_camRoom) : 0u;
+	auto holds = [&](u32 i) { return _visViewers[i].room == room && camera.y >= _visViewers[i].yMin && camera.y < _visViewers[i].yMax; };
 	int pick = -1;
-	if (_visPick >= 0 && camera.y >= _visViewers[_visPick].yMin && camera.y < _visViewers[_visPick].yMax) {
+	if (_visPick >= 0 && holds(u32(_visPick))) {
 		pick = _visPick;
 	} else {
 		for (u32 i = _visFirst; i < _visFirst + _visCount && pick < 0; ++i)
-			if (camera.y >= _visViewers[i].yMin && camera.y < _visViewers[i].yMax) pick = int(i);
+			if (holds(i)) pick = int(i);
 	}
 	if (pick == _visPick) {
 		_stats.visRow = _visRow;

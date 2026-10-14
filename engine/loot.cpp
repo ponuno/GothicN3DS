@@ -3,6 +3,7 @@
 #include "game.h"
 #include "gfx.h"
 #include "readahead.h"
+#include "sys.h"
 #include "world.h"
 
 #include <stdlib.h>
@@ -95,6 +96,7 @@ void Loot::update(Pak& pak, const World& world, Game& game, Vec3 eye) {
 	bool loadedOne = false;
 	u32 rays = 0; // floors looked for this frame: a few, so that a crowd of things coming into reach is not met in one frame
 	_stats.noModel = 0;
+	_stats.rayMs = _stats.loadMs = 0.0f;
 	auto each = [&](u32 i) {
 		LootItem& it = _items[i];
 		if (it.taken) return;
@@ -106,7 +108,10 @@ void Loot::update(Pak& pak, const World& world, Game& game, Vec3 eye) {
 			float y;
 			Vec3 n;
 			u8 l[4];
-			if (world.rayDown({it.pos.x, it.pos.y + 60.0f, it.pos.z}, 400.0f, y, n, l)) {
+			const double tRay = sys::timeMs();
+			const bool floorFound = world.rayDown({it.pos.x, it.pos.y + 60.0f, it.pos.z}, 400.0f, y, n, l);
+			_stats.rayMs += float(sys::timeMs() - tRay);
+			if (floorFound) {
 				// (How much of the sky the floor sees: the time of day's share, applied when drawn.)
 				it.sky = float(l[3]) * (1.0f / 255.0f);
 				for (int c = 0; c < 3; ++c) it.light[c] = max(float(l[c]) * (1.0f / 255.0f) * 1.15f, 0.25f);
@@ -139,7 +144,9 @@ void Loot::update(Pak& pak, const World& world, Game& game, Vec3 eye) {
 			Look& look = _looks[_lookCount];
 			look.visual = visual;
 			loadedOne = true;
+			const double tBuild = sys::timeMs();
 			const bool ok = look.model.loadEntry(pak, entry, &_pool) && look.model.hasMesh();
+			_stats.loadMs += float(sys::timeMs() - tBuild);
 			if (!ok) look.model.release();
 			it.model = ok ? u16(_lookCount) : NO_MODEL;
 			++_lookCount;

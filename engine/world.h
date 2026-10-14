@@ -176,6 +176,11 @@ public:
 	bool chunkResident(u32 index) const { return _loaded[index].mesh != nullptr; }
 	// 0: the world and big things (or everything, in a world without WORLDF_TIERS); 1, 2: medium, small objects only.
 	u32 chunkTier(u32 index) const { return _tier ? _tier[index] : 0u; }
+	// Things of the world a character needs right now (a bench under a sitting man, a bed): the chunks around `p` are
+	// loaded first, whatever their size class (fix92); and settledAt() says whether they have all arrived, so that nobody
+	// is shown sitting on air.
+	void wantAt(Vec3 p) const;
+	bool settledAt(Vec3 p) const;
 	bool hasTiers() const { return (_hdr.flags & WORLDF_TIERS) != 0; }
 	u32 entryHash() const { return _entryHash; }
 	StreamConfig& config() { return _cfg; }
@@ -317,6 +322,11 @@ private:
 	int pickVictim(Vec3 camera, float forKey) const;
 	void countReject(u32 index);
 	void sortNearest(u32 n, u32 pending);
+	bool wanted(const ChunkInfo& ci, const Vec3* list, u32 count) const;
+	mutable Vec3 _wantNow[16], _wantPrev[16];
+	mutable u32 _wantNowCount = 0, _wantPrevCount = 0;
+	u32 _missing[256];
+	u32 _missingCount = 0;
 	void updateImmediate(u32 pending, Vec3 camera);
 	// Frees the farthest loaded chunks (farther than `forDistance`) until `need` more bytes fit the budget; false: they do not.
 	bool makeRoom(Vec3 camera, float forDistance, u32 need, u32 reserved);
@@ -376,6 +386,10 @@ private:
 	void freeVis();
 	// Looks up the camera's row of the table when the camera has moved to another cell.
 	void updateVisibility(Vec3 camera);
+public:
+	// The room (Rooms::roomAt, 1..; 0 outside) the player's character is in: a table with rows of rooms uses the room's row.
+	void setCameraRoom(u16 room) { _camRoom = room; }
+private:
 	bool visHidden(u32 chunk, u32 cluster) const {
 		return _visRow && _visBase[chunk] != 0xFFFFFFFFu && cluster < _visClusters[chunk] &&
 		       (_visBits[(_visBase[chunk] + cluster) >> 5] & (1u << ((_visBase[chunk] + cluster) & 31))) == 0;
@@ -465,8 +479,10 @@ private:
 	const i16* _visCellZ = nullptr;
 	const u8* _visClusters = nullptr;
 	const u32* _visOrder = nullptr;
-	const VisViewer2* _visViewers = nullptr; // (of a version 1 table: made from it, _visViewersOwned)
-	VisViewer2* _visViewersOwned = nullptr;
+	const VisViewer3* _visViewers = nullptr; // (of a version 1 or 2 table: made from it, _visViewersOwned)
+	VisViewer3* _visViewersOwned = nullptr;
+	bool _visRooms = false; // the table has rows of rooms (version 3)
+	u16 _camRoom = 0;       // the room the camera is in (setCameraRoom), 0: outside
 	u32 _visFirst = 0, _visCount = 0; // the rows of the camera's cell, and the one in use:
 	int _visPick = -1;
 	const u32* _visBits = nullptr;

@@ -7714,6 +7714,95 @@ static void testVisibilityFloors() {
 	CHECK(w.visibilityFloor({1000.0f, 1800.0f, 1000.0f}) == a && w.visibilityFloor({1000.0f, 1900.0f, 1000.0f}) == a);
 }
 
+
+// A house's inside is not "near" to the street (fix91): from outside its crate is hidden by the walls, in the room it is
+// seen; a table of the older kind, or a camera in a room with no row, draws everything.
+static void testVisibilityRooms() {
+	SrcScene scene;
+	scene.materials.resize(2);
+	scene.materials[0].name = "ground";
+	scene.materials[1].name = "house";
+	for (SrcMaterial& m : scene.materials) {
+		m.hasColor = true;
+		m.color[0] = 120;
+	}
+	// (The ground in small tiles: one big ground triangle would share the crate's cluster and keep it "near".)
+	for (int tx = 0; tx < 24; ++tx)
+		for (int tz = 0; tz < 8; ++tz) {
+			const float x0 = float(tx) * 500.0f, z0 = float(tz) * 500.0f;
+			const float f[4][3] = {{x0, 0, z0}, {x0 + 500, 0, z0}, {x0 + 500, 0, z0 + 500}, {x0, 0, z0 + 500}};
+			addQuad(scene, f[0], f[1], f[2], f[3], 0);
+		}
+	size_t first = scene.triangles.size();
+	addBlock(scene, 9000.0f, 12000.0f, 500.0f, 3500.0f, 400.0f); // the house: a closed box (walls and roof)
+	for (size_t t = first; t < scene.triangles.size(); ++t) scene.triangles[t].material = 1;
+	first = scene.triangles.size();
+	addBlock(scene, 10500.0f, 10700.0f, 1500.0f, 1700.0f, 150.0f); // the crate inside (a small object: a chunk of its own)
+	for (size_t t = first; t < scene.triangles.size(); ++t) {
+		scene.triangles[t].material = 1;
+		scene.triangles[t].detail = DETAIL_SMALL;
+	}
+	scene.roomNames.push_back("HOUSE");
+	SrcScene::RoomBoxSrc rb {};
+	rb.bbMin[0] = 9050.0f, rb.bbMin[1] = 0.0f, rb.bbMin[2] = 550.0f;
+	rb.bbMax[0] = 11950.0f, rb.bbMax[1] = 380.0f, rb.bbMax[2] = 3450.0f;
+	rb.room = 0;
+	scene.roomBoxes.push_back(rb);
+	scene.spawnPos[0] = 1000.0f;
+	scene.spawnPos[1] = 170.0f;
+	scene.spawnPos[2] = 1000.0f;
+	scene.hasSpawn = true;
+	const std::string path = gDir + "/visrooms.pak";
+	{
+		std::vector<BakeWorld> worlds(1);
+		worlds[0].name = "r";
+		worlds[0].scene = scene;
+		BakeOptions opt;
+		opt.chunker.chunkSize = 4000.0f;
+		opt.tex.maxSize = 32;
+		opt.tex.quality = 0;
+		opt.threads = 2;
+		opt.quiet = true;
+		opt.vis.enabled = true;
+		opt.vis.threads = 2;
+		opt.vis.nearAlways = 100.0f;
+		PakWriter pak;
+		bakeWorlds(worlds, opt, pak);
+		pak.write(path);
+	}
+	gfx::init();
+	Pak pak;
+	CHECK(pak.open(path.c_str()));
+	World w;
+	CHECK(w.open(&pak, "r"));
+	CHECK(w.hasVisibility());
+	w.config().visibility = true;
+	for (int i = 0; i < 4; ++i) w.update({8400.0f, 170.0f, 400.0f});
+	CHECK(w.visibilityActive());
+	u32 chunk = 0xFFFFFFFFu;
+	for (u32 i = 0; i < w.header().chunkCount; ++i)
+		if (w.chunkInfo(i).bbMin[0] < 10500.0f && w.chunkInfo(i).bbMax[0] > 10700.0f && w.chunkInfo(i).bbMax[1] > 100.0f) chunk = i; // (the cell with the house)
+	CHECK(chunk != 0xFFFFFFFFu);
+	w.setCameraRoom(0);
+	const int outside = w.visibilityFloor({8400.0f, 170.0f, 400.0f});
+	u32 total = 0;
+	const u32 hiddenOutside = w.hiddenClusters(chunk, total);
+	w.setCameraRoom(1);
+	const int inside = w.visibilityFloor({10600.0f, 170.0f, 1000.0f});
+	u32 total2 = 0;
+	const u32 hiddenInside = w.hiddenClusters(chunk, total2);
+	std::printf("  visibility rooms: outside row %d hides %08x, the room's row %d hides %08x of %u clusters\n", outside, hiddenOutside, inside,
+	            hiddenInside, total);
+	CHECK(outside >= 0 && inside >= 0 && total == total2 && total >= 2);
+	CHECK((hiddenOutside & ~hiddenInside) != 0); // (something the street does not see - the crate - the room does)
+	CHECK((hiddenInside & ~hiddenOutside) == 0);
+	// A camera in a room the cell has no row for: everything is drawn.
+	w.setCameraRoom(7);
+	CHECK(w.visibilityFloor({10600.0f, 170.0f, 1000.0f}) == -1);
+	w.setCameraRoom(0);
+	CHECK(w.visibilityFloor({8400.0f, 170.0f, 400.0f}) == outside);
+}
+
 // ---- simplified stand-ins for far chunks (--lod) ----
 
 static SrcScene hillScene(bool jitter = false) {
@@ -11223,6 +11312,7 @@ int main(int argc, char** argv) {
 	             {"chunk tiers", testChunkTiers},
 	             {"visibility", testVisibility},
 	             {"visibility floors", testVisibilityFloors},
+	             {"visibility rooms", testVisibilityRooms},
 	             {"lod", testLod},
              {"simplify", testSimplify},
              {"displaytiming", testDisplayTiming},

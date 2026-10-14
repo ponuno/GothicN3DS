@@ -519,13 +519,37 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 		a->dist2 = dist2[k];
 		GameNpc& n = _game.npcMut(a->npc);
 		n.active = _cfg.alive;
+		// On a bench or in a bed: the world around him first, and he is not shown until it is there (no sitting on air).
+		if (a->mob >= 0 && a->mobStage >= NpcActor::MOB_ENTERING) {
+			const Vec3 at = {n.pos[0], n.pos[1], n.pos[2]};
+			world.wantAt(at);
+			if (!world.settledAt(at)) {
+				a->ready = false;
+				continue;
+			}
+		}
 		const LookEntry* look = lookOf(n.look);
 		if (!look) {
 			++_stats.noModel;
 			a->ready = false;
 			continue;
 		}
-		Piece* rig = piece(pak, look->rig, loadsLeft);
+		// Behind a wall with no models yet: nothing is read for him (fix91; see NpcConfig::skipHiddenLoads). Two lines, to the
+		// head and to the chest, looked at again every few frames; nearer than hiddenNear, or once he has models, no look.
+		u32 noLoads = 0;
+		u32* loads = &loadsLeft;
+		if (_cfg.skipHiddenLoads && _cfg.hideOccluded && !a->ready && !a->rig) {
+			const float hx = n.pos[0] - eye.x, hz = n.pos[2] - eye.z;
+			if (hx * hx + hz * hz < _cfg.hiddenNear * _cfg.hiddenNear) {
+				a->unseen = false;
+			} else if (a->unseenFrame == 0 || _frame - a->unseenFrame >= (a->unseen ? 2u : 8u)) {
+				const Vec3 head = {n.pos[0], n.pos[1] + 150.0f, n.pos[2]}, chest = {n.pos[0], n.pos[1] + 110.0f, n.pos[2]};
+				a->unseen = world.sightBlocked(eye, head) && world.sightBlocked(eye, chest);
+				a->unseenFrame = _frame ? _frame : 1;
+			}
+			if (a->unseen) loads = &noLoads;
+		}
+		Piece* rig = piece(pak, look->rig, *loads);
 		// A look with a coarse body: from afar only that is read; the full body and head come as the player nears,
 		// and the coarse one stands in until they are there.
 		Piece* low = nullptr;
@@ -535,13 +559,13 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 			const float edge = a->far ? d * 0.9f : d * 1.1f;
 			a->far = dist2[k] > edge * edge;
 			const float load = d + 600.0f;
-			low = piece(pak, look->bodyLow, loadsLeft);
+			low = piece(pak, look->bodyLow, *loads);
 			wantFull = !a->far || dist2[k] < load * load;
 		} else {
 			a->far = false;
 		}
-		Piece* body = wantFull || !low ? piece(pak, look->body, loadsLeft) : nullptr;
-		Piece* head = look->head && body ? piece(pak, look->head, loadsLeft) : nullptr;
+		Piece* body = wantFull || !low ? piece(pak, look->body, *loads) : nullptr;
+		Piece* head = look->head && body ? piece(pak, look->head, *loads) : nullptr;
 		// Pieces that do not fit together are as good as missing.
 		if (rig && body && !body->model.sameSkeleton(rig->model)) body = nullptr;
 		if (rig && low && !low->model.sameSkeleton(rig->model)) low = nullptr;
@@ -757,8 +781,9 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3], const World* worl
 			}
 			if (a.occluded) {
 				++_stats.hidden;
-				// (The pose is still worked out, as for one drawn: what asks for it - the report, the tests - sees it move on.)
-				a.anim.evaluate();
+				// (The pose is still worked out, as for one drawn, unless the config says not and he is far: what asks for it - the
+				// report, the tests - sees it move on.)
+				if (_cfg.poseHidden || flat2 < 800.0f * 800.0f) a.anim.evaluate();
 				// Still somebody standing there (the triggers ask who is where), only not drawn, nor its shadow.
 				if (n.down == DOWN_NONE && a.shown > 127 && _drawnCount < ACTORS) {
 					_drawnFeet[_drawnCount] = feet;

@@ -31,6 +31,13 @@ struct ChunkVis {
 struct Place {
 	V3 p;
 	float floorY;
+	u16 room = 0; // the room (BSP sector, 1..) the place is in; 0: outside (fix91)
+};
+
+// A room's box (the same boxes the runtime's Rooms uses).
+struct RoomB {
+	float mn[3], mx[3];
+	u16 room;
 };
 
 inline V3 frontNormalOf(const Tri& t) { return cross(t.e1, t.e2) * -1.0f; }
@@ -43,11 +50,16 @@ struct Shared {
 	const std::vector<ChunkVis>* chunks;
 	const std::vector<u32>* order; // chunk numbers sorted by cell z, x, number
 	std::map<std::pair<int, int>, std::pair<u32, u32>> cellRange; // (z, x) -> [begin, end) in `order`
+	const std::vector<RoomB>* rooms = nullptr;
+	const std::vector<u16>* boxRoom = nullptr; // per cluster box: the room it lies inside of (fix91), 0: none
+	std::map<std::pair<int, int>, std::vector<u32>> roomsInCell; // (z, x) -> the rooms (indices) whose middle is in the cell
 	VisOptions opt;
 	float cellSize;
 	float skyY, floorY;
 	mutable std::atomic<u64> rays {0};
 };
+
+u16 roomOfPoint(const Shared& sh, V3 p);
 
 // The places a character in the cell may have its eyes at.
 void viewingPlaces(const Shared& sh, int cx, int cz, std::vector<Place>& out) {
@@ -94,6 +106,47 @@ void viewingPlaces(const Shared& sh, int cx, int cz, std::vector<Place>& out) {
 		for (int iz = 0; iz < n; ++iz)
 			for (int ix = 0; ix < n; ++ix)
 				out.push_back({V3 {(float(cx) + (n == 3 ? fr3[ix] : fr2[ix])) * sh.cellSize, highest + 450.0f, (float(cz) + (n == 3 ? fr3[iz] : fr2[iz])) * sh.cellSize}, highest});
+	// (A place of the lattice that falls inside a room is that room's.)
+	for (Place& pl : out) pl.room = roomOfPoint(sh, pl.p);
+}
+
+// The room a point is in: the smallest box that holds it (the runtime's Rooms::roomAt does the same), 0: none.
+u16 roomOfPoint(const Shared& sh, V3 p) {
+	u16 best = 0;
+	float bestVolume = 1e30f;
+	if (!sh.rooms) return 0;
+	for (const RoomB& b : *sh.rooms) {
+		if (p.x < b.mn[0] || p.x > b.mx[0] || p.z < b.mn[2] || p.z > b.mx[2] || p.y < b.mn[1] - 20.0f || p.y > b.mx[1] + 20.0f) continue;
+		const float v = (b.mx[0] - b.mn[0]) * (b.mx[1] - b.mn[1] + 1.0f) * (b.mx[2] - b.mn[2]);
+		if (v < bestVolume) {
+			bestVolume = v;
+			best = b.room;
+		}
+	}
+	return best;
+}
+
+// Places inside the rooms whose middle is in the cell: five to a room (the middle and the quarter points), on the
+// floor under them. (The cell's own lattice finds few of them: a room is a few metres wide.)
+void roomPlaces(const Shared& sh, int cx, int cz, std::vector<Place>& out) {
+	auto it = sh.roomsInCell.find({cz, cx});
+	if (it == sh.roomsInCell.end()) return;
+	for (u32 ri : it->second) {
+		const RoomB& rb = (*sh.rooms)[ri];
+		const float mx = 0.5f * (rb.mn[0] + rb.mx[0]), mz = 0.5f * (rb.mn[2] + rb.mx[2]);
+		const float dx = 0.25f * (rb.mx[0] - rb.mn[0]), dz = 0.25f * (rb.mx[2] - rb.mn[2]);
+		const float xs[5] = {mx, mx - dx, mx + dx, mx - dx, mx + dx}, zs[5] = {mz, mz - dz, mz - dz, mz + dz, mz + dz};
+		for (int k = 0; k < 5; ++k) {
+			float t = 0;
+			const Tri* tri = nullptr;
+			const V3 o {xs[k], rb.mx[1] - 30.0f, zs[k]};
+			if (sh.bvh->nearest(o, V3 {0, -1, 0}, 1e-3f, o.y - sh.floorY, t, &tri) <= 0.0f || !tri) continue;
+			const float hy = o.y - t;
+			if (hy < rb.mn[1] - 80.0f || hy > rb.mx[1]) continue;
+			Place pl {V3 {xs[k], hy + 170.0f, zs[k]}, hy, rb.room};
+			out.push_back(pl);
+		}
+	}
 }
 
 // Whether the segment from `s` to the point `p` meets something solid before it gets there (a few cm short:
@@ -122,11 +175,15 @@ bool blockedTo(const Shared& sh, V3 s, V3 p, Occluders& oc) {
 	return true;
 }
 
-bool visibleFrom(const Shared& sh, const std::vector<V3>& places, std::vector<Occluders>& cache, u32 box, int cx, int cz, float eyeLo, float eyeHi) {
+bool visibleFrom(const Shared& sh, const std::vector<V3>& places, std::vector<Occluders>& cache, u32 box, int cx, int cz, float eyeLo, float eyeHi,
+                 u16 rowRoom) {
 	const Box& b = (*sh.boxes)[box];
 	if (b.empty()) return true;
 	// Whatever is near the cell - not near one of its few places: the camera can be anywhere in it - is visible.
-	{
+	// (Except what lies inside a room that is not the row's own: a house's inside is not near the street - only what the
+	// rays see of it through its doors and windows is visible from outside; fix91.)
+	const u16 inRoom = sh.boxRoom ? (*sh.boxRoom)[box] : u16(0);
+	if (inRoom == 0 || inRoom == rowRoom) {
 		const float x0 = float(cx) * sh.cellSize, x1 = x0 + sh.cellSize, z0 = float(cz) * sh.cellSize, z1 = z0 + sh.cellSize;
 		const float dx = std::max({b.mn[0] - x1, x0 - b.mx[0], 0.0f}), dz = std::max({b.mn[2] - z1, z0 - b.mx[2], 0.0f});
 		// (and not too far above or below the eyes of this floor: the street under a bridge is not near the bridge's deck)
@@ -259,6 +316,39 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 	sh.cellSize = cellSize;
 	sh.skyY = skyY + 10.0f;
 	sh.floorY = floorY - 10.0f;
+	// ---- rooms (fix91) ----
+	std::vector<RoomB> roomBoxes;
+	for (const auto& rb : scene.roomBoxes) {
+		RoomB b {};
+		for (int a = 0; a < 3; ++a) b.mn[a] = rb.bbMin[a], b.mx[a] = rb.bbMax[a];
+		b.room = u16(rb.room + 1);
+		roomBoxes.push_back(b);
+	}
+	std::vector<u16> boxRoom(boxes.size(), 0);
+	u32 roomClusters = 0;
+	for (size_t i = 0; i < boxes.size(); ++i) {
+		const Box& bx = boxes[i];
+		if (bx.empty()) continue;
+		float bestVolume = 1e30f;
+		for (const RoomB& rb : roomBoxes) {
+			bool inside = true;
+			for (int a = 0; a < 3 && inside; ++a) inside = bx.mn[a] >= rb.mn[a] - 30.0f && bx.mx[a] <= rb.mx[a] + 30.0f;
+			const float v = (rb.mx[0] - rb.mn[0]) * (rb.mx[1] - rb.mn[1] + 1.0f) * (rb.mx[2] - rb.mn[2]);
+			if (inside && v < bestVolume) {
+				bestVolume = v;
+				boxRoom[i] = rb.room;
+			}
+		}
+		roomClusters += boxRoom[i] != 0;
+	}
+	sh.rooms = &roomBoxes;
+	sh.boxRoom = &boxRoom;
+	for (u32 ri = 0; ri < roomBoxes.size(); ++ri) {
+		const float mx = 0.5f * (roomBoxes[ri].mn[0] + roomBoxes[ri].mx[0]), mz = 0.5f * (roomBoxes[ri].mn[2] + roomBoxes[ri].mx[2]);
+		sh.roomsInCell[{int(std::floor(mz / cellSize)), int(std::floor(mx / cellSize))}].push_back(ri);
+	}
+	stats.roomClusters = roomClusters;
+
 	for (u32 k = 0; k < order.size();) {
 		u32 e = k;
 		while (e < order.size() && cv[order[e]].cz == cv[order[k]].cz && cv[order[e]].cx == cv[order[k]].cx) ++e;
@@ -269,6 +359,7 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 	// ---- one row per floor of each cell ----
 	struct Row {
 		int x, z;
+		u16 room = 0;
 		float yMin, yMax;      // the camera heights this row is for
 		std::vector<u32> bits; // packed
 		u32 count = 0;
@@ -287,6 +378,7 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 			std::vector<Row>& out = cellRows[r];
 			const int cz = cells[r].first, cx = cells[r].second;
 			viewingPlaces(sh, cx, cz, places);
+			roomPlaces(sh, cx, cz, places);
 			if (places.empty()) {
 				Row row;
 				row.x = cx;
@@ -297,63 +389,75 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 				out.push_back(std::move(row));
 				continue;
 			}
-			// The floors of the cell: heights closer together than levelGap are one (a slope, a stair), and each floor
-			// is seen from its own places.
-			struct Level {
-				float top, bottom;
-				std::vector<V3> eyes;
-				float eyeLo = 1e30f, eyeHi = -1e30f;
-			};
-			std::vector<float> heights;
-			for (const Place& pl : places) heights.push_back(pl.floorY);
-			std::sort(heights.begin(), heights.end(), [](float a, float b) { return a > b; });
-			std::vector<Level> levels;
-			for (float f : heights) {
-				if (levels.empty() || levels.back().bottom - f > opt.levelGap)
-					levels.push_back(Level {f, f, {}, 1e30f, -1e30f});
-				else
-					levels.back().bottom = f;
-			}
+			// Rows by room (fix91): the places of one room - or of the outside - see by themselves, and a camera in a room
+			// is given the row of that room.
+			std::vector<u16> roomIds;
 			for (const Place& pl : places)
-				for (Level& lv : levels)
-					if (pl.floorY <= lv.top + 0.01f && pl.floorY >= lv.bottom - 0.01f) {
-						lv.eyes.push_back(pl.p);
-						lv.eyeLo = std::min(lv.eyeLo, pl.p.y);
-						lv.eyeHi = std::max(lv.eyeHi, pl.p.y);
-						break;
-					}
-			for (size_t li = levels.size(); li-- > 0;) { // (the lowest floor first: rows are sorted by height)
-				const Level& lv = levels[li];
-				Row row;
-				row.x = cx;
-				row.z = cz;
-				// The floor above claims the heights from a metre under its own floor; the ranges overlap by a little
-				// more than that, so that a camera at the edge does not change rows with every step.
-				row.yMin = li + 1 < levels.size() ? lv.bottom - 250.0f : lv.bottom - 1500.0f;
-				row.yMax = li > 0 ? levels[li - 1].bottom + 50.0f : 1.0e30f;
-				row.samples = lv.eyes.size();
-				std::vector<Occluders> cache(lv.eyes.size());
-				std::vector<u8> bitsOut;
-				for (int dz = -reach; dz <= reach; ++dz)
-					for (int dx = -reach; dx <= reach; ++dx) {
-						const float gx = float(std::max(std::abs(dx) - 1, 0)) * cellSize, gz = float(std::max(std::abs(dz) - 1, 0)) * cellSize;
-						if (std::sqrt(gx * gx + gz * gz) > opt.radius) continue;
-						auto it = sh.cellRange.find({cz + dz, cx + dx});
-						if (it == sh.cellRange.end()) continue;
-						for (u32 k = it->second.first; k < it->second.second; ++k) {
-							const ChunkVis& c = cv[order[k]];
-							for (u32 cl = 0; cl < c.clusters; ++cl) {
-								const bool vis = lv.eyes.empty() || visibleFrom(sh, lv.eyes, cache, c.firstBox + cl, cx, cz, lv.eyeLo, lv.eyeHi);
-								bitsOut.push_back(vis ? 1 : 0);
-								row.hidden += !vis;
+				if (std::find(roomIds.begin(), roomIds.end(), pl.room) == roomIds.end()) roomIds.push_back(pl.room);
+			std::sort(roomIds.begin(), roomIds.end());
+			for (u16 roomId : roomIds) {
+				// The floors of the cell (in this room): heights closer together than levelGap are one (a slope, a stair),
+				// and each floor is seen from its own places.
+				struct Level {
+					float top, bottom;
+					std::vector<V3> eyes;
+					float eyeLo = 1e30f, eyeHi = -1e30f;
+				};
+				std::vector<float> heights;
+				for (const Place& pl : places)
+					if (pl.room == roomId) heights.push_back(pl.floorY);
+				std::sort(heights.begin(), heights.end(), [](float a, float b) { return a > b; });
+				std::vector<Level> levels;
+				for (float f : heights) {
+					if (levels.empty() || levels.back().bottom - f > opt.levelGap)
+						levels.push_back(Level {f, f, {}, 1e30f, -1e30f});
+					else
+						levels.back().bottom = f;
+				}
+				for (const Place& pl : places) {
+					if (pl.room != roomId) continue;
+					for (Level& lv : levels)
+						if (pl.floorY <= lv.top + 0.01f && pl.floorY >= lv.bottom - 0.01f) {
+							lv.eyes.push_back(pl.p);
+							lv.eyeLo = std::min(lv.eyeLo, pl.p.y);
+							lv.eyeHi = std::max(lv.eyeHi, pl.p.y);
+							break;
+						}
+				}
+				for (size_t li = levels.size(); li-- > 0;) { // (the lowest floor first: rows are sorted by height)
+					const Level& lv = levels[li];
+					Row row;
+					row.x = cx;
+					row.z = cz;
+					row.room = roomId;
+					// The floor above claims the heights from a metre under its own floor; the ranges overlap by a little
+					// more than that, so that a camera at the edge does not change rows with every step.
+					row.yMin = li + 1 < levels.size() ? lv.bottom - 250.0f : lv.bottom - 1500.0f;
+					row.yMax = li > 0 ? levels[li - 1].bottom + 50.0f : 1.0e30f;
+					row.samples = lv.eyes.size();
+					std::vector<Occluders> cache(lv.eyes.size());
+					std::vector<u8> bitsOut;
+					for (int dz = -reach; dz <= reach; ++dz)
+						for (int dx = -reach; dx <= reach; ++dx) {
+							const float gx = float(std::max(std::abs(dx) - 1, 0)) * cellSize, gz = float(std::max(std::abs(dz) - 1, 0)) * cellSize;
+							if (std::sqrt(gx * gx + gz * gz) > opt.radius) continue;
+							auto it = sh.cellRange.find({cz + dz, cx + dx});
+							if (it == sh.cellRange.end()) continue;
+							for (u32 k = it->second.first; k < it->second.second; ++k) {
+								const ChunkVis& c = cv[order[k]];
+								for (u32 cl = 0; cl < c.clusters; ++cl) {
+									const bool vis = lv.eyes.empty() || visibleFrom(sh, lv.eyes, cache, c.firstBox + cl, cx, cz, lv.eyeLo, lv.eyeHi, roomId);
+									bitsOut.push_back(vis ? 1 : 0);
+									row.hidden += !vis;
+								}
 							}
 						}
-					}
-				row.count = u32(bitsOut.size());
-				row.bits.assign((bitsOut.size() + 31) / 32, 0u);
-				for (size_t i = 0; i < bitsOut.size(); ++i)
-					if (bitsOut[i]) row.bits[i >> 5] |= 1u << (i & 31);
-				out.push_back(std::move(row));
+					row.count = u32(bitsOut.size());
+					row.bits.assign((bitsOut.size() + 31) / 32, 0u);
+					for (size_t i = 0; i < bitsOut.size(); ++i)
+						if (bitsOut[i]) row.bits[i >> 5] |= 1u << (i & 31);
+					out.push_back(std::move(row));
+				}
 			}
 		}
 	};
@@ -364,7 +468,7 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 	for (std::thread& t : pool) t.join();
 
 	// ---- the table ----
-	std::vector<VisViewer2> viewers;
+	std::vector<VisViewer3> viewers;
 	std::vector<u32> bits;
 	u64 totalBits = 0;
 	for (const std::vector<Row>& cellList : cellRows) {
@@ -373,12 +477,13 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 			stats.samples += row.samples;
 			if (row.count == 0xFFFFFFFFu || row.count == 0) continue;
 			if (totalBits > 0xFFFFFFF0ull - row.count) break; // (more than a table can hold)
-			VisViewer2 v {};
+			VisViewer3 v {};
 			v.x = i16(row.x);
 			v.z = i16(row.z);
 			v.bitOffset = u32(totalBits);
 			v.yMin = row.yMin;
 			v.yMax = row.yMax;
+			v.room = row.room;
 			viewers.push_back(v);
 			// Rows begin on whatever bit the last one ended on: append bit by bit.
 			bits.resize((totalBits + row.count + 31) / 32, 0u);
@@ -389,7 +494,8 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 				}
 			totalBits += row.count;
 			stats.hidden += row.hidden;
-			++floorsOfCell;
+			if (row.room == 0) ++floorsOfCell;
+			else ++stats.roomRows;
 		}
 		stats.cells += floorsOfCell > 0;
 		stats.multiFloorCells += floorsOfCell > 1;
@@ -397,9 +503,10 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 	stats.viewers = u32(viewers.size());
 	stats.targets = totalBits;
 	if (viewers.empty()) return {};
-	std::sort(viewers.begin(), viewers.end(), [](const VisViewer2& a, const VisViewer2& b) {
+	std::sort(viewers.begin(), viewers.end(), [](const VisViewer3& a, const VisViewer3& b) {
 		if (a.z != b.z) return a.z < b.z;
 		if (a.x != b.x) return a.x < b.x;
+		if (a.room != b.room) return a.room < b.room;
 		return a.yMin < b.yMin;
 	});
 
@@ -430,7 +537,7 @@ std::vector<u8> buildVisibility(const SrcScene& scene, const std::vector<AoMater
 	put(counts.data(), counts.size());
 	p += visPad(h.chunkCount);
 	put(order.data(), order.size() * 4);
-	put(viewers.data(), viewers.size() * sizeof(VisViewer2));
+	put(viewers.data(), viewers.size() * sizeof(VisViewer3));
 	put(bits.data(), bits.size() * 4);
 	stats.bytes = u32(out.size());
 	stats.rays = sh.rays.load();

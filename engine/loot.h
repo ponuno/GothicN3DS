@@ -38,6 +38,7 @@ struct LootStats {
 	u32 drawCalls = 0, triangles = 0; // ... with this many draw calls and triangles
 	u32 models = 0;    // looks in memory
 	u32 noModel = 0;   // looks the archive has no model for
+	float rayMs = 0, loadMs = 0; // the last update: floors looked for (rays), models built (fix90: for finding what a hitch is made of)
 };
 
 class Loot {

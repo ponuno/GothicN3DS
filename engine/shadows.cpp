@@ -33,6 +33,8 @@ void Shadows::release() {
 	}
 	if (_texture) gfx::textureDestroy(_texture);
 	_texture = nullptr;
+	if (_flat) gfx::textureDestroy(_flat);
+	_flat = nullptr;
 	_count = 0;
 }
 
@@ -134,6 +136,43 @@ void Shadows::draw(const World& world, Vec3 camera, float strength) {
 		first = last;
 	}
 	_stats.drawn = n;
+}
+
+bool Shadows::cast(const World& world, Vec3 camera, const Model& model, const Pose& pose, Vec3 feet, float yaw, float lean,
+                   const float dir[3], float strength) {
+	if (!model.loaded() || !(strength > 0.0f) || dir[1] > -0.2f) return false;
+	const float dist = length(feet - camera);
+	if (dist > RANGE) return false;
+	float ground;
+	Vec3 n;
+	if (!world.rayDown({feet.x, feet.y + 50.0f, feet.z}, 50.0f + kMaxHeight, ground, n) || n.y < 0.5f) return false;
+	const float height = max(feet.y - ground, 0.0f);
+	if (height >= kMaxHeight) return false;
+	const float fade = (1.0f - height / kMaxHeight) * (1.0f - smoothstep01((dist - RANGE * 0.8f) / (RANGE * 0.2f)));
+	const float a = strength * fade;
+	if (a < 0.03f) return false;
+	if (!_flat) {
+		static u8 solid[8 * 8];
+		memset(solid, 255, sizeof(solid));
+		_flat = gfx::uiTextureCreate(8, 8, solid, true);
+		if (!_flat) return false;
+	}
+	// The map q -> q - d (n.q + n.(o - g)) / (n.d) + n lift, q relative to the feet o, g the ground below them.
+	const float nd = n.x * dir[0] + n.y * dir[1] + n.z * dir[2];
+	if (nd > -0.1f) return false;
+	const float nv[3] = {n.x, n.y, n.z};
+	float k[9], c[3];
+	for (int r = 0; r < 3; ++r)
+		for (int col = 0; col < 3; ++col) k[r * 3 + col] = (r == col ? 1.0f : 0.0f) - dir[r] * nv[col] / nd;
+	const float off = n.y * (feet.y - ground); // (o - g) is straight above g
+	const float lift = 2.0f + dist * 0.003f;
+	for (int r = 0; r < 3; ++r) c[r] = -dir[r] * off / nd + nv[r] * lift;
+	// (Both sides of the flattened body are drawn, so a point is covered twice: half the darkness each.)
+	const float layer = 1.0f - sqrtf(1.0f - clamp(a, 0.0f, 0.95f));
+	model.drawFlat(pose, feet, yaw, lean, k, c, _flat, layer);
+	++_stats.drawn;
+	++_stats.drawCalls;
+	return true;
 }
 
 } // namespace g3

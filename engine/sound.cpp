@@ -321,6 +321,12 @@ bool Sound::knows(const char* name) {
 	return d >= 0 && _defs[d].state == 1;
 }
 
+bool Sound::isLoop(const char* name) {
+	if (!ready() || !name) return false;
+	const int d = defFor(hashName(name), name);
+	return d >= 0 && _defs[d].state == 1 && _defs[d].loop;
+}
+
 void Sound::note(const char* name, bool absent) {
 	for (u32 i = 0; i < _logCount; ++i)
 		if (strncmp(_log[i].name, name, sizeof(_log[i].name) - 1) == 0) {

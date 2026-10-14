@@ -87,6 +87,8 @@ public:
 	void setHandleGain(u32 handle, float gain);
 	// Does a sound of this name exist (an instance of C_SFX, or a sample of that name)?
 	bool knows(const char* name);
+	// True if the instance of that name plays in a loop (false if unknown).
+	bool isLoop(const char* name);
 
 	// Makes the scripts' Snd_Play and Snd_Play3D do something. `where` gives
 	// the place of the character a script hands over (false: unknown).

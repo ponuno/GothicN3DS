@@ -9206,7 +9206,7 @@ static void testWeather() {
 				if (!p) continue;
 				++have;
 				CHECK(x >= float(ix) * Puddles::CELL && x < float(ix + 1) * Puddles::CELL && z >= float(iz) * Puddles::CELL && z < float(iz + 1) * Puddles::CELL);
-				CHECK(rx >= 60.0f && rx < 400.0f && rz >= 60.0f && th > 0.0f && th < 0.6f);
+				CHECK(rx >= 40.0f && rx < 400.0f && rz >= 40.0f && th > 0.0f && th < 0.6f);
 			}
 		CHECK(have > total / 5 && have < total / 2);
 	}

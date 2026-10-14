@@ -227,6 +227,11 @@ public:
 	// nodeCount of them - and each model is drawn with them.
 	void skinMatrices(const Pose& pose, float yaw, float lean, const float* scale, Mat34* skin) const;
 	void drawSkinned(const Mat34* skin, Vec3 origin, const float light[3]) const;
+	// The body flattened onto a plane (a cast shadow), in PASS_BLEND: every bone matrix is followed by the affine map
+	// q -> k q + c (k: 9 floats, rows; c: 3), q being the place relative to `origin`. Drawn black with `tex` (its alpha is
+	// the shadow) at `opacity`; the parts' own textures are not used.
+	void drawFlat(const Pose& pose, Vec3 origin, float yaw, float lean, const float k[9], const float c[3], gfx::Texture* tex,
+	              float opacity) const;
 	// Where a node of `pose` is, turned as skinMatrices() turns the body (what
 	// a held thing is drawn with); false without such a node.
 	bool nodeMatrix(const Pose& pose, int node, float yaw, float lean, const float* scale, Mat34& out) const;

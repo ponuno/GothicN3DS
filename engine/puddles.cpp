@@ -34,7 +34,7 @@ bool Puddles::cellPuddle(int ix, int iz, float& x, float& z, float& rx, float& r
 	const unsigned h2 = mix(h + 1u), h3 = mix(h + 2u), h4 = mix(h + 3u);
 	x = (float(ix) + 0.2f + 0.6f * unit(h2)) * CELL;
 	z = (float(iz) + 0.2f + 0.6f * unit(h2 >> 16 | h3 << 16)) * CELL;
-	const float r = 70.0f + 110.0f * unit(h3);
+	const float r = 45.0f + 70.0f * unit(h3);
 	rx = r * (1.0f + 0.5f * unit(h4));
 	rz = r;
 	angle = unit(h4 >> 8) * 6.2831853f;
@@ -135,7 +135,16 @@ void Puddles::draw(const World& world, Vec3 camera, float wet, float rain, const
 						float below;
 						Vec3 n2;
 						c.retryAt = 0;
-						if (!world.rayDown({px, top - 40.0f, pz}, 3000.0f, below, n2) && fabsf(top - camera.y) < 1800.0f) {
+						// Not on what the water covers, nor at its edge (a puddle must not show through the water).
+						bool wetSpot = false;
+						static const float probe[5][2] = {{0, 0}, {1.3f, 0}, {-1.3f, 0}, {0, 1.3f}, {0, -1.3f}};
+						for (const auto& pr : probe) {
+							float wy;
+							if (world.waterBelow({px + pr[0] * rx, camera.y + 1500.0f, pz + pr[1] * rx}, 4500.0f, wy) && wy >= top - 25.0f) wetSpot = true;
+						}
+						if (wetSpot) {
+							// (stays state 1, never asked again)
+						} else if (!world.rayDown({px, top - 40.0f, pz}, 3000.0f, below, n2) && fabsf(top - camera.y) < 1800.0f) {
 							c.state = 2;
 							c.x = px; c.y = top; c.z = pz; c.rx = rx; c.rz = rz; c.angle = ang; c.threshold = th;
 							c.normal = nrm;
@@ -162,8 +171,8 @@ void Puddles::draw(const World& world, Vec3 camera, float wet, float rain, const
 	// (it mirrors it, lighter than the dark wet ground), and bright rings where drops fall in.
 	u8 wetColour[3], sheenColour[3], ringColour[3];
 	for (int k = 0; k < 3; ++k) {
-		wetColour[k] = u8(float(sky[k]) * 0.22f);
-		sheenColour[k] = u8(min(255.0f, float(sky[k]) * 0.80f + 28.0f));
+		wetColour[k] = u8(float(sky[k]) * 0.15f);
+		sheenColour[k] = u8(min(255.0f, float(sky[k]) * 0.45f + 6.0f));
 		ringColour[k] = u8(min(255.0f, float(sky[k]) * 0.5f + 150.0f));
 	}
 	auto put = [&](WorldVertex* out, const Cell& c, float rx, float rz, float lift, float u0, float u1, const u8* colour) {
@@ -236,13 +245,13 @@ void Puddles::draw(const World& world, Vec3 camera, float wet, float rain, const
 	_meshTurn = (_meshTurn + 1) % MESHES;
 	gfx::meshUpdate(mesh, verts, total * 4);
 	gfx::setChunkTransform(origin, kPosScale, 1.0f / 1024.0f);
-	gfx::setMaterial(_texture, MATF_BLEND, clamp(0.25f + 0.30f * wet, 0.0f, 0.55f));
+	gfx::setMaterial(_texture, MATF_BLEND, clamp(0.18f + 0.20f * wet, 0.0f, 0.36f));
 	gfx::draw(mesh, 0, puddleQuads * 6);
-	gfx::setMaterial(_texture, MATF_BLEND, clamp(0.28f + 0.27f * wet, 0.0f, 0.55f));
+	gfx::setMaterial(_texture, MATF_BLEND, clamp(0.16f + 0.18f * wet, 0.0f, 0.32f));
 	gfx::draw(mesh, sheenFirst * 6, puddleQuads * 6);
 	for (int l = 0; l < kRingLevels; ++l) {
 		if (!ringQuads[l]) continue;
-		gfx::setMaterial(_texture, MATF_BLEND, 0.8f * float(l + 1) / float(kRingLevels));
+		gfx::setMaterial(_texture, MATF_BLEND, 0.5f * float(l + 1) / float(kRingLevels));
 		gfx::draw(mesh, first[l] * 6, ringQuads[l] * 6);
 	}
 	_drawn = puddleQuads;

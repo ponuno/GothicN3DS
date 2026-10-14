@@ -444,7 +444,8 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		++result.textures;
 		texels += u64(j.info.width) * j.info.height;
 		srcTexels += u64(j.info.srcWidth) * j.info.srcHeight;
-		alphaTextures += j.info.alpha;
+		// (The generated water texture carries alpha for blending; it is no cut-out.)
+		alphaTextures += j.info.alpha && !(opt.waterTexture && waterNames.count(j.pakName));
 	}
 	const std::string fallbackName = "tex/_missing";
 	pak.add(fallbackName, ASSET_TEXTURE, bakeTexture(missingTexture(), opt.tex));

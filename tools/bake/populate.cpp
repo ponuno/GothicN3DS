@@ -326,6 +326,20 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				}
 				line(found.empty() ? "barrier: no sound instance named like it in the scripts; the dome is silent"
 				                   : "barrier: sound instances named like it: " + found);
+				// The weather's sounds: the instances named like rain and thunder (the engine takes the first it can play; a looping one for the rain).
+				std::string rainList, thunderList, meta;
+				for (const SrcSymbol& s : names->symbols) {
+					std::string up = s.name;
+					for (char& c : up) c = char(std::toupper(static_cast<unsigned char>(c)));
+					const bool rain = up.find("RAIN") != std::string::npos || up.find("REGEN") != std::string::npos;
+					const bool thunder = up.find("THUNDER") != std::string::npos || up.find("DONNER") != std::string::npos ||
+					                     up.find("GEWITTER") != std::string::npos;
+					if (rain) { rainList += (rainList.empty() ? "" : ", ") + s.name; meta += "R " + s.name + "\n"; }
+					if (thunder) { thunderList += (thunderList.empty() ? "" : ", ") + s.name; meta += "T " + s.name + "\n"; }
+				}
+				if (!meta.empty()) pak.add("meta/weathersfx", ASSET_META, std::vector<u8>(meta.begin(), meta.end()));
+				line("weather sounds: rain: " + (rainList.empty() ? std::string("none") : rainList) + "; thunder: " +
+				     (thunderList.empty() ? std::string("none") : thunderList));
 			}
 		} catch (const std::exception& ex) {
 			line(std::string("WARNING: sounds not baked: ") + ex.what());

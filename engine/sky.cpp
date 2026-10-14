@@ -428,7 +428,9 @@ void Sky::drawBodies(Vec3 camera, float radius, const SkyColors& colors, float s
 		const float scale = 1.0f / (dir[1] + 0.22f);
 		const float cover = clamp01(0.30f + 0.85f * _scene.cloud), thr = 0.80f - 0.52f * cover;
 		const float dens = dir[1] > 0.0f ? smooth01((fbm(dir[0] * scale * 0.95f + seconds * 0.010f, dir[2] * scale * 0.95f + seconds * 0.0035f) - thr) / 0.24f) * smooth01(dir[1] / 0.14f) : 0.0f;
-		const float veil = clamp01(dens * 0.85f + _scene.cloud * 0.4f);
+		const float veil = max(clamp01(dens * 0.85f + _scene.cloud * 0.4f), clamp01(_scene.rain * 1.3f));
+		// Behind rain cloud (or thick cloud) the sun and the moon are not seen at all.
+		if (veil > 0.8f) return;
 		float col[3];
 		const float blend = blendAtElevation(asinf(clamp(dir[1], -1.0f, 1.0f)) * 57.2958f);
 		for (int c = 0; c < 3; ++c) {

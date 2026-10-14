@@ -891,7 +891,30 @@ void App::render() {
 			_puddles.draw(_world, _cam.pos, _weather.wet(), _weather.rain(), sky.horizon, _clock);
 		}
 		_shadows.begin();
-		if (_settings.shadows != SHADOWS_OFF) {
+		const bool castHero = _settings.shadows == SHADOWS_HERO_CAST && !_gfxRelief;
+		if (castHero && _heroVisible && _hero.loaded()) {
+			// The light: the sun by day, the moon at night, a lamp overhead indoors; fainter under cloud and rain.
+			float lightDir[3] = {0.25f, -0.96f, 0.1f};
+			float strength = 0.5f;
+			if (!indoor) {
+				float sun[3], moon[3];
+				Sky::sunDirection(_env.timeOfDay, sun);
+				Sky::moonDirection(_env.timeOfDay, moon);
+				const float su = clamp((sun[1] - 0.02f) / 0.25f, 0.0f, 1.0f), mu = clamp((moon[1] - 0.02f) / 0.25f, 0.0f, 1.0f);
+				const float s = su * su * (3.0f - 2.0f * su), m = 0.35f * mu * mu * (3.0f - 2.0f * mu);
+				const float* to = s >= m ? sun : moon;
+				strength = max(s, m) * 0.6f * (1.0f - 0.85f * _weather.cloud()) * (1.0f - 0.4f * _weather.rain());
+				// (Never longer than about two and a half times the height: a low sun is held at 24 degrees.)
+				const float e = max(to[1], 0.4f), ce = sqrtf(1.0f - e * e);
+				const float h = sqrtf(to[0] * to[0] + to[2] * to[2]);
+				const float hx = h > 1e-4f ? to[0] / h : 0.0f, hz = h > 1e-4f ? to[2] / h : 1.0f;
+				lightDir[0] = -hx * ce;
+				lightDir[1] = -e;
+				lightDir[2] = -hz * ce;
+			}
+			_shadows.cast(_world, _cam.pos, _hero.model(), _hero.pose(), _hero.feet(), _hero.yaw(), _hero.lean(), lightDir, strength);
+		}
+		if (_settings.shadows != SHADOWS_OFF && _settings.shadows != SHADOWS_HERO_CAST) {
 			if (_heroVisible && _hero.loaded()) _shadows.add(_hero.feet(), 48.0f);
 			if (_settings.shadows == SHADOWS_ALL && !_gfxRelief)
 				for (u32 i = 0; i < _npcs.drawnCount(); ++i)
@@ -1453,16 +1476,46 @@ void App::weatherSound(float dt) {
 		_weatherSoundSearched = true;
 		static const char* const kRain[] = {"RAIN_LOOP", "AMB_RAIN", "AMBIENT_RAIN", "RAIN", "REGEN_LOOP", "REGEN", "RAIN_01", "RAIN_A1", "WEATHER_RAIN"};
 		static const char* const kThunder[] = {"THUNDER", "THUNDER_01", "THUNDER_A1", "THUNDER_1", "AMB_THUNDER", "DONNER", "THUNDER_LOUD", "WEATHER_THUNDER"};
-		for (const char* n : kRain)
-			if (_sound.knows(n)) {
-				_rainName = n;
-				break;
+		// The names the baker found in the scripts (meta/weathersfx: "R name" / "T name" lines) come first.
+		u32 used = 0;
+		if (const PakEntry* e = _pak.find("meta/weathersfx")) {
+			static char text[2048];
+			if (e->size > 0 && e->size < sizeof(text) && _pak.read(*e, text)) {
+				text[e->size] = 0;
+				const char* rainAny = nullptr;
+				for (char* p = text; *p;) {
+					char* end = strchr(p, '\n');
+					if (end) *end = 0;
+					const char kind = p[0];
+					const char* name = p + 2;
+					if (p[1] == ' ' && *name && _sound.knows(name)) {
+						if (kind == 'R') {
+							if (_sound.isLoop(name) && !_rainName) _rainName = name;
+							else if (!rainAny) rainAny = name;
+						} else if (kind == 'T' && !_thunderName) {
+							_thunderName = name;
+						}
+					}
+					if (!end) break;
+					p = end + 1;
+				}
+				if (!_rainName) _rainName = rainAny;
+				used = e->size;
 			}
-		for (const char* n : kThunder)
-			if (_sound.knows(n)) {
-				_thunderName = n;
-				break;
-			}
+		}
+		(void)used;
+		if (!_rainName)
+			for (const char* n : kRain)
+				if (_sound.knows(n)) {
+					_rainName = n;
+					break;
+				}
+		if (!_thunderName)
+			for (const char* n : kThunder)
+				if (_sound.knows(n)) {
+					_thunderName = n;
+					break;
+				}
 	}
 	float delay = 0;
 	if (_weather.takeThunder(delay)) _thunderWait = delay;

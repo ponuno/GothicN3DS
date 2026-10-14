@@ -54,7 +54,7 @@ static void usage() {
 	     "  --vis               use the baked visibility table (data baked with --vis): what is hidden from the camera's cell is not drawn\n"
 	     "  --lod M             draw chunks wholly farther than M metres with their simplified stand-ins (data baked with --lod)\n"
 	     "  --waves N           waves on the water 0..3 (data baked with --water-grid)\n"
-	     "  --gfx-plus A,W,S    Graphics+: occlusion 0..100 %, wind 0..3, shadows 0 off / 1 hero / 2 all near\n"
+	     "  --gfx-plus A,W,S    Graphics+: occlusion 0..100 %, wind 0..3, shadows 0 off / 1 hero / 2 all near / 3 hero outline\n"
 	     "  --stats FILE        write a JSON summary");
 }
 
@@ -245,7 +245,7 @@ int main(int argc, char** argv) {
 		Settings& st = app.settings();
 		st.occlusion = u8(clamp(ao, 0, 100));
 		st.wind = u8(clamp(wind, 0, 3));
-		st.shadows = u8(clamp(shadows, 0, 2));
+		st.shadows = u8(clamp(shadows, 0, 3));
 		app.applySettings();
 		printf("Graphics+: occlusion %d%% (%s), wind %d (%s), shadows %d\n", int(st.occlusion),
 		       app.world().hasOcclusion() ? "in the data" : "NOT in the data", int(st.wind),

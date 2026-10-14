@@ -675,6 +675,38 @@ void Model::draw(const Pose& pose, Vec3 origin, float yaw, const float light[3],
 	drawSkinned(gDrawSkin, origin, light);
 }
 
+void Model::drawFlat(const Pose& pose, Vec3 origin, float yaw, float lean, const float k[9], const float c[3], gfx::Texture* tex,
+                     float opacity) const {
+	if (!_mesh || !tex) return;
+	static Mat34 flat[MODEL_MAX_NODES];
+	skinMatrices(pose, yaw, lean, nullptr, gDrawSkin);
+	for (u32 n = 0; n < _h.nodeCount && n < MODEL_MAX_NODES; ++n) {
+		const Mat34& s = gDrawSkin[n];
+		Mat34& o = flat[n];
+		for (int col = 0; col < 4; ++col)
+			for (int r = 0; r < 3; ++r)
+				o.m[r][col] = k[r * 3] * s.m[0][col] + k[r * 3 + 1] * s.m[1][col] + k[r * 3 + 2] * s.m[2][col] + (col == 3 ? c[r] : 0.0f);
+	}
+	const float black[3] = {0, 0, 0};
+	float palette[MODEL_PALETTE * 12];
+	gfx::SkinDraw sd {};
+	sd.bones = palette;
+	sd.origin[0] = origin.x;
+	sd.origin[1] = origin.y;
+	sd.origin[2] = origin.z;
+	sd.posScale = _h.posScale;
+	sd.uvScale = _h.uvScale;
+	memcpy(sd.light, black, sizeof(sd.light));
+	for (u32 i = 0; i < _h.partCount; ++i) {
+		const ModelPart& part = _parts[i];
+		if (!part.indexCount) continue;
+		for (u32 b = 0; b < part.boneCount; ++b) memcpy(palette + b * 12, flat[part.bones[b]].m, 12 * sizeof(float));
+		sd.boneCount = part.boneCount;
+		gfx::setMaterial(tex, MATF_BLEND, opacity);
+		gfx::drawSkinned(_mesh, part.firstIndex, part.indexCount, sd);
+	}
+}
+
 void Model::turnNode(Pose& pose, int node, float yaw, float pitch) const {
 	if (!_nodes || node < 0 || u32(node) >= _h.nodeCount) return;
 	// The parent's rotation in model space: the chain from the root down.

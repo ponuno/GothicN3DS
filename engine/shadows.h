@@ -11,6 +11,7 @@
 #pragma once
 #include "g3ds/math.h"
 #include "gfx.h"
+#include "model.h"
 
 namespace g3 {
 
@@ -33,6 +34,11 @@ public:
 	Shadows& operator=(const Shadows&) = delete;
 
 	// Forgets the characters of the last frame.
+	// The hero's body thrown onto the ground along `dir` (unit, pointing down: the way the light travels), as dark as
+	// `strength`; in the blended pass, once a frame. False if nothing was drawn (no ground, too high, too faint).
+	bool cast(const World& world, Vec3 camera, const Model& model, const Pose& pose, Vec3 feet, float yaw, float lean,
+	          const float dir[3], float strength);
+
 	void begin() {
 		_count = 0;
 		_stats = ShadowStats {};
@@ -56,6 +62,7 @@ private:
 	Spot _spots[MAX] = {};
 	u32 _count = 0;
 	gfx::Texture* _texture = nullptr;
+	gfx::Texture* _flat = nullptr; // a uniform one: the body's own shape gives the cast shadow its outline
 	gfx::Mesh* _meshes[MESHES] = {};
 	u32 _meshTurn = 0;
 	ShadowStats _stats;

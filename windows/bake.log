@@ -197,10 +197,10 @@ camera: from the game's CAMERA.DAT: CAMMODNORMAL range 3.00 m (2.00..10.00), ele
 ground colour: 198132 corners by the water darkened, 1194456 under plants (26039118 rays)
 water grid (--water-grid): cells of 2.0 m along the shores: 771 shore tiles, 1366 tiles cut fine (32 x 32 m), 66532 water triangles -> 2039535
 far layer: 199191 triangles (and 51434 in strips along 25717 seam edges; 125730 vertices) of 2906766, 9430 crowns, grid 2.0-173.0 m (seams 15.2; 14 tries), 337 tiles, 16342 ranges, 4.13 MB
-visibility (--vis): 10521 rows in 3613 cells (2898 cells with more than one floor; 1538 rows of rooms, 9477 clusters lie wholly inside a room), 48475 places looked from, 24776196 clusters in the rows of which 13729885 (55%) hidden, 994.3 M rays in 19.2 s, radius 150 m, near 25 m; 3.21 MB
+visibility (--vis): 10521 rows in 3613 cells (2898 cells with more than one floor; 1538 rows of rooms, 9477 clusters lie wholly inside a room), 48475 places looked from, 24776196 clusters in the rows of which 13729885 (55%) hidden, 994.3 M rays in 18.6 s, radius 150 m, near 25 m; 3.21 MB
 simplified geometry (--simplify): 1340 of 6952 chunks, 6721166 -> 4959466 triangles of what was simplified (74%), vertices 17292380 -> 15495968, 1.6 s
   of 6952 chunks: 5034 have fewer than 24 simplifiable triangles, 578 would shrink by less than 3%
-far geometry (--lod): 906 of 6952 chunks got a stand-in, 3146849 -> 2097097 triangles of the simplified batches (67%), +28.33 MB, 1.2 s
+far geometry (--lod): 906 of 6952 chunks got a stand-in, 3146849 -> 2097097 triangles of the simplified batches (67%), +28.33 MB, 1.1 s
   of 6952 chunks: 0 of medium or small objects left alone (--no-lod-objects), 5242 have too few simplifiable triangles (48 for the large, 200 for objects), 804 would shrink by too little; 5108570 simplifiable triangles in the rest
   chunks of medium and small objects with a stand-in (kept 40% of the triangles of what they replace): 680, +25.51 MB
 vertex cache order: 12904511 triangles; vertex shader runs per triangle 2.11 -> 1.56 (16-entry FIFO)
@@ -219,8 +219,8 @@ seams: 102784 vertices welded to a neighbour within 0.25 cm, 411361 T-junctions 
 chunks by detail tier (--no-split: one chunk holds everything): 6001 of the world and big things (116.5 MB, always around the camera), 508 with medium objects (77.2 MB, within their reach), 443 with small ones (142.6 MB, within theirs)
 draw distance classes: 4922039 triangles always drawn, 2522319 medium, 5215648 small; 225042 batches (32.4 per chunk)
 clusters: the chunks are cut into 86259 boxes of 10 m (95 at most in one): 126 triangles and 2.6 batches in a box on average
-ambient occlusion (--ao low): 29790264 corners from 14168160 places, 16 rays of 2.5 m each against 5169544 triangles (226.7 M rays, 31.3 s); 52% shut in on average, 15278268 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
-lamp light (--lights): 6778 lamps in the world, 317 baked (6461 static ones left out), 783757 corners lit by 2.25 M shadow rays, 60000 triangles added by cutting those near a lamp (4.2 s)
+ambient occlusion (--ao low): 29790264 corners from 14168160 places, 16 rays of 2.5 m each against 5169544 triangles (226.7 M rays, 38.2 s); 52% shut in on average, 15278268 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
+lamp light (--lights): 6778 lamps in the world, 317 baked (6461 static ones left out), 783757 corners lit by 2.25 M shadow rays, 60000 triangles added by cutting those near a lamp (4.8 s)
 wind: 6895622 corners sway, 117 world materials marked
 materials: 1574 world materials from 3280 source materials, 1309 textures; 41 blended (5 water), 14 animated, 3 scrolling
 material mean colours (stand-in until the texture arrives): 3275 of 1574 materials
@@ -313,8 +313,8 @@ objects skipped (not supported yet): 25 camera-facing sprites, 0 other
 other objects named like lights: DT_FIREPLACE_V1.3DS x4; FIRE.PFX x2 (not drawn); FIREPLACE_GROUND.ASC x1 <- FIREPLACE_GROUND.MDL; FIRE_COMPLETE_A0.TGA x4 (not drawn); FIRE_MEDIUM.PFX x39 (not drawn); FIRE_SMOKE.PFX x6 (not drawn); FIRE_SPARKS.PFX x6 (not drawn); ITLS_TORCH_01.3DS x2; KM_VOB_LANTERN_WALL.3DS x2; KM_VOB_SKULL_CANDLE_01.3DS x2; NW_MISC_FIREPLACE_01.3DS x4; OC_FIREPLACE_V1.3DS x1; OC_FIREPLACE_V5.3DS x2; OW_MISC_WALL_TORCH_01.3DS x22
 water: 3 materials, opacity 150..180 of 255
 water grid (--water-grid): cells of 2.0 m along the shores: 36 shore tiles, 36 tiles cut fine (32 x 32 m), 2353 water triangles -> 15243
-visibility (--vis): 90 rows in 36 cells (33 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 459 places looked from, 83431 clusters in the rows of which 45554 (55%) hidden, 4.8 M rays in 0.2 s, radius 150 m, near 25 m; 0.01 MB
-simplified geometry (--simplify): 78 of 89 chunks, 209693 -> 132743 triangles of what was simplified (63%), vertices 356675 -> 295378, 0.1 s
+visibility (--vis): 90 rows in 36 cells (33 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 459 places looked from, 83431 clusters in the rows of which 45554 (55%) hidden, 4.8 M rays in 0.1 s, radius 150 m, near 25 m; 0.01 MB
+simplified geometry (--simplify): 78 of 89 chunks, 209693 -> 132743 triangles of what was simplified (63%), vertices 356675 -> 295378, 0.0 s
   of 89 chunks: 10 have fewer than 24 simplifiable triangles, 1 would shrink by less than 3%
 vertex cache order: 222833 triangles; vertex shader runs per triangle 1.88 -> 1.40 (16-entry FIFO)
 things to use by the player: 44 have a name to show (he may use those), 10 have none (the inhabitants' only); 0 belong to somebody (a person or a guild)
@@ -424,7 +424,7 @@ objects skipped (not supported yet): 4 camera-facing sprites, 0 other
 objects: 4 have no ground below them, lit with the world average
 other objects named like lights: FIRE.PFX x1 (not drawn); FIRE_COMPLETE_A0.TGA x4 (not drawn); FIRE_HOT.PFX x3 (not drawn); FIRE_MEDIUM.PFX x17 (not drawn); FIRE_SMOKE.PFX x2 (not drawn); FIRE_SPARKS.PFX x1 (not drawn); ITLS_TORCHBURNED_01.3DS x2; ITLS_TORCH_01.3DS x4; KM_VOB_LANTERN_WITHCHAIN.3DS x2; NW_CITY_CANDLE_01.3DS x2; NW_MISC_FIREPLACE_01.3DS x1; OC_FIREPLACE_V5.3DS x2; OC_FIREWOOD_V1.3DS x2; OC_FIREWOOD_V3.3DS x2; OC_LOB_LIGHTER_HUGE3.3DS x16; TORCH.PFX x2 (not drawn)
 visibility (--vis): 44 rows in 19 cells (11 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 133 places looked from, 27842 clusters in the rows of which 17232 (62%) hidden, 1.0 M rays in 0.0 s, radius 150 m, near 25 m; 0.00 MB
-simplified geometry (--simplify): 38 of 44 chunks, 137997 -> 90885 triangles of what was simplified (66%), vertices 210408 -> 165214, 0.1 s
+simplified geometry (--simplify): 38 of 44 chunks, 137997 -> 90885 triangles of what was simplified (66%), vertices 210408 -> 165214, 0.0 s
   of 44 chunks: 3 have fewer than 24 simplifiable triangles, 3 would shrink by less than 3%
 vertex cache order: 102120 triangles; vertex shader runs per triangle 2.30 -> 1.67 (16-entry FIFO)
 things to use by the player: 73 have a name to show (he may use those), 1 have none (the inhabitants' only); 0 belong to somebody (a person or a guild)
@@ -579,7 +579,7 @@ seams: 1610 vertices welded to a neighbour within 0.25 cm, 36917 T-junctions clo
 chunks by detail tier (--no-split: one chunk holds everything): 81 of the world and big things (2.5 MB, always around the camera), 21 with medium objects (4.4 MB, within their reach), 24 with small ones (10.0 MB, within theirs)
 draw distance classes: 123184 triangles always drawn, 183536 medium, 385429 small; 4324 batches (34.3 per chunk)
 clusters: the chunks are cut into 1189 boxes of 10 m (54 at most in one): 487 triangles and 3.6 batches in a box on average
-ambient occlusion (--ao low): 1659195 corners from 664480 places, 16 rays of 2.5 m each against 197429 triangles (10.6 M rays, 1.2 s); 59% shut in on average, 971694 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
+ambient occlusion (--ao low): 1659195 corners from 664480 places, 16 rays of 2.5 m each against 197429 triangles (10.6 M rays, 1.1 s); 59% shut in on average, 971694 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
 lamp light (--lights): 205 lamps in the world, 69 baked (136 static ones left out), 155307 corners lit by 0.57 M shadow rays, 60000 triangles added by cutting those near a lamp (0.2 s)
 wind: 200 corners sway, 1 world materials marked
 materials: 233 world materials from 253 source materials, 182 textures; 10 blended (1 water), 0 animated, 0 scrolling
@@ -594,8 +594,8 @@ portals: 1 of 1 lead to a baked world: archolos_mainland at PART5_START
 note: 44 triangles needed a private UV origin (wide texture spans)
 WARNING: 8 triangles span more than 32 texture repeats and were clamped
 == all worlds ==
-textures: 1363 baked (217 cut-out), max edge 128, 5.3% of the source texels kept, 0 missing
-size: chunks 356.20 MB (236.13 MB packed), textures 14.12 MB (12.05 MB packed)
+textures: 1363 baked (228 cut-out), max edge 128, 5.3% of the source texels kept, 0 missing
+size: chunks 356.20 MB (236.13 MB packed), textures 14.24 MB (12.09 MB packed)
 == model 'hero' ==
 character: HUMANS, skeleton HUMANS.MDH (34 nodes), body HUM_BODY_NAKED0; head HUM_HEAD_PONY; rest pose within 0.0 cm of the stored mesh; 33 of 296 skin vertices hang on more than two bones (the two strongest are kept)
 character mesh: 862 triangles, winding kept (score 0.044)
@@ -672,7 +672,6 @@ engine functions the start-up called that do nothing yet: 3, called 16 times: WL
 life: the scripts have 407 states; the people of these worlds are put into 145: ZS_MM_ALLSCHEDULER x1108, ZS_GOTOBED x346, ZS_SMALLTALK x170, ZS_STAND_EATING x131, ZS_STAND_DRINKING x123, ZS_STAND_ARMSCROSSED x99, ZS_SIT_BENCH x95, ZS_PLUNDER x79, ZS_SIT_CHAIR x74, ZS_SIT_CHAIR_EAT x69, ZS_STAND_GUARDING x66, ZS_LEAN x50, ZS_STAYSTRAIGHT x46, ZS_SIT_BENCH_DRINK x42, ZS_SIT_THRONE x41, ZS_SIT_CHAIR_DRINK x39, ZS_OBSERVE x38, ZS_SMOKE_JOINT x29, ZS_STAND_GUARDING2 x28, ZS_COOK_STOVE x28, ...
 life: the states call 159 engine functions, 154 of which the engine carries out; the others do nothing yet, by the number of states that call them: EXITGAME x32, SND_PLAY x15, MDL_STARTFACEANI x7, SND_PLAY3D x1, AI_WAITTILLEND x1
 dialogue: 6398 infos of 804 characters (1879 important, 3090 permanent); the 24231 functions they run call 183 engine functions, 167 of which the engine carries out; the others do nothing yet: EXITGAME, EXITSESSION, PLAYVIDEO, AI_WAITTILLEND, AI_DROPITEM, AI_AIMAT, AI_SHOOTAT, AI_SND_PLAY, SND_PLAY, SND_PLAY3D, NPC_CANSEESOURCE, MDL_STARTFACEANI, WLD_STOPEFFECT, WLD_REMOVEITEM, MOB_CREATEITEMS, MOB_HASITEMS
-debug report written to C:\GOTHIC~1\windows\bake_debug.txt (7 KB)
 characters the scripts put in later (talks, summoning): 1578 kinds not in any world at the start, made to read their looks (2169 characters before): MEM_HELPER_INST, ITEM_HELPER_INST, MARVIN_CUTSCENEHELPER_KQ404, MARVIN_CUTSCENEHELPER_QM401, CEMETERYGOLEM_P5, SKELETON_WS_L, SKELETON_WS_H, SKELETON_WS_H_IMMORTAL_01, SKELETON_WS_L_IMMORTAL_02, SKELETON_WS_L_IMMORTAL_03, SKELETON_WS_H_IMMORTAL_04, SKELETON_WS_H_IMMORTAL_05, ...
 things to use: the worlds have 96 kinds; the scripts name 71 of them: ARMORINSPECT x5, BAKER x3, BARBQ x12, BARRELCONTAINER x72, BARRELO x4, BAUMSAEGE x34, BEDHIGH x1, BEGGER x2, BENCH x260, BOOK x68, BOOKSHELF x88, BOWMAKING x24, BRAZIER x10, BSANVIL x22, BSCOOL x15, BSFIRE x10, BSSHARP x12, BUTCHER x8, CANONPUSH x2, CAULDRON x13, CHAIR x327, CHESTBIG x200, CHESTPUSH x1, CHESTSMALL x101, CLEANWALL x10, DIG x6, DOOR x2, EXECUTION x1, EXECUTIONKNEEL x1, EXPLOSION x2, FIREPLACE x134, FISHING x25, FISHTABLE x4, GRAPEPLUNDER x47, GRAVE x4, GSKELTHRONE x1, HAMMERGROUND x10, HERB x25, IMPRISONED x2, INNOS x32, JEWELER x2, KICKOBJECT x20, KMFIRE x5, LAB x39, LATI x1, LEVER x25, NETREPAIR x8, OCEAN x6, ORE x199, PAITING x4, PAN x37, PLUNDER x49, PUTOUT x4, REPAIR x48, RMAKER x8, SCYTHE x6, SMOKE x26, SOFA x16, STOVE x63, SWORDTRAINING x19, TABLEBOOK x24, TANNING x14, THRONE x139, THRONENEW x47, TOUCHPLATE x13, TREASURERTN x2, VWHEEL x6, WATERTORTURE x8, WOODCUTTER x50, WORKTABLE x22, WRITING x38; not named: BARRELKAJMA, BARRELPOISON, BLOODFLASK, BOATSAW, BURNMOB, CANONFIRE, CORPSEPLUNDER, EXCALIBUR, FIREPLACEOAR, GRAVEBIG, KM, NW, PILLAR, PREPAREARENA, SEARCHVINEYARD, SECRETSTOVE, SITSLAV, SITTIRED, SOUPTRAP, TREASURE, TRYOPENGATE, TURNSWITCH, VOLFZACKFIRE, WASHSELF, WOODCHEST
 things in the hands: the scripts' items are used in 54 ways (BEER, BEGGER, BIGPOT, BOTTLENOMORE, BROOM, BRUSH, CELLO, CHECKBOLT, CHECKLIST, CHECKPOCKET, CHECKSCALE, CHECKSTEW, CHECKSWD, CHECKSWDV2, DARKBEER, DIG, DRINKNOTSURE, DRUMSCHEIT, DUDEL, FIRESPIT, FISHING, FLUTE, FLUTEINEXTREMO, FLUTENPC, FOOD, FOODHUGE, GRONCUTSCENE, GUIDOPOTION, HARFE, HORN, IELAUTE, INN, JOINT, JOINTFAST, JOINTSTRONG, LOSTHEAD, LUTE, LUTZSIT, MAP, MAPSEALED, MAPSEALEDKEY, MEAT, NOTHING, PAUKE, PLATE, POTION, POTIONFAST, PUTOUT, RAKE, RATSTICK, RICE, SCYTHE, SELLJOINT, SNIFFQ303, SPYGLASS, STRONGBEER, THROWSHIT, WATCHSKULL, WATCHVINE, WATERTORTURE); their animations are asked of every skeleton
@@ -765,7 +764,7 @@ particles: 613 effects in the scripts (238 pictures baked, 9 of the names have n
   pictures not found: item_stars_green_01, key, magiccouldron, magicfog, mfx_spell_star, mine_brick, water_dripping, water_dripping_ground, waveofinsanity_a0
 things lying about: 4796 (4786 from the world files, 10 from the start-up scripts) of 348 kinds of look; looks of all things of the scripts: 1261, 1256 models baked (203734 triangles, 5.13 MB), 1097 pictures for the inventory (9.66 MB)
 WARNING: 4 looks of things not baked (they lie there unseen): ITAT_CRAWLERQUEEN: no mesh; ITLSTORCHBURNING: no mesh; ITLSTORCHBURNING_EDITED: no mesh; ITLSTORCHCRYSTAL: no mesh
-time: sources 0.0 s, world textures 7.9 s, worlds 145.0 s, hero 0.2 s, scripts and inhabitants 115.4 s
+time: sources 0.0 s, world textures 10.2 s, worlds 164.4 s, hero 0.2 s, scripts and inhabitants 114.3 s
 dialogue: 50900 lines (3029 KB of text) from ou.bin (from an archive), in 127 blocks, 263 names given twice (the first kept)
 font: not baked (the glyphs of the fonts do not fit in 256x512 (need 584 rows)); the overlay keeps its own font
 C:\GOTHIC~1\windows\data.pak written (25208 entries); the rest (voices, music) follows
@@ -814,4 +813,4 @@ hero: fightclip T_2HRUN_2_2HRUNL: file T_2HRUN_2_2HRUNL, mds frames 1..11, 11 fr
 hero: fightclip T_2HRUNL_2_2HRUN: file T_2HRUNL_2_2HRUN, mds frames 32..38, 7 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HRUN
 hero: fightclip T_2HWALK_2_2HWALKL: file T_2HWALK_2_2HWALKL, mds frames 1..18, 18 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALKL
 hero: fightclip T_2HWALKL_2_2HWALK: file T_2HWALKL_2_2HWALK, mds frames 39..49, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALK
-wrote C:\GOTHIC~1\windows\data.pak: 4 worlds, 25208 entries in 277.8 s
+wrote C:\GOTHIC~1\windows\data.pak: 4 worlds, 25208 entries in 300.5 s

@@ -152,7 +152,7 @@ void Rain::draw(const World& world, Vec3 camera, float rain, float snow, const f
 			// The drop: a quad standing in the world, turned to the camera, as long as it falls in a few frames.
 			if (nDrops < MAX_DROPS) {
 				const float speed = (snowing ? kSnowSpeed : kRainSpeed) * speedK;
-				float t = sec * speed / H + phase;
+				float t = phase - sec * speed / H; // (falling: the height share shrinks with time)
 				t -= floorf(t);
 				const float y = c.y + t * H;
 				float px = x, pz = z;

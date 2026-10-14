@@ -28,6 +28,7 @@ enum ShadowMode : u8 {
 	SHADOWS_OFF,
 	SHADOWS_HERO, // under the player's character only
 	SHADOWS_ALL,  // and under everybody near (as far as the inhabitants are drawn, up to 25 m)
+	SHADOWS_HERO_CAST, // the hero's own body thrown on the ground by the sun (his outline), nobody else's
 	SHADOW_MODES
 };
 

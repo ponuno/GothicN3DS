@@ -247,8 +247,9 @@ bool Npcs::bytesReady(u32 hash) {
 		return true;
 	}
 	_ahead->request(hash);
+	const u32 patience = _ahead->paused() ? 20u : 90u; // (while it rests nothing arrives: not for long)
 	for (Wish& w : _wishes)
-		if (w.hash == hash) return _frame - w.since >= 90; // (3 s at 30 fps: then it is read here after all)
+		if (w.hash == hash) return _frame - w.since >= patience; // (3 s at 30 fps: then it is read here after all)
 	Wish& w = _wishes[_wishNext++ % 32];
 	w.hash = hash;
 	w.since = _frame;

@@ -52,7 +52,7 @@ struct StreamConfig {
 	// the ones before. Null: no limit.
 	const FrameBudget* budget = nullptr;
 	u32 maxLoadsPerFrame = 2;      // chunks handed to the GPU per frame: bounds the upload hitch
-	u32 readAheadChunks = 4;       // chunks after those being read whose bytes are read ahead from the card (with a ReadAhead)
+	u32 readAheadChunks = 2;       // chunks after those being read whose bytes are read ahead from the card (with a ReadAhead)
 	u32 maxInFlight = 2;           // chunks being read at once in the background (nearer wishes wait: what is read is still wanted when it arrives)
 	// Worlds baked with WORLDF_TIERS: chunks of medium and small objects (tier 1, 2) are wanted only
 	// where those are drawn: out to the class's detailDistance, a tenth farther (detailHysteresis) and

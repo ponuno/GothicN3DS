@@ -1066,7 +1066,7 @@ void World::updateImmediate(u32 pending, Vec3 camera) {
 			// The budget said yes, the allocator said no (the memory is in pieces, or something else took it). Free
 			// the farthest chunk there is and try again next frame.
 			++_stats.allocRejects;
-			if (_ahead) _ahead->relieve(2000);
+			if (_ahead) _ahead->relieve(400);
 			const int victim = pickVictim(camera, _orderKey[n]);
 			if (victim >= 0) {
 				unloadChunk(u32(victim));
@@ -1137,7 +1137,7 @@ void World::updateBackground(u32 pending, Vec3 camera) {
 			// there is (if it is farther than this one) and try again in a couple of frames; if there is
 			// none, wait a while instead of reading from the card again every frame.
 			++_stats.allocRejects;
-			if (_ahead) _ahead->relieve(2000);
+			if (_ahead) _ahead->relieve(400);
 			const int victim = pickVictim(camera, priority(r.index, distanceTo(r.index, camera), camera));
 			if (victim >= 0) {
 				unloadChunk(u32(victim));

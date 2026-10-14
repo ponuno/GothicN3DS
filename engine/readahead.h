@@ -70,6 +70,7 @@ public:
 	// The allocator has refused somebody (fix94): frees what is waiting and reads nothing for `ms`, so that the heap
 	// the blobs were scattered over can close up again.
 	void relieve(u32 ms);
+	bool paused() const { return sys::timeMs() < _pauseUntil; }
 	ReadAheadStats stats();
 	// The longest single read since the last call, ms.
 	float takeWorstMs();
@@ -110,7 +111,7 @@ private:
 	bool _running = false, _quit = false;
 	volatile bool _enabled = true;
 	u32 _budget = 0;
-	double _pauseUntil = 0.0;
+	double _pauseUntil = 0.0, _lastRelief = -1.0e9;
 
 	u32 _queue[QUEUE];
 	u32 _qHead = 0, _qCount = 0;

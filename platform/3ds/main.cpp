@@ -94,8 +94,8 @@ static const char* kSlopePath = "sdmc:/3ds/gothic3ds/slope.txt";
 // The memory split. libctru's own gives the linear heap (where meshes and textures live, what the GPU reads) at most
 // 32 MB and the rest to the ordinary heap: on a New 3DS with 124 MB that is 32 + 90 (HUD `sys`). The world's cache
 // of chunks lives in the linear heap, and `rej`/`ev` of a long walk in the market showed it too small, so it takes
-// 48 MB here, if the system gave enough to leave the ordinary heap at least 56 MB (else the library's split).
-static const u32 kLinearWanted = 48u << 20, kHeapLeast = 56u << 20;
+// 42 MB here (48 before fix95: the ordinary heap ran dry at 60 of 74 MB, `nj`), if the system gave enough to leave the ordinary heap at least 56 MB (else the library's split).
+static const u32 kLinearWanted = 42u << 20, kHeapLeast = 56u << 20;
 extern "C" {
 extern char* fake_heap_start;
 extern char* fake_heap_end;

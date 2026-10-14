@@ -262,6 +262,9 @@ void ReadAhead::noteClip(u32 nameHash) {
 
 void ReadAhead::relieve(u32 ms) {
 	if (!_running) return;
+	const double now = sys::timeMs();
+	if (now - _lastRelief < 2000.0) return; // (not again at once: the models wait for these bytes)
+	_lastRelief = now;
 	lock();
 	for (Slot& s : _slots)
 		if (s.blob) freeSlotLocked(s);

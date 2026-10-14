@@ -8198,6 +8198,57 @@ static SrcScene simplifyScene() {
 	return scene;
 }
 
+// A steep ramp of light across the ground (the edge of a shade): the simplifier carries each triangle's light to the new
+// corners by extending its field; where that runs past 0..255 it used to clamp - a black or white corner, a flat wedge.
+static void testSimplifySteepLight() {
+	SrcScene scene = hillScene(false);
+	auto ramp = [](float x) { return std::clamp((x - 3000.0f) / 150.0f, 0.0f, 1.0f) * 255.0f; };
+	for (SrcTriangle& t : scene.triangles)
+		for (SrcVertex& v : t.v) v.rgba[0] = v.rgba[1] = v.rgba[2] = u8(ramp(v.pos[0]) + 0.5f);
+	ChunkerOptions co;
+	co.chunkSize = 4000.0f;
+	ChunkerStats cs;
+	std::vector<BakedChunk> chunks = buildChunks(scene, {0}, {0}, co, cs);
+	WorldMaterial mat {};
+	const std::vector<WorldMaterial> materials = {mat};
+	SimplifyOptions so;
+	so.enabled = true;
+	so.ratio = 0.3f;
+	so.maxError = 60.0f;
+	so.threads = 2;
+	SimplifyStats ss;
+	buildSimplified(chunks, materials, so, ss);
+	// What the surface shows at x is the light of the source's triangles: the ramp sampled at the metres, between them linear.
+	auto shown = [&](float x) {
+		const float x0 = std::floor(x / 100.0f) * 100.0f, f = (x - x0) / 100.0f;
+		return ramp(x0) * (1.0f - f) + ramp(x0 + 100.0f) * f;
+	};
+	// Every simplified triangle's own light, at its middle and at the middles of its edges, against that.
+	int worst = 0;
+	u64 probes = 0;
+	for (const BakedChunk& c : chunks)
+		for (const ChunkBatch& b : c.batches)
+			for (u32 i = 0; i + 2 < b.indexCount; i += 3) {
+				float px[3], pr[3];
+				for (int k = 0; k < 3; ++k) {
+					const WorldVertex& v = c.vertices[c.indices[b.firstIndex + i + u32(k)]];
+					px[k] = c.header.origin[0] + float(v.x) * c.header.posScale;
+					pr[k] = float(v.r);
+				}
+				const float wx[4][3] = {{0.5f, 0.5f, 0.0f}, {0.0f, 0.5f, 0.5f}, {0.5f, 0.0f, 0.5f}, {1.0f / 3, 1.0f / 3, 1.0f / 3}};
+				for (const auto& w : wx) {
+					const float x = px[0] * w[0] + px[1] * w[1] + px[2] * w[2], r = pr[0] * w[0] + pr[1] * w[1] + pr[2] * w[2];
+					worst = std::max(worst, int(std::fabs(r - shown(x))));
+					++probes;
+				}
+			}
+	std::printf("  steep light: %llu -> %llu triangles; the light of a simplified triangle is off the source's by %d at most (of 255, %llu probes)\n",
+	            static_cast<unsigned long long>(ss.trianglesBefore), static_cast<unsigned long long>(ss.trianglesAfter), worst,
+	            static_cast<unsigned long long>(probes));
+	CHECK(ss.chunks > 0 && ss.trianglesAfter < ss.trianglesBefore && probes > 0);
+	CHECK(worst <= 40);
+}
+
 static void testSimplifyWorld() {
 	const SrcScene scene = simplifyScene();
 	ChunkerOptions co;
@@ -8885,6 +8936,7 @@ static void testSharedMeshes() {
 
 static void testSimplify() {
 	testSimplifyWorld();
+	testSimplifySteepLight();
 	testSimplifyModel();
 	testSharedMeshes();
 }

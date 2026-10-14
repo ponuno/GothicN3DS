@@ -137,38 +137,115 @@ std::string format(const char* fmt, ...) {
 }
 
 namespace {
-// The triangles whose middle is within `radius` metres of `at`, the biggest first: where they are, how long their edges
-// are, what they are made of and the light/occlusion in their corners.
-void probeReport(const SrcScene& scene, const float at[3], float radius, const char* stage, const std::function<void(const std::string&)>& say) {
-	struct Hit { float edge; std::string text; };
+// What --probe lists: a triangle, where it is (metres), how long its longest edge is, what it is made of and the baked
+// light of its corners (r g b, a = daylight, o = occlusion).
+struct ProbeTri {
+	float mid[3] = {0, 0, 0}, edge = 0;
+	int corner[3][5] = {};
+	std::string material;
+};
+
+// Of the triangles near `at`, the darkest ones with an edge of 2 m or more first (a dark flat patch is one of those).
+void probePrint(const std::vector<ProbeTri>& all, const float at[3], float radius, const char* stage, const std::function<void(const std::string&)>& say) {
+	struct Hit { int bright; float edge; std::string text; };
 	std::vector<Hit> hits;
-	size_t inside = 0;
-	for (const SrcTriangle& t : scene.triangles) {
-		float mid[3] = {0, 0, 0}, edge = 0;
-		for (int a = 0; a < 3; ++a) mid[a] = (t.v[0].pos[a] + t.v[1].pos[a] + t.v[2].pos[a]) / 3.0f * 0.01f;
-		const float dx = mid[0] - at[0], dy = mid[1] - at[1], dz = mid[2] - at[2];
-		if (dx * dx + dy * dy + dz * dz > radius * radius) continue;
+	size_t inside = 0, dark = 0;
+	for (const ProbeTri& t : all) {
+		const float dx = t.mid[0] - at[0], dy = t.mid[1] - at[1], dz = t.mid[2] - at[2];
+		const float reach = radius + t.edge * 0.3f;
+		if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
 		++inside;
+		// (The darkest corner: a patch that is black at one corner and grey at the others is seen as a dark wedge.)
+		int bright = 255;
+		for (const auto& c : t.corner) bright = std::min(bright, std::max({c[0], c[1], c[2]}));
+		if (t.edge < 2.0f) continue;
+		dark += bright < 25;
+		char buf[400];
+		int n = std::snprintf(buf, sizeof(buf), "  [%.0f %.0f %.0f] edge %.1f m, %s:", double(t.mid[0]), double(t.mid[1]), double(t.mid[2]), double(t.edge),
+		                      t.material.c_str());
+		for (int k = 0; k < 3 && n > 0 && n < int(sizeof(buf)) - 40; ++k)
+			n += std::snprintf(buf + n, sizeof(buf) - size_t(n), " (%d %d %d a%d o%d)", t.corner[k][0], t.corner[k][1], t.corner[k][2], t.corner[k][3], t.corner[k][4]);
+		hits.push_back({bright, t.edge, buf});
+	}
+	std::sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) { return a.bright != b.bright ? a.bright < b.bright : a.edge > b.edge; });
+	say(format("probe (%s): %zu triangles within %.0f m of %.0f %.0f %.0f, %zu with an edge of 2 m or more, %zu of them dark (a corner under 25); the 30 with the darkest corner (corners: r g b, a = daylight, o = occlusion):",
+	           stage, inside, double(radius), double(at[0]), double(at[1]), double(at[2]), hits.size(), dark));
+	std::string last;
+	size_t shown = 0;
+	for (const Hit& h : hits) {
+		if (h.text == last) continue; // (a two-sided triangle twice)
+		last = h.text;
+		say(h.text);
+		if (++shown >= 30) break;
+	}
+}
+
+void probeScene(const SrcScene& scene, const float at[3], float radius, const char* stage, const std::function<void(const std::string&)>& say) {
+	std::vector<ProbeTri> all;
+	for (const SrcTriangle& t : scene.triangles) {
+		ProbeTri p;
+		for (int a = 0; a < 3; ++a) p.mid[a] = (t.v[0].pos[a] + t.v[1].pos[a] + t.v[2].pos[a]) / 3.0f * 0.01f;
+		const float dx = p.mid[0] - at[0], dy = p.mid[1] - at[1], dz = p.mid[2] - at[2];
+		if (dx * dx + dy * dy + dz * dz > (radius + 60.0f) * (radius + 60.0f)) continue; // (far off, whatever the size)
 		for (int k = 0; k < 3; ++k) {
 			float d2 = 0;
 			for (int a = 0; a < 3; ++a) {
 				const float d = t.v[(k + 1) % 3].pos[a] - t.v[k].pos[a];
 				d2 += d * d;
 			}
-			edge = std::max(edge, std::sqrt(d2) * 0.01f);
+			p.edge = std::max(p.edge, std::sqrt(d2) * 0.01f);
+			p.corner[k][0] = t.v[k].rgba[0]; p.corner[k][1] = t.v[k].rgba[1]; p.corner[k][2] = t.v[k].rgba[2];
+			p.corner[k][3] = t.v[k].rgba[3]; p.corner[k][4] = t.v[k].occlusion;
 		}
-		if (edge < 2.0f) continue;
-		char buf[400];
-		const std::string& name = t.material < scene.materials.size() ? scene.materials[t.material].name : std::string("?");
-		int n = std::snprintf(buf, sizeof(buf), "  [%.0f %.0f %.0f] edge %.1f m, %s:", double(mid[0]), double(mid[1]), double(mid[2]), double(edge), name.c_str());
-		for (int k = 0; k < 3 && n > 0 && n < int(sizeof(buf)) - 40; ++k)
-			n += std::snprintf(buf + n, sizeof(buf) - size_t(n), " (%d %d %d a%d o%d)", t.v[k].rgba[0], t.v[k].rgba[1], t.v[k].rgba[2], t.v[k].rgba[3], t.v[k].occlusion);
-		hits.push_back({edge, buf});
+		p.material = t.material < scene.materials.size() ? scene.materials[t.material].name : std::string("?");
+		all.push_back(p);
 	}
-	std::sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) { return a.edge > b.edge; });
-	say(format("probe (%s): %zu triangles within %.0f m of %.0f %.0f %.0f, %zu with an edge of 2 m or more (the biggest 30; corners: r g b, a = daylight, o = occlusion):",
-	           stage, inside, double(radius), double(at[0]), double(at[1]), double(at[2]), hits.size()));
-	for (size_t i = 0; i < hits.size() && i < 30; ++i) say(hits[i].text);
+	probePrint(all, at, radius, stage, say);
+}
+
+// The chunks as they will be written (after the seams, the simplifying): what the game draws near the camera.
+void probeChunks(const std::vector<BakedChunk>& chunks, const SrcScene& scene, const std::vector<int>& remap, const float at[3], float radius,
+                 const char* stage, const std::function<void(const std::string&)>& say) {
+	std::vector<ProbeTri> all;
+	for (const BakedChunk& c : chunks) {
+		// (The chunk's box, to skip the far ones.)
+		bool near = true;
+		for (int a = 0; a < 3; ++a)
+			near = near && at[a] * 100.0f > c.bbMin[a] - (radius + 60.0f) * 100.0f && at[a] * 100.0f < c.bbMax[a] + (radius + 60.0f) * 100.0f;
+		if (!near) continue;
+		for (const ChunkBatch& b : c.batches) {
+			std::string name = "?";
+			for (size_t m = 0; m < remap.size(); ++m)
+				if (remap[m] == int(b.material) && m < scene.materials.size()) {
+					name = scene.materials[m].name;
+					break;
+				}
+			for (u32 i = 0; i + 2 < b.indexCount; i += 3) {
+				ProbeTri p;
+				float pos[3][3];
+				for (int k = 0; k < 3; ++k) {
+					const WorldVertex& v = c.vertices[c.indices[b.firstIndex + i + u32(k)]];
+					pos[k][0] = (c.header.origin[0] + float(v.x) * c.header.posScale) * 0.01f;
+					pos[k][1] = (c.header.origin[1] + float(v.y) * c.header.posScale) * 0.01f;
+					pos[k][2] = (c.header.origin[2] + float(v.z) * c.header.posScale) * 0.01f;
+					p.corner[k][0] = v.r; p.corner[k][1] = v.g; p.corner[k][2] = v.b; p.corner[k][3] = v.a;
+					p.corner[k][4] = v.w & 0xFF;
+				}
+				for (int a = 0; a < 3; ++a) p.mid[a] = (pos[0][a] + pos[1][a] + pos[2][a]) / 3.0f;
+				for (int k = 0; k < 3; ++k) {
+					float d2 = 0;
+					for (int a = 0; a < 3; ++a) {
+						const float d = pos[(k + 1) % 3][a] - pos[k][a];
+						d2 += d * d;
+					}
+					p.edge = std::max(p.edge, std::sqrt(d2));
+				}
+				p.material = name;
+				all.push_back(p);
+			}
+		}
+	}
+	probePrint(all, at, radius, stage, say);
 }
 } // namespace
 
@@ -552,7 +629,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			for (SrcTriangle& t : bw.scene.triangles)
 				for (SrcVertex& v : t.v) v.rgba[3] = 0;
 		applyWaterLight(bw.scene, opt.waterLight);
-		if (opt.probe) probeReport(bw.scene, opt.probeAt, opt.probeRadius, "as imported", line);
+		if (opt.probe) probeScene(bw.scene, opt.probeAt, opt.probeRadius, "as imported", line);
 		AoStats ao;
 		if (opt.ao.level != AO_OFF) bakeOcclusion(bw.scene, aoMaterials, opt.ao, ao);
 		LightStats lightStats;
@@ -561,7 +638,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			lo.threads = opt.threads;
 			bakeLights(bw.scene, aoMaterials, lo, lightStats);
 		}
-		if (opt.probe) probeReport(bw.scene, opt.probeAt, opt.probeRadius, "after occlusion and lamps", line);
+		if (opt.probe) probeScene(bw.scene, opt.probeAt, opt.probeRadius, "after occlusion and lamps", line);
 		const bool hasWind = opt.wind && windyMaterials > 0;
 		ChunkerOptions chunkerOpt = opt.chunker;
 		chunkerOpt.vertexFx = opt.ao.level != AO_OFF || hasWind;
@@ -678,6 +755,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			line(format("  of %u chunks: %u have fewer than %u simplifiable triangles, %u would shrink by less than 3%%", ss.candidates,
 			            ss.tooFew, opt.simplify.minTriangles, ss.tooLittle));
 		}
+		if (opt.probe) probeChunks(chunks, bw.scene, remap, opt.probeAt, opt.probeRadius, "as written to the chunks, after seams and simplifying", line);
 		// ---- simplified stand-ins for far chunks ----
 		if (opt.lod.enabled && !scene.indoor) {
 			LodStats ls;

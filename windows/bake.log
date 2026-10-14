@@ -194,21 +194,114 @@ fire places: 136 objects of 7 kinds (their flames are not drawn yet):
 other objects named like lights: ADANOSLIGHT.PFX x1 (not drawn); BRAZIER_FIRE.ASC x10 <- BRAZIER_FIRE.MDL; BSFIRE_OC.MDS x9 <- BSFIRE_OC.MDM + BSFIRE_OC.MDH [script: tree BSFIRE_OC]; BURNMOB_BONFIRE.ASC x1 <- BURNMOB_BONFIRE.MDL; CANONFIRE_CANON.ASC x1 <- CANONFIRE_CANON.MDL; DT_FIREPLACE_V1.3DS x12; DT_FIREPLACE_V2.3DS x3; DT_LIGHTER_PENTAGRAMM.3DS x4; FIRE.PFX x173 (not drawn); FIREPLACEOAR_ISLAND.ASC x1 <- FIREPLACEOAR_ISLAND.MDL; FIRE_COMPLETE_A0.TGA x1529 (not drawn); FIRE_HOT.PFX x53 (not drawn); FIRE_MEDIUM.PFX x279 (not drawn); FIRE_SMOKE.PFX x174 (not drawn); FIRE_SPARKS.PFX x133 (not drawn); ITAT_FIREWARANSKIN.3DS x1; ITLS_TORCHBURNED_01.3DS x6; ITLS_TORCH_01.3DS x5; ITMW_035_2H_AXE_LIGHT_03.3DS x1; KMFIRE_ALPHACRATE.ASC x5 <- KMFIRE_ALPHACRATE.MDL; KM_CITYONFIRE_CORPSE_CITIZEN_02.3DS x1; KM_CITYONFIRE_CORPSE_CITIZEN_04.3DS x1; KM_CITYONFIRE_CORPSE_CITIZEN_05.3DS x1; KM_CITYONFIRE_CORPSE_CITIZEN_06.3DS x1; KM_SHIP_LAMP.3DS x4; KM_VOB_CANDLESTICK_01.3DS x95; KM_VOB_CANDLESTICK_02_BIG.3DS x105; KM_VOB_CANDLES_02.3DS x5; KM_VOB_FIREWOOD_01.3DS x35; KM_VOB_LANTERN_01.3DS x4; KM_VOB_LANTERN_02.3DS x5; KM_VOB_LANTERN_NOCHAIN.3DS x88; KM_VOB_LANTERN_WALL.3DS x35; KM_VOB_LANTERN_WITHCHAIN.3DS x115; KM_VOB_SKULL_CANDLE_01.3DS x17; NC_LOB_LIGHTER.3DS x14; NW_CITY_CANDLE_01.3DS x421; NW_CITY_FIREPLACE_LARGE_01.3DS x20; NW_CITY_FIREPLACE_LARGE_011.3DS x36; NW_CITY_FIREPLACE_LARGE_02.3DS x1; ...
 water: 9 materials, opacity 150..240 of 255
 camera: from the game's CAMERA.DAT: CAMMODNORMAL range 3.00 m (2.00..10.00), elevation 30, azimuth 0, view offset 23 0, pace 40; CAMMODSWIM range 3.00 m (2.90..5.10), elevation 20, azimuth 0, view offset 15 0, pace 40; CAMMODFALL range 3.00 m (1.50..5.50), elevation 60, azimuth 0, view offset 0 0, pace 10
+probe (as imported): 85243 triangles within 60 m of -843 11 -1080, 31179 with an edge of 2 m or more, 0 of them dark (a corner under 25); the 30 with the darkest corner (corners: r g b, a = daylight, o = occlusion):
+  [-786 -2 -1072] edge 2.6 m, NW_NATURE_LEAVE_03: (27 27 27 a255 o0) (27 27 27 a255 o0) (27 27 27 a255 o0)
+  [-787 -3 -1072] edge 2.4 m, NW_NATURE_LEAVE_03: (27 27 27 a255 o0) (27 27 27 a255 o0) (27 27 27 a255 o0)
+  [-787 -2 -1072] edge 3.0 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o0) (28 28 28 a255 o0) (28 28 28 a255 o0)
+  [-788 -1 -1071] edge 3.0 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o0) (28 28 28 a255 o0) (28 28 28 a255 o0)
+  [-787 -2 -1072] edge 2.5 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o0) (28 28 28 a255 o0) (28 28 28 a255 o0)
+  [-788 -2 -1071] edge 2.3 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o0) (28 28 28 a255 o0) (28 28 28 a255 o0)
+  [-789 -2 -1071] edge 2.3 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o0) (28 28 28 a255 o0) (28 28 28 a255 o0)
+  [-791 -1 -1073] edge 2.2 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o0) (28 28 28 a255 o0) (28 28 28 a255 o0)
+  [-787 -2 -1071] edge 2.1 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o0) (28 28 28 a255 o0) (28 28 28 a255 o0)
+  [-862 5 -1042] edge 2.0 m, OW_LOB_BUSH_REED_V1_2: (30 30 30 a255 o0) (28 28 28 a255 o0) (31 31 31 a255 o0)
+  [-790 -1 -1072] edge 3.2 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o0) (29 29 29 a255 o0) (29 29 29 a255 o0)
+  [-790 -1 -1073] edge 3.2 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o0) (29 29 29 a255 o0) (29 29 29 a255 o0)
+  [-789 -1 -1072] edge 3.1 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o0) (29 29 29 a255 o0) (29 29 29 a255 o0)
+  [-786 -2 -1071] edge 2.6 m, NW_NATURE_LEAVE_03: (31 31 31 a255 o0) (29 29 29 a255 o0) (31 31 31 a255 o0)
+  [-790 -1 -1072] edge 2.6 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o0) (29 29 29 a255 o0) (29 29 29 a255 o0)
+  [-790 -1 -1072] edge 2.4 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o0) (30 30 30 a255 o0) (29 29 29 a255 o0)
+  [-790 -1 -1072] edge 2.4 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o0) (29 29 29 a255 o0) (29 29 29 a255 o0)
+  [-786 -3 -1071] edge 2.3 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o0) (29 29 29 a255 o0) (29 29 29 a255 o0)
+  [-789 -2 -1072] edge 2.3 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o0) (29 29 29 a255 o0) (29 29 29 a255 o0)
+  [-795 -0 -1071] edge 2.2 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o0) (29 29 29 a255 o0) (29 29 29 a255 o0)
+  [-789 -1 -1073] edge 2.1 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o0) (29 29 29 a255 o0) (29 29 29 a255 o0)
+  [-789 -1 -1072] edge 2.0 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o0) (29 29 29 a255 o0) (29 29 29 a255 o0)
+  [-794 0 -1071] edge 3.2 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o0) (30 30 30 a255 o0) (30 30 30 a255 o0)
+  [-788 -1 -1072] edge 3.0 m, NW_NATURE_LEAVE_03: (33 33 33 a255 o0) (30 30 30 a255 o0) (33 33 33 a255 o0)
+  [-790 -1 -1072] edge 3.0 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o0) (30 30 30 a255 o0) (30 30 30 a255 o0)
+  [-787 -2 -1071] edge 3.0 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o0) (30 30 30 a255 o0) (30 30 30 a255 o0)
+  [-888 -3 -1059] edge 2.9 m, OMWAGREY01: (33 33 33 a255 o0) (32 32 32 a255 o0) (30 30 30 a255 o0)
+  [-889 -3 -1060] edge 2.8 m, OMWAGREY01: (32 32 32 a255 o0) (31 31 31 a255 o0) (30 30 30 a255 o0)
+  [-788 -2 -1073] edge 2.7 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o0) (30 30 30 a255 o0) (30 30 30 a255 o0)
+  [-786 -2 -1071] edge 2.6 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o0) (30 30 30 a255 o0) (30 30 30 a255 o0)
+probe (after occlusion and lamps): 85243 triangles within 60 m of -843 11 -1080, 31179 with an edge of 2 m or more, 0 of them dark (a corner under 25); the 30 with the darkest corner (corners: r g b, a = daylight, o = occlusion):
+  [-786 -2 -1072] edge 2.6 m, NW_NATURE_LEAVE_03: (27 27 27 a255 o146) (27 27 27 a255 o94) (27 27 27 a255 o25)
+  [-787 -3 -1072] edge 2.4 m, NW_NATURE_LEAVE_03: (27 27 27 a255 o58) (27 27 27 a255 o91) (27 27 27 a255 o88)
+  [-787 -2 -1072] edge 3.0 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o171) (28 28 28 a255 o99) (28 28 28 a255 o192)
+  [-788 -1 -1071] edge 3.0 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o198) (28 28 28 a255 o126) (28 28 28 a255 o171)
+  [-787 -2 -1072] edge 2.5 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o108) (28 28 28 a255 o66) (28 28 28 a255 o233)
+  [-788 -2 -1071] edge 2.3 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o199) (28 28 28 a255 o9) (28 28 28 a255 o0)
+  [-789 -2 -1071] edge 2.3 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o195) (28 28 28 a255 o12) (28 28 28 a255 o177)
+  [-791 -1 -1073] edge 2.2 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o226) (28 28 28 a255 o15) (28 28 28 a255 o52)
+  [-787 -2 -1071] edge 2.1 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o200) (28 28 28 a255 o37) (28 28 28 a255 o35)
+  [-862 5 -1042] edge 2.0 m, OW_LOB_BUSH_REED_V1_2: (30 30 30 a255 o60) (28 28 28 a255 o35) (31 31 31 a255 o212)
+  [-790 -1 -1072] edge 3.2 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o255) (29 29 29 a255 o81) (29 29 29 a255 o141)
+  [-790 -1 -1073] edge 3.2 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o184) (29 29 29 a255 o184) (29 29 29 a255 o251)
+  [-789 -1 -1072] edge 3.1 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o196) (29 29 29 a255 o57) (29 29 29 a255 o157)
+  [-786 -2 -1071] edge 2.6 m, NW_NATURE_LEAVE_03: (31 31 31 a255 o164) (29 29 29 a255 o165) (31 31 31 a255 o87)
+  [-790 -1 -1072] edge 2.6 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o167) (29 29 29 a255 o170) (29 29 29 a255 o255)
+  [-790 -1 -1072] edge 2.4 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o46) (30 30 30 a255 o94) (29 29 29 a255 o162)
+  [-790 -1 -1072] edge 2.4 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o194) (29 29 29 a255 o71) (29 29 29 a255 o109)
+  [-786 -3 -1071] edge 2.3 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o196) (29 29 29 a255 o57) (29 29 29 a255 o215)
+  [-789 -2 -1072] edge 2.3 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o128) (29 29 29 a255 o66) (29 29 29 a255 o195)
+  [-795 -0 -1071] edge 2.2 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o212) (29 29 29 a255 o232) (29 29 29 a255 o141)
+  [-789 -1 -1073] edge 2.1 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o203) (29 29 29 a255 o255) (29 29 29 a255 o255)
+  [-789 -1 -1072] edge 2.0 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o162) (29 29 29 a255 o37) (29 29 29 a255 o46)
+  [-794 0 -1071] edge 3.2 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o255) (30 30 30 a255 o194) (30 30 30 a255 o31)
+  [-788 -1 -1072] edge 3.0 m, NW_NATURE_LEAVE_03: (33 33 33 a255 o198) (30 30 30 a255 o20) (33 33 33 a255 o255)
+  [-790 -1 -1072] edge 3.0 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o255) (30 30 30 a255 o175) (30 30 30 a255 o189)
+  [-787 -2 -1071] edge 3.0 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o227) (30 30 30 a255 o116) (30 30 30 a255 o77)
+  [-888 -3 -1059] edge 2.9 m, OMWAGREY01: (33 33 33 a255 o0) (32 32 32 a255 o0) (30 30 30 a255 o0)
+  [-889 -3 -1060] edge 2.8 m, OMWAGREY01: (32 32 32 a255 o0) (31 31 31 a255 o0) (30 30 30 a255 o0)
+  [-788 -2 -1073] edge 2.7 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o223) (30 30 30 a255 o13) (30 30 30 a255 o178)
+  [-786 -2 -1071] edge 2.6 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o197) (30 30 30 a255 o79) (30 30 30 a255 o255)
 far layer: 195755 triangles (and 51228 in strips along 25614 seam edges; 122629 vertices) of 3606765, 8905 crowns, grid 2.0-173.0 m (seams 15.2; 15 tries), 337 tiles, 16333 ranges, 4.06 MB
-visibility (--vis): 10517 rows in 3611 cells (2897 cells with more than one floor; 1538 rows of rooms, 9453 clusters lie wholly inside a room), 48457 places looked from, 23144848 clusters in the rows of which 13492901 (58%) hidden, 940.4 M rays in 18.3 s, radius 150 m, near 25 m; 3.02 MB
-simplified geometry (--simplify): 1589 of 6914 chunks, 7566337 -> 5189629 triangles of what was simplified (69%), vertices 17335195 -> 15169963, 1.8 s
-  of 6914 chunks: 4968 have fewer than 24 simplifiable triangles, 357 would shrink by less than 3%
-far geometry (--lod): 1241 of 6914 chunks got a stand-in, 3650197 -> 2406655 triangles of the simplified batches (66%), +34.03 MB, 1.1 s
-  of 6914 chunks: 0 of medium or small objects left alone (--no-lod-objects), 5194 have too few simplifiable triangles (48 for the large, 200 for objects), 479 would shrink by too little; 5228878 simplifiable triangles in the rest
-  chunks of medium and small objects with a stand-in (kept 40% of the triangles of what they replace): 715, +26.49 MB
-vertex cache order: 11504236 triangles; vertex shader runs per triangle 2.30 -> 1.76 (16-entry FIFO)
+visibility (--vis): 10517 rows in 3611 cells (2897 cells with more than one floor; 1538 rows of rooms, 9453 clusters lie wholly inside a room), 48457 places looked from, 23144848 clusters in the rows of which 13492901 (58%) hidden, 940.4 M rays in 18.1 s, radius 150 m, near 25 m; 3.02 MB
+simplified geometry (--simplify): 1406 of 6914 chunks, 7429854 -> 5544308 triangles of what was simplified (75%), vertices 17335195 -> 15485053, 2.0 s
+  of 6914 chunks: 4968 have fewer than 24 simplifiable triangles, 540 would shrink by less than 3%
+probe (as written to the chunks, after seams and simplifying): 76018 triangles within 60 m of -843 11 -1080, 31051 with an edge of 2 m or more, 0 of them dark (a corner under 25); the 30 with the darkest corner (corners: r g b, a = daylight, o = occlusion):
+  [-786 -2 -1072] edge 2.6 m, NW_NATURE_LEAVE_03: (27 27 27 a255 o146) (27 27 27 a255 o94) (27 27 27 a255 o25)
+  [-787 -3 -1072] edge 2.4 m, NW_NATURE_LEAVE_03: (27 27 27 a255 o58) (27 27 27 a255 o91) (27 27 27 a255 o88)
+  [-787 -2 -1072] edge 3.0 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o171) (28 28 28 a255 o99) (28 28 28 a255 o192)
+  [-788 -1 -1071] edge 3.0 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o198) (28 28 28 a255 o126) (28 28 28 a255 o171)
+  [-787 -2 -1072] edge 2.5 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o108) (28 28 28 a255 o66) (28 28 28 a255 o233)
+  [-788 -2 -1071] edge 2.3 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o199) (28 28 28 a255 o9) (28 28 28 a255 o0)
+  [-789 -2 -1071] edge 2.3 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o195) (28 28 28 a255 o12) (28 28 28 a255 o177)
+  [-791 -1 -1073] edge 2.2 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o226) (28 28 28 a255 o15) (28 28 28 a255 o52)
+  [-787 -2 -1071] edge 2.1 m, NW_NATURE_LEAVE_03: (28 28 28 a255 o200) (28 28 28 a255 o37) (28 28 28 a255 o35)
+  [-862 5 -1042] edge 2.0 m, OW_LOB_BUSH_REED_V1_2: (30 30 30 a255 o60) (28 28 28 a255 o35) (31 31 31 a255 o212)
+  [-790 -1 -1073] edge 3.2 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o184) (29 29 29 a255 o184) (29 29 29 a255 o251)
+  [-790 -1 -1072] edge 3.2 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o255) (29 29 29 a255 o81) (29 29 29 a255 o141)
+  [-789 -1 -1072] edge 3.1 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o196) (29 29 29 a255 o57) (29 29 29 a255 o157)
+  [-786 -2 -1071] edge 2.6 m, NW_NATURE_LEAVE_03: (31 31 31 a255 o164) (29 29 29 a255 o165) (31 31 31 a255 o87)
+  [-790 -1 -1072] edge 2.6 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o167) (29 29 29 a255 o170) (29 29 29 a255 o255)
+  [-790 -1 -1072] edge 2.4 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o46) (30 30 30 a255 o94) (29 29 29 a255 o162)
+  [-790 -1 -1072] edge 2.4 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o194) (29 29 29 a255 o71) (29 29 29 a255 o109)
+  [-786 -3 -1071] edge 2.3 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o196) (29 29 29 a255 o57) (29 29 29 a255 o215)
+  [-789 -2 -1072] edge 2.3 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o128) (29 29 29 a255 o66) (29 29 29 a255 o195)
+  [-795 -0 -1071] edge 2.2 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o212) (29 29 29 a255 o232) (29 29 29 a255 o141)
+  [-789 -1 -1073] edge 2.1 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o203) (29 29 29 a255 o255) (29 29 29 a255 o255)
+  [-789 -1 -1072] edge 2.0 m, NW_NATURE_LEAVE_03: (29 29 29 a255 o162) (29 29 29 a255 o37) (29 29 29 a255 o46)
+  [-794 0 -1071] edge 3.2 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o255) (30 30 30 a255 o194) (30 30 30 a255 o31)
+  [-788 -1 -1072] edge 3.0 m, NW_NATURE_LEAVE_03: (33 33 33 a255 o198) (30 30 30 a255 o20) (33 33 33 a255 o255)
+  [-790 -1 -1072] edge 3.0 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o255) (30 30 30 a255 o175) (30 30 30 a255 o189)
+  [-787 -2 -1071] edge 3.0 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o227) (30 30 30 a255 o116) (30 30 30 a255 o77)
+  [-888 -3 -1059] edge 2.9 m, OMWAGREY01: (33 33 33 a255 o0) (32 32 32 a255 o0) (30 30 30 a255 o0)
+  [-889 -3 -1060] edge 2.8 m, OMWAGREY01: (32 32 32 a255 o0) (31 31 31 a255 o0) (30 30 30 a255 o0)
+  [-788 -2 -1073] edge 2.7 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o223) (30 30 30 a255 o13) (30 30 30 a255 o178)
+  [-786 -2 -1071] edge 2.6 m, NW_NATURE_LEAVE_03: (30 30 30 a255 o197) (30 30 30 a255 o79) (30 30 30 a255 o255)
+far geometry (--lod): 914 of 6914 chunks got a stand-in, 3130303 -> 2102265 triangles of the simplified batches (67%), +27.97 MB, 1.3 s
+  of 6914 chunks: 0 of medium or small objects left alone (--no-lod-objects), 5189 have too few simplifiable triangles (48 for the large, 200 for objects), 811 would shrink by too little; 5720258 simplifiable triangles in the rest
+  chunks of medium and small objects with a stand-in (kept 40% of the triangles of what they replace): 683, +25.17 MB
+vertex cache order: 11702428 triangles; vertex shader runs per triangle 2.25 -> 1.71 (16-entry FIFO)
 things to use by the player: 2161 have a name to show (he may use those), 603 have none (the inhabitants' only); 14 belong to somebody (a person or a guild)
 ambient sounds: 961 placed in world 'archolos_mainland'
 triggers: 9 triggers, 8 lists, 191 script triggers, 7 world starts, 914 movers (862 drawn moving), 610 doors (55 locked); 873 solid (160745 triangles), 149 meshes; key rotations read conjugated: 898, 0 the other way
 rooms: 313 (BSP sectors, 1002 boxes): 13CAVE01, M8CHAPEL, M8CHAPEL02, M8TREASURE01, M7HOUSE2, M7HOUSE3, M7HOUSE402, M7HOUSE5, M7HOUSE6, M7HOUSE7, M7HOUSE8, M7HOUSE9, ...
 music zones: 73 in world 'archolos_mainland'
 world 'archolos_mainland': 3444 x 282 x 3379 m, grid 86 x 85 cells of 40 m
-geometry: 10843489 triangles in, 9206893 out (42138 degenerate dropped), 17335195 vertices (1.88 per triangle)
+geometry: 10843489 triangles in, 9698055 out (42138 degenerate dropped), 17335195 vertices (1.79 per triangle)
 vertex sharing: 6794773 distinct positions, 16376846 with UVs, 17335195 with UVs and light
 winding check: 62% of the horizontal front-facing area looks up
 chunks: 6914 (28 cells split), largest 52908 triangles / 65535 vertices / 598 batches
@@ -216,9 +309,9 @@ position step: 5910 at 0.125 cm, 822 at 0.25 cm, 182 at 0.5 cm
 seams: 35887 vertices welded to a neighbour within 0.25 cm, 592967 T-junctions closed within 0.50 cm (+782250 triangles)
 chunks by detail tier (--no-split: one chunk holds everything): 5963 of the world and big things (111.7 MB, always around the camera), 508 with medium objects (76.9 MB, within their reach), 443 with small ones (142.1 MB, within theirs)
 draw distance classes: 3845125 triangles always drawn, 2522457 medium, 5216019 small; 215195 batches (31.1 per chunk)
-clusters: the chunks are cut into 76094 boxes of 10 m (101 at most in one): 121 triangles and 2.8 batches in a box on average
-ambient occlusion (--ao low): 31876740 corners from 14615704 places, 16 rays of 2.5 m each against 5565038 triangles (233.9 M rays, 36.2 s); 50% shut in on average, 15715688 corners more than half; 300000 triangles added by cutting the large ones near something (--ao-extra)
-lamp light (--lights): 6778 lamps in the world, 317 baked (6461 static ones left out), 805541 corners lit by 2.42 M shadow rays, 60000 triangles added by cutting those near a lamp (4.5 s)
+clusters: the chunks are cut into 76094 boxes of 10 m (101 at most in one): 127 triangles and 2.8 batches in a box on average
+ambient occlusion (--ao low): 31876740 corners from 14615704 places, 16 rays of 2.5 m each against 5565038 triangles (233.9 M rays, 36.9 s); 50% shut in on average, 15715688 corners more than half; 300000 triangles added by cutting the large ones near something (--ao-extra)
+lamp light (--lights): 6778 lamps in the world, 317 baked (6461 static ones left out), 805541 corners lit by 2.42 M shadow rays, 60000 triangles added by cutting those near a lamp (4.8 s)
 wind: 6895622 corners sway, 117 world materials marked
 materials: 1574 world materials from 3280 source materials, 1309 textures; 41 blended (5 water), 14 animated, 3 scrolling
 material mean colours (stand-in until the texture arrives): 3275 of 1574 materials
@@ -310,17 +403,20 @@ particle effects: 75 placed by the world, 0 from fire places' trees
 objects skipped (not supported yet): 25 camera-facing sprites, 0 other
 other objects named like lights: DT_FIREPLACE_V1.3DS x4; FIRE.PFX x2 (not drawn); FIREPLACE_GROUND.ASC x1 <- FIREPLACE_GROUND.MDL; FIRE_COMPLETE_A0.TGA x4 (not drawn); FIRE_MEDIUM.PFX x39 (not drawn); FIRE_SMOKE.PFX x6 (not drawn); FIRE_SPARKS.PFX x6 (not drawn); ITLS_TORCH_01.3DS x2; KM_VOB_LANTERN_WALL.3DS x2; KM_VOB_SKULL_CANDLE_01.3DS x2; NW_MISC_FIREPLACE_01.3DS x4; OC_FIREPLACE_V1.3DS x1; OC_FIREPLACE_V5.3DS x2; OW_MISC_WALL_TORCH_01.3DS x22
 water: 3 materials, opacity 150..180 of 255
+probe (as imported): 0 triangles within 60 m of -843 11 -1080, 0 with an edge of 2 m or more, 0 of them dark (a corner under 25); the 30 with the darkest corner (corners: r g b, a = daylight, o = occlusion):
+probe (after occlusion and lamps): 0 triangles within 60 m of -843 11 -1080, 0 with an edge of 2 m or more, 0 of them dark (a corner under 25); the 30 with the darkest corner (corners: r g b, a = daylight, o = occlusion):
 visibility (--vis): 93 rows in 39 cells (33 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 490 places looked from, 95178 clusters in the rows of which 51487 (54%) hidden, 5.5 M rays in 0.3 s, radius 150 m, near 25 m; 0.01 MB
-simplified geometry (--simplify): 83 of 95 chunks, 457578 -> 235102 triangles of what was simplified (51%), vertices 626754 -> 466025, 0.1 s
+simplified geometry (--simplify): 83 of 95 chunks, 457578 -> 264594 triangles of what was simplified (58%), vertices 626754 -> 485120, 0.2 s
   of 95 chunks: 12 have fewer than 24 simplifiable triangles, 0 would shrink by less than 3%
-vertex cache order: 427981 triangles; vertex shader runs per triangle 1.51 -> 1.18 (16-entry FIFO)
+probe (as written to the chunks, after seams and simplifying): 0 triangles within 60 m of -843 11 -1080, 0 with an edge of 2 m or more, 0 of them dark (a corner under 25); the 30 with the darkest corner (corners: r g b, a = daylight, o = occlusion):
+vertex cache order: 457474 triangles; vertex shader runs per triangle 1.47 -> 1.15 (16-entry FIFO)
 things to use by the player: 44 have a name to show (he may use those), 10 have none (the inhabitants' only); 0 belong to somebody (a person or a guild)
 ambient sounds: 72 placed in world 'archolos_sewers'
 triggers: 0 triggers, 0 lists, 14 script triggers, 0 world starts, 26 movers (26 drawn moving), 32 doors (1 locked); 46 solid (6794 triangles), 11 meshes; key rotations read conjugated: 26, 0 the other way
 rooms: none in this world (no BSP sectors): nobody's house is told from the street
 music zones: 1 in world 'archolos_sewers'
 world 'archolos_sewers': 228 x 42 x 332 m, grid 7 x 9 cells of 40 m
-geometry: 550060 triangles in, 428398 out (6188 degenerate dropped), 626754 vertices (1.46 per triangle)
+geometry: 550060 triangles in, 457890 out (6188 degenerate dropped), 626754 vertices (1.37 per triangle)
 vertex sharing: 293191 distinct positions, 617846 with UVs, 626754 with UVs and light
 winding check: 85% of the horizontal front-facing area looks up
 chunks: 95 (0 cells split), largest 29863 triangles / 26841 vertices / 150 batches
@@ -328,8 +424,8 @@ position step: 89 at 0.125 cm, 3 at 0.25 cm, 3 at 0.5 cm
 seams: 2762 vertices welded to a neighbour within 0.25 cm, 101501 T-junctions closed within 0.50 cm (+107002 triangles)
 chunks by detail tier (--no-split: one chunk holds everything): 46 of the world and big things (8.4 MB, always around the camera), 24 with medium objects (2.0 MB, within their reach), 25 with small ones (2.9 MB, within theirs)
 draw distance classes: 450440 triangles always drawn, 89174 medium, 111260 small; 4062 batches (42.8 per chunk)
-clusters: the chunks are cut into 1180 boxes of 10 m (37 at most in one): 363 triangles and 3.4 batches in a box on average
-ambient occlusion (--ao low): 1492653 corners from 444209 places, 16 rays of 2.5 m each against 139723 triangles (7.1 M rays, 1.1 s); 37% shut in on average, 482370 corners more than half; 255555 triangles added by cutting the large ones near something (--ao-extra)
+clusters: the chunks are cut into 1180 boxes of 10 m (37 at most in one): 388 triangles and 3.4 batches in a box on average
+ambient occlusion (--ao low): 1492653 corners from 444209 places, 16 rays of 2.5 m each against 139723 triangles (7.1 M rays, 1.6 s); 37% shut in on average, 482370 corners more than half; 255555 triangles added by cutting the large ones near something (--ao-extra)
 lamp light (--lights): 50 lamps in the world, 5 baked (45 static ones left out), 9394 corners lit by 0.02 M shadow rays, 5628 triangles added by cutting those near a lamp (0.2 s)
 wind: 3030 corners sway, 1 world materials marked
 materials: 189 world materials from 198 source materials, 198 textures; 9 blended (3 water), 3 animated, 1 scrolling
@@ -420,17 +516,20 @@ particle effects: 33 placed by the world, 0 from fire places' trees
 objects skipped (not supported yet): 4 camera-facing sprites, 0 other
 objects: 4 have no ground below them, lit with the world average
 other objects named like lights: FIRE.PFX x1 (not drawn); FIRE_COMPLETE_A0.TGA x4 (not drawn); FIRE_HOT.PFX x3 (not drawn); FIRE_MEDIUM.PFX x17 (not drawn); FIRE_SMOKE.PFX x2 (not drawn); FIRE_SPARKS.PFX x1 (not drawn); ITLS_TORCHBURNED_01.3DS x2; ITLS_TORCH_01.3DS x4; KM_VOB_LANTERN_WITHCHAIN.3DS x2; NW_CITY_CANDLE_01.3DS x2; NW_MISC_FIREPLACE_01.3DS x1; OC_FIREPLACE_V5.3DS x2; OC_FIREWOOD_V1.3DS x2; OC_FIREWOOD_V3.3DS x2; OC_LOB_LIGHTER_HUGE3.3DS x16; TORCH.PFX x2 (not drawn)
+probe (as imported): 0 triangles within 60 m of -843 11 -1080, 0 with an edge of 2 m or more, 0 of them dark (a corner under 25); the 30 with the darkest corner (corners: r g b, a = daylight, o = occlusion):
+probe (after occlusion and lamps): 0 triangles within 60 m of -843 11 -1080, 0 with an edge of 2 m or more, 0 of them dark (a corner under 25); the 30 with the darkest corner (corners: r g b, a = daylight, o = occlusion):
 visibility (--vis): 45 rows in 20 cells (11 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 137 places looked from, 29958 clusters in the rows of which 18881 (63%) hidden, 1.2 M rays in 0.1 s, radius 150 m, near 25 m; 0.00 MB
-simplified geometry (--simplify): 45 of 45 chunks, 257095 -> 131839 triangles of what was simplified (51%), vertices 326213 -> 233594, 0.1 s
+simplified geometry (--simplify): 45 of 45 chunks, 257095 -> 132447 triangles of what was simplified (52%), vertices 326213 -> 232081, 0.1 s
   of 45 chunks: 0 have fewer than 24 simplifiable triangles, 0 would shrink by less than 3%
-vertex cache order: 189425 triangles; vertex shader runs per triangle 1.76 -> 1.34 (16-entry FIFO)
+probe (as written to the chunks, after seams and simplifying): 0 triangles within 60 m of -843 11 -1080, 0 with an edge of 2 m or more, 0 of them dark (a corner under 25); the 30 with the darkest corner (corners: r g b, a = daylight, o = occlusion):
+vertex cache order: 190030 triangles; vertex shader runs per triangle 1.75 -> 1.33 (16-entry FIFO)
 things to use by the player: 73 have a name to show (he may use those), 1 have none (the inhabitants' only); 0 belong to somebody (a person or a guild)
 ambient sounds: 20 placed in world 'archolos_silvermine'
 triggers: 0 triggers, 0 lists, 1 script triggers, 0 world starts, 3 movers (3 drawn moving), 7 doors (0 locked); 7 solid (3024 triangles), 3 meshes; key rotations read conjugated: 3, 0 the other way
 rooms: none in this world (no BSP sectors): nobody's house is told from the street
 music zones: 1 in world 'archolos_silvermine'
 world 'archolos_silvermine': 123 x 67 x 235 m, grid 4 x 7 cells of 40 m
-geometry: 295620 triangles in, 189651 out (562 degenerate dropped), 326213 vertices (1.72 per triangle)
+geometry: 295620 triangles in, 190259 out (562 degenerate dropped), 326213 vertices (1.71 per triangle)
 vertex sharing: 161882 distinct positions, 320378 with UVs, 326213 with UVs and light
 winding check: 50% of the horizontal front-facing area looks up (says nothing here: an indoor world has as much ceiling as floor)
 chunks: 45 (0 cells split), largest 39867 triangles / 30129 vertices / 217 batches
@@ -438,8 +537,8 @@ position step: 45 at 0.125 cm
 seams: 684 vertices welded to a neighbour within 0.25 cm, 17257 T-junctions closed within 0.50 cm (+19849 triangles)
 chunks by detail tier (--no-split: one chunk holds everything): 21 of the world and big things (3.1 MB, always around the camera), 11 with medium objects (1.2 MB, within their reach), 13 with small ones (2.4 MB, within theirs)
 draw distance classes: 177956 triangles always drawn, 47821 medium, 89130 small; 2184 batches (48.5 per chunk)
-clusters: the chunks are cut into 678 boxes of 10 m (73 at most in one): 280 triangles and 3.2 batches in a box on average
-ambient occlusion (--ao low): 859290 corners from 271116 places, 16 rays of 2.5 m each against 60147 triangles (4.3 M rays, 0.5 s); 38% shut in on average, 280918 corners more than half; 142605 triangles added by cutting the large ones near something (--ao-extra)
+clusters: the chunks are cut into 678 boxes of 10 m (73 at most in one): 281 triangles and 3.2 batches in a box on average
+ambient occlusion (--ao low): 859290 corners from 271116 places, 16 rays of 2.5 m each against 60147 triangles (4.3 M rays, 0.6 s); 38% shut in on average, 280918 corners more than half; 142605 triangles added by cutting the large ones near something (--ao-extra)
 lamp light (--lights): 59 lamps in the world, 3 baked (56 static ones left out), 6453 corners lit by 0.01 M shadow rays, 1626 triangles added by cutting those near a lamp (0.1 s)
 wind: 0 corners sway, 0 world materials marked
 materials: 121 world materials from 121 source materials, 113 textures; 5 blended (0 water), 1 animated, 0 scrolling
@@ -556,17 +655,20 @@ fire places: 77 objects of 1 kinds (their flames are not drawn yet):
   VOLFZACKFIRE_HIGH.ASC x77, fire FIRETREE_MEDIUM.ZEN at BIP01 FIRE <- VOLFZACKFIRE_HIGH.MDL: node BIP01 258 tris OBJ_CITY_STREETLAMP_01.TGA MOSTSTONES02.TGA
 other objects named like lights: BSFIRE_OC.MDS x1 <- BSFIRE_OC.MDM + BSFIRE_OC.MDH [script: tree BSFIRE_OC]; FIRE_COMPLETE_A0.TGA x13 (not drawn); FIRE_HOT.PFX x1 (not drawn); ITLS_TORCHBURNED_01.3DS x1; KM_VOB_BROKEN_LAMP_01.3DS x4; KM_VOB_BROKEN_LAMP_02.3DS x5; KM_VOB_CANDLESTICK_02.3DS x4; KM_VOB_CANDLESTICK_02_BIG.3DS x9; KM_VOB_CRYSTALCANDLE.3DS x7; KM_VOB_CRYSTAL_LAMP_01.3DS x12; KM_VOB_CRYSTAL_LAMP_02.3DS x2; KM_VOB_CRYSTAL_LAMP_04.3DS x2; KM_VOB_LANTERN_NOCHAIN.3DS x3; KM_VOB_LANTERN_WALL.3DS x5; KM_VOB_LANTERN_WITHCHAIN.3DS x4; KM_VOB_SKULL_CANDLE_01.3DS x18; LIGHTCONE.PFX x1 (not drawn); MFX_LIGHT_ORIGIN.PFX x1 (not drawn); NW_CITY_CANDLE_01.3DS x4; OC_BIGLIGHTER_01.3DS x2; OC_FIREWOOD_V2.3DS x2
 water: 1 materials, opacity 150..150 of 255
+probe (as imported): 0 triangles within 60 m of -843 11 -1080, 0 with an edge of 2 m or more, 0 of them dark (a corner under 25); the 30 with the darkest corner (corners: r g b, a = daylight, o = occlusion):
+probe (after occlusion and lamps): 0 triangles within 60 m of -843 11 -1080, 0 with an edge of 2 m or more, 0 of them dark (a corner under 25); the 30 with the darkest corner (corners: r g b, a = daylight, o = occlusion):
 visibility (--vis): 90 rows in 46 cells (25 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 573 places looked from, 105095 clusters in the rows of which 42432 (40%) hidden, 5.5 M rays in 0.3 s, radius 150 m, near 25 m; 0.02 MB
-simplified geometry (--simplify): 71 of 126 chunks, 540976 -> 304492 triangles of what was simplified (56%), vertices 1038047 -> 849402, 0.2 s
+simplified geometry (--simplify): 71 of 126 chunks, 540976 -> 320028 triangles of what was simplified (59%), vertices 1038047 -> 859036, 0.3 s
   of 126 chunks: 53 have fewer than 24 simplifiable triangles, 2 would shrink by less than 3%
-vertex cache order: 715293 triangles; vertex shader runs per triangle 1.73 -> 1.26 (16-entry FIFO)
+probe (as written to the chunks, after seams and simplifying): 0 triangles within 60 m of -843 11 -1080, 0 with an edge of 2 m or more, 0 of them dark (a corner under 25); the 30 with the darkest corner (corners: r g b, a = daylight, o = occlusion):
+vertex cache order: 730840 triangles; vertex shader runs per triangle 1.72 -> 1.25 (16-entry FIFO)
 things to use by the player: 116 have a name to show (he may use those), 107 have none (the inhabitants' only); 0 belong to somebody (a person or a guild)
 ambient sounds: 11 placed in world 'archolos_volfzacke'
 triggers: 0 triggers, 0 lists, 62 script triggers, 0 world starts, 121 movers (116 drawn moving), 19 doors (2 locked); 126 solid (20155 triangles), 43 meshes; key rotations read conjugated: 116, 0 the other way
 rooms: none in this world (no BSP sectors): nobody's house is told from the street
 music zones: 2 in world 'archolos_volfzacke'
 world 'archolos_volfzacke': 256 x 87 x 256 m, grid 8 x 8 cells of 40 m
-geometry: 859293 triangles in, 715785 out (3896 degenerate dropped), 1038047 vertices (1.45 per triangle)
+geometry: 859293 triangles in, 731321 out (3896 degenerate dropped), 1038047 vertices (1.42 per triangle)
 vertex sharing: 461315 distinct positions, 994073 with UVs, 1038047 with UVs and light
 winding check: 85% of the horizontal front-facing area looks up
 chunks: 126 (2 cells split), largest 52004 triangles / 65533 vertices / 189 batches
@@ -574,8 +676,8 @@ position step: 92 at 0.125 cm, 20 at 0.25 cm, 14 at 0.5 cm
 seams: 2067 vertices welded to a neighbour within 0.25 cm, 81135 T-junctions closed within 0.50 cm (+96872 triangles)
 chunks by detail tier (--no-split: one chunk holds everything): 81 of the world and big things (6.7 MB, always around the camera), 21 with medium objects (4.6 MB, within their reach), 24 with small ones (10.0 MB, within theirs)
 draw distance classes: 375807 triangles always drawn, 190999 medium, 385463 small; 4461 batches (35.4 per chunk)
-clusters: the chunks are cut into 1216 boxes of 10 m (46 at most in one): 589 triangles and 3.7 batches in a box on average
-ambient occlusion (--ao low): 2374203 corners from 814889 places, 16 rays of 2.5 m each against 210749 triangles (13.0 M rays, 1.7 s); 52% shut in on average, 1182729 corners more than half; 225402 triangles added by cutting the large ones near something (--ao-extra)
+clusters: the chunks are cut into 1216 boxes of 10 m (46 at most in one): 601 triangles and 3.7 batches in a box on average
+ambient occlusion (--ao low): 2374203 corners from 814889 places, 16 rays of 2.5 m each against 210749 triangles (13.0 M rays, 1.8 s); 52% shut in on average, 1182729 corners more than half; 225402 triangles added by cutting the large ones near something (--ao-extra)
 lamp light (--lights): 205 lamps in the world, 69 baked (136 static ones left out), 157806 corners lit by 0.58 M shadow rays, 37785 triangles added by cutting those near a lamp (0.3 s)
 wind: 200 corners sway, 1 world materials marked
 materials: 233 world materials from 253 source materials, 182 textures; 10 blended (1 water), 0 animated, 0 scrolling
@@ -591,7 +693,7 @@ note: 76 triangles needed a private UV origin (wide texture spans)
 WARNING: 40 triangles span more than 32 texture repeats and were clamped
 == all worlds ==
 textures: 1363 baked (217 cut-out), max edge 128, 5.2% of the source texels kept, 0 missing
-size: chunks 354.83 MB (234.88 MB packed), textures 14.12 MB (12.07 MB packed)
+size: chunks 357.08 MB (238.91 MB packed), textures 14.12 MB (12.07 MB packed)
 == model 'hero' ==
 character: HUMANS, skeleton HUMANS.MDH (34 nodes), body HUM_BODY_NAKED0; head HUM_HEAD_PONY; rest pose within 0.0 cm of the stored mesh; 33 of 296 skin vertices hang on more than two bones (the two strongest are kept)
 character mesh: 862 triangles, winding kept (score 0.044)
@@ -761,7 +863,7 @@ particles: 613 effects in the scripts (238 pictures baked, 9 of the names have n
   pictures not found: item_stars_green_01, key, magiccouldron, magicfog, mfx_spell_star, mine_brick, water_dripping, water_dripping_ground, waveofinsanity_a0
 things lying about: 4796 (4786 from the world files, 10 from the start-up scripts) of 348 kinds of look; looks of all things of the scripts: 1261, 1256 models baked (203734 triangles, 5.13 MB), 1097 pictures for the inventory (9.66 MB)
 WARNING: 4 looks of things not baked (they lie there unseen): ITAT_CRAWLERQUEEN: no mesh; ITLSTORCHBURNING: no mesh; ITLSTORCHBURNING_EDITED: no mesh; ITLSTORCHCRYSTAL: no mesh
-time: sources 0.0 s, world textures 9.1 s, worlds 138.6 s, hero 0.2 s, scripts and inhabitants 107.6 s
+time: sources 0.0 s, world textures 9.0 s, worlds 153.9 s, hero 0.2 s, scripts and inhabitants 115.8 s
 dialogue: 50900 lines (3029 KB of text) from ou.bin (from an archive), in 127 blocks, 263 names given twice (the first kept)
 font: not baked (the glyphs of the fonts do not fit in 256x512 (need 584 rows)); the overlay keeps its own font
 C:\GOTHIC~1\windows\data.pak written (25177 entries); the rest (voices, music) follows
@@ -810,4 +912,4 @@ hero: fightclip T_2HRUN_2_2HRUNL: file T_2HRUN_2_2HRUNL, mds frames 1..11, 11 fr
 hero: fightclip T_2HRUNL_2_2HRUN: file T_2HRUNL_2_2HRUN, mds frames 32..38, 7 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HRUN
 hero: fightclip T_2HWALK_2_2HWALKL: file T_2HWALK_2_2HWALKL, mds frames 1..18, 18 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALKL
 hero: fightclip T_2HWALKL_2_2HWALK: file T_2HWALKL_2_2HWALK, mds frames 39..49, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALK
-wrote C:\GOTHIC~1\windows\data.pak: 4 worlds, 25177 entries in 265.2 s
+wrote C:\GOTHIC~1\windows\data.pak: 4 worlds, 25177 entries in 288.3 s

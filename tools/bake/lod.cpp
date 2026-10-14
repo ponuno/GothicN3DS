@@ -200,6 +200,7 @@ private:
 	// How far a corner's coordinates and light may be off what the triangle had at that place.
 	static constexpr double kUvTolerance = 0.01; // texture repeats
 	static constexpr double kLightTolerance = 10.0; // of 255
+	static constexpr int kLightSpread = 24;        // of 255: the most the light may differ over a triangle that a collapse stretches
 
 	bool plane(const Tri& t, double& nx, double& ny, double& nz, double& d) const {
 		const P3 a = _pos[_pid[t.v[0]]], b = _pos[_pid[t.v[1]]], c = _pos[_pid[t.v[2]]];
@@ -294,6 +295,10 @@ private:
 		const Attr A = attrOf(vertexAt(t.v[fk])), X = attrOf(vertexAt(t.v[(fk + 1) % 3])), Y = attrOf(vertexAt(t.v[(fk + 2) % 3]));
 		double want[6];
 		for (int i = 0; i < 6; ++i) want[i] = A.v[i] + s * (X.v[i] - A.v[i]) + u * (Y.v[i] - A.v[i]);
+		// Light is stored in bytes: a field that would run past 0..255 where `to` is (a steep ramp, the edge of a shade in a
+		// lightmap) would be clamped there, and the new corner would be black or white - a flat wedge over the triangle.
+		for (int i = 2; i < 6; ++i)
+			if (want[i] < -0.5 || want[i] > 255.5) return 0;
 		double best = 1e30;
 		for (u16 cand : _vertsAt[to]) {
 			const Attr C = attrOf(vertexAt(cand));
@@ -340,6 +345,24 @@ private:
 					break;
 				}
 		if (shared != 2 || common != 2) return false;
+		// Light is not part of a collapse's error: the neighbours stretch over the area of the removed triangles with their
+		// own light, whatever the removed ones had there. Only where the light is flat round the place may it be merged
+		// over - at the edge of a shade (a lightmap's) it would smear into a flat dark or bright wedge.
+		for (u32 t : _inc[from]) {
+			const Tri& tri = _tris[t];
+			if (!tri.alive) continue;
+			int lo[4] = {255, 255, 255, 255}, hi[4] = {0, 0, 0, 0};
+			for (int k = 0; k < 3; ++k) {
+				const WorldVertex& w = vertexAt(tri.v[k]);
+				const int c[4] = {w.r, w.g, w.b, w.a};
+				for (int i = 0; i < 4; ++i) {
+					lo[i] = std::min(lo[i], c[i]);
+					hi[i] = std::max(hi[i], c[i]);
+				}
+			}
+			for (int i = 0; i < 4; ++i)
+				if (hi[i] - lo[i] > kLightSpread) return false;
+		}
 		u32 needed = 0;
 		for (u32 t : _inc[from]) {
 			const Tri& tri = _tris[t];

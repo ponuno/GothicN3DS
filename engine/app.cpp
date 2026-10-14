@@ -814,7 +814,12 @@ void App::render() {
 		_npcs.setFadeStep(_world.fadeStep());
 		_npcs.draw(viewProj, indoor ? indoorLight : sky.light, &_world, _cam.pos);
 		const double r3 = sys::timeMs();
-		_loot.draw(_cam.pos, indoor ? indoorLight : sky.light);
+		{
+			// (Only what is in view and not too small to see: fix87.)
+			const Frustum view = frustumFromViewProj(viewProj);
+			_loot.draw(_cam.pos, indoor ? indoorLight : sky.light, 3500.0f, &view, _world.config().sizePixels, _world.config().focalPx);
+			_triggers.setView(&view, _world.config().sizePixels, _world.config().focalPx);
+		}
 		_triggers.draw(_pak, _world, _cam.pos, indoor ? indoorLight : sky.light, min(_world.drawReach() + 2000.0f, 20000.0f));
 		drawShowcase();
 		const double r4 = sys::timeMs();

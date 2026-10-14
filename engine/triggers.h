@@ -83,6 +83,13 @@ public:
 	void doorToggle(u32 i, Vec3 from);
 	// In PASS_WORLD: the movers within `range` of `eye`, lit as the floor under them.
 	void draw(Pak& pak, const World& world, Vec3 eye, const float dayLight[3], float range = 6000.0f);
+	// For the next draw() only: leave out what is outside `view` (null: nothing) or less than `minPixels` across.
+	void setView(const Frustum* view, float minPixels, float focalPx) {
+		_hasView = view != nullptr;
+		if (view) _view = *view;
+		_minPixels = minPixels;
+		_focalPx = focalPx;
+	}
 
 	// A mover's sounds and a script trigger's function: the application's.
 	struct Hooks {
@@ -108,7 +115,7 @@ private:
 		bool enabled;
 		bool inside;     // the player's character is in its box (touch fires on the way in)
 		u16 emitCount;
-		float sinceEmit; // seconds since it last fired (-1: never)
+		double emitAt;   // the clock (Triggers::_clock) when it last fired (-1: never)
 		float delay;     // a delayed event: seconds left (-1: none)
 		u8 delayedType;
 		u8 next;         // a list: the next target
@@ -125,8 +132,12 @@ private:
 		// Colliding: a sphere about its triangles (its own space).
 		Vec3 collCenter;
 		float collRadius;
+		Vec3 worldCenter; // collCenter where it stands now (refreshCenter: whenever it moves; fix87)
 		bool lit;
 		float light[3], sky;
+		// A door: where its hinge is when shut (worked out once).
+		Vec3 hinge;
+		bool hingeSet;
 	};
 	struct Pending {
 		u32 hash;
@@ -143,6 +154,10 @@ private:
 	void tickMover(u32 i, float dtMs);
 	void arrive(u32 i);
 	void pose(u32 i);
+	void poseAt(u32 i);
+	void refreshCenter(u32 i) {
+		if (_coll && _state[i].collRadius > 0.0f) _state[i].worldCenter = toWorld(i, _state[i].collCenter);
+	}
 	float keyTicks(u32 i, u32 k) const; // ms from key k to the next
 	u32 nextKey(u32 i, u32 k) const;
 	u32 prevKey(u32 i, u32 k) const;
@@ -170,6 +185,22 @@ private:
 	const char* _names = nullptr;
 	u32* _nameHash = nullptr; // per trigger
 	State* _state = nullptr;
+	// What update() looks at (fix87: not every trigger of the world every frame): the triggers the player's
+	// character may walk into, the movers, the doors; those with a delayed event pending.
+	u32* _touchList = nullptr;
+	u32* _moverList = nullptr;
+	u32* _doorList = nullptr;
+	u32* _solidList = nullptr; // those with triangles to collide with (asked by every collision query of the world)
+	u32 _touchCount = 0, _moverCount = 0, _doorCount = 0, _solidCount = 0;
+	enum { DELAYED = 64 };
+	u32 _delayed[DELAYED] = {};
+	u32 _delayedCount = 0;
+	bool _delayedOverflow = false; // more than DELAYED at once: all are looked at until none is left
+	double _clock = 0.0;           // seconds of update() since the world was entered
+	// The view the next draw() culls by (setView; fix87).
+	Frustum _view {};
+	bool _hasView = false;
+	float _minPixels = 0.0f, _focalPx = 208.0f;
 	enum { PENDING = 32, MODELS = 24 };
 	Pending _pending[PENDING] = {};
 	u32 _pendingCount = 0;

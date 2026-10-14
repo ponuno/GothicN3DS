@@ -935,6 +935,20 @@ private:
 	u32 _clipBytes = 0;
 	u32 _victim = SCRIPT_NONE; // the scripts' global of that name
 	u32 _frame = 0;
+	// Who may come into reach (fix87): select() looks at these, not at every character of the game every frame.
+	// A sweep through all of them, a slice a frame, makes the next list; the list in use was made with the eye
+	// within `kNearMargin` of where it is (else, and after a world change, it is made anew at once).
+	u32* _nearList = nullptr;   // candidates in use
+	u32* _sweepList = nullptr;  // ... being made
+	u32* _seen = nullptr;       // per character: the select() it was last looked at in (no one twice a frame)
+	u32 _nearCount = 0, _sweepCount = 0, _sweepPos = 0, _nearCap = 0, _sweepHere = 0, _nearHere = 0;
+	u32 _selectStamp = 0;
+	u32 _nearNpcs = 0;          // characters there were when the list was made (more since: those are looked at too)
+	u16 _nearWorld = 0xFFFF;
+	Vec3 _nearEye {0, 0, 0}, _sweepEye {0, 0, 0};
+	static constexpr float kNearMargin = 2500.0f; // cm
+	bool nearListFits(u32 npcs);
+	void freeNearLists();
 	float _clock = 0;
 	float _hours = -1.0f;
 	int _fadeStep = 255;

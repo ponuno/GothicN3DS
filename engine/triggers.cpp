@@ -67,6 +67,16 @@ void Triggers::release() {
 	free(_blob);
 	free(_nameHash);
 	free(_state);
+	free(_touchList);
+	free(_moverList);
+	free(_doorList);
+	free(_solidList);
+	_touchList = _moverList = _doorList = _solidList = nullptr;
+	_touchCount = _moverCount = _doorCount = _solidCount = 0;
+	_delayedCount = 0;
+	_delayedOverflow = false;
+	_clock = 0.0;
+	_hasView = false;
 	_blob = nullptr;
 	_nameHash = nullptr;
 	_state = nullptr;
@@ -132,7 +142,11 @@ bool Triggers::adopt(u8* blob, u32 size, Game& game) {
 	if (ok) {
 		_nameHash = static_cast<u32*>(malloc(size_t(h.count + 1) * sizeof(u32)));
 		_state = static_cast<State*>(calloc(size_t(h.count) + 1, sizeof(State)));
-		ok = _nameHash && _state;
+		_touchList = static_cast<u32*>(malloc(size_t(h.count + 1) * sizeof(u32)));
+		_moverList = static_cast<u32*>(malloc(size_t(h.count + 1) * sizeof(u32)));
+		_doorList = static_cast<u32*>(malloc(size_t(h.count + 1) * sizeof(u32)));
+		_solidList = static_cast<u32*>(malloc(size_t(h.count + 1) * sizeof(u32)));
+		ok = _nameHash && _state && _touchList && _moverList && _doorList && _solidList;
 	}
 	if (!ok) {
 		free(blob);
@@ -152,8 +166,11 @@ bool Triggers::adopt(u8* blob, u32 size, Game& game) {
 		_nameHash[i] = t.name ? hashName(_names + t.name) : 0u;
 		State& s = _state[i];
 		s.enabled = (t.flags & TRGF_START_ENABLED) != 0;
-		s.sinceEmit = -1.0f;
+		s.emitAt = -1.0;
 		s.delay = -1.0f;
+		if (t.kind == TRG_MOVER) _moverList[_moverCount++] = i;
+		else if (t.kind == TRG_DOOR) _doorList[_doorCount++] = i;
+		else if ((t.flags & TRGF_REACT_TOUCH) && (t.flags & TRGF_RESPOND_PC)) _touchList[_touchCount++] = i;
 		s.model = (t.kind == TRG_MOVER || t.kind == TRG_DOOR) && t.visual ? NOT_TRIED : NO_MODEL;
 		u32 kept = 0;
 		if (game.triggerState(_world, i, kept)) {
@@ -177,8 +194,8 @@ bool Triggers::adopt(u8* blob, u32 size, Game& game) {
 		} else {
 			++_stats.triggers;
 		}
-		if (solid(i)) {
-			// A sphere about its triangles, for a quick no.
+		if ((t.flags & TRGF_COLLIDES) && t.collCount && _coll) {
+			// A sphere about its triangles, for a quick no. (Also for a door kept open: it is solid once shut.)
 			const float* c = _coll + size_t(t.collFirst) * 9;
 			float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
 			for (u32 k = 0; k < t.collCount * 3; ++k)
@@ -189,6 +206,8 @@ bool Triggers::adopt(u8* blob, u32 size, Game& game) {
 			s.collCenter = {(mn[0] + mx[0]) * 0.5f, (mn[1] + mx[1]) * 0.5f, (mn[2] + mx[2]) * 0.5f};
 			const Vec3 half = {(mx[0] - mn[0]) * 0.5f, (mx[1] - mn[1]) * 0.5f, (mx[2] - mn[2]) * 0.5f};
 			s.collRadius = sqrtf(dot(half, half));
+			refreshCenter(i);
+			_solidList[_solidCount++] = i;
 			++_stats.solid;
 		}
 	}
@@ -241,10 +260,12 @@ void Triggers::process(u32 i, u8 type) {
 	const WorldTrigger& t = _list[i];
 	State& s = _state[i];
 	if (s.delay >= 0.0f) return;
-	if (s.sinceEmit >= 0.0f && s.sinceEmit < t.retriggerDelay) return;
+	if (s.emitAt >= 0.0 && _clock - s.emitAt < double(t.retriggerDelay)) return;
 	if (t.fireDelay > 0.0f && t.kind != TRG_MOVER) {
 		s.delay = t.fireDelay;
 		s.delayedType = type;
+		if (_delayedCount < DELAYED) _delayed[_delayedCount++] = i;
+		else _delayedOverflow = true;
 		return;
 	}
 	fire(i, type);
@@ -254,7 +275,7 @@ void Triggers::process(u32 i, u8 type) {
 void Triggers::fire(u32 i, u8 type) {
 	const WorldTrigger& t = _list[i];
 	State& s = _state[i];
-	s.sinceEmit = 0.0f;
+	s.emitAt = _clock;
 	if (type == EV_UNTRIGGER) {
 		if (!s.enabled || !(t.flags & TRGF_SEND_UNTRIGGER)) return;
 		if (t.kind == TRG_MOVER) onMover(i, type);
@@ -444,6 +465,11 @@ void Triggers::tickMover(u32 i, float dtMs) {
 
 // Where the mesh is now: between the key it comes from and the next, as fast as its speed type says.
 void Triggers::pose(u32 i) {
+	poseAt(i);
+	refreshCenter(i);
+}
+
+void Triggers::poseAt(u32 i) {
 	State& s = _state[i];
 	const WorldTrigger& t = _list[i];
 	if (!t.count) return;
@@ -541,36 +567,69 @@ void Triggers::update(float dt, Vec3 heroFeet, Game& game, const Vec3* others, u
 		_pending[k] = _pending[--_pendingCount];
 		dispatch(p.hash, p.type);
 	}
+	_clock += double(dt);
 	u32 moving = 0;
 	const Vec3 body = {heroFeet.x, heroFeet.y + 90.0f, heroFeet.z};
-	for (u32 i = 0; i < _h.count; ++i) {
+	// Delayed events (fix87: those pending, not every trigger every frame).
+	auto delayStep = [&](u32 i) {
+		State& s = _state[i];
+		if (s.delay < 0.0f) return true; // (done)
+		s.delay -= dt;
+		if (s.delay >= 0.0f) return false;
+		s.delay = -1.0f;
+		fire(i, s.delayedType);
+		return _state[i].delay < 0.0f; // (firing may have set a new delay)
+	};
+	if (_delayedOverflow) {
+		// More than the list holds: all of them, until the list can take what is left.
+		_delayedCount = 0;
+		_delayedOverflow = false;
+		for (u32 i = 0; i < _h.count; ++i) {
+			if (_state[i].delay < 0.0f || delayStep(i)) continue;
+			if (_delayedCount < DELAYED) _delayed[_delayedCount++] = i;
+			else _delayedOverflow = true;
+		}
+	} else {
+		const u32 before = _delayedCount;
+		u32 kept = 0;
+		for (u32 k = 0; k < before; ++k) {
+			const u32 i = _delayed[k];
+			if (!delayStep(i)) _delayed[kept++] = i;
+		}
+		// (What firing added meanwhile went to the end: moved down behind the kept ones.)
+		for (u32 k = before; k < _delayedCount; ++k) _delayed[kept++] = _delayed[k];
+		_delayedCount = kept;
+	}
+	// The player's character walks into the box (OpenGothic's onIntersect: on the way in).
+	for (u32 k = 0; k < _touchCount; ++k) {
+		const u32 i = _touchList[k];
 		const WorldTrigger& t = _list[i];
 		State& s = _state[i];
-		if (s.sinceEmit >= 0.0f) s.sinceEmit += dt;
-		if (s.delay >= 0.0f) {
-			s.delay -= dt;
-			if (s.delay < 0.0f) {
-				s.delay = -1.0f;
-				fire(i, s.delayedType);
-			}
-		}
-		// The player's character walks into the box (OpenGothic's onIntersect: on the way in).
-		if (t.kind != TRG_MOVER && t.kind != TRG_DOOR && (t.flags & TRGF_REACT_TOUCH) && (t.flags & TRGF_RESPOND_PC)) {
-			const bool in = body.x >= t.bbMin[0] && body.x <= t.bbMax[0] && body.y >= t.bbMin[1] - 90.0f && body.y <= t.bbMax[1] &&
-			                body.z >= t.bbMin[2] && body.z <= t.bbMax[2];
-			if (in && !s.inside) process(i, EV_TOUCH);
-			s.inside = in;
-		}
-		if (t.kind == TRG_MOVER && s.mover != MV_IDLE) {
+		const bool in = body.x >= t.bbMin[0] && body.x <= t.bbMax[0] && body.y >= t.bbMin[1] - 90.0f && body.y <= t.bbMax[1] &&
+		                body.z >= t.bbMin[2] && body.z <= t.bbMax[2];
+		if (in && !s.inside) process(i, EV_TOUCH);
+		s.inside = in;
+	}
+	for (u32 k = 0; k < _moverCount; ++k) {
+		const u32 i = _moverList[k];
+		State& s = _state[i];
+		if (s.mover != MV_IDLE) {
 			tickMover(i, dt * 1000.0f);
 			moving += s.mover != MV_IDLE;
 		}
-		if (t.kind == TRG_DOOR) {
+	}
+	for (u32 k = 0; k < _doorCount; ++k) {
+		const u32 i = _doorList[k];
+		const WorldTrigger& t = _list[i];
+		State& s = _state[i];
+		{
 			// The inhabitants walk through doors: one opens before them (if it is not locked) and shuts a while after
 			// the last of them has gone.
-			const MoverKey& k0 = _keys[t.first];
-			const Vec3 hinge = toWorldClosed(i, {_keys[t.first + 1].pos[0], _keys[t.first + 1].pos[1], _keys[t.first + 1].pos[2]});
-			(void)k0;
+			if (!s.hingeSet) {
+				s.hinge = toWorldClosed(i, {_keys[t.first + 1].pos[0], _keys[t.first + 1].pos[1], _keys[t.first + 1].pos[2]});
+				s.hingeSet = true;
+			}
+			const Vec3 hinge = s.hinge;
 			bool someone = false;
 			Vec3 who = {0, 0, 0};
 			for (u32 o = 0; o < otherCount; ++o) {
@@ -626,16 +685,21 @@ void Triggers::doorPose(u32 i) {
 	const Quat turn = quatFromYaw(s.doorAngle);
 	s.rot = quatMul(turn, q0);
 	s.pos = hinge + quatRotate(turn, p0 - hinge);
+	refreshCenter(i);
 }
 
 int Triggers::doorNear(Vec3 feet, float yaw, float reach) const {
 	int best = -1;
 	float bestD = reach * reach;
-	for (u32 i = 0; i < _h.count; ++i) {
-		if (_list[i].kind != TRG_DOOR) continue;
-		// Measured to the middle of the leaf as it stands now.
+	for (u32 k = 0; k < _doorCount; ++k) {
+		const u32 i = _doorList[k];
+		// Measured to the middle of the leaf as it stands now (first a quick no by its place: a leaf is a few metres).
 		const State& s = _state[i];
-		const Vec3 c = solid(i) ? toWorld(i, s.collCenter) : s.pos;
+		{
+			const float qx = s.pos.x - feet.x, qz = s.pos.z - feet.z, far = reach + 400.0f;
+			if (qx * qx + qz * qz > far * far) continue;
+		}
+		const Vec3 c = solid(i) ? s.worldCenter : s.pos;
 		const float dx = c.x - feet.x, dz = c.z - feet.z;
 		const float d2 = dx * dx + dz * dz;
 		if (d2 >= bestD || fabsf(c.y - (feet.y + 100.0f)) > 220.0f) continue;
@@ -718,16 +782,17 @@ bool Triggers::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, int*
 	if (!_coll) return false;
 	bool found = false;
 	float best = from.y - maxDrop;
-	for (u32 i = 0; i < _h.count; ++i) {
+	for (u32 k = 0; k < _solidCount; ++k) {
+		const u32 i = _solidList[k];
 		if (!solid(i)) continue;
 		const State& s = _state[i];
-		const Vec3 c = toWorld(i, s.collCenter);
+		const Vec3 c = s.worldCenter;
 		const float dx = c.x - from.x, dz = c.z - from.z;
 		if (dx * dx + dz * dz > s.collRadius * s.collRadius || c.y - s.collRadius > from.y || c.y + s.collRadius < best) continue;
 		const Vec3 o = toLocal(i, from);
 		const Vec3 down = quatRotate({-s.rot.x, -s.rot.y, -s.rot.z, s.rot.w}, {0, -1, 0});
 		const float* tri = _coll + size_t(_list[i].collFirst) * 9;
-		for (u32 k = 0; k < _list[i].collCount; ++k, tri += 9) {
+		for (u32 j = 0; j < _list[i].collCount; ++j, tri += 9) {
 			const Vec3 a = {tri[0], tri[1], tri[2]}, b = {tri[3], tri[4], tri[5]}, cc = {tri[6], tri[7], tri[8]};
 			float t;
 			if (!rayTriangle(o, down, a, b, cc, t) || t > maxDrop) continue;
@@ -750,17 +815,18 @@ bool Triggers::rayDown(Vec3 from, float maxDrop, float& hitY, Vec3& normal, int*
 bool Triggers::pushSphere(Vec3& center, float radius) const {
 	if (!_coll) return false;
 	bool moved = false;
-	for (u32 i = 0; i < _h.count; ++i) {
+	for (u32 k = 0; k < _solidCount; ++k) {
+		const u32 i = _solidList[k];
 		if (!solid(i)) continue;
 		const State& st = _state[i];
-		const Vec3 c = toWorld(i, st.collCenter);
+		const Vec3 c = st.worldCenter;
 		const Vec3 d = center - c;
 		const float reach = st.collRadius + radius;
 		if (dot(d, d) > reach * reach) continue;
 		Vec3 p = toLocal(i, center);
 		bool here = false;
 		const float* tri = _coll + size_t(_list[i].collFirst) * 9;
-		for (u32 k = 0; k < _list[i].collCount; ++k, tri += 9) {
+		for (u32 j = 0; j < _list[i].collCount; ++j, tri += 9) {
 			const Vec3 a = {tri[0], tri[1], tri[2]}, b = {tri[3], tri[4], tri[5]}, cc = {tri[6], tri[7], tri[8]};
 			const Vec3 q = closestPointOnTriangle(p, a, b, cc);
 			const Vec3 dq = p - q;
@@ -791,11 +857,12 @@ bool Triggers::segmentHits(Vec3 a, Vec3 b) const {
 	const Vec3 ab = b - a;
 	const float len = sqrtf(dot(ab, ab));
 	if (len < 1e-3f) return false;
-	for (u32 i = 0; i < _h.count; ++i) {
+	for (u32 k = 0; k < _solidCount; ++k) {
+		const u32 i = _solidList[k];
 		if (!solid(i)) continue;
 		const State& s = _state[i];
 		// (The segment's nearest approach to the sphere.)
-		const Vec3 c = toWorld(i, s.collCenter);
+		const Vec3 c = s.worldCenter;
 		float t = dot(c - a, ab) / (len * len);
 		t = t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
 		const Vec3 near = a + ab * t - c;
@@ -803,7 +870,7 @@ bool Triggers::segmentHits(Vec3 a, Vec3 b) const {
 		const Vec3 o = toLocal(i, a);
 		const Vec3 d = quatRotate({-s.rot.x, -s.rot.y, -s.rot.z, s.rot.w}, ab * (1.0f / len));
 		const float* tri = _coll + size_t(_list[i].collFirst) * 9;
-		for (u32 k = 0; k < _list[i].collCount; ++k, tri += 9) {
+		for (u32 j = 0; j < _list[i].collCount; ++j, tri += 9) {
 			float hit;
 			if (rayTriangle(o, d, {tri[0], tri[1], tri[2]}, {tri[3], tri[4], tri[5]}, {tri[6], tri[7], tri[8]}, hit) && hit <= len) return true;
 		}
@@ -813,10 +880,11 @@ bool Triggers::segmentHits(Vec3 a, Vec3 b) const {
 
 bool Triggers::boxTouches(const float mn[3], const float mx[3]) const {
 	if (!_coll) return false;
-	for (u32 i = 0; i < _h.count; ++i) {
+	for (u32 k = 0; k < _solidCount; ++k) {
+		const u32 i = _solidList[k];
 		if (!solid(i)) continue;
 		const State& s = _state[i];
-		const Vec3 c = toWorld(i, s.collCenter);
+		const Vec3 c = s.worldCenter;
 		const float r = s.collRadius;
 		if (c.x + r < mn[0] || c.x - r > mx[0] || c.y + r < mn[1] || c.y - r > mx[1] || c.z + r < mn[2] || c.z - r > mx[2]) continue;
 		return true;
@@ -843,7 +911,8 @@ void Triggers::draw(Pak& pak, const World& world, Vec3 eye, const float dayLight
 	if (!_blob) return;
 	bool loadedOne = false;
 	u32 rays = 0;
-	for (u32 i = 0; i < _h.count; ++i) {
+	for (u32 k = 0; k < _moverCount + _doorCount; ++k) {
+		const u32 i = k < _moverCount ? _moverList[k] : _doorList[k - _moverCount];
 		const WorldTrigger& t = _list[i];
 		State& s = _state[i];
 		if ((t.kind != TRG_MOVER && t.kind != TRG_DOOR) || s.model == NO_MODEL) continue;
@@ -856,8 +925,8 @@ void Triggers::draw(Pak& pak, const World& world, Vec3 eye, const float dayLight
 			char name[112];
 			snprintf(name, sizeof(name), "model/item.%s", _names + t.visual);
 			const u32 hash = hashName(name);
-			for (u32 k = 0; k < _modelCount; ++k)
-				if (_models[k].hash == hash) s.model = u16(_models[k].model.loaded() ? k : NO_MODEL);
+			for (u32 j = 0; j < _modelCount; ++j)
+				if (_models[j].hash == hash) s.model = u16(_models[j].model.loaded() ? j : NO_MODEL);
 			if (s.model == NO_MODEL && _modelCount < MODELS) {
 				Look& look = _models[_modelCount];
 				look.hash = hash;
@@ -884,12 +953,25 @@ void Triggers::draw(Pak& pak, const World& world, Vec3 eye, const float dayLight
 		}
 		if (!s.lit) continue;
 		const Model& m = _models[s.model].model;
+		if (_hasView || _minPixels > 0.0f) {
+			// Out of view, or too small from here (fix87).
+			const ModelHeader& mh = m.header();
+			float r = 0.0f;
+			for (int a = 0; a < 3; ++a) r = fmaxf(r, fmaxf(fabsf(mh.bbMin[a]), fabsf(mh.bbMax[a])));
+			r = fmaxf(r, 10.0f);
+			if (_minPixels > 0.0f && 2.0f * r * _focalPx < _minPixels * sqrtf(dot(d, d))) continue;
+			if (_hasView) {
+				const float mn[3] = {s.pos.x - r, s.pos.y - r, s.pos.z - r}, mx[3] = {s.pos.x + r, s.pos.y + r, s.pos.z + r};
+				if (!aabbInFrustum(_view, mn, mx)) continue;
+			}
+		}
 		float light[3];
 		for (int c = 0; c < 3; ++c) light[c] = fmaxf(s.light[c] * (1.0f + s.sky * (dayLight[c] - 1.0f)), 0.22f);
 		const Mat34 skin = mat34From(s.rot, {0, 0, 0});
 		m.drawSkinned(&skin, s.pos, light);
 		++_stats.drawn;
 	}
+	_hasView = false; // (for this frame's draw only)
 }
 
 } // namespace g3

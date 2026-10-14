@@ -54,6 +54,7 @@ bool Npcs::load(Pak& pak) {
 
 void Npcs::release() {
 	talkAbort();
+	freeNearLists();
 	_texts.release();
 	_speechHead = _speechCount = 0;
 	_speechNext = _speechDone = 1;
@@ -270,6 +271,34 @@ void Npcs::ground(NpcActor& a, const World& world, float above) {
 	if (_rooms.count()) _game.setRoom(a.npc, _rooms.hash(roomOf(n.pos)));
 }
 
+// The candidate lists of select() for `npcs` characters; false if there is no memory for them.
+bool Npcs::nearListFits(u32 npcs) {
+	if (npcs <= _nearCap && _nearList) return true;
+	freeNearLists();
+	const u32 cap = npcs + 64;
+	_nearList = static_cast<u32*>(malloc(size_t(cap) * sizeof(u32)));
+	_sweepList = static_cast<u32*>(malloc(size_t(cap) * sizeof(u32)));
+	_seen = static_cast<u32*>(calloc(cap, sizeof(u32)));
+	if (!_nearList || !_sweepList || !_seen) {
+		freeNearLists();
+		return false;
+	}
+	_nearCap = cap;
+	_nearCount = _sweepCount = _sweepPos = 0;
+	_nearNpcs = 0;
+	_nearWorld = 0xFFFF; // (made anew at the next select)
+	return true;
+}
+
+void Npcs::freeNearLists() {
+	free(_nearList);
+	free(_sweepList);
+	free(_seen);
+	_nearList = _sweepList = _seen = nullptr;
+	_nearCap = _nearCount = _sweepCount = _sweepPos = 0;
+	_nearWorld = 0xFFFF;
+}
+
 void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 	const u32 want = min<u32>(_cfg.maxShown, ACTORS);
 	const float range2 = _reach * _reach, keep2 = (_reach + 300.0f) * (_reach + 300.0f);
@@ -287,10 +316,63 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 	u32 ahead[AHEAD];
 	float aheadKey[AHEAD];
 	u32 aheadCount = 0;
-	for (u32 i = 0; i < _game.npcCount(); ++i) {
+	// (fix87) Only the candidates - those who were within reach of a sweep and a margin - and the actors, not all
+	// of the game's characters every frame (Archolos: 1980, 2.4 ms a frame on the console).
+	const u32 total = _game.npcCount();
+	const float sweepReach = _reach + 300.0f + _cfg.prefetchRange + kNearMargin, sweep2 = sweepReach * sweepReach;
+	const bool fresh = nearListFits(total);
+	auto qualifies = [&](u32 i, Vec3 from) {
 		const GameNpc& n = _game.npc(i);
-		if (n.hero || n.world != _game.currentWorld() || !n.placed) continue;
-		++_stats.here;
+		if (n.hero || n.world != _game.currentWorld() || !n.placed) return false;
+		const float dx = n.pos[0] - from.x, dy = n.pos[1] - from.y, dz = n.pos[2] - from.z;
+		return n.active || dx * dx + dy * dy + dz * dz <= sweep2;
+	};
+	auto here = [&](u32 i) {
+		const GameNpc& n = _game.npc(i);
+		return !n.hero && n.world == _game.currentWorld() && n.placed;
+	};
+	{
+		const float mx = eye.x - _nearEye.x, my = eye.y - _nearEye.y, mz = eye.z - _nearEye.z;
+		const bool moved = mx * mx + my * my + mz * mz > kNearMargin * kNearMargin * 0.25f;
+		if (fresh && (_nearWorld != _game.currentWorld() || moved || (_nearCount == 0 && _nearNpcs == 0))) {
+			// Made anew at once: all of them.
+			_nearCount = _nearHere = 0;
+			for (u32 i = 0; i < total; ++i) {
+				_nearHere += here(i);
+				if (qualifies(i, eye)) _nearList[_nearCount++] = i;
+			}
+			_nearWorld = _game.currentWorld();
+			_nearEye = eye;
+			_nearNpcs = total;
+			_sweepPos = _sweepCount = _sweepHere = 0;
+			_sweepEye = eye;
+		} else if (fresh) {
+			// A slice of the sweep: all of them in about half a second.
+			const u32 slice = total / 32 + 1;
+			if (_sweepPos == 0) {
+				_sweepEye = eye;
+				_sweepCount = _sweepHere = 0;
+			}
+			for (u32 k = 0; k < slice && _sweepPos < total; ++k, ++_sweepPos) {
+				_sweepHere += here(_sweepPos);
+				if (qualifies(_sweepPos, _sweepEye)) _sweepList[_sweepCount++] = _sweepPos;
+			}
+			if (_sweepPos >= total) {
+				u32* t = _nearList;
+				_nearList = _sweepList;
+				_sweepList = t;
+				_nearCount = _sweepCount;
+				_nearHere = _sweepHere;
+				_nearEye = _sweepEye;
+				_nearNpcs = total;
+				_sweepPos = 0;
+			}
+		}
+	}
+	++_selectStamp;
+	auto consider = [&](u32 i) {
+		const GameNpc& n = _game.npc(i);
+		if (n.hero || n.world != _game.currentWorld() || !n.placed) return;
 		const float dx = n.pos[0] - eye.x, dy = n.pos[1] - eye.y, dz = n.pos[2] - eye.z;
 		const float d2 = dx * dx + dy * dy + dz * dz;
 		const bool isActor = n.active || actorOf(i) != nullptr;
@@ -308,15 +390,15 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 					aheadKey[at] = d2;
 				}
 			}
-			continue;
+			return;
 		}
-		if (d2 > keep2) continue;
+		if (d2 > keep2) return;
 		++_stats.near;
 		// (The dead come last: the living need the places more.)
 		const float k = (isActor ? d2 * 0.7f : d2) * (n.down == DOWN_DEAD ? 4.0f : 1.0f);
 		u32 at = count;
 		while (at > 0 && key[at - 1] > k) --at;
-		if (at >= want) continue;
+		if (at >= want) return;
 		if (count < want) ++count;
 		for (u32 j = count - 1; j > at; --j) {
 			chosen[j] = chosen[j - 1];
@@ -326,6 +408,32 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 		chosen[at] = i;
 		key[at] = k;
 		dist2[at] = d2;
+		};
+	if (fresh) {
+		for (u32 k = 0; k < _nearCount; ++k) {
+			const u32 i = _nearList[k];
+			if (i >= total || _seen[i] == _selectStamp) continue;
+			_seen[i] = _selectStamp;
+			consider(i);
+		}
+		// Those made since the list (Wld_InsertNpc, a summoning), and the actors whoever they are.
+		for (u32 i = _nearNpcs; i < total; ++i)
+			if (_seen[i] != _selectStamp) {
+				_seen[i] = _selectStamp;
+				consider(i);
+			}
+		for (const NpcActor& a : _actors)
+			if (a.used && a.npc < total && _seen[a.npc] != _selectStamp) {
+				_seen[a.npc] = _selectStamp;
+				consider(a.npc);
+			}
+		_stats.here = _nearHere;
+	} else {
+		// (No memory for the lists: everybody, as before.)
+		for (u32 i = 0; i < total; ++i) {
+			_stats.here += here(i);
+			consider(i);
+		}
 	}
 	// (What the actors are made of stays in memory while this goes on.)
 	for (NpcActor& a : _actors)

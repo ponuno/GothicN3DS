@@ -7,6 +7,7 @@
 #include "g3ds/game.h"
 #include "g3ds/pak.h"
 #include "model.h"
+#include "point_grid.h"
 
 #include <stdio.h>
 
@@ -27,6 +28,7 @@ struct LootItem {
 	float light[3];   // the baked light of the floor under it (before the time of day)
 	float sky;        // how much of the sky that floor sees (the time of day's share)
 };
+static_assert(sizeof(LootItem) % sizeof(float) == 0, "LootItem: a whole number of floats (PointGrid's stride)");
 
 struct LootStats {
 	u32 count = 0;     // things of this world
@@ -54,8 +56,10 @@ public:
 	// Reads one model a frame for the things near `eye` and takes the light
 	// of their floor once it is there.
 	void update(Pak& pak, const World& world, Game& game, Vec3 eye);
-	// In PASS_WORLD: the things within `range` of `eye`.
-	void draw(Vec3 eye, const float dayLight[3], float range = 3500.0f);
+	// In PASS_WORLD: the things within `range` of `eye` - with `view`, only those in it, and with `minPixels` > 0
+	// only those still that many pixels across (`focalPx`: pixels per radian of the picture; fix87).
+	void draw(Vec3 eye, const float dayLight[3], float range = 3500.0f, const Frustum* view = nullptr, float minPixels = 0.0f,
+	          float focalPx = 208.0f);
 
 	u32 count() const { return _count; }
 	const LootItem& item(u32 i) const { return _items[i]; }
@@ -99,6 +103,7 @@ private:
 
 	LootItem* _items = nullptr;
 	u32 _count = 0;
+	PointGrid _grid; // where they lie (fix87: only those near are looked at, not all of them every frame)
 	u32 _world = 0; // pak hash of the world asset
 	Taken* _taken = nullptr;
 	u32 _takenCount = 0, _takenCap = 0;

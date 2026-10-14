@@ -23,6 +23,7 @@ void Loot::leaveWorld() {
 	free(_items);
 	_items = nullptr;
 	_count = 0;
+	_grid.release();
 	_world = 0;
 	_stats = LootStats();
 	// (The looks stay: the next world has many of the same.)
@@ -85,17 +86,18 @@ void Loot::enterWorld(Pak& pak, const char* worldName, u32 worldHash, Game& game
 	}
 	_stats.count = _count;
 	free(blob);
+	_grid.build(&_items[0].pos.x, &_items[0].pos.z, _count, u32(sizeof(LootItem) / sizeof(float)));
 }
 
 void Loot::update(Pak& pak, const World& world, Game& game, Vec3 eye) {
 	bool loadedOne = false;
 	u32 rays = 0; // floors looked for this frame: a few, so that a crowd of things coming into reach is not met in one frame
 	_stats.noModel = 0;
-	for (u32 i = 0; i < _count; ++i) {
+	auto each = [&](u32 i) {
 		LootItem& it = _items[i];
-		if (it.taken) continue;
+		if (it.taken) return;
 		const float dx = it.pos.x - eye.x, dz = it.pos.z - eye.z;
-		if (dx * dx + dz * dz > 4000.0f * 4000.0f) continue;
+		if (dx * dx + dz * dz > 4000.0f * 4000.0f) return;
 		if (!it.lit && rays < 6) {
 			++rays;
 			// Lit like the floor it lies on, once that is there.
@@ -113,13 +115,13 @@ void Loot::update(Pak& pak, const World& world, Game& game, Vec3 eye) {
 			const GameItemInfo* info = game.itemInfo(it.symbol);
 			const GameText visual = info ? info->visual : GameText(0);
 			it.model = NO_MODEL;
-			if (!visual) continue;
+			if (!visual) return;
 			for (u32 k = 0; k < _lookCount; ++k)
 				if (_looks[k].visual == visual) it.model = u16(_looks[k].model.loaded() ? k : NO_MODEL);
-			if (it.model != NO_MODEL) continue;
+			if (it.model != NO_MODEL) return;
 			bool known = false;
 			for (u32 k = 0; k < _lookCount; ++k) known = known || _looks[k].visual == visual;
-			if (known || _lookCount >= LOOKS) continue;
+			if (known || _lookCount >= LOOKS) return;
 			char name[96];
 			snprintf(name, sizeof(name), "model/item.%s", game.text(visual));
 			Look& look = _looks[_lookCount];
@@ -131,20 +133,32 @@ void Loot::update(Pak& pak, const World& world, Game& game, Vec3 eye) {
 			++_lookCount;
 		}
 		_stats.noModel += it.model == NO_MODEL;
-	}
+	};
+	_grid.forNear(eye.x, eye.z, 4000.0f, _count, each);
 	_stats.models = 0;
 	for (u32 k = 0; k < _lookCount; ++k) _stats.models += _looks[k].model.loaded();
 }
 
-void Loot::draw(Vec3 eye, const float dayLight[3], float range) {
+void Loot::draw(Vec3 eye, const float dayLight[3], float range, const Frustum* view, float minPixels, float focalPx) {
 	_stats.drawn = _stats.drawCalls = _stats.triangles = 0;
-	for (u32 i = 0; i < _count; ++i) {
+	auto each = [&](u32 i) {
 		const LootItem& it = _items[i];
-		if (it.taken || !it.lit || it.model >= _lookCount) continue;
+		if (it.taken || !it.lit || it.model >= _lookCount) return;
 		const Vec3 d = it.pos - eye;
-		if (dot(d, d) > range * range) continue;
+		const float d2 = dot(d, d);
+		if (d2 > range * range) return;
 		const Model& m = _looks[it.model].model;
-		if (!m.loaded()) continue;
+		if (!m.loaded()) return;
+		// Out of view, or too small to be seen from here (a ring, a coin: a pixel at a few metres).
+		const ModelHeader& mh = m.header();
+		float r = 0.0f;
+		for (int a = 0; a < 3; ++a) r = max(r, max(fabsf(mh.bbMin[a]), fabsf(mh.bbMax[a])));
+		r = max(r, 5.0f);
+		if (minPixels > 0.0f && 2.0f * r * focalPx < minPixels * sqrtf(d2)) return;
+		if (view) {
+			const float mn[3] = {it.pos.x - r, it.pos.y - r, it.pos.z - r}, mx[3] = {it.pos.x + r, it.pos.y + r, it.pos.z + r};
+			if (!aabbInFrustum(*view, mn, mx)) return;
+		}
 		float light[3];
 		for (int c = 0; c < 3; ++c) light[c] = max(it.light[c] * (1.0f + it.sky * (dayLight[c] - 1.0f)), 0.22f);
 		const Mat34 skin = mat34From(it.rot, {0, 0, 0});
@@ -152,7 +166,8 @@ void Loot::draw(Vec3 eye, const float dayLight[3], float range) {
 		++_stats.drawn;
 		_stats.triangles += m.triangles();
 		for (u32 p = 0; p < m.partCount(); ++p) _stats.drawCalls += m.part(p).indexCount != 0;
-	}
+	};
+	_grid.forNear(eye.x, eye.z, range, _count, each);
 }
 
 void Loot::drawHeld(Pak& pak, Game& game, u32 symbol, const Mat34& attach, Vec3 origin, const float light[3]) {
@@ -221,23 +236,24 @@ void Loot::drawInHand(Pak& pak, Game& game, const Model& host, const Pose& pose,
 int Loot::nearest(Vec3 feet, float yaw, float reach, float halfAngle) const {
 	int best = -1;
 	float bestScore = 1e30f;
-	for (u32 i = 0; i < _count; ++i) {
+	auto each = [&](u32 i) {
 		const LootItem& it = _items[i];
-		if (it.taken) continue;
+		if (it.taken) return;
 		const float dx = it.pos.x - feet.x, dz = it.pos.z - feet.z, dy = it.pos.y - feet.y;
 		const float d2 = dx * dx + dz * dz;
-		if (d2 > reach * reach || dy < -80.0f || dy > 160.0f) continue;
+		if (d2 > reach * reach || dy < -80.0f || dy > 160.0f) return;
 		float off = atan2f(dx, dz) - yaw;
 		while (off > 3.14159265f) off -= 6.2831853f;
 		while (off < -3.14159265f) off += 6.2831853f;
-		if (d2 > 40.0f * 40.0f && fabsf(off) > halfAngle) continue;
-		// The nearest, and of two as near the one more ahead.
+		if (d2 > 40.0f * 40.0f && fabsf(off) > halfAngle) return;
+		// The nearest, and of two as near the one more ahead (of equal ones the first, as before).
 		const float score = sqrtf(d2) + 60.0f * fabsf(off);
-		if (score < bestScore) {
+		if (score < bestScore || (score == bestScore && int(i) < best)) {
 			bestScore = score;
 			best = int(i);
 		}
-	}
+	};
+	_grid.forNear(feet.x, feet.z, reach, _count, each);
 	return best;
 }
 

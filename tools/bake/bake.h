@@ -36,6 +36,11 @@ struct BakeOptions {
 	// sway (--wind; the importer marks them, without it the marks are dropped).
 	AoOptions ao;
 	bool wind = false;
+	// --probe X Y Z [--probe-radius M]: lists the triangles around that place (metres) in the report, at two stages of the
+	// bake (as imported; after the light and occlusion) - to find where a flat patch seen in the game comes from.
+	bool probe = false;
+	float probeAt[3] = {0, 0, 0};
+	float probeRadius = 25.0f;
 	// Water is lit the same everywhere (--water-light): the vertex light of its polygons is a fixed blue-green tone of this
 	// brightness (0..255) instead of what the source mesh has (big polygons, lightmapped per corner: patches of very
 	// different brightness). 0 keeps the source's light.

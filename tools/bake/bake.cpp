@@ -12,6 +12,7 @@
 #include "g3ds/world.h"
 
 #include <algorithm>
+#include <functional>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -30,6 +31,7 @@
 #include <vector>
 
 namespace g3 {
+
 
 namespace {
 
@@ -133,6 +135,42 @@ std::string format(const char* fmt, ...) {
 	va_end(ap);
 	return buf;
 }
+
+namespace {
+// The triangles whose middle is within `radius` metres of `at`, the biggest first: where they are, how long their edges
+// are, what they are made of and the light/occlusion in their corners.
+void probeReport(const SrcScene& scene, const float at[3], float radius, const char* stage, const std::function<void(const std::string&)>& say) {
+	struct Hit { float edge; std::string text; };
+	std::vector<Hit> hits;
+	size_t inside = 0;
+	for (const SrcTriangle& t : scene.triangles) {
+		float mid[3] = {0, 0, 0}, edge = 0;
+		for (int a = 0; a < 3; ++a) mid[a] = (t.v[0].pos[a] + t.v[1].pos[a] + t.v[2].pos[a]) / 3.0f * 0.01f;
+		const float dx = mid[0] - at[0], dy = mid[1] - at[1], dz = mid[2] - at[2];
+		if (dx * dx + dy * dy + dz * dz > radius * radius) continue;
+		++inside;
+		for (int k = 0; k < 3; ++k) {
+			float d2 = 0;
+			for (int a = 0; a < 3; ++a) {
+				const float d = t.v[(k + 1) % 3].pos[a] - t.v[k].pos[a];
+				d2 += d * d;
+			}
+			edge = std::max(edge, std::sqrt(d2) * 0.01f);
+		}
+		if (edge < 2.0f) continue;
+		char buf[400];
+		const std::string& name = t.material < scene.materials.size() ? scene.materials[t.material].name : std::string("?");
+		int n = std::snprintf(buf, sizeof(buf), "  [%.0f %.0f %.0f] edge %.1f m, %s:", double(mid[0]), double(mid[1]), double(mid[2]), double(edge), name.c_str());
+		for (int k = 0; k < 3 && n > 0 && n < int(sizeof(buf)) - 40; ++k)
+			n += std::snprintf(buf + n, sizeof(buf) - size_t(n), " (%d %d %d a%d o%d)", t.v[k].rgba[0], t.v[k].rgba[1], t.v[k].rgba[2], t.v[k].rgba[3], t.v[k].occlusion);
+		hits.push_back({edge, buf});
+	}
+	std::sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) { return a.edge > b.edge; });
+	say(format("probe (%s): %zu triangles within %.0f m of %.0f %.0f %.0f, %zu with an edge of 2 m or more (the biggest 30; corners: r g b, a = daylight, o = occlusion):",
+	           stage, inside, double(radius), double(at[0]), double(at[1]), double(at[2]), hits.size()));
+	for (size_t i = 0; i < hits.size() && i < 30; ++i) say(hits[i].text);
+}
+} // namespace
 
 template <class T> void append(std::vector<u8>& out, const std::vector<T>& items) {
 	const u8* p = reinterpret_cast<const u8*>(items.data());
@@ -514,6 +552,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			for (SrcTriangle& t : bw.scene.triangles)
 				for (SrcVertex& v : t.v) v.rgba[3] = 0;
 		applyWaterLight(bw.scene, opt.waterLight);
+		if (opt.probe) probeReport(bw.scene, opt.probeAt, opt.probeRadius, "as imported", line);
 		AoStats ao;
 		if (opt.ao.level != AO_OFF) bakeOcclusion(bw.scene, aoMaterials, opt.ao, ao);
 		LightStats lightStats;
@@ -522,6 +561,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			lo.threads = opt.threads;
 			bakeLights(bw.scene, aoMaterials, lo, lightStats);
 		}
+		if (opt.probe) probeReport(bw.scene, opt.probeAt, opt.probeRadius, "after occlusion and lamps", line);
 		const bool hasWind = opt.wind && windyMaterials > 0;
 		ChunkerOptions chunkerOpt = opt.chunker;
 		chunkerOpt.vertexFx = opt.ao.level != AO_OFF || hasWind;

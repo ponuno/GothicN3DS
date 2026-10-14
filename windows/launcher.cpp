@@ -13,6 +13,7 @@
 #include <shlobj.h>
 
 #include <atomic>
+#include <cstdio>
 #include <string>
 #include <thread>
 #include <vector>
@@ -49,6 +50,23 @@ std::wstring shortPath(const std::wstring& p) {
 }
 
 bool exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; }
+
+// Extra command-line options for the baker from "bake_args.txt" beside this program (one line or several, as typed
+// after g3ds-bake: e.g. --probe -843 11 -1080 --ao-extra 500000). Empty if there is no such file.
+std::wstring extraArgs(const std::wstring& dir) {
+	FILE* f = _wfopen((dir + L"bake_args.txt").c_str(), L"rb");
+	if (!f) return L"";
+	std::string text;
+	char buf[512];
+	size_t n;
+	while ((n = fread(buf, 1, sizeof(buf), f)) > 0 && text.size() < 4096) text.append(buf, n);
+	fclose(f);
+	for (char& c : text)
+		if (c == '\r' || c == '\n' || c == '\t') c = ' ';
+	if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB && static_cast<unsigned char>(text[2]) == 0xBF)
+		text.erase(0, 3);
+	return text.empty() ? L"" : L" " + utf8ToWide(text);
+}
 
 void say(const std::wstring& line) { PostMessageW(gWnd, WM_LOGLINE, 0, LPARAM(new std::wstring(line))); }
 void status(const std::wstring& text) { PostMessageW(gWnd, WM_STATUS, 0, LPARAM(new std::wstring(text))); }
@@ -179,6 +197,11 @@ void pipeline(std::wstring game, bool music, bool gfxPlus, bool lod, bool simpli
 		if (simplifyLarge) cmd += L" --simplify-ratio-large 0.4";
 		if (!voices) cmd += L" --no-voices";
 		if (debug) cmd += L" --debug-report \"" + outShort + L"bake_debug.txt\"";
+		const std::wstring extra = extraArgs(gExeDir);
+		if (!extra.empty()) {
+			say(L"Extra options from bake_args.txt:" + extra);
+			cmd += extra;
+		}
 		ok = run(cmd);
 	}
 	// (The temporary music files are big and useless afterwards.)

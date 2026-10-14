@@ -891,7 +891,7 @@ void App::render() {
 			_puddles.draw(_world, _cam.pos, _weather.wet(), _weather.rain(), sky.horizon, _clock);
 		}
 		_shadows.begin();
-		const bool castHero = _settings.shadows == SHADOWS_HERO_CAST && !_gfxRelief;
+		const bool castHero = _settings.shadows == SHADOWS_HERO_CAST && !_windRelief; // (only given up at the halved frame rate)
 		if (castHero && _heroVisible && _hero.loaded()) {
 			// The light: the sun by day, the moon at night, a lamp overhead indoors; fainter under cloud and rain.
 			float lightDir[3] = {0.25f, -0.96f, 0.1f};
@@ -1506,9 +1506,9 @@ void App::weatherSound(float dt) {
 		(void)used;
 		if (!_rainName)
 			for (const char* n : kRain)
-				if (_sound.knows(n)) {
+				if (_sound.knows(n) && (!_rainName || _sound.isLoop(n))) {
 					_rainName = n;
-					break;
+					if (_sound.isLoop(n)) break;
 				}
 		if (!_thunderName)
 			for (const char* n : kThunder)
@@ -1535,8 +1535,13 @@ void App::weatherSound(float dt) {
 		return;
 	}
 	const float gain = 0.15f + 0.65f * amount;
-	if (!_rainLoop || !_sound.playing(_rainLoop)) _rainLoop = _sound.play(_rainName, nullptr, gain);
-	else _sound.setHandleGain(_rainLoop, gain);
+	_rainRetry -= dt;
+	if (_rainLoop && _sound.playing(_rainLoop)) {
+		_sound.setHandleGain(_rainLoop, gain);
+	} else if (_rainRetry <= 0.0f) {
+		_rainLoop = _sound.play(_rainName, nullptr, gain);
+		_rainRetry = 0.25f;
+	}
 }
 
 void App::toast(const char* text, float seconds) {

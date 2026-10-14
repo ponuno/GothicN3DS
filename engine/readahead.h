@@ -33,6 +33,9 @@ struct ReadAheadStats {
 	u32 queued = 0;      // wishes not yet read
 	u32 clipHits = 0;    // of hits/misses: the animations (fix98)
 	u32 clipMisses = 0;
+	u32 clipWished = 0;  // clips the models' chain asked for (fix101)
+	u32 clipRead = 0;    // clips read ahead
+	u32 dropped = 0;     // wishes pushed out of a full queue or cleared by relieve
 };
 
 class ReadAhead {

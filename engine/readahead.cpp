@@ -114,6 +114,7 @@ void ReadAhead::pushLocked(u32 hash, bool low) {
 	if (count == QUEUE) {
 		head = (head + 1) % QUEUE;
 		--count;
+		++_stats.dropped;
 	}
 	q[(head + count) % QUEUE] = hash;
 	++count;
@@ -186,6 +187,7 @@ void ReadAhead::chain(const PakEntry& e, const u8* blob) {
 		memcpy(&ref, blob + refsAt + u64(i) * sizeof(ModelClipRef), sizeof(ref));
 		if (!wantedClipLocked(ref.nameHash)) continue;
 		pushLocked(ref.entryHash, true);
+		++_stats.clipWished;
 		++clips;
 	}
 	unlock();
@@ -239,6 +241,7 @@ bool ReadAhead::readOne() {
 	if (_enabled) {
 		storeLocked(hash, blob, e->size);
 		++_stats.loaded;
+		if (e->type == ASSET_CLIP) ++_stats.clipRead;
 	} else {
 		free(blob);
 	}
@@ -283,6 +286,7 @@ void ReadAhead::relieve(u32 ms) {
 	if (now - _lastRelief < 2000.0) return; // (not again at once: the models wait for these bytes)
 	_lastRelief = now;
 	lock();
+	_stats.dropped += _qCount + _lCount;
 	for (Slot& s : _slots)
 		if (s.blob) freeSlotLocked(s);
 	_qHead = _qCount = _lHead = _lCount = 0;

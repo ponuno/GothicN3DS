@@ -298,10 +298,58 @@ void appendMesh(const zenkit::Mesh& mesh, const ZenImportOptions& opt, SrcScene&
 		for (size_t t = 0; t < triCount; ++t) std::swap(scene.triangles[firstTriangle + t].v[1], scene.triangles[firstTriangle + t].v[2]);
 	}
 
+	// What is dark and large in the source (before any cutting): a flat black patch seen in the game is one of these
+	// when it comes from the source's light. The biggest are listed with their place (metres), to match against the
+	// game's position display.
+	{
+		struct Dark { float area, edge, at[3]; bool lightmap; u8 rgb[3][3]; };
+		std::vector<Dark> dark;
+		u64 darkLightmap = 0, darkVertex = 0;
+		for (size_t t = 0; t < triCount; ++t) {
+			const SrcTriangle& w = scene.triangles[firstTriangle + t];
+			float edge = 0;
+			int bright = 0;
+			for (int k = 0; k < 3; ++k) {
+				float d2 = 0;
+				for (int a = 0; a < 3; ++a) {
+					const float d = w.v[(k + 1) % 3].pos[a] - w.v[k].pos[a];
+					d2 += d * d;
+				}
+				edge = std::max(edge, std::sqrt(d2));
+				bright = std::max({bright, int(w.v[k].rgba[0]), int(w.v[k].rgba[1]), int(w.v[k].rgba[2])});
+			}
+			if (edge < 500.0f || bright >= 30) continue;
+			const bool lm = t < hasSample.size() && hasSample[t] && trusted;
+			(lm ? darkLightmap : darkVertex)++;
+			Dark d {};
+			d.edge = edge;
+			d.area = edge * edge;
+			d.lightmap = lm;
+			for (int a = 0; a < 3; ++a) d.at[a] = (w.v[0].pos[a] + w.v[1].pos[a] + w.v[2].pos[a]) / 3.0f * 0.01f;
+			for (int k = 0; k < 3; ++k) std::copy_n(w.v[k].rgba, 3, d.rgb[k]);
+			dark.push_back(d);
+		}
+		if (!dark.empty()) {
+			std::sort(dark.begin(), dark.end(), [](const Dark& a, const Dark& b) { return a.area > b.area; });
+			std::string note = "dark large triangles in the source (edge 5 m or more, no corner brighter than 30/255): " +
+			                   std::to_string(darkLightmap) + " lit from a lightmap, " + std::to_string(darkVertex) +
+			                   " by the vertex light; the largest (x y z in m, edge, source):";
+			char buf[160];
+			for (size_t i = 0; i < dark.size() && i < 12; ++i) {
+				std::snprintf(buf, sizeof(buf), " [%.0f %.0f %.0f, %.0f m, %s %d/%d/%d]", double(dark[i].at[0]), double(dark[i].at[1]),
+				              double(dark[i].at[2]), double(dark[i].edge * 0.01f), dark[i].lightmap ? "lightmap" : "vertex",
+				              dark[i].rgb[0][0], dark[i].rgb[1][0], dark[i].rgb[2][0]);
+				note += buf;
+			}
+			scene.notes.push_back(note);
+		}
+	}
+
 	// A lightmap holds more than its polygon's corners: where a shade's edge crosses a large triangle, the corners'
 	// light stretched over it is a flat dark (or bright) wedge. Cut such triangles into four - the new corners
 	// sample the lightmap at their own place - until the corners agree with the lightmap or the cut is small.
 	u64 lmCut = 0, lmTriangles = 0;
+	bool lmExhausted = false;
 	if (trusted && opt.lightmaps && opt.lightmapExtra > 0) {
 		const float cell = std::max(opt.lightmapCell, 10.0f);
 		u32 budget = opt.lightmapExtra;
@@ -353,7 +401,7 @@ void appendMesh(const zenkit::Mesh& mesh, const ZenImportOptions& opt, SrcScene&
 			for (int depth = 0; depth < 6 && !work.empty(); ++depth) {
 				next.clear();
 				for (const SrcTriangle& w : work) {
-					if (budget < 3 || edgeOf(w) <= cell || error(lm, w) < 10.0f) {
+					if (budget < 3 || edgeOf(w) <= cell || error(lm, w) < 16.0f) {
 						done.push_back(w);
 						continue;
 					}
@@ -384,6 +432,7 @@ void appendMesh(const zenkit::Mesh& mesh, const ZenImportOptions& opt, SrcScene&
 			}
 		}
 		lmTriangles = extra.size();
+		lmExhausted = budget < 3;
 		scene.triangles.insert(scene.triangles.end(), extra.begin(), extra.end());
 	}
 
@@ -402,7 +451,8 @@ void appendMesh(const zenkit::Mesh& mesh, const ZenImportOptions& opt, SrcScene&
 			        "% of the corners inside the lightmap rectangle)" +
 			        (opt.lightmapExtra > 0
 			             ? "; " + std::to_string(lmCut) + " large ones cut where the lightmap differs from their corners, +" +
-			                   std::to_string(lmTriangles) + " triangles (--lightmap-extra " + std::to_string(opt.lightmapExtra) + ")"
+			                   std::to_string(lmTriangles) + " triangles (--lightmap-extra " + std::to_string(opt.lightmapExtra) + ")" +
+			                   (lmExhausted ? " - USED UP: later ones were left whole" : "")
 			             : std::string());
 		else
 			note += "NOT applied: only " + std::to_string(corners ? inside * 100 / corners : 0) +

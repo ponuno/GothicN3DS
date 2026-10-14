@@ -388,6 +388,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		int fallbackIndex = -1;
 		std::map<std::string, int> flatIndex; // flat texture name -> table index
 		std::vector<std::string> untextured;  // for the report
+		u32 averagesStored = 0;               // materials with the texture's mean colour (drawn until the texture is there)
 		u32 blended = 0, animated = 0, scrolling = 0, water = 0;
 		// "Graphics+": which materials sway, and what each does for the occlusion.
 		std::vector<bool> windy(scene.materials.size(), false);
@@ -455,6 +456,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				const TexJob& tj = jobs[jobIndex[texturePakName(sm.texture)]];
 				farColor[i] = {tj.average[0], tj.average[1], tj.average[2]};
 				wm.average = u16(((tj.average[0] >> 3) << 11) | ((tj.average[1] >> 2) << 5) | (tj.average[2] >> 3));
+				++averagesStored;
 				// A cut-out drawn solid: smaller by its holes (area goes with the square).
 				if (wm.flags & MATF_ALPHA_TEST) farShrink[i] = std::clamp(std::sqrt(tj.coverage), 0.35f, 1.0f);
 			} else if (sm.hasColor) {
@@ -1217,6 +1219,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		            "%u animated, %u scrolling",
 		            worldMaterials.size(), size_t(std::count(used[w].begin(), used[w].end(), 1)), textureTable.size(),
 		            blended, water, animated, scrolling));
+		line(format("material mean colours (stand-in until the texture arrives): %u of %zu materials", averagesStored, worldMaterials.size()));
 		if (!untextured.empty()) {
 			std::string list;
 			for (size_t i = 0; i < untextured.size() && i < 16; ++i) list += (i ? ", " : "") + untextured[i];

@@ -1404,6 +1404,19 @@ const WorldLadder* World::ladderAt(Vec3 p) const {
 	return nullptr;
 }
 
+// Every texture of the full batches of a box is in (or will never come).
+bool World::clusterTexturesThere(const Loaded& l, u32 cluster) const {
+	for (u32 b = 0; b < l.batchCount; ++b) {
+		const Batch& batch = l.batches[b];
+		if (batch.cluster != cluster || batch.lodMode == BATCH_LOD_FAR_ONLY) continue;
+		const WorldMaterial& m = _materials[batch.material];
+		if (m.flags & (MATF_NO_TEXTURE | MATF_WATER)) continue;
+		const TexSlot& slot = _tex[m.texture];
+		if (!slot.tex && !slot.failed) return false;
+	}
+	return true;
+}
+
 // How far the farthest point of a box is from `c`.
 static float aabbFarDistance(const float mn[3], const float mx[3], Vec3 c) {
 	const float dx = max(c.x - mn[0], mx[0] - c.x), dy = max(c.y - mn[1], mx[1] - c.y), dz = max(c.z - mn[2], mx[2] - c.z);
@@ -1431,7 +1444,25 @@ void World::classify(const Loaded& l, u32 index, bool count) {
 		// they should be, not dissolving in.)
 		_clusterNear[c] = aabbDistance(k.bbMin, k.bbMax, _camera);
 		// Far enough from the camera for the stand-ins (a cluster's own distance: a chunk is 40 m wide).
-		k.lod = l.hasLod && _cfg.lodDistance > 0.0f && _clusterNear[c] > (k.lod ? _cfg.lodDistance * _cfg.lodHysteresis : _cfg.lodDistance);
+		bool wantLod = l.hasLod && _cfg.lodDistance > 0.0f && _clusterNear[c] > (k.lod ? _cfg.lodDistance * _cfg.lodHysteresis : _cfg.lodDistance);
+		// Near enough for the full batches, but their textures have not come: the stand-ins stay (a chunk shows white, or
+		// its mean colours, until then). At most a few seconds: a texture that never comes must not keep them for ever.
+		if (l.hasLod && _cfg.lodDistance > 0.0f) {
+			if (wantLod) {
+				k.texOk = 0;
+				k.holdFrames = 0;
+			} else if (!k.texOk && k.mixFrame != _drawFrame) {
+				if (clusterTexturesThere(l, c)) {
+					k.texOk = 1;
+				} else if (k.holdFrames < 240) {
+					++k.holdFrames;
+					wantLod = true;
+				}
+			} else if (!k.texOk && k.holdFrames > 0 && k.holdFrames < 240) {
+				wantLod = true; // (a second classify() of the same frame: the same answer)
+			}
+		}
+		k.lod = wantLod;
 		_stats.lodChunks += count && k.lod;
 		// The stand-ins and the full batches dissolve into each other (a chunk not drawn the frame before takes its state at once).
 		if (k.mixFrame != _drawFrame) {

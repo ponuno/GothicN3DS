@@ -269,6 +269,8 @@ private:
 		bool lod; // drawn with its simplified stand-ins just now (with a little hysteresis)
 		u8 lodMix = 0;     // how much of the stand-ins and how little of the full batches is drawn, 0..255: dissolves between the two
 		u32 mixFrame = 0;  // the draw() lodMix was last stepped in (classify() runs more than once a frame)
+		u8 texOk = 0;      // 1: the textures of its full batches have been seen all there (fix106); 0: not yet looked at
+		u8 holdFrames = 0; // frames its stand-ins have been kept for the textures that are on their way
 	};
 	struct Loaded {
 		gfx::Mesh* mesh;
@@ -296,6 +298,7 @@ private:
 	// The colour a material is drawn in until its texture has arrived (WorldMaterial::average): one small solid texture
 	// per colour (RGB444), made when first wanted.
 	gfx::Texture* solidFor(u16 rgb565);
+	bool clusterTexturesThere(const Loaded& l, u32 cluster) const;
 	gfx::Texture* _solid[48] = {};
 	u16 _solidColour[48] = {};
 	u32 _solidNext = 0;

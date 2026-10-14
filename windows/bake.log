@@ -194,10 +194,10 @@ other objects named like lights: ADANOSLIGHT.PFX x1 (not drawn); BRAZIER_FIRE.AS
 water: 9 materials, opacity 150..240 of 255
 camera: from the game's CAMERA.DAT: CAMMODNORMAL range 3.00 m (2.00..10.00), elevation 30, azimuth 0, view offset 23 0, pace 40; CAMMODSWIM range 3.00 m (2.90..5.10), elevation 20, azimuth 0, view offset 15 0, pace 40; CAMMODFALL range 3.00 m (1.50..5.50), elevation 60, azimuth 0, view offset 0 0, pace 10
 far layer: 199191 triangles (and 51434 in strips along 25717 seam edges; 125730 vertices) of 2906766, 9430 crowns, grid 2.0-173.0 m (seams 15.2; 14 tries), 337 tiles, 16342 ranges, 4.13 MB
-visibility (--vis): 10517 rows in 3611 cells (2897 cells with more than one floor; 1538 rows of rooms, 9286 clusters lie wholly inside a room), 48457 places looked from, 22927979 clusters in the rows of which 13393948 (58%) hidden, 927.4 M rays in 18.2 s, radius 150 m, near 25 m; 2.99 MB
-simplified geometry (--simplify): 1537 of 6911 chunks, 6825703 -> 4941625 triangles of what was simplified (72%), vertices 16649827 -> 14758075, 1.8 s
+visibility (--vis): 10517 rows in 3611 cells (2897 cells with more than one floor; 1538 rows of rooms, 9286 clusters lie wholly inside a room), 48457 places looked from, 22927979 clusters in the rows of which 13393948 (58%) hidden, 927.4 M rays in 20.5 s, radius 150 m, near 25 m; 2.99 MB
+simplified geometry (--simplify): 1537 of 6911 chunks, 6825703 -> 4941625 triangles of what was simplified (72%), vertices 16649827 -> 14758075, 2.1 s
   of 6911 chunks: 4992 have fewer than 24 simplifiable triangles, 382 would shrink by less than 3%
-far geometry (--lod): 1242 of 6911 chunks got a stand-in, 3669119 -> 2422623 triangles of the simplified batches (66%), +34.60 MB, 1.3 s
+far geometry (--lod): 1242 of 6911 chunks got a stand-in, 3669119 -> 2422623 triangles of the simplified batches (66%), +34.60 MB, 1.5 s
   of 6911 chunks: 0 of medium or small objects left alone (--no-lod-objects), 5213 have too few simplifiable triangles (48 for the large, 200 for objects), 456 would shrink by too little; 4984893 simplifiable triangles in the rest
   chunks of medium and small objects with a stand-in (kept 40% of the triangles of what they replace): 716, +26.79 MB
 vertex cache order: 11098974 triangles; vertex shader runs per triangle 2.34 -> 1.79 (16-entry FIFO)
@@ -216,8 +216,8 @@ seams: 31244 vertices welded to a neighbour within 0.25 cm, 402457 T-junctions c
 chunks by detail tier (--no-split: one chunk holds everything): 5960 of the world and big things (96.1 MB, always around the camera), 508 with medium objects (76.9 MB, within their reach), 443 with small ones (142.1 MB, within theirs)
 draw distance classes: 2935837 triangles always drawn, 2522317 medium, 5215648 small; 213213 batches (30.9 per chunk)
 clusters: the chunks are cut into 75260 boxes of 10 m (95 at most in one): 117 triangles and 2.8 batches in a box on average
-ambient occlusion (--ao low): 29790264 corners from 14168160 places, 16 rays of 2.5 m each against 5169544 triangles (226.7 M rays, 34.2 s); 52% shut in on average, 15278268 corners more than half
-lamp light (--lights): 6778 lamps in the world, 317 baked (6461 static ones left out), 783757 corners lit by 2.25 M shadow rays, 60000 triangles added by cutting those near a lamp (4.1 s)
+ambient occlusion (--ao low): 29790264 corners from 14168160 places, 16 rays of 2.5 m each against 5169544 triangles (226.7 M rays, 37.3 s); 52% shut in on average, 15278268 corners more than half
+lamp light (--lights): 6778 lamps in the world, 317 baked (6461 static ones left out), 783757 corners lit by 2.25 M shadow rays, 60000 triangles added by cutting those near a lamp (4.5 s)
 wind: 6895622 corners sway, 117 world materials marked
 materials: 1574 world materials from 3280 source materials, 1309 textures; 41 blended (5 water), 14 animated, 3 scrolling
 untextured: 5 materials drawn in their own colour: 'SUN_BLOCKER_2000' (no texture, 1706 triangles, colour 237 34 244), 'TELLER' (no texture, 60 triangles, colour 136 136 136), 'MEAT' (no texture, 37 triangles, colour 209 105 84), 'BEERMUG' (no texture, 10 triangles, colour 122 81 37), 'MATERIAL #1' (no texture, 5 triangles, colour 242 242 220)
@@ -307,8 +307,8 @@ particle effects: 75 placed by the world, 0 from fire places' trees
 objects skipped (not supported yet): 25 camera-facing sprites, 0 other
 other objects named like lights: DT_FIREPLACE_V1.3DS x4; FIRE.PFX x2 (not drawn); FIREPLACE_GROUND.ASC x1 <- FIREPLACE_GROUND.MDL; FIRE_COMPLETE_A0.TGA x4 (not drawn); FIRE_MEDIUM.PFX x39 (not drawn); FIRE_SMOKE.PFX x6 (not drawn); FIRE_SPARKS.PFX x6 (not drawn); ITLS_TORCH_01.3DS x2; KM_VOB_LANTERN_WALL.3DS x2; KM_VOB_SKULL_CANDLE_01.3DS x2; NW_MISC_FIREPLACE_01.3DS x4; OC_FIREPLACE_V1.3DS x1; OC_FIREPLACE_V5.3DS x2; OW_MISC_WALL_TORCH_01.3DS x22
 water: 3 materials, opacity 150..180 of 255
-visibility (--vis): 90 rows in 36 cells (33 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 459 places looked from, 83366 clusters in the rows of which 45485 (55%) hidden, 4.7 M rays in 0.1 s, radius 150 m, near 25 m; 0.01 MB
-simplified geometry (--simplify): 78 of 89 chunks, 207048 -> 128408 triangles of what was simplified (62%), vertices 346444 -> 283965, 0.0 s
+visibility (--vis): 90 rows in 36 cells (33 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 459 places looked from, 83366 clusters in the rows of which 45485 (55%) hidden, 4.7 M rays in 0.2 s, radius 150 m, near 25 m; 0.01 MB
+simplified geometry (--simplify): 78 of 89 chunks, 207048 -> 128408 triangles of what was simplified (62%), vertices 346444 -> 283965, 0.1 s
   of 89 chunks: 10 have fewer than 24 simplifiable triangles, 1 would shrink by less than 3%
 vertex cache order: 205864 triangles; vertex shader runs per triangle 1.96 -> 1.45 (16-entry FIFO)
 things to use by the player: 44 have a name to show (he may use those), 10 have none (the inhabitants' only); 0 belong to somebody (a person or a guild)
@@ -326,7 +326,7 @@ seams: 1404 vertices welded to a neighbour within 0.25 cm, 10796 T-junctions clo
 chunks by detail tier (--no-split: one chunk holds everything): 40 of the world and big things (2.2 MB, always around the camera), 24 with medium objects (1.9 MB, within their reach), 25 with small ones (2.9 MB, within theirs)
 draw distance classes: 90343 triangles always drawn, 83410 medium, 111231 small; 3808 batches (42.8 per chunk)
 clusters: the chunks are cut into 1063 boxes of 10 m (31 at most in one): 194 triangles and 3.6 batches in a box on average
-ambient occlusion (--ao low): 662250 corners from 265638 places, 16 rays of 2.5 m each against 116864 triangles (4.3 M rays, 0.4 s); 44% shut in on average, 274683 corners more than half
+ambient occlusion (--ao low): 662250 corners from 265638 places, 16 rays of 2.5 m each against 116864 triangles (4.3 M rays, 0.5 s); 44% shut in on average, 274683 corners more than half
 lamp light (--lights): 50 lamps in the world, 5 baked (45 static ones left out), 9394 corners lit by 0.02 M shadow rays, 9477 triangles added by cutting those near a lamp (0.1 s)
 wind: 3030 corners sway, 1 world materials marked
 materials: 189 world materials from 198 source materials, 198 textures; 9 blended (3 water), 3 animated, 1 scrolling
@@ -434,7 +434,7 @@ seams: 471 vertices welded to a neighbour within 0.25 cm, 4940 T-junctions close
 chunks by detail tier (--no-split: one chunk holds everything): 20 of the world and big things (0.5 MB, always around the camera), 11 with medium objects (1.2 MB, within their reach), 13 with small ones (2.4 MB, within theirs)
 draw distance classes: 18324 triangles always drawn, 42163 medium, 89128 small; 2044 batches (46.5 per chunk)
 clusters: the chunks are cut into 644 boxes of 10 m (68 at most in one): 159 triangles and 3.2 batches in a box on average
-ambient occlusion (--ao low): 397752 corners from 176959 places, 16 rays of 2.5 m each against 48906 triangles (2.8 M rays, 0.2 s); 47% shut in on average, 176830 corners more than half
+ambient occlusion (--ao low): 397752 corners from 176959 places, 16 rays of 2.5 m each against 48906 triangles (2.8 M rays, 0.3 s); 47% shut in on average, 176830 corners more than half
 lamp light (--lights): 59 lamps in the world, 3 baked (56 static ones left out), 6453 corners lit by 0.01 M shadow rays, 3156 triangles added by cutting those near a lamp (0.0 s)
 wind: 0 corners sway, 0 world materials marked
 materials: 121 world materials from 121 source materials, 113 textures; 5 blended (0 water), 1 animated, 0 scrolling
@@ -549,8 +549,8 @@ fire places: 77 objects of 1 kinds (their flames are not drawn yet):
   VOLFZACKFIRE_HIGH.ASC x77, fire FIRETREE_MEDIUM.ZEN at BIP01 FIRE <- VOLFZACKFIRE_HIGH.MDL: node BIP01 258 tris OBJ_CITY_STREETLAMP_01.TGA MOSTSTONES02.TGA
 other objects named like lights: BSFIRE_OC.MDS x1 <- BSFIRE_OC.MDM + BSFIRE_OC.MDH [script: tree BSFIRE_OC]; FIRE_COMPLETE_A0.TGA x13 (not drawn); FIRE_HOT.PFX x1 (not drawn); ITLS_TORCHBURNED_01.3DS x1; KM_VOB_BROKEN_LAMP_01.3DS x4; KM_VOB_BROKEN_LAMP_02.3DS x5; KM_VOB_CANDLESTICK_02.3DS x4; KM_VOB_CANDLESTICK_02_BIG.3DS x9; KM_VOB_CRYSTALCANDLE.3DS x7; KM_VOB_CRYSTAL_LAMP_01.3DS x12; KM_VOB_CRYSTAL_LAMP_02.3DS x2; KM_VOB_CRYSTAL_LAMP_04.3DS x2; KM_VOB_LANTERN_NOCHAIN.3DS x3; KM_VOB_LANTERN_WALL.3DS x5; KM_VOB_LANTERN_WITHCHAIN.3DS x4; KM_VOB_SKULL_CANDLE_01.3DS x18; LIGHTCONE.PFX x1 (not drawn); MFX_LIGHT_ORIGIN.PFX x1 (not drawn); NW_CITY_CANDLE_01.3DS x4; OC_BIGLIGHTER_01.3DS x2; OC_FIREWOOD_V2.3DS x2
 water: 1 materials, opacity 150..150 of 255
-visibility (--vis): 90 rows in 46 cells (25 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 573 places looked from, 102951 clusters in the rows of which 40096 (39%) hidden, 5.0 M rays in 0.1 s, radius 150 m, near 25 m; 0.02 MB
-simplified geometry (--simplify): 66 of 126 chunks, 358332 -> 240372 triangles of what was simplified (67%), vertices 845547 -> 733465, 0.2 s
+visibility (--vis): 90 rows in 46 cells (25 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 573 places looked from, 102951 clusters in the rows of which 40096 (39%) hidden, 5.0 M rays in 0.2 s, radius 150 m, near 25 m; 0.02 MB
+simplified geometry (--simplify): 66 of 126 chunks, 358332 -> 240372 triangles of what was simplified (67%), vertices 845547 -> 733465, 0.3 s
   of 126 chunks: 56 have fewer than 24 simplifiable triangles, 4 would shrink by less than 3%
 vertex cache order: 572254 triangles; vertex shader runs per triangle 1.89 -> 1.34 (16-entry FIFO)
 things to use by the player: 116 have a name to show (he may use those), 107 have none (the inhabitants' only); 0 belong to somebody (a person or a guild)
@@ -568,7 +568,7 @@ seams: 1570 vertices welded to a neighbour within 0.25 cm, 36665 T-junctions clo
 chunks by detail tier (--no-split: one chunk holds everything): 81 of the world and big things (2.4 MB, always around the camera), 21 with medium objects (4.4 MB, within their reach), 24 with small ones (10.0 MB, within theirs)
 draw distance classes: 121879 triangles always drawn, 183536 medium, 385429 small; 4322 batches (34.3 per chunk)
 clusters: the chunks are cut into 1187 boxes of 10 m (54 at most in one): 483 triangles and 3.6 batches in a box on average
-ambient occlusion (--ao low): 1659195 corners from 664480 places, 16 rays of 2.5 m each against 197429 triangles (10.6 M rays, 1.2 s); 59% shut in on average, 971694 corners more than half
+ambient occlusion (--ao low): 1659195 corners from 664480 places, 16 rays of 2.5 m each against 197429 triangles (10.6 M rays, 1.4 s); 59% shut in on average, 971694 corners more than half
 lamp light (--lights): 205 lamps in the world, 69 baked (136 static ones left out), 155307 corners lit by 0.57 M shadow rays, 60000 triangles added by cutting those near a lamp (0.2 s)
 wind: 200 corners sway, 1 world materials marked
 materials: 233 world materials from 253 source materials, 182 textures; 10 blended (1 water), 0 animated, 0 scrolling
@@ -753,7 +753,7 @@ particles: 613 effects in the scripts (238 pictures baked, 9 of the names have n
   pictures not found: item_stars_green_01, key, magiccouldron, magicfog, mfx_spell_star, mine_brick, water_dripping, water_dripping_ground, waveofinsanity_a0
 things lying about: 4796 (4786 from the world files, 10 from the start-up scripts) of 348 kinds of look; looks of all things of the scripts: 1261, 1256 models baked (203734 triangles, 5.13 MB), 1097 pictures for the inventory (9.66 MB)
 WARNING: 4 looks of things not baked (they lie there unseen): ITAT_CRAWLERQUEEN: no mesh; ITLSTORCHBURNING: no mesh; ITLSTORCHBURNING_EDITED: no mesh; ITLSTORCHCRYSTAL: no mesh
-time: sources 0.0 s, world textures 8.5 s, worlds 130.3 s, hero 0.2 s, scripts and inhabitants 116.3 s
+time: sources 0.0 s, world textures 9.5 s, worlds 146.4 s, hero 0.2 s, scripts and inhabitants 116.5 s
 dialogue: 50900 lines (3029 KB of text) from ou.bin (from an archive), in 127 blocks, 263 names given twice (the first kept)
 font: not baked (the glyphs of the fonts do not fit in 256x512 (need 584 rows)); the overlay keeps its own font
 C:\GOTHIC~1\windows\data.pak written (25167 entries); the rest (voices, music) follows
@@ -802,4 +802,4 @@ hero: fightclip T_2HRUN_2_2HRUNL: file T_2HRUN_2_2HRUNL, mds frames 1..11, 11 fr
 hero: fightclip T_2HRUNL_2_2HRUN: file T_2HRUNL_2_2HRUN, mds frames 32..38, 7 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HRUN
 hero: fightclip T_2HWALK_2_2HWALKL: file T_2HWALK_2_2HWALKL, mds frames 1..18, 18 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALKL
 hero: fightclip T_2HWALKL_2_2HWALK: file T_2HWALKL_2_2HWALK, mds frames 39..49, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALK
-wrote C:\GOTHIC~1\windows\data.pak: 4 worlds, 25167 entries in 260.6 s
+wrote C:\GOTHIC~1\windows\data.pak: 4 worlds, 25167 entries in 277.9 s

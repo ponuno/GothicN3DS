@@ -113,6 +113,17 @@ private:
 	u32 _world = 0; // pak hash of the world asset
 	Taken* _taken = nullptr;
 	u32 _takenCount = 0, _takenCap = 0;
+	// What this frame's update has already asked the read-ahead about a model (fix104): every waiting thing of a kind used to
+	// format the name, hash it and lock the read-ahead's mutex again, each frame - a crowd of them cost 10-25 ms.
+	struct Ask {
+		u32 visual = 0;
+		u32 entry = 0;
+		u32 frame = 0; // the update `have` and `idle` were taken in
+		bool have = false, idle = false;
+	};
+	enum { ASKS = 24 };
+	Ask _asks[ASKS];
+	u32 _askNext = 0, _updateNo = 0;
 	enum { LOOKS = 96 };
 	Look _looks[LOOKS];
 	u32 _lookCount = 0;

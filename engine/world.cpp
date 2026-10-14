@@ -112,6 +112,12 @@ void World::close() {
 		for (u32 i = 0; i < _hdr.chunkCount; ++i)
 			if (_loaded[i].mesh) unloadChunk(i);
 	}
+	for (u32 i = 0; i < 48; ++i) {
+		if (_solid[i]) gfx::textureDestroy(_solid[i]);
+		_solid[i] = nullptr;
+		_solidColour[i] = 0;
+	}
+	_solidNext = 0;
 	free(_materials);
 	free(_textures);
 	free(_portals);
@@ -1494,7 +1500,11 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 			const float f = float(scrollPhase) / float(period);
 			offset[a] = m.scroll[a] < 0 ? 1.0f - f : f;
 		}
-		gfx::setMaterial(_tex[u32(m.texture) + frame].tex, m.flags, float(m.opacity) * (1.0f / 255.0f), offset[0], offset[1]);
+		gfx::Texture* tex = _tex[u32(m.texture) + frame].tex;
+		// (A texture that has not arrived: the material's mean colour instead of white. Not for glass, glow, cut-outs and
+		// water: their look comes from the texture's alpha.)
+		if (!tex && m.average && !(m.flags & (MATF_BLEND | MATF_ADD | MATF_ALPHA_TEST | MATF_NO_TEXTURE))) tex = solidFor(m.average);
+		gfx::setMaterial(tex, m.flags, float(m.opacity) * (1.0f / 255.0f), offset[0], offset[1]);
 		if (!blended) gfx::setFade(float(runShown) * (1.0f / 255.0f));
 		gfx::draw(l.mesh, runFirst, runCount);
 		++_stats.drawCalls;
@@ -1845,6 +1855,22 @@ void World::drawBlended() {
 		classify(l, _order[k], false);
 		drawBatches(l, true);
 	}
+}
+
+gfx::Texture* World::solidFor(u16 rgb565) {
+	// 4 bits a channel: few colours, so the table stays small.
+	const u16 key = u16(rgb565 & 0xF79E); // (the 4 high bits of each channel, as far as 565 goes)
+	for (u32 i = 0; i < 48; ++i)
+		if (_solid[i] && _solidColour[i] == key) return _solid[i];
+	const u32 at = _solidNext++ % 48;
+	if (_solid[at]) return _solid[at]; // (full: some other colour's texture is better than a white one)
+	const u8 r = u8(((key >> 11) & 31) << 3 | 4), g = u8(((key >> 5) & 63) << 2 | 2), b = u8((key & 31) << 3 | 4);
+	TexHeader h;
+	u8 data[32];
+	texSolid(r, g, b, h, data);
+	_solid[at] = gfx::textureCreate(h, data);
+	_solidColour[at] = key;
+	return _solid[at];
 }
 
 } // namespace g3

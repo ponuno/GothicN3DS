@@ -1493,6 +1493,12 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 		u8 detail = 0;
 	};
 	std::map<std::string, MeshCost> meshCost;
+	struct PlaceCheck {
+		u32 copies = 0, off = 0;
+		float worst = 0.0f, at[3] = {0, 0, 0};
+	};
+	std::map<std::string, PlaceCheck> placeChecks;
+	std::map<std::string, u32> mirroredCopies;
 	// Plants (vertex_fx.h): by the object's name, else by a part's material or texture.
 	std::map<std::string, u32> plantsByName, plantsByPart;
 	u32 plantKinds[4] = {0, 0, 0, 0};
@@ -1504,6 +1510,11 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 		std::vector<std::pair<size_t, PlantKind>> partKinds; // (first triangle, kind) of each part
 		const zenkit::Vec3* col = vob.rotation.columns; // object -> world: p' = R * p + position
 		const bool decal = inst.mesh->kind == VisualKind::Decal;
+		// A mirrored placement (negative determinant) turns every triangle inside out: its winding is swapped back.
+		const float det = col[0].x * (col[1].y * col[2].z - col[2].y * col[1].z) - col[1].x * (col[0].y * col[2].z - col[2].y * col[0].z) +
+		                  col[2].x * (col[0].y * col[1].z - col[1].y * col[0].z);
+		const bool mirrored = det < 0.0f;
+		if (mirrored && !decal) ++mirroredCopies[visualName];
 
 		// Like ZenGin: a static object takes the light of the floor under it.
 		u8 light[4];
@@ -1586,12 +1597,41 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 					for (int c = 0; c < 3; ++c) v.rgba[c] = u8(std::clamp(float(light[c]) * shade, 0.0f, 255.0f));
 					v.rgba[3] = light[3];
 				}
-				if (flip && !decal) std::swap(tri.v[1], tri.v[2]);
+				if ((flip != mirrored) && !decal) std::swap(tri.v[1], tri.v[2]);
 				scene.triangles.push_back(tri);
 				++stats.triangles;
 			}
 		}
 		++stats.placed[size_t(inst.mesh->kind)];
+
+		// Check against the world's own bounding box of the object: where the baked triangles ended up and where the
+		// file says the object is (a bed that is placed outside its house shows up here, with its name).
+		if (!decal && scene.triangles.size() > firstTriangle) {
+			float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+			for (size_t t = firstTriangle; t < scene.triangles.size(); ++t)
+				for (const SrcVertex& v : scene.triangles[t].v)
+					for (int c = 0; c < 3; ++c) {
+						lo[c] = std::min(lo[c], v.pos[c]);
+						hi[c] = std::max(hi[c], v.pos[c]);
+					}
+			const float want[6] = {vob.bbox.min.x, vob.bbox.min.y, vob.bbox.min.z, vob.bbox.max.x, vob.bbox.max.y, vob.bbox.max.z};
+			const float size = std::max({want[3] - want[0], want[4] - want[1], want[5] - want[2]});
+			float off = 0.0f;
+			for (int c = 0; c < 3; ++c) off = std::max(off, std::max(std::fabs(0.5f * (lo[c] + hi[c]) - 0.5f * (want[c] + want[c + 3])), 0.0f));
+			if (size > 1.0f && size < 100000.0f) {
+				PlaceCheck& pc = placeChecks[visualName];
+				++pc.copies;
+				if (off > std::max(80.0f, 0.4f * size)) {
+					++pc.off;
+					if (off > pc.worst) {
+						pc.worst = off;
+						pc.at[0] = vob.position.x;
+						pc.at[1] = vob.position.y;
+						pc.at[2] = vob.position.z;
+					}
+				}
+			}
+		}
 
 		// Swaying: measured over the whole object, so that a tree's leaves near
 		// the top move most even if only they are named as leaves.
@@ -1650,6 +1690,35 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 	                      std::to_string(stats.triangles) + " triangles, " + std::to_string(stats.noCollision) +
 	                      " without collision; winding " + (flip ? "flipped" : "kept") + " (score " +
 	                      std::to_string(vote) + ")");
+	{
+		u32 total = 0;
+		std::string list;
+		for (const auto& kv : mirroredCopies) {
+			total += kv.second;
+			if (list.size() < 400) list += (list.empty() ? "" : ", ") + kv.first + " x" + std::to_string(kv.second);
+		}
+		scene.notes.push_back("mirrored placements (negative determinant, winding corrected): " + std::to_string(total) + " copies of " +
+		                      std::to_string(mirroredCopies.size()) + " visuals" + (list.empty() ? "" : ": " + list));
+	}
+	{
+		std::vector<std::pair<std::string, PlaceCheck>> bad;
+		u32 badCopies = 0;
+		for (const auto& kv : placeChecks)
+			if (kv.second.off) {
+				bad.push_back(kv);
+				badCopies += kv.second.off;
+			}
+		std::sort(bad.begin(), bad.end(), [](const auto& a, const auto& b) { return a.second.off > b.second.off; });
+		scene.notes.push_back("placement check: " + std::to_string(badCopies) + " object copies lie away from the bounding box the world file gives them, " +
+		                      std::to_string(bad.size()) + " visuals");
+		for (size_t i = 0; i < bad.size() && i < 25; ++i)
+			scene.notes.push_back("  off " + bad[i].first + ": " + std::to_string(bad[i].second.off) + " of " + std::to_string(bad[i].second.copies) +
+			                      " copies, worst " + std::to_string(int(bad[i].second.worst)) + " cm at " + std::to_string(int(bad[i].second.at[0])) + " " +
+			                      std::to_string(int(bad[i].second.at[1])) + " " + std::to_string(int(bad[i].second.at[2])));
+		for (const auto& kv : placeChecks)
+			if (kv.first.find("BED") != std::string::npos)
+				scene.notes.push_back("  bed " + kv.first + ": " + std::to_string(kv.second.copies) + " copies, " + std::to_string(kv.second.off) + " away from its box");
+	}
 	scene.notes.push_back("objects by kind: " + std::to_string(stats.placed[size_t(VisualKind::Mesh)]) + " meshes, " +
 	                      std::to_string(stats.placed[size_t(VisualKind::Model)]) + " models in rest pose, " +
 	                      std::to_string(stats.placed[size_t(VisualKind::Morph)]) + " morph meshes, " +

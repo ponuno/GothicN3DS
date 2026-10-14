@@ -113,7 +113,7 @@ struct WorldMaterial {
 	u8 reserved;
 	u16 frameMs;   // milliseconds per animation frame
 	i16 scroll[2]; // texture scrolling in WORLD_SCROLL_SCALE repeats per second
-	u16 reserved2;
+	u16 average;   // RGB565 of the texture's mean colour, 0 = not known (older data); drawn until the texture has arrived
 };
 static_assert(sizeof(WorldMaterial) == 14 + 2, "WorldMaterial layout");
 

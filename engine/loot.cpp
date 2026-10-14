@@ -94,6 +94,7 @@ void Loot::enterWorld(Pak& pak, const char* worldName, u32 worldHash, Game& game
 
 void Loot::update(Pak& pak, const World& world, Game& game, Vec3 eye) {
 	bool loadedOne = false;
+	++_updateNo;
 	u32 rays = 0; // floors looked for this frame: a few, so that a crowd of things coming into reach is not met in one frame
 	_stats.noModel = 0;
 	_stats.rayMs = _stats.loadMs = 0.0f;
@@ -129,14 +130,28 @@ void Loot::update(Pak& pak, const World& world, Game& game, Vec3 eye) {
 			bool known = false;
 			for (u32 k = 0; k < _lookCount; ++k) known = known || _looks[k].visual == visual;
 			if (known || _lookCount >= LOOKS) return;
-			char name[96];
-			snprintf(name, sizeof(name), "model/item.%s", game.text(visual));
-			const u32 entry = hashName(name);
+			Ask* ask = nullptr;
+			for (Ask& a : _asks)
+				if (a.entry && a.visual == u32(visual)) ask = &a;
+			if (!ask) {
+				char name[96];
+				snprintf(name, sizeof(name), "model/item.%s", game.text(visual));
+				ask = &_asks[_askNext++ % ASKS];
+				*ask = Ask();
+				ask->visual = u32(visual);
+				ask->entry = hashName(name);
+			}
+			const u32 entry = ask->entry;
 			if (_ahead && _ahead->running() && _ahead->enabled() && it.wait < 120) {
 				// Wished from the read-ahead's thread; built here when it is there (the frame never waits for the card).
-				_ahead->request(entry);
+				if (ask->frame != _updateNo) {
+					ask->frame = _updateNo;
+					_ahead->request(entry);
+					ask->have = _ahead->has(entry);
+					ask->idle = _ahead->idle();
+				}
 				// (And what the model drags after it - its textures - has been read too, or has had its time.)
-				if (!_ahead->has(entry) || (it.wait < 40 && !_ahead->idle())) {
+				if (!ask->have || (it.wait < 40 && !ask->idle)) {
 					++it.wait;
 					it.model = NOT_TRIED;
 					return;

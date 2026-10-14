@@ -66,6 +66,8 @@ void etc1DecodeBlock(const u8 block[8], u8 outRGBA[64]);
 
 // Decodes a mip level to top-down RGBA8 (w*h*4 bytes). Used by the software
 // backend and the tests; the 3DS never decodes.
+// An 8x8 ETC1 texture of one colour (header and 32 bytes of data), for what is drawn until the real texture is there.
+void texSolid(u8 r, u8 g, u8 b, TexHeader& header, u8 data[32]);
 void texDecodeLevel(const TexHeader& h, const u8* data, u32 level, u8* outRGBA);
 
 } // namespace g3

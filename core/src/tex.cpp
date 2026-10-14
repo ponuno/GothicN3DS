@@ -58,6 +58,24 @@ void etc1DecodeBlock(const u8 b[8], u8 out[64]) {
 	}
 }
 
+void texSolid(u8 r, u8 g, u8 b, TexHeader& header, u8 data[32]) {
+	header = TexHeader {};
+	header.magic = TEX_MAGIC;
+	header.width = header.height = 8;
+	header.format = TEX_ETC1;
+	header.mipCount = 1;
+	header.flags = 0;
+	header.dataSize = 32;
+	// Individual mode, table 0, every texel "+2": the base is the colour less 2, in 4 bits (the nearest of 17 * n).
+	auto nibble = [](u8 c) {
+		const int v = (int(c) - 2 + 8) / 17;
+		return u8(v < 0 ? 0 : (v > 15 ? 15 : v));
+	};
+	u8 block[8] = {u8((nibble(r) << 4) | nibble(r)), u8((nibble(g) << 4) | nibble(g)), u8((nibble(b) << 4) | nibble(b)), 0, 0, 0, 0, 0};
+	for (int k = 0; k < 4; ++k)
+		for (int i = 0; i < 8; ++i) data[k * 8 + i] = block[7 - i]; // (the stored block has its bytes reversed)
+}
+
 void texDecodeLevel(const TexHeader& h, const u8* data, u32 level, u8* out) {
 	const u32 w = h.width >> level, hh = h.height >> level;
 	const u32 blockBytes = texBytesPerBlock(h.format);

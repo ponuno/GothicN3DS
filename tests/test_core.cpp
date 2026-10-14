@@ -242,6 +242,21 @@ static void testPak() {
 	CHECK(!p.open((gDir + "/does-not-exist.pak").c_str()));
 }
 
+static void testTexSolid() {
+	// The stand-in texture for a material whose own has not come: decodes to the colour asked for (within the 4-bit steps).
+	const u8 colours[][3] = {{0, 0, 0}, {255, 255, 255}, {128, 100, 60}, {30, 200, 90}, {250, 10, 10}};
+	for (const auto& c : colours) {
+		TexHeader h;
+		u8 data[32];
+		texSolid(c[0], c[1], c[2], h, data);
+		CHECK(texValidate(h, 32));
+		std::vector<u8> rgba(8 * 8 * 4);
+		texDecodeLevel(h, data, 0, rgba.data());
+		for (int px = 0; px < 64; ++px)
+			for (int k = 0; k < 3; ++k) CHECK(std::abs(int(rgba[size_t(px) * 4 + size_t(k)]) - int(c[k])) <= 12);
+	}
+}
+
 static void testEtc1BlockDecoder() {
 	// Our decoder against an independent implementation (rg_etc1's unpacker).
 	std::mt19937 rng(7);
@@ -11260,6 +11275,7 @@ int main(int argc, char** argv) {
 	} tests[] = {{"hash", testHash},
 	             {"pak", testPak},
 	             {"etc1 block decoder", testEtc1BlockDecoder},
+	             {"tex solid", testTexSolid},
 	             {"texture", testTexture},
 	             {"frame budget", testFrameBudget},
 	             {"rooms", testRooms},

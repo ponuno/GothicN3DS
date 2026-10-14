@@ -293,6 +293,12 @@ private:
 		ChunkCollider collider;
 		ChunkCollider water;
 	};
+	// The colour a material is drawn in until its texture has arrived (WorldMaterial::average): one small solid texture
+	// per colour (RGB444), made when first wanted.
+	gfx::Texture* solidFor(u16 rgb565);
+	gfx::Texture* _solid[48] = {};
+	u16 _solidColour[48] = {};
+	u32 _solidNext = 0;
 	struct TexSlot {
 		gfx::Texture* tex;
 		u32 refs;

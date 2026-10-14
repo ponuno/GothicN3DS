@@ -454,6 +454,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			if (tex >= 0) {
 				const TexJob& tj = jobs[jobIndex[texturePakName(sm.texture)]];
 				farColor[i] = {tj.average[0], tj.average[1], tj.average[2]};
+				wm.average = u16(((tj.average[0] >> 3) << 11) | ((tj.average[1] >> 2) << 5) | (tj.average[2] >> 3));
 				// A cut-out drawn solid: smaller by its holes (area goes with the square).
 				if (wm.flags & MATF_ALPHA_TEST) farShrink[i] = std::clamp(std::sqrt(tj.coverage), 0.35f, 1.0f);
 			} else if (sm.hasColor) {

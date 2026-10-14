@@ -55,3 +55,4 @@
 После fix97: модели предметов/жителей строятся после idle() ReadAhead (текстуры уже прочитаны). Клипы (tick 25–70 мс) — отдельно, через предзагрузку при startState.
 После fix98: больше клипов в ReadAhead, счётчик rc в hitches. Если rc-промахи остаются — предзагрузка при startState и ограничение цепочки clip fetch.
 - fix99: hitch-line buffer 300→480 (rc/la were truncated in fix98 log). fix98 log: tick>=15 8.6→5.9/1000fr, loot 3.1→2.0, sel 2.3→1.3; clip1 spikes 25–128 ms remain.
+- fix100: fix99 log showed rc4/476 (clip prefetch ~1% hits). clipBudget 1.5→3 MB (suspect: eviction→re-reads); log gets `ce` (clipsEvicted) `cr` (clipsRefused). Next if ce high: Pak-level clip cache / preload at startState.

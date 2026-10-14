@@ -53,7 +53,7 @@ struct NpcConfig {
 	u32 loadsPerFrame = 1; // models read from the archive per frame (each is a hitch)
 	u32 startsPerFrame = 0; // characters set going per frame (0: all at once): their first steps run scripts, and a crowd at once was a hitch (the console takes one)
 	float prefetchRange = 0.0f; // cm beyond the range: the models of those who will come into it are read in the frames with nothing else to load (0: not; the console 1500)
-	u32 clipBudget = 1536u * 1024u; // bytes of animations in memory at most
+	u32 clipBudget = 3072u * 1024u; // bytes of animations in memory at most
 	bool alive = true;     // false: everybody just stands where his routine has him
 	bool perceive = true;  // false: nobody notices anybody (Npc_PercEnable is taken note of, nothing more)
 	bool fights = true;    // false: the states of attack are not begun, as before fighting

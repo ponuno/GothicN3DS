@@ -7197,6 +7197,43 @@ static void testGfxPlus() {
 	// One place and one smooth surface: one answer (so the chunker still merges the corners).
 	CHECK(st.unique < st.corners);
 
+	// A floor of two huge triangles beside a wall: the cutting gives the shade somewhere to fall off, and leaves the open middle alone.
+	{
+		SrcScene big;
+		big.materials.resize(1);
+		auto bt = [&](SrcVertex a, SrcVertex b, SrcVertex c) {
+			SrcTriangle t;
+			t.v[0] = a; t.v[1] = b; t.v[2] = c;
+			t.material = 0;
+			big.triangles.push_back(t);
+		};
+		bt(vert(0, 0, 0), vert(1600, 0, 0), vert(0, 0, 1600));
+		bt(vert(1600, 0, 0), vert(1600, 0, 1600), vert(0, 0, 1600));
+		bt(vert(0, 0, 0), vert(0, 0, 1600), vert(0, 400, 0));
+		bt(vert(0, 0, 1600), vert(0, 400, 1600), vert(0, 400, 0));
+		AoOptions a2;
+		a2.level = AO_LOW;
+		a2.threads = 2;
+		AoStats s2;
+		const size_t before = big.triangles.size();
+		bakeOcclusion(big, mats, a2, s2);
+		int farMax = 0, nearMax = 0;
+		for (const SrcTriangle& t : big.triangles) {
+			if (t.v[0].pos[1] != 0 || t.v[1].pos[1] != 0 || t.v[2].pos[1] != 0 || t.v[0].pos[0] == 0 && t.v[1].pos[0] == 0) continue;
+			for (const SrcVertex& v : t.v) (v.pos[0] > 900 ? farMax : nearMax) = std::max(v.pos[0] > 900 ? farMax : nearMax, int(v.occlusion));
+		}
+		std::printf("  occlusion cutting: %zu -> %zu triangles (%u added); near the wall at most %d, far side %d\n", before, big.triangles.size(),
+		            s2.added, nearMax, farMax);
+		CHECK(s2.added > 0 && big.triangles.size() == before + s2.added);
+		CHECK(s2.added < 4000 && nearMax > 60 && farMax < 12);
+		a2.maxExtra = 0;
+		SrcScene whole = big;
+		whole.triangles.resize(before);
+		AoStats s3;
+		bakeOcclusion(whole, mats, a2, s3);
+		CHECK(s3.added == 0 && whole.triangles.size() == before);
+	}
+
 	// 3. The chunker writes occlusion and sway into w with vertexFx, and 1 without.
 	scene.triangles[0].v[0].wind = 9;
 	{

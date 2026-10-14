@@ -28,6 +28,11 @@ struct AoOptions {
 	// 0: from the level (low: 16 rays, 2.5 m; high: 40 rays, 4 m).
 	u32 rays = 0;
 	float radius = 0; // cm
+	// Large triangles with something solid within the ray reach are cut into four (again, as far as `cell`) before
+	// the rays are shot: a corner's answer is then no longer stretched over a whole floor tile (flat triangles of
+	// light and shade beside a wall). 0: from the level (low 2 m, high 1.5 m); `maxExtra` the triangles it may add.
+	float cell = 0; // cm
+	u32 maxExtra = 300000;
 };
 
 struct AoStats {
@@ -38,6 +43,7 @@ struct AoStats {
 	double seconds = 0;
 	float mean = 0;   // average occlusion of the corners, 0..1
 	u64 darkCorners = 0; // corners more than half shut in
+	u32 added = 0;       // triangles the cutting of large ones near something made
 	u32 rayCount = 0;
 	float radius = 0;
 };

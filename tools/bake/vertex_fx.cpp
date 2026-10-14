@@ -58,6 +58,52 @@ struct Shot {
 	u8 result = 0;
 };
 
+// The middle of two corners.
+SrcVertex middleOf(const SrcVertex& a, const SrcVertex& b) {
+	SrcVertex m = a;
+	for (int i = 0; i < 3; ++i) m.pos[i] = (a.pos[i] + b.pos[i]) * 0.5f;
+	for (int i = 0; i < 2; ++i) m.uv[i] = (a.uv[i] + b.uv[i]) * 0.5f;
+	for (int i = 0; i < 4; ++i) m.rgba[i] = u8((int(a.rgba[i]) + int(b.rgba[i]) + 1) / 2);
+	m.occlusion = u8((int(a.occlusion) + int(b.occlusion) + 1) / 2);
+	m.wind = u8((int(a.wind) + int(b.wind) + 1) / 2);
+	return m;
+}
+
+float longestEdgeOf(const SrcTriangle& t) {
+	float e = 0;
+	for (int k = 0; k < 3; ++k) e = std::max(e, length(at(t.v[(k + 1) % 3]) - at(t.v[k])));
+	return e;
+}
+
+// Is something solid within `radius` of the triangle's corners, edge middles or middle (rays over its front half)?
+bool nearSolid(const SrcTriangle& t, const Bvh& bvh, float radius, const std::vector<V3>& dirs) {
+	V3 n = frontNormal(t);
+	const float nl = length(n);
+	if (nl < 1e-6f) return false;
+	n = n * (1.0f / nl);
+	const V3 helper = std::fabs(n.y) < 0.9f ? V3 {0, 1, 0} : V3 {1, 0, 0};
+	V3 tx = cross(helper, n);
+	tx = tx * (1.0f / length(tx));
+	const V3 ty = cross(n, tx);
+	const V3 c = (at(t.v[0]) + at(t.v[1]) + at(t.v[2])) * (1.0f / 3.0f);
+	V3 probes[7];
+	for (int k = 0; k < 3; ++k) {
+		const V3 a = at(t.v[k]), b = at(t.v[(k + 1) % 3]);
+		probes[k] = a + (c - a) * 0.05f;           // (a little in from the corner: not in the plane of a wall it meets)
+		probes[3 + k] = (a + b) * 0.5f + (c - (a + b) * 0.5f) * 0.05f;
+	}
+	probes[6] = c;
+	for (const V3& p : probes) {
+		const V3 o = p + n * 2.0f;
+		for (const V3& l : dirs) {
+			const V3 d = tx * l.x + ty * l.y + n * l.z;
+			float hit = 0;
+			if (bvh.nearest(o, d, 0.5f, radius, hit, nullptr, true) > 0.0f) return true;
+		}
+	}
+	return false;
+}
+
 } // namespace
 
 void bakeOcclusion(SrcScene& scene, const std::vector<AoMaterial>& materials, const AoOptions& opt, AoStats& stats) {
@@ -83,6 +129,53 @@ void bakeOcclusion(SrcScene& scene, const std::vector<AoMaterial>& materials, co
 	stats.occluders = blockers.size();
 	Bvh bvh;
 	bvh.build(std::move(blockers));
+
+	// ---- cut the large triangles that have something near ----
+	// (Plants - what sways - stay whole.) Same cut as the lamps': into four, the middles of the edges.
+	{
+		const float cell = std::max(opt.cell > 0 ? opt.cell : (opt.level == AO_HIGH ? 150.0f : 200.0f), 40.0f);
+		std::vector<V3> probeDirs;
+		for (int i = 0; i < 8; ++i) { // a few directions, low ones too (towards a wall beside the floor)
+			const float phi = float(i) * 0.785398f, el = (i % 2) ? 0.35f : 0.8f;
+			probeDirs.push_back(V3 {std::cos(phi) * std::sqrt(1.0f - el * el), std::sin(phi) * std::sqrt(1.0f - el * el), el});
+		}
+		probeDirs.push_back(V3 {0, 0, 1});
+		const size_t original = scene.triangles.size();
+		u32 budget = opt.maxExtra;
+		std::vector<SrcTriangle> out;
+		out.reserve(original + budget);
+		std::vector<SrcTriangle> work, next;
+		for (size_t i = 0; i < original; ++i) {
+			const SrcTriangle& t = scene.triangles[i];
+			if (budget < 3 || !mat(t.material).receives || (t.detail & 3) == DETAIL_SMALL || t.v[0].wind || t.v[1].wind || t.v[2].wind ||
+			    longestEdgeOf(t) <= cell || !nearSolid(t, bvh, radius, probeDirs)) {
+				out.push_back(t);
+				continue;
+			}
+			work.assign(1, t);
+			for (int depth = 0; depth < 4 && !work.empty(); ++depth) {
+				next.clear();
+				for (const SrcTriangle& w : work) {
+					if (budget < 3 || longestEdgeOf(w) <= cell || (depth > 0 && !nearSolid(w, bvh, radius, probeDirs))) {
+						out.push_back(w);
+						continue;
+					}
+					const SrcVertex m01 = middleOf(w.v[0], w.v[1]), m12 = middleOf(w.v[1], w.v[2]), m20 = middleOf(w.v[2], w.v[0]);
+					SrcTriangle a = w, b = w, c = w, d = w;
+					a.v[0] = w.v[0]; a.v[1] = m01; a.v[2] = m20;
+					b.v[0] = m01; b.v[1] = w.v[1]; b.v[2] = m12;
+					c.v[0] = m20; c.v[1] = m12; c.v[2] = w.v[2];
+					d.v[0] = m01; d.v[1] = m12; d.v[2] = m20;
+					budget -= 3;
+					next.push_back(a); next.push_back(b); next.push_back(c); next.push_back(d);
+				}
+				work.swap(next);
+			}
+			for (const SrcTriangle& w : work) out.push_back(w);
+		}
+		stats.added = u32(out.size() - original);
+		scene.triangles.swap(out);
+	}
 
 	// ---- one shot per place and smooth normal ----
 	// The corners of one place, for the normals of its neighbours.

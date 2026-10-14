@@ -1198,11 +1198,11 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			            double(cs.outputTriangles) / double(cs.clusters), double(cs.batches) / double(cs.clusters)));
 		if (opt.ao.level != AO_OFF)
 			line(format("ambient occlusion (--ao %s): %llu corners from %llu places, %u rays of %.1f m each against %llu "
-			            "triangles (%.1f M rays, %.1f s); %.0f%% shut in on average, %llu corners more than half",
+			            "triangles (%.1f M rays, %.1f s); %.0f%% shut in on average, %llu corners more than half; %u triangles added by cutting the large ones near something (--ao-extra)",
 			            opt.ao.level == AO_HIGH ? "high" : "low", static_cast<unsigned long long>(ao.corners),
 			            static_cast<unsigned long long>(ao.unique), ao.rayCount, double(ao.radius) / 100.0,
 			            static_cast<unsigned long long>(ao.occluders), double(ao.rays) / 1e6, ao.seconds, double(ao.mean) * 100.0,
-			            static_cast<unsigned long long>(ao.darkCorners)));
+			            static_cast<unsigned long long>(ao.darkCorners), ao.added));
 		else
 			line("ambient occlusion: not baked (--ao low|high)");
 		if (opt.light.enabled)

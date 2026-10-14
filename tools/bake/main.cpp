@@ -126,6 +126,8 @@ void usage() {
 	          "  --ao off|low|high  Graphics+: bake ambient occlusion into the vertices - corners, the foot of walls\n"
 	          "                     and the ground under eaves darker (low: 16 rays of 2.5 m, high: 40 of 4 m; default: off)\n"
 	          "  --ao-rays N        rays per corner instead of the level's\n"
+	          "  --ao-cell M        large triangles near something are cut to this edge before the occlusion (default 2, high 1.5);\n"
+	          "  --ao-extra N       the most triangles that may add (default 300000, 0: no cutting)\n"
 	          "  --ao-radius CM     how far a ray looks instead of the level's\n"
 	          "  --wind             Graphics+: trees, bushes and grass sway (marked by their names; see the report)\n"
 	          "  --simplify         fewer triangles in everything that is drawn: the world's objects and the level (edge\n"
@@ -267,6 +269,8 @@ int main(int argc, char** argv) {
 				else throw std::runtime_error("--ao wants off, low or high");
 			}
 			else if (a == "--ao-rays") opt.ao.rays = u32(std::clamp(std::stoi(value()), 1, 256));
+			else if (a == "--ao-cell") opt.ao.cell = std::clamp(std::stof(value()), 0.4f, 20.0f) * 100.0f;
+			else if (a == "--ao-extra") opt.ao.maxExtra = u32(std::clamp(std::stoi(value()), 0, 5000000));
 			else if (a == "--ao-radius") opt.ao.radius = std::clamp(std::stof(value()), 10.0f, 5000.0f);
 			else if (a == "--wind") opt.wind = true;
 			else if (a == "--simplify") opt.simplify.enabled = opt.simplifyModels.enabled = true;

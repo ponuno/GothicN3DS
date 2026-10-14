@@ -444,7 +444,8 @@ bool World::settledAt(Vec3 p) const {
 float World::priority(u32 index, float d, Vec3 camera) const {
 	const u32 tier = chunkTier(index);
 	float key = d + _cfg.tierBias[tier < DETAIL_COUNT ? tier : 0u];
-	if (_wantPrevCount && wanted(_chunks[index], _wantPrev, _wantPrevCount)) key -= 4000.0f; // (before the rest, buildings aside)
+	// A thing a character needs (a bench): as near as a building at the same distance, not more (it must not push out the rest).
+	if (_wantPrevCount && tier && wanted(_chunks[index], _wantPrev, _wantPrevCount)) key -= _cfg.tierBias[tier < DETAIL_COUNT ? tier : 0u];
 	if (_headStrength > 0.0f) {
 		const ChunkInfo& ci = _chunks[index];
 		const float vx = (ci.bbMin[0] + ci.bbMax[0]) * 0.5f - camera.x, vz = (ci.bbMin[2] + ci.bbMax[2]) * 0.5f - camera.z;
@@ -693,6 +694,7 @@ void World::update(Vec3 camera) {
 			missingDetail += chunkTier(i) != 0;
 		}
 		_stats.chunksPending = missing;
+	_stats.inFlight = _chunksInFlight;
 		_stats.pendingDetail = missingDetail;
 	}
 	_stats.chunksInFlight = _chunksInFlight;

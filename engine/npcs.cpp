@@ -241,19 +241,22 @@ void Npcs::enterWorld(Pak& pak, const World& world, const char* asset, Vec3 eye,
 // is not in memory (yet) or cannot be used.
 bool Npcs::bytesReady(u32 hash) {
 	if (!_ahead || !_ahead->running() || !_ahead->enabled()) return true;
-	if (_ahead->has(hash)) {
-		for (Wish& w : _wishes)
-			if (w.hash == hash) w = Wish();
-		return true;
-	}
-	_ahead->request(hash);
+	const bool have = _ahead->has(hash);
+	if (!have) _ahead->request(hash);
 	const u32 patience = _ahead->paused() ? 20u : 90u; // (while it rests nothing arrives: not for long)
-	for (Wish& w : _wishes)
-		if (w.hash == hash) return _frame - w.since >= patience; // (3 s at 30 fps: then it is read here after all)
-	Wish& w = _wishes[_wishNext++ % 32];
-	w.hash = hash;
-	w.since = _frame;
-	return false;
+	Wish* w = nullptr;
+	for (Wish& x : _wishes)
+		if (x.hash == hash) w = &x;
+	if (!w) {
+		w = &_wishes[_wishNext++ % 32];
+		w->hash = hash;
+		w->since = _frame;
+	}
+	const u32 waited = _frame - w->since;
+	// Here, and what it drags after it (textures, meshes) read too, or its time is up (fix97): built then in one go, without the card.
+	const bool ready = have ? (waited >= 40 || _ahead->idle()) : waited >= patience;
+	if (ready) *w = Wish();
+	return ready;
 }
 
 Npcs::Piece* Npcs::piece(Pak& pak, u32 hash, u32& loadsLeft) {

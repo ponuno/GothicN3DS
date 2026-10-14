@@ -139,6 +139,7 @@ struct WorldStats {
 	u32 budgetRejects;   // chunks the budget had no room for (cumulative; a chunk that keeps waiting counts once)
 	u32 allocRejects;    // loads the allocator refused though the budget had room (memory too fragmented; cumulative)
 	u32 evictions;       // far chunks freed to make room for nearer ones (cumulative)
+	u32 lastFailKB;      // the chunk (its blob, KB) whose loading ran out of heap last
 	u32 allocJobs;       // of allocRejects: the loader's own malloc (blob, collision) failed - the ordinary heap, not the linear one
 	u32 inFlight;        // chunks being read by the loader now
 	u32 loadFailures;    // corrupt or missing data (cumulative)

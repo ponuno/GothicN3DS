@@ -135,7 +135,8 @@ void Loot::update(Pak& pak, const World& world, Game& game, Vec3 eye) {
 			if (_ahead && _ahead->running() && _ahead->enabled() && it.wait < 120) {
 				// Wished from the read-ahead's thread; built here when it is there (the frame never waits for the card).
 				_ahead->request(entry);
-				if (!_ahead->has(entry)) {
+				// (And what the model drags after it - its textures - has been read too, or has had its time.)
+				if (!_ahead->has(entry) || (it.wait < 40 && !_ahead->idle())) {
 					++it.wait;
 					it.model = NOT_TRIED;
 					return;

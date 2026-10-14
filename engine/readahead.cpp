@@ -208,16 +208,33 @@ bool ReadAhead::readOne() {
 		--_lCount;
 	}
 	const bool have = findLocked(hash) != nullptr;
+	_reading = !have && _enabled;
 	unlock();
-	if (have || !_enabled || sys::timeMs() < _pauseUntil) return true;
+	if (have || !_enabled || sys::timeMs() < _pauseUntil) {
+		lock();
+		_reading = false;
+		unlock();
+		return true;
+	}
 	const PakEntry* e = _pak.find(hash);
-	if (!e || !worthIt(e->type) || e->size == 0 || e->size > _budget / 2) return true;
+	if (!e || !worthIt(e->type) || e->size == 0 || e->size > _budget / 2) {
+		lock();
+		_reading = false;
+		unlock();
+		return true;
+	}
 	const double t0 = sys::timeMs();
 	u8* blob = static_cast<u8*>(_pak.readAlloc(*e));
 	const float ms = float(sys::timeMs() - t0);
-	if (!blob) return true;
+	if (!blob) {
+		lock();
+		_reading = false;
+		unlock();
+		return true;
+	}
 	chain(*e, blob);
 	lock();
+	_reading = false;
 	if (ms > _worstMs) _worstMs = ms;
 	if (_enabled) {
 		storeLocked(hash, blob, e->size);

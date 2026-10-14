@@ -641,7 +641,7 @@ u32 World::collectPending(Vec3 camera) {
 	// (Downwards: freeing a chunk moves the last one into its place, which has been looked at.)
 	for (u32 k = _stats.chunksLoaded; k-- > 0;) {
 		const u32 i = _resident[k];
-		if (distanceTo(i, camera) > unloadReach(chunkTier(i))) unloadChunk(i);
+		if (distanceTo(i, camera) > unloadReach(chunkTier(i)) && !(_wantPrevCount && wanted(_chunks[i], _wantPrev, _wantPrevCount))) unloadChunk(i);
 	}
 	gatherCandidates(camera);
 	u32 pending = 0;
@@ -653,6 +653,34 @@ u32 World::collectPending(Vec3 camera) {
 		_order[pending] = i;
 		_orderKey[pending] = priority(i, d, camera);
 		++pending;
+	}
+	// What a character needs (the bench under a sitting man), though it is beyond the reach of its size class: wanted all the same.
+	for (u32 w = 0; w < _wantPrevCount; ++w) {
+		const Vec3 p = _wantPrev[w];
+		auto addNear = [&](u32 i) {
+			if (_loaded[i].mesh || _loaded[i].failed || !wanted(_chunks[i], &p, 1)) return;
+			const float d = distanceTo(i, camera);
+			if (d >= _cfg.loadRadius) return;
+			for (u32 k = 0; k < pending; ++k)
+				if (_order[k] == i) return;
+			_order[pending] = i;
+			_orderKey[pending] = priority(i, d, camera);
+			++pending;
+		};
+		if (_gridStart) {
+			const int cx0 = clamp(int(floorf((p.x - 250.0f - _gridX0) / _gridCell)), 0, _gridW - 1);
+			const int cx1 = clamp(int(floorf((p.x + 250.0f - _gridX0) / _gridCell)), 0, _gridW - 1);
+			const int cz0 = clamp(int(floorf((p.z - 250.0f - _gridZ0) / _gridCell)), 0, _gridH - 1);
+			const int cz1 = clamp(int(floorf((p.z + 250.0f - _gridZ0) / _gridCell)), 0, _gridH - 1);
+			for (int z = cz0; z <= cz1; ++z)
+				for (int x = cx0; x <= cx1; ++x) {
+					const size_t cell = size_t(z) * size_t(_gridW) + size_t(x);
+					for (u32 k = _gridStart[cell]; k < _gridStart[cell + 1]; ++k) addNear(_gridItems[k]);
+				}
+			for (u32 k = 0; k < _bigCount; ++k) addNear(_big[k]);
+		} else {
+			for (u32 i = 0; i < _hdr.chunkCount; ++i) addNear(i);
+		}
 	}
 	_visible = 0; // _order is shared scratch space
 	return pending;
@@ -1124,7 +1152,11 @@ void World::updateBackground(u32 pending, Vec3 camera) {
 			r.discard(); // the camera has moved on in the meantime
 			continue;
 		}
-		if (r.status == LOAD_NO_MEMORY) ++_stats.allocJobs;
+		const bool jobNoMemory = r.status == LOAD_NO_MEMORY;
+		if (jobNoMemory) {
+			++_stats.allocJobs;
+			_stats.lastFailKB = _chunks[r.index].size / 1024;
+		}
 		const LoadStatus status = finishChunk(r);
 		_chunkCostMs = _chunkCostMs * 0.8f + float(sys::timeMs() - tChunk) * 0.2f;
 		if (status == LOAD_OK) {
@@ -1138,13 +1170,15 @@ void World::updateBackground(u32 pending, Vec3 camera) {
 			// none, wait a while instead of reading from the card again every frame.
 			++_stats.allocRejects;
 			if (_ahead) _ahead->relieve(400);
-			const int victim = pickVictim(camera, priority(r.index, distanceTo(r.index, camera), camera));
+			// The loader's own malloc failed (the ordinary heap): freeing a chunk does not give that back, and the ground the
+			// player stands on must not go for it. Wait a little instead.
+			const int victim = jobNoMemory ? -1 : pickVictim(camera, priority(r.index, distanceTo(r.index, camera), camera));
 			if (victim >= 0) {
 				unloadChunk(u32(victim));
 				++_stats.evictions;
 				_loaded[r.index].retryAt = _frame + 2;
 			} else {
-				_loaded[r.index].retryAt = _frame + 30;
+				_loaded[r.index].retryAt = _frame + (jobNoMemory ? 12 : 30);
 			}
 		}
 	}

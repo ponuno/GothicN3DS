@@ -70,6 +70,13 @@ public:
 	// The allocator has refused somebody (fix94): frees what is waiting and reads nothing for `ms`, so that the heap
 	// the blobs were scattered over can close up again.
 	void relieve(u32 ms);
+	// Nothing urgent is waiting or being read: what a model drags after it (textures, meshes) has arrived too (fix97).
+	bool idle() {
+		lock();
+		const bool yes = _qCount == 0 && !_reading;
+		unlock();
+		return yes;
+	}
 	bool paused() const { return sys::timeMs() < _pauseUntil; }
 	ReadAheadStats stats();
 	// The longest single read since the last call, ms.
@@ -111,6 +118,7 @@ private:
 	bool _running = false, _quit = false;
 	volatile bool _enabled = true;
 	u32 _budget = 0;
+	bool _reading = false;
 	double _pauseUntil = 0.0, _lastRelief = -1.0e9;
 
 	u32 _queue[QUEUE];

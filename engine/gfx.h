@@ -97,7 +97,28 @@ struct ChunkFx {
 	// at the crest of the wave. Only materials with MATF_WIND move.
 	float windX = 0.0f, windZ = 0.0f;
 	float windPhase = 0.0f; // 0..1: the wave's phase at the chunk's origin (see windPhaseAt)
+	// Water waves (MATF_WATER materials only; needs water baked in a fine grid, g3ds-bake --water-grid): the phases
+	// of the two waves at the chunk's origin (0..1, see wavePhaseAt), how high they lift the surface at the crest, cm
+	// (0 = flat water, the fast shader), and how much their slopes light and darken it.
+	float waveA = 0.0f, waveB = 0.0f, waveHeight = 0.0f, waveShade = 0.0f;
 };
+// The water's two waves (world_full.v.pica has the same numbers): directions (x, z) and wavelengths, cm; speed in
+// waves a second.
+constexpr float WAVE_A_DIR[2] = {0.8f, 0.6f};
+constexpr float WAVE_A_CM = 1000.0f;
+constexpr float WAVE_A_SPEED = 0.12f;
+constexpr float WAVE_B_DIR[2] = {0.35f, -0.937f};
+constexpr float WAVE_B_CM = 650.0f;
+constexpr float WAVE_B_SPEED = 0.18f;
+// The phase (0..1) of wave A (which = 0) or B (1) at `origin` at time `seconds`; in double, as windPhaseAt.
+inline float wavePhaseAt(const float origin[3], double seconds, int which) {
+	const float* d = which ? WAVE_B_DIR : WAVE_A_DIR;
+	const double cm = which ? double(WAVE_B_CM) : double(WAVE_A_CM);
+	const double speed = which ? double(WAVE_B_SPEED) : double(WAVE_A_SPEED);
+	double t = seconds * speed + (double(origin[0]) * double(d[0]) + double(origin[2]) * double(d[1])) / cm;
+	t -= floor(t);
+	return float(t);
+}
 // The wave travels along x + z: one wave per this many cm.
 constexpr float WIND_WAVE_CM = 800.0f;
 // The wave's phase at `origin` at time `seconds` with `wavesPerSecond`

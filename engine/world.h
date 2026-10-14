@@ -95,6 +95,9 @@ struct StreamConfig {
 	// WORLDF_WIND): hasOcclusion(), hasWind().
 	float occlusion = 0.0f;
 	float wind = 0.0f;
+	// Waves on the water (gfx::ChunkFx::waveHeight): how high the crest lifts the surface, cm; 0 still. Only in a
+	// world baked with a fine water grid (hasWaterGrid()).
+	float waves = 0.0f;
 	// The far layer (G10; a world baked with --far-lod): drawn out to here, cm,
 	// where the chunks are not - beyond drawDistance, and in place of chunks
 	// not loaded yet. 0 (or no farther than drawDistance): not drawn, and not
@@ -240,6 +243,7 @@ public:
 	// Whether the world was baked with Graphics+ data (g3ds-bake --ao, --wind).
 	bool hasOcclusion() const { return (_hdr.flags & WORLDF_AO) != 0; }
 	bool hasWind() const { return (_hdr.flags & WORLDF_WIND) != 0; }
+	bool hasWaterGrid() const { return (_hdr.flags & WORLDF_WATER_GRID) != 0; }
 	// Whether the world has a far layer (g3ds-bake --far-lod), and whether it
 	// is drawn now: loaded and asked to reach beyond the draw distance.
 	bool hasFarLayer() const { return _hdr.farEntry != 0 && !indoor(); }
@@ -468,6 +472,7 @@ private:
 	// Graphics+ of this frame (draw()): the occlusion's strength, the wind's
 	// push along x and z (gusts included), and the time the wave goes by.
 	float _fxOcclusion = 0.0f, _windX = 0.0f, _windZ = 0.0f;
+	float _waveHeight = 0.0f, _waveShade = 0.0f; // the water's waves of this frame (0: still)
 	double _windSeconds = 0.0;
 	// The far layer (FarHeader in g3ds/world.h).
 	struct FarTileRt {

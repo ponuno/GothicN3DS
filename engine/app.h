@@ -484,6 +484,7 @@ private:
 	bool _thirdPerson = true; // wanted; see thirdPerson()
 	bool _heroVisible = false;
 	bool _gfxRelief = false;
+	float _wavesWanted = 0.0f; // the water's waves as set (cm; StreamConfig::waves is 0 while relieved)
 	float _windWanted = 0.0f; // Graphics+ wind as set (StreamConfig::wind is 0 while relieved)
 	CameraSet _cams = defaultCameraSet();
 	Vec3 _camTarget {0, 0, 0}, _camOrigin {0, 0, 0}; // the looked-after point and the camera, both trailing

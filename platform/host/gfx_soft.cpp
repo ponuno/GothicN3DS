@@ -434,6 +434,7 @@ void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, 
 void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 	if (!m || indexCount == 0 || firstIndex + indexCount > m->indexCount) return;
 	const bool windy = (gMaterialFlags & MATF_WIND) != 0 && (gFx.windX != 0.0f || gFx.windZ != 0.0f);
+	const bool wavy = (gMaterialFlags & MATF_WATER) != 0 && gFx.waveHeight != 0.0f;
 	for (u32 i = 0; i + 2 < indexCount; i += 3) {
 		ClipVert cv[3];
 		for (int k = 0; k < 3; ++k) {
@@ -451,7 +452,26 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 				p[0] += gFx.windX * 4.0f * wave;
 				p[2] += gFx.windZ * 4.0f * wave;
 			}
-			const float shade = 1.0f - (steps - sway) * gFx.occlusion; // the low byte: ambient occlusion
+			float shade = 1.0f - (steps - sway) * gFx.occlusion; // the low byte: ambient occlusion
+			float uvShift[2] = {0.0f, 0.0f};
+			if (wavy) {
+				// As world_full.v.pica: two waves x (1 - |x|) * 4, the height from both, the slopes light the surface.
+				float xs[2], ws[2], slope[2];
+				for (int k2 = 0; k2 < 2; ++k2) {
+					const float* d = k2 ? WAVE_B_DIR : WAVE_A_DIR;
+					const float cm = k2 ? WAVE_B_CM : WAVE_A_CM;
+					float t = (k2 ? gFx.waveB : gFx.waveA) + (p[0] * d[0] + p[2] * d[1]) / cm;
+					t -= floorf(t);
+					xs[k2] = t + t - 1.0f;
+					const float edge = 1.0f - fabsf(xs[k2]);
+					ws[k2] = 4.0f * xs[k2] * edge;
+					slope[k2] = 2.0f * edge - 1.0f;
+				}
+				p[1] += gFx.waveHeight * (0.7f * ws[0] + 0.3f * ws[1]);
+				shade *= 1.0f + gFx.waveShade * (0.6f * slope[0] + 0.4f * slope[1]);
+				uvShift[0] = 0.015f * ws[0];
+				uvShift[1] = 0.015f * ws[1];
+			}
 			// The shader's arithmetic: position relative to the anchor first
 			// (exact for lattice positions), then one matrix for every chunk.
 			const Vec4 c = transform(gViewProj, {p[0] + gChunk[0], p[1] + gChunk[1], p[2] + gChunk[2], 1.0f});
@@ -462,7 +482,8 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 			const float weight = v.a * (1.0f / 255.0f);
 			const float tint[3] = {1.0f + weight * (gFrame.dayLight[0] - 1.0f), 1.0f + weight * (gFrame.dayLight[1] - 1.0f),
 			                       1.0f + weight * (gFrame.dayLight[2] - 1.0f)};
-			cv[k] = {c.x, c.y, c.z, c.w, float(v.u) * gUvScale + gUvOffset[0], float(v.v) * gUvScale + gUvOffset[1],
+			cv[k] = {c.x, c.y, c.z, c.w, float(v.u) * gUvScale + gUvOffset[0] + uvShift[0],
+			         float(v.v) * gUvScale + gUvOffset[1] + uvShift[1],
 			         v.r * (1.0f / 255.0f) * tint[0] * shade, v.g * (1.0f / 255.0f) * tint[1] * shade,
 			         v.b * (1.0f / 255.0f) * tint[2] * shade, 1.0f, fog};
 		}

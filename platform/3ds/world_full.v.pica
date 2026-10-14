@@ -23,12 +23,18 @@
 .fvec fx            ; Graphics+: xy = wind (cm per step of sway, times 4), z = wave phase, w = occlusion strength
 .fvec lightK        ; xyz = (dayLight - 1) / 255 / 255: the fast shader's daylight term
 .fvec aoK           ; x = occlusion strength / 256: the fast shader's occlusion term
+.fvec wave          ; Graphics+ water: x = phase of wave A, y = phase of wave B (cycles, at the chunk's origin), z = height (cm), w = shading strength
 .bool skinned
 .bool windy
 .bool fading        ; the dissolve (gfx::setFade): texture coordinate 1 is the place on the screen
+.bool wavy          ; Graphics+: the water's waves (world_full.v.pica only)
 
 .constf consts(0.0, 1.0, 0.00390625, 0.00125) ; 0, 1, 1/256, k = 1/800 cm (gfx.h WIND_WAVE_PER_CM)
-.constf noiseScale(15.0, 25.0, 0.0, 0.0) ; texels of the 8x8 noise per unit of x and y on the screen (as world_fade.v.pica)
+.constf noiseScale(15.0, 25.0, 0.000538, -0.001442) ; zw: wave B's kB per cm (the 96 constant registers are full); texels of the 8x8 noise per unit of x and y on the screen (as world_fade.v.pica)
+; Water waves (gfx.h WAVE_*): two travelling waves, A along (0.8, 0.6) with a wavelength of 10 m and B along
+; (0.35, -0.937) with 6.5 m; the same smooth curve as the wind's, w = 4 x (1 - |x|) in -1..1, x = 2 fract(u) - 1.
+.constf wc(4.0, 0.7, 0.3, 0.015)          ; 4, height share of A, of B, texture shift (repeats) per unit of w
+.constf wkA(0.0008, 0.0006, 0.6, 0.4)     ; per cm along x and z; zw: how the slopes of A and B light the surface
 .alias zero consts.xxxx
 .alias one  consts.yyyy
 
@@ -85,6 +91,55 @@
 		add r0.z, r0.z, r11.y
 	.end
 
+
+	ifu wavy
+		; r9.x = xA = 2 fract(wave.x + kA . (x, z)) - 1,  r10.x = xB likewise
+		mul r9.x, wkA.x, r0.x
+		mul r9.y, wkA.y, r0.z
+		add r9.x, r9.x, r9.y
+		add r9.x, wave.x, r9.x
+		flr r9.y, r9.x
+		add r9.x, r9.x, -r9.y
+		add r9.x, r9.x, r9.x
+		add r9.x, -consts.y, r9.x
+		mul r10.x, noiseScale.z, r0.x
+		mul r10.y, noiseScale.w, r0.z
+		add r10.x, r10.x, r10.y
+		add r10.x, wave.y, r10.x
+		flr r10.y, r10.x
+		add r10.x, r10.x, -r10.y
+		add r10.x, r10.x, r10.x
+		add r10.x, -consts.y, r10.x
+		; r11.x = 1 - |xA|, r11.y = 1 - |xB|
+		max r11.x, r9.x, -r9.x
+		add r11.x, consts.y, -r11.x
+		max r11.y, r10.x, -r10.x
+		add r11.y, consts.y, -r11.y
+		; r12.x = wA = 4 xA (1 - |xA|),  r12.y = wB
+		mul r12.x, r9.x, r11.x
+		mul r12.x, wc.x, r12.x
+		mul r12.y, r10.x, r11.y
+		mul r12.y, wc.x, r12.y
+		; height: wave.z * (0.7 wA + 0.3 wB), straight up
+		mul r13.x, wc.y, r12.x
+		mul r13.y, wc.z, r12.y
+		add r13.x, r13.x, r13.y
+		mul r13.x, wave.z, r13.x
+		add r0.y, r0.y, r13.x
+		; slopes: d wA / du ~ (1 - 2 |xA|) = 2 (1 - |xA|) - 1; the surface is lit by 1 + strength * (lA sA + lB sB)
+		add r11.x, r11.x, r11.x
+		add r11.x, -consts.y, r11.x
+		add r11.y, r11.y, r11.y
+		add r11.y, -consts.y, r11.y
+		mul r11.x, wkA.z, r11.x
+		mul r11.y, wkA.w, r11.y
+		add r11.x, r11.x, r11.y
+		mul r11.x, wave.w, r11.x
+		add r14.x, consts.y, r11.x
+		; the texture slides with the waves, as if seen through them
+		mul r15.xy, wc.ww, r12.xy
+	.end
+
 	; relative to the eye's lattice point
 	add r0.xyz, chunk.xyz, r0.xyz
 
@@ -107,6 +162,9 @@
 
 	mul r2, params.xxxx, intc
 	add r2, texOffset, r2
+	ifu wavy
+		add r2.xy, r2.xy, r15.xy
+	.end
 	mov outtc0, r2
 
 	; fog factor
@@ -132,6 +190,9 @@
 		mul r9.x, fx.w, r9.x
 		add r9.x, consts.y, -r9.x
 		mul r4.xyz, r4.xyz, r9.xxx
+	.end
+	ifu wavy
+		mul r4.xyz, r4.xyz, r14.xxx
 	.end
 
 	mov r4.w, r3.x

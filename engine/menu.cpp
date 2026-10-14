@@ -49,6 +49,7 @@ const char* const kGfxPresetNotes[] = {"Всё выключено, как ран
                                        "Значения изменены вручную"};
 const char* const kScreen[] = {"Обычный", "3D", "Широкий 800x240"};
 const char* const kWind[] = {"Нет", "Слабое", "Обычное", "Сильное"};
+const char* const kWaves[] = {"Нет", "Слабые", "Обычные", "Сильные"};
 const char* const kShadows[] = {"Выкл", "Герой", "Все рядом"};
 const char* const kRefresh[] = {"Выкл", "45–60 Гц", "45–72 Гц", "45–80 Гц", "Держать 72", "Держать 80"};
 const char* const kFarGeometry[] = {"Выкл", "25 м", "40 м", "60 м"};
@@ -110,6 +111,7 @@ const Item kGfxPlus[] = {
     {"Набор", CHOICE, &Settings::gfxPlus, kGfxPresets, 4, 0, 0, nullptr, 0, nullptr, kGfxPresetNotes},
     {"Затенение углов", RANGE, &Settings::occlusion, nullptr, 10, 0, 100, "%", 0, "Нужен data.pak, запечённый с --ao", nullptr},
     {"Колыхание листвы", CHOICE, &Settings::wind, kWind, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --wind", nullptr},
+    {"Волны на воде", CHOICE, &Settings::waves, kWaves, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --water-grid", nullptr},
     {"Тени персонажей", CHOICE, &Settings::shadows, kShadows, 3, 0, 0, nullptr, 0, nullptr, kShadowNotes},
     {"Дальний план", CHOICE, &Settings::farLayer, kFarLayer, 4, 0, 0, nullptr, 0, nullptr, kFarLayerNotes},
     {"Дальняя геометрия", CHOICE, &Settings::farGeometry, kFarGeometry, 4, 0, 0, nullptr, 0, "Упрощённые дальние чанки (мир с --lod)", nullptr},

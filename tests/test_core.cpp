@@ -1,5 +1,6 @@
 // Unit and integration tests for the data path: archive, texture layout,
 // chunker, streaming. Usage: test_core <scratch dir>
+#include <set>
 #include "app.h"
 #include "audio_host.h"
 #include "bake.h"
@@ -177,6 +178,91 @@ static void testWaterLight() {
 	float tint[3];
 	waterTint(255, tint);
 	CHECK(tint[2] == 1.0f && tint[0] < tint[1] && tint[1] < tint[2]);
+}
+
+// --water-grid: the water cut along one grid, without T-junctions; the rest is left alone.
+static void testWaterGrid() {
+	SrcScene scene;
+	scene.materials.resize(2);
+	scene.materials[1].water = true;
+	auto tri = [&](u32 m, float x0, float z0, float x1, float z1, float x2, float z2) {
+		SrcTriangle t {};
+		t.material = m;
+		const float p[3][2] = {{x0, z0}, {x1, z1}, {x2, z2}};
+		for (int k = 0; k < 3; ++k) {
+			t.v[k].pos[0] = p[k][0];
+			t.v[k].pos[1] = 100.0f;
+			t.v[k].pos[2] = p[k][1];
+			t.v[k].uv[0] = p[k][0] / 1000.0f;
+			t.v[k].uv[1] = p[k][1] / 1000.0f;
+			t.v[k].rgba[0] = t.v[k].rgba[1] = t.v[k].rgba[2] = 180;
+			t.v[k].rgba[3] = 255;
+		}
+		scene.triangles.push_back(t);
+	};
+	tri(0, -500, -500, 1500, -500, -500, 1500); // land under it, to say where the grid lies
+	tri(0, 1500, 1500, -500, 1500, 1500, -500);
+	// a lake: two triangles of a 1000 x 1000 cm square, and a small one inside a cell
+	tri(1, 0, 0, 1000, 0, 0, 1000);
+	tri(1, 1000, 0, 1000, 1000, 0, 1000);
+	tri(1, 410, 410, 450, 410, 410, 450);
+	CHECK(subdivideWater(scene, 0.0f) == 0 && scene.triangles.size() == 5);
+	const size_t added = subdivideWater(scene, 200.0f);
+	CHECK(added > 30 && scene.triangles.size() == 5 + added);
+	double area = 0, smallArea = 0;
+	bool allWater = true, inGrid = true;
+	for (size_t i = 2; i < scene.triangles.size(); ++i) {
+		const SrcTriangle& t = scene.triangles[i];
+		allWater = allWater && t.material == 1;
+		const double a = 0.5 * std::fabs(double(t.v[1].pos[0] - t.v[0].pos[0]) * (t.v[2].pos[2] - t.v[0].pos[2]) -
+		                                 double(t.v[2].pos[0] - t.v[0].pos[0]) * (t.v[1].pos[2] - t.v[0].pos[2]));
+		area += a;
+		if (a < 1000.0 && t.v[0].pos[0] > 400 && t.v[0].pos[0] < 460 && t.v[0].pos[2] > 400 && t.v[0].pos[2] < 460) smallArea += a;
+		for (int k = 0; k < 3; ++k) {
+			// a corner inside a cell's rectangle, the uv follows the place, the light is the same all over
+			inGrid = inGrid && std::fabs(t.v[k].uv[0] - t.v[k].pos[0] / 1000.0f) < 1e-4f && t.v[k].rgba[0] == 180 && t.v[k].rgba[3] == 255;
+		}
+		// one cell: all corners between the same two grid lines (multiples of 200)
+		for (int a2 : {0, 2}) {
+			const float lo = std::min({t.v[0].pos[a2], t.v[1].pos[a2], t.v[2].pos[a2]});
+			const float hi = std::max({t.v[0].pos[a2], t.v[1].pos[a2], t.v[2].pos[a2]});
+			inGrid = inGrid && std::floor((lo + 0.01f) / 200.0f) == std::floor((hi - 0.01f) / 200.0f);
+		}
+	}
+	CHECK(allWater && inGrid);
+	CHECK(std::fabs(area - (1000.0 * 1000.0 + 0.5 * 40.0 * 40.0)) < 1.0);
+	CHECK(std::fabs(smallArea - 800.0) < 1.0); // (the small triangle is untouched)
+	// no T-junctions: every corner on the edge of another triangle is a corner of it
+	auto key = [](const SrcVertex& v) { return std::make_pair(std::lround(v.pos[0] * 10), std::lround(v.pos[2] * 10)); };
+	std::set<std::pair<long, long>> corners;
+	for (size_t i = 2; i < scene.triangles.size(); ++i)
+		for (const SrcVertex& v : scene.triangles[i].v) corners.insert(key(v));
+	bool tjunction = false;
+	for (size_t i = 2; i < scene.triangles.size() && !tjunction; ++i) {
+		const SrcTriangle& t = scene.triangles[i];
+		for (int e = 0; e < 3; ++e) {
+			const SrcVertex &a = t.v[e], &b = t.v[(e + 1) % 3];
+			for (const auto& c : corners) {
+				const double px = double(c.first) / 10.0, pz = double(c.second) / 10.0;
+				const double dx = b.pos[0] - a.pos[0], dz = b.pos[2] - a.pos[2];
+				const double len2 = dx * dx + dz * dz;
+				const double u = ((px - a.pos[0]) * dx + (pz - a.pos[2]) * dz) / len2;
+				if (u <= 0.001 || u >= 0.999) continue;
+				const double cross = (px - a.pos[0]) * dz - (pz - a.pos[2]) * dx;
+				if (std::fabs(cross) / std::sqrt(len2) < 0.2) tjunction = true;
+			}
+		}
+	}
+	CHECK(!tjunction);
+	// the front stays the front (counter-clockwise from above gives the same sign as before)
+	bool sameWinding = true;
+	for (size_t i = 2; i < scene.triangles.size(); ++i) {
+		const SrcTriangle& t = scene.triangles[i];
+		const double cr = double(t.v[1].pos[0] - t.v[0].pos[0]) * (t.v[2].pos[2] - t.v[0].pos[2]) -
+		                  double(t.v[2].pos[0] - t.v[0].pos[0]) * (t.v[1].pos[2] - t.v[0].pos[2]);
+		sameWinding = sameWinding && cr > 0;
+	}
+	CHECK(sameWinding);
 }
 
 static void testHash() {
@@ -7213,6 +7299,7 @@ static void testGfxPlus() {
 		bt(vert(0, 0, 1600), vert(0, 400, 1600), vert(0, 400, 0));
 		AoOptions a2;
 		a2.level = AO_LOW;
+		a2.maxExtra = 300000;
 		a2.threads = 2;
 		AoStats s2;
 		const size_t before = big.triangles.size();
@@ -9241,7 +9328,7 @@ static void testSettings() {
 			CHECK(kit);
 			CHECK(d.update(back2, s) == MENU_NONE && d.page() == Menu::PAGE_DEBUG);
 			CHECK(d.update(back2, s) == MENU_NONE && d.page() == Menu::PAGE_MAIN);
-			for (int p = 0; p < Menu::PAGES; ++p) CHECK(d.itemCount(Menu::Page(p)) <= 10);
+			for (int p = 0; p < Menu::PAGES; ++p) CHECK(d.itemCount(Menu::Page(p)) <= 12); // (the list scrolls)
 			(void)none;
 		}
 		// Every line fits the panel (320 pixels, 8 of margin either side).
@@ -11383,6 +11470,7 @@ int main(int argc, char** argv) {
              {"pacer heavy", testPacerHeavy},
              {"stereo", testStereoEyes},
              {"water light", testWaterLight},
+             {"water grid", testWaterGrid},
              {"lamp light", testLampLight},
 	             {"detail fade", testDetailFade},
              {"thinning", testThinning},

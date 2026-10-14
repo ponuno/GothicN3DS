@@ -1,1 +1,1 @@
---probe -843 11 -1080 --probe-radius 60
+--water-grid 2

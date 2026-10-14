@@ -53,7 +53,7 @@ struct ZenImportOptions {
 	// Lightmapped triangles whose light is not what their corners say (a shade's edge crossing a large polygon) are cut
 	// into four, as far as `lightmapCell` (cm) and while `lightmapExtra` triangles are left; the new corners sample the lightmap.
 	float lightmapCell = 100.0f;
-	u32 lightmapExtra = 400000;
+	u32 lightmapExtra = 0; // (0: no cutting; --lightmap-extra N switches it on)
 	// More words that name a tree in object, material or texture names
 	// (upper case; vertex_fx.h plantKindOf), for mods with names of their own.
 	std::vector<std::string> plantWords;

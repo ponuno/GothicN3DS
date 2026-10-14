@@ -52,6 +52,7 @@ static void usage() {
 	     "  --far M             the far layer (data baked with --far-lod) out to M metres (default: off)\n"
 	     "  --vis               use the baked visibility table (data baked with --vis): what is hidden from the camera's cell is not drawn\n"
 	     "  --lod M             draw chunks wholly farther than M metres with their simplified stand-ins (data baked with --lod)\n"
+	     "  --waves N           waves on the water 0..3 (data baked with --water-grid)\n"
 	     "  --gfx-plus A,W,S    Graphics+: occlusion 0..100 %, wind 0..3, shadows 0 off / 1 hero / 2 all near\n"
 	     "  --stats FILE        write a JSON summary");
 }
@@ -165,6 +166,7 @@ int main(int argc, char** argv) {
 	bool console = false, fight = false, sword = false, inventory = false, pickup = false;
 	int menuPage = -1;
 	const char* gfxPlusSpec = nullptr;
+	int wavesSpec = -1;
 	float budgetMb = 24.0f, drawDistance = 12000.0f, farMetres = 0.0f, lodMetres = 0.0f;
 	bool useVis = false;
 
@@ -188,6 +190,7 @@ int main(int argc, char** argv) {
 		else if (arg("--probe-grid")) probeGrid = atoi(argv[++i]);
 		else if (arg("--menu")) menuPage = atoi(argv[++i]);
 		else if (arg("--gfx-plus")) gfxPlusSpec = argv[++i];
+		else if (arg("--waves")) wavesSpec = atoi(argv[++i]);
 		else if (arg("--far")) farMetres = float(atof(argv[++i]));
 		else if (!strcmp(argv[i], "--vis")) useVis = true;
 		else if (arg("--lod")) lodMetres = float(atof(argv[++i]));
@@ -224,6 +227,11 @@ int main(int argc, char** argv) {
 	if (!app.init(pakPath, worldName)) {
 		fprintf(stderr, "error: %s\n", app.error());
 		return 1;
+	}
+	if (wavesSpec >= 0) {
+		app.settings().waves = u8(clamp(wavesSpec, 0, 3));
+		app.applySettings();
+		printf("waves on the water: %d (%s)\n", int(app.settings().waves), app.world().hasWaterGrid() ? "water grid in the data" : "NOT in the data");
 	}
 	if (gfxPlusSpec) {
 		int ao = 0, wind = 0, shadows = 0;

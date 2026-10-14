@@ -23,7 +23,8 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 13: the screen's refresh rate follows the frame.
 // 14: the old picture turned sideways when a refresh has no new one.
 // 15: reading ahead.
-constexpr u32 SETTINGS_VERSION = 19;
+// 20: waves on the water.
+constexpr u32 SETTINGS_VERSION = 20;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -108,6 +109,7 @@ void Settings::sanitize() {
 	if (timeFlow > 3) timeFlow = 2;
 	occlusion = u8(clamp<int>(occlusion, 0, 100) / 10 * 10);
 	if (wind > 3) wind = 0;
+	if (waves > 3) waves = 0;
 	if (shadows >= SHADOW_MODES) shadows = SHADOWS_OFF;
 	if (farLayer > 3) farLayer = 0;
 	if (farGeometry > 3) farGeometry = 2;

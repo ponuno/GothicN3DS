@@ -111,6 +111,9 @@ struct Settings {
 	u8 farFill = 0;
 	// Version 19: how the simplified far chunks and the full ones change places: 0 at once, 1 quickly (0.35 s), 2 slowly (0.9 s).
 	u8 lodFade = 1;
+	// Version 20: waves on the water: 0 still, 1 gentle, 2 normal, 3 strong (data baked with --water-grid).
+	u8 waves = 0;
+	float waveHeightCm() const { return waves == 1 ? 10.0f : waves == 2 ? 22.0f : waves == 3 ? 40.0f : 0.0f; }
 	float lodFadeMs() const { return lodFade == 0 ? 1.0f : lodFade == 2 ? 900.0f : 350.0f; }
 	float lodDistanceCm() const;
 

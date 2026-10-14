@@ -1515,6 +1515,12 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 				fx.windZ = _windZ;
 				fx.windPhase = gfx::windPhaseAt(l.origin, _windSeconds, kWindWavesPerSecond);
 			}
+			if (_waveHeight > 0.0f) {
+				fx.waveA = gfx::wavePhaseAt(l.origin, _windSeconds, 0);
+				fx.waveB = gfx::wavePhaseAt(l.origin, _windSeconds, 1);
+				fx.waveHeight = _waveHeight;
+				fx.waveShade = _waveShade;
+			}
 			gfx::setChunkTransform(l.origin, l.posScale, l.uvScale, &fx);
 			transformSet = true;
 		}
@@ -1718,6 +1724,8 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_fxOcclusion = hasOcclusion() ? clamp(_cfg.occlusion, 0.0f, 1.0f) : 0.0f;
 	_windX = _windZ = 0.0f;
 	_windSeconds = double(timeMs) * 0.001;
+	_waveHeight = hasWaterGrid() ? clamp(_cfg.waves, 0.0f, 60.0f) : 0.0f;
+	_waveShade = 0.10f + 0.0065f * _waveHeight;
 	if (hasWind() && _cfg.wind > 0.0f) {
 		const double t = _windSeconds;
 		const float gust = 0.75f + 0.25f * float(sin(t * 0.31) * sin(t * 0.17 + 1.3));

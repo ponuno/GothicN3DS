@@ -1369,6 +1369,8 @@ void App::applySettings() {
 	cfg.occlusion = _settings.occlusionStrength();
 	_windWanted = _settings.windStrength();
 	cfg.wind = _gfxRelief ? 0.0f : _windWanted;
+	_wavesWanted = _settings.waveHeightCm();
+	cfg.waves = _gfxRelief ? 0.0f : _wavesWanted;
 	setLanguage(_settings.language);
 	_ahead.setEnabled(_settings.readAhead != 0);
 	_env.dayLength = _settings.dayLengthSeconds();
@@ -1393,6 +1395,7 @@ void App::applySettings() {
 void App::setGfxRelief(bool heavy) {
 	_gfxRelief = heavy;
 	_world.config().wind = heavy ? 0.0f : _windWanted;
+	_world.config().waves = heavy ? 0.0f : _wavesWanted;
 }
 
 // The names the Barrier's sound could have in the scripts (the first the sound script knows is used).

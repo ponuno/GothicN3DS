@@ -102,6 +102,9 @@ enum WorldFlags : u32 {
 	// Chunks with batches for a simplified stand-in (see batchLod): the engine draws those instead of the
 	// full-detail ones of a chunk that lies far enough away (g3ds-bake --lod).
 	WORLDF_LOD = 1 << 4,
+	// The water surfaces are cut into a fine grid (g3ds-bake --water-grid), fine enough for the runtime's waves
+	// (StreamConfig::waves) to lift them corner by corner. Without it the waves are not drawn.
+	WORLDF_WATER_GRID = 1 << 5,
 };
 
 struct WorldMaterial {

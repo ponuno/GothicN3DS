@@ -124,14 +124,14 @@ void usage() {
 	          "  --no-objects       world mesh only, skip trees, bridges and other world objects\n"
 	          "  --no-lightmaps     keep the vertex light on lightmapped (indoor) polygons\n"
 	          "  --lightmap-cell M  lightmapped triangles whose shade differs from their corners' are cut down to this edge (default 1)\n"
-	          "  --lightmap-extra N the most triangles that may add (default 400000, 0: no cutting)\n"
+	          "  --lightmap-extra N the most triangles that may add (default 0: no cutting)\n"
 	          "  --ao off|low|high  Graphics+: bake ambient occlusion into the vertices - corners, the foot of walls\n"
 	          "                     and the ground under eaves darker (low: 16 rays of 2.5 m, high: 40 of 4 m; default: off)\n"
 	          "  --ao-rays N        rays per corner instead of the level's\n"
 	          "  --probe X Y Z      list the triangles around that place (metres, as the log gives them; the game's position display is in cm) at\n"
 	          "                     two stages of the bake; --probe-radius M (default 25)\n"
 	          "  --ao-cell M        large triangles near something are cut to this edge before the occlusion (default 2, high 1.5);\n"
-	          "  --ao-extra N       the most triangles that may add (default 300000, 0: no cutting)\n"
+	          "  --ao-extra N       the most triangles that may add (default 0: no cutting)\n"
 	          "  --ao-radius CM     how far a ray looks instead of the level's\n"
 	          "  --wind             Graphics+: trees, bushes and grass sway (marked by their names; see the report)\n"
 	          "  --simplify         fewer triangles in everything that is drawn: the world's objects and the level (edge\n"
@@ -164,6 +164,8 @@ void usage() {
 	          "  --light-static     also the lamps the world's own compiled light has (otherwise those are left out)\n"
 	          "  --water-light N    the water's own light, 0..255 (default 200): the same blue-green tone all over it,\n"
 	          "                     not the patches of the source mesh's vertex light; 0: keep the source's light\n"
+	          "  --water-grid M     cut the water into a grid of M metres (try 2; 0 = off, the default), fine enough for the\n"
+	          "                     game's \"Waves on the water\" setting to lift it; more triangles where there is water\n"
 	          "  --far-lod          Graphics+: a coarse copy of the world drawn beyond the draw distance and where\n"
 	          "                     chunks are not loaded yet (far layer; about 1.5-2 MB on the console)\n"
 	          "  --far-cell M       its finest grid, metres (default 4; coarser if needed to fit)\n"
@@ -307,6 +309,7 @@ int main(int argc, char** argv) {
 			else if (a == "--light-cell") opt.light.cell = std::clamp(std::stof(value()), 0.2f, 10.0f) * 100.0f;
 			else if (a == "--light-static") opt.light.statics = true;
 			else if (a == "--water-light") opt.waterLight = u8(std::clamp(std::stoi(value()), 0, 255));
+			else if (a == "--water-grid") opt.waterGrid = std::clamp(std::stof(value()), 0.0f, 50.0f) * 100.0f;
 			else if (a == "--vis") opt.vis.enabled = true;
 			else if (a == "--vis-high") opt.vis.high = true;
 			else if (a == "--vis-radius") opt.vis.radius = std::clamp(std::stof(value()), 40.0f, 500.0f) * 100.0f;

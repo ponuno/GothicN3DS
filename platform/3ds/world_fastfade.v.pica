@@ -15,9 +15,11 @@
 .fvec fx            ; Graphics+: xy = wind (cm per step of sway, times 4), z = wave phase, w = occlusion strength
 .fvec lightK        ; xyz = (dayLight - 1) / 255 / 255: the fast shader's daylight term
 .fvec aoK           ; x = occlusion strength / 256: the fast shader's occlusion term
+.fvec wave          ; (water waves; used by the full entry only)
 .bool skinned
 .bool windy
 .bool fading
+.bool wavy          ; Graphics+: the water's waves (world_full.v.pica only)
 
 .constf consts(0.0, 1.0, 0.0, 0.0)
 .constf noiseScale(15.0, 25.0, 0.0, 0.0)

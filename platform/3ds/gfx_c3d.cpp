@@ -70,6 +70,7 @@ bool gReady = false; // C3D_Init succeeded
 int gLocProjection = -1, gLocModelView = -1, gLocChunk = -1, gLocParams = -1, gLocDayDelta = -1, gLocTexOffset = -1;
 int gLocSkinLight = -1, gLocBones = -1, gLocSkinned = -1, gLocFading = -1;
 int gLocFx = -1, gLocWindy = -1; // Graphics+ (not in the plain shader)
+int gLocWave = -1, gLocWavy = -1; // the water's waves (only the full entry of the four-entry shader has them)
 // The shader with the combined matrix (world_full / world_fast.v.pica): mvp and fogRow stand for projection and
 // modelView, lightK and aoK are the fast entry's own forms of dayDelta and the occlusion strength.
 int gLocMvp = -1, gLocFogRow = -1, gLocLightK = -1, gLocAoK = -1;
@@ -84,6 +85,10 @@ bool gSkinned = false; // last value of the shader's `skinned` switch
 // material with MATF_WIND while the chunk's wind is not zero.
 float gFx[4] = {0, 0, 0, 0};
 bool gWindy = false, gMaterialWind = false, gChunkWind = false;
+// The water's waves: the last `wave` uniform, and the `wavy` switch - on for a water material while the chunk's waves
+// are not zero.
+float gWave[4] = {0, 0, 0, 0};
+bool gWavy = false, gMaterialWater = false, gChunkWave = false;
 bool gFillTest = false;    // the picture squeezed into half the screen (hold ZR at start): does the GPU time follow the pixels?
 bool gDoubleDraws = false; // every world draw is issued twice (hold START at start): what does one more draw call cost with no state change?
 bool gPlainShader = false; // the world-only shader of earlier versions: no characters
@@ -263,9 +268,24 @@ void setFxUniform(float x, float y, float z, float w) {
 
 void updateWindy() {
 	const bool on = gLocWindy >= 0 && gMaterialWind && gChunkWind && !gSkinned;
-	if (on == gWindy) return;
-	gWindy = on;
-	C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWindy, on);
+	if (on != gWindy) {
+		gWindy = on;
+		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWindy, on);
+	}
+	const bool wavy = gLocWavy >= 0 && gMaterialWater && gChunkWave && !gSkinned;
+	if (wavy != gWavy) {
+		gWavy = wavy;
+		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWavy, wavy);
+	}
+}
+
+void setWaveUniform(float a, float b, float height, float shade) {
+	if (gLocWave < 0 || (a == gWave[0] && b == gWave[1] && height == gWave[2] && shade == gWave[3])) return;
+	gWave[0] = a;
+	gWave[1] = b;
+	gWave[2] = height;
+	gWave[3] = shade;
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocWave, a, b, height, shade);
 }
 
 // The shader with the combined matrix. A C3D_Mtx holds rows; its components are named, whatever order citro3d keeps them in.
@@ -516,6 +536,10 @@ bool init() {
 		gLocFx = shaderInstanceGetUniformLocation(gProgram.vertexShader, "fx");
 		gLocWindy = shaderInstanceGetUniformLocation(gProgram.vertexShader, "windy");
 		if (gLocFx < 0 || gLocWindy < 0) return false;
+		// (Optional: a shader without them draws the water flat.)
+		gLocWave = shaderInstanceGetUniformLocation(gProgram.vertexShader, "wave");
+		gLocWavy = shaderInstanceGetUniformLocation(gProgram.vertexShader, "wavy");
+		if (gLocWave < 0 || gLocWavy < 0 || !gMvpShader) gLocWave = gLocWavy = -1;
 		if (gFadeShader) {
 			gLocFading = shaderInstanceGetUniformLocation(gProgram.vertexShader, "fading");
 			if (gLocFading < 0) return false;
@@ -570,7 +594,7 @@ void shutdown() {
 		C3D_Fini();
 		if (gNoiseReady) C3D_TexDelete(&gNoise);
 		gNoiseReady = false;
-		gLocFading = gLocFx = gLocWindy = -1;
+		gLocFading = gLocFx = gLocWindy = gLocWave = gLocWavy = -1;
 		if (gProgramReady) shaderProgramFree(&gProgram);
 		if (gProgramFastReady) shaderProgramFree(&gProgramFast);
 		if (gProgramSkinReady) shaderProgramFree(&gProgramSkin);
@@ -797,6 +821,12 @@ static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target) {
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWindy, false);
 	}
 	gWindy = gMaterialWind = gChunkWind = false;
+	if (gLocWave >= 0) {
+		gWave[0] = gWave[1] = gWave[2] = gWave[3] = 0.0f;
+		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocWave, 0.0f, 0.0f, 0.0f, 0.0f);
+		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWavy, false);
+	}
+	gWavy = gMaterialWater = gChunkWave = false;
 
 	// Start every frame from a known state; from here on only changes are sent.
 	setStage0(true, 255);
@@ -907,6 +937,8 @@ void setChunkTransform(const float origin[3], float posScale, float uvScale, con
 	const ChunkFx& f = fx ? *fx : none;
 	setFxUniform(f.windX * 4.0f, f.windZ * 4.0f, f.windPhase, f.occlusion);
 	gChunkWind = f.windX != 0.0f || f.windZ != 0.0f;
+	setWaveUniform(f.waveA, f.waveB, f.waveHeight, f.waveShade);
+	gChunkWave = f.waveHeight != 0.0f;
 	updateWindy();
 }
 
@@ -928,6 +960,7 @@ void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, 
 	if (additive != gFogToBlack) setFogStage(additive);
 	setTexOffset(uvOffsetU, uvOffsetV);
 	gMaterialWind = (materialFlags & MATF_WIND) != 0;
+	gMaterialWater = (materialFlags & MATF_WATER) != 0;
 	updateWindy();
 }
 
@@ -964,7 +997,8 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 	}
 	setSkinned(false);
 	// What sways is the full shader's (its vertices carry the sway in w, which the fast one does not know).
-	useProgram(!gMaterialWind);
+	// (So does the water that is waving: the height comes from the shader.)
+	useProgram(!gMaterialWind && !gWavy);
 	if (m != gBoundMesh) {
 		C3D_SetBufInfo(&m->buf);
 		gBoundMesh = m;
@@ -1074,6 +1108,7 @@ static void beginUi(Texture* t) {
 	setTexOffset(0.0f, 0.0f);
 	setFxUniform(0.0f, 0.0f, 0.0f, 0.0f);
 	gMaterialWind = gChunkWind = false;
+	gMaterialWater = gChunkWave = false;
 	updateWindy();
 	C3D_Mtx proj, identity;
 	Mtx_OrthoTilt(&proj, 0.0f, float(SCREEN_W), float(SCREEN_H), 0.0f, -1.0f, 1.0f, true);

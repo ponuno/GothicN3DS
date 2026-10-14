@@ -32,7 +32,7 @@ struct AoOptions {
 	// the rays are shot: a corner's answer is then no longer stretched over a whole floor tile (flat triangles of
 	// light and shade beside a wall). 0: from the level (low 2 m, high 1.5 m); `maxExtra` the triangles it may add.
 	float cell = 0; // cm
-	u32 maxExtra = 300000;
+	u32 maxExtra = 0; // (0: no cutting; --ao-extra N switches it on)
 };
 
 struct AoStats {

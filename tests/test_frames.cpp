@@ -442,8 +442,8 @@ static void testShader(const std::string& pak) {
 	std::printf("  shader: %u instructions, %u of 96 float registers%s%s\n", mock3ds::shaderInstructions(),
 	            mock3ds::shaderFloatRegisters(), *mock3ds::shaderProblem() ? "; PROBLEM: " : "", mock3ds::shaderProblem());
 	CHECK(!*mock3ds::shaderProblem());
-	// (mvp, fogRow, five vectors, the palette, fx, lightK, aoK; two constants)
-	CHECK(mock3ds::shaderFloatRegisters() == 4 + 1 + 5 + MODEL_PALETTE * 3 + 1 + 1 + 1 + 2 && mock3ds::shaderFloatRegisters() <= 96);
+	// (mvp, fogRow, five vectors, the palette, fx, lightK, aoK, wave; four constants: consts, noiseScale, the waves' two)
+	CHECK(mock3ds::shaderFloatRegisters() == 4 + 1 + 5 + MODEL_PALETTE * 3 + 1 + 1 + 1 + 1 + 4 && mock3ds::shaderFloatRegisters() <= 96);
 	shaderProgram_s probe;
 	shaderProgramInit(&probe);
 	shaderProgramSetVsh(&probe, nullptr);
@@ -813,12 +813,12 @@ static void testDefaultShader(const std::string& pak) {
 	            mock3ds::shaderEntryInstructions(0), mock3ds::shaderEntryInstructions(1), mock3ds::shaderInstructions(),
 	            mock3ds::shaderFloatRegisters(), *mock3ds::shaderProblem() ? "; PROBLEM: " : "", mock3ds::shaderProblem());
 	CHECK(!*mock3ds::shaderProblem() && mock3ds::shaderEntries() == 4);
-	// (mvp, fogRow, five vectors, the palette, fx, lightK, aoK; two constants)
-	CHECK(mock3ds::shaderFloatRegisters() == 4 + 1 + 5 + MODEL_PALETTE * 3 + 1 + 1 + 1 + 2);
+	// (mvp, fogRow, five vectors, the palette, fx, lightK, aoK, wave; four constants: consts, noiseScale, the waves' two)
+	CHECK(mock3ds::shaderFloatRegisters() == 4 + 1 + 5 + MODEL_PALETTE * 3 + 1 + 1 + 1 + 1 + 4);
 	// main, fastmain, fadefast (with the dissolve: 3 more), skinmain (both ways of the dissolve counted)
 	std::printf("  entries: %u, %u, %u and %u instructions\n", mock3ds::shaderEntryInstructions(0), mock3ds::shaderEntryInstructions(1),
 	            mock3ds::shaderEntryInstructions(2), mock3ds::shaderEntryInstructions(3));
-	CHECK(mock3ds::shaderEntryInstructions(1) <= 20 && mock3ds::shaderEntryInstructions(0) < 70);
+	CHECK(mock3ds::shaderEntryInstructions(1) <= 20 && mock3ds::shaderEntryInstructions(0) < 120); // (the water waves are most of the full entry: it draws only what waves or sways)
 	CHECK(mock3ds::shaderEntryInstructions(2) <= 28 && mock3ds::shaderEntryInstructions(3) <= 32);
 	shaderProgram_s probe;
 	shaderProgramInit(&probe);

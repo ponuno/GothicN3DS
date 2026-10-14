@@ -1080,6 +1080,7 @@ void checkScripts(std::shared_ptr<const ZenGame> game, const fs::path& dir, bool
 	worlds[1].name = "fixture2";
 	worlds[1].level = "Fixture2.zen";
 	ZenImportOptions zo;
+	zo.lightmapExtra = 0;
 	zo.zenName = "FIXTURE.ZEN";
 	importZenWorld(game, zo, worlds[0].scene);
 	zo.zenName = "FIXTURE2.ZEN";
@@ -1778,6 +1779,7 @@ int main(int argc, char** argv) {
 		std::printf("[ RUN ] loose mesh, flipWinding=%d\n", int(flip));
 		SrcScene scene;
 		ZenImportOptions opt;
+		opt.lightmapExtra = 0; // (the cutting has its own test)
 		opt.meshFile = (dir / "loose" / "fixture.msh").string();
 		opt.textureDir = (dir / "loose").string();
 		opt.flipWinding = flip;
@@ -1789,6 +1791,42 @@ int main(int argc, char** argv) {
 			SrcImage frame;
 			CHECK(scene.loadTexture("fix_water_a1.tga", frame) && frame.width == 64);
 			CHECK(!scene.loadTexture("fix_water_a2.tga", frame));
+		} catch (const std::exception& ex) {
+			std::printf("FAIL import threw: %s\n", ex.what());
+			++gFailures;
+		}
+	}
+
+	// The cutting of lightmapped triangles: the shade's edge in the middle of the cell gets small triangles, and the
+	// corners away from the edge keep the exact light of their side.
+	{
+		std::printf("[ RUN ] loose mesh, lightmapped triangles cut\n");
+		SrcScene plain, cut;
+		ZenImportOptions opt;
+		opt.lightmapExtra = 0;
+		opt.meshFile = (dir / "loose" / "fixture.msh").string();
+		opt.textureDir = (dir / "loose").string();
+		try {
+			importZenMesh(opt, plain);
+			opt.lightmapExtra = 10000;
+			importZenMesh(opt, cut);
+			CHECK(cut.triangles.size() > plain.triangles.size() && cut.triangles.size() < plain.triangles.size() + 10000);
+			CHECK(hasNote(cut, "large ones cut where the lightmap differs"));
+			int far = 0, edge = 0;
+			for (const SrcTriangle& t : cut.triangles) {
+				if (t.material != MAT_NOTEX) continue;
+				for (const SrcVertex& v : t.v) {
+					const float d = std::fabs(v.pos[0] - 3.5f * kCell);
+					if (d > kCell / 8.0f) {
+						const uint8_t* want = v.pos[0] < 3.5f * kCell ? kLmLeft : kLmRight;
+						++far;
+						CHECK(std::abs(v.rgba[0] - want[0]) < 4 && std::abs(v.rgba[2] - want[2]) < 4);
+					} else {
+						++edge;
+					}
+				}
+			}
+			CHECK(far > 0 && edge > 0);
 		} catch (const std::exception& ex) {
 			std::printf("FAIL import threw: %s\n", ex.what());
 			++gFailures;
@@ -2059,6 +2097,7 @@ int main(int argc, char** argv) {
 
 			SrcScene scene;
 			ZenImportOptions opt;
+			opt.lightmapExtra = 0; // (the cutting has its own test)
 			opt.zenName = "fixture.zen";
 			importZenWorld(game, opt, scene);
 			checkScene(scene, false, true);
@@ -2254,6 +2293,7 @@ int main(int argc, char** argv) {
 				CHECK(zenGameFileSize(*mg1, "FIXTURE2.ZEN") == zen.size());
 				SrcScene scene;
 				ZenImportOptions opt;
+				opt.lightmapExtra = 0; // (the cutting has its own test)
 				opt.zenName = info.world;
 				importZenWorld(mg1, opt, scene);
 				CHECK(!scene.points.empty() || scene.hasSpawn || scene.notes.size() > 0);
@@ -2326,6 +2366,7 @@ int main(int argc, char** argv) {
 		try {
 			SrcScene scene;
 			ZenImportOptions opt;
+			opt.lightmapExtra = 0; // (the cutting has its own test)
 			opt.zenName = "MISSING.ZEN";
 			if (game) importZenWorld(game, opt, scene);
 		} catch (const std::exception&) {
@@ -2383,6 +2424,7 @@ int main(int argc, char** argv) {
 			auto sampleGame = openZenGame((dir / "samples").string(), notes);
 			SrcScene scene;
 			ZenImportOptions opt;
+			opt.lightmapExtra = 0; // (the cutting has its own test)
 			opt.zenName = "SAMPLES.ZEN";
 			importZenWorld(sampleGame, opt, scene);
 			for (const std::string& n : scene.notes) std::printf("  %s\n", n.c_str());
@@ -2481,6 +2523,7 @@ int main(int argc, char** argv) {
 				auto savedGame = openZenGame((dir / "saved").string(), notes);
 				SrcScene saved;
 				ZenImportOptions opt;
+				opt.lightmapExtra = 0; // (the cutting has its own test)
 				opt.zenName = "SAVED.ZEN";
 				importZenWorld(savedGame, opt, saved);
 				std::map<std::string, u32> kinds;

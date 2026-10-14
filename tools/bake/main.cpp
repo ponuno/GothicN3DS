@@ -123,6 +123,8 @@ void usage() {
 	          "  --no-font          world: keep the overlay's own font, do not take the game's\n"
 	          "  --no-objects       world mesh only, skip trees, bridges and other world objects\n"
 	          "  --no-lightmaps     keep the vertex light on lightmapped (indoor) polygons\n"
+	          "  --lightmap-cell M  lightmapped triangles whose shade differs from their corners' are cut down to this edge (default 0.5)\n"
+	          "  --lightmap-extra N the most triangles that may add (default 400000, 0: no cutting)\n"
 	          "  --ao off|low|high  Graphics+: bake ambient occlusion into the vertices - corners, the foot of walls\n"
 	          "                     and the ground under eaves darker (low: 16 rays of 2.5 m, high: 40 of 4 m; default: off)\n"
 	          "  --ao-rays N        rays per corner instead of the level's\n"
@@ -257,6 +259,8 @@ int main(int argc, char** argv) {
 			else if (a == "--textures") zen.textureDir = value();
 			else if (a == "--no-objects") zen.objects = false;
 			else if (a == "--no-lightmaps") zen.lightmaps = false;
+			else if (a == "--lightmap-cell") zen.lightmapCell = std::clamp(std::stof(value()), 0.1f, 10.0f) * 100.0f;
+			else if (a == "--lightmap-extra") zen.lightmapExtra = u32(std::clamp(std::stoi(value()), 0, 10000000));
 			else if (a == "--flip") zen.flipWinding = true;
 			else if (a == "--no-flip") zen.flipWinding = false; // the default; kept for old command lines
 			else if (a == "--cells") synth.cells = std::stoi(value());

@@ -298,6 +298,95 @@ void appendMesh(const zenkit::Mesh& mesh, const ZenImportOptions& opt, SrcScene&
 		for (size_t t = 0; t < triCount; ++t) std::swap(scene.triangles[firstTriangle + t].v[1], scene.triangles[firstTriangle + t].v[2]);
 	}
 
+	// A lightmap holds more than its polygon's corners: where a shade's edge crosses a large triangle, the corners'
+	// light stretched over it is a flat dark (or bright) wedge. Cut such triangles into four - the new corners
+	// sample the lightmap at their own place - until the corners agree with the lightmap or the cut is small.
+	u64 lmCut = 0, lmTriangles = 0;
+	if (trusted && opt.lightmaps && opt.lightmapExtra > 0) {
+		const float cell = std::max(opt.lightmapCell, 10.0f);
+		u32 budget = opt.lightmapExtra;
+		std::vector<SrcTriangle> extra;
+		auto sampleAt = [&](const zenkit::LightMap& lm, const float pos[3], u8 rgb[3]) {
+			zenkit::Vec3 q;
+			q.x = pos[0]; q.y = pos[1]; q.z = pos[2];
+			bool in = false;
+			return sampler.sample(lm, q, rgb, in);
+		};
+		auto edgeOf = [](const SrcTriangle& w) {
+			float e = 0;
+			for (int k = 0; k < 3; ++k) {
+				float d2 = 0;
+				for (int a = 0; a < 3; ++a) {
+					const float d = w.v[(k + 1) % 3].pos[a] - w.v[k].pos[a];
+					d2 += d * d;
+				}
+				e = std::max(e, std::sqrt(d2));
+			}
+			return e;
+		};
+		// How far the lightmap, at the middles of the edges and of the triangle, is from what the corners give there.
+		auto error = [&](const zenkit::LightMap& lm, const SrcTriangle& w) {
+			float worst = 0;
+			for (int probe = 0; probe < 4; ++probe) {
+				float pos[3], expect[3];
+				for (int a = 0; a < 3; ++a) {
+					if (probe < 3) pos[a] = (w.v[probe].pos[a] + w.v[(probe + 1) % 3].pos[a]) * 0.5f;
+					else pos[a] = (w.v[0].pos[a] + w.v[1].pos[a] + w.v[2].pos[a]) / 3.0f;
+				}
+				for (int c = 0; c < 3; ++c)
+					expect[c] = probe < 3 ? (float(w.v[probe].rgba[c]) + float(w.v[(probe + 1) % 3].rgba[c])) * 0.5f
+					                      : (float(w.v[0].rgba[c]) + float(w.v[1].rgba[c]) + float(w.v[2].rgba[c])) / 3.0f;
+				u8 got[3];
+				if (!sampleAt(lm, pos, got)) return 0.0f;
+				for (int c = 0; c < 3; ++c) worst = std::max(worst, std::fabs(float(got[c]) - expect[c]));
+			}
+			return worst;
+		};
+		std::vector<SrcTriangle> work, next, done;
+		for (size_t t = 0; t < triCount && budget >= 3; ++t) {
+			if (!hasSample[t]) continue;
+			SrcTriangle& root = scene.triangles[firstTriangle + t];
+			if (edgeOf(root) <= cell) continue;
+			const zenkit::LightMap& lm = mesh.lightmaps[size_t(li[t])];
+			work.assign(1, root);
+			done.clear();
+			for (int depth = 0; depth < 6 && !work.empty(); ++depth) {
+				next.clear();
+				for (const SrcTriangle& w : work) {
+					if (budget < 3 || edgeOf(w) <= cell || error(lm, w) < 10.0f) {
+						done.push_back(w);
+						continue;
+					}
+					SrcVertex m[3];
+					for (int k = 0; k < 3; ++k) {
+						const SrcVertex &p = w.v[k], &q = w.v[(k + 1) % 3];
+						m[k] = p;
+						for (int a = 0; a < 3; ++a) m[k].pos[a] = (p.pos[a] + q.pos[a]) * 0.5f;
+						for (int a = 0; a < 2; ++a) m[k].uv[a] = (p.uv[a] + q.uv[a]) * 0.5f;
+						if (!sampleAt(lm, m[k].pos, m[k].rgba)) std::copy_n(p.rgba, 3, m[k].rgba);
+						m[k].rgba[3] = 0;
+					}
+					SrcTriangle c[4] = {w, w, w, w};
+					c[0].v[0] = w.v[0]; c[0].v[1] = m[0]; c[0].v[2] = m[2];
+					c[1].v[0] = m[0]; c[1].v[1] = w.v[1]; c[1].v[2] = m[1];
+					c[2].v[0] = m[2]; c[2].v[1] = m[1]; c[2].v[2] = w.v[2];
+					c[3].v[0] = m[0]; c[3].v[1] = m[1]; c[3].v[2] = m[2];
+					for (const SrcTriangle& n : c) next.push_back(n);
+					budget -= 3;
+				}
+				work.swap(next);
+			}
+			for (const SrcTriangle& w : work) done.push_back(w);
+			if (done.size() > 1) {
+				++lmCut;
+				root = done[0];
+				for (size_t k = 1; k < done.size(); ++k) extra.push_back(done[k]);
+			}
+		}
+		lmTriangles = extra.size();
+		scene.triangles.insert(scene.triangles.end(), extra.begin(), extra.end());
+	}
+
 	scene.notes.push_back("world mesh: " + std::to_string(triCount) + " triangles, " +
 	                      std::to_string(mesh.materials.size()) + " materials, " + std::to_string(mesh.lightmaps.size()) +
 	                      " lightmaps");
@@ -310,7 +399,11 @@ void appendMesh(const zenkit::Mesh& mesh, const ZenImportOptions& opt, SrcScene&
 			note += "disabled, vertex light used";
 		else if (trusted)
 			note += std::to_string(applied) + " lit from their lightmap (" + std::to_string(inside * 100 / corners) +
-			        "% of the corners inside the lightmap rectangle)";
+			        "% of the corners inside the lightmap rectangle)" +
+			        (opt.lightmapExtra > 0
+			             ? "; " + std::to_string(lmCut) + " large ones cut where the lightmap differs from their corners, +" +
+			                   std::to_string(lmTriangles) + " triangles (--lightmap-extra " + std::to_string(opt.lightmapExtra) + ")"
+			             : std::string());
 		else
 			note += "NOT applied: only " + std::to_string(corners ? inside * 100 / corners : 0) +
 			        "% of the corners map into their lightmap, vertex light used instead";

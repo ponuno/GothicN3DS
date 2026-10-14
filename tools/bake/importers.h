@@ -50,6 +50,10 @@ struct ZenImportOptions {
 	bool flipWinding = false;
 	bool objects = true;   // bake world objects (trees, bridges, chests, decals, ...) into the world
 	bool lightmaps = true; // bake indoor lightmaps into the vertex light
+	// Lightmapped triangles whose light is not what their corners say (a shade's edge crossing a large polygon) are cut
+	// into four, as far as `lightmapCell` (cm) and while `lightmapExtra` triangles are left; the new corners sample the lightmap.
+	float lightmapCell = 50.0f;
+	u32 lightmapExtra = 400000;
 	// More words that name a tree in object, material or texture names
 	// (upper case; vertex_fx.h plantKindOf), for mods with names of their own.
 	std::vector<std::string> plantWords;

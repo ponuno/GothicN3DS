@@ -91,10 +91,10 @@ synth)
 	;;
 zen)
 	# The loose-mesh path and the Gothic-install path must agree.
-	"$bake" mesh --msh "$fixture/loose/fixture.msh" --textures "$fixture/loose" --chunk 2000 --max-tex 64 -o "$out/mesh.pak"
+	"$bake" mesh --msh "$fixture/loose/fixture.msh" --textures "$fixture/loose" --chunk 2000 --max-tex 64 --lightmap-extra 0 -o "$out/mesh.pak"
 	# Names one world; the baker follows its level-change trigger to the other.
 	# The fixture's character stands in for the game's (whose files it does not have).
-	"$bake" world --game "$fixture/game" --zen FIXTURE.ZEN --chunk 2000 --max-tex 64 \
+	"$bake" world --game "$fixture/game" --zen FIXTURE.ZEN --chunk 2000 --max-tex 64 --lightmap-extra 0 \
 		--hero-script FIX_HERO.MDS --hero-body FIX_HERO_BODY --hero-head "" -o "$out/data.pak"
 	"$bake" info "$out/mesh.pak" | grep -q "514 triangles in, 514 out" || fail "mesh bake lost triangles"
 	"$host" --pak "$out/data.pak" --still --frames 3 --shots 1 --out "$out/frame" --stats "$out/stats.json"

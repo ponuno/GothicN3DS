@@ -139,7 +139,7 @@ static const char* kHitchPath = "sdmc:/3ds/gothic3ds/hitches.txt";
 // to the card only when it is full, when the game ends, or in the pause menu - the old 48 lines at 200-300 ms each
 // were hitches of their own, and the file grew from run to run.)
 static const int kHitchBatch = 160;
-static char gHitchLines[kHitchBatch][300];
+static char gHitchLines[kHitchBatch][480];
 static int gHitchCount = 0;
 static unsigned long gHitchTotal = 0;
 

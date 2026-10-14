@@ -54,3 +54,4 @@
 После fix96: отказ malloc загрузчика не вытесняет чанки; чанки у wantAt-точек грузятся за пределами радиуса класса; fo/la в hitches.
 После fix97: модели предметов/жителей строятся после idle() ReadAhead (текстуры уже прочитаны). Клипы (tick 25–70 мс) — отдельно, через предзагрузку при startState.
 После fix98: больше клипов в ReadAhead, счётчик rc в hitches. Если rc-промахи остаются — предзагрузка при startState и ограничение цепочки clip fetch.
+- fix99: hitch-line buffer 300→480 (rc/la were truncated in fix98 log). fix98 log: tick>=15 8.6→5.9/1000fr, loot 3.1→2.0, sel 2.3→1.3; clip1 spikes 25–128 ms remain.

@@ -635,8 +635,7 @@ std::vector<BakedChunk> buildChunks(const SrcScene& scene, const std::vector<int
 	// Never finer than the lattice: what rounds to one point is one point.
 	clusters.eps = opt.seal ? std::max(double(opt.sealTolerance) * 0.5, step0 * 0.5) : 0.0;
 	std::vector<WorkTri> input;
-	for (const SrcTriangle& tri : scene.triangles) {
-		if (materialRemap[tri.material] < 0) continue;
+	auto addInput = [&](const SrcTriangle& tri) {
 		++stats.inputTriangles;
 		WorkTri w;
 		for (int k = 0; k < 3; ++k) {
@@ -646,7 +645,20 @@ std::vector<BakedChunk> buildChunks(const SrcScene& scene, const std::vector<int
 		w.material = tri.material;
 		w.detail = tri.detail;
 		input.push_back(w);
+	};
+	WaterGrid waterGrid(scene, opt.vertexFx ? opt.water : WaterGridOptions {});
+	std::vector<SrcTriangle> pieces;
+	for (const SrcTriangle& tri : scene.triangles) {
+		if (materialRemap[tri.material] < 0) continue;
+		if (waterGrid.active() && tri.material < scene.materials.size() && scene.materials[tri.material].water) {
+			pieces.clear();
+			waterGrid.cut(tri, pieces);
+			for (const SrcTriangle& p : pieces) addInput(p);
+			continue;
+		}
+		addInput(tri);
 	}
+	stats.water = waterGrid.stats();
 	stats.welded = clusters.merged;
 
 	// ---- 2. cut edges at the vertices lying on them ----

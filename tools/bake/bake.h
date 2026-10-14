@@ -45,9 +45,11 @@ struct BakeOptions {
 	// brightness (0..255) instead of what the source mesh has (big polygons, lightmapped per corner: patches of very
 	// different brightness). 0 keeps the source's light.
 	u8 waterLight = 200;
-	// The water cut into a grid of this many cm (--water-grid; 0: not cut): fine enough for the runtime's waves to lift
-	// it corner by corner (WORLDF_WATER_GRID). One grid for all water, so neighbours meet corner to corner.
+	// The water cut into a grid of this many cm along the shores (--water-grid; 0: not cut): fine enough for the runtime's
+	// waves to lift it corner by corner (WORLDF_WATER_GRID; see water_grid.h). `waterReach`: how far from the shore line
+	// (cm, in whole tiles of 16 cells, at least one) the fine water goes (--water-reach).
 	float waterGrid = 0.0f;
+	float waterReach = 3200.0f;
 	// The light of the world's lamps (torches, fire places) baked into the vertices (--lights, light_bake.h).
 	LightOptions light;
 	// The far layer (G10, --far-lod): a coarse copy of the world drawn beyond the draw distance.
@@ -147,12 +149,6 @@ std::string texturePakName(const std::string& texture);
 // Gives the water's triangles the one light all over (BakeOptions::waterLight); what is not water, and the daylight weight, stay.
 // Returns how many triangles it set. (0 as the brightness: nothing is changed.)
 size_t applyWaterLight(SrcScene& scene, u8 brightness);
-// Cuts the water's triangles along a grid of `cell` cm in x and z (the lines go through every multiple of `cell`, within
-// the box of what is not water, grown by a margin; outside it the outermost cells reach out for ever). The pieces carry the
-// attributes of the corner they interpolate to; the mesh stays without T-junctions (an edge has a corner wherever a grid line
-// crosses it, on both sides). A triangle within one cell stays as it is. Returns how many triangles were added (0 as `cell`:
-// nothing is done).
-size_t subdivideWater(SrcScene& scene, float cell);
 // The colour that light has, as a share of the white (the far layer's water is the texture's average in it).
 void waterTint(u8 brightness, float rgb[3]);
 

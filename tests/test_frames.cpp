@@ -181,6 +181,12 @@ struct ShaderCheck {
 	unsigned fadeBit = 2;    // the bool register of `fading` (b1 in world_fade.v.pica, b2 in the default shader)
 	unsigned fastDraws = 0, fullDraws = 0, skinDraws = 0, wrongEntry = 0, swayOnFast = 0;
 	unsigned occludedVertices = 0, swayedVertices = 0, windyDraws = 0;
+	// The water's waves: the bool register of `wavy` (b3 in the default shader, 0: not looked at), the draws that had it
+	// on, and those of them that the fast entry drew (none may be).
+	u16 wavyBit = 0;
+	int locWave = 91; // the `wave` uniform's register in the default shader
+	unsigned wavyDraws = 0, wavyOnFast = 0, wavedVertices = 0;
+	double worstWave = 0; // cm: the highest a corner was lifted
 	double worstSway = 0; // cm: the farthest a corner was moved
 	unsigned fadedVertices = 0;
 	double fadeChanged = 0, worstNoise = 0;
@@ -242,6 +248,10 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 	}
 	const float* fx = call.uniforms[locFx];
 	if (windy) ++sc.windyDraws;
+	if (sc.wavyBit && (call.bools & sc.wavyBit)) {
+		++sc.wavyDraws;
+		sc.wavyOnFast += fastEntry;
+	}
 	const float* chunk = call.uniforms[locChunk];
 	const float* params = call.uniforms[locParams];
 	const bool sky = params[2] == 1.0f && params[3] == 0.0f; // never fogged
@@ -367,7 +377,28 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 				sc.worstSway = std::max(sc.worstSway, std::hypot(double(fx[0]) * wave, double(fx[1]) * wave));
 				++sc.swayedVertices;
 			}
-			const double shade = 1.0 - occlusion * double(fx[3]);
+			// The water's waves (world_full.v.pica): two waves 4 x (1 - |x|), lift by 0.7 A + 0.3 B, the slopes light it, the
+			// texture slides; all per step of the corner's weight (w's high byte), the uniform holds them per step.
+			double waveShade = 1.0, shiftU = 0.0, shiftV = 0.0;
+			if (sc.wavyBit && (call.bools & sc.wavyBit) && sway > 0) {
+				const float* wv = call.uniforms[sc.locWave];
+				const double k[2][2] = {{0.0008, 0.0006}, {0.000538, -0.001442}};
+				double ws[2], sl[2];
+				for (int a = 0; a < 2; ++a) {
+					const double u = double(wv[a]) + k[a][0] * p[0] + k[a][1] * p[2];
+					const double x = 2.0 * (u - std::floor(u)) - 1.0, edge = 1.0 - std::fabs(x);
+					ws[a] = 4.0 * x * edge;
+					sl[a] = 2.0 * edge - 1.0;
+				}
+				const double lift = double(wv[2]) * sway * (0.7 * ws[0] + 0.3 * ws[1]);
+				p[1] += lift;
+				waveShade = 1.0 + double(wv[3]) * sway * (0.6 * sl[0] + 0.4 * sl[1]);
+				shiftU = 0.000118110 * sway * ws[0];
+				shiftV = 0.000118110 * sway * ws[1];
+				sc.worstWave = std::max(sc.worstWave, std::fabs(lift));
+				++sc.wavedVertices;
+			}
+			const double shade = (1.0 - occlusion * double(fx[3])) * waveShade;
 			sc.occludedVertices += occlusion > 0 && fx[3] > 0;
 			for (int k = 0; k < 3; ++k) {
 				world[k] = double(sc.anchor[k]) + double(chunk[k]) + p[k];
@@ -383,13 +414,27 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 		const double wantFog = std::clamp(double(params[2]) - eye[2] * double(params[3]), 0.0, 1.0);
 		sc.worstColor = std::max(sc.worstColor, std::fabs(double(got.color[3]) - wantFog));
 		for (int k = 0; k < 3; ++k) sc.worstColor = std::max(sc.worstColor, std::fabs(double(got.color[k]) - wantColor[k]));
-		const double wantU = double(v.u) * double(params[0]) + double(call.uniforms[locTexOffset][0]);
-		const double wantV = double(v.v) * double(params[0]) + double(call.uniforms[locTexOffset][1]);
+		double wantU = double(v.u) * double(params[0]) + double(call.uniforms[locTexOffset][0]);
+		double wantV = double(v.v) * double(params[0]) + double(call.uniforms[locTexOffset][1]);
+		if (!skinned && sc.wavyBit && (call.bools & sc.wavyBit) && vertexWind(v.w) > 0) {
+			// (the wave's texture slide, as above)
+			const float* wv = call.uniforms[sc.locWave];
+			const double k[2][2] = {{0.0008, 0.0006}, {0.000538, -0.001442}};
+			double chunkP[3] = {double(chunk[3]) * double(v.x), double(chunk[3]) * double(v.y), double(chunk[3]) * double(v.z)};
+			double ws[2];
+			for (int a = 0; a < 2; ++a) {
+				const double u = double(wv[a]) + k[a][0] * chunkP[0] + k[a][1] * chunkP[2];
+				const double x = 2.0 * (u - std::floor(u)) - 1.0;
+				ws[a] = 4.0 * x * (1.0 - std::fabs(x));
+			}
+			wantU += 0.000118110 * double(vertexWind(v.w)) * ws[0];
+			wantV += 0.000118110 * double(vertexWind(v.w)) * ws[1];
+		}
 		sc.worstTex = std::max({sc.worstTex, std::fabs(double(got.texcoord[0]) - wantU), std::fabs(double(got.texcoord[1]) - wantV)});
 
 		// One point of the world, one point on the GPU. (A swaying corner is
 		// moved after its chunk is known: it is left out.)
-		if (!skinned && !sky && !(windy && vertexWind(v.w) > 0)) {
+		if (!skinned && !sky && !(windy && vertexWind(v.w) > 0) && !(sc.wavyBit && (call.bools & sc.wavyBit) && vertexWind(v.w) > 0)) {
 			const ShaderCheck::Key key = {i32(std::lround(world[0] * 64.0)), i32(std::lround(world[1] * 64.0)), i32(std::lround(world[2] * 64.0))};
 			auto it = sc.points.find(key);
 			if (it == sc.points.end()) {
@@ -454,6 +499,9 @@ static void testShader(const std::string& pak) {
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "bones") == 10);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "skinned") == 0x68);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "windy") == 0x69);
+	// (the water's waves: `wave` after aoK and the bool `wavy` after `fading`, in every entry's source alike)
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "wavy") == 0x6b);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "wave") == shaderInstanceGetUniformLocation(probe.vertexShader, "aoK") + 1);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fading") == 0x6A);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fx") == 88);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "nonsense") < 0);
@@ -461,6 +509,7 @@ static void testShader(const std::string& pak) {
 	ShaderCheck sc;
 	sc.checkFade = true;
 	sc.windyBit = 2;
+	sc.wavyBit = 8;
 	sc.fadeBit = 4;
 	sc.locChunk = 5;
 	sc.locParams = 6;
@@ -481,6 +530,7 @@ static void testShader(const std::string& pak) {
 		CHECK(app.world().hasOcclusion() && app.world().hasWind());
 		app.world().config().occlusion = 1.0f;
 		app.world().config().wind = 2.0f;
+		app.world().config().waves = 22.0f;
 		app.world().preload(app.camera().pos);
 		CHECK(app.hero().loaded() && app.thirdPerson() && app.npcs().loaded());
 		u32 inhabitants = 0;
@@ -767,6 +817,8 @@ static void testClassicShader(const std::string& pak) {
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fading") < 0);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "fx") == 91);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "windy") == 0x69);
+	// (the classic shader has no waves: the water is drawn flat)
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "wavy") < 0);
 	{
 		ShaderCheck sc;
 		sc.windyBit = 2;
@@ -835,10 +887,14 @@ static void testDefaultShader(const std::string& pak) {
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "aoK") == 90);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "skinned") == 0x68);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "windy") == 0x69);
+	// (the water's waves: `wave` after aoK and the bool `wavy` after `fading`, in every entry's source alike)
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "wavy") == 0x6b);
+	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "wave") == shaderInstanceGetUniformLocation(probe.vertexShader, "aoK") + 1);
 	CHECK(shaderInstanceGetUniformLocation(probe.vertexShader, "projection") < 0);
 	{
 		ShaderCheck sc;
 		sc.windyBit = 2;
+		sc.wavyBit = 8;
 		sc.locChunk = 5;
 		sc.locParams = 6;
 		sc.locDayDelta = 7;
@@ -855,6 +911,7 @@ static void testDefaultShader(const std::string& pak) {
 		CHECK(app.world().hasOcclusion() && app.world().hasWind());
 		app.world().config().occlusion = 1.0f;
 		app.world().config().wind = 2.0f;
+		app.world().config().waves = 22.0f;
 		app.world().preload(app.camera().pos);
 		unsigned switches = 0, frames = 0;
 		for (int f = 0; f < 50; ++f) {
@@ -895,6 +952,12 @@ static void testDefaultShader(const std::string& pak) {
 		CHECK(sc.worstDepth < 1e-3 && sc.worstColor < 1e-4 && sc.worstTex < 1e-3);
 		CHECK(sc.sharedPoints > 20 && sc.splitPoints == 0);
 		CHECK(sc.occludedVertices > 1000 && sc.swayedVertices > 50 && sc.windyDraws > 0 && sc.worstSway > 0.5 && sc.worstSway < 40.0);
+		// The water's waves: where there is water in view, it waved with the full entry (never the fast one, which would
+		// read the waves' weights as occlusion); and the report counts what waved.
+		std::printf("  waves: %u wavy draw calls, %u of them on the fast entry; %u triangles in the last frame\n", sc.wavyDraws, sc.wavyOnFast,
+		            app.world().stats().waveTriangles);
+		std::printf("  waves: %u waved corners, the highest lifted %.1f cm\n", sc.wavedVertices, sc.worstWave);
+		CHECK(app.world().hasWaterGrid() && sc.wavyOnFast == 0 && sc.wavedVertices > 20 && sc.worstWave > 3.0 && sc.worstWave <= 22.01);
 		// The program changes are not free (a few dozen words of commands each); they stay in the tens a frame.
 		CHECK(switches > 0 && switches < frames * 120);
 		app.shutdown();
@@ -1235,6 +1298,7 @@ int main(int argc, char** argv) {
 	bo.quiet = true;
 	bo.ao.level = AO_LOW; // Graphics+ in the data: the shaders' occlusion and wind are checked
 	bo.wind = true;
+	bo.waterGrid = 200.0f; // (the water cut along the shores, for the waves)
 	std::vector<SrcModel> models(2);
 	buildSyntheticActor(models[0]);
 	buildChainModel(models[1], 60);

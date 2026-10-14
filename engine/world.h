@@ -125,6 +125,8 @@ struct WorldStats {
 	u32 drawCalls;       // both passes
 	u32 blendedDrawCalls;
 	u32 windyDrawCalls;  // of them: plants swaying (the vertex shader does more there)
+	u32 waveDrawCalls;   // of them: water with waves (WorldF_WATER_GRID, the setting on)
+	u32 waveTriangles;   // their triangles
 	u32 batchesCulled;   // batches of visible chunks skipped: out of view or too far for their size
 	u32 sizeCulled;      // of them: small objects nearer than their class's distance, but too small to be seen there
 	u32 batchesMerged;   // batches that went out in the draw call of the one before them

@@ -292,127 +292,6 @@ size_t applyWaterLight(SrcScene& scene, u8 brightness) {
 }
 
 
-namespace {
-
-SrcVertex lerpVertex(const SrcVertex& a, const SrcVertex& b, float t) {
-	SrcVertex r = a;
-	for (int i = 0; i < 3; ++i) r.pos[i] = a.pos[i] + (b.pos[i] - a.pos[i]) * t;
-	for (int i = 0; i < 2; ++i) r.uv[i] = a.uv[i] + (b.uv[i] - a.uv[i]) * t;
-	for (int i = 0; i < 4; ++i) r.rgba[i] = u8(std::lround(float(a.rgba[i]) + (float(b.rgba[i]) - float(a.rgba[i])) * t));
-	r.occlusion = u8(std::lround(float(a.occlusion) + (float(b.occlusion) - float(a.occlusion)) * t));
-	r.wind = u8(std::lround(float(a.wind) + (float(b.wind) - float(a.wind)) * t));
-	return r;
-}
-
-// Keeps the part of the convex polygon on one side of the line pos[axis] = at (keepAbove: >= at), Sutherland-Hodgman.
-void clipPolygon(std::vector<SrcVertex>& poly, int axis, float at, bool keepAbove) {
-	std::vector<SrcVertex> out;
-	const size_t n = poly.size();
-	for (size_t i = 0; i < n; ++i) {
-		const SrcVertex& a = poly[i];
-		const SrcVertex& b = poly[(i + 1) % n];
-		const float da = keepAbove ? a.pos[axis] - at : at - a.pos[axis];
-		const float db = keepAbove ? b.pos[axis] - at : at - b.pos[axis];
-		const bool ia = da >= 0.0f, ib = db >= 0.0f;
-		if (ia) out.push_back(a);
-		if (ia != ib) {
-			SrcVertex c = lerpVertex(a, b, da / (da - db));
-			c.pos[axis] = at; // (exactly on the line, so that both sides get the same corner)
-			out.push_back(c);
-		}
-	}
-	poly.swap(out);
-}
-
-struct WaterLines {
-	float first = 0.0f; // the position of line 0
-	int count = 0;      // lines at first + i * cell
-	int cellOf(float x, float cell) const {
-		const int c = int(std::floor((x - first) / cell)) + 1;
-		return std::clamp(c, 0, count);
-	}
-};
-
-} // namespace
-
-size_t subdivideWater(SrcScene& scene, float cell) {
-	if (cell < 20.0f) return 0;
-	// Where the grid lies: over what is not water (that is the playable world), a margin more. Without it a sea of
-	// hundreds of kilometres would be cut into a million cells.
-	float lo[2] = {1e30f, 1e30f}, hi[2] = {-1e30f, -1e30f};
-	for (const SrcTriangle& t : scene.triangles) {
-		if (t.material < scene.materials.size() && scene.materials[t.material].water) continue;
-		for (const SrcVertex& v : t.v) {
-			lo[0] = std::min(lo[0], v.pos[0]);
-			hi[0] = std::max(hi[0], v.pos[0]);
-			lo[1] = std::min(lo[1], v.pos[2]);
-			hi[1] = std::max(hi[1], v.pos[2]);
-		}
-	}
-	if (lo[0] > hi[0]) return 0;
-	const float margin = 2000.0f;
-	WaterLines lines[2];
-	for (int a = 0; a < 2; ++a) {
-		const float from = std::floor((lo[a] - margin) / cell) * cell, to = std::ceil((hi[a] + margin) / cell) * cell;
-		lines[a].first = from;
-		lines[a].count = std::min(int((to - from) / cell) + 1, 4000);
-	}
-	std::vector<SrcTriangle> out;
-	out.reserve(scene.triangles.size());
-	size_t added = 0;
-	for (const SrcTriangle& t : scene.triangles) {
-		if (t.material >= scene.materials.size() || !scene.materials[t.material].water) {
-			out.push_back(t);
-			continue;
-		}
-		int c0[2], c1[2];
-		for (int a = 0; a < 2; ++a) {
-			const int axis = a * 2; // x, z
-			float mn = t.v[0].pos[axis], mx = mn;
-			for (int k = 1; k < 3; ++k) {
-				mn = std::min(mn, t.v[k].pos[axis]);
-				mx = std::max(mx, t.v[k].pos[axis]);
-			}
-			c0[a] = lines[a].cellOf(mn, cell);
-			c1[a] = lines[a].cellOf(mx, cell);
-		}
-		if (c0[0] == c1[0] && c0[1] == c1[1]) {
-			out.push_back(t);
-			continue;
-		}
-		const size_t before = out.size();
-		for (int cx = c0[0]; cx <= c1[0]; ++cx) {
-			std::vector<SrcVertex> column(t.v, t.v + 3);
-			if (cx > 0) clipPolygon(column, 0, lines[0].first + float(cx - 1) * cell, true);
-			if (cx < lines[0].count) clipPolygon(column, 0, lines[0].first + float(cx) * cell, false);
-			if (column.size() < 3) continue;
-			for (int cz = c0[1]; cz <= c1[1]; ++cz) {
-				std::vector<SrcVertex> poly = column;
-				if (cz > 0) clipPolygon(poly, 2, lines[1].first + float(cz - 1) * cell, true);
-				if (cz < lines[1].count) clipPolygon(poly, 2, lines[1].first + float(cz) * cell, false);
-				for (size_t i = 1; i + 1 < poly.size(); ++i) {
-					SrcTriangle piece = t;
-					piece.v[0] = poly[0];
-					piece.v[1] = poly[i];
-					piece.v[2] = poly[i + 1];
-					// (A sliver of no area - three corners on a line - is of no use.)
-					const float ax = piece.v[1].pos[0] - piece.v[0].pos[0], ay = piece.v[1].pos[1] - piece.v[0].pos[1],
-					            az = piece.v[1].pos[2] - piece.v[0].pos[2];
-					const float bx = piece.v[2].pos[0] - piece.v[0].pos[0], by = piece.v[2].pos[1] - piece.v[0].pos[1],
-					            bz = piece.v[2].pos[2] - piece.v[0].pos[2];
-					const float cxn = ay * bz - az * by, cyn = az * bx - ax * bz, czn = ax * by - ay * bx;
-					if (cxn * cxn + cyn * cyn + czn * czn < 1e-4f) continue;
-					out.push_back(piece);
-				}
-			}
-		}
-		if (out.size() == before) out.push_back(t); // (cut to nothing: keep it whole)
-		added += out.size() - before - 1;
-	}
-	scene.triangles.swap(out);
-	return added;
-}
-
 BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel>& models, const BakeScripts& scripts,
                       const BakeOptions& opt, PakWriter& pak) {
 	if (worlds.empty()) throw std::runtime_error("nothing to bake");
@@ -761,20 +640,29 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			bakeLights(bw.scene, aoMaterials, lo, lightStats);
 		}
 		if (opt.probe) probeScene(bw.scene, opt.probeAt, opt.probeRadius, "after occlusion and lamps", line);
-		bool waterGrid = false;
-		if (opt.waterGrid > 0.0f && water > 0) {
-			const size_t before = bw.scene.triangles.size();
-			const size_t added = subdivideWater(bw.scene, opt.waterGrid);
-			waterGrid = true;
-			line(format("water grid (--water-grid): cells of %.1f m, +%zu triangles (%zu -> %zu in the scene)", double(opt.waterGrid) / 100.0,
-			            added, before, bw.scene.triangles.size()));
-		}
 		const bool hasWind = opt.wind && windyMaterials > 0;
 		ChunkerOptions chunkerOpt = opt.chunker;
-		chunkerOpt.vertexFx = opt.ao.level != AO_OFF || hasWind;
+		// The water cut finely along the shores (in the chunks only: the far layer, visibility and the rest see the
+		// water as it is); the waves' weight rides in the vertices' w.
+		const bool waterGrid = opt.waterGrid > 0.0f && water > 0;
+		if (waterGrid) {
+			chunkerOpt.water.cell = opt.waterGrid;
+			chunkerOpt.water.reachTiles = std::max(1, int(std::lround(opt.waterReach / (opt.waterGrid * float(chunkerOpt.water.cellsPerTile)))));
+		}
+		chunkerOpt.vertexFx = opt.ao.level != AO_OFF || hasWind || waterGrid;
 		ChunkerStats cs;
 		std::vector<BakedChunk> chunks = buildChunks(scene, remap, materialOrder, chunkerOpt, cs);
 		if (chunks.empty()) throw std::runtime_error("world '" + bw.name + "' has no drawable triangles");
+		if (waterGrid) {
+			if (cs.water.fineTiles > 0)
+				line(format("water grid (--water-grid): cells of %.1f m along the shores: %u shore tiles, %u tiles cut fine (%.0f x %.0f m), "
+				            "%llu water triangles -> %llu",
+				            double(opt.waterGrid) / 100.0, cs.water.shoreTiles, cs.water.fineTiles,
+				            double(opt.waterGrid) * chunkerOpt.water.cellsPerTile / 100.0, double(opt.waterGrid) * chunkerOpt.water.cellsPerTile / 100.0,
+				            static_cast<unsigned long long>(cs.water.waterIn), static_cast<unsigned long long>(cs.water.waterOut)));
+			else
+				line("water grid (--water-grid): no shore found - the water is left flat");
+		}
 
 		// ---- portals ----
 		std::vector<WorldPortal> portals;
@@ -829,7 +717,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		if (scene.indoor) wh.flags |= WORLDF_INDOOR;
 		if (opt.ao.level != AO_OFF) wh.flags |= WORLDF_AO;
 		if (hasWind) wh.flags |= WORLDF_WIND;
-		if (waterGrid) wh.flags |= WORLDF_WATER_GRID;
+		if (waterGrid && cs.water.fineTiles > 0) wh.flags |= WORLDF_WATER_GRID;
 		if (chunkerOpt.splitDetail) wh.flags |= WORLDF_TIERS;
 		// ---- the far layer (G10) ----
 		if (opt.far.enabled && !scene.indoor) {

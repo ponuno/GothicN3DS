@@ -101,6 +101,10 @@ struct ChunkFx {
 	// of the two waves at the chunk's origin (0..1, see wavePhaseAt), how high they lift the surface at the crest, cm
 	// (0 = flat water, the fast shader), and how much their slopes light and darken it.
 	float waveA = 0.0f, waveB = 0.0f, waveHeight = 0.0f, waveShade = 0.0f;
+	// The chunk's water carries the waves' weight in its vertices' w (WORLDF_WATER_GRID): the corner's wind byte, 0..127,
+	// of how much of the height and the shading it takes. Such water is drawn with the full shader even when still,
+	// because the fast one reads the whole of w as occlusion.
+	bool waterGrid = false;
 };
 // The water's two waves (world_full.v.pica has the same numbers): directions (x, z) and wavelengths, cm; speed in
 // waves a second.

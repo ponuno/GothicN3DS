@@ -154,7 +154,7 @@ static void flushHitches() {
 
 static void startHitchLog(const char* what) {
 	if (FILE* f = fopen(kHitchPath, "w")) {
-		fprintf(f, "# gothic3ds fix117 hitches: %s\n", what);
+		fprintf(f, "# gothic3ds fix118 hitches: %s\n", what);
 		fclose(f);
 	}
 	gHitchCount = 0;
@@ -882,6 +882,10 @@ int main(int, char**) {
 				     app.world().hasWind() ? ' ' : '-', static_cast<unsigned long>(ws.windyDrawCalls), int(st.shadows),
 				     static_cast<unsigned long>(app.shadows().stats().drawn), app.gfxRelief() ? " R" : "", gfx::c3dSupersampleLight() ? " AA1" : gfx::c3dSupersample() ? " AA" : "", gfx::stereoActive() ? " 3D" : gfx::c3dWide() ? " W" : "");
 			}
+			// The water's waves: the setting; '-' after it: not in data.pak (bake with --water-grid); the draw calls and
+			// thousands of triangles of water that waved in the last frame.
+			reportLine("waves %d%c %lu dc %lu tri", int(app.settings().waves), app.world().hasWaterGrid() ? ' ' : '-',
+			     static_cast<unsigned long>(ws.waveDrawCalls), static_cast<unsigned long>(ws.waveTriangles));
 			// (Chunks in memory: the world's own + those of medium and small objects, of all; wanted and not there: the same.)
 			// (RP: the re-projection, when asked for: columns of the last move and refreshes that showed the old picture
 			// moved; "RP!" - asked for, but the framebuffers were not found as expected, so it is not running.)

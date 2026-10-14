@@ -3,6 +3,7 @@
 #pragma once
 #include "g3ds/world.h"
 #include "scene.h"
+#include "water_grid.h"
 
 #include <vector>
 
@@ -54,6 +55,9 @@ struct ChunkerOptions {
 	// A tier with fewer triangles than this in a cell is not worth a chunk (and the bookkeeping that
 	// comes with one): small objects go in with the medium ones, those with the world.
 	u32 minTierTriangles = 400;
+	// The water cut finely along the shores, for the waves (water_grid.h); `water.cell` 0: it is left as it is. Needs
+	// vertexFx: the weight of the waves is carried in the vertices' w.
+	WaterGridOptions water;
 };
 
 struct ChunkerStats {
@@ -83,6 +87,7 @@ struct ChunkerStats {
 	u64 tierTriangles[DETAIL_COUNT] = {0, 0, 0};
 	u64 tierVertices[DETAIL_COUNT] = {0, 0, 0};
 	float maxPosError = 0; // cm, worst-case quantisation step / 2
+	WaterGridStats water;  // what the water grid made of the water
 };
 
 // `materialRemap[srcMaterial]` gives the world material index, or -1 to drop.

@@ -164,8 +164,9 @@ void usage() {
 	          "  --light-static     also the lamps the world's own compiled light has (otherwise those are left out)\n"
 	          "  --water-light N    the water's own light, 0..255 (default 200): the same blue-green tone all over it,\n"
 	          "                     not the patches of the source mesh's vertex light; 0: keep the source's light\n"
-	          "  --water-grid M     cut the water into a grid of M metres (try 2; 0 = off, the default), fine enough for the\n"
-	          "                     game's \"Waves on the water\" setting to lift it; more triangles where there is water\n"
+	          "  --water-grid M     cut the water along the shores into a grid of M metres (try 2; 0 = off, the default), fine\n"
+	          "                     enough for the game's \"Waves on the water\" setting to lift it; the open water stays coarse\n"
+	          "  --water-reach M    how far from the shore line the fine water goes, metres (default 32; a multiple of 16 cells)\n"
 	          "  --far-lod          Graphics+: a coarse copy of the world drawn beyond the draw distance and where\n"
 	          "                     chunks are not loaded yet (far layer; about 1.5-2 MB on the console)\n"
 	          "  --far-cell M       its finest grid, metres (default 4; coarser if needed to fit)\n"
@@ -310,6 +311,7 @@ int main(int argc, char** argv) {
 			else if (a == "--light-static") opt.light.statics = true;
 			else if (a == "--water-light") opt.waterLight = u8(std::clamp(std::stoi(value()), 0, 255));
 			else if (a == "--water-grid") opt.waterGrid = std::clamp(std::stof(value()), 0.0f, 50.0f) * 100.0f;
+			else if (a == "--water-reach") opt.waterReach = std::clamp(std::stof(value()), 1.0f, 500.0f) * 100.0f;
 			else if (a == "--vis") opt.vis.enabled = true;
 			else if (a == "--vis-high") opt.vis.high = true;
 			else if (a == "--vis-radius") opt.vis.radius = std::clamp(std::stof(value()), 40.0f, 500.0f) * 100.0f;

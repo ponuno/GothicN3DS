@@ -1515,6 +1515,7 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 				fx.windZ = _windZ;
 				fx.windPhase = gfx::windPhaseAt(l.origin, _windSeconds, kWindWavesPerSecond);
 			}
+			fx.waterGrid = hasWaterGrid();
 			if (_waveHeight > 0.0f) {
 				fx.waveA = gfx::wavePhaseAt(l.origin, _windSeconds, 0);
 				fx.waveB = gfx::wavePhaseAt(l.origin, _windSeconds, 1);
@@ -1526,6 +1527,10 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 		}
 		const WorldMaterial& m = _materials[runMaterial];
 		_stats.windyDrawCalls += (m.flags & MATF_WIND) != 0 && (_windX != 0.0f || _windZ != 0.0f);
+		if (_waveHeight > 0.0f && (m.flags & MATF_WATER) != 0) {
+			++_stats.waveDrawCalls;
+			_stats.waveTriangles += runCount / 3;
+		}
 		const u32 frame = (m.frameCount > 1 && m.frameMs) ? (ms / m.frameMs) % m.frameCount : 0;
 		float offset[2] = {0, 0};
 		for (int a = 0; a < 2; ++a) {
@@ -1664,6 +1669,8 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_stats.drawCalls = 0;
 	_stats.blendedDrawCalls = 0;
 	_stats.windyDrawCalls = 0;
+	_stats.waveDrawCalls = 0;
+	_stats.waveTriangles = 0;
 	_stats.batchesCulled = 0;
 	_stats.sizeCulled = 0;
 	_stats.batchesMerged = 0;

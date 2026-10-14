@@ -467,10 +467,11 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 					ws[k2] = 4.0f * xs[k2] * edge;
 					slope[k2] = 2.0f * edge - 1.0f;
 				}
-				p[1] += gFx.waveHeight * (0.7f * ws[0] + 0.3f * ws[1]);
-				shade *= 1.0f + gFx.waveShade * (0.6f * slope[0] + 0.4f * slope[1]);
-				uvShift[0] = 0.015f * ws[0];
-				uvShift[1] = 0.015f * ws[1];
+				const float weight = sway * (1.0f / 127.0f); // (the corner's wind byte: how much of the waves it takes)
+				p[1] += weight * gFx.waveHeight * (0.7f * ws[0] + 0.3f * ws[1]);
+				shade *= 1.0f + weight * gFx.waveShade * (0.6f * slope[0] + 0.4f * slope[1]);
+				uvShift[0] = weight * 0.015f * ws[0];
+				uvShift[1] = weight * 0.015f * ws[1];
 			}
 			// The shader's arithmetic: position relative to the anchor first
 			// (exact for lattice positions), then one matrix for every chunk.

@@ -88,7 +88,7 @@ bool gWindy = false, gMaterialWind = false, gChunkWind = false;
 // The water's waves: the last `wave` uniform, and the `wavy` switch - on for a water material while the chunk's waves
 // are not zero.
 float gWave[4] = {0, 0, 0, 0};
-bool gWavy = false, gMaterialWater = false, gChunkWave = false;
+bool gWavy = false, gMaterialWater = false, gChunkWave = false, gChunkWaterGrid = false;
 bool gFillTest = false;    // the picture squeezed into half the screen (hold ZR at start): does the GPU time follow the pixels?
 bool gDoubleDraws = false; // every world draw is issued twice (hold START at start): what does one more draw call cost with no state change?
 bool gPlainShader = false; // the world-only shader of earlier versions: no characters
@@ -285,7 +285,8 @@ void setWaveUniform(float a, float b, float height, float shade) {
 	gWave[1] = b;
 	gWave[2] = height;
 	gWave[3] = shade;
-	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocWave, a, b, height, shade);
+	// (The shader multiplies by the corner's weight, 0..127: the height and the shading come in per step of it.)
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocWave, a, b, height * (1.0f / 127.0f), shade * (1.0f / 127.0f));
 }
 
 // The shader with the combined matrix. A C3D_Mtx holds rows; its components are named, whatever order citro3d keeps them in.
@@ -826,7 +827,7 @@ static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target) {
 		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocWave, 0.0f, 0.0f, 0.0f, 0.0f);
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWavy, false);
 	}
-	gWavy = gMaterialWater = gChunkWave = false;
+	gWavy = gMaterialWater = gChunkWave = gChunkWaterGrid = false;
 
 	// Start every frame from a known state; from here on only changes are sent.
 	setStage0(true, 255);
@@ -939,6 +940,7 @@ void setChunkTransform(const float origin[3], float posScale, float uvScale, con
 	gChunkWind = f.windX != 0.0f || f.windZ != 0.0f;
 	setWaveUniform(f.waveA, f.waveB, f.waveHeight, f.waveShade);
 	gChunkWave = f.waveHeight != 0.0f;
+	gChunkWaterGrid = f.waterGrid && gLocWavy >= 0;
 	updateWindy();
 }
 
@@ -998,7 +1000,8 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 	setSkinned(false);
 	// What sways is the full shader's (its vertices carry the sway in w, which the fast one does not know).
 	// (So does the water that is waving: the height comes from the shader.)
-	useProgram(!gMaterialWind && !gWavy);
+	// (And water cut for waves, still or not: its vertices' w carries the weight of the waves.)
+	useProgram(!gMaterialWind && !gWavy && !(gMaterialWater && gChunkWaterGrid));
 	if (m != gBoundMesh) {
 		C3D_SetBufInfo(&m->buf);
 		gBoundMesh = m;
@@ -1108,7 +1111,7 @@ static void beginUi(Texture* t) {
 	setTexOffset(0.0f, 0.0f);
 	setFxUniform(0.0f, 0.0f, 0.0f, 0.0f);
 	gMaterialWind = gChunkWind = false;
-	gMaterialWater = gChunkWave = false;
+	gMaterialWater = gChunkWave = gChunkWaterGrid = false;
 	updateWindy();
 	C3D_Mtx proj, identity;
 	Mtx_OrthoTilt(&proj, 0.0f, float(SCREEN_W), float(SCREEN_H), 0.0f, -1.0f, 1.0f, true);

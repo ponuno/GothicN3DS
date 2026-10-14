@@ -707,6 +707,11 @@ int main(int argc, char** argv) {
 		printf("far layer         %.2f MB in memory; last frame %u tiles, %u draw calls, %u triangles\n", double(ws.farBytes) / 1048576.0,
 		       ws.farTiles, ws.farDrawCalls, ws.farTriangles);
 	}
+	if (wavesSpec >= 0) {
+		const WorldStats& wsx = app.world().stats();
+		printf("waves             setting %d, %s; %u draw calls, %u triangles of water waving in the last frame\n", int(app.settings().waves),
+		       app.world().hasWaterGrid() ? "baked" : "not baked", wsx.waveDrawCalls, wsx.waveTriangles);
+	}
 	if (gfxPlusSpec) {
 		const ShadowStats& ss = app.shadows().stats();
 		const WorldStats& ws = app.world().stats();

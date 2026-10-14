@@ -33,7 +33,7 @@
 .constf noiseScale(15.0, 25.0, 0.000538, -0.001442) ; zw: wave B's kB per cm (the 96 constant registers are full); texels of the 8x8 noise per unit of x and y on the screen (as world_fade.v.pica)
 ; Water waves (gfx.h WAVE_*): two travelling waves, A along (0.8, 0.6) with a wavelength of 10 m and B along
 ; (0.35, -0.937) with 6.5 m; the same smooth curve as the wind's, w = 4 x (1 - |x|) in -1..1, x = 2 fract(u) - 1.
-.constf wc(4.0, 0.7, 0.3, 0.015)          ; 4, height share of A, of B, texture shift (repeats) per unit of w
+.constf wc(4.0, 0.7, 0.3, 0.000118110)    ; 4, height share of A, of B, texture shift (repeats) per unit of w and step of weight (0.015 / 127)
 .constf wkA(0.0008, 0.0006, 0.6, 0.4)     ; per cm along x and z; zw: how the slopes of A and B light the surface
 .alias zero consts.xxxx
 .alias one  consts.yyyy
@@ -93,6 +93,10 @@
 
 
 	ifu wavy
+		; r8.x = the corner's weight in steps, 0..127 (the high byte of w, the wind's place; the multiplications below by
+		; wave.z, wave.w and wc.w are per step: the CPU divides by 127)
+		mul r8.x, consts.z, inpos.w
+		flr r8.x, r8.x
 		; r9.x = xA = 2 fract(wave.x + kA . (x, z)) - 1,  r10.x = xB likewise
 		mul r9.x, wkA.x, r0.x
 		mul r9.y, wkA.y, r0.z
@@ -125,6 +129,7 @@
 		mul r13.y, wc.z, r12.y
 		add r13.x, r13.x, r13.y
 		mul r13.x, wave.z, r13.x
+		mul r13.x, r13.x, r8.x
 		add r0.y, r0.y, r13.x
 		; slopes: d wA / du ~ (1 - 2 |xA|) = 2 (1 - |xA|) - 1; the surface is lit by 1 + strength * (lA sA + lB sB)
 		add r11.x, r11.x, r11.x
@@ -135,9 +140,11 @@
 		mul r11.y, wkA.w, r11.y
 		add r11.x, r11.x, r11.y
 		mul r11.x, wave.w, r11.x
+		mul r11.x, r11.x, r8.x
 		add r14.x, consts.y, r11.x
 		; the texture slides with the waves, as if seen through them
 		mul r15.xy, wc.ww, r12.xy
+		mul r15.xy, r15.xy, r8.xx
 	.end
 
 	; relative to the eye's lattice point

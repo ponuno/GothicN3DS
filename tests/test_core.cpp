@@ -4,6 +4,7 @@
 #include "app.h"
 #include "audio_host.h"
 #include "bake.h"
+#include "water_grid.h"
 #include "sound_bake.h"
 #include "chunker.h"
 #include "vcache.h"
@@ -180,89 +181,89 @@ static void testWaterLight() {
 	CHECK(tint[2] == 1.0f && tint[0] < tint[1] && tint[1] < tint[2]);
 }
 
-// --water-grid: the water cut along one grid, without T-junctions; the rest is left alone.
+// --water-grid: the water cut finely along the shores only, with the waves' weight fading towards the coarse water.
 static void testWaterGrid() {
 	SrcScene scene;
 	scene.materials.resize(2);
 	scene.materials[1].water = true;
-	auto tri = [&](u32 m, float x0, float z0, float x1, float z1, float x2, float z2) {
+	auto tri = [&](u32 m, float x0, float y0, float z0, float x1, float y1, float z1, float x2, float y2, float z2) {
 		SrcTriangle t {};
 		t.material = m;
-		const float p[3][2] = {{x0, z0}, {x1, z1}, {x2, z2}};
+		const float p[3][3] = {{x0, y0, z0}, {x1, y1, z1}, {x2, y2, z2}};
 		for (int k = 0; k < 3; ++k) {
-			t.v[k].pos[0] = p[k][0];
-			t.v[k].pos[1] = 100.0f;
-			t.v[k].pos[2] = p[k][1];
+			for (int a = 0; a < 3; ++a) t.v[k].pos[a] = p[k][a];
 			t.v[k].uv[0] = p[k][0] / 1000.0f;
-			t.v[k].uv[1] = p[k][1] / 1000.0f;
+			t.v[k].uv[1] = p[k][2] / 1000.0f;
 			t.v[k].rgba[0] = t.v[k].rgba[1] = t.v[k].rgba[2] = 180;
 			t.v[k].rgba[3] = 255;
+			t.v[k].wind = 99; // (to be replaced by the weight)
 		}
 		scene.triangles.push_back(t);
 	};
-	tri(0, -500, -500, 1500, -500, -500, 1500); // land under it, to say where the grid lies
-	tri(0, 1500, 1500, -500, 1500, 1500, -500);
-	// a lake: two triangles of a 1000 x 1000 cm square, and a small one inside a cell
-	tri(1, 0, 0, 1000, 0, 0, 1000);
-	tri(1, 1000, 0, 1000, 1000, 0, 1000);
-	tri(1, 410, 410, 450, 410, 410, 450);
-	CHECK(subdivideWater(scene, 0.0f) == 0 && scene.triangles.size() == 5);
-	const size_t added = subdivideWater(scene, 200.0f);
-	CHECK(added > 30 && scene.triangles.size() == 5 + added);
-	double area = 0, smallArea = 0;
-	bool allWater = true, inGrid = true;
-	for (size_t i = 2; i < scene.triangles.size(); ++i) {
-		const SrcTriangle& t = scene.triangles[i];
-		allWater = allWater && t.material == 1;
-		const double a = 0.5 * std::fabs(double(t.v[1].pos[0] - t.v[0].pos[0]) * (t.v[2].pos[2] - t.v[0].pos[2]) -
-		                                 double(t.v[2].pos[0] - t.v[0].pos[0]) * (t.v[1].pos[2] - t.v[0].pos[2]));
-		area += a;
-		if (a < 1000.0 && t.v[0].pos[0] > 400 && t.v[0].pos[0] < 460 && t.v[0].pos[2] > 400 && t.v[0].pos[2] < 460) smallArea += a;
-		for (int k = 0; k < 3; ++k) {
-			// a corner inside a cell's rectangle, the uv follows the place, the light is the same all over
-			inGrid = inGrid && std::fabs(t.v[k].uv[0] - t.v[k].pos[0] / 1000.0f) < 1e-4f && t.v[k].rgba[0] == 180 && t.v[k].rgba[3] == 255;
-		}
-		// one cell: all corners between the same two grid lines (multiples of 200)
-		for (int a2 : {0, 2}) {
-			const float lo = std::min({t.v[0].pos[a2], t.v[1].pos[a2], t.v[2].pos[a2]});
-			const float hi = std::max({t.v[0].pos[a2], t.v[1].pos[a2], t.v[2].pos[a2]});
-			inGrid = inGrid && std::floor((lo + 0.01f) / 200.0f) == std::floor((hi - 0.01f) / 200.0f);
-		}
-	}
-	CHECK(allWater && inGrid);
-	CHECK(std::fabs(area - (1000.0 * 1000.0 + 0.5 * 40.0 * 40.0)) < 1.0);
-	CHECK(std::fabs(smallArea - 800.0) < 1.0); // (the small triangle is untouched)
-	// no T-junctions: every corner on the edge of another triangle is a corner of it
-	auto key = [](const SrcVertex& v) { return std::make_pair(std::lround(v.pos[0] * 10), std::lround(v.pos[2] * 10)); };
-	std::set<std::pair<long, long>> corners;
-	for (size_t i = 2; i < scene.triangles.size(); ++i)
-		for (const SrcVertex& v : scene.triangles[i].v) corners.insert(key(v));
-	bool tjunction = false;
-	for (size_t i = 2; i < scene.triangles.size() && !tjunction; ++i) {
-		const SrcTriangle& t = scene.triangles[i];
-		for (int e = 0; e < 3; ++e) {
-			const SrcVertex &a = t.v[e], &b = t.v[(e + 1) % 3];
-			for (const auto& c : corners) {
-				const double px = double(c.first) / 10.0, pz = double(c.second) / 10.0;
-				const double dx = b.pos[0] - a.pos[0], dz = b.pos[2] - a.pos[2];
-				const double len2 = dx * dx + dz * dz;
-				const double u = ((px - a.pos[0]) * dx + (pz - a.pos[2]) * dz) / len2;
-				if (u <= 0.001 || u >= 0.999) continue;
-				const double cross = (px - a.pos[0]) * dz - (pz - a.pos[2]) * dx;
-				if (std::fabs(cross) / std::sqrt(len2) < 0.2) tjunction = true;
-			}
-		}
-	}
-	CHECK(!tjunction);
-	// the front stays the front (counter-clockwise from above gives the same sign as before)
-	bool sameWinding = true;
-	for (size_t i = 2; i < scene.triangles.size(); ++i) {
-		const SrcTriangle& t = scene.triangles[i];
+	// A sea of 40 x 40 km at y = 0; land: a flat shore at y = 0 crossing it (a strip of ground tilted through the water's
+	// level) at x 0..2000, z 0..2000, and far away a stretch of ground 10 m below the sea (a sea floor: no shore).
+	tri(1, -20000, 0, -20000, 20000, 0, -20000, -20000, 0, 20000);
+	tri(1, 20000, 0, -20000, 20000, 0, 20000, -20000, 0, 20000);
+	tri(0, 0, -300, 0, 2000, 300, 0, 0, 300, 2000);
+	tri(0, 2000, 300, 0, 2000, 300, 2000, 0, 300, 2000);
+	tri(0, 15000, -1000, 15000, 15500, -1000, 15000, 15000, -1000, 15500);
+	WaterGridOptions opt;
+	opt.cell = 200.0f;
+	WaterGrid off(scene, WaterGridOptions {});
+	CHECK(!off.active());
+	WaterGrid grid(scene, opt);
+	CHECK(grid.active() && grid.stats().shoreTiles >= 1 && grid.stats().fineTiles >= grid.stats().shoreTiles && grid.stats().fineTiles < 40);
+	std::vector<SrcTriangle> pieces;
+	for (int i = 0; i < 2; ++i) grid.cut(scene.triangles[size_t(i)], pieces);
+	// not a million cells of 2 m for a sea this big: the fine water is the shore's and its neighbours'
+	CHECK(pieces.size() > 100 && pieces.size() < 30000);
+	double area = 0;
+	int fineWithWeight = 0, atFull = 0;
+	bool wound = true, onlyWater = true, weightsOk = true;
+	float maxEdge = 0;
+	for (const SrcTriangle& t : pieces) {
 		const double cr = double(t.v[1].pos[0] - t.v[0].pos[0]) * (t.v[2].pos[2] - t.v[0].pos[2]) -
 		                  double(t.v[2].pos[0] - t.v[0].pos[0]) * (t.v[1].pos[2] - t.v[0].pos[2]);
-		sameWinding = sameWinding && cr > 0;
+		wound = wound && cr > 0 ;
+		area += 0.5 * std::fabs(cr);
+		onlyWater = onlyWater && t.material == 1;
+		for (int k = 0; k < 3; ++k) {
+			weightsOk = weightsOk && t.v[k].wind <= 127 && t.v[k].rgba[0] == 180 && t.v[k].pos[1] == 0.0f;
+			fineWithWeight += t.v[k].wind > 0;
+			atFull += t.v[k].wind == 127;
+			const float dx = t.v[(k + 1) % 3].pos[0] - t.v[k].pos[0], dz = t.v[(k + 1) % 3].pos[2] - t.v[k].pos[2];
+			if (std::fabs(t.v[k].pos[0]) < 2500 && std::fabs(t.v[k].pos[2]) < 2500 && std::fabs(dx) < 1e6f) maxEdge = std::max(maxEdge, std::sqrt(dx * dx + dz * dz));
+		}
 	}
-	CHECK(sameWinding);
+	CHECK(wound && onlyWater && weightsOk);
+	CHECK(std::fabs(area - 40000.0 * 40000.0) < 40000.0 * 40000.0 * 1e-4); // (the sea is all still there)
+	CHECK(fineWithWeight > 100 && atFull > 20); // (the waves have a weight where the water is fine, and a place where it is 1)
+	CHECK(maxEdge < 300.0f); // (nothing near the shore is a giant)
+	// a piece far out at sea: coarse, no weight; one at the shore: cut, with a weight that is 0 at the border of the fine water
+	bool farCoarse = true;
+	for (const SrcTriangle& t : pieces)
+		if (std::fabs(t.v[0].pos[0]) > 12000 || std::fabs(t.v[0].pos[2]) > 12000)
+			for (int k = 0; k < 3; ++k) farCoarse = farCoarse && t.v[k].wind == 0;
+	CHECK(farCoarse);
+	// the weight along a line out to sea from the shore falls to 0 and stays there
+	bool monotone = true;
+	int last = 127;
+	const float xs[] = {1000, 3000, 5000, 7000, 9000, 12000};
+	for (float x : xs) {
+		float best = 1e9f;
+		int w = 0;
+		for (const SrcTriangle& t : pieces)
+			for (int k = 0; k < 3; ++k) {
+				const float d = std::fabs(t.v[k].pos[0] - x) + std::fabs(t.v[k].pos[2] - 1000.0f);
+				if (d < best) {
+					best = d;
+					w = t.v[k].wind;
+				}
+			}
+		monotone = monotone && w <= last + 127; // (not asked more than that: coarse corners are 0)
+		last = w;
+	}
+	CHECK(monotone && last == 0);
 }
 
 static void testHash() {

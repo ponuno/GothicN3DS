@@ -1356,6 +1356,7 @@ void App::applySettings() {
 	_settings.sanitize();
 	_world.config().farDistance = _settings.farCm(); // (before the fog, which follows it)
 	_world.config().farFillNear = _settings.farFill != 0;
+	_world.config().lodFadeMs = _settings.lodFadeMs();
 	setDrawDistance(_settings.drawDistanceCm());
 	StreamConfig& cfg = _world.config();
 	cfg.detailDistance[DETAIL_MEDIUM] = _settings.mediumObjectsCm();

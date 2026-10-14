@@ -109,6 +109,9 @@ struct Settings {
 	bool wideScreen() const { return stereo == 2; }
 	// Version 17: the far layer fills in, within the draw distance, for chunks not loaded yet (0: it is only drawn beyond it).
 	u8 farFill = 0;
+	// Version 19: how the simplified far chunks and the full ones change places: 0 at once, 1 quickly (0.35 s), 2 slowly (0.9 s).
+	u8 lodFade = 1;
+	float lodFadeMs() const { return lodFade == 0 ? 1.0f : lodFade == 2 ? 900.0f : 350.0f; }
 	float lodDistanceCm() const;
 
 	// Clamps every value into its range (after reading a file of another version).

@@ -23,7 +23,7 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 13: the screen's refresh rate follows the frame.
 // 14: the old picture turned sideways when a refresh has no new one.
 // 15: reading ahead.
-constexpr u32 SETTINGS_VERSION = 18;
+constexpr u32 SETTINGS_VERSION = 19;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -52,6 +52,7 @@ void Settings::resetGraphics() {
 	npcDistance = d.npcDistance;
 	visibility = d.visibility;
 	farGeometry = d.farGeometry;
+	lodFade = d.lodFade;
 	antialias = d.antialias;
 	refresh = d.refresh;
 	reproject = d.reproject;
@@ -112,6 +113,7 @@ void Settings::sanitize() {
 	if (farGeometry > 3) farGeometry = 2;
 	if (refresh > 5) refresh = 0;
 	if (antialias > 2) antialias = 0;
+	if (lodFade > 2) lodFade = 1;
 	gfxPlus = gfxPresetOf();
 	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier, &visibility, &reproject, &readAhead, &farFill};
 	if (stereo > 2) stereo = 0;

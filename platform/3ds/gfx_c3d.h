@@ -19,6 +19,9 @@ void c3dSetPlainShader(bool plain);
 void c3dSetFillTest(bool on);
 // The sun's shadow left out of the drawing altogether (its texture stages never set): for finding faults (C-Stick up at start).
 void c3dSetNoSun(bool on);
+// For finding faults (debug.txt): materials with any of `skipFlags` (MATF_*) are not drawn; `program` 1 draws the world with the fast
+// entry only, 2 with the full one only, 0 as usual.
+void c3dSetDebugDraw(u16 skipFlags, int program);
 // Smooths the edges: the picture is drawn twice the size each way (four times the pixels) and shrunk by the
 // display-transfer unit as it goes to the screen. Call before init(); if the bigger buffers do not fit into VRAM
 // the picture stays as it was (c3dSupersample() says which).

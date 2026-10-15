@@ -240,6 +240,9 @@ bool gSunWhiteReady = false;
 float gSunUv[4] = {0, 0, 0, 0}; // scale x, scale z, offset u, offset v (relative to the anchor)
 bool gSunUvSent = false;
 
+u16 gDebugSkipFlags = 0; // c3dSetDebugDraw: materials with any of these flags are not drawn
+int gDebugProgram = 0;   // 1: the fast entry for every world draw, 2: the full entry for every one
+u16 gMaterialFlags = 0;
 bool gNoSun = false; // c3dSetNoSun: the stages of the sun's shadow never set (C-Stick up held at start)
 
 // The white 8x8 stand-in for the mask (unit 2 must never be left without a texture while a stage reads it).
@@ -1140,6 +1143,7 @@ void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, 
 	if (blended) setBlend(additive ? BLEND_ADD : BLEND_ALPHA);
 	if (additive != gFogToBlack) setFogStage(additive);
 	setTexOffset(uvOffsetU, uvOffsetV);
+	gMaterialFlags = u16(materialFlags);
 	gMaterialWind = (materialFlags & MATF_WIND) != 0;
 	gMaterialWater = (materialFlags & MATF_WATER) != 0;
 	updateWindy();
@@ -1178,11 +1182,12 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 		++gDropped;
 		return;
 	}
+	if (gMaterialFlags & gDebugSkipFlags) return;
 	setSkinned(false);
 	// What sways is the full shader's (its vertices carry the sway in w, which the fast one does not know).
 	// (So does the water that is waving: the height comes from the shader.)
 	// (And water cut for waves, still or not: its vertices' w carries the weight of the waves.)
-	useProgram(!gMaterialWind && !gWavy && !(gMaterialWater && gChunkWaterGrid));
+	useProgram(gDebugProgram == 1 ? true : gDebugProgram == 2 ? false : !gMaterialWind && !gWavy && !(gMaterialWater && gChunkWaterGrid));
 	if (m != gBoundMesh) {
 		C3D_SetBufInfo(&m->buf);
 		gBoundMesh = m;
@@ -1426,6 +1431,10 @@ void c3dSetClassicFrames(bool classic) {
 
 void c3dSetFillTest(bool on) { gFillTest = on; }
 void c3dSetNoSun(bool on) { gNoSun = on; }
+void c3dSetDebugDraw(u16 skipFlags, int program) {
+	gDebugSkipFlags = skipFlags;
+	gDebugProgram = program;
+}
 
 void c3dSetWide(bool on) {
 	if (!gReady) gWideWanted = on; // (only before init(): the targets are made there)

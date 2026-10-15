@@ -156,7 +156,7 @@ static void flushHitches() {
 
 static void startHitchLog(const char* what) {
 	if (FILE* f = fopen(kHitchPath, "w")) {
-		fprintf(f, "# gothic3ds fix136 hitches: %s\n", what);
+		fprintf(f, "# gothic3ds fix137 hitches: %s\n", what);
 		fclose(f);
 	}
 	gHitchCount = 0;
@@ -179,9 +179,13 @@ static Thread gWatchdog = nullptr;
 //   nosun        the sun's shadow stages never set (as C-Stick up)
 //   classic      citro3d's own frames instead of the overlapped ones (as Y held)
 //   plain        the plain world shader (as R held: no characters)
+//   nowind nowater noalpha noblend   materials of that kind not drawn (swaying, water, cut-out, see-through)
+//   fastonly fullonly                the world drawn with the fast entry only / the full entry only
 static char gDebugWords[256] = "";
 static u32 gDebugSkip = 0;
 static bool gDebugNoSun = false, gDebugClassic = false, gDebugPlain = false;
+static g3::u16 gDebugMatSkip = 0;
+static int gDebugProgram = 0;
 static void readDebugFile() {
 	FILE* f = fopen("sdmc:/3ds/gothic3ds/debug.txt", "rb");
 	if (!f) return;
@@ -211,6 +215,12 @@ static void readDebugFile() {
 		if (strcmp(w, "nosun") == 0) gDebugNoSun = known = true;
 		if (strcmp(w, "classic") == 0) gDebugClassic = known = true;
 		if (strcmp(w, "plain") == 0) gDebugPlain = known = true;
+		if (strcmp(w, "nowind") == 0) gDebugMatSkip |= g3::MATF_WIND, known = true;
+		if (strcmp(w, "nowater") == 0) gDebugMatSkip |= g3::MATF_WATER, known = true;
+		if (strcmp(w, "noalpha") == 0) gDebugMatSkip |= g3::MATF_ALPHA_TEST, known = true;
+		if (strcmp(w, "noblend") == 0) gDebugMatSkip |= g3::MATF_TRANSLUCENT, known = true;
+		if (strcmp(w, "fastonly") == 0) gDebugProgram = 1, known = true;
+		if (strcmp(w, "fullonly") == 0) gDebugProgram = 2, known = true;
 		if (known && strlen(gDebugWords) + strlen(w) + 2 < sizeof(gDebugWords)) {
 			strcat(gDebugWords, " ");
 			strcat(gDebugWords, w);
@@ -236,7 +246,7 @@ static void watchdogMain(void*) {
 		if (still < 20 || (still - 20) % 40 != 0 || written >= 6) continue;
 		if (FILE* f = fopen(kHangPath, written == 0 ? "w" : "a")) {
 			fprintf(f, "%s%s%s%.1f s without a frame after frame %lu: in \"%s\"; %s (steps %lu, %lu at the last frame)\n",
-			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix136 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix136 watchdog: the main loop stopped\n") : "",
+			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix137 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix137 watchdog: the main loop stopped\n") : "",
 			        written == 0 && gDebugWords[0] ? gDebugWords : "", written == 0 && gDebugWords[0] ? ")\n" : "", double(still) * 0.25,
 			        static_cast<unsigned long>(frame), g3::gTrace.stage ? g3::gTrace.stage : "?",
 			        beats != lastBeats ? "it still goes from step to step (a loop)" : "no step since (stuck in that one)",
@@ -395,7 +405,8 @@ int main(int, char**) {
 	gfx::c3dSetClassicShader(classicShader);
 	gfx::c3dSetDoubleDraws((startKeys & KEY_START) != 0); // hold START at start: every draw twice
 	gfx::c3dSetFillTest(halfPicture); // hold ZR at start: half the pixels, the same triangles
-	gfx::c3dSetNoSun((startKeys & KEY_CSTICK_UP) != 0 || gDebugNoSun); // hold the C-Stick up at start: no sun's shadow at all (its stages left out)
+	gfx::c3dSetNoSun((startKeys & KEY_CSTICK_UP) != 0 || gDebugNoSun);
+	gfx::c3dSetDebugDraw(gDebugMatSkip, gDebugProgram); // hold the C-Stick up at start: no sun's shadow at all (its stages left out)
 	gfx::c3dSetFadeShader(dissolve);
 	gfx::c3dSetSupersampleMode(settings.antialias); // (a change in the menu counts after a restart)
 	// The top screen: wide (800x240) or stereo 3D (the same, after a restart; the 3D not together with the smoothing). The wide

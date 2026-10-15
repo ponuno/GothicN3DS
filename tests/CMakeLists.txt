@@ -19,6 +19,12 @@ target_link_libraries(test_frames PRIVATE g3tools g3engine)
 target_compile_options(test_frames PRIVATE ${G3DS_WARNINGS})
 add_test(NAME frames COMMAND test_frames ${CMAKE_CURRENT_BINARY_DIR})
 
+# A real data.pak through the console's graphics code (not a test: run it by hand, see pica_replay.cpp).
+add_executable(pica_replay pica_replay.cpp mock3ds/mock3ds.cpp ${CMAKE_SOURCE_DIR}/platform/3ds/gfx_c3d.cpp)
+target_include_directories(pica_replay PRIVATE mock3ds ${CMAKE_SOURCE_DIR}/platform/3ds)
+target_link_libraries(pica_replay PRIVATE g3tools g3engine)
+target_compile_options(pica_replay PRIVATE ${G3DS_WARNINGS})
+
 # Full chain through the command-line tools: bake -> data.pak -> runtime -> frame.
 add_test(NAME e2e_synth
          COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e.sh synth $<TARGET_FILE:g3ds-bake> $<TARGET_FILE:g3ds-host>

@@ -169,6 +169,9 @@ struct WorldStats {
 	bool visRow;         // the camera's cell has a row in the table
 };
 
+// For finding faults (debug.txt `noladderinfo`): world/<name>/ladderinfo is not read (before a world is opened).
+void setLadderInfoWanted(bool on);
+
 class World {
 public:
 	World() = default;

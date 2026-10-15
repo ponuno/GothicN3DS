@@ -459,6 +459,12 @@ unsigned shaderEntryInstructions(unsigned entry) {
 	return entry < unsigned(gSh.entries) ? gSh.entry[entry].endMain - gSh.entry[entry].main : 0;
 }
 
+size_t blockBytes(const void* p) {
+	const void* b = blockOf(p);
+	if (!b) return 0;
+	return gBlocks[b] - size_t(static_cast<const char*>(p) - static_cast<const char*>(b));
+}
+
 bool shadeVertex(const DrawCall& call, unsigned index, ShadedVertex& out, bool gpuFloats) {
 	out = ShadedVertex {};
 	if (!gSh.loaded || !call.vertices || call.stride == 0) return false;

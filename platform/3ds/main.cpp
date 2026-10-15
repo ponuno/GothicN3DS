@@ -156,7 +156,7 @@ static void flushHitches() {
 
 static void startHitchLog(const char* what) {
 	if (FILE* f = fopen(kHitchPath, "w")) {
-		fprintf(f, "# gothic3ds fix138 hitches: %s\n", what);
+		fprintf(f, "# gothic3ds fix139 hitches: %s\n", what);
 		fclose(f);
 	}
 	gHitchCount = 0;
@@ -181,11 +181,13 @@ static Thread gWatchdog = nullptr;
 //   plain        the plain world shader (as R held: no characters)
 //   nowind nowater noalpha noblend   materials of that kind not drawn (swaying, water, cut-out, see-through)
 //   fastonly fullonly                the world drawn with the fast entry only / the full entry only
+//   noladderinfo  world/<name>/ladderinfo not read;  noweathersfx  the baker's rain and thunder not taken
 static char gDebugWords[256] = "";
 static u32 gDebugSkip = 0;
 static bool gDebugNoSun = false, gDebugClassic = false, gDebugPlain = false;
 static g3::u16 gDebugMatSkip = 0;
 static int gDebugProgram = 0;
+static bool gDebugNoLadderInfo = false, gDebugNoWeatherSfx = false;
 static void readDebugFile() {
 	FILE* f = fopen("sdmc:/3ds/gothic3ds/debug.txt", "rb");
 	if (!f) return;
@@ -221,6 +223,8 @@ static void readDebugFile() {
 		if (strcmp(w, "noblend") == 0) gDebugMatSkip |= g3::MATF_TRANSLUCENT, known = true;
 		if (strcmp(w, "fastonly") == 0) gDebugProgram = 1, known = true;
 		if (strcmp(w, "fullonly") == 0) gDebugProgram = 2, known = true;
+		if (strcmp(w, "noladderinfo") == 0) gDebugNoLadderInfo = known = true;
+		if (strcmp(w, "noweathersfx") == 0) gDebugNoWeatherSfx = known = true;
 		if (known && strlen(gDebugWords) + strlen(w) + 2 < sizeof(gDebugWords)) {
 			strcat(gDebugWords, " ");
 			strcat(gDebugWords, w);
@@ -246,7 +250,7 @@ static void watchdogMain(void*) {
 		if (still < 20 || (still - 20) % 40 != 0 || written >= 6) continue;
 		if (FILE* f = fopen(kHangPath, written == 0 ? "w" : "a")) {
 			fprintf(f, "%s%s%s%.1f s without a frame after frame %lu: in \"%s\"; %s (steps %lu, %lu at the last frame)\n",
-			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix138 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix138 watchdog: the main loop stopped\n") : "",
+			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix139 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix139 watchdog: the main loop stopped\n") : "",
 			        written == 0 && gDebugWords[0] ? gDebugWords : "", written == 0 && gDebugWords[0] ? ")\n" : "", double(still) * 0.25,
 			        static_cast<unsigned long>(frame), g3::gTrace.stage ? g3::gTrace.stage : "?",
 			        beats != lastBeats ? "it still goes from step to step (a loop)" : "no step since (stuck in that one)",
@@ -415,6 +419,8 @@ int main(int, char**) {
 	gfx::c3dSetStereo(settings.stereo3D() && settings.antialias == 0);
 
 	App& app = gApp;
+	g3::setLadderInfoWanted(!gDebugNoLadderInfo);
+	app.setOwnWeatherSfx(!gDebugNoWeatherSfx);
 	// Chunks are read, unpacked and given their collision grids on a worker
 	// thread; the frame only copies the finished mesh into video memory.
 	g3::StreamConfig& stream = app.world().config();

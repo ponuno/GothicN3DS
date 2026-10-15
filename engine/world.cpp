@@ -1468,10 +1468,15 @@ const WorldPortal* World::portalAt(Vec3 p) const {
 	return nullptr;
 }
 
+// debug.txt `noladderinfo` (fix139): the table is not read, the ladders are climbed by their boxes.
+bool gLadderInfoWanted = true;
+void setLadderInfoWanted(bool on) { gLadderInfoWanted = on; }
+
 // What the bake knew of the ladders themselves ("world/<name>/ladderinfo"); an archive without it climbs the boxes.
 void World::loadLadderInfo() {
 	free(_ladderInfo);
 	_ladderInfo = nullptr;
+	if (!gLadderInfoWanted) return;
 	if (!_pak || !_hdr.ladderCount) return;
 	const PakEntry* w = _pak->find(_entryHash);
 	if (!w) return;

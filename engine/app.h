@@ -92,6 +92,8 @@ public:
 		SKIP_PARTICLES = 1u << 10, SKIP_OVERLAY = 1u << 11,
 	};
 	void setRenderSkip(u32 skip) { _renderSkip = skip; }
+	// debug.txt `noweathersfx`: the baker's own rain and thunder (meta/weathersfx L/N/F) are not taken.
+	void setOwnWeatherSfx(bool on) { _ownWeatherSfx = on; }
 	u32 renderSkip() const { return _renderSkip; }
 
 	// ---- sound (sound.h) ----
@@ -516,6 +518,7 @@ private:
 	u8 _thunderMade = 0;                // how many thunders were made here (engine/weather_sfx.h; 0: the game's own)
 	u32 _thunderTurn = 0;
 	u32 _renderSkip = 0; // RenderSkip
+	bool _ownWeatherSfx = true;
 	// The baker's own thunders (meta/weathersfx "N name" near, "F name" far; tools/bake/weather_sfx_bake.h): a near one when the
 	// flash is close (its sound follows soon), a far one otherwise, taking turns within each.
 	const char* _thunderNear[4] = {};

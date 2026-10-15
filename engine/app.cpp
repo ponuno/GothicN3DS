@@ -1559,7 +1559,9 @@ void App::weatherSound(float dt) {
 					const char kind = p[0];
 					const char* name = p + 2;
 					if (p[1] == ' ' && *name && !weatherNameIsSpell(name) && _sound.knows(name)) {
-						if (kind == 'L') {
+						if ((kind == 'L' || kind == 'N' || kind == 'F') && !_ownWeatherSfx) {
+							// (debug.txt noweathersfx: not taken)
+						} else if (kind == 'L') {
 							if (!rainOwn) rainOwn = name;
 						} else if (kind == 'N') {
 							if (_thunderNearCount < 4) _thunderNear[_thunderNearCount++] = name;

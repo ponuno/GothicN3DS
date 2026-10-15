@@ -246,4 +246,24 @@ struct LookEntry {
 };
 static_assert(sizeof(LookEntry) == 20, "LookEntry layout");
 
+// "meta/forms" (fix151): what a transforming spell makes the player's character - the whole model of each creature
+// the scripts name with Npc_SetActiveSpellInfo, baked like the hero's ("model/form.<instance>").
+//   FormsHeader | FormEntry[count]
+constexpr u32 FORMS_MAGIC = fourcc('G', '3', 'F', 'M');
+constexpr u32 FORMS_VERSION = 1;
+
+struct FormsHeader {
+	u32 magic;
+	u32 version;
+	u32 count;
+	u32 reserved;
+};
+static_assert(sizeof(FormsHeader) == 16, "FormsHeader layout");
+
+struct FormEntry {
+	u32 instance; // hashName of the creature's instance name ("WOLF"): ScriptSymbol::nameHash
+	u32 model;    // pak entry of its model
+};
+static_assert(sizeof(FormEntry) == 8, "FormEntry layout");
+
 } // namespace g3

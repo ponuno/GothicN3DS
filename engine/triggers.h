@@ -11,8 +11,11 @@
 //     sends its own target on.
 //
 // What changes is kept in the game's save (Game::triggerState): a gate opened stays open.
-// Not done: movers do not collide (the player walks through them, as before they moved), nobody but the player's
-// character touches a trigger, messages to single keys (zCMessageFilter, zCCodeMaster), damage triggers.
+//   * zCCSCamera (fix152): triggered, a camera flies along its keys (a spline through them, as OpenGothic's CsCamera)
+//     looking at its target keys; the player stands meanwhile unless it lets him move; untriggered, or by itself after
+//     its last key and delay, it ends.
+// Not done: nobody but the player's character touches a trigger, messages to single keys (zCMessageFilter,
+// zCCodeMaster), damage triggers, cameras keyed in an object's coordinates.
 #pragma once
 #include "g3ds/math.h"
 #include "g3ds/pak.h"
@@ -33,6 +36,8 @@ struct TriggerStats {
 	u32 drawn = 0;                // movers and doors drawn in the last frame
 	u32 doors = 0, solid = 0;     // doors; movers and doors the player cannot pass through
 	u32 carried = 0;              // frames the player's character rode on a mover
+	u32 cameras = 0;              // fix152: camera flights in this world, and those flown since it was entered
+	u32 flights = 0;
 	char last[40] = "";           // the last event's name, for the debug line
 };
 
@@ -93,6 +98,16 @@ public:
 		_focalPx = focalPx;
 	}
 
+	// ---- camera flights (fix152: zCCSCamera, OpenGothic's CsCamera) ----
+	// One is flying now: where the camera is, and (`hasLook`) the point it looks at - without target keys it looks
+	// the way it flies, and stands still it keeps the view it had. False if none is flying.
+	bool cutscene(Vec3& pos, Vec3& look, bool& hasLook) const;
+	bool cutsceneActive() const { return _cs >= 0; }
+	// The player may move while it flies (autoPlayerMovable); else he stands and the keys do nothing.
+	bool cutsceneMovable() const { return _cs >= 0 && (_list[_cs].behavior & 2); }
+	// Ends the flight now (skipped, or the world left).
+	void cutsceneStop() { _cs = -1; }
+	float cutsceneTime() const { return _csTime; }
 	// A mover's sounds and a script trigger's function: the application's.
 	struct Hooks {
 		void (*sound)(void* user, const char* name, Vec3 at) = nullptr;
@@ -175,6 +190,8 @@ private:
 	Vec3 toLocal(u32 i, Vec3 p) const;
 	Vec3 toWorld(u32 i, Vec3 p) const;
 	const float* _coll = nullptr; // 9 floats per triangle
+	int _cs = -1;       // the camera flying now (fix152), -1: none
+	float _csTime = 0;  // seconds since it began
 
 	Hooks _hooks;
 	Game* _game = nullptr;

@@ -691,7 +691,7 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 		const size_t anvil = thing("BSANVIL", -500.0f - 160.0f, 500.0f, 0.0f, 0, 32.0f, 75.0f);
 		slot(anvil, "ZS_POS0_DIST", 0.0f, 75.0f, 3.14159f);
 		scene.mobs[anvil].focus = "MOBNAME_ANVIL";
-		scene.mobs[anvil].onState = "ANVIL_S1";
+		scene.mobs[anvil].onState = "SMITHWEAPON"; // (fix153: what to make, the player's own talk; SMITHWEAPON_S1 / _S0)
 		scene.mobs[anvil].kind = 0;
 		// The chests: an open one with a few things in it, among them a key and
 		// lock picks; a small one that the key opens; a small one that only a pick

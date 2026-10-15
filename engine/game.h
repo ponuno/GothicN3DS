@@ -97,6 +97,8 @@ struct GameNpc {
 	// seconds left of a timed one (Mdl_ApplyOverlayMdsTimed; 0: for good). In the order applied.
 	GameText overlay[4] = {};
 	float overlayLeft[4] = {};
+	// Npc_SetActiveSpellInfo: what the spell being cast makes him (a transformation: the creature's instance), 0 for nothing.
+	i32 spellInfo = 0;
 	u32 overlayCount() const {
 		u32 n = 0;
 		while (n < 4 && overlay[n]) ++n;
@@ -527,6 +529,22 @@ public:
 	// Spell_ProcessMana (or _Release) for `caster` with `invested` mana put in so far, and the target if any
 	// (-1: none): SPL_DONTINVEST .. SPL_NEXTLEVEL. The spell is the caster's `spell`.
 	i32 processMana(u32 caster, int target, i32 invested, bool release);
+	// Who is "in a cutscene" for Npc_IsInCutscene (fix152): the player's character in a camera flight that holds him,
+	// and the one talking with him (-1: nobody). The application says so every frame.
+	void setCutscene(bool hero, int partner) {
+		_csHero = hero;
+		_csPartner = partner;
+	}
+	// ---- transforming (game_magic.cpp; OpenGothic's Npc::TransformBack, fix151) ----
+	// Turns character `npc` into the creature of instance `symbol` (a C_NPC: "Wolf"): what he is - his object, the things
+	// he carries, his talents, his look, what he wears - is put aside and the creature's instance code is run on his own
+	// object (Mdl_SetVisual and the rest of it), his level kept. One at a time. False if that cannot be.
+	bool transform(u32 npc, u32 symbol);
+	// Back as he was, with what he gained meanwhile (experience, learning points, level, the AI variables) kept.
+	bool transformBack(u32 npc);
+	// Who is transformed now (-1: nobody), and into what (an instance symbol).
+	int transformedNpc() const { return _trf.on ? int(_trf.npc) : -1; }
+	u32 transformedInto() const { return _trf.on ? _trf.into : SCRIPT_NONE; }
 	// The rune or scroll of spell `spell` a character carries (C_ITEM.SPELL), SCRIPT_NONE for none.
 	u32 spellItemOf(u32 npc, i32 spell);
 	// The bow or crossbow mode of a character's ranged weapon (WEAPON_BOW / WEAPON_CBOW), WEAPON_NONE if it has
@@ -855,6 +873,18 @@ private:
 	i32 _strikeSpell = -1, _strikeLevel = 0;
 	i32 _strikeArrow[8] = {};
 	bool _strikeIsArrow = false;
+	bool _csHero = false;
+	int _csPartner = -1;
+	struct Transform {
+		bool on = false;
+		u32 npc = 0, into = SCRIPT_NONE;
+		u8* object = nullptr; // his object as ScriptVm::saveObject wrote it
+		u32 objectSize = 0;
+		GameNpc before;       // what he was (look, talents, what he wore)
+		GameItem* items = nullptr; // what he carried
+		u32 itemCount = 0;
+	} _trf;
+	void dropTransform();
 	static void xActiveSpell(ScriptVm& vm, void* user);
 	static void xActiveSpellLevel(ScriptVm& vm, void* user);
 	static void xActiveSpellCat(ScriptVm& vm, void* user);

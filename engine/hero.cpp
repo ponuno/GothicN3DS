@@ -68,14 +68,29 @@ void stateName(int row, int state, char* out, size_t size) {
 } // namespace
 
 bool Hero::load(Pak& pak) {
-	release();
 	const PakEntry* e = pak.find("meta/hero");
 	char name[64] = {};
-	if (!e || e->size == 0 || e->size >= sizeof(name) || !pak.read(*e, name)) return false;
-	if (!_model.load(pak, name)) {
+	if (!e || e->size == 0 || e->size >= sizeof(name) || !pak.read(*e, name)) {
+		release();
+		return false;
+	}
+	char path[96];
+	snprintf(path, sizeof(path), "model/%s", name);
+	if (!loadEntry(pak, hashName(path))) {
 		logf("hero: model '%s' could not be loaded", name);
 		return false;
 	}
+	return true;
+}
+
+bool Hero::loadEntry(Pak& pak, u32 entryHash) {
+	release();
+	if (!_model.loadEntry(pak, entryHash)) {
+		return false;
+	}
+	// A creature's model script (a transformation, fix151) has its standing and going under the fists' word only
+	// ("S_FISTRUN"): those stand in for the bare ones.
+	_fistOnly = !_model.clip("S_RUN") && _model.clip("S_FISTRUN");
 	cacheClips();
 	_spine[0] = _model.findNode(hashName("BIP01 SPINE"));
 	_spine[1] = _model.findNode(hashName("BIP01 SPINE1"));
@@ -166,6 +181,22 @@ void Hero::cacheClips() {
 			_parryClip[r] = lookup(buf);
 		}
 	}
+	// (fix151) A creature: the fists' states, moves and transitions are its bare ones, and its sneaking ones.
+	if (_fistOnly)
+		for (int pass = 0; pass < 2; ++pass) {
+			const int r = pass ? int(ROW_SNEAK) : int(WEAPON_NONE);
+			for (int s = 0; s < ST_COUNT; ++s)
+				if (!_state[r][s]) _state[r][s] = _state[WEAPON_FIST][s];
+			for (int x = 0; x <= ST_COUNT; ++x)
+				for (int y = 0; y <= ST_COUNT; ++y)
+					if (!_via[r][x][y].clip && _via[r][x][y].fade < 0.0f) _via[r][x][y] = _via[WEAPON_FIST][x][y];
+			if (!_jumpBack[r]) _jumpBack[r] = _jumpBack[WEAPON_FIST];
+			for (int k = 0; k < 2; ++k)
+				for (int side = 0; side < 2; ++side) {
+					if (!_strafe[r][k][side]) _strafe[r][k][side] = _strafe[WEAPON_FIST][k][side];
+					if (!_turn[r][k][side]) _turn[r][k][side] = _turn[WEAPON_FIST][k][side];
+				}
+		}
 	// What the model script has for climbing onto a ledge (the clips that lift the body).
 	static const char* const kClimbNames[CLIMB_CLIPS] = {"T_STAND_2_JUMPUPLOW", "S_JUMPUPLOW", "T_JUMPUPLOW_2_STAND", "T_STAND_2_JUMPUPMID",
 	                                                     "S_JUMPUPMID",         "T_JUMPUPMID_2_STAND", "T_STAND_2_JUMPUP", "S_JUMPUP",
@@ -248,6 +279,7 @@ void Hero::release() {
 	_reel = nullptr;
 	_down = false;
 	_sneak = false;
+	_fistOnly = false;
 	_use = Use();
 }
 

@@ -33,7 +33,8 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, it
 **Combat and magic**
 - Combat by the game's rules: target lock, combo strikes with direction, parry, dodge back, looting corpses.
 - Bow and crossbow: aiming, arrows with gravity and a hit-throw, the white trail as in the original.
-- Magic driven by the game's scripts: fire bolt, fireball, lightning, healing, scrolls and runes, effects from `VISUALFX.DAT`; instant spells fire at once, chargeable ones charge; area spells (fire rain).
+- Magic driven by the game's scripts: fire bolt, fireball, lightning, healing, scrolls and runes, effects from `VISUALFX.DAT`; instant spells fire at once, chargeable ones charge; area spells (fire rain); summoning (the creature appears next to the caster).
+- **Transformations** (fix151): a transformation rune or scroll turns the hero into the creature its scripts name (`Npc_SetActiveSpellInfo`): its body, animations, attributes and guild, with nothing in his hands; the magic button (L, or SELECT in the classic scheme) turns him back with everything he had, keeping what he gained meanwhile. Needs a new `data.pak` (the baker writes the creatures' whole models, report line `transformations:`). Saving or loading ends a transformation.
 
 **Townsfolk and scripts**
 - Own Daedalus virtual machine: 2075 of 2075 runs matched the ZenKit interpreter.
@@ -60,7 +61,11 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, it
 - **Animation overlays** (`Mdl_ApplyOverlayMds`): the guards' and mages' walk, the drunk's, the hero's learnt fight talents, a sprint potion.
 - **Doors** open and shut (A), locked ones want their key or a lock pick; the inhabitants open them as they pass.
 
-**Not there yet:** transformations, weather. Details and measurements: [`docs/HANDOFF.md`](docs/HANDOFF.md), [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/TECHNICAL.md`](docs/TECHNICAL.md). Next for Graphics+: sky with clouds, height fog, a smooth transition to the far layer and more (the plan is at the end of `docs/HANDOFF.md`).
+- **Camera flights** (fix152): the world's scripted cameras (`zCCSCamera`) fly along their keys when a trigger or the scripts (`Wld_SendTrigger`) set them going, as OpenGothic's CsCamera; the player stands meanwhile (unless the camera lets him move), A skips. `Npc_IsInCutscene` is true for the two in a talk and for the hero in such a flight. Needs a new `data.pak` (report line `triggers: … camera flights`).
+
+- **Crafting stations** (fix153): an anvil, a forge, an alchemist's table run their scripts' state functions as OpenGothic does (`<func>_S1` … when used, `_S0` when left); the player's own talk they put up (what to make: Gothic 2 / Archolos crafting) keeps him at the station until it is over. The bake report lists what the stations of a game run.
+
+**Not there yet:** ZenGin's `.CS` cutscenes (`AI_PlayCutscene`; Gothic 1 hardly uses them, OpenGothic does not play them either) and the Bink videos (`PlayVideo`). Details and measurements: [`docs/HANDOFF.md`](docs/HANDOFF.md), [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/TECHNICAL.md`](docs/TECHNICAL.md). Next for Graphics+: sky with clouds, height fog, a smooth transition to the far layer and more (the plan is at the end of `docs/HANDOFF.md`).
 
 **Status.** Much of this has been verified on a real New 3DS (60 fps, world, townsfolk, AI), but the latest rounds (combat, magic, climbing, Archolos memory, the far layer) have only been checked on PC and are waiting for a test on the console. The project licence has not been chosen yet; third-party code: [`third_party/README.md`](third_party/README.md).
 

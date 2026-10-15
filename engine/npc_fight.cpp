@@ -280,10 +280,13 @@ void Npcs::xSpellIsScroll(ScriptVm& vm, void* user) {
 	vm.pushInt(scroll);
 }
 
-// Npc_SetActiveSpellInfo(npc, value): what a transforming spell becomes; not kept (no transforming here).
-void Npcs::xSetSpellInfo(ScriptVm& vm, void*) {
-	(void)vm.popInt();
-	(void)vm.popInstance();
+// Npc_SetActiveSpellInfo(npc, value): what the spell being cast makes him - a transformation's creature (an
+// instance); kept until the spell goes off (App::castCommit, as OpenGothic's Npc::commitSpell) or is lost.
+void Npcs::xSetSpellInfo(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const i32 value = vm.popInt();
+	const int who = self._game.indexOf(vm.popInstance());
+	if (who >= 0) self._game.npcMut(u32(who)).spellInfo = value;
 	vm.pushInt(0);
 }
 

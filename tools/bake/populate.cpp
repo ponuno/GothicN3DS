@@ -784,11 +784,17 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	// A talk inserts a character (Wld_InsertNpc), a spell summons one (Wld_SpawnNpcRange): their looks are wanted
 	// too, or they stand there unseen. The instance is pushed as a number right before the call; every such number
 	// that names a character nobody has been made of yet is made here once, in no world, to read its look off.
+	// fix151: a transforming spell names its creature the same way (Npc_SetActiveSpellInfo(self, Wolf)): those are
+	// made too, and kept in `formSyms` for their whole models below.
+	std::set<u32> formSyms;
 	{
-		std::set<u32> targets;
-		for (const char* n : {"WLD_INSERTNPC", "WLD_SPAWNNPCRANGE", "WLD_INSERTNPCANDRESPAWN"})
+		std::set<u32> targets, formCalls;
+		for (const char* n : {"WLD_INSERTNPC", "WLD_SPAWNNPCRANGE", "WLD_INSERTNPCANDRESPAWN", "NPC_SETACTIVESPELLINFO"})
 			for (u32 i = 0; i < script.symbols.size(); ++i)
-				if (script.symbols[i].external && script.symbols[i].name == n) targets.insert(i);
+				if (script.symbols[i].external && script.symbols[i].name == n) {
+					targets.insert(i);
+					if (std::string(n) == "NPC_SETACTIVESPELLINFO") formCalls.insert(i);
+				}
 		std::set<u32> have, wanted;
 		for (u32 i = 0; i < game.npcCount(); ++i) have.insert(game.npc(i).symbol);
 		u32 recent[6] = {};
@@ -810,9 +816,10 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				if (targets.count(operand))
 					for (u32 k = 0; k < 6 && k < recentCount; ++k) {
 						const u32 sym = recent[k];
-						if (sym < script.symbols.size() && script.symbols[sym].type == SCRIPT_INSTANCE && script.symbols[sym].isConst &&
-						    !have.count(sym))
-							wanted.insert(sym);
+						if (sym < script.symbols.size() && script.symbols[sym].type == SCRIPT_INSTANCE && script.symbols[sym].isConst) {
+							if (formCalls.count(operand)) formSyms.insert(sym);
+							if (!have.count(sym)) wanted.insert(sym);
+						}
 					}
 				recentCount = 0;
 			} else if (op == OP_BL || op == OP_RSR) {
@@ -1208,6 +1215,62 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		}
 		line(format("overlays: %zu baked (%zu animations): ", overlays, overlayClips) + (list.empty() ? std::string("none") : list) +
 		     (overlays > 16 ? ", ..." : "") + (failed.empty() ? "" : "; not usable: " + failed));
+	}
+
+	// ---- transformations (fix151) ----
+	// What a transforming spell makes the player's character: the creature whole, "model/form.<instance>" (lower case),
+	// with the animations the hero's own movement and fists ask for, the way OpenGothic's Npc::commitSpell gives him the
+	// creature's instance and its visual (Npc_SetActiveSpellInfo). Its look is read off a character of that instance.
+	if (scripts.looks.form && !formSyms.empty()) {
+		std::string list, failed;
+		size_t forms = 0, formClips = 0;
+		std::vector<FormEntry> formEntries;
+		const u64 formBytes = pak.rawBytes(ASSET_MODEL) + pak.rawBytes(ASSET_CLIP) + pak.rawBytes(ASSET_TEXTURE);
+		for (u32 sym : formSyms) {
+			const GameNpc* who = nullptr;
+			for (u32 i = 0; i < game.npcCount() && !who; ++i)
+				if (game.npc(i).symbol == sym && !game.npc(i).hero) who = &game.npc(i);
+			const std::string name = script.symbols[sym].name;
+			if (!who) continue; // (a number that is no character: Npc_SetActiveSpellInfo is given other things too)
+			const GameLook& gl = who->look;
+			const std::string mesh = gl.armor ? game.text(gl.armor) : game.text(gl.body);
+			if (!gl.script || mesh.empty()) {
+				failed += (failed.empty() ? "" : ", ") + name + " (no look)";
+				continue;
+			}
+			SrcModel m;
+			try {
+				if (!scripts.looks.form(game.text(gl.script), mesh, gl.bodyTex, gl.skin, m)) {
+					failed += (failed.empty() ? "" : ", ") + name + " (" + (m.notes.empty() ? std::string("not found") : m.notes.back()) + ")";
+					continue;
+				}
+				std::string lowerName = name;
+				for (char& c : lowerName) c = char(std::tolower(static_cast<unsigned char>(c)));
+				m.name = "form." + lowerName;
+				BakeOptions formOpt = opt; // (as the hero is baked: a mesh of its own, not a shared one)
+				formOpt.quiet = true;
+				const ModelBakeResult mr = bakeModel(m, formOpt, pak);
+				formEntries.push_back(FormEntry {hashName(name.c_str()), hashName(("model/" + m.name).c_str())});
+				++forms;
+				formClips += mr.clips;
+				list += format("%s%s %zu", list.empty() ? "" : ", ", name.c_str(), mr.clips);
+			} catch (const std::exception& ex) {
+				failed += (failed.empty() ? "" : ", ") + name + " (" + ex.what() + ")";
+			}
+		}
+		if (!formEntries.empty()) {
+			const FormsHeader fh {FORMS_MAGIC, FORMS_VERSION, u32(formEntries.size()), 0};
+			std::vector<u8> blob(sizeof(fh) + formEntries.size() * sizeof(FormEntry));
+			std::memcpy(blob.data(), &fh, sizeof(fh));
+			std::memcpy(blob.data() + sizeof(fh), formEntries.data(), formEntries.size() * sizeof(FormEntry));
+			pak.add("meta/forms", ASSET_META, blob);
+		}
+		const u64 after = pak.rawBytes(ASSET_MODEL) + pak.rawBytes(ASSET_CLIP) + pak.rawBytes(ASSET_TEXTURE);
+		line(format("transformations: %zu creatures baked whole for the player (%zu animations, %.2f MB): ", forms, formClips,
+		            double(after - formBytes) / 1048576.0) +
+		     (list.empty() ? std::string("none") : list) + (failed.empty() ? "" : "; not usable: " + failed));
+	} else if (!formSyms.empty()) {
+		line(format("transformations: the scripts name %zu creatures, but this bake has no source for whole models", formSyms.size()));
 	}
 
 	size_t rigCount = 0;

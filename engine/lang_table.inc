@@ -6,6 +6,8 @@ const Entry kEntries[] = {
     {{"Заклинаний нет", "No spells", "Brak czarów", "Keine Zauber"}},
     {{"Заклинание выбрано другое", "Another spell chosen", "Wybrano inny czar", "Anderer Zauber gewählt"}},
     {{"Нет маны", "No mana", "Brak many", "Kein Mana"}},
+    {{"Превращения нет в data.pak (нужен перепёк)", "No transformation in data.pak (bake it again)", "Brak przemiany w data.pak (upiecz ponownie)", "Keine Verwandlung in data.pak (neu backen)"}},
+    {{"Превращение. Обратно — кнопка магии", "Transformed. Back: the magic button", "Przemiana. Powrót: przycisk magii", "Verwandelt. Zurück: Magietaste"}},
     {{"Заклинание", "Spell", "Czar", "Zauber"}},
     {{"Заряд", "Charge", "Ładowanie", "Aufladung"}},
     {{"Жители", "Inhabitants", "Mieszkańcy", "Bewohner"}},

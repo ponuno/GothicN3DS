@@ -1037,6 +1037,20 @@ bool buildSyntheticBody(const std::string& script, const std::string& mesh, int 
 	return true;
 }
 
+// fix151: a transformation's creature, whole (skeleton, body and all its animations), as the hero is baked.
+bool buildSyntheticForm(const std::string& script, const std::string& mesh, int, int, SrcModel& model) {
+	if (!isSyntheticCreature(script)) {
+		model.notes.push_back("the synthetic scene has no '" + script + "'");
+		return false;
+	}
+	buildCreature(script, model);
+	model.parts[0].material.texture = upperName(mesh);
+	model.parts[0].material.name = mesh;
+	model.loadTexture = paintLook;
+	model.notes.clear();
+	return true;
+}
+
 // A thing lying about: boxes in the thing's shape (a blade with a guard and
 // a grip, a flask with a neck, a block for the rest), in a colour of its own.
 bool buildSyntheticItem(const std::string& visual, SrcModel& model) {

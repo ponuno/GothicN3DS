@@ -169,7 +169,8 @@ void App::talkUpdate(Input& in, float dt) {
 	_talkTarget = -1;
 	if (hi < 0 || !_hero.loaded() || _hero.down() || _hero.weapon() != WEAPON_NONE || _hero.drawing() || _job.stage != JOB_NONE ||
 	    _panel.open() || _player.swimming || _player.climbing || _hero.mantling() || !_player.grounded || _chest.stage != CH_NONE ||
-	    _lootTarget >= 0 || _chestTarget >= 0 || _corpseTarget >= 0 || _mobTarget >= 0 || _mobJob.stage != MJ_NONE || _menu.isOpen()) {
+	    _lootTarget >= 0 || _chestTarget >= 0 || _corpseTarget >= 0 || _mobTarget >= 0 || _mobJob.stage != MJ_NONE || _menu.isOpen() ||
+	    heroTransformed()) { // (a creature talks to nobody)
 		return;
 	}
 	// (A scan over the few characters about is as cheap as the chests' one.)

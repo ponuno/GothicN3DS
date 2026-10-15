@@ -1233,6 +1233,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			size_t infoNamed = 0, infoHidden = 0, mobOwned = 0;
 			size_t chestItems = 0, chestLocked = 0;
 			std::map<std::string, u32> byScheme;
+			std::map<std::string, u32> byFunction; // (fix153) onStateFunc (scheme, item) -> how many
 			size_t withoutSlots = 0;
 			for (const SrcMob& src : scene.mobs) {
 				if (mobs.size() >= 65534) break;
@@ -1296,6 +1297,12 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 					mobOwned += !src.owner.empty() || !src.ownerGuild.empty();
 					info.kind = u8(src.kind);
 					info.rewind = src.rewind ? 1 : 0;
+					// (fix153) What the player's things run in the scripts: the crafting of a game is there, if it has any.
+					if (!src.onState.empty() && !src.focus.empty()) {
+						std::string what = upper(src.onState) + " (" + src.scheme;
+						if (!src.useItem.empty()) what += ", needs " + upper(src.useItem);
+						++byFunction[what + ")"];
+					}
 					infoNamed += info.focus != 0;
 					infoHidden += info.focus == 0;
 					mobInfos.push_back(info);
@@ -1343,6 +1350,18 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				line(format("things to use by the player: %zu have a name to show (he may use those), %zu have none (the inhabitants' only); "
 				            "%zu belong to somebody (a person or a guild)",
 				            infoNamed, infoHidden, mobOwned));
+				std::string fns;
+				size_t shown = 0;
+				for (const auto& [what, count] : byFunction) {
+					if (++shown > 24) {
+						fns += ", ...";
+						break;
+					}
+					fns += format("%s%s x%u", fns.empty() ? "" : ", ", what.c_str(), count);
+				}
+				line(format("things of the player's that run the scripts (<function>_S1 when used, _S0 when left): %zu kinds: ",
+				            byFunction.size()) +
+				     (fns.empty() ? std::string("none") : fns));
 			}
 			std::vector<std::pair<u32, std::string>> order;
 			for (const auto& [scheme, count] : byScheme) order.push_back({count, scheme});
@@ -1384,7 +1403,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			std::vector<MoverKey> keys;
 			std::vector<TriggerTarget> targets;
 			std::vector<float> collision;
-			u32 counts[7] = {};
+			u32 counts[8] = {};
 			u32 locked = 0, solid = 0;
 			std::set<std::string> visuals;
 			for (const SrcTrigger& t : scene.triggers) {
@@ -1439,12 +1458,24 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 					const std::string* sfx[5] = {&t.sfxOpenStart, &t.sfxOpenEnd, &t.sfxCloseStart, &t.sfxCloseEnd, &t.sfxMoving};
 					for (int k = 0; k < 5; ++k) wt.sfx[k] = nameOf(*sfx[k]);
 					if (!t.visual.empty()) visuals.insert(t.visual);
+				} else if (t.kind == TRG_CAMERA) {
+					wt.first = u32(keys.size());
+					wt.count = u16(std::min<size_t>(t.keys.size(), 255 + 255));
+					wt.speedMode = u8(std::min(t.camTargets, 255));
+					for (size_t k = 0; k < wt.count; ++k) {
+						MoverKey mk {};
+						for (int a = 0; a < 3; ++a) mk.pos[a] = t.keys[k][size_t(a)];
+						for (int a = 0; a < 4; ++a) mk.rot[a] = t.keys[k][size_t(3 + a)];
+						keys.push_back(mk);
+					}
+					wt.speed = t.speed;
+					wt.stayOpen = t.stayOpen;
 				} else if (t.kind == TRG_LIST) {
 					wt.first = u32(targets.size());
 					wt.count = u16(std::min<size_t>(t.list.size(), 65535));
 					for (size_t k = 0; k < wt.count; ++k) targets.push_back(TriggerTarget {nameOf(t.list[k].first), t.list[k].second});
 				}
-				if (t.kind >= 1 && t.kind <= 6) ++counts[t.kind];
+				if (t.kind >= 1 && t.kind <= 7) ++counts[t.kind];
 				table.push_back(wt);
 			}
 			while (tnames.size() % 4) tnames.push_back('\0');
@@ -1466,10 +1497,10 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			pak.add("world/" + bw.name + "/triggers", ASSET_META, blob);
 			u32 moving = 0;
 			for (const SrcTrigger& t : scene.triggers) moving += t.kind == TRG_MOVER && !t.visual.empty();
-			line(format("triggers: %u triggers, %u lists, %u script triggers, %u world starts, %u movers (%u drawn moving), %u doors (%u locked); "
-			            "%u solid (%zu triangles), %zu meshes; key rotations read %s: %u, %u the other way",
-			            counts[TRG_TRIGGER], counts[TRG_LIST], counts[TRG_SCRIPT], counts[TRG_WORLDSTART], counts[TRG_MOVER], moving,
-			            counts[TRG_DOOR], locked, solid, collision.size() / 9,
+			line(format("triggers: %u triggers, %u lists, %u script triggers, %u world starts, %u movers (%u drawn moving), %u doors (%u locked), "
+			            "%u camera flights; %u solid (%zu triangles), %zu meshes; key rotations read %s: %u, %u the other way",
+			            counts[TRG_TRIGGER], counts[TRG_LIST], counts[TRG_SCRIPT], counts[TRG_WORLDSTART], counts[TRG_MOVER], moving, counts[TRG_DOOR],
+			            locked, counts[TRG_CAMERA], solid, collision.size() / 9,
 			            visuals.size(), scene.moverConjugated >= scene.moverPlain ? "conjugated" : "as stored",
 			            std::max(scene.moverConjugated, scene.moverPlain), std::min(scene.moverConjugated, scene.moverPlain)));
 		}

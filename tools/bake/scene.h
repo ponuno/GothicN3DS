@@ -230,6 +230,9 @@ struct SrcTrigger {
 	float pivot[3] = {0, 0, 0};
 	bool locked = false;
 	std::string key, pick;
+	// A camera's flight (TRG_CAMERA): `keys` are its positions, then the last camTargets of them the points it looks at
+	// ({x, y, z, time, motion, 0, 1}); speed: its seconds, stayOpen: the delay of its own end, behavior: its bits.
+	int camTargets = 0;
 	// A list: targets and their delays.
 	std::vector<std::pair<std::string, float>> list;
 	int listMode = 0;
@@ -283,6 +286,7 @@ struct SrcScene {
 	std::vector<std::string> roomNames;
 	std::vector<SrcTrigger> triggers;
 	u32 moverConjugated = 0, moverPlain = 0; // how the movers' key rotations read (for the report)
+	u32 cameraObjectRelative = 0; // camera flights left out: keyed in an object's coordinates (fix152)
 	std::vector<RoomBoxSrc> roomBoxes;
 	std::vector<std::string> notes; // importer remarks for the bake report
 };

@@ -153,6 +153,10 @@ struct LookSource {
 	std::function<std::vector<std::string>(const std::string& base)> overlays;
 	// fix150: the Barrier's mesh (MAGICFRONTIER_OUT) as the game has it; false with `why` set if there is none.
 	std::function<bool(SrcBarrier& barrier, std::string& why)> barrier;
+	// fix151: what a transforming spell makes the player's character (Npc_SetActiveSpellInfo: a wolf, a meatbug): the
+	// whole creature - skeleton, body and every animation the hero's own movement and fists ask for - as one model,
+	// the way the hero is baked. May be empty: no transformations then.
+	std::function<bool(const std::string& script, const std::string& mesh, int tex, int skin, SrcModel& model)> form;
 };
 
 // The game's scripts: baked into the archive, run to see who lives in the

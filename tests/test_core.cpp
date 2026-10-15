@@ -5471,7 +5471,7 @@ static BakeResult bakeLifeWorlds(const std::string& source, const std::string& p
 		buildSyntheticFightScript(fight);
 		scripts.fight = &fight;
 	}
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays, nullptr};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays, nullptr, buildSyntheticForm};
 	PakWriter writer;
 	const BakeResult r = bakeWorlds(worlds, models, scripts, bo, writer);
 	writer.write(path);
@@ -7151,6 +7151,85 @@ static void testMagic() {
 
 // The inventory: using things takes the character's time, armour is not
 // changed in a fight, requirements hold, quick slots, state.bin, the panel.
+
+// fix151: a transformation, as OpenGothic's Npc::commitSpell / transformBack: the rune's scripts name the creature
+// (Npc_SetActiveSpellInfo), the spell goes off, the character is the creature with its whole model (baked from
+// "meta/forms") and nothing in his hands; the magic key turns him back with all he had.
+static void testTransformHero() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/transform.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.settings().scheme = CONTROLS_CONSOLE;
+	app.settings().immortal = 1;
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.applySettings();
+	Game& g = app.npcs().game();
+	g.setQuiet(true);
+	const u32 hero = u32(g.hero() - &g.npc(0));
+	const float dt = 1.0f / 30.0f;
+	const u32 rune = g.vm().find("ITARRUNETRFMOLERAT"), sword = g.vm().find("ITMW_SWORD"), molerat = g.vm().find("MOLERAT");
+	CHECK(rune != SCRIPT_NONE && sword != SCRIPT_NONE && molerat != SCRIPT_NONE);
+	if (rune == SCRIPT_NONE || sword == SCRIPT_NONE || molerat == SCRIPT_NONE) return;
+	for (int i = 0; i < 30; ++i) app.update(Input {}, dt);
+	g.npcMut(hero).skill[g.constant("NPC_TALENT_MAGE", 7)] = 6;
+	g.giveItems(hero, rune, 1);
+	g.giveItems(hero, sword, 1);
+	g.setAttribute(g.npcMut(hero), 2, 10);
+	const GameText lookBefore = g.npc(hero).look.script;
+	CHECK(app.selectSpell(rune));
+	for (int i = 0; i < 60; ++i) app.update(Input {}, dt);
+	CHECK(app.hero().weapon() == WEAPON_MAG);
+	for (int i = 0; i < 120 && !app.heroTransformed(); ++i) {
+		Input in;
+		if (i == 2) in.attack = true;
+		in.attackHeld = i >= 2;
+		app.update(in, dt);
+	}
+	std::printf("  transformed: %d (%u times, %u without a model), fists only %d, look '%s'\n", int(app.heroTransformed()),
+	            app.magicStats().transforms, app.magicStats().noForm, int(app.hero().fistOnly()), g.text(g.npc(hero).look.script));
+	CHECK(app.heroTransformed() && app.magicStats().transforms == 1 && g.transformedInto() == molerat);
+	CHECK(app.hero().fistOnly() && app.hero().clip("S_FISTRUN") && !app.hero().clip("S_RUN"));
+	CHECK(g.itemCount(hero, rune) == 0 && g.itemCount(hero, sword) == 0 && g.npc(hero).look.script != lookBefore);
+	CHECK(app.hero().weapon() == WEAPON_NONE && app.hero().animator().current() != nullptr);
+	// As the creature: it goes about (the fists' going stands in for the bare one), and its attack key bites.
+	for (int i = 0; i < 40; ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+	}
+	CHECK(app.hero().animator().current() == app.hero().clip("S_FISTRUNL") || app.hero().speed() > 1.0f);
+	{
+		Input bite;
+		bite.attack = bite.attackHeld = true;
+		app.update(bite, dt);
+		for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
+		CHECK(app.hero().weapon() == WEAPON_FIST);
+	}
+	// The magic key casts nothing now: it turns him back.
+	{
+		Input back;
+		back.magic = true;
+		app.update(back, dt);
+		for (int i = 0; i < 5; ++i) app.update(Input {}, dt);
+	}
+	CHECK(!app.heroTransformed() && g.transformedNpc() == -1);
+	CHECK(!app.hero().fistOnly() && app.hero().clip("S_RUN") && g.npc(hero).look.script == lookBefore);
+	CHECK(g.itemCount(hero, rune) == 1 && g.itemCount(hero, sword) == 1);
+	// A save ends a transformation: what is saved is the character himself.
+	CHECK(app.heroTransform(molerat) && app.heroTransformed());
+	const std::string state = gDir + "/transform.state";
+	CHECK(app.saveState(state.c_str()));
+	CHECK(!app.heroTransformed() && g.itemCount(hero, sword) == 1);
+	CHECK(app.heroTransform(molerat));
+	CHECK(app.loadState(state.c_str()) && !app.heroTransformed() && g.itemCount(hero, rune) == 1);
+	for (int i = 0; i < 10; ++i) app.update(Input {}, dt);
+}
+
 static void testInventory() {
 	// Text of the scripts in their code page.
 	{
@@ -10848,6 +10927,35 @@ static void testMobUse() {
 	run(3.0f);
 	CHECK(std::fabs(app.environment().timeOfDay - 20.0f) < 0.2f && !app.mobInUse());
 	g.vm().setInt(g.vm().find("SLEEPTEST_NOSCRIPT"), 0, nullptr, 0);
+
+	// 6. (fix153) The anvil the way the games with crafting have it: its state function (SMITHWEAPON_S1) puts up his
+	//    own infos of what to make; he stays at it while they are up (the stick does nothing), the choice makes the
+	//    thing out of what he carries, and he leaves it, its SMITHWEAPON_S0 running.
+	{
+		const u32 nugget = g.vm().find("ITMINUGGET"), sword = g.vm().find("ITMW_SWORD");
+		CHECK(nugget != SCRIPT_NONE && sword != SCRIPT_NONE);
+		g.giveItems(hero, nugget, 2);
+		const i32 swords = g.itemCount(hero, sword);
+		const u32 callsBefore = app.mobUseStats().stateCalls;
+		stand(anvil, 0.0f, 160.0f, 3.14159f);
+		CHECK(app.mobTarget() == anvil);
+		pressA();
+		run(2.5f);
+		std::printf("  anvil: in use %d, talk %d, %u ways, %u state calls, %u talks\n", int(app.mobInUse()), int(npcs.talkView().active),
+		            npcs.talkView().count, app.mobUseStats().stateCalls - callsBefore, app.mobUseStats().talks);
+		CHECK(app.mobUsed() == anvil && npcs.talkView().active && npcs.selfTalk() && npcs.talkView().count == 2);
+		for (int i = 0; i < 10; ++i) {
+			Input in;
+			in.moveZ = 1.0f;
+			app.update(in, dt);
+		}
+		CHECK(app.mobInUse() && npcs.talkView().active);
+		CHECK(sleepTo("sword"));
+		run(3.0f);
+		CHECK(g.itemCount(hero, sword) == swords + 1 && g.itemCount(hero, nugget) == 0);
+		CHECK(!npcs.talkView().active && !app.mobInUse() && mobs.userOf(u32(anvil)) < 0);
+		CHECK(g.vm().getInt(g.vm().find("MOBTEST_LEFT")) == 1 && app.mobUseStats().stateCalls == callsBefore + 2);
+	}
 }
 
 static void testTrade() {
@@ -12102,6 +12210,89 @@ static void testRooms() {
 	CHECK(!bad.adopt(blob.data(), u32(blob.size())));
 }
 
+
+// fix152: a camera flight (zCCSCamera, OpenGothic's CsCamera): triggered, the camera goes through its keys in time,
+// looking at its target; it ends by itself after the last key and its delay, or untriggered.
+static void testCameraFlight() {
+	std::vector<char> names(1, '\0');
+	const auto name = [&](const char* n) {
+		const u32 at = u32(names.size());
+		names.insert(names.end(), n, n + std::strlen(n) + 1);
+		return at;
+	};
+	std::vector<WorldTrigger> list;
+	std::vector<MoverKey> keys;
+	const auto camera = [&](const char* n, u8 behavior, bool target) {
+		WorldTrigger t {};
+		t.kind = TRG_CAMERA;
+		t.behavior = behavior;
+		t.flags = TRGF_START_ENABLED | TRGF_REACT_TRIGGER | TRGF_SEND_UNTRIGGER;
+		t.name = name(n);
+		t.maxActivations = -1;
+		t.first = u32(keys.size());
+		t.speed = 2.0f;
+		t.stayOpen = 0.5f;
+		keys.push_back(MoverKey {{0, 500, 0}, {0.0f, 1, 0, 1}});
+		keys.push_back(MoverKey {{1000, 500, 0}, {1.0f, 1, 0, 1}});
+		keys.push_back(MoverKey {{2000, 500, 0}, {2.0f, 1, 0, 1}});
+		if (target) keys.push_back(MoverKey {{1000, 0, 1000}, {0.0f, 1, 0, 1}});
+		t.count = u16(target ? 4 : 3);
+		t.speedMode = target ? 1 : 0;
+		list.push_back(t);
+	};
+	camera("CAM_TOUR", 1, true);   // ends by itself
+	camera("CAM_FREE", 2, false);  // the player may move; ends when untriggered
+	while (names.size() % 4) names.push_back('\0');
+	TriggersHeader h {};
+	h.magic = TRIGGERS_MAGIC;
+	h.version = TRIGGERS_VERSION;
+	h.count = u32(list.size());
+	h.keyCount = u32(keys.size());
+	h.nameBytes = u32(names.size());
+	const size_t size = sizeof(h) + list.size() * sizeof(WorldTrigger) + keys.size() * sizeof(MoverKey) + names.size();
+	u8* b = static_cast<u8*>(std::malloc(size));
+	std::memcpy(b, &h, sizeof(h));
+	std::memcpy(b + sizeof(h), list.data(), list.size() * sizeof(WorldTrigger));
+	std::memcpy(b + sizeof(h) + list.size() * sizeof(WorldTrigger), keys.data(), keys.size() * sizeof(MoverKey));
+	std::memcpy(b + sizeof(h) + list.size() * sizeof(WorldTrigger) + keys.size() * sizeof(MoverKey), names.data(), names.size());
+	Game game;
+	Triggers t;
+	CHECK(t.adopt(b, u32(size), game));
+	CHECK(t.count() == 2 && t.stats().cameras == 2 && !t.cutsceneActive());
+	const Vec3 feet = {0, 0, 0};
+	const auto step = [&](float seconds) {
+		for (float x = 0; x < seconds - 1e-4f; x += 0.05f) t.update(0.05f, feet, game);
+	};
+	Vec3 pos, look;
+	bool hasLook = false;
+	CHECK(!t.cutscene(pos, look, hasLook));
+	t.send("cam_tour", false);
+	CHECK(t.cutsceneActive() && !t.cutsceneMovable() && t.stats().flights == 1);
+	CHECK(t.cutscene(pos, look, hasLook) && std::fabs(pos.x) < 0.01f && hasLook && std::fabs(look.z - 1000.0f) < 0.01f);
+	step(1.0f);
+	CHECK(t.cutscene(pos, look, hasLook) && std::fabs(pos.x - 1000.0f) < 1.0f && std::fabs(pos.y - 500.0f) < 0.01f);
+	step(0.5f);
+	CHECK(t.cutscene(pos, look, hasLook) && pos.x > 1300.0f && pos.x < 1700.0f);
+	step(0.6f); // past its last key: it holds there for its delay
+	CHECK(t.cutscene(pos, look, hasLook) && std::fabs(pos.x - 2000.0f) < 0.01f);
+	step(0.5f);
+	CHECK(!t.cutsceneActive());
+	// Without a target it looks the way it flies; untriggered, it ends.
+	t.send("CAM_FREE", false);
+	step(0.5f);
+	CHECK(t.cutsceneActive() && t.cutsceneMovable() && t.cutscene(pos, look, hasLook) && hasLook && look.x > pos.x);
+	step(3.0f);
+	CHECK(t.cutsceneActive()); // (it does not end by itself)
+	t.send("CAM_FREE", true);
+	CHECK(!t.cutsceneActive() && t.stats().flights == 2);
+	// One flight ends when another begins; a skip ends it at once.
+	t.send("CAM_FREE", false);
+	t.send("CAM_TOUR", false);
+	CHECK(t.cutsceneActive() && !t.cutsceneMovable());
+	t.cutsceneStop();
+	CHECK(!t.cutsceneActive());
+}
+
 static void testTriggers() {
 	// A gate (toggle) that, once open, triggers "AFTER", which opens a lift (trigger control); a trigger in the way
 	// that toggles the gate once when walked into; a world start that fires the first time only.
@@ -12580,6 +12771,7 @@ int main(int argc, char** argv) {
 	             {"frame budget", testFrameBudget},
 	             {"rooms", testRooms},
 	             {"triggers", testTriggers},
+             {"camera flight", testCameraFlight},
 	             {"vertex cache", testVertexCache},
 	             {"chunker", testChunker},
 	             {"seams", testSeams},
@@ -12609,6 +12801,7 @@ int main(int argc, char** argv) {
 	             {"life", testLife},
 	             {"fight", testFight},
              {"magic", testMagic},
+             {"transform", testTransformHero},
              {"ranged", testRanged},
              {"bodies", testBodies},
              {"overlays", testOverlays},

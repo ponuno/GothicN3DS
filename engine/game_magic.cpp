@@ -3,7 +3,10 @@
 // drive casting with (Spell_ProcessMana and Spell_ProcessMana_Release). How OpenGothic runs it:
 // GameScript::invokeMana, spellDesc, spellVfx; Npc::beginCastSpell and tickCast.
 #include "game.h"
+#include "bytes.h"
 #include "fight.h"
+
+#include <stdlib.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -188,6 +191,132 @@ u32 Game::bestRanged(u32 npc) {
 		}
 	}
 	return best;
+}
+
+// ---- transforming (fix151) ----
+// As OpenGothic's Npc::commitSpell and Npc::TransformBack: the spell's scripts name the creature
+// (Npc_SetActiveSpellInfo(self, Wolf)); when it goes off the caster's object is put aside, the creature's instance
+// code is run on it (its visual, attributes, guild, damage), the things he carries are put aside too and his level
+// stays his. Back again, all of it returns but what he gained as the creature: experience, learning points, level and
+// the AI variables of the scripts.
+
+void Game::dropTransform() {
+	free(_trf.object);
+	free(_trf.items);
+	_trf = Transform();
+}
+
+bool Game::transform(u32 npc, u32 symbol) {
+	if (_trf.on || npc >= _npcCount || !_npcs[npc].object) return false;
+	if (symbol >= _vm.symbolCount() || _vm.symbol(symbol).type != SCRIPT_INSTANCE || _clsNpc == SCRIPT_NONE ||
+	    _vm.classOf(symbol) != _clsNpc)
+		return false;
+	GameNpc& n = _npcs[npc];
+	ScriptInstance* o = n.object;
+	u32 strings[64];
+	const u32 stringCount = _vm.stringMembers(o->classSymbol, strings, 64);
+	ByteSink sink;
+	_vm.saveObject(o, strings, stringCount, sink);
+	if (sink.failed || !sink.size) return false;
+	u8* copy = static_cast<u8*>(malloc(sink.size));
+	if (!copy) return false;
+	memcpy(copy, sink.data, sink.size);
+	u32 carried = 0;
+	for (u32 i = 0; i < _itemCount; ++i) carried += _items[i].npc == npc && _items[i].count > 0;
+	GameItem* items = carried ? static_cast<GameItem*>(malloc(carried * sizeof(GameItem))) : nullptr;
+	if (carried && !items) {
+		free(copy);
+		return false;
+	}
+	u32 k = 0;
+	for (u32 i = 0; i < _itemCount; ++i)
+		if (_items[i].npc == npc && _items[i].count > 0) {
+			items[k++] = _items[i];
+			_items[i].count = 0; // (the creature carries nothing: OpenGothic gives it an empty inventory)
+		}
+	++_itemsVersion;
+	_trf.on = true;
+	_trf.npc = npc;
+	_trf.into = symbol;
+	_trf.object = copy;
+	_trf.objectSize = u32(sink.size);
+	_trf.before = n;
+	_trf.items = items;
+	_trf.itemCount = carried;
+	// What he wore and held is not the creature's.
+	n.melee = n.ranged = n.armorItem = 0xFFFFFFFFu;
+	n.weapon = WEAPON_NONE;
+	n.spell = -1;
+	n.spellLevel = 0;
+	n.spellInfo = 0;
+	n.trueGuild = -1;
+	for (u32 i = 0; i < 4; ++i) {
+		n.overlay[i] = 0;
+		n.overlayLeft[i] = 0.0f;
+	}
+	// The creature's code on his own object (SELF is he); his instance stays his name to the scripts.
+	const u32 mLevel = _vm.findMember("C_NPC", "LEVEL");
+	const i32 level = mLevel != SCRIPT_NONE ? _vm.getInt(mLevel, 0, o) : 0;
+	const u32 own = o->symbol;
+	o->symbol = symbol;
+	_vm.construct(o);
+	o->symbol = own;
+	if (mLevel != SCRIPT_NONE) _vm.setInt(mLevel, 0, o, level);
+	return true;
+}
+
+bool Game::transformBack(u32 npc) {
+	if (!_trf.on || npc != _trf.npc || npc >= _npcCount || !_npcs[npc].object) return false;
+	GameNpc& n = _npcs[npc];
+	ScriptInstance* o = n.object;
+	// What he gained as the creature stays his (OpenGothic: exp, exp_next, lp, level, aivar).
+	const char* const keep[] = {"EXP", "EXP_NEXT", "LP", "LEVEL", "AIVAR"};
+	u32 member[5];
+	i32* kept[5] = {};
+	u32 keptCount[5] = {};
+	for (u32 i = 0; i < 5; ++i) {
+		member[i] = _vm.findMember("C_NPC", keep[i]);
+		if (member[i] == SCRIPT_NONE || _vm.symbol(member[i]).type != SCRIPT_INT) {
+			member[i] = SCRIPT_NONE;
+			continue;
+		}
+		const u32 count = _vm.symbol(member[i]).count ? _vm.symbol(member[i]).count : 1u;
+		kept[i] = static_cast<i32*>(malloc(count * sizeof(i32)));
+		if (!kept[i]) continue;
+		keptCount[i] = count;
+		for (u32 k = 0; k < count; ++k) kept[i][k] = _vm.getInt(member[i], k, o);
+	}
+	u32 strings[64];
+	const u32 stringCount = _vm.stringMembers(o->classSymbol, strings, 64);
+	ByteSource src(_trf.object, _trf.objectSize);
+	_vm.loadObject(o, strings, stringCount, src);
+	for (u32 i = 0; i < 5; ++i) {
+		for (u32 k = 0; k < keptCount[i]; ++k) _vm.setInt(member[i], k, o, kept[i][k]);
+		free(kept[i]);
+	}
+	// What he carried, and nothing the creature was given.
+	for (u32 i = 0; i < _itemCount; ++i)
+		if (_items[i].npc == npc) _items[i].count = 0;
+	for (u32 i = 0; i < _trf.itemCount; ++i) addItems(o, i32(_trf.items[i].symbol), _trf.items[i].count);
+	++_itemsVersion;
+	const GameNpc& b = _trf.before;
+	n.look = b.look;
+	memcpy(n.talent, b.talent, sizeof(n.talent));
+	memcpy(n.skill, b.skill, sizeof(n.skill));
+	n.melee = b.melee;
+	n.ranged = b.ranged;
+	n.armorItem = b.armorItem;
+	n.trueGuild = b.trueGuild;
+	for (u32 i = 0; i < 4; ++i) {
+		n.overlay[i] = b.overlay[i];
+		n.overlayLeft[i] = b.overlayLeft[i];
+	}
+	n.weapon = WEAPON_NONE;
+	n.spell = -1;
+	n.spellLevel = 0;
+	n.spellInfo = 0;
+	dropTransform();
+	return true;
 }
 
 } // namespace g3

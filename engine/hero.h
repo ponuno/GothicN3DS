@@ -40,6 +40,9 @@ public:
 
 	// False if the archive has no hero (the game then stays first-person).
 	bool load(Pak& pak);
+	// The same with another model, by its pak entry (fix151: a transformation's creature, "model/form.wolf"); the
+	// character is then whatever that model's animations make of him. False, and nothing loaded, if it cannot be read.
+	bool loadEntry(Pak& pak, u32 entryHash);
 	// The overlays the character wears (Mdl_ApplyOverlayMds: a fight talent's blows, a drunk's walk), the last one
 	// first in line: their animations stand in for the model's of the same name. The models must outlive their use.
 	void setOverlays(const Model* const* models, u32 count);
@@ -259,6 +262,10 @@ private:
 	bool _placed = false, _walkMode = false, _slow = false, _jumpHeld = false, _jumping = false, _leftGround = false;
 	bool _sneak = false;
 	bool _forceNext = false;
+	bool _fistOnly = false; // (fix151) a creature's model: no bare states, the fists' stand in
+public:
+	bool fistOnly() const { return _fistOnly; }
+private:
 	const Clip* _takeoff = nullptr;
 	// Climbing onto a ledge, as in the original: from the ground a low
 	// (T_STAND_2_JUMPUPLOW, S_JUMPUPLOW, T_JUMPUPLOW_2_STAND), a middle

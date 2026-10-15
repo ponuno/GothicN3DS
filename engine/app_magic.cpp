@@ -10,13 +10,17 @@
 //     travels 1 cm/ms and hurts whoever it meets (damage per level times level, less protection),
 //     the others have done their work through the scripts while charged. A scroll is used up.
 //
-// Not done: the spells that need the world to change (teleporting, summoning, transforming) have only
-// their effect; the runes' circles are not asked for; the others' spells (inhabitants casting) are not.
+// The spells that change the world do it through the scripts, as in the original: teleporting (AI_Teleport),
+// summoning (Wld_SpawnNpcRange in Spell_ProcessMana, fix79/80). Transforming (fix151): the scripts name the creature
+// (Npc_SetActiveSpellInfo) while charging; when the spell goes off the character becomes it (heroTransform), and the
+// magic key turns him back. The runes' circles are the scripts' to ask (Spell_ProcessMana).
 #include "app.h"
 #include "lang.h"
+#include "g3ds/game.h"
 
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 namespace g3 {
 
@@ -108,6 +112,11 @@ void App::magicInput(const Input& in) {
 	const int hi = heroIndex();
 	if (hi < 0) return;
 	Game& g = _npcs.game();
+	// A creature casts nothing: the magic key turns him back (OpenGothic: the action key while transformed).
+	if (heroTransformed()) {
+		if (in.magic) heroTransformBack();
+		return;
+	}
 	if (in.magic && _cast.stage == CAST_NONE) {
 		if (_hero.weapon() == WEAPON_MAG) {
 			heroTake(WEAPON_NONE);
@@ -158,6 +167,7 @@ void App::castBegin() {
 	_cast.target = _target;
 	h.spell = _cast.spell;
 	h.spellLevel = 0;
+	h.spellInfo = 0; // (what a transformation makes him: the scripts say while charging)
 	const i32 code = g.processMana(u32(hi), _cast.target, 0, false);
 	const i32 sendCast = g.constant("SPL_SENDCAST", 2), sendStop = g.constant("SPL_SENDSTOP", 3), dontInvest = g.constant("SPL_DONTINVEST", 0);
 	if (code == sendStop || code == dontInvest) {
@@ -243,7 +253,10 @@ void App::castRelease(bool letGo) {
 void App::castCancel() {
 	const int hi = heroIndex();
 	if (_cast.fx) _particles.stop(_cast.fx);
-	if (hi >= 0) _npcs.game().npcMut(u32(hi)).spell = -1;
+	if (hi >= 0) {
+		_npcs.game().npcMut(u32(hi)).spell = -1;
+		_npcs.game().npcMut(u32(hi)).spellInfo = 0;
+	}
 	_cast = Cast();
 	_hero.castEnd();
 }
@@ -298,8 +311,78 @@ void App::castCommit() {
 		}
 	}
 	g.npcMut(u32(hi)).spell = -1;
+	// A transformation: the scripts named the creature while it was charged (OpenGothic's commitSpell, after the scroll).
+	const i32 into = g.npc(u32(hi)).spellInfo;
+	g.npcMut(u32(hi)).spellInfo = 0;
 	_cast = Cast();
 	_hero.castEnd();
+	if (into > 0) heroTransform(u32(into));
+}
+
+// ---- transforming ----
+
+bool App::heroTransformed() const {
+	const int hi = heroIndex();
+	return hi >= 0 && _npcs.loaded() && _npcs.game().transformedNpc() == hi;
+}
+
+bool App::heroTransform(u32 symbol) {
+	const int hi = heroIndex();
+	if (hi < 0 || !_npcs.loaded() || !_hero.loaded() || heroTransformed()) return false;
+	Game& g = _npcs.game();
+	if (symbol >= g.vm().symbolCount()) return false;
+	// Its model, by the baker's table "meta/forms" (the machine knows its symbols by their names' hashes only).
+	u32 entry = 0;
+	if (const PakEntry* e = _pak.find("meta/forms")) {
+		FormsHeader fh {};
+		u8 buf[sizeof(FormsHeader) + 64 * sizeof(FormEntry)];
+		if (e->size >= sizeof(fh) && e->size <= sizeof(buf) && _pak.read(*e, buf)) {
+			memcpy(&fh, buf, sizeof(fh));
+			if (fh.magic == FORMS_MAGIC && fh.version == FORMS_VERSION && e->size == sizeof(fh) + size_t(fh.count) * sizeof(FormEntry))
+				for (u32 i = 0; i < fh.count && !entry; ++i) {
+					FormEntry fe;
+					memcpy(&fe, buf + sizeof(fh) + i * sizeof(FormEntry), sizeof(fe));
+					if (fe.instance == g.vm().symbol(symbol).nameHash) entry = fe.model;
+				}
+		}
+	}
+	if (!entry || !_pak.find(entry)) {
+		// (An archive baked before fix151 has no creatures for the player.)
+		++_magic.noForm;
+		toast(tr("Превращения нет в data.pak (нужен перепёк)"), 3.0f);
+		return false;
+	}
+	const Vec3 feet = _player.feet;
+	const float yaw = _hero.yaw();
+	if (!g.transform(u32(hi), symbol)) return false;
+	if (!_hero.loadEntry(_pak, entry)) {
+		g.transformBack(u32(hi));
+		_hero.load(_pak);
+		_hero.reset(feet, yaw);
+		++_magic.noForm;
+		return false;
+	}
+	_hero.reset(feet, yaw);
+	_spellItem = NONE;
+	_lastWeapon = WEAPON_FIST;
+	_invStamp = 0;
+	++_magic.transforms;
+	toast(tr("Превращение. Обратно — кнопка магии"), 3.0f);
+	return true;
+}
+
+void App::heroTransformBack() {
+	const int hi = heroIndex();
+	if (hi < 0 || !heroTransformed()) return;
+	if (_cast.stage != CAST_NONE) castCancel();
+	const Vec3 feet = _player.feet;
+	const float yaw = _hero.yaw();
+	const bool down = _hero.down();
+	_npcs.game().transformBack(u32(hi));
+	_hero.load(_pak);
+	_hero.reset(feet, yaw);
+	if (down) _hero.fall(_deadTime > 0.0f, false);
+	_invStamp = 0;
 }
 
 void App::magicUpdate(float dt) {

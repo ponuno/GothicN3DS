@@ -127,6 +127,7 @@ const int MAX_SPELL = 18;
 const int SPL_LIGHT = 0;
 const int SPL_FIREBALL = 1;
 const int SPL_HEAL = 4;
+const int SPL_TRANSFORM = 2;
 const int SPL_FIREBOLT = 17;
 const int SPL_DONTINVEST = 0;
 const int SPL_RECEIVEINVEST = 1;
@@ -500,6 +501,7 @@ extern func void   Npc_ExchangeRoutine(var C_NPC n, var string routine);
 extern func void   Npc_ClearAIQueue(var C_NPC n);
 extern func void   Npc_SetKnowsPlayer(var C_NPC n, var C_NPC player);
 extern func void   Npc_RemoveInvItem(var C_NPC n, var int item);
+extern func void   Npc_RemoveInvItems(var C_NPC n, var int item, var int amount);
 extern func void   PrintScreen(var string msg, var int x, var int y, var string font, var int seconds);
 
 // ---------------------------------------------------------------- helpers
@@ -1108,6 +1110,16 @@ instance ItArRuneFireball (C_ITEM) {
 	description = "Fireball";
 };
 
+instance ItArRuneTrfMolerat (C_ITEM) {
+	name = "Rune";
+	mainflag = ITEM_KAT_RUNE;
+	value = 200;
+	visual = "ItAr_Rune_26.3ds";
+	spell = SPL_TRANSFORM;
+	mag_circle = 1;
+	description = "Transform into a molerat";
+};
+
 instance ItArRuneHeal (C_ITEM) {
 	name = "Rune";
 	mainflag = ITEM_KAT_RUNE;
@@ -1148,35 +1160,15 @@ instance Spell_Fireball (C_Spell) {
 	targetCollectAlgo = TARGET_COLLECT_FOCUS_FALLBACK_NONE;
 	targetCollectType = 1;
 };
+instance Spell_Transform (C_Spell) {
+	time_per_mana = 500;
+	spellType = SPELL_NEUTRAL;
+	targetCollectAlgo = TARGET_COLLECT_NONE;
+};
 instance Spell_Heal (C_Spell) {
 	time_per_mana = 500;
 	spellType = SPELL_GOOD;
 	targetCollectAlgo = TARGET_COLLECT_CASTER;
-};
-
-func int Spell_ProcessMana(var int manaInvested) {
-	if (Npc_GetActiveSpell(self) == SPL_FIREBOLT) {
-		if (manaInvested >= SPL_SENDCAST_FIREBOLT) { return SPL_SENDCAST; };
-		return SPL_RECEIVEINVEST;
-	};
-	if (Npc_GetActiveSpell(self) == SPL_FIREBALL) {
-		if ((manaInvested == (SPL_SENDCAST_FIREBALL * 3) / 10) || (manaInvested == (SPL_SENDCAST_FIREBALL * 5) / 10)) { return SPL_NEXTLEVEL; };
-		if (manaInvested >= SPL_SENDCAST_FIREBALL) { return SPL_SENDCAST; };
-		return SPL_RECEIVEINVEST;
-	};
-	if (Npc_GetActiveSpell(self) == SPL_HEAL) {
-		if (self.attribute[ATR_HITPOINTS] < self.attribute[ATR_HITPOINTS_MAX]) {
-			Npc_ChangeAttribute(self, ATR_HITPOINTS, SPL_HEALING_HP_PER_MP);
-			return SPL_NEXTLEVEL;
-		};
-		return SPL_SENDSTOP;
-	};
-	return SPL_SENDSTOP;
-};
-
-func int Spell_ProcessMana_Release(var int manaInvested) {
-	if (Npc_GetActiveSpell(self) == SPL_FIREBALL) { return SPL_SENDCAST; };
-	return SPL_SENDSTOP;
 };
 
 instance spellFX_Firebolt (CFx_Base) {
@@ -1413,6 +1405,43 @@ instance Molerat (C_NPC) {
 	Mdl_SetVisualBody(self, "Mol_Body", DEFAULT, DEFAULT, "", DEFAULT, DEFAULT, -1);
 };
 
+// A transformation (Spell_Logic_Trf* of the original): the creature is named while charging, the spell goes off.
+extern func int Npc_SetActiveSpellInfo(var C_NPC n, var int i1);
+func int Spell_Logic_TrfMolerat(var int manaInvested) {
+	if (manaInvested >= 1) {
+		Npc_SetActiveSpellInfo(self, Molerat);
+		return SPL_SENDCAST;
+	};
+	return SPL_RECEIVEINVEST;
+};
+
+func int Spell_ProcessMana(var int manaInvested) {
+	if (Npc_GetActiveSpell(self) == SPL_FIREBOLT) {
+		if (manaInvested >= SPL_SENDCAST_FIREBOLT) { return SPL_SENDCAST; };
+		return SPL_RECEIVEINVEST;
+	};
+	if (Npc_GetActiveSpell(self) == SPL_FIREBALL) {
+		if ((manaInvested == (SPL_SENDCAST_FIREBALL * 3) / 10) || (manaInvested == (SPL_SENDCAST_FIREBALL * 5) / 10)) { return SPL_NEXTLEVEL; };
+		if (manaInvested >= SPL_SENDCAST_FIREBALL) { return SPL_SENDCAST; };
+		return SPL_RECEIVEINVEST;
+	};
+	if (Npc_GetActiveSpell(self) == SPL_TRANSFORM) { return Spell_Logic_TrfMolerat(manaInvested); };
+	if (Npc_GetActiveSpell(self) == SPL_HEAL) {
+		if (self.attribute[ATR_HITPOINTS] < self.attribute[ATR_HITPOINTS_MAX]) {
+			Npc_ChangeAttribute(self, ATR_HITPOINTS, SPL_HEALING_HP_PER_MP);
+			return SPL_NEXTLEVEL;
+		};
+		return SPL_SENDSTOP;
+	};
+	return SPL_SENDSTOP;
+};
+
+func int Spell_ProcessMana_Release(var int manaInvested) {
+	if (Npc_GetActiveSpell(self) == SPL_FIREBALL) { return SPL_SENDCAST; };
+	return SPL_SENDSTOP;
+};
+
+
 // ---------------------------------------------------------------- dialogues
 const string DIALOG_ENDE = "End";
 const string DIALOG_BACK = "Back";
@@ -1581,6 +1610,46 @@ func void SLEEPABIT_S1() {
 	};
 };
 func int PC_Sleep_Condition() { return PLAYER_MOBSI_PRODUCTION == MOBSI_SLEEPABIT; };
+// The anvil, as the games that let the player make things have it (Gothic 2, Archolos): its state function puts up
+// his own infos of what to make; leaving it runs its _S0.
+const int MOBSI_SMITHWEAPON = 3;
+var int MOBTEST_LEFT;
+func void SMITHWEAPON_S1() {
+	if (Hlp_GetInstanceID(self) == Hlp_GetInstanceID(hero)) {
+		PLAYER_MOBSI_PRODUCTION = MOBSI_SMITHWEAPON;
+		AI_ProcessInfos(hero);
+	};
+};
+func void SMITHWEAPON_S0() { MOBTEST_LEFT = MOBTEST_LEFT + 1; };
+func int PC_Smith_Condition() { return PLAYER_MOBSI_PRODUCTION == MOBSI_SMITHWEAPON; };
+instance PC_SmithSword (C_INFO) {
+	npc = PC_Hero;
+	nr = 1;
+	condition = PC_Smith_Condition;
+	information = PC_SmithSword_Info;
+	permanent = TRUE;
+	description = "Forge a sword";
+};
+func void PC_SmithSword_Info() {
+	if (Npc_HasItems(self, ItMiNugget) >= 2) {
+		Npc_RemoveInvItems(self, ItMiNugget, 2);
+		CreateInvItems(self, ItMw_Sword, 1);
+	};
+	PLAYER_MOBSI_PRODUCTION = 0;
+	AI_StopProcessInfos(self);
+};
+instance PC_SmithEnd (C_INFO) {
+	npc = PC_Hero;
+	nr = 999;
+	condition = PC_Smith_Condition;
+	information = PC_SmithEnd_Info;
+	permanent = TRUE;
+	description = "Stop";
+};
+func void PC_SmithEnd_Info() {
+	PLAYER_MOBSI_PRODUCTION = 0;
+	AI_StopProcessInfos(self);
+};
 instance PC_NoSleep (C_INFO) {
 	npc = PC_Hero;
 	nr = 999;

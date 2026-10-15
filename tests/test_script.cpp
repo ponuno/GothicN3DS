@@ -662,6 +662,68 @@ static void testLateAndRooms() {
 	}
 }
 
+// fix151: a transformation (OpenGothic's Npc::TransformBack) - the hero becomes the creature and back, keeping what
+// he gained meanwhile.
+static void testTransform() {
+	SrcScript src;
+	compileDaedalus(std::string(syntheticScriptSource()), src);
+	ScriptBakeResult baked;
+	const std::vector<u8> image = bakeScript(src, baked);
+	SynthOptions so;
+	so.cells = 48;
+	SrcScene world;
+	buildSyntheticScene(so, world);
+	const Game::PointFinder find = [](void* user, const char* name, float pos[3], float& yaw) {
+		const SrcScene& scene = *static_cast<const SrcScene*>(user);
+		std::string up = name;
+		for (char& c : up) c = char(std::toupper(static_cast<unsigned char>(c)));
+		const auto it = scene.points.find(up);
+		if (it == scene.points.end()) return false;
+		std::copy_n(it->second.pos, 3, pos);
+		yaw = it->second.yaw;
+		return true;
+	};
+	Game game;
+	game.setQuiet(true);
+	u8* blob = static_cast<u8*>(std::malloc(image.size()));
+	std::memcpy(blob, image.data(), image.size());
+	CHECK(game.adopt(blob, u32(image.size())));
+	game.enterWorld("WORLD", 8.0f, find, &world);
+	const u32 hero = game.heroIndex();
+	const u32 molerat = game.vm().find("MOLERAT"), sword = game.vm().find("ITMW_SWORD");
+	CHECK(molerat != SCRIPT_NONE && sword != SCRIPT_NONE && hero < game.npcCount());
+	if (molerat == SCRIPT_NONE || sword == SCRIPT_NONE || hero >= game.npcCount()) return;
+	ScriptVm& vm = game.vm();
+	const u32 mGuild = vm.findMember("C_NPC", "GUILD"), mExp = vm.findMember("C_NPC", "EXP"), mName = vm.findMember("C_NPC", "NAME"),
+	          mLevel = vm.findMember("C_NPC", "LEVEL");
+	ScriptInstance* o = game.npc(hero).object;
+	game.giveItems(hero, sword, 2);
+	game.npcMut(hero).melee = sword;
+	vm.setInt(mLevel, 0, o, 7);
+	const i32 guildBefore = vm.getInt(mGuild, 0, o);
+	const std::string scriptBefore = game.text(game.npc(hero).look.script);
+	CHECK(game.transformedNpc() == -1);
+	CHECK(!game.transform(hero, sword)); // (an item is no creature)
+	CHECK(game.transform(hero, molerat));
+	CHECK(game.transformedNpc() == int(hero) && game.transformedInto() == molerat);
+	CHECK(!game.transform(hero, molerat)); // (one at a time)
+	CHECK(std::string(game.text(game.npc(hero).look.script)) != scriptBefore);
+	CHECK(vm.getInt(mGuild, 0, o) == game.constant("GIL_MOLERAT", -99));
+	CHECK(std::string(vm.getString(mName, 0, o)) == "Molerat");
+	CHECK(vm.getInt(mLevel, 0, o) == 7);                    // his level stays
+	CHECK(game.itemCount(hero, sword) == 0 && game.npc(hero).melee == SCRIPT_NONE); // the creature carries nothing
+	CHECK(game.npc(hero).object == o && game.npc(hero).hero && o->symbol == game.npc(hero).symbol);
+	vm.setInt(mExp, 0, o, 123); // gained as the creature
+	vm.setInt(mLevel, 0, o, 8);
+	CHECK(game.transformBack(hero));
+	CHECK(game.transformedNpc() == -1 && !game.transformBack(hero));
+	CHECK(std::string(game.text(game.npc(hero).look.script)) == scriptBefore);
+	CHECK(vm.getInt(mGuild, 0, o) == guildBefore);
+	CHECK(std::string(vm.getString(mName, 0, o)) == "I");
+	CHECK(vm.getInt(mExp, 0, o) == 123 && vm.getInt(mLevel, 0, o) == 8);
+	CHECK(game.itemCount(hero, sword) == 2 && game.npc(hero).melee == sword);
+}
+
 // The game layer on the built-in script: who is where, wearing what.
 static void testGame() {
 	// The built-in script, plus a world whose start-up names a place nobody has.
@@ -991,6 +1053,7 @@ int main(int argc, char** argv) {
 		void (*fn)();
 	} tests[] = {{"basics", testBasics}, {"compiler errors", testCompilerErrors}, {"objects", testObjects}, {"broken images", testBrokenImages}, {"synthetic script", testSyntheticScript},
 	             {"game", testGame}, {"docs and clock", testDocsAndClock}, {"late and rooms", testLateAndRooms},
+	             {"transform", testTransform},
 #ifdef G3DS_WITH_ZENKIT
 	             {"against the reference", testAgainstReference},
 #endif

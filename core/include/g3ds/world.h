@@ -219,6 +219,12 @@ enum TriggerKind : u8 {
 	TRG_WORLDSTART = 4, // zCTriggerWorldStart: sends its target when the world is entered
 	TRG_MOVER = 5,      // zCMover
 	TRG_DOOR = 6,       // oCMobDoor: the player opens and shuts it (and the inhabitants walking through)
+	// fix152: zCCSCamera, a camera's flight (OpenGothic's CsCamera): triggered, it takes the view along its keys.
+	// Its keys (first, count): the positions, then the last `speedMode` of them the points it looks at; each key's
+	// pos is the place, rot[0] its time (seconds), rot[1] its zenkit::CameraMotion. `speed`: the whole flight's
+	// seconds; `stayOpen`: how long the last key holds before it ends by itself; `behavior` bit 0: it ends by itself
+	// (autoUntriggerLast), bit 1: the player may move meanwhile.
+	TRG_CAMERA = 7,
 };
 
 enum TriggerFlags : u16 {

@@ -61,6 +61,8 @@ Quat lookRotation(Vec3 z) {
 } // namespace
 
 void Triggers::release() {
+	_cs = -1;
+	_csTime = 0;
 	for (u32 i = 0; i < _modelCount; ++i) _models[i].model.release();
 	_modelCount = 0;
 	_pool.release();
@@ -128,9 +130,10 @@ bool Triggers::adopt(u8* blob, u32 size, Game& game) {
 	if (ok) ok = names[h.nameBytes - 1] == 0;
 	for (u32 i = 0; ok && i < h.count; ++i) {
 		const WorldTrigger& t = list[i];
-		ok = t.kind >= TRG_TRIGGER && t.kind <= TRG_DOOR && t.name < h.nameBytes && t.target < h.nameBytes && t.visual < h.nameBytes &&
+		ok = t.kind >= TRG_TRIGGER && t.kind <= TRG_CAMERA && t.name < h.nameBytes && t.target < h.nameBytes && t.visual < h.nameBytes &&
 		     finite3(t.bbMin) && finite3(t.bbMax);
-		if (ok && (t.kind == TRG_MOVER || t.kind == TRG_DOOR)) ok = u64(t.first) + t.count <= h.keyCount;
+		if (ok && (t.kind == TRG_MOVER || t.kind == TRG_DOOR || t.kind == TRG_CAMERA)) ok = u64(t.first) + t.count <= h.keyCount;
+		if (ok && t.kind == TRG_CAMERA) ok = t.count > t.speedMode && isfinite(t.speed) && isfinite(t.stayOpen);
 		if (ok && t.kind == TRG_DOOR) ok = t.count == 2;
 		if (ok && h.version >= 2 && (t.flags & TRGF_COLLIDES)) ok = u64(t.collFirst) + t.collCount <= h.collisionTris;
 		if (ok && t.kind == TRG_LIST) ok = u64(t.first) + t.count <= h.targetCount;
@@ -168,6 +171,7 @@ bool Triggers::adopt(u8* blob, u32 size, Game& game) {
 		s.enabled = (t.flags & TRGF_START_ENABLED) != 0;
 		s.emitAt = -1.0;
 		s.delay = -1.0f;
+		if (t.kind == TRG_CAMERA) ++_stats.cameras;
 		if (t.kind == TRG_MOVER) _moverList[_moverCount++] = i;
 		else if (t.kind == TRG_DOOR) _doorList[_doorCount++] = i;
 		else if ((t.flags & TRGF_REACT_TOUCH) && (t.flags & TRGF_RESPOND_PC)) _touchList[_touchCount++] = i;
@@ -277,6 +281,10 @@ void Triggers::fire(u32 i, u8 type) {
 	State& s = _state[i];
 	s.emitAt = _clock;
 	if (type == EV_UNTRIGGER) {
+		if (t.kind == TRG_CAMERA) { // (CsCamera::onUntrigger: the flight ends)
+			if (_cs == int(i)) _cs = -1;
+			return;
+		}
 		if (!s.enabled || !(t.flags & TRGF_SEND_UNTRIGGER)) return;
 		if (t.kind == TRG_MOVER) onMover(i, type);
 		else if (t.kind == TRG_TRIGGER && t.target) dispatch(hashName(_names + t.target), EV_UNTRIGGER);
@@ -325,9 +333,83 @@ void Triggers::fire(u32 i, u8 type) {
 		}
 		break;
 	case TRG_MOVER: onMover(i, type); break;
+	case TRG_CAMERA:
+		// (CsCamera::onTrigger: one flying already goes on; another one ends and this one begins.)
+		if (_cs != int(i)) {
+			_cs = int(i);
+			_csTime = 0.0f;
+			++_stats.flights;
+		}
+		break;
 	default: break;
 	}
 	keep(i);
+}
+
+// ---- camera flights (fix152) ----
+
+namespace {
+
+Vec3 keyPos(const MoverKey& k) { return {k.pos[0], k.pos[1], k.pos[2]}; }
+
+// OpenGothic's CsCamera::KbSpline: a cubic through the keys, the slopes at each from its neighbours (by their times);
+// a key of motion SLOW (4) next to one of another eases in or out.
+Vec3 splineAt(const MoverKey* k, u32 n, float t) {
+	if (n == 0) return {0, 0, 0};
+	if (n == 1 || t <= k[0].rot[0]) return keyPos(k[0]);
+	if (t >= k[n - 1].rot[0]) return keyPos(k[n - 1]);
+	u32 i = 0;
+	while (i + 1 < n && t >= k[i + 1].rot[0]) ++i;
+	if (i + 1 >= n) return keyPos(k[n - 1]);
+	const MoverKey& k0 = i == 0 ? k[i] : k[i - 1];
+	const MoverKey& k1 = k[i];
+	const MoverKey& k2 = k[i + 1];
+	const MoverKey& k3 = i + 2 == n ? k2 : k[i + 2];
+	const Vec3 p0 = keyPos(k0), p1 = keyPos(k1), p2 = keyPos(k2), p3 = keyPos(k3);
+	const float dt = k2.rot[0] - k1.rot[0];
+	if (!(dt > 0.0f)) return p2;
+	const float span0 = k2.rot[0] - k0.rot[0], span1 = k3.rot[0] - k1.rot[0];
+	const Vec3 dd = span0 > 0.0f ? (p2 - p0) * (dt / span0) : Vec3 {0, 0, 0};
+	const Vec3 sd = span1 > 0.0f ? (p3 - p1) * (dt / span1) : Vec3 {0, 0, 0};
+	const Vec3 c0 = p1 * 2.0f - p2 * 2.0f + dd + sd;
+	const Vec3 c1 = p1 * -3.0f + p2 * 3.0f - dd * 2.0f - sd;
+	float u = clamp((t - k1.rot[0]) / dt, 0.0f, 1.0f);
+	const bool slow1 = int(k1.rot[1]) == 4, slow2 = int(k2.rot[1]) == 4;
+	if (slow1 && !slow2) u = powf(u, 1.005f);
+	else if (!slow1 && slow2) u = powf(u, 1.0f / 1.005f);
+	return ((c0 * u + c1) * u + dd) * u + p1;
+}
+
+} // namespace
+
+bool Triggers::cutscene(Vec3& pos, Vec3& look, bool& hasLook) const {
+	hasLook = false;
+	if (_cs < 0 || u32(_cs) >= _h.count) return false;
+	const WorldTrigger& t = _list[_cs];
+	const u32 targets = t.speedMode, positions = t.count - targets;
+	const MoverKey* k = _keys + t.first;
+	const float time = min(_csTime, max(t.speed, 0.0f));
+	pos = splineAt(k, positions, time);
+	if (targets == 1) {
+		look = keyPos(k[positions]);
+		hasLook = true;
+	} else if (targets > 1) {
+		look = splineAt(k + positions, targets, time);
+		hasLook = true;
+	} else {
+		// No target: the way it flies.
+		const Vec3 ahead = splineAt(k, positions, time + 0.1f);
+		const Vec3 d = ahead - pos;
+		if (dot(d, d) > 1.0f) {
+			look = pos + d * (100.0f / length(d));
+			hasLook = true;
+		}
+	}
+	if (hasLook) {
+		const Vec3 d = look - pos;
+		hasLook = dot(d, d) > 1.0f;
+	}
+	return true;
 }
 
 // ---- movers (OpenGothic's MoveTrigger) ----
@@ -568,6 +650,12 @@ void Triggers::update(float dt, Vec3 heroFeet, Game& game, const Vec3* others, u
 		dispatch(p.hash, p.type);
 	}
 	_clock += double(dt);
+	// A camera flight goes on; it ends by itself after its last key and delay, if it is to (CsCamera::tick).
+	if (_cs >= 0) {
+		_csTime += dt;
+		const WorldTrigger& t = _list[_cs];
+		if ((t.behavior & 1) && _csTime > max(t.speed, 0.0f) + max(t.stayOpen, 0.0f)) _cs = -1;
+	}
 	u32 moving = 0;
 	const Vec3 body = {heroFeet.x, heroFeet.y + 90.0f, heroFeet.z};
 	// Delayed events (fix87: those pending, not every trigger every frame).

@@ -545,7 +545,7 @@ void App::itemsUpdate(Input& in, float dt) {
 	// A thing on the ground in reach, hands empty: A picks it up.
 	_lootTarget = -1;
 	if (hi >= 0 && _job.stage == JOB_NONE && _hero.loaded() && !_hero.down() && _hero.weapon() == WEAPON_NONE && !_hero.drawing() &&
-	    !_panel.open() && !_player.swimming && !_player.climbing) {
+	    !_panel.open() && !_player.swimming && !_player.climbing && !heroTransformed()) {
 		const Vec3 feet = _player.feet;
 		_lootTarget = _loot.nearest(feet, _hero.yaw(), 150.0f, 1.0f);
 		if (_lootTarget >= 0 && (in.confirm || in.attack)) {

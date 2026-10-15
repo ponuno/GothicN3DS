@@ -235,6 +235,8 @@ bool finite(float v) { return v == v && v > -1.0e7f && v < 1.0e7f; }
 
 bool App::saveState(const char* path) const {
 	if (!_world.isOpen()) return false;
+	// (fix151: a save holds the character as himself; a transformation ends with it.)
+	if (heroTransformed()) const_cast<App*>(this)->heroTransformBack();
 	SavedState s {};
 	s.magic = STATE_MAGIC;
 	s.version = STATE_VERSION;
@@ -268,6 +270,7 @@ bool App::saveState(const char* path) const {
 bool App::loadState(const char* path) {
 	FILE* f = fopen(path, "rb");
 	if (!f) return false;
+	heroTransformBack(); // (fix151: what is loaded is the character himself)
 	SavedState s {};
 	const bool read = fread(&s, sizeof(s), 1, f) == 1;
 	if (!read || s.magic != STATE_MAGIC || (s.version != 1 && s.version != STATE_VERSION) || s.check != stateCheck(s)) {
@@ -410,8 +413,16 @@ void App::checkPortals() {
 		_portalLock = true; // do not retry a broken portal every frame
 }
 
-void App::update(const Input& in, float dt) {
+void App::update(const Input& given, float dt) {
 	collisionStatsReset(); // (what collisionStats() says is one frame's worth)
+	// (fix152) A camera flight that holds the player: the keys do nothing but A, which skips it (the clock goes on).
+	Input in = given;
+	if (_triggers.cutsceneActive() && !_triggers.cutsceneMovable() && !_player.flying) {
+		if (given.confirm && _triggers.cutsceneTime() > 0.5f) _triggers.cutsceneStop();
+		in = Input {};
+		in.timeStep = given.timeStep;
+		in.toggleFly = given.toggleFly;
+	}
 	_clock += dt;
 	if (dt > 0.0f) _fps += (clamp(1.0f / dt, 0.0f, 120.0f) - _fps) * min(dt * 3.0f, 1.0f);
 	_env.timeOfDay += in.timeStep;
@@ -471,7 +482,8 @@ void App::update(const Input& in, float dt) {
 	for (u32 i = 0; i < _wantMobCount; ++i) _world.wantAt(_wantMobs[i]);
 	const double t0 = sys::timeMs();
 	trace("update: world");
-	_world.update(_player.eye());
+	// (fix152: in a camera flight the world is there about the camera, which may be far from the character.)
+	_world.update(_triggers.cutsceneActive() ? _cam.pos : _player.eye());
 	const double t1 = sys::timeMs();
 	trace("update: npcs");
 	_npcs.update(_pak, _world, _player.eye(), _env.timeOfDay, dt);
@@ -489,6 +501,7 @@ void App::update(const Input& in, float dt) {
 		u32 otherCount = 0;
 		for (u32 k = 0; k < _npcs.drawnCount() && otherCount < 16; ++k) others[otherCount++] = _npcs.drawnFeet(k);
 		_triggers.update(dt, _player.feet, _npcs.game(), others, otherCount);
+		_npcs.game().setCutscene(_triggers.cutsceneActive() && !_triggers.cutsceneMovable(), _npcs.talking() ? _npcs.talkPartner() : -1);
 		if (ride >= 0) {
 			const Vec3 to = _triggers.fromLocal(ride, rideLocal);
 			const Vec3 d = to - _player.feet;
@@ -574,7 +587,8 @@ void App::update(const Input& in, float dt) {
 		// What the character wears (Mdl_ApplyOverlayMds: a learnt fight talent, a potion's sprint).
 		if (_npcs.loaded() && heroIndex() >= 0) {
 			const Model* worn[4];
-			const u32 count = _npcs.overlayModels(u32(heroIndex()), worn, 4);
+			// (fix151: a creature wears none of the human skeleton's.)
+			const u32 count = heroTransformed() ? 0u : _npcs.overlayModels(u32(heroIndex()), worn, 4);
 			_hero.setOverlays(worn, count);
 		}
 		const Drive drive = _hero.control(heroIn, _player, dt, grab ? &ledge : nullptr, ground.found ? &ground : nullptr, wall);
@@ -738,6 +752,24 @@ void App::placeCamera(float dt) {
 	if (!_hero.loaded() || _player.flying) {
 		_cam.pos = eye;
 		return;
+	}
+	// (fix152) A camera flight has the view: along its keys, at its target; the usual camera starts afresh after it.
+	{
+		Vec3 csPos, csLook;
+		bool csHasLook = false;
+		if (_triggers.cutscene(csPos, csLook, csHasLook)) {
+			_cam.pos = csPos;
+			if (csHasLook) {
+				const Vec3 d = csLook - csPos;
+				const float flat = sqrtf(d.x * d.x + d.z * d.z);
+				if (flat > 0.01f) _cam.yaw = atan2f(d.x, d.z);
+				_cam.pitch = clamp(atan2f(d.y, flat), -1.5f, 1.5f);
+			}
+			_camPlaced = false;
+			_heroVisible = true;
+			_hero.setTurnLag(0.0f);
+			return;
+		}
 	}
 	const float heroYaw = _hero.yaw();
 	if (!thirdPerson()) {
@@ -1339,6 +1371,8 @@ void App::fightInput(const Input& in, float dt) {
 	_attackHeld = in.attackHeld;
 	magicInput(in);
 	rangedInput(in);
+	// (fix151) A creature fights with what it has: the attack key bares its teeth at once.
+	if (in.attack && heroTransformed() && _hero.weapon() == WEAPON_NONE && !_hero.drawing()) take(WEAPON_FIST);
 	if (in.attack && _hero.weapon() != WEAPON_NONE && _hero.weapon() != WEAPON_MAG && _hero.weapon() != WEAPON_BOW &&
 	    _hero.weapon() != WEAPON_CBOW) {
 		// The direction of the blow is the D-Pad's, held as A is pressed (left: from the left,

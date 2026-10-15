@@ -308,7 +308,7 @@ void App::chestUpdate(Input& in, float dt) {
 	if (_chest.stage == CH_NONE) {
 		if (hi < 0 || !_hero.loaded() || _hero.down() || _hero.weapon() != WEAPON_NONE || _hero.drawing() ||
 		    _job.stage != JOB_NONE || _panel.open() || _player.swimming || _player.climbing || _hero.mantling() || _lootTarget >= 0 ||
-		    !_player.grounded)
+		    !_player.grounded || heroTransformed())
 			return;
 		if (_chests.count()) _chestTarget = _chests.nearest(_npcs.mobs(), _player.feet, _hero.yaw(), 170.0f, 1.2f);
 		// (A chest first; the body only when there is none in reach.)

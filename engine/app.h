@@ -302,8 +302,18 @@ public:
 		u32 noMana = 0;    // casts refused for want of mana
 		i32 lastDamage = -1;
 		i32 lastSpell = -1;
+		u32 transforms = 0; // fix151: times the player's character became a creature
+		u32 noForm = 0;     // ... and could not (no model of it in the archive)
 	};
 	const MagicStats& magicStats() const { return _magic; }
+	// ---- transforming (fix151, app_magic.cpp; OpenGothic's Npc::commitSpell / transformBack) ----
+	// The player's character is a transformation's creature now.
+	bool heroTransformed() const;
+	// Makes him the creature of instance `symbol` (Game::transform) with its whole model ("model/form.<instance>",
+	// baked for every creature the scripts' Npc_SetActiveSpellInfo names). False (with a toast) if it cannot be.
+	bool heroTransform(u32 symbol);
+	// Back to himself (the magic key while transformed; also before a save, a load and on death).
+	void heroTransformBack();
 	// Bow and crossbow: the arrows shot, the ones that hit, and the last damage.
 	struct RangedStats {
 		u32 shot = 0, hits = 0, misses = 0, noAmmo = 0;
@@ -702,6 +712,22 @@ private:
 	int mobNearest() const;
 	bool mobStart(u32 mob);
 	void mobEnd(bool hurried);
+	// (fix153) The thing's state function for `state` ("<onStateFunc>_S<state>", OpenGothic's invokeStateFunc);
+	// with `whole`, the bare name stands in when there is none. True if one ran.
+	bool mobStateFunc(u32 mob, int state, bool whole = false);
+public:
+	struct MobUseStats {
+		u32 stateCalls = 0; // state functions run (S1.., S0)
+		u32 talks = 0;      // times a thing's function put up a talk of his own (a workbench's, a bed's)
+	};
+	const MobUseStats& mobUseStats() const { return _mobUse; }
+	// The thing the character is at now (-1: none) and how far he is with it (MobStage).
+	int mobUsed() const { return _mobJob.stage != MJ_NONE ? int(_mobJob.mob) : -1; }
+	u8 mobStage() const { return _mobJob.stage; }
+	// Uses the thing as the player's A would (for the tests).
+	bool useMob(u32 mob) { return mobStart(mob); }
+private:
+	MobUseStats _mobUse;
 	void talkUpdate(Input& in, float dt);
 	void drawSubtitle();
 	int _talkTarget = -1;

@@ -29,6 +29,7 @@
 #include <zenkit/Vfs.hh>
 #include <zenkit/World.hh>
 #include <zenkit/world/VobTree.hh>
+#include <zenkit/vobs/Camera.hh>
 #include <zenkit/vobs/Light.hh>
 #include <zenkit/vobs/MovableObject.hh>
 #include <zenkit/vobs/Sound.hh>
@@ -1152,6 +1153,39 @@ bool collectTrigger(const zenkit::VirtualObject& vob, SrcScene& scene, bool& dyn
 		t.startEnabled = true;
 		t.maxActivations = -1;
 		dynamic = true;
+		scene.triggers.push_back(t);
+		return true;
+	}
+	if (vob.type == T::zCCSCamera) {
+		// fix152: a camera's flight (OpenGothic's CsCamera): its keys in the world's coordinates; one flying in an
+		// object's (trajectory_for OBJECT) is left out, as OpenGothic does.
+		const auto* c = dynamic_cast<const zenkit::VCutsceneCamera*>(&vob);
+		if (!c || c->trajectory_frames.empty() || !(c->total_duration > 0.0f) || t.name.empty()) return false;
+		if (c->trajectory_for == zenkit::CameraCoordinateReference::OBJECT ||
+		    c->target_trajectory_for == zenkit::CameraCoordinateReference::OBJECT) {
+			++scene.cameraObjectRelative;
+			return false;
+		}
+		t.kind = TRG_CAMERA;
+		t.speed = c->total_duration;
+		t.stayOpen = c->auto_untrigger_last_delay;
+		t.behavior = (c->auto_untrigger_last ? 1 : 0) | (c->auto_player_movable ? 2 : 0);
+		t.reactTrigger = true;
+		t.startEnabled = true;
+		t.sendUntrigger = true;
+		t.maxActivations = -1;
+		const auto add = [&](const std::vector<std::shared_ptr<zenkit::VCameraTrajectoryFrame>>& frames) {
+			int n = 0;
+			for (const auto& f : frames) {
+				if (!f || n >= 255) continue;
+				const zenkit::Mat4& m = f->original_pose;
+				t.keys.push_back({m[3][0], m[3][1], m[3][2], std::max(f->time, 0.0f), float(int(f->motion_type)), 0.0f, 1.0f});
+				++n;
+			}
+			return n;
+		};
+		if (add(c->trajectory_frames) == 0) return false;
+		t.camTargets = add(c->target_frames);
 		scene.triggers.push_back(t);
 		return true;
 	}
@@ -3542,6 +3576,17 @@ LookSource zenLookSource(std::shared_ptr<const ZenGame> game) {
 		o.skinColor = skin;
 		o.teethVariant = teeth;
 		o.heroClips = false;
+		return importZenActor(game, o, model);
+	};
+	// fix151: a transformation's creature, whole, with the hero's set of animations (what its script lacks is passed over).
+	source.form = [game](const std::string& script, const std::string& mesh, int tex, int skin, SrcModel& model) {
+		ZenActorOptions o;
+		o.script = script;
+		o.body = mesh;
+		o.head.clear();
+		o.bodyVariant = tex;
+		o.skinColor = skin;
+		o.heroClips = true;
 		return importZenActor(game, o, model);
 	};
 	return source;

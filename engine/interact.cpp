@@ -138,8 +138,31 @@ bool App::mobStart(u32 mob) {
 	return true;
 }
 
+bool App::mobStateFunc(u32 mob, int state, bool whole) {
+	const int hi = heroIndex();
+	Mobs& mobs = _npcs.mobs();
+	if (hi < 0 || mob >= mobs.count() || !mobs.hasInfo()) return false;
+	const WorldMobInfo& mi = mobs.info(mob);
+	if (!mi.onState) return false;
+	Game& g = _npcs.game();
+	const char* name = mobs.infoText(mi.onState);
+	char fnName[96];
+	snprintf(fnName, sizeof(fnName), "%s_S%d", name, state);
+	u32 fn = g.function(fnName);
+	if (fn == SCRIPT_NONE && whole) fn = g.function(name);
+	if (fn == SCRIPT_NONE) return false;
+	const bool talkBefore = _npcs.talking();
+	g.callAs(fn, u32(hi), -1);
+	++_mobUse.stateCalls;
+	if (!talkBefore && _npcs.talking()) ++_mobUse.talks;
+	_invStamp = 0;
+	return true;
+}
+
 void App::mobEnd(bool hurried) {
 	if (_mobJob.stage == MJ_NONE) return;
+	// (fix153) Leaving it: its state function of S0, as OpenGothic invokes it when the state is back at 0.
+	if (_mobJob.ran) mobStateFunc(_mobJob.mob, 0);
 	_npcs.mobs().drop(u32(heroIndex() < 0 ? 0 : heroIndex()));
 	if (hurried || _mobJob.stage == MJ_GLIDE) {
 		if (_mobJob.stage != MJ_GLIDE) _hero.cancelUse();
@@ -158,7 +181,8 @@ void App::mobUpdate(Input& in, float dt) {
 	if (_mobJob.stage == MJ_NONE) {
 		if (hi < 0 || !_hero.loaded() || _hero.down() || _hero.weapon() != WEAPON_NONE || _hero.drawing() || _job.stage != JOB_NONE ||
 		    _chest.stage != CH_NONE || _panel.open() || _player.swimming || _player.climbing || _hero.mantling() ||
-		    !_player.grounded || _chestTarget >= 0 || _corpseTarget >= 0 || _lootTarget >= 0 || _menu.isOpen())
+		    !_player.grounded || _chestTarget >= 0 || _corpseTarget >= 0 || _lootTarget >= 0 || _menu.isOpen() ||
+		    heroTransformed()) // (a creature uses no benches, doors or ladders)
 			return;
 		_mobTarget = mobNearest();
 		if (_mobTarget >= 0 && (in.confirm || in.attack)) {
@@ -225,17 +249,27 @@ void App::mobUpdate(Input& in, float dt) {
 			_mobJob.ran = true;
 			_mobJob.stage = MJ_HELD;
 			_mobJob.time = 0;
-			Game& g = _npcs.game();
 			if (mi.onState) {
 				// The function is the object's name for it with the state's number (OpenGothic's
-				// Interactive::invokeStateFunc: "<name>_S1" on the first use); one that is named whole still runs.
-				const char* name = mobs.infoText(mi.onState);
-				char state[96];
-				snprintf(state, sizeof(state), "%s_S1", name);
-				u32 fn = g.function(state);
-				if (fn == SCRIPT_NONE) fn = g.function(name);
-				if (fn != SCRIPT_NONE) g.callAs(fn, u32(hi), -1);
-				_invStamp = 0;
+				// Interactive::invokeStateFunc: "<name>_S1", then "_S2" ... for a thing of more states, as each is
+				// reached); one that is named whole still runs. A workbench's, a forge's, an alchemist's table's
+				// function puts up the player's own talk (AI_ProcessInfos(hero): what to make), held below.
+				const int states = max(int(mobs.mob(_mobJob.mob).states), 1);
+				for (int k = 1; k <= states; ++k) mobStateFunc(_mobJob.mob, k, k == 1);
+			}
+		}
+		// (fix153) A talk the thing put up (a bed's sleep, a workbench's what-to-make): he stays at it while it lasts and
+		// the keys are the talk's; when it is over he leaves it, as the original lets go of him.
+		if (_mobJob.stage == MJ_HELD && !_mobJob.bed) {
+			if (_npcs.talking()) {
+				_mobJob.talked = true;
+				in.confirm = in.jump = false;
+				in.moveX = in.moveZ = 0;
+				break;
+			}
+			if (_mobJob.talked) {
+				mobEnd(false);
+				break;
 			}
 		}
 		if (_mobJob.stage == MJ_HELD && _mobJob.bed) {

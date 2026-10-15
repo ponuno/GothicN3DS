@@ -62,6 +62,7 @@ bool Game::adopt(u8* image, u32 size) {
 
 void Game::release() {
 	freePending();
+	dropTransform();
 	_timeSet = 0.0f;
 	_timeSetSerial = _timeSetTaken = 0;
 	_day = 0;
@@ -1258,10 +1259,13 @@ void Game::xGetInstanceId(ScriptVm& vm, void*) {
 	vm.pushInt(inst ? i32(inst->symbol) : -1);
 }
 
-// No cutscenes here: nobody is in one.
-void Game::xIsInCutscene(ScriptVm& vm, void*) {
-	(void)vm.popInstance();
-	vm.pushInt(0);
+// Npc_IsInCutscene (fix152): as OpenGothic has it, whoever is in the talk with the player (G1's B_AssessEnemy asks it
+// so that nobody attacks the two meanwhile) - and the player's character while a camera flight holds him still.
+void Game::xIsInCutscene(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const int who = g.indexOf(vm.popInstance());
+	const bool in = who >= 0 && ((u32(who) == g._hero && (g._csHero || g._csPartner >= 0)) || who == g._csPartner);
+	vm.pushInt(in ? 1 : 0);
 }
 
 void Game::xIsValid(ScriptVm& vm, void*) { vm.pushInt(vm.popInstance() != nullptr); }

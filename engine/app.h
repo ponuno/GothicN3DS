@@ -85,6 +85,14 @@ public:
 
 	void update(const Input& in, float dt);
 	void render();
+	// For finding a fault (fix135, sdmc:/3ds/gothic3ds/debug.txt): parts of the picture left out (RenderSkip bits).
+	enum RenderSkip : u32 {
+		SKIP_SKY = 1u << 0, SKIP_WORLD = 1u << 1, SKIP_NPCS = 1u << 2, SKIP_THINGS = 1u << 3, SKIP_HERO_SHADOW = 1u << 4,
+		SKIP_HERO = 1u << 5, SKIP_GROUND = 1u << 6, SKIP_BLENDED = 1u << 7, SKIP_GODRAYS = 1u << 8, SKIP_RAIN = 1u << 9,
+		SKIP_PARTICLES = 1u << 10, SKIP_OVERLAY = 1u << 11,
+	};
+	void setRenderSkip(u32 skip) { _renderSkip = skip; }
+	u32 renderSkip() const { return _renderSkip; }
 
 	// ---- sound (sound.h) ----
 	// The platform's output, given before init(); null: no sound. Must outlive the application.
@@ -507,6 +515,7 @@ private:
 	float _thunderWait = -1.0f;         // seconds until the thunder is heard (<0: none)
 	u8 _thunderMade = 0;                // how many thunders were made here (engine/weather_sfx.h; 0: the game's own)
 	u32 _thunderTurn = 0;
+	u32 _renderSkip = 0; // RenderSkip
 	// The baker's own thunders (meta/weathersfx "N name" near, "F name" far; tools/bake/weather_sfx_bake.h): a near one when the
 	// flash is close (its sound follows soon), a far one otherwise, taking turns within each.
 	const char* _thunderNear[4] = {};

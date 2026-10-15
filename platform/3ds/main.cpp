@@ -156,7 +156,7 @@ static void flushHitches() {
 
 static void startHitchLog(const char* what) {
 	if (FILE* f = fopen(kHitchPath, "w")) {
-		fprintf(f, "# gothic3ds fix135 hitches: %s\n", what);
+		fprintf(f, "# gothic3ds fix136 hitches: %s\n", what);
 		fclose(f);
 	}
 	gHitchCount = 0;
@@ -172,6 +172,52 @@ static const char* kHangPath = "sdmc:/3ds/gothic3ds/hang.txt";
 static volatile bool gWatchdogRun = false;
 static volatile bool gWatchdogPaused = false; // the HOME Menu, the system's sleep, a load the game knows is long
 static Thread gWatchdog = nullptr;
+
+// debug.txt (fix135): words that leave parts of the picture out, to find what hangs the GPU. Any of:
+//   sky world npcs things heroshadow hero ground blended godrays rain particles overlay  (App::RenderSkip)
+//   all          every one of those (only the clear colour is drawn)
+//   nosun        the sun's shadow stages never set (as C-Stick up)
+//   classic      citro3d's own frames instead of the overlapped ones (as Y held)
+//   plain        the plain world shader (as R held: no characters)
+static char gDebugWords[256] = "";
+static u32 gDebugSkip = 0;
+static bool gDebugNoSun = false, gDebugClassic = false, gDebugPlain = false;
+static void readDebugFile() {
+	FILE* f = fopen("sdmc:/3ds/gothic3ds/debug.txt", "rb");
+	if (!f) return;
+	char text[512];
+	const size_t n = fread(text, 1, sizeof(text) - 1, f);
+	fclose(f);
+	text[n] = 0;
+	static const struct {
+		const char* word;
+		u32 bit;
+	} kWords[] = {{"sky", App::SKIP_SKY}, {"world", App::SKIP_WORLD}, {"npcs", App::SKIP_NPCS}, {"things", App::SKIP_THINGS},
+	              {"heroshadow", App::SKIP_HERO_SHADOW}, {"hero", App::SKIP_HERO}, {"ground", App::SKIP_GROUND}, {"blended", App::SKIP_BLENDED},
+	              {"godrays", App::SKIP_GODRAYS}, {"rain", App::SKIP_RAIN}, {"particles", App::SKIP_PARTICLES}, {"overlay", App::SKIP_OVERLAY},
+	              {"all", 0xFFFFFFFFu}};
+	for (char* p = text; *p;) {
+		while (*p && !(*p >= 'a' && *p <= 'z') && !(*p >= 'A' && *p <= 'Z')) ++p;
+		char* w = p;
+		while ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z')) {
+			if (*p >= 'A' && *p <= 'Z') *p = char(*p + 32);
+			++p;
+		}
+		const char end = *p;
+		*p = 0;
+		bool known = false;
+		for (const auto& k : kWords)
+			if (strcmp(w, k.word) == 0) gDebugSkip |= k.bit, known = true;
+		if (strcmp(w, "nosun") == 0) gDebugNoSun = known = true;
+		if (strcmp(w, "classic") == 0) gDebugClassic = known = true;
+		if (strcmp(w, "plain") == 0) gDebugPlain = known = true;
+		if (known && strlen(gDebugWords) + strlen(w) + 2 < sizeof(gDebugWords)) {
+			strcat(gDebugWords, " ");
+			strcat(gDebugWords, w);
+		}
+		*p = end;
+	}
+}
 
 static void watchdogMain(void*) {
 	u32 lastFrame = g3::gTrace.frame, lastBeats = g3::gTrace.beats;
@@ -189,8 +235,9 @@ static void watchdogMain(void*) {
 		// After 5 s, then every 10 s while it lasts (at most 6 times: what changed in between says loop or stuck).
 		if (still < 20 || (still - 20) % 40 != 0 || written >= 6) continue;
 		if (FILE* f = fopen(kHangPath, written == 0 ? "w" : "a")) {
-			fprintf(f, "%s%.1f s without a frame after frame %lu: in \"%s\"; %s (steps %lu, %lu at the last frame)\n",
-			        written == 0 ? "# gothic3ds fix135 watchdog: the main loop stopped\n" : "", double(still) * 0.25,
+			fprintf(f, "%s%s%s%.1f s without a frame after frame %lu: in \"%s\"; %s (steps %lu, %lu at the last frame)\n",
+			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix136 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix136 watchdog: the main loop stopped\n") : "",
+			        written == 0 && gDebugWords[0] ? gDebugWords : "", written == 0 && gDebugWords[0] ? ")\n" : "", double(still) * 0.25,
 			        static_cast<unsigned long>(frame), g3::gTrace.stage ? g3::gTrace.stage : "?",
 			        beats != lastBeats ? "it still goes from step to step (a loop)" : "no step since (stuck in that one)",
 			        static_cast<unsigned long>(beats), static_cast<unsigned long>(lastBeats));
@@ -324,8 +371,9 @@ int main(int, char**) {
 		hidScanInput();
 		startKeys |= hidKeysHeld();
 	}
-	const bool background = !(startKeys & KEY_B), pacing = !(startKeys & KEY_X), classic = (startKeys & KEY_Y) != 0;
-	const bool plainShader = (startKeys & KEY_R) != 0;
+	readDebugFile();
+	const bool background = !(startKeys & KEY_B), pacing = !(startKeys & KEY_X), classic = (startKeys & KEY_Y) != 0 || gDebugClassic;
+	const bool plainShader = (startKeys & KEY_R) != 0 || gDebugPlain;
 	const bool nobody = (startKeys & KEY_SELECT) != 0; // the scripts run, their people are not drawn
 	const bool standing = (startKeys & KEY_DUP) != 0;  // they stand: no states, no walking
 	const bool zl = (startKeys & KEY_ZL) != 0, zr = (startKeys & KEY_ZR) != 0;
@@ -347,7 +395,7 @@ int main(int, char**) {
 	gfx::c3dSetClassicShader(classicShader);
 	gfx::c3dSetDoubleDraws((startKeys & KEY_START) != 0); // hold START at start: every draw twice
 	gfx::c3dSetFillTest(halfPicture); // hold ZR at start: half the pixels, the same triangles
-	gfx::c3dSetNoSun((startKeys & KEY_CSTICK_UP) != 0); // hold the C-Stick up at start: no sun's shadow at all (its stages left out)
+	gfx::c3dSetNoSun((startKeys & KEY_CSTICK_UP) != 0 || gDebugNoSun); // hold the C-Stick up at start: no sun's shadow at all (its stages left out)
 	gfx::c3dSetFadeShader(dissolve);
 	gfx::c3dSetSupersampleMode(settings.antialias); // (a change in the menu counts after a restart)
 	// The top screen: wide (800x240) or stereo 3D (the same, after a restart; the 3D not together with the smoothing). The wide
@@ -413,6 +461,7 @@ int main(int, char**) {
 	if (standing) settings.life = 0;
 	app.settings() = settings;
 	app.applySettings();
+	app.setRenderSkip(gDebugSkip);
 	{
 		char what[160];
 		snprintf(what, sizeof(what), "preset %d, draw %d m, objects %d, life %d, shader %s", int(settings.gfxPresetOf()),

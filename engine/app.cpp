@@ -871,7 +871,7 @@ void App::render() {
 	gfx::setSunShadow(indoor ? 0.0f : sunShadowDarkness());
 	const auto drawEye = [&](const gfx::FrameDesc& d) {
 		const double r0 = sys::timeMs();
-		if (!indoor) {
+		if (!indoor && !(_renderSkip & SKIP_SKY)) {
 			gfx::setPass(gfx::PASS_SKY);
 			_sky.setScene(SkyScene {_env.timeOfDay, _weather.cloud(), _weather.rain(), _weather.flash()});
 			_sky.draw(_cam.pos, _cam.zFar * 0.5f, sky, _settings.barrier ? 1.0f : 0.0f, float(_clock));
@@ -883,28 +883,28 @@ void App::render() {
 		// (The room the player's character is in picks the row of the visibility table: fix91.)
 		_world.setCameraRoom(_npcs.rooms().roomAt(_player.feet));
 		trace("render: world");
-		_world.draw(viewProj, _cam.pos, u32(u64(_clock * 1000.0)));
+		if (!(_renderSkip & SKIP_WORLD)) _world.draw(viewProj, _cam.pos, u32(u64(_clock * 1000.0)));
 		trace("render: npcs");
 		const double r2 = sys::timeMs();
 		const float indoorLight[3] = {1, 1, 1};
 		_npcs.setFadeStep(_world.fadeStep());
-		_npcs.draw(viewProj, indoor ? indoorLight : sky.light, &_world, _cam.pos);
+		if (!(_renderSkip & SKIP_NPCS)) _npcs.draw(viewProj, indoor ? indoorLight : sky.light, &_world, _cam.pos);
 		const double r3 = sys::timeMs();
 		{
 			// (Only what is in view and not too small to see: fix87.)
 			const Frustum view = frustumFromViewProj(viewProj);
-			_loot.draw(_cam.pos, indoor ? indoorLight : sky.light, 3500.0f, &view, _world.config().sizePixels, _world.config().focalPx);
+			if (!(_renderSkip & SKIP_THINGS)) _loot.draw(_cam.pos, indoor ? indoorLight : sky.light, 3500.0f, &view, _world.config().sizePixels, _world.config().focalPx);
 			_triggers.setView(&view, _world.config().sizePixels, _world.config().focalPx);
 		}
 		trace("render: triggers");
-		_triggers.draw(_pak, _world, _cam.pos, indoor ? indoorLight : sky.light, min(_world.drawReach() + 2000.0f, 20000.0f));
+		if (!(_renderSkip & SKIP_THINGS)) _triggers.draw(_pak, _world, _cam.pos, indoor ? indoorLight : sky.light, min(_world.drawReach() + 2000.0f, 20000.0f));
 		drawShowcase();
 		const double r4 = sys::timeMs();
 		trace("render: hero shadow");
 		_shadows.begin();
 		// (Always: some 14 draw calls. It used to be given up at the half rate, so at the menu's steady 30 fps it never showed.)
 		const bool castHero = _settings.shadows == SHADOWS_HERO_CAST;
-		if (castHero && _heroVisible && _hero.loaded()) {
+		if (castHero && _heroVisible && _hero.loaded() && !(_renderSkip & SKIP_HERO_SHADOW)) {
 			// The light: the sun by day, the moon at night, a lamp overhead indoors; fainter under cloud and rain.
 			float lightDir[3] = {0.25f, -0.96f, 0.1f};
 			float strength = 0.5f;
@@ -931,7 +931,7 @@ void App::render() {
 			gfx::setPass(gfx::PASS_WORLD);
 		}
 		trace("render: hero");
-		if (_heroVisible) {
+		if (_heroVisible && !(_renderSkip & SKIP_HERO)) {
 			_hero.draw();
 			drawArrows(_hero.light());
 			const GameNpc* hn = heroNpc();
@@ -946,11 +946,11 @@ void App::render() {
 		gfx::setPass(gfx::PASS_BLEND);
 		trace("render: puddles, shadows");
 		// Graphics+: shadows on the ground, before the water (which then covers those under it).
-		if (!indoor && _settings.wetGround && _weather.wet() > 0.12f) {
+		if (!indoor && _settings.wetGround && _weather.wet() > 0.12f && !(_renderSkip & SKIP_GROUND)) {
 			_puddles.draw(_world, _cam.pos, _weather.wet(), _weather.rain(), sky.horizon, _clock);
 		}
 		// Round ones: under the hero (unless his own shape is thrown), and with "all near" or his shape under the people and beasts.
-		if (_settings.shadows != SHADOWS_OFF) {
+		if (_settings.shadows != SHADOWS_OFF && !(_renderSkip & SKIP_GROUND)) {
 			if (_heroVisible && _hero.loaded() && _settings.shadows != SHADOWS_HERO_CAST) _shadows.add(_hero.feet(), 48.0f);
 			if ((_settings.shadows == SHADOWS_ALL || _settings.shadows == SHADOWS_HERO_CAST) && !_gfxRelief)
 				for (u32 i = 0; i < _npcs.drawnCount(); ++i)
@@ -958,9 +958,9 @@ void App::render() {
 			_shadows.draw(_world, _cam.pos, indoor ? 0.7f : 0.6f);
 		}
 		trace("render: blended");
-		_world.drawBlended();
+		if (!(_renderSkip & SKIP_BLENDED)) _world.drawBlended();
 		trace("render: god rays");
-		if (!indoor && _settings.godRays && !_underwater) {
+		if (!indoor && _settings.godRays && !_underwater && !(_renderSkip & SKIP_GODRAYS)) {
 			float sunDir[3];
 			Sky::sunDirection(_env.timeOfDay, sunDir);
 			const float el = sunDir[1];
@@ -972,11 +972,11 @@ void App::render() {
 			_godRays.draw(_world, _cam.pos, look, sunDir, low * high * clear, tint, _clock);
 		}
 		trace("render: rain");
-		if (!indoor && (_weather.rain() > 0.03f || _weather.snow() > 0.03f)) _rain.draw(_world, _cam.pos, _weather.rain(), _weather.snow(), sky.light, _clock);
+		if (!indoor && (_weather.rain() > 0.03f || _weather.snow() > 0.03f) && !(_renderSkip & SKIP_RAIN)) _rain.draw(_world, _cam.pos, _weather.rain(), _weather.snow(), sky.light, _clock);
 		trace("render: particles");
-		_particles.draw(d.view, _cam.pos, indoor ? indoorLight : sky.light);
+		if (!(_renderSkip & SKIP_PARTICLES)) _particles.draw(d.view, _cam.pos, indoor ? indoorLight : sky.light);
 		trace("render: overlay");
-		drawOverlay();
+		if (!(_renderSkip & SKIP_OVERLAY)) drawOverlay();
 		const double r6 = sys::timeMs();
 		_renderTimes.world += float(r2 - r1);
 		_renderTimes.npcs += float(r3 - r2);

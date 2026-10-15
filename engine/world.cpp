@@ -1471,6 +1471,9 @@ const WorldPortal* World::portalAt(Vec3 p) const {
 // debug.txt `noladderinfo` (fix139): the table is not read, the ladders are climbed by their boxes.
 bool gLadderInfoWanted = true;
 void setLadderInfoWanted(bool on) { gLadderInfoWanted = on; }
+// debug.txt `ladderunused` (fix140): the table is read, but World::ladderInfo says nothing (reading vs using).
+bool gLadderInfoUsed = true;
+void setLadderInfoUsed(bool on) { gLadderInfoUsed = on; }
 
 // What the bake knew of the ladders themselves ("world/<name>/ladderinfo"); an archive without it climbs the boxes.
 void World::loadLadderInfo() {

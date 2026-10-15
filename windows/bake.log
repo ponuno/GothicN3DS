@@ -161,7 +161,7 @@ places: 4973 named (way points and markers), 4881 set on the ground (41 cm down 
 way net: 2784 points, 3486 connections (34.9 km of paths), 20 points without any; 1603 free points
 things to use: 924 of 38 kinds, with 1092 places to stand at (48 have none: nobody can use those): CHAIR x203, CHESTBIG x194, FIREPLACE x157, BENCH x71, CHESTSMALL x55, PC x36, REPAIR x29, ORE x17, BOOK x16, SMOKE x14, CAULDRON x14, VWHEEL x12, BSCOOL x10, BARBQ x10, ORCDRUM x9, LAB x9, BEDLOW x9, PAN x8, HERB x8, BSSHARP x8, TOUCHPLATE x5, BSANVIL x5, BSFIRE x4, MPIPE x3, ...
 containers: 249 (193 locked), with 1085 stacks of things inside
-ladders: 65
+ladders: 65 (65 read from their models, the side to climb from known for 0)
 portals: 4 of 6 lead to a baked world: orctempel at ENTRANCE_ORCTEMPLE_SURFACE; oldmine at ENTRANCE_OLDMINE_SURFACE; ABANDONEDMINE.ZEN (not baked); orcgraveyard at ENTRANCE_ORCGRAVEYARD_SURFACE; ORCCITY.ZEN (not baked); freemine at its start point ('ENTRANCE_FREEMINE_FREEMINECAMP' not found)
 note: 7808 triangles needed a private UV origin (wide texture spans)
 WARNING: 408 triangles span more than 32 texture repeats and were clamped
@@ -403,7 +403,7 @@ places: 384 named (way points and markers), 376 set on the ground (45 cm down on
 way net: 254 points, 312 connections (2.2 km of paths), 0 points without any; 76 free points
 things to use: 176 of 12 kinds, with 188 places to stand at (1 have none: nobody can use those): ORE x103, FIREPLACE x43, CHESTBIG x11, BENCH x4, BARRELO x4, CHAIR x3, STOMPER x2, CAULDRON x2, VWHEEL x1, STONEMILL x1, BELLOW x1, BARBQ x1
 containers: 11 (10 locked), with 26 stacks of things inside
-ladders: 16
+ladders: 16 (16 read from their models, the side to climb from known for 0)
 portals: 1 of 1 lead to a baked world: world at ENTRANCE_SURFACE_OLDMINE
 note: 86 triangles needed a private UV origin (wide texture spans)
 WARNING: 2 triangles span more than 32 texture repeats and were clamped
@@ -587,7 +587,7 @@ indoor world: no sky, background colour 74 85 102
 places: 208 named (way points and markers), 201 set on the ground (45 cm down on average), 7 with no ground within 5 m below left where they are
 way net: 119 points, 177 connections (1.0 km of paths), 0 points without any; 39 free points
 things to use: 67 of 6 kinds, with 66 places to stand at (1 have none: nobody can use those): FIREPLACE x44, ORE x13, CHAIR x7, STOMPER x1, BELLOW x1, BARBQ x1
-ladders: 14
+ladders: 14 (14 read from their models, the side to climb from known for 0)
 portals: 1 of 1 lead to a baked world: world at ENTRANCE_FREEMINECAMP_FREEMINE
 note: 90 triangles needed a private UV origin (wide texture spans)
 WARNING: 2 triangles span more than 32 texture repeats and were clamped
@@ -652,8 +652,9 @@ scripts: 66 of 291 class members are laid out differently than the file says (ha
 fight AI: 333 tables for 29 of 30 tactics (FIGHT.DAT)
 script/sfx: SFX.DAT, 113424 bytes
 sounds: 1208 C_SFX instances name 873 files; 744 baked (66.1 MB at up to 22050 Hz); 127 are not in the game's files: ambientscream_03_dark.wav bird_10.wav bird_11.wav bird_11b.wav bird_11c.wav bird_12.wav; 2 could not be used: [CS_Inextremo.wav: too long for an effect (180 s)] [murmor_loop.wav: too long for an effect (137 s)]
+weather sounds of the baker: G3_RAIN 10.0 s at 22050 Hz, G3_THUNDER_NEAR 15.5 s at 16000 Hz, G3_THUNDER_ROLL 11.7 s at 16000 Hz, G3_THUNDER_FAR 8.0 s at 16000 Hz (1.49 MB)
 barrier: sound instances named like it: MFX_BARRIERE_AMBIENT, ROPEWAY_BARRIER
-weather sounds: rain: RAIN_01 (file); thunder: none (the game makes its own)
+weather sounds of the game: rain: RAIN_01 (file); thunder: none (the baker's are used); the baker's own come first
 the player's character: humans, body hum_body_naked0 (texture 4, skin 1), head hum_head_pony (texture 9)
 world 'world': STARTUP_WORLD puts 1030 characters into it (394 with a daily routine, 636 without), 11 items
 WARNING: 2 of them stand at places the world does not have (not drawn): OW_MONSTER_NAVIGATE02
@@ -722,10 +723,10 @@ particles: 280 effects in the scripts (144 pictures baked, 5 of the names have n
   pictures not found: bloodkai, mfx_spell_star, water_dripping, water_dripping_ground, waveofinsanity_a0
 things lying about: 1086 (1075 from the world files, 11 from the start-up scripts) of 114 kinds of look; looks of all things of the scripts: 382, 374 models baked (26620 triangles, 0.86 MB), 336 pictures for the inventory (2.96 MB)
 WARNING: 8 looks of things not baked (they lie there unseen): ITFOFLASKHEALTH: no mesh; ITLSTORCHBURNING: no mesh; ITMIJOINT: no mesh; ITMW1HSWORD01: no mesh; ITMW1HSWORDOLD01: no mesh; ITMW2HSWORD01: no mesh; ITWRBOOK: no mesh; ITWRMAP: no mesh
-time: sources 0.0 s, world textures 3.7 s, worlds 5.1 s, hero 0.1 s, scripts and inhabitants 13.3 s
+time: sources 0.0 s, world textures 4.3 s, worlds 6.3 s, hero 0.1 s, scripts and inhabitants 14.1 s
 dialogue: 7354 lines (377 KB of text) from OU.BIN, in 16 blocks, 6 names given twice (the first kept)
 font: FONT_OLD_10_WHITE (17 px) and FONT_OLD_20_WHITE (36 px), code page 1252, 218 glyphs, atlas 256x336, 87 KB
-C:\GOTHIC~1\windows\data.pak written (7563 entries); the rest (voices, music) follows
+C:\GOTHIC~1\windows\data.pak written (7570 entries); the rest (voices, music) follows
 hero: fightclip T_JUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_RUN
 hero: fightclip T_FISTJUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_FISTRUN
 hero: fightclip T_FISTPARADEJUMPB: file T_FISTPARADEJUMPB, mds frames 1..12, 12 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next -
@@ -766,4 +767,4 @@ hero: fightclip T_2HRUN_2_2HRUNL: file T_2HRUN_2_2HRUNL, mds frames 1..11, 11 fr
 hero: fightclip T_2HRUNL_2_2HRUN: file T_2HRUNL_2_2HRUN, mds frames 32..38, 7 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HRUN
 hero: fightclip T_2HWALK_2_2HWALKL: file T_2HWALK_2_2HWALKL, mds frames 1..18, 18 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALKL
 hero: fightclip T_2HWALKL_2_2HWALK: file T_2HWALKL_2_2HWALK, mds frames 39..49, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALK
-wrote C:\GOTHIC~1\windows\data.pak: 5 worlds, 7563 entries in 25.0 s
+wrote C:\GOTHIC~1\windows\data.pak: 5 worlds, 7570 entries in 25.7 s

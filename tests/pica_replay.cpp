@@ -171,11 +171,18 @@ int main(int argc, char** argv) {
 	std::printf("camera %.0f %.0f %.0f, shader: %s\n", double(app.camera().pos.x), double(app.camera().pos.y),
 	            double(app.camera().pos.z), gfx::c3dFastShader() ? "fast (four entries)" : "fallback");
 	Stats s;
-	const float dt = 1.0f / 30.0f;
+	const float dtArg = getenv("DT") ? float(atof(getenv("DT"))) : 1.0f / 30.0f;
 	for (int f = 0; f < frames; ++f) {
 		s.frame = f;
 		Input in;
+		const float dt = f == 0 && getenv("DT0") ? float(atof(getenv("DT0"))) : dtArg;
 		app.update(in, dt);
+		{
+			const Player& pl = app.player();
+			const Camera& cam = app.camera();
+			std::printf("frame %d: feet %.1f %.1f %.1f climbing %d grounded %d, camera %.1f %.1f %.1f yaw %.3f pitch %.3f\n", f, double(pl.feet.x), double(pl.feet.y),
+			            double(pl.feet.z), int(pl.climbing), int(pl.grounded), double(cam.pos.x), double(cam.pos.y), double(cam.pos.z), double(cam.yaw), double(cam.pitch));
+		}
 		mock3ds::setDrawHook(hook, &s);
 		app.render();
 		mock3ds::setDrawHook(nullptr, nullptr);

@@ -171,6 +171,8 @@ struct WorldStats {
 
 // For finding faults (debug.txt `noladderinfo`): world/<name>/ladderinfo is not read (before a world is opened).
 void setLadderInfoWanted(bool on);
+void setLadderInfoUsed(bool on);
+extern bool gLadderInfoUsed;
 
 class World {
 public:
@@ -264,7 +266,7 @@ public:
 	u32 ladderCount() const { return _hdr.ladderCount; }
 	const WorldLadder& ladder(u32 i) const { return _ladders[i]; }
 	const LadderInfo* ladderInfo(u32 i) const {
-		return _ladderInfo && i < _hdr.ladderCount && _ladderInfo[i].halfWidth > 0.0f ? &_ladderInfo[i] : nullptr;
+		return gLadderInfoUsed && _ladderInfo && i < _hdr.ladderCount && _ladderInfo[i].halfWidth > 0.0f ? &_ladderInfo[i] : nullptr;
 	}
 	bool indoor() const { return (_hdr.flags & WORLDF_INDOOR) != 0; }
 	// Whether the world was baked with Graphics+ data (g3ds-bake --ao, --wind).

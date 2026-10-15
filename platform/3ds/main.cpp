@@ -156,7 +156,7 @@ static void flushHitches() {
 
 static void startHitchLog(const char* what) {
 	if (FILE* f = fopen(kHitchPath, "w")) {
-		fprintf(f, "# gothic3ds fix139 hitches: %s\n", what);
+		fprintf(f, "# gothic3ds fix140 hitches: %s\n", what);
 		fclose(f);
 	}
 	gHitchCount = 0;
@@ -187,7 +187,7 @@ static u32 gDebugSkip = 0;
 static bool gDebugNoSun = false, gDebugClassic = false, gDebugPlain = false;
 static g3::u16 gDebugMatSkip = 0;
 static int gDebugProgram = 0;
-static bool gDebugNoLadderInfo = false, gDebugNoWeatherSfx = false;
+static bool gDebugNoLadderInfo = false, gDebugNoWeatherSfx = false, gDebugLadderUnused = false;
 static void readDebugFile() {
 	FILE* f = fopen("sdmc:/3ds/gothic3ds/debug.txt", "rb");
 	if (!f) return;
@@ -224,6 +224,7 @@ static void readDebugFile() {
 		if (strcmp(w, "fastonly") == 0) gDebugProgram = 1, known = true;
 		if (strcmp(w, "fullonly") == 0) gDebugProgram = 2, known = true;
 		if (strcmp(w, "noladderinfo") == 0) gDebugNoLadderInfo = known = true;
+		if (strcmp(w, "ladderunused") == 0) gDebugLadderUnused = known = true;
 		if (strcmp(w, "noweathersfx") == 0) gDebugNoWeatherSfx = known = true;
 		if (known && strlen(gDebugWords) + strlen(w) + 2 < sizeof(gDebugWords)) {
 			strcat(gDebugWords, " ");
@@ -233,6 +234,7 @@ static void readDebugFile() {
 	}
 }
 
+static void watchdogPlayerLine(FILE* f); // (after gApp, below)
 static void watchdogMain(void*) {
 	u32 lastFrame = g3::gTrace.frame, lastBeats = g3::gTrace.beats;
 	int still = 0, written = 0;
@@ -250,11 +252,12 @@ static void watchdogMain(void*) {
 		if (still < 20 || (still - 20) % 40 != 0 || written >= 6) continue;
 		if (FILE* f = fopen(kHangPath, written == 0 ? "w" : "a")) {
 			fprintf(f, "%s%s%s%.1f s without a frame after frame %lu: in \"%s\"; %s (steps %lu, %lu at the last frame)\n",
-			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix139 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix139 watchdog: the main loop stopped\n") : "",
+			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix140 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix140 watchdog: the main loop stopped\n") : "",
 			        written == 0 && gDebugWords[0] ? gDebugWords : "", written == 0 && gDebugWords[0] ? ")\n" : "", double(still) * 0.25,
 			        static_cast<unsigned long>(frame), g3::gTrace.stage ? g3::gTrace.stage : "?",
 			        beats != lastBeats ? "it still goes from step to step (a loop)" : "no step since (stuck in that one)",
 			        static_cast<unsigned long>(beats), static_cast<unsigned long>(lastBeats));
+			watchdogPlayerLine(f);
 			fprintf(f, "  the last steps, oldest first:");
 			const u32 at = g3::gTrace.recentAt;
 			for (u32 k = 0; k < 16; ++k) {
@@ -305,6 +308,14 @@ static void onApt(APT_HookType hook, void*) {
 // The application: 13 KB, with the character's poses in it. Not a local of
 // main(): the stack is 32 KB.
 static App gApp;
+
+static void watchdogPlayerLine(FILE* f) {
+	const g3::Player& pl = gApp.player();
+	const g3::Camera& cam = gApp.camera();
+	fprintf(f, "  player: feet %.0f %.0f %.0f, climbing %d, grounded %d, swimming %d; camera %.0f %.0f %.0f yaw %.2f pitch %.2f; world ladders %lu\n",
+	        double(pl.feet.x), double(pl.feet.y), double(pl.feet.z), int(pl.climbing), int(pl.grounded), int(pl.swimming), double(cam.pos.x),
+	        double(cam.pos.y), double(cam.pos.z), double(cam.yaw), double(cam.pitch), static_cast<unsigned long>(gApp.world().ladderCount()));
+}
 // The DSP: sound plays through it (without the DSP firmware on the card it stays shut and the game is silent).
 static g3::Audio3ds gAudio;
 // What the sound engine met that the scripts name and the archive lacks.
@@ -420,6 +431,7 @@ int main(int, char**) {
 
 	App& app = gApp;
 	g3::setLadderInfoWanted(!gDebugNoLadderInfo);
+	g3::setLadderInfoUsed(!gDebugLadderUnused);
 	app.setOwnWeatherSfx(!gDebugNoWeatherSfx);
 	// Chunks are read, unpacked and given their collision grids on a worker
 	// thread; the frame only copies the finished mesh into video memory.

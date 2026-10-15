@@ -19,6 +19,9 @@ struct SynthOptions {
 	// Crates (medium) and barrels (small) strewn over the whole valley, for a world that is mostly
 	// objects that are drawn only near the camera (a town): the memory and streaming benchmark.
 	int clutter = 0;
+	// A river through the valley (--synth-river): a channel along x about 9 m wide that runs down towards +x, for looking at
+	// the flow and the shore foam; off in every test world.
+	bool river = false;
 };
 
 void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene);

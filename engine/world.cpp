@@ -1859,15 +1859,20 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_windSeconds = double(timeMs) * 0.001;
 	_waveHeight = hasWaterGrid() ? clamp(_cfg.waves, 0.0f, 60.0f) : 0.0f;
 	_waveShade = 0.10f + 0.0065f * _waveHeight;
-	if (hasWind() && _cfg.wind > 0.0f) {
+	_pushX = _pushZ = 0.0f;
+	if (_cfg.wind > 0.0f) { // (the grass sways even in a world baked without --wind: it carries its own sway)
 		const double t = _windSeconds;
 		const float gust = 0.75f + 0.25f * float(sin(t * 0.31) * sin(t * 0.17 + 1.3));
 		// (kWindGain: the sway the baker gives - a tree's crown 4..20 cm, a bush's 2..10 - is what a big screen shows; on the
 		// 3DS's 400x240 it was a sway of 2..8 cm in clear weather, nothing to see. Three and a half times that reads as wind.)
 		constexpr float kWindGain = 3.5f;
 		const float push = clamp(_cfg.wind * _cfg.windWeather * kWindGain, 0.0f, 7.0f) * WORLD_WIND_UNIT * gust;
-		_windX = push * 0.8f;
-		_windZ = push * 0.6f;
+		_pushX = push * 0.8f;
+		_pushZ = push * 0.6f;
+		if (hasWind()) {
+			_windX = _pushX;
+			_windZ = _pushZ;
+		}
 	}
 	u32 n = 0;
 	for (u32 r = 0; r < _stats.chunksLoaded; ++r) {
@@ -1912,6 +1917,14 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 		classify(l, _order[k], false);
 		drawBatches(l, false, 2);
 	}
+}
+
+void World::grassFx(const float origin[3], gfx::ChunkFx& fx) const {
+	fx = gfx::ChunkFx {};
+	if (_pushX == 0.0f && _pushZ == 0.0f) return;
+	fx.windX = _pushX;
+	fx.windZ = _pushZ;
+	fx.windPhase = gfx::windPhaseAt(origin, _windSeconds, kWindWavesPerSecond);
 }
 
 bool World::farCovered(u32 firstChunk, u32 count) const {

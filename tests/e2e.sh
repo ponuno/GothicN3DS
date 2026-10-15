@@ -87,6 +87,13 @@ synth)
 	"$host" --pak "$out/empty.pak" --walk --frames 10 --shots 0 --stats "$out/stats.json" | grep -q "scripts           none" \
 		|| fail "an archive without scripts was not reported as such"
 	[ "$(num npcsTotal)" = "0" ] || fail "inhabitants without scripts"
+	# The new grass (fix147): baked with --grass, drawn with the menu's "many"; nothing of it in an archive without.
+	"$bake" synth --cells 48 --no-voices --grass -o "$out/grass.pak" > "$out/grass_bake.txt"
+	grep -q "^grass (--grass): [0-9]* tufts" "$out/grass_bake.txt" || fail "--grass baked no grass"
+	"$host" --pak "$out/grass.pak" --walk --frames 60 --shots 0 --grass 2 > "$out/grass.txt"
+	grep -q "^grass             setting 2, baked; radius 28 m; last frame [1-9]" "$out/grass.txt" || fail "the grass was not drawn"
+	"$host" --pak "$out/empty.pak" --walk --frames 10 --shots 0 --grass 2 | grep -q "^grass             setting 2, not baked" \
+		|| fail "an archive without grass was not reported as such"
 	"$host" --pak "$out/data.pak" --frames 150 --shots 2 --time 19.5 --out "$out/frame" --stats "$out/stats.json"
 	;;
 zen)

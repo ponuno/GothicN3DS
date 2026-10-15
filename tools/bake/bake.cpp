@@ -5,6 +5,7 @@
 #include "model_bake.h"
 #include "populate.h"
 #include "vcache.h"
+#include "water_fx.h"
 #include "water_texture.h"
 #include "ground_fx.h"
 
@@ -345,6 +346,28 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		if (!opt.quiet) std::puts(s.c_str());
 	};
 
+	// ---- water that looks like water (fix140): river flow and shore foam, added to the scene before anything is counted ----
+	if (opt.waterFoam > 0.0f || opt.riverFlow > 0.0f || opt.waterGlint > 0.0f) {
+		for (size_t w = 0; w < worlds.size(); ++w) {
+			SrcScene& scene = worlds[w].scene;
+			if (scene.indoor) continue;
+			WaterFxOptions fo;
+			fo.foam = opt.waterFoam;
+			fo.flow = opt.riverFlow;
+			fo.glint = opt.waterGlint;
+			WaterFxStats fs;
+			bakeWaterFx(scene, fo, fs);
+			if (fs.glintTriangles) line(format("water glints (%s): %llu triangles", worlds[w].name.c_str(), static_cast<unsigned long long>(fs.glintTriangles)));
+			if (fs.foamTriangles || fs.flowMaterials)
+				line(format("water fx (%s): %u shore tiles; foam: %u shore lines, %.1f km, %llu triangles; rivers: %u tiles, %u flow materials, "
+				            "%llu triangles (tiles by direction %u %u %u %u %u %u %u %u)",
+				            worlds[w].name.c_str(), fs.shoreTiles, fs.shoreChains, double(fs.shoreLength) / 100000.0,
+				            static_cast<unsigned long long>(fs.foamTriangles), fs.riverTiles, fs.flowMaterials,
+				            static_cast<unsigned long long>(fs.flowTriangles), fs.flowTiles[0], fs.flowTiles[1], fs.flowTiles[2],
+				            fs.flowTiles[3], fs.flowTiles[4], fs.flowTiles[5], fs.flowTiles[6], fs.flowTiles[7]));
+		}
+	}
+
 	// ---- which materials and textures are referenced, by any world ----
 	std::vector<std::vector<char>> used(worlds.size());
 	std::vector<std::vector<u32>> materialTriangles(worlds.size());
@@ -408,6 +431,12 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 					bool found;
 					if (opt.waterTexture && waterNames.count(jobs[i].pakName)) {
 						img = makeWaterTexture(opt.waterColor, 128, opt.waterAlpha);
+						found = true;
+					} else if (jobs[i].pakName == texturePakName(kFoamTexture)) {
+						img = makeFoamTexture();
+						found = true;
+					} else if (jobs[i].pakName == texturePakName(kGlintTexture)) {
+						img = makeGlintTexture();
 						found = true;
 					} else {
 						std::lock_guard<std::mutex> g(loadLock);
@@ -663,6 +692,17 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			bakeLights(bw.scene, aoMaterials, lo, lightStats);
 		}
 		if (opt.probe) probeScene(bw.scene, opt.probeAt, opt.probeRadius, "after occlusion and lamps", line);
+		// ---- the new grass (--grass): sown now, with the ground's light final; the old grass objects it replaces
+		// (--grass-replace) go before the chunks are cut; packed after the sun's shadow, which it takes ----
+		GrassPlacement grass;
+		GrassBakeStats grassStats;
+		bool grassOk = false;
+		std::string grassWhy;
+		if (opt.grass.enabled && !scene.indoor) {
+			grassOk = placeGrass(bw.scene, opt.grass, grass, grassStats, grassWhy);
+			if (grassOk && opt.grass.replaceOld) grassStats.oldRemoved = removeOldGrass(bw.scene, grass);
+		}
+		std::vector<SunMask> grassSunMasks;
 		const bool hasWind = opt.wind && windyMaterials > 0;
 		ChunkerOptions chunkerOpt = opt.chunker;
 		// The water cut finely along the shores (in the chunks only: the far layer, visibility and the rest see the
@@ -876,6 +916,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				sc[i].scaleZ = 1.0f / std::max(m.z1 - m.z0, 1.0f);
 			}
 			append(sunBlob, sc);
+			if (grassOk) grassSunMasks = masks;
 			const std::string sunName = "world/" + bw.name + "/sun";
 			pak.add(sunName, ASSET_META, sunBlob);
 			wh.sunEntry = hashName(sunName.c_str());
@@ -885,6 +926,47 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			            static_cast<unsigned long long>(ss.texels), double(so.texel),
 			            ss.texels ? 100.0 * double(ss.shaded) / double(ss.texels) : 0.0, static_cast<unsigned long long>(ss.empty),
 			            double(ss.rays) / 1e6, ss.seconds, double(ss.bytes) / MB));
+		}
+		// ---- the grass: the sun's shade at each tuft, then the index and the list ----
+		if (grassOk) {
+			if (!grassSunMasks.empty()) {
+				size_t last = 0;
+				shadeGrass(grass, [&](float x, float z, float& shade) {
+					for (size_t n = 0; n < grassSunMasks.size(); ++n) {
+						const SunMask& m = grassSunMasks[(last + n) % grassSunMasks.size()];
+						if (x < m.x0 || x >= m.x1 || z < m.z0 || z >= m.z1 || !m.width || !m.height) continue;
+						if (m.texture.size() < sizeof(TexHeader) + m.width * m.height / 2) continue;
+						last = (last + n) % grassSunMasks.size();
+						const u32 tx = std::min(m.width - 1, u32((x - m.x0) / (m.x1 - m.x0) * float(m.width)));
+						const u32 ty = std::min(m.height - 1, u32((z - m.z0) / (m.z1 - m.z0) * float(m.height)));
+						const u32 nib = texL4Nibble(m.width, m.height, tx, ty);
+						const u8 value = u8((m.texture[sizeof(TexHeader) + (nib >> 1)] >> ((nib & 1u) * 4u)) & 15u);
+						shade = 1.0f - float(value) / 15.0f;
+						return true;
+					}
+					return false;
+				}, grassStats);
+			}
+			const std::string grassName = "world/" + bw.name + "/grass", dataName = grassName + "_data", atlasName = "tex/_grass";
+			if (!pak.has(atlasName)) {
+				const std::vector<u8> atlas = grassAtlasTexture(opt.tex);
+				grassStats.atlasBytes = atlas.size();
+				pak.add(atlasName, ASSET_TEXTURE, atlas);
+			}
+			std::vector<u8> grassIndex, grassData;
+			encodeGrass(grass, opt.grass, hashName(dataName.c_str()), hashName(atlasName.c_str()), grassIndex, grassData, grassStats);
+			pak.add(grassName, ASSET_META, grassIndex);
+			pak.add(dataName, ASSET_BLOB, grassData, false); // (raw: the runtime reads it a tile at a time)
+			line(format("grass (--grass): %u tufts (%.1f per m2 at full density; %.0f m2 of it) in %u tiles of %.0f m, the fullest %u; "
+			            "pictures %.0f/%.0f/%.0f/%.0f %%; %u in the sun's shadow; %u places without ground, %u left out of full tiles; "
+			            "old grass: %u triangles taken out%s; %.2f MB",
+			            grassStats.tufts, double(opt.grass.density), grassStats.areaFull, grassStats.tiles, double(opt.grass.tileSize) / 100.0,
+			            grassStats.maxTile, double(grassStats.variantShare[0] * 100.0f), double(grassStats.variantShare[1] * 100.0f),
+			            double(grassStats.variantShare[2] * 100.0f), double(grassStats.variantShare[3] * 100.0f), grassStats.shaded,
+			            grassStats.noGround, grassStats.capped, grassStats.oldRemoved, opt.grass.replaceOld ? "" : " (kept: --grass-replace)",
+			            double(grassStats.bytes) / MB));
+		} else if (opt.grass.enabled && !scene.indoor) {
+			line("grass (--grass): none: " + grassWhy);
 		}
 		// ---- --simplify: fewer triangles in the geometry itself ----
 		if (opt.simplify.enabled) {

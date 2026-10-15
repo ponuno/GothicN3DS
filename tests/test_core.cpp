@@ -24,9 +24,11 @@
 #include "ground_fx.h"
 #include "puddles.h"
 #include "rain.h"
+#include "ripples.h"
 #include "sun_bake.h"
 #include "weather_sfx.h"
 #include "godrays.h"
+#include "water_fx.h"
 #include "water_texture.h"
 #include "model_bake.h"
 #include "pacer.h"
@@ -1470,8 +1472,8 @@ static void testWorlds() {
 	const BakeResult result = bakeWorlds(worlds, bo, writer);
 	const std::string path = gDir + "/worlds.pak";
 	writer.write(path);
-	// Textures are shared: both worlds use the same water, rock and dirt.
-	CHECK(result.textures == 13 && result.report.find("== world 'cave'") != std::string::npos);
+	// Textures are shared: both worlds use the same water, rock and dirt (and the one foam picture, fix140).
+	CHECK(result.textures == 14 && result.report.find("== world 'cave'") != std::string::npos);
 	CHECK(result.report.find("portals: 1 of 1 lead to a baked world: cave at CAVE_ENTRY") != std::string::npos);
 	CHECK(result.report.find("portals: 1 of 1 lead to a baked world: world at CAMP_GATE") != std::string::npos);
 	CHECK(result.report.find("1 animated, 1 scrolling") != std::string::npos);
@@ -1483,7 +1485,7 @@ static void testWorlds() {
 	CHECK(std::string(app.worldName()) == "world/world");
 	World& w = app.world();
 	Player& pl = app.player();
-	CHECK(w.header().portalCount == 1 && w.header().textureCount == 14);
+	CHECK(w.header().portalCount == 1 && w.header().textureCount == 15);
 	w.preload(app.camera().pos);
 
 	// ---- detail classes: small objects are only drawn near the camera ----
@@ -5425,7 +5427,7 @@ static void testWayNet() {
 
 // The two synthetic worlds with a script of the caller's and the people it names.
 static BakeResult bakeLifeWorlds(const std::string& source, const std::string& path, std::vector<BakeWorld>& worlds,
-                                 bool withFightAi = true, bool sunShadow = false) {
+                                 bool withFightAi = true, bool sunShadow = false, bool grass = false) {
 	SrcScript script;
 	compileDaedalus(source, script);
 	worlds.assign(2, BakeWorld());
@@ -5450,6 +5452,7 @@ static BakeResult bakeLifeWorlds(const std::string& source, const std::string& p
 	bo.sun.enabled = sunShadow;
 	bo.sun.texel = 48.0f;
 	bo.sun.samples = 3;
+	bo.grass.enabled = grass;
 	BakeScripts scripts;
 	scripts.script = &script;
 	SrcScript fight;
@@ -5462,6 +5465,207 @@ static BakeResult bakeLifeWorlds(const std::string& source, const std::string& p
 	const BakeResult r = bakeWorlds(worlds, models, scripts, bo, writer);
 	writer.write(path);
 	return r;
+}
+
+// The new grass (fix147, g3ds-bake --grass; engine/grass.h): the bake sows the same tufts every time, on the ground and
+// not in the water nor on the paths, packs them by tiles; the runtime makes meshes of the tiles round the camera only,
+// draws them as cut-outs, presses them aside round the hero and the inhabitants, gives way under load and frees all.
+static void testGrass() {
+	// The bake: the map and the tufts, twice the same.
+	SrcScene scene;
+	SynthOptions so;
+	so.cells = 48;
+	so.huts = 6;
+	so.trees = 20;
+	buildSyntheticScene(so, scene);
+	GrassOptions go;
+	go.enabled = true;
+	GrassPlacement a, b;
+	GrassBakeStats sa, sb;
+	std::string why;
+	CHECK(placeGrass(scene, go, a, sa, why) && placeGrass(scene, go, b, sb, why));
+	CHECK(a.seeds.size() > 1000 && a.seeds.size() == b.seeds.size());
+	bool same = a.seeds.size() == b.seeds.size();
+	for (size_t i = 0; same && i < a.seeds.size(); ++i)
+		same = std::memcmp(a.seeds[i].pos, b.seeds[i].pos, sizeof(a.seeds[i].pos)) == 0 && a.seeds[i].look == b.seeds[i].look &&
+		       a.seeds[i].rgb[1] == b.seeds[i].rgb[1];
+	CHECK(same);
+	// Nothing in the water; on the ground (within a few cm of the map's ground); much less on the paths than elsewhere.
+	const GrassMap& map = a.map;
+	u32 wet = 0, floating = 0, onPath = 0;
+	double pathArea = 0;
+	for (const GrassSeed& s : a.seeds) {
+		int cx, cz;
+		if (!map.cellOf(s.pos[0], s.pos[2], cx, cz)) {
+			++floating;
+			continue;
+		}
+		const size_t k = map.at(cx, cz);
+		wet += map.waterY[k] > GrassMap::NONE && map.waterY[k] > s.pos[1] - 5.0f;
+		floating += std::fabs(s.pos[1] - map.groundY[k]) > 120.0f;
+	}
+	auto nearPath = [&](float x, float z) {
+		for (const auto& e : scene.wayEdges) {
+			const float* p = scene.wayPoints[e.first].pos;
+			const float* q = scene.wayPoints[e.second].pos;
+			const float dx = q[0] - p[0], dz = q[2] - p[2], len2 = dx * dx + dz * dz;
+			const float t = len2 > 0 ? std::clamp(((x - p[0]) * dx + (z - p[2]) * dz) / len2, 0.0f, 1.0f) : 0.0f;
+			const float ex = p[0] + dx * t - x, ez = p[2] + dz * t - z;
+			if (ex * ex + ez * ez < 80.0f * 80.0f) return true;
+		}
+		return false;
+	};
+	for (const GrassSeed& s : a.seeds) onPath += nearPath(s.pos[0], s.pos[2]);
+	double groundArea = 0;
+	for (int z = 0; z < map.h; ++z)
+		for (int x = 0; x < map.w; ++x) {
+			if (map.groundY[map.at(x, z)] == GrassMap::NONE || map.texW[map.at(x, z)] < 0.5f) continue;
+			groundArea += map.cellM2();
+			if (nearPath(map.cx(x), map.cz(z))) pathArea += map.cellM2();
+		}
+	const double pathDensity = pathArea > 0 ? double(onPath) / pathArea : 0.0, allDensity = double(a.seeds.size()) / std::max(groundArea, 1.0);
+	std::printf("  bake: %zu tufts (%u without ground), %u in water, %u floating; %.2f tufts/m2 on the paths, %.2f on grassy ground\n",
+	            a.seeds.size(), sa.noGround, wet, floating, pathDensity, allDensity);
+	CHECK(wet == 0 && floating == 0 && sa.noGround < a.seeds.size() / 50);
+	CHECK(scene.wayEdges.empty() || pathArea == 0 || pathDensity < 0.5 * allDensity);
+	// Packing: every tuft in its tile, the index sorted, the list raw-sized.
+	{
+		std::vector<u8> index, data;
+		encodeGrass(a, go, 1, 2, index, data, sa);
+		GrassHeader h;
+		std::memcpy(&h, index.data(), sizeof(h));
+		CHECK(h.magic == GRASS_MAGIC && grassBlobSize(h) == index.size() && h.tuftCount * sizeof(GrassTuft) == data.size() &&
+		      h.tuftCount == a.seeds.size());
+		const GrassTile* tiles = reinterpret_cast<const GrassTile*>(index.data() + sizeof(h));
+		bool sorted = true, inside = true;
+		u32 sum = 0;
+		for (u32 t = 0; t < h.tileCount; ++t) {
+			if (t) sorted = sorted && (tiles[t - 1].z < tiles[t].z || (tiles[t - 1].z == tiles[t].z && tiles[t - 1].x < tiles[t].x));
+			sum += tiles[t].count;
+			const GrassTuft* list = reinterpret_cast<const GrassTuft*>(data.data()) + tiles[t].first;
+			for (u32 i = 0; i < tiles[t].count; ++i) inside = inside && float(list[i].y) <= tiles[t].yMax - tiles[t].yMin + 1.0f;
+		}
+		CHECK(sorted && inside && sum == h.tuftCount);
+		// The atlas: a cut-out of four pictures whose smallest level still has blades.
+		const std::vector<u8> atlas = grassAtlasTexture(TexBakeOptions {});
+		TexHeader th;
+		std::memcpy(&th, atlas.data(), sizeof(th));
+		CHECK(texValidate(th, u32(atlas.size() - sizeof(th))) && th.width == 256 && th.height == 64 && th.format == TEX_ETC1A4 &&
+		      (th.flags & TEXF_ALPHA_TEST) && th.mipCount == 4);
+		u32 cover[4] = {0, 0, 0, 0};
+		for (u32 l = 0; l < th.mipCount; ++l) {
+			const u32 w = th.width >> l, hh = th.height >> l;
+			std::vector<u8> rgba(size_t(w) * hh * 4);
+			texDecodeLevel(th, atlas.data() + sizeof(th), l, rgba.data());
+			u32 n = 0;
+			for (size_t i = 3; i < rgba.size(); i += 4) n += rgba[i] >= 128;
+			cover[l] = u32(100.0 * n / (double(w) * hh));
+		}
+		std::printf("  atlas: %u x %u, coverage %u/%u/%u/%u %% by level\n", th.width, th.height, cover[0], cover[1], cover[2], cover[3]);
+		CHECK(cover[0] > 10 && cover[3] + 8 >= cover[0]);
+	}
+
+	// The game: a world baked with it (and the sun's shadow), on the PC's renderer.
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/grass.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds, true, true, true);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	CHECK(app.grass().available());
+	app.skipChapters();
+	app.npcs().game().setQuiet(true);
+	app.weather().configure(WEATHER_CLEAR, true);
+	app.weather().settle();
+	app.environment().timeOfDay = 14.5f;
+	app.settings().timeFlow = 0;
+	app.settings().wind = 2;
+	app.applySettings();
+	app.world().preload(app.camera().pos);
+	for (int i = 0; i < 20; ++i) app.update(Input {}, 1.0f / 30.0f);
+	// Off (the default): nothing held, nothing drawn.
+	CHECK(app.settings().grass == 0 && app.grassRadius() == 0.0f);
+	app.render();
+	CHECK(app.grass().stats().tiles == 0 && app.grass().stats().slots == 0);
+	const std::vector<u8> off(gfx::softFramebuffer(), gfx::softFramebuffer() + gfx::SCREEN_W * gfx::SCREEN_H * 4);
+	// Many: the tiles round the camera arrive a little a frame, then it is drawn.
+	app.settings().grass = 2;
+	app.applySettings();
+	CHECK(std::fabs(app.grassRadius() - 2800.0f) < 1.0f);
+	u32 most = 0, frames = 0, bigBuild = 0;
+	for (int i = 0; i < 40; ++i) {
+		app.render();
+		most = std::max(most, app.grass().stats().tufts);
+		bigBuild = std::max(bigBuild, app.grass().stats().built);
+		frames += app.grass().stats().tiles > 0;
+	}
+	const GrassStats many = app.grass().stats();
+	const u8* on = gfx::softFramebuffer();
+	u32 changed = 0;
+	for (u32 i = 0; i < u32(gfx::SCREEN_W * gfx::SCREEN_H); ++i)
+		changed += std::abs(int(on[i * 4]) - int(off[i * 4])) + std::abs(int(on[i * 4 + 1]) - int(off[i * 4 + 1])) > 12;
+	std::printf("  many: %u tiles, %u tufts, %u triangles in %u draw calls; %u tiles held (%.2f MB), %u made, %u read; %u pixels changed\n",
+	            many.tiles, many.tufts, many.triangles, many.drawCalls, many.slots, double(many.meshBytes) / 1048576.0, many.builtTotal,
+	            many.reads, changed);
+	CHECK(many.tiles > 0 && many.tufts > 100 && many.triangles == many.tufts * 4 && many.drawCalls == many.tiles && changed > 100);
+	CHECK(many.slots <= Grass::SLOTS && many.reads == many.slots && bigBuild <= 8);
+	// What is drawn lies within the radius of the camera: every tuft of a tile held is either within it, or left out.
+	{
+		const Vec3 cam = app.camera().pos;
+		u32 within = 0;
+		for (u32 t = 0; t < app.grass().tileCount(); ++t) {
+			const GrassTile& tile = app.grass().tile(t);
+			const float x0 = app.grass().header().originX + float(tile.x) * app.grass().header().tileSize;
+			const float z0 = app.grass().header().originZ + float(tile.z) * app.grass().header().tileSize;
+			const float dx = std::max({x0 - cam.x, 0.0f, cam.x - (x0 + app.grass().header().tileSize)});
+			const float dz = std::max({z0 - cam.z, 0.0f, cam.z - (z0 + app.grass().header().tileSize)});
+			within += dx * dx + dz * dz < 2800.0f * 2800.0f;
+		}
+		CHECK(many.slots >= std::min<u32>(within, Grass::SLOTS) && app.grass().findTile(-30000, -30000) < 0);
+	}
+	// Few: half the tufts, a shorter radius.
+	app.settings().grass = 1;
+	app.applySettings();
+	for (int i = 0; i < 40; ++i) app.render();
+	const GrassStats few = app.grass().stats();
+	std::printf("  few: %u tiles, %u tufts\n", few.tiles, few.tufts);
+	CHECK(few.tufts > 0 && few.tufts * 3 < many.tufts * 2);
+	// Under load it gives way first: the pacer's detail at 75 % halves the radius, the relief takes more.
+	app.settings().grass = 2;
+	app.applySettings();
+	app.world().config().detailScale = 0.75f;
+	CHECK(std::fabs(app.grassRadius() - 1400.0f) < 1.0f);
+	app.setGfxRelief(true);
+	CHECK(app.grassRadius() < 1400.0f);
+	app.setGfxRelief(false);
+	app.world().config().detailScale = 1.0f;
+	// debug.txt "grass": not drawn.
+	app.setRenderSkip(App::SKIP_GRASS);
+	app.render();
+	CHECK(app.grass().stats().tiles == 0);
+	app.setRenderSkip(0);
+	// Walking through it: the tiles under the hero are made again as he goes (pressed aside round his feet).
+	const u32 madeBefore = app.grass().stats().builtTotal;
+	for (int i = 0; i < 60; ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, 1.0f / 30.0f);
+		app.render();
+	}
+	std::printf("  walking: %u tiles made in 60 frames\n", app.grass().stats().builtTotal - madeBefore);
+	CHECK(app.grass().stats().builtTotal > madeBefore);
+	// Settings: a file of before version 24 keeps it off; a wrong value is put right.
+	{
+		Settings st;
+		st.grass = 7;
+		st.sanitize();
+		CHECK(st.grass == 0 && st.grassRadiusCm() == 0.0f);
+		st.grass = 1;
+		CHECK(st.grassShare() == 0.5f && st.grassRadiusCm() == 2000.0f);
+	}
+	// A world switch drops it all; the end frees every mesh.
+	app.shutdown();
+	CHECK(gfx::memStats().meshCount == 0);
 }
 
 // The inhabitants' life: states run by the scripts, walking the way net.
@@ -9233,9 +9437,9 @@ static void testShore() {
 		for (int k = 0; k < 3; ++k) {
 			lo = std::min<int>(lo, t.v[k].rgba[0]);
 			hi = std::max<int>(hi, t.v[k].rgba[1]);
-			bright += t.v[k].rgba[0] > 230;
+			bright += t.v[k].rgba[0] > 190;
 		}
-	CHECK(lo == 180 && hi > 215 && bright > 0); // deep water keeps its tone; the shallows are lighter; foam is nearly white
+	CHECK(lo == 180 && hi > 200 && hi < 235 && bright > 0); // deep water keeps its tone; the shallows are a little lighter (not milky); the edge warms to foam
 	// Wet ground: the corner at the water's level darkens, one 3 m up does not.
 	GroundFxStats st;
 	bakeWetShore(scene, 1.0f, st);
@@ -9269,6 +9473,127 @@ static void testShore() {
 	for (SrcVertex& v : d.triangles[0].v) v.rgba[0] = 200;
 	bakeCanopy(d, plant, 0.0f, 1800.0f, 1, cs);
 	CHECK(d.triangles[0].v[0].rgba[0] == 200);
+}
+
+// fix140: a river through a valley that runs down towards +x (or -x): the water in it flows that way, and the shores get foam.
+// The player's ripples (fix141): rings spread and fade; none outside the water.
+static void testRipples() {
+	CHECK(Ripples::radius(0.0f, 1.0f) < Ripples::radius(0.5f, 1.0f) && Ripples::radius(0.5f, 1.0f) < Ripples::radius(1.0f, 1.0f));
+	CHECK(Ripples::radius(1.0f, 1.0f) > Ripples::radius(1.0f, 0.2f));
+	CHECK(Ripples::opacity(0.0f, 0.8f) > Ripples::opacity(0.5f, 0.8f) && Ripples::opacity(1.0f, 0.8f) == 0.0f);
+	Ripples r;
+	CHECK(r.rings() == 0);
+}
+
+static void testWaterFx() {
+	auto build = [](float bedSlope) {
+		SrcScene scene;
+		scene.materials.resize(2);
+		scene.materials[1].water = true;
+		scene.materials[1].scroll[0] = 0.01f; // (the game's own scroll: replaced in the river)
+		auto tri = [&](u32 m, const float p[3][3], bool water) {
+			SrcTriangle t {};
+			t.material = m;
+			for (int k = 0; k < 3; ++k) {
+				for (int a = 0; a < 3; ++a) t.v[k].pos[a] = p[k][a];
+				t.v[k].uv[0] = p[k][0] / 900.0f;
+				t.v[k].uv[1] = p[k][2] / 900.0f;
+				t.v[k].rgba[0] = t.v[k].rgba[1] = t.v[k].rgba[2] = water ? 200 : 120;
+				t.v[k].rgba[3] = 255;
+			}
+			scene.triangles.push_back(t);
+		};
+		const float x0 = -9000.0f, x1 = 9000.0f, z0 = -3000.0f, z1 = 3000.0f, step = 200.0f;
+		auto ground = [&](float x, float z) {
+			// A channel 6 m wide whose bed falls by 2 m along 18 km, banks 4 m over the water.
+			const float bed = -60.0f - bedSlope * (x - x0) / (x1 - x0) * 200.0f - (bedSlope < 0 ? 200.0f * -1.0f * 0.0f : 0.0f);
+			const float t = std::clamp((std::fabs(z) - 200.0f) / 300.0f, 0.0f, 1.0f);
+			const float s = t * t * (3.0f - 2.0f * t);
+			return bed + (400.0f - bed) * s;
+		};
+		for (float x = x0; x < x1; x += step)
+			for (float z = z0; z < z1; z += step) {
+				const float a[3][3] = {{x, ground(x, z), z}, {x + step, ground(x + step, z), z}, {x, ground(x, z + step), z + step}};
+				const float b[3][3] = {{x + step, ground(x + step, z), z}, {x + step, ground(x + step, z + step), z + step}, {x, ground(x, z + step), z + step}};
+				tri(0, a, false);
+				tri(0, b, false);
+			}
+		const float w1[3][3] = {{x0, 0, z0}, {x1, 0, z0}, {x0, 0, z1}}, w2[3][3] = {{x1, 0, z0}, {x1, 0, z1}, {x0, 0, z1}};
+		tri(1, w1, true);
+		tri(1, w2, true);
+		return scene;
+	};
+	for (int dir = 0; dir < 2; ++dir) {
+		// dir 0: the bed falls towards +x, 1: towards -x (it rises).
+		SrcScene scene = build(dir == 0 ? 1.0f : -1.0f);
+		if (dir == 1) {
+			// (rising towards +x: the bed's height is the mirror image)
+		}
+		const size_t trianglesBefore = scene.triangles.size();
+		WaterFxOptions opt;
+		opt.foam = 1.0f;
+		opt.flow = 70.0f;
+		opt.glint = dir == 0 ? 0.5f : 0.0f;
+		WaterFxStats st;
+		bakeWaterFx(scene, opt, st);
+		{
+			bool glintMaterial = false;
+			for (const SrcMaterial& m : scene.materials)
+				if (m.name == "G3_WATER_GLINT" && m.blend == SrcBlend::Add) glintMaterial = true;
+			CHECK(glintMaterial == (dir == 0) && (st.glintTriangles > 0) == (dir == 0));
+		}
+		if (false) std::printf("  water fx: %u shore tiles, %u chains, %llu foam triangles, %u river tiles, %u flow materials\n", st.shoreTiles, st.shoreChains, (unsigned long long)st.foamTriangles, st.riverTiles, st.flowMaterials);
+		CHECK(st.shoreTiles >= 3 && st.riverTiles >= 3 && st.flowMaterials == 1 && st.foamTriangles > 200 && st.shoreChains >= 1);
+		// The flow's copy of the water material scrolls the pattern with the water: -J^-1 scroll = (+-70 cm/s, 0) in x z; J = 1/900.
+		int flowMaterial = -1;
+		for (size_t i = 0; i < scene.materials.size(); ++i)
+			if (scene.materials[i].name.find("_FLOW") != std::string::npos) flowMaterial = int(i);
+		CHECK(flowMaterial > 0);
+		if (flowMaterial > 0) {
+			const SrcMaterial& m = scene.materials[size_t(flowMaterial)];
+			const float want = (dir == 0 ? -1.0f : 1.0f) * 70.0f / 900.0f;
+			CHECK(m.water && std::fabs(m.scroll[0] - want) < 0.002f && std::fabs(m.scroll[1]) < 0.002f);
+		}
+		// The foam: its own blended material after the water's, lying over the water's edge, within the channel.
+		int foamMaterial = -1;
+		for (size_t i = 0; i < scene.materials.size(); ++i)
+			if (scene.materials[i].texture == kFoamTexture) foamMaterial = int(i);
+		CHECK(foamMaterial > 0 && scene.materials[size_t(foamMaterial)].blend == SrcBlend::Alpha && scene.materials[size_t(foamMaterial)].noCollision);
+		u64 foam = 0, moved = 0, outside = 0, below = 0;
+		for (const SrcTriangle& t : scene.triangles) {
+			if (int(t.material) == foamMaterial) {
+				++foam;
+				for (const SrcVertex& v : t.v) {
+					outside += std::fabs(v.pos[2]) > 800.0f;
+					below += v.pos[1] < 0.5f;
+				}
+			} else if (t.material < scene.materials.size() && scene.materials[t.material].name.find("_FLOW") != std::string::npos) {
+				++moved;
+			}
+		}
+		CHECK(foam == st.foamTriangles && moved == st.flowTriangles && moved > 0 && outside == 0 && below == 0);
+		CHECK(scene.triangles.size() > trianglesBefore);
+	}
+	// Nothing asked for: nothing done. A lake (no channel): no flow.
+	{
+		SrcScene scene = build(1.0f);
+		const size_t n = scene.triangles.size(), m = scene.materials.size();
+		WaterFxOptions off;
+		WaterFxStats st;
+		bakeWaterFx(scene, off, st);
+		CHECK(scene.triangles.size() == n && scene.materials.size() == m);
+	}
+	// The foam's picture tiles along the shore and fades at both edges.
+	{
+		const SrcImage f = makeFoamTexture(64, 32);
+		CHECK(f.width == 64 && f.height == 32 && f.rgba.size() == 64u * 32u * 4u);
+		int solid = 0;
+		for (int x = 0; x < 64; ++x) {
+			CHECK(f.rgba[size_t(31 * 64 + x) * 4 + 3] < 8); // the open water's edge: nothing
+			solid += f.rgba[size_t(10 * 64 + x) * 4 + 3] > 40;
+		}
+		CHECK(solid > 8); // some foam at the water's edge
+	}
 }
 
 static void testWeather() {
@@ -12014,6 +12339,19 @@ static void testSunShadow() {
 	for (int i = 0; i < 30; ++i) app.update(Input {}, 1.0f / 30.0f);
 	app.environment().timeOfDay = 14.5f;
 	CHECK(app.sunShadowDarkness() > 0.4f);
+	// fix146: the menu's strength - each step darker than the one before.
+	{
+		const float normal = app.sunShadowDarkness();
+		app.settings().sunShadows = 2;
+		app.applySettings();
+		const float strong = app.sunShadowDarkness();
+		app.settings().sunShadows = 3;
+		app.applySettings();
+		const float strongest = app.sunShadowDarkness();
+		CHECK(strong > normal && strongest > strong && strongest <= 0.85f + 1e-4f);
+		app.settings().sunShadows = 1;
+		app.applySettings();
+	}
 	app.settings().sunShadows = 0;
 	app.applySettings();
 	CHECK(app.sunShadowDarkness() == 0.0f);
@@ -12099,6 +12437,7 @@ int main(int argc, char** argv) {
 	             {"settings", testSettings},
 	             {"graphics+", testGfxPlus},
 	             {"sun shadow", testSunShadow},
+             {"grass", testGrass},
 	             {"far layer", testFarLayer},
 	             {"chunk tiers", testChunkTiers},
 	             {"visibility", testVisibility},
@@ -12106,6 +12445,8 @@ int main(int argc, char** argv) {
 	             {"visibility rooms", testVisibilityRooms},
 	             {"lod", testLod},
              {"shore", testShore},
+             {"water fx", testWaterFx},
+             {"ripples", testRipples},
              {"weather", testWeather},
              {"simplify", testSimplify},
              {"displaytiming", testDisplayTiming},

@@ -6,7 +6,7 @@
 namespace g3 {
 
 // `size` x size texels (a power of two); tiles without a seam.
-// `alpha`: the water's opacity at its clearest, 0..255 (the caustics add up to 70 on top).
+// `alpha`: the water's opacity at its clearest, 0..255 (the caustics add up to 45 on top).
 SrcImage makeWaterTexture(const unsigned char color[3], int size = 128, int alpha = 110);
 
 } // namespace g3

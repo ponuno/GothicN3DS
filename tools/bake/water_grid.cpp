@@ -335,10 +335,13 @@ void WaterGrid::shoreColour(SrcVertex& v) const {
 	if (_ground.sample(v.pos[0], level + 300.0f, v.pos[2], rgba, &top)) depth = level - top;
 	const float k = std::clamp(depth / 400.0f, 0.0f, 1.0f);
 	const float deepK = k * k * (3.0f - 2.0f * k); // 0 shallow .. 1 deep
-	static const float kShallow[3] = {1.06f, 1.26f, 1.10f}; // turquoise: more green than the deep water's tone
+	// (fix140: a gentle turquoise, and the foam only at the very edge. Before, the shallows were x1.26 in green and white up to
+	// 50 cm deep: on a narrow, shallow river every corner was "shore" and the whole river went milky. The crisp foam is the
+	// shore strips' job now (`--water-foam`, shore_foam.cpp); the corner colour only warms the edge a little.)
+	static const float kShallow[3] = {1.02f, 1.13f, 1.05f}; // turquoise: more green than the deep water's tone
 	const float s = std::min(_opt.shore, 1.0f);
-	float foam = 1.0f - std::clamp((depth + 20.0f) / 70.0f, 0.0f, 1.0f); // white by the shore, gone from 50 cm
-	foam *= 0.7f * s;
+	float foam = 1.0f - std::clamp((depth + 10.0f) / 35.0f, 0.0f, 1.0f); // white by the shore, gone from 25 cm
+	foam *= 0.30f * s;
 	for (int c = 0; c < 3; ++c) {
 		const float base = float(v.rgba[c]);
 		float col = base * (1.0f + (kShallow[c] - 1.0f) * (1.0f - deepK) * s);

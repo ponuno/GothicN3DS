@@ -156,7 +156,7 @@ static void flushHitches() {
 
 static void startHitchLog(const char* what) {
 	if (FILE* f = fopen(kHitchPath, "w")) {
-		fprintf(f, "# gothic3ds fix145 hitches: %s\n", what);
+		fprintf(f, "# gothic3ds fix147 hitches: %s\n", what);
 		fclose(f);
 	}
 	gHitchCount = 0;
@@ -174,7 +174,8 @@ static volatile bool gWatchdogPaused = false; // the HOME Menu, the system's sle
 static Thread gWatchdog = nullptr;
 
 // debug.txt (fix135): words that leave parts of the picture out, to find what hangs the GPU. Any of:
-//   sky world npcs things heroshadow hero ground blended godrays rain particles overlay  (App::RenderSkip)
+//   sky world npcs things heroshadow hero ground blended godrays rain particles overlay grass  (App::RenderSkip)
+//   nograss      the same as grass (fix147): the new grass is not drawn, nor its tiles made, whatever the menu says
 //   all          every one of those (only the clear colour is drawn)
 //   nosun        the sun's shadow stages never set (as C-Stick up)
 //   classic      citro3d's own frames instead of the overlapped ones (as Y held)
@@ -205,7 +206,7 @@ static void readDebugFile() {
 	} kWords[] = {{"sky", App::SKIP_SKY}, {"world", App::SKIP_WORLD}, {"npcs", App::SKIP_NPCS}, {"things", App::SKIP_THINGS},
 	              {"heroshadow", App::SKIP_HERO_SHADOW}, {"hero", App::SKIP_HERO}, {"ground", App::SKIP_GROUND}, {"blended", App::SKIP_BLENDED},
 	              {"godrays", App::SKIP_GODRAYS}, {"rain", App::SKIP_RAIN}, {"particles", App::SKIP_PARTICLES}, {"overlay", App::SKIP_OVERLAY},
-	              {"all", 0xFFFFFFFFu}};
+	              {"grass", App::SKIP_GRASS}, {"nograss", App::SKIP_GRASS}, {"all", 0xFFFFFFFFu}};
 	for (char* p = text; *p;) {
 		while (*p && !(*p >= 'a' && *p <= 'z') && !(*p >= 'A' && *p <= 'Z') && !(*p >= '0' && *p <= '9')) ++p; // (fix144: digits too - sunl4)
 		char* w = p;
@@ -263,7 +264,7 @@ static void watchdogMain(void*) {
 		if (still < 20 || (still - 20) % 40 != 0 || written >= 6) continue;
 		if (FILE* f = fopen(kHangPath, written == 0 ? "w" : "a")) {
 			fprintf(f, "%s%s%s%.1f s without a frame after frame %lu: in \"%s\"; %s (steps %lu, %lu at the last frame)\n",
-			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix145 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix145 watchdog: the main loop stopped\n") : "",
+			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix147 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix147 watchdog: the main loop stopped\n") : "",
 			        written == 0 && gDebugWords[0] ? gDebugWords : "", written == 0 && gDebugWords[0] ? ")\n" : "", double(still) * 0.25,
 			        static_cast<unsigned long>(frame), g3::gTrace.stage ? g3::gTrace.stage : "?",
 			        beats != lastBeats ? "it still goes from step to step (a loop)" : "no step since (stuck in that one)",
@@ -1057,8 +1058,14 @@ int main(int, char**) {
 			}
 			// The water's waves: the setting; '-' after it: not in data.pak (bake with --water-grid); the draw calls and
 			// thousands of triangles of water that waved in the last frame.
-			reportLine("waves %d%c %lu dc %lu tri", int(app.settings().waves), app.world().hasWaterGrid() ? ' ' : '-',
-			     static_cast<unsigned long>(ws.waveDrawCalls), static_cast<unsigned long>(ws.waveTriangles));
+			// ... and the new grass (fix147): the setting ('-': not in data.pak, bake with --grass; 'x': debug.txt nograss), its
+			// radius now (m), tiles drawn / held, tufts and thousands of triangles drawn in the last frame.
+			const g3::GrassStats& gs = app.grass().stats();
+			reportLine("waves %d%c %lu/%lu gr%d%c %.0fm %lu/%lu %lu %luk", int(app.settings().waves), app.world().hasWaterGrid() ? ' ' : '-',
+			     static_cast<unsigned long>(ws.waveDrawCalls), static_cast<unsigned long>(ws.waveTriangles / 1000), int(app.settings().grass),
+			     !app.grass().available() ? '-' : (app.renderSkip() & App::SKIP_GRASS) ? 'x' : ' ', double(gs.radius / 100.0f),
+			     static_cast<unsigned long>(gs.tiles), static_cast<unsigned long>(gs.slots), static_cast<unsigned long>(gs.tufts),
+			     static_cast<unsigned long>(gs.triangles / 1000));
 			// (Chunks in memory: the world's own + those of medium and small objects, of all; wanted and not there: the same.)
 			// (RP: the re-projection, when asked for: columns of the last move and refreshes that showed the old picture
 			// moved; "RP!" - asked for, but the framebuffers were not found as expected, so it is not running.)

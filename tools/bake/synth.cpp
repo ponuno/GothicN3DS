@@ -302,6 +302,15 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 		float rim = std::pow(std::min(d / half, 1.0f), 3.0f) * 9000.0f; // mountains at the border
 		float lake = -std::exp(-((x - 6500) * (x - 6500) + (z + 5200) * (z + 5200)) / (2 * 2600.0f * 2600.0f)) * 1500.0f;
 		float h = hills + detail + rim + lake;
+		if (opt.river) {
+			// A flood plain a little over the water, and in it a channel that goes down towards +x.
+			const float zr = 6500.0f, dz = std::fabs(z - zr);
+			const float plain = smooth(std::clamp(1.0f - (dz - 500.0f) / 2500.0f, 0.0f, 1.0f));
+			h = h + (-h + 90.0f) * plain;
+			const float bed = waterLevel - 70.0f - (x + half) / (2.0f * half) * 250.0f;
+			const float bank = smooth(std::clamp((dz - 160.0f) / 340.0f, 0.0f, 1.0f));
+			h = std::min(h, bed + (h - bed) * bank);
+		}
 		// Flatten a plateau for the camp in the middle of the map.
 		float t = smooth(std::clamp((d - campRadius) / 2200.0f, 0.0f, 1.0f));
 		return 120.0f + (h - 120.0f) * t;

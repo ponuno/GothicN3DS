@@ -203,6 +203,23 @@
 	.end
 	ifu wavy
 		mul r4.xyz, r4.xyz, r14.xxx
+		; fix140, the sheen: water seen from afar mirrors the sky, close below it is dark and clear - a Fresnel by distance.
+		; With the view depth d (r6.w, cm), f = t / (1 + t), t = d / 800 (consts.w): 0.1 at 1 m, 0.5 at 8 m, 0.8 at 32 m. It needs
+		; no new uniform (the 96 constant registers are full, and picasso's table of global uniforms is full with 16 for each of
+		; the six entries) and nothing from the camera's height. The colour goes wc.y + wkA.z f = 0.7 .. 1.3 times (the
+		; hardware clamps what is over 1), and the fog factor is cut by wkA.w f, up to 0.4: the fog stage then blends that much of
+		; the horizon's colour in - the sky in the water. (The constants are the waves' - 0.7, 0.6 and 0.4: change them
+		; together with gfx.h WATER_SHEEN_*.) The `wavy` switch is on for all water cut in the grid, waves or none.
+		mul r5.x, consts.w, r6.w
+		add r5.y, one, r5.x
+		rcp r5.y, r5.y
+		mul r5.x, r5.x, r5.y
+		mul r5.y, wkA.z, r5.x
+		add r5.y, wc.y, r5.y
+		mul r4.xyz, r4.xyz, r5.yyy
+		mul r5.x, wkA.w, r5.x
+		add r5.x, one, -r5.x
+		mul r3.x, r3.x, r5.x
 	.end
 
 	mov r4.w, r3.x

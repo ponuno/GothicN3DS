@@ -11,6 +11,9 @@ struct TexBakeOptions {
 	int quality = 1;     // 0 fast, 1 medium, 2 best (slow)
 	bool mipmaps = true;
 	unsigned threads = 1; // worker threads for the blocks of one image (callers that already run in parallel leave 1)
+	// A cut-out's smaller mip levels keep the share of texels that pass the alpha test (their alpha scaled up): thin
+	// blades of grass would otherwise wear away from mip level to mip level and the grass thin out with the distance.
+	bool keepCoverage = false;
 };
 
 struct TexBakeInfo {

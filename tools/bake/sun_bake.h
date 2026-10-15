@@ -24,6 +24,7 @@ struct SunOptions {
 	int samples = 6;      // rays towards the sun per texel
 	float softness = 1.2f; // degrees: how wide the sun's disc is taken (the softness of the shadows' edges)
 	float reach = 12000.0f; // cm: how far towards the sun something still shades
+	float leaves = 0.75f;   // how much of the sun cut-out leaves take, 0..1 (fix146: was 0.5; --sun-leaves)
 	unsigned threads = 1;
 };
 

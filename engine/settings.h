@@ -120,7 +120,11 @@ struct Settings {
 	// Version 22: light shafts through gaps in the shade (godrays.h): 0 off, 1 on.
 	u8 godRays = 1;
 	// Version 23: the sun's shadow baked into the world (g3ds-bake --sun-shadow): 0 off, 1 on.
-	u8 sunShadows = 1;
+	u8 sunShadows = 1; // fix146: 0 off, 1 normal, 2 strong, 3 strongest (App::sunShadowDarkness; was on/off, 1 = on)
+	// Version 24: the new grass (data baked with --grass): 0 off, 1 few (half the tufts, out to 20 m), 2 many (all, 28 m).
+	u8 grass = 0;
+	float grassRadiusCm() const { return grass == 1 ? 2000.0f : grass == 2 ? 2800.0f : 0.0f; }
+	float grassShare() const { return grass == 1 ? 0.5f : 1.0f; }
 	float waveHeightCm() const { return waves == 1 ? 10.0f : waves == 2 ? 22.0f : waves == 3 ? 40.0f : 0.0f; }
 	float lodFadeMs() const { return lodFade == 0 ? 1.0f : lodFade == 2 ? 900.0f : 350.0f; }
 	float lodDistanceCm() const;

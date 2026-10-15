@@ -154,6 +154,24 @@ void encodeLevel(const Image& img, bool alpha, rg_etc1::etc1_pack_params& params
 	for (std::thread& t : pool) t.join();
 }
 
+// The share of texels that pass the alpha test (alpha above a half) with alpha scaled by `scale`.
+float coverageOf(const Image& img, float scale) {
+	size_t pass = 0, n = 0;
+	for (size_t i = 3; i < img.px.size(); i += 4, ++n) pass += float(img.px[i]) * scale > 127.5f;
+	return n ? float(pass) / float(n) : 0.0f;
+}
+
+// Scales the alpha of a smaller level until as many texels pass as at the full size (a bisection of the scale).
+void keepCoverage(Image& img, float want) {
+	if (coverageOf(img, 1.0f) >= want) return;
+	float lo = 1.0f, hi = 8.0f;
+	for (int i = 0; i < 16; ++i) {
+		const float mid = 0.5f * (lo + hi);
+		(coverageOf(img, mid) < want ? lo : hi) = mid;
+	}
+	for (size_t i = 3; i < img.px.size(); i += 4) img.px[i] = u8(std::min(255.0f, float(img.px[i]) * hi + 0.5f));
+}
+
 } // namespace
 
 std::vector<u8> bakeTexture(const SrcImage& src, const TexBakeOptions& opt, TexBakeInfo* info) {
@@ -195,9 +213,11 @@ std::vector<u8> bakeTexture(const SrcImage& src, const TexBakeOptions& opt, TexB
 
 	std::vector<u8> data;
 	Image level = img;
+	const float coverage0 = coverageOf(img, 1.0f);
 	for (u32 l = 0; l < hdr.mipCount; ++l) {
 		if (l) level = resample(level, level.w / 2, level.h / 2);
 		Image enc = level;
+		if (alpha && opt.keepCoverage && l > 0) keepCoverage(enc, coverage0);
 		if (alpha) bleedColor(enc);
 		encodeLevel(enc, alpha, params, data, opt.threads);
 	}

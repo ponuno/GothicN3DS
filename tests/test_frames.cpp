@@ -28,6 +28,7 @@
 #include "model_bake.h"
 #include "pak_writer.h"
 #include "test_models.h"
+#include "trace.h"
 
 #include <citro3d.h>
 
@@ -185,7 +186,7 @@ struct ShaderCheck {
 	// on, and those of them that the fast entry drew (none may be).
 	u16 wavyBit = 0;
 	int locWave = 91; // the `wave` uniform's register in the default shader
-	unsigned wavyDraws = 0, wavyOnFast = 0, wavedVertices = 0;
+	unsigned wavyDraws = 0, wavyOnFast = 0, wavedVertices = 0, sheenVertices = 0;
 	double worstWave = 0; // cm: the highest a corner was lifted
 	double worstSway = 0; // cm: the farthest a corner was moved
 	unsigned fadedVertices = 0;
@@ -411,7 +412,14 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 		for (int r = 0; r < 4; ++r)
 			eye[r] = double(sc.view.at(r, 0)) * world[0] + double(sc.view.at(r, 1)) * world[1] + double(sc.view.at(r, 2)) * world[2] +
 			         double(sc.view.at(r, 3));
-		const double wantFog = std::clamp(double(params[2]) - eye[2] * double(params[3]), 0.0, 1.0);
+		double wantFog = std::clamp(double(params[2]) - eye[2] * double(params[3]), 0.0, 1.0);
+		if (!skinned && sc.wavyBit && (call.bools & sc.wavyBit)) {
+			// fix140, the water's sheen: f = t / (1 + t), t = view depth / 800 cm; the colour 0.7 + 0.6 f times, the fog's share cut by 0.4 f.
+			const double t = eye[2] * double(gfx::WATER_SHEEN_PER_CM), f = t / (1.0 + t);
+			for (int k = 0; k < 3; ++k) wantColor[k] *= double(gfx::WATER_SHEEN_BASE) + double(gfx::WATER_SHEEN_RANGE) * f;
+			wantFog *= 1.0 - double(gfx::WATER_SHEEN_SKY) * f;
+			++sc.sheenVertices;
+		}
 		sc.worstColor = std::max(sc.worstColor, std::fabs(double(got.color[3]) - wantFog));
 		for (int k = 0; k < 3; ++k) sc.worstColor = std::max(sc.worstColor, std::fabs(double(got.color[k]) - wantColor[k]));
 		double wantU = double(v.u) * double(params[0]) + double(call.uniforms[locTexOffset][0]);
@@ -973,7 +981,7 @@ static void testDefaultShader(const std::string& pak) {
 	// main, fastmain, fadefast (with the dissolve: 3 more), skinmain (both ways of the dissolve counted)
 	std::printf("  entries: %u, %u, %u and %u instructions\n", mock3ds::shaderEntryInstructions(0), mock3ds::shaderEntryInstructions(1),
 	            mock3ds::shaderEntryInstructions(2), mock3ds::shaderEntryInstructions(3));
-	CHECK(mock3ds::shaderEntryInstructions(1) <= 20 && mock3ds::shaderEntryInstructions(0) < 120); // (the water waves are most of the full entry: it draws only what waves or sways)
+	CHECK(mock3ds::shaderEntryInstructions(1) <= 20 && mock3ds::shaderEntryInstructions(0) < 130); // (fix140: the sheen made it 125) // (the water waves are most of the full entry: it draws only what waves or sways)
 	CHECK(mock3ds::shaderEntryInstructions(2) <= 28 && mock3ds::shaderEntryInstructions(3) <= 32);
 	// The sun's mask: four instructions more, in entries of their own (chunks without a mask keep the short ones; fix145: the
 	// coordinate is built in a register and written whole, zw too).
@@ -1079,13 +1087,86 @@ static void testDefaultShader(const std::string& pak) {
 		// read the waves' weights as occlusion); and the report counts what waved.
 		std::printf("  waves: %u wavy draw calls, %u of them on the fast entry; %u triangles in the last frame\n", sc.wavyDraws, sc.wavyOnFast,
 		            app.world().stats().waveTriangles);
-		std::printf("  waves: %u waved corners, the highest lifted %.1f cm\n", sc.wavedVertices, sc.worstWave);
-		CHECK(app.world().hasWaterGrid() && sc.wavyOnFast == 0 && sc.wavedVertices > 20 && sc.worstWave > 3.0 && sc.worstWave <= 22.01);
+		std::printf("  waves: %u waved corners, the highest lifted %.1f cm; the sheen on %u corners\n", sc.wavedVertices, sc.worstWave, sc.sheenVertices);
+		CHECK(app.world().hasWaterGrid() && sc.wavyOnFast == 0 && sc.wavedVertices > 20 && sc.sheenVertices >= sc.wavedVertices && sc.worstWave > 3.0 && sc.worstWave <= 22.01);
 		// The program changes are not free (a few dozen words of commands each); they stay in the tens a frame.
 		CHECK(switches > 0 && switches < frames * 120);
 		app.shutdown();
 	}
 	CHECK(mock3ds::counters().texUnit1Binds <= 1); // (fix143: unit 1 holds the white stand-in without the dissolve: once)
+	gfx::shutdown();
+	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
+}
+
+// The new grass (fix147) through the console's graphics code: its draw calls are cut-outs of the full entry (it sways), every
+// corner comes out of the shader as numbers in the screen's reach, its meshes break none of the GPU's memory rules, and
+// they are all freed at the end. Only texture unit 0 (no new unit, no third texture coordinate set: the sun's lesson).
+struct GrassCheck {
+	unsigned draws = 0, vertices = 0, bad = 0, partial = 0, fastEntry = -1, onFast = 0;
+	unsigned tex1Changes = 0;
+	const C3D_Tex* tex1 = nullptr;
+	bool tex1Seen = false;
+};
+static void grassHook(const mock3ds::DrawCall& c, void* user) {
+	GrassCheck& g = *static_cast<GrassCheck*>(user);
+	if (!gTrace.stage || std::strncmp(gTrace.stage, "grass", 5) != 0) return;
+	++g.draws;
+	if (g.tex1Seen && c.tex1 != g.tex1) ++g.tex1Changes;
+	g.tex1 = c.tex1;
+	g.tex1Seen = true;
+	const unsigned n = c.stride ? unsigned(mock3ds::blockBytes(c.vertices) / c.stride) : 0;
+	for (unsigned i = 0; i < c.count; i += 3) {
+		const unsigned index = c.indices[i];
+		if (index >= n) {
+			++g.bad;
+			continue;
+		}
+		mock3ds::ShadedVertex v;
+		if (!mock3ds::shadeVertex(c, index, v, true)) {
+			++g.bad;
+			continue;
+		}
+		++g.vertices;
+		for (int k = 0; k < 4; ++k)
+			if (!std::isfinite(v.position[k]) || !std::isfinite(v.color[k])) ++g.bad;
+		if (v.position[3] <= 0.0f && (std::fabs(v.position[0]) > 1e5f || std::fabs(v.position[1]) > 1e5f)) ++g.bad;
+	}
+	if (*mock3ds::shaderPartialOutputs()) ++g.partial;
+}
+
+static void testGrass(const std::string& pak) {
+	mock3ds::reset();
+	gfx::c3dSetClassicFrames(false);
+	CHECK(gfx::init());
+	{
+		App app;
+		CHECK(app.init(pak.c_str(), nullptr));
+		CHECK(app.grass().available());
+		app.skipChapters();
+		app.setDrawDistance(6000.0f);
+		app.environment().timeOfDay = 13.0f;
+		app.settings().grass = 2;
+		app.settings().wind = 2;
+		app.applySettings();
+		app.world().preload(app.camera().pos);
+		GrassCheck gc;
+		unsigned most = 0;
+		for (int f = 0; f < 50; ++f) {
+			Input in;
+			in.moveZ = f > 20 ? 1.0f : 0.0f;
+			in.lookX = f > 35 ? 0.3f : 0.0f;
+			app.update(in, 1.0f / 30.0f);
+			mock3ds::setDrawHook(grassHook, &gc);
+			app.render();
+			mock3ds::setDrawHook(nullptr, nullptr);
+			most = std::max(most, app.grass().stats().tufts);
+		}
+		std::printf("  grass: %u draw calls, %u corners shaded in 24-bit floats, %u bad, %u with outputs left unwritten; up to %u tufts a frame; "
+		            "unit 1 changed %u times between them\n",
+		            gc.draws, gc.vertices, gc.bad, gc.partial, most, gc.tex1Changes);
+		CHECK(gc.draws > 0 && gc.vertices > 1000 && gc.bad == 0 && gc.partial == 0 && most > 100 && gc.tex1Changes == 0);
+		app.shutdown();
+	}
 	gfx::shutdown();
 	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
 }
@@ -1423,6 +1504,7 @@ int main(int argc, char** argv) {
 	bo.wind = true;
 	bo.waterGrid = 200.0f; // (the water cut along the shores, for the waves)
 	bo.riverWidth = 0.0f; // (and everywhere: the test world's water is a narrow stream, which the default leaves calm)
+	bo.grass.enabled = true; // (the new grass: off in the menu unless a test turns it on)
 	std::vector<SrcModel> models(2);
 	buildSyntheticActor(models[0]);
 	buildChainModel(models[1], 60);
@@ -1452,6 +1534,8 @@ int main(int argc, char** argv) {
 	testWide(pak);
 	std::printf("[ RUN ] the fallback shader without characters\n");
 	testPlainShader(pak);
+	std::printf("[ RUN ] the new grass on the console's path\n");
+	testGrass(pak);
 	std::printf("[ RUN ] the overlay\n");
 	testOverlay(pak);
 	std::printf("[ RUN ] frame orders\n");

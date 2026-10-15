@@ -79,7 +79,7 @@ std::vector<SunMask> bakeSunMasks(const SrcScene& scene, const std::vector<u8>& 
 		const V3 n = cross(e1, e2);
 		const float len = length(n);
 		if (len < 1e-4f) continue;
-		if ((t.detail & 3) != DETAIL_SMALL) blockers.push_back(Tri {a, e1, e2, k == 1 ? 0.5f : 1.0f});
+		if ((t.detail & 3) != DETAIL_SMALL) blockers.push_back(Tri {a, e1, e2, k == 1 ? std::clamp(opt.leaves, 0.0f, 1.0f) : 1.0f});
 		// (Facing up enough to be stood on or to be a roof; either side, as the source's winding may be either.)
 		if (k == 0 && std::fabs(n.y) / len > 0.35f) receivers.push_back(Tri {a, e1, e2, 1.0f});
 	}

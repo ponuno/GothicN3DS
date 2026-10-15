@@ -1,6 +1,7 @@
 // pica_replay: runs a real data.pak through the console's graphics code on the PC (fix139).
 //
-//   pica_replay <data.pak> [frames] [x,y,z]
+//   pica_replay <data.pak> [frames] [x,y,z] [grass N]
+//   (fix147: `grass 1` / `grass 2` turns the new grass on, few / many, as the menu would; the default is a first start's: off)
 //
 // platform/3ds/gfx_c3d.cpp is compiled against the stand-in for libctru and citro3d (tests/mock3ds), as in test_frames:
 // the stand-in keeps the GPU's books (which memory a submitted frame refers to) and runs the assembled vertex shader.
@@ -127,7 +128,7 @@ void hook(const mock3ds::DrawCall& c, void* user) {
 
 int main(int argc, char** argv) {
 	if (argc < 2) {
-		std::printf("usage: pica_replay <data.pak> [frames] [x,y,z]\n");
+		std::printf("usage: pica_replay <data.pak> [frames] [x,y,z] [grass N]\n");
 		return 2;
 	}
 	const int frames = argc > 2 ? std::atoi(argv[2]) : 60;
@@ -162,9 +163,13 @@ int main(int argc, char** argv) {
 	app.npcs().config().prefetchRange = 3000.0f;
 	// The settings of a first start (no settings.bin), as on the console.
 	Settings st;
+	for (int i = 3; i + 1 < argc; ++i)
+		if (std::strcmp(argv[i], "grass") == 0) st.grass = u8(std::atoi(argv[i + 1]));
+	st.sanitize();
 	app.settings() = st;
 	app.applySettings();
-	if (argc > 3) {
+	if (st.grass) std::printf("grass: %d (%s)\n", int(st.grass), app.grass().available() ? "in data.pak" : "NOT in data.pak: bake with --grass");
+	if (argc > 3 && std::strcmp(argv[3], "grass") != 0) {
 		float x, y, z;
 		if (std::sscanf(argv[3], "%f,%f,%f", &x, &y, &z) == 3) app.teleport({x, y, z});
 	}

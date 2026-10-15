@@ -39,13 +39,14 @@ SrcImage makeWaterTexture(const unsigned char color[3], int size, int alpha) {
 			c = std::min(c * 0.85, 1.0);
 			// A slow swell: darker and lighter bands, periodic (whole waves across the tile).
 			const double swell = 0.5 + 0.5 * std::sin(kTau * (u * 2.0 + v) + 1.3 * std::sin(kTau * v * 3.0));
-			const double body = 0.80 + 0.20 * swell;
+			// (fix140: a deeper body, 0.62..1.0, and only a light touch of white on the caustic lines: 0.65 made the water read as frost.)
+				const double body = 0.62 + 0.38 * swell;
 			unsigned char* p = &img.rgba[(size_t(y) * size_t(size) + size_t(x)) * 4];
 			for (int k = 0; k < 3; ++k) {
 				const double base = double(color[k]) * body;
-				p[k] = (unsigned char)std::clamp(base + (255.0 - base) * c * 0.65, 0.0, 255.0);
+				p[k] = (unsigned char)std::clamp(base + (255.0 - base) * c * 0.32, 0.0, 255.0);
 			}
-			p[3] = (unsigned char)std::clamp(double(alpha) + 70.0 * c + 15.0 * swell, 0.0, 255.0);
+			p[3] = (unsigned char)std::clamp(double(alpha) + 45.0 * c + 15.0 * swell, 0.0, 255.0);
 		}
 	return img;
 }

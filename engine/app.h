@@ -11,7 +11,9 @@
 #include "shadows.h"
 #include "puddles.h"
 #include "rain.h"
+#include "ripples.h"
 #include "godrays.h"
+#include "grass.h"
 #include "menu.h"
 #include "npcs.h"
 #include "panel.h"
@@ -89,7 +91,7 @@ public:
 	enum RenderSkip : u32 {
 		SKIP_SKY = 1u << 0, SKIP_WORLD = 1u << 1, SKIP_NPCS = 1u << 2, SKIP_THINGS = 1u << 3, SKIP_HERO_SHADOW = 1u << 4,
 		SKIP_HERO = 1u << 5, SKIP_GROUND = 1u << 6, SKIP_BLENDED = 1u << 7, SKIP_GODRAYS = 1u << 8, SKIP_RAIN = 1u << 9,
-		SKIP_PARTICLES = 1u << 10, SKIP_OVERLAY = 1u << 11,
+		SKIP_PARTICLES = 1u << 10, SKIP_OVERLAY = 1u << 11, SKIP_GRASS = 1u << 12,
 	};
 	void setRenderSkip(u32 skip) { _renderSkip = skip; }
 	// debug.txt `noweathersfx`: the baker's own rain and thunder (meta/weathersfx L/N/F) are not taken.
@@ -135,6 +137,9 @@ public:
 	const Puddles& puddles() const { return _puddles; }
 	const Rain& rain() const { return _rain; }
 	const GodRays& godRays() const { return _godRays; }
+	// Graphics+: the new grass (grass.h; a world baked with --grass) and how far it is drawn now (cm; the menu, the load).
+	const Grass& grass() const { return _grass; }
+	float grassRadius() const;
 	Player& player() { return _player; }
 	const Hero& hero() const { return _hero; }
 	// The characters the game's scripts put into the world; not loaded with
@@ -508,7 +513,8 @@ private:
 	const char* _barrierName = nullptr; // the scripts' name of it, found once (null: none)
 	bool _barrierSearched = false;
 	void weatherSound(float dt);
-	static constexpr float kSunShadowDark = 0.42f; // how dark the sun's shadow is at its darkest (gfx::setSunShadow)
+	// How dark the sun's shadow is at its darkest (gfx::setSunShadow), by Settings::sunShadows (fix146: was 0.42 for all).
+	static constexpr float kSunShadowDark[4] = {0.0f, 0.58f, 0.72f, 0.85f};
 	u32 _rainLoop = 0;                  // the rain's sound playing
 	const char* _rainName = nullptr;    // the scripts' name of it (null: none)
 	const char* _thunderName = nullptr;
@@ -641,7 +647,9 @@ private:
 	Shadows _shadows;
 	Puddles _puddles;
 	Rain _rain;
+	Ripples _ripples; // rings round whoever is in the water (fix141)
 	GodRays _godRays;
+	Grass _grass;
 	int _lootTarget = -1;
 	// The chests.
 	Chests _chests;

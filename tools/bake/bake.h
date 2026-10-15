@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "sun_bake.h"
+#include "grass_bake.h"
 
 namespace g3 {
 
@@ -66,10 +67,17 @@ struct BakeOptions {
 	float waterReach = 3200.0f;
 	// cm: water narrower than this (rivers, ponds) gets no waves (--river-width; 0: waves everywhere).
 	float riverWidth = 4000.0f;
+	// fix140: shore foam (--water-foam S, 0..1: strips of lace along every shore line, 0: none) and the flow of rivers
+	// (--river-flow CM_PER_S: water in narrow channels moves along them, downhill; 0: none). water_fx.h.
+	float waterFoam = 0.8f;
+	float riverFlow = 70.0f;
+	float waterGlint = 0.0f; // --water-glint S: sun glints, an additive layer of sparkles over the water (0: none; doubles the water)
 	// The light of the world's lamps (torches, fire places) baked into the vertices (--lights, light_bake.h).
 	LightOptions light;
 	// The sun's shadow on the ground (--sun-shadow, sun_bake.h): a mask per cell of the chunk grid, outdoor worlds only.
 	SunOptions sun;
+	// The new grass (--grass, grass_bake.h): tufts sown by the density map, outdoor worlds only.
+	GrassOptions grass;
 	// The far layer (G10, --far-lod): a coarse copy of the world drawn beyond the draw distance.
 	FarOptions far;
 	// Visibility (--vis): which parts of the world are hidden from which cell (see visibility.h).

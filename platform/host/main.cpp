@@ -54,6 +54,7 @@ static void usage() {
 	     "  --vis               use the baked visibility table (data baked with --vis): what is hidden from the camera's cell is not drawn\n"
 	     "  --lod M             draw chunks wholly farther than M metres with their simplified stand-ins (data baked with --lod)\n"
 	     "  --waves N           waves on the water 0..3 (data baked with --water-grid)\n"
+	     "  --grass N           the new grass 0 off, 1 few, 2 many (data baked with --grass)\n"
 	     "  --gfx-plus A,W,S    Graphics+: occlusion 0..100 %, wind 0..3, shadows 0 off / 1 hero / 2 all near / 3 hero outline\n"
 	     "  --stats FILE        write a JSON summary");
 }
@@ -169,6 +170,7 @@ int main(int argc, char** argv) {
 	int menuPage = -1;
 	const char* gfxPlusSpec = nullptr;
 	int wavesSpec = -1;
+	int grassSpec = -1;
 	float budgetMb = 24.0f, drawDistance = 12000.0f, farMetres = 0.0f, lodMetres = 0.0f;
 	bool useVis = false;
 
@@ -194,6 +196,7 @@ int main(int argc, char** argv) {
 		else if (arg("--menu")) menuPage = atoi(argv[++i]);
 		else if (arg("--gfx-plus")) gfxPlusSpec = argv[++i];
 		else if (arg("--waves")) wavesSpec = atoi(argv[++i]);
+		else if (arg("--grass")) grassSpec = atoi(argv[++i]);
 		else if (arg("--far")) farMetres = float(atof(argv[++i]));
 		else if (!strcmp(argv[i], "--vis")) useVis = true;
 		else if (arg("--lod")) lodMetres = float(atof(argv[++i]));
@@ -235,6 +238,11 @@ int main(int argc, char** argv) {
 		app.settings().waves = u8(clamp(wavesSpec, 0, 3));
 		app.applySettings();
 		printf("waves on the water: %d (%s)\n", int(app.settings().waves), app.world().hasWaterGrid() ? "water grid in the data" : "NOT in the data");
+	}
+	if (grassSpec >= 0) {
+		app.settings().grass = u8(clamp(grassSpec, 0, 2));
+		app.applySettings();
+		printf("grass: %d (%s)\n", int(app.settings().grass), app.grass().available() ? "in the data" : "NOT in the data");
 	}
 	if (gfxPlusSpec) {
 		int ao = 0, wind = 0, shadows = 0;
@@ -711,6 +719,13 @@ int main(int argc, char** argv) {
 		const WorldStats& ws = app.world().stats();
 		printf("far layer         %.2f MB in memory; last frame %u tiles, %u draw calls, %u triangles\n", double(ws.farBytes) / 1048576.0,
 		       ws.farTiles, ws.farDrawCalls, ws.farTriangles);
+	}
+	if (grassSpec >= 0) {
+		const GrassStats& gs = app.grass().stats();
+		printf("grass             setting %d, %s; radius %.0f m; last frame %u tiles, %u tufts, %u triangles, %u draw calls; %u tiles held "
+		       "(%.2f MB of meshes), %u made, %u read in all\n",
+		       int(app.settings().grass), app.grass().available() ? "baked" : "not baked", double(gs.radius) / 100.0, gs.tiles, gs.tufts,
+		       gs.triangles, gs.drawCalls, gs.slots, double(gs.meshBytes) / 1048576.0, gs.builtTotal, gs.reads);
 	}
 	if (wavesSpec >= 0) {
 		const WorldStats& wsx = app.world().stats();

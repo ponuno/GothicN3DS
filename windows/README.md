@@ -29,7 +29,7 @@
 
 The window has two more boxes: **Bake the voices** (untick to skip `speech.pak`: faster, smaller; the game then shows subtitles only) and **Debug report**.
 
-Two more: **Original water texture** (the game's own water instead of the baker's soft caustics) and **Grass report for testing** (writes `grass_<world>.txt` and `.png` pictures next to the program: where new grass could grow and what it would cost; `data.pak` is the same with or without it).
+**New grass** (on by default) bakes the new grass into `data.pak` (about 2.5 MB more); in the game it is switched on in Graphics+ → Grass. Two more: **Original water texture** (the game's own water instead of the baker's soft caustics) and **Grass report for testing** (writes `grass_<world>.txt` and `.png` pictures next to the program: where new grass could grow and what it would cost; `data.pak` is the same with or without it).
 
 ## Put it on the 3DS
 

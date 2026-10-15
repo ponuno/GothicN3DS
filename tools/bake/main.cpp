@@ -167,6 +167,7 @@ void usage() {
 	          "                     a 4-bit mask per grid cell, no extra triangles (menu: Graphics+ -> Sun shadows; Gothic 1 and 2)\n"
 	          "  --sun-hour H       the sky's sun of this hour, 9..17 (default 14.5); --sun-texel CM: finest texel (default 32);\n"
 	          "                     --sun-samples N: rays per texel, 1..32 (default 6; more = softer, slower)\n"
+	          "                     --sun-leaves F: how much sun the trees' leaves take, 0..1 (default 0.75)\n"
 	          "  --water-light N    the water's own light, 0..255 (default 200): the same blue-green tone all over it,\n"
 	          "                     not the patches of the source mesh's vertex light; 0: keep the source's light\n"
 	          "  --water-texture S  the water's texture: made here (default: soft caustics; S = made) or the game's (S = original)\n"
@@ -179,6 +180,9 @@ void usage() {
 	          "  --water-grid M     cut the water along the shores into a grid of M metres (try 2; 0 = off, the default), fine\n"
 	          "                     enough for the game's \"Waves on the water\" setting to lift it; the open water stays coarse\n"
 	          "  --river-width M    water narrower than this stays calm: rivers, ponds (default 40; 0: waves everywhere)\n"
+	          "  --water-foam S     foam strips along the shore lines, 0..1 (default 0.8; 0: none)\n"
+	          "  --water-glint S    sun glints: an additive layer of sparkles over the water, 0..1 (default 0: off; doubles the water's triangles)\n"
+	          "  --river-flow CMS   the speed of the water in rivers, cm/s (default 70; 0: the game's scroll, one way everywhere)\n"
 	          "  --water-reach M    how far from the shore line the fine water goes, metres (default 32; a multiple of 16 cells)\n"
 	          "  --far-lod          Graphics+: a coarse copy of the world drawn beyond the draw distance and where\n"
 	          "                     chunks are not loaded yet (far layer; about 1.5-2 MB on the console)\n"
@@ -187,7 +191,11 @@ void usage() {
 	          "  --plant-words A,B  more words that name a tree in object/material/texture names (a mod's own)\n"
 	          "  --grass-report DIR for the grass tests: grass_<world>.txt/.png/_mask.png/_rules.txt in DIR, per outdoor world -\n"
 	          "                     where new grass could grow and what it would cost (data.pak is the same with or without it)\n"
-	          "  --grass-rules FILE the weights of the ground textures for that report (TEXTURE WEIGHT per line; its _rules.txt)\n"
+	          "  --grass            Graphics+: the new grass - tufts sown by that density map, drawn round the camera (menu:\n"
+	          "                     Graphics+ -> Grass); world/<name>/grass + grass_data, about 2.5 MB for Gothic 1 at the default density\n"
+	          "  --grass-density N  tufts per m2 where the map says full density (default 2; the menu's \"few\" draws half)\n"
+	          "  --grass-replace    the world's own grass objects go where the new grass grows (default: kept)\n"
+	          "  --grass-rules FILE the weights of the ground textures for the report and the grass (TEXTURE WEIGHT per line; its _rules.txt)\n"
 	          "  --grass-cell M     the report's map cell, metres (default 1; coarser for a big world)\n"
 	          "  --no-weather-sfx   keep the game's own (or the made) rain and thunder instead of the baker's recordings\n"
 	          "  --pack-level N     LZ4HC effort 3..12 (default 9; 12 is about 0.2 % smaller and a quarter slower to bake)\n"
@@ -290,6 +298,8 @@ int main(int argc, char** argv) {
 			else if (a == "--no-flip") zen.flipWinding = false; // the default; kept for old command lines
 			else if (a == "--cells") synth.cells = std::stoi(value());
 			else if (a == "--clutter") synth.clutter = std::stoi(value());
+			else if (a == "--cell-size") synth.cellSize = std::stof(value());
+			else if (a == "--synth-river") synth.river = true;
 			else if (a == "--ao") {
 				const std::string v = value();
 				if (v == "off") opt.ao.level = AO_OFF;
@@ -330,12 +340,16 @@ int main(int argc, char** argv) {
 			else if (a == "--sun-hour") opt.sun.hour = std::clamp(std::stof(value()), 9.0f, 17.0f);
 			else if (a == "--sun-texel") opt.sun.texel = std::clamp(std::stof(value()), 8.0f, 200.0f);
 			else if (a == "--sun-samples") opt.sun.samples = std::clamp(std::stoi(value()), 1, 32);
+			else if (a == "--sun-leaves") opt.sun.leaves = std::clamp(std::stof(value()), 0.0f, 1.0f);
 			else if (a == "--light-strength") opt.light.strength = std::clamp(std::stof(value()), 0.1f, 4.0f);
 			else if (a == "--light-cell") opt.light.cell = std::clamp(std::stof(value()), 0.2f, 10.0f) * 100.0f;
 			else if (a == "--light-static") opt.light.statics = true;
 			else if (a == "--grass-report") grass.dir = value(), grassReport = true;
-			else if (a == "--grass-rules") grass.rulesFile = value();
-			else if (a == "--grass-cell") grass.cellCm = std::clamp(std::stof(value()), 0.25f, 20.0f) * 100.0f;
+			else if (a == "--grass-rules") grass.rulesFile = opt.grass.map.rulesFile = value();
+			else if (a == "--grass-cell") grass.cellCm = opt.grass.map.cellCm = std::clamp(std::stof(value()), 0.25f, 20.0f) * 100.0f;
+			else if (a == "--grass") opt.grass.enabled = true;
+			else if (a == "--grass-density") opt.grass.density = std::clamp(std::stof(value()), 0.1f, 16.0f);
+			else if (a == "--grass-replace") opt.grass.replaceOld = true;
 			else if (a == "--no-weather-sfx") opt.weatherSfx = false;
 			else if (a == "--water-light") opt.waterLight = u8(std::clamp(std::stoi(value()), 0, 255));
 			else if (a == "--water-texture") opt.waterTexture = value() != "original";
@@ -354,6 +368,9 @@ int main(int argc, char** argv) {
 			else if (a == "--canopy-reach") opt.canopyReach = std::clamp(std::stof(value()), 2.0f, 60.0f) * 100.0f;
 			else if (a == "--water-grid") opt.waterGrid = std::clamp(std::stof(value()), 0.0f, 50.0f) * 100.0f;
 			else if (a == "--river-width") opt.riverWidth = std::clamp(std::stof(value()), 0.0f, 500.0f) * 100.0f;
+			else if (a == "--water-foam") opt.waterFoam = std::clamp(std::stof(value()), 0.0f, 1.0f);
+			else if (a == "--water-glint") opt.waterGlint = std::clamp(std::stof(value()), 0.0f, 1.0f);
+			else if (a == "--river-flow") opt.riverFlow = std::clamp(std::stof(value()), 0.0f, 400.0f);
 			else if (a == "--water-reach") opt.waterReach = std::clamp(std::stof(value()), 1.0f, 500.0f) * 100.0f;
 			else if (a == "--vis") opt.vis.enabled = true;
 			else if (a == "--vis-high") opt.vis.high = true;

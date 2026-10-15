@@ -527,6 +527,61 @@ inline void sunDirectionAt(float hour, float out[3]) {
 	out[2] = cosf(el) * cosf(az);
 }
 
+// ---- G3GR: grass (g3ds-bake --grass) ----
+// Tufts of grass grown where the bake's density map says (tools/bake/grass_map.h), kept as a compact list - the runtime
+// (engine/grass.h) makes meshes of them only round the camera. The world is cut into tiles of `tileSize` cm on x/z (a
+// grid from `originX/Z`); a tile with grass has an entry, and its tufts lie together in the data entry:
+//   "world/<name>/grass"       GrassHeader | GrassTile[tileCount] (sorted by z, then x)
+//   "world/<name>/grass_data"  GrassTuft[tuftCount], stored raw (read a tile at a time, Pak::readRange)
+// A tile's tufts are in no order of place: the first half of them is an even sprinkle of half the density (the "few"
+// setting draws only those). A runtime that knows nothing of these entries draws the world as before.
+constexpr u32 GRASS_MAGIC = fourcc('G', '3', 'G', 'R');
+constexpr u32 GRASS_VERSION = 1;
+constexpr u32 GRASS_VARIANTS = 4; // pictures of a tuft side by side in the atlas, left to right
+
+struct GrassHeader {
+	u32 magic;
+	u32 version;
+	u32 tileCount;
+	u32 tuftCount;
+	float tileSize;          // cm
+	float originX, originZ;  // cm: tile (x, z) covers [originX + x * tileSize, originX + (x + 1) * tileSize) and likewise on z
+	float density;           // tufts per m² where the map's density is 1 (as baked)
+	float height;            // cm: a tuft's height at scale 1
+	float width;             // cm: the width of each of its two crossed cards at scale 1
+	u32 dataEntry;           // pak entry of the tuft list ("world/<name>/grass_data")
+	u32 textureEntry;        // pak entry of the atlas (G3TX, cut-out, GRASS_VARIANTS pictures across)
+	u32 reserved[4];
+};
+static_assert(sizeof(GrassHeader) == 64, "GrassHeader layout");
+
+struct GrassTile {
+	i16 x, z;       // the tile's place in the grid
+	u16 count;      // tufts
+	u8 day;         // daylight weight of the ground there (WorldVertex::a): 255 outdoors
+	u8 reserved;
+	float yMin, yMax; // cm: the lowest and the highest foot of its tufts
+	u32 first;      // its first tuft in the list
+};
+static_assert(sizeof(GrassTile) == 20, "GrassTile layout");
+
+struct GrassTuft {
+	u8 x, z;    // its foot in the tile, tileSize / 256 steps (the middle of the step)
+	u16 y;      // cm above the tile's yMin
+	u8 look;    // bits 0-1 the picture (0..GRASS_VARIANTS-1), 2-4 the scale (grassScale), 5-7 the turn (grassTurn)
+	u8 lean;    // bits 0-2 the lean along x, 3-5 along z (signed, -3..3: grassLean), 6-7 the sun's shade (0 sunlit .. 3)
+	u16 colour; // RGB565: the light of the ground there in the colour of its texture
+};
+static_assert(sizeof(GrassTuft) == 8, "GrassTuft layout");
+
+inline float grassScale(u8 look) { return 0.7f + 0.6f * float((look >> 2) & 7u) / 7.0f; }
+inline float grassTurn(u8 look) { return float(look >> 5) * (3.14159265f / 16.0f); } // radians, 0 .. 78.75 degrees (the cards repeat every 90)
+inline float grassLean(int steps) { return float(steps) * 0.0875f; } // tan: 5 degrees a step
+inline int grassLeanX(u8 lean) { return int(lean & 7u) - (int(lean & 7u) >= 4 ? 8 : 0); }
+inline int grassLeanZ(u8 lean) { return int((lean >> 3) & 7u) - (int((lean >> 3) & 7u) >= 4 ? 8 : 0); }
+inline u8 grassShade(u8 lean) { return u8(lean >> 6); }
+inline u32 grassBlobSize(const GrassHeader& h) { return u32(sizeof(GrassHeader)) + h.tileCount * u32(sizeof(GrassTile)); }
+
 inline u32 chunkBlobSize(u32 batches, u32 vertices, u32 indices) {
 	return u32(sizeof(ChunkHeader)) + batches * u32(sizeof(ChunkBatch)) + vertices * u32(sizeof(WorldVertex)) +
 	       indices * u32(sizeof(u16));

@@ -477,7 +477,9 @@ void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, 
 void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 	if (!m || indexCount == 0 || firstIndex + indexCount > m->indexCount) return;
 	const bool windy = (gMaterialFlags & MATF_WIND) != 0 && (gFx.windX != 0.0f || gFx.windZ != 0.0f);
-	const bool wavy = (gMaterialFlags & MATF_WATER) != 0 && gFx.waveHeight != 0.0f;
+	const bool water = (gMaterialFlags & MATF_WATER) != 0;
+	const bool wavy = water && gFx.waveHeight != 0.0f;
+	const bool sheen = water && gFx.waterGrid; // (fix140: the water cut in the grid, as the full shader's `wavy` block)
 	gSunOn = gFx.sun && gSunDark > 0.0f && gPass != PASS_SKY && (gMaterialFlags & (MATF_ALPHA_TEST | MATF_WIND | MATF_ADD | MATF_WATER)) == 0;
 	for (u32 i = 0; i + 2 < indexCount; i += 3) {
 		ClipVert cv[3];
@@ -521,7 +523,16 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 			// (exact for lattice positions), then one matrix for every chunk.
 			const Vec4 c = transform(gViewProj, {p[0] + gChunk[0], p[1] + gChunk[1], p[2] + gChunk[2], 1.0f});
 			// clip.w is the view-space depth for a perspective projection.
-			const float fog = clamp(gFogA - c.w * gFogB, 0.0f, 1.0f);
+			float fog = clamp(gFogA - c.w * gFogB, 0.0f, 1.0f);
+			// The sheen as world_full.v.pica: f = t / (1 + t), t = depth / 800 cm; the colour 0.7 + 0.6 f times, the fog's share
+			// cut by 0.4 f (the horizon's colour is the sky in the water).
+			float sheenK = 1.0f;
+			if (sheen) {
+				const float t = c.w * WATER_SHEEN_PER_CM;
+				const float f = t / (1.0f + t);
+				sheenK = WATER_SHEEN_BASE + WATER_SHEEN_RANGE * f;
+				fog *= 1.0f - WATER_SHEEN_SKY * f;
+			}
 			// Same arithmetic as the vertex shader: the vertex alpha says how
 			// strongly the time of day tints the baked light.
 			const float weight = v.a * (1.0f / 255.0f);
@@ -529,8 +540,8 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 			                       1.0f + weight * (gFrame.dayLight[2] - 1.0f)};
 			cv[k] = {c.x, c.y, c.z, c.w, float(v.u) * gUvScale + gUvOffset[0] + uvShift[0],
 			         float(v.v) * gUvScale + gUvOffset[1] + uvShift[1],
-			         v.r * (1.0f / 255.0f) * tint[0] * shade, v.g * (1.0f / 255.0f) * tint[1] * shade,
-			         v.b * (1.0f / 255.0f) * tint[2] * shade, 1.0f, fog,
+			         v.r * (1.0f / 255.0f) * tint[0] * shade * sheenK, v.g * (1.0f / 255.0f) * tint[1] * shade * sheenK,
+			         v.b * (1.0f / 255.0f) * tint[2] * shade * sheenK, 1.0f, fog,
 			         (p[0] + gChunk[0] + gAnchor[0] - gFx.sunX0) * gFx.sunScaleX, (p[2] + gChunk[2] + gAnchor[2] - gFx.sunZ0) * gFx.sunScaleZ};
 		}
 		if (gPass == PASS_WORLD) ++gStats.trianglesSubmitted;

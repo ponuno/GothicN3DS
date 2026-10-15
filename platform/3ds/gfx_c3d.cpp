@@ -396,7 +396,9 @@ void updateWindy() {
 		gWindy = on;
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWindy, on);
 	}
-	const bool wavy = gLocWavy >= 0 && gMaterialWater && gChunkWave && !gSkinned;
+	// (fix140: the `wavy` block also gives the water its sheen by distance, so it is on for all water cut in the grid; with
+	// the waves off their height and shading are 0 and the water is as still as before.)
+	const bool wavy = gLocWavy >= 0 && gMaterialWater && gChunkWaterGrid && !gSkinned;
 	if (wavy != gWavy) {
 		gWavy = wavy;
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWavy, wavy);

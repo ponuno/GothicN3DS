@@ -42,6 +42,7 @@ bool App::init(const char* pakPath, const char* worldName) {
 		_pak.close();
 		return false;
 	}
+	_grass.enterWorld(_pak, this->worldName()); // (Graphics+: the new grass, if the world has it)
 	// Optional: archives without a character stay first-person.
 	_hero.load(_pak);
 	// The game's own camera set-ups, if the archive has them.
@@ -149,12 +150,14 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	_mobJob = MobJob();
 	_corpseTarget = -1;
 	_world.close();
+	_grass.release();
 	gfx::releaseDestroyed();
 	if (!_world.open(&_pak, worldEntryHash)) {
 		// Broken target: go back to where we were rather than to nowhere.
-		if (previous) _world.open(&_pak, previous);
+		if (previous && _world.open(&_pak, previous)) _grass.enterWorld(_pak, worldName());
 		return false;
 	}
+	_grass.enterWorld(_pak, worldName());
 	const WorldHeader& h = _world.header();
 	if (eye) {
 		_cam.yaw = yaw;
@@ -183,6 +186,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	_barrierHum = 0;
 	_rainLoop = 0;
 	_thunderWait = -1.0f;
+	_ripples.release();
 	_rain.release();    // (what they asked of the ground was the other world's)
 	_godRays.release();
 	_music.enterWorld(_pak, worldName());
@@ -370,7 +374,9 @@ void App::shutdown() {
 	_shadows.release();
 	_puddles.release();
 	_rain.release();
+	_ripples.release();
 	_godRays.release();
+	_grass.release();
 	_chests.release();
 	_pictures.release();
 	_showModel.release();
@@ -624,6 +630,7 @@ void App::update(const Input& in, float dt) {
 			}
 		}
 	}
+	_ripples.update(_world, _player.feet, _player.flying ? 0.0f : _player.waterDepth, _player.swimming, dt);
 	_moves.record(_world, _player, in, _hero.loaded() ? "GTAS"[_hero.body()] : '?', dt);
 	trace("update: portals");
 	checkPortals();
@@ -869,6 +876,40 @@ void App::render() {
 	}
 	_renderTimes = RenderTimes {};
 	gfx::setSunShadow(indoor ? 0.0f : sunShadowDarkness());
+	// Graphics+: the new grass - which tiles round the camera, made into meshes a little a frame (once, for both eyes).
+	{
+		Grass::Frame gf;
+		gf.camera = _cam.pos;
+		gf.radius = indoor || _underwater || (_renderSkip & SKIP_GRASS) ? 0.0f : grassRadius();
+		gf.share = _settings.grassShare();
+		gf.darkness = indoor ? 0.0f : sunShadowDarkness();
+		// Who presses it aside: the hero first, then the inhabitants and beasts nearest the camera (within 15 m).
+		if (_hero.loaded() && _heroVisible && !_player.flying) gf.press[gf.pressCount++] = Grass::Frame::Presser {_hero.feet(), Grass::TRAMPLE};
+		float nearSq[Grass::PRESSERS];
+		for (u32 i = 0; i < _npcs.drawnCount(); ++i) {
+			if (!_npcs.drawnVisible(i)) continue;
+			const Vec3 p = _npcs.drawnFeet(i);
+			const float dx = p.x - _cam.pos.x, dy = p.y - _cam.pos.y, dz = p.z - _cam.pos.z;
+			const float d = dx * dx + dy * dy + dz * dz;
+			if (d > 1500.0f * 1500.0f) continue;
+			const u32 first = gf.pressCount && _hero.loaded() && _heroVisible && !_player.flying ? 1u : 0u;
+			u32 k = gf.pressCount;
+			if (k == Grass::PRESSERS) {
+				if (nearSq[k - 1] <= d) continue;
+				--k;
+			} else {
+				++gf.pressCount;
+			}
+			while (k > first && nearSq[k - 1] > d) {
+				gf.press[k] = gf.press[k - 1];
+				nearSq[k] = nearSq[k - 1];
+				--k;
+			}
+			gf.press[k] = Grass::Frame::Presser {p, clamp(_npcs.drawnRadius(i) * 1.5f, 60.0f, 200.0f)};
+			nearSq[k] = d;
+		}
+		_grass.update(gf);
+	}
 	const auto drawEye = [&](const gfx::FrameDesc& d) {
 		const double r0 = sys::timeMs();
 		if (!indoor && !(_renderSkip & SKIP_SKY)) {
@@ -884,6 +925,8 @@ void App::render() {
 		_world.setCameraRoom(_npcs.rooms().roomAt(_player.feet));
 		trace("render: world");
 		if (!(_renderSkip & SKIP_WORLD)) _world.draw(viewProj, _cam.pos, u32(u64(_clock * 1000.0)));
+		trace("render: grass");
+		if (!(_renderSkip & (SKIP_GRASS | SKIP_WORLD))) _grass.draw(_world, frustumFromViewProj(viewProj));
 		trace("render: npcs");
 		const double r2 = sys::timeMs();
 		const float indoorLight[3] = {1, 1, 1};
@@ -971,6 +1014,8 @@ void App::render() {
 			const float look[3] = {sinf(_cam.yaw), 0.0f, cosf(_cam.yaw)};
 			_godRays.draw(_world, _cam.pos, look, sunDir, low * high * clear, tint, _clock);
 		}
+		trace("render: ripples");
+		if (!(_renderSkip & SKIP_RAIN)) _ripples.draw(_world, _cam.pos, indoor ? indoorLight : sky.light);
 		trace("render: rain");
 		if (!indoor && (_weather.rain() > 0.03f || _weather.snow() > 0.03f) && !(_renderSkip & SKIP_RAIN)) _rain.draw(_world, _cam.pos, _weather.rain(), _weather.snow(), sky.light, _clock);
 		trace("render: particles");
@@ -1492,6 +1537,15 @@ void App::applySettings() {
 // How dark the baked sun's shadow (g3ds-bake --sun-shadow) makes the ground now: full by day in clear weather while the
 // sky's sun is near the one baked (within an hour and a half or so), fading out farther from it, under cloud and rain,
 // and as the sun goes down. (The masks hold where the shade lies for that one sun: three hours off, it would lie wrong.)
+float App::grassRadius() const {
+	const float r = _settings.grassRadiusCm();
+	if (r <= 0.0f) return 0.0f;
+	// Under load the grass gives way first: as soon as the pacer takes objects away, the radius shrinks twice as fast as
+	// their distance (to half at most), and to 60 % of that while Graphics+ is relieved.
+	const float detail = clamp(_world.config().detailScale, 0.0f, 1.0f);
+	return r * clamp(1.0f - 2.0f * (1.0f - detail), 0.5f, 1.0f) * (_gfxRelief ? 0.6f : 1.0f);
+}
+
 float App::sunShadowDarkness() const {
 	if (!_settings.sunShadows || !_world.hasSunMasks() || _world.indoor()) return 0.0f;
 	float sun[3];
@@ -1502,10 +1556,15 @@ float App::sunShadowDarkness() const {
 		x = clamp(x, 0.0f, 1.0f);
 		return x * x * (3.0f - 2.0f * x);
 	};
-	const float near = smooth((agree - 0.64f) / 0.29f);
+	// fix146: full while the sun is within about 25 degrees of the baked one (was 22), gone at about 57 (was 50); the strong
+	// settings hold it a little longer and keep more of it under cloud.
+	const u8 level = _settings.sunShadows > 3 ? u8(1) : _settings.sunShadows;
+	const float wide = level >= 2 ? 0.05f : 0.0f;
+	const float near = smooth((agree - (0.55f - wide)) / 0.35f);
 	const float up = smooth((sun[1] - 0.05f) / 0.20f);
-	const float clear = (1.0f - 0.9f * _weather.cloud()) * (1.0f - 0.6f * _weather.rain());
-	return kSunShadowDark * near * up * clamp(clear, 0.0f, 1.0f);
+	const float cloudy = level >= 2 ? 0.75f : 0.9f;
+	const float clear = (1.0f - cloudy * _weather.cloud()) * (1.0f - 0.6f * _weather.rain());
+	return kSunShadowDark[level] * near * up * clamp(clear, 0.0f, 1.0f);
 }
 
 void App::setGfxRelief(bool heavy) {

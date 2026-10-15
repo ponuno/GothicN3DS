@@ -123,6 +123,14 @@ constexpr float WAVE_A_SPEED = 0.07f;
 constexpr float WAVE_B_DIR[2] = {0.6313f, 0.7755f}; // 14 degrees off A: one swell
 constexpr float WAVE_B_CM = 900.0f;
 constexpr float WAVE_B_SPEED = 0.10f;
+// The water's sheen (fix140): water seen from afar mirrors the sky, close below it is dark and clear. A Fresnel by the view
+// depth d: f = t / (1 + t), t = d * WATER_SHEEN_PER_CM; the colour is WATER_SHEEN_BASE + WATER_SHEEN_RANGE * f times, the fog
+// factor (the horizon's colour, the sky) is cut by WATER_SHEEN_SKY * f. world_full.v.pica has the same numbers, as constants
+// that the waves use too (consts.w, wc.y, wkA.z, wkA.w): change them together.
+constexpr float WATER_SHEEN_PER_CM = 0.00125f;
+constexpr float WATER_SHEEN_BASE = 0.7f;
+constexpr float WATER_SHEEN_RANGE = 0.6f;
+constexpr float WATER_SHEEN_SKY = 0.4f;
 // The phase (0..1) of wave A (which = 0) or B (1) at `origin` at time `seconds`; in double, as windPhaseAt.
 inline float wavePhaseAt(const float origin[3], double seconds, int which) {
 	const float* d = which ? WAVE_B_DIR : WAVE_A_DIR;

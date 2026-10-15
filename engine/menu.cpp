@@ -58,6 +58,12 @@ const char* const kLodFade[] = {"Сразу", "Быстро", "Плавно"};
 const char* const kFarLayer[] = {"Выкл", "250 м", "400 м", "600 м"};
 const char* const kFarLayerNotes[] = {"Дальше дальности прорисовки — туман", "Упрощённый мир до 250 м",
                                       "Упрощённый мир до 400 м", "Упрощённый мир до 600 м"};
+const char* const kSunShadows[] = {"Выкл", "Обычные", "Сильные", "Максимум"};
+const char* const kSunShadowNotes[] = {"Без тени от солнца (--sun-shadow)", "Тень деревьев и домов днём (--sun-shadow)", "Тень темнее и дольше днём",
+                                       "Самая тёмная тень"};
+const char* const kGrass[] = {"Выкл", "Мало", "Много"};
+const char* const kGrassNotes[] = {"Новая трава выключена (мир с --grass)", "Половина пучков, до 20 м (мир с --grass)",
+                                   "Все пучки, до 28 м (мир с --grass)"};
 const char* const kShadowNotes[] = {"Без теней под ногами", "Круглая тень под героем", "Под героем и жителями до 25 м", "Герой по фигуре, жители круглые"};
 
 #define NONE nullptr, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr
@@ -114,13 +120,13 @@ const Item kGfxPlus[] = {
     {"Колыхание листвы", CHOICE, &Settings::wind, kWind, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --wind", nullptr},
     {"Волны на воде", CHOICE, &Settings::waves, kWaves, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --water-grid", nullptr},
     {"Тени персонажей", CHOICE, &Settings::shadows, kShadows, 4, 0, 0, nullptr, 0, nullptr, kShadowNotes},
-    {"Тени от солнца", TOGGLE, &Settings::sunShadows, nullptr, 0, 0, 0, nullptr, 0, "Тень деревьев и домов днём (--sun-shadow)", nullptr},
+    {"Тени от солнца", CHOICE, &Settings::sunShadows, kSunShadows, 4, 0, 0, nullptr, 0, nullptr, kSunShadowNotes},
+    {"Трава", CHOICE, &Settings::grass, kGrass, 3, 0, 0, nullptr, 0, nullptr, kGrassNotes},
     {"Дальний план", CHOICE, &Settings::farLayer, kFarLayer, 4, 0, 0, nullptr, 0, nullptr, kFarLayerNotes},
     {"Дальняя геометрия", CHOICE, &Settings::farGeometry, kFarGeometry, 4, 0, 0, nullptr, 0, "Упрощённые дальние чанки (мир с --lod)", nullptr},
     {"Частота экрана", CHOICE, &Settings::refresh, kRefresh, 6, 0, 0, nullptr, 0, "Экран подстраивается под кадр (опыт)", nullptr},
     {"Доворот кадра", TOGGLE, &Settings::reproject, nullptr, 0, 0, 0, nullptr, 0, "Старый кадр довёрнут, пока ждём новый", nullptr},
     {"Сглаживание", CHOICE, &Settings::antialias, kAntialias, 3, 0, 0, nullptr, 0, nullptr, kAntialiasNotes},
-    {"Видимость", TOGGLE, &Settings::visibility, nullptr, 0, 0, 0, nullptr, 0, "Не рисовать скрытое стенами (мир с --vis)", nullptr},
 };
 const Item kDebug[] = {
     {"Жители", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG_NPC, "Восприятие, жизнь, драки", nullptr},
@@ -148,6 +154,7 @@ const Item kDebugWorld[] = {
     {"Погода", CHOICE, &Settings::weather, kWeather, 6, 0, 0, nullptr, 0, "Авто: меняется сама; иначе держится", nullptr},
     {"Мокрая земля", TOGGLE, &Settings::wetGround, nullptr, 0, 0, 0, nullptr, 0, "В дождь свет на улице темнее", nullptr},
     {"Лучи света", TOGGLE, &Settings::godRays, nullptr, 0, 0, 0, nullptr, 0, "Столбы света в тенях (днём, в ясно)", nullptr},
+    {"Видимость", TOGGLE, &Settings::visibility, nullptr, 0, 0, 0, nullptr, 0, "Не рисовать скрытое стенами (мир с --vis)", nullptr},
     {"Чтение наперёд", TOGGLE, &Settings::readAhead, nullptr, 0, 0, 0, nullptr, 0, "Модели и чанки читаются с карты заранее", nullptr},
 };
 #undef NONE

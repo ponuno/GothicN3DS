@@ -255,6 +255,9 @@ public:
 	bool waterBelow(Vec3 from, float maxDrop, float& surfaceY, float* waveWeight = nullptr) const;
 	// The waves as drawn now: the time they run on (seconds) and the crest height (cm; 0 = still).
 	double waveSeconds() const { return _windSeconds; }
+	// The wind of this frame for what is drawn beside the chunks with its own sway (the grass, grass.h): the push and the
+	// wave's phase at `origin`, as the plants of the chunks get them (all zero while the wind is off). After draw().
+	void grassFx(const float origin[3], gfx::ChunkFx& fx) const;
 	float waveHeight() const { return _waveHeight; }
 
 	// The portal whose box contains `p`, or null.
@@ -508,6 +511,7 @@ private:
 	// Graphics+ of this frame (draw()): the occlusion's strength, the wind's
 	// push along x and z (gusts included), and the time the wave goes by.
 	float _fxOcclusion = 0.0f, _windX = 0.0f, _windZ = 0.0f;
+	float _pushX = 0.0f, _pushZ = 0.0f; // the wind as set, whether the world's plants have their sway baked or not (grassFx)
 	float _waveHeight = 0.0f, _waveShade = 0.0f; // the water's waves of this frame (0: still)
 	double _windSeconds = 0.0;
 	// The far layer (FarHeader in g3ds/world.h).

@@ -207,9 +207,9 @@ static void readDebugFile() {
 	              {"godrays", App::SKIP_GODRAYS}, {"rain", App::SKIP_RAIN}, {"particles", App::SKIP_PARTICLES}, {"overlay", App::SKIP_OVERLAY},
 	              {"all", 0xFFFFFFFFu}};
 	for (char* p = text; *p;) {
-		while (*p && !(*p >= 'a' && *p <= 'z') && !(*p >= 'A' && *p <= 'Z')) ++p;
+		while (*p && !(*p >= 'a' && *p <= 'z') && !(*p >= 'A' && *p <= 'Z') && !(*p >= '0' && *p <= '9')) ++p; // (fix144: digits too - sunl4)
 		char* w = p;
-		while ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z')) {
+		while ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9')) {
 			if (*p >= 'A' && *p <= 'Z') *p = char(*p + 32);
 			++p;
 		}

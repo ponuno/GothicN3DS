@@ -1,3 +1,4 @@
+**README WIP**
 # Gothic 3DS — Gothic 1 on the New Nintendo 3DS
 
 > **Game data is not distributed.** This project contains nothing from Gothic: you need your own legal copy, and the baked `data.pak`, `music.pak`, `speech.pak` and the music WAVs you produce from it must not be published.

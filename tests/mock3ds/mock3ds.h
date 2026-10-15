@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct C3D_Tex;
+
 namespace mock3ds {
 
 struct Counters {
@@ -66,6 +68,7 @@ struct DrawCall {
 	float uniforms[96][4]; // float registers c0..c95: x y z w
 	uint16_t bools;        // bool registers b0..b15
 	int entry;             // the DVLE (entry point of the shader binary) of the program bound for the draw
+	const C3D_Tex* tex1 = nullptr; // what texture unit 1 holds for the draw
 };
 typedef void (*DrawHook)(const DrawCall& call, void* user);
 // Called for every C3D_DrawElements issued inside a frame.

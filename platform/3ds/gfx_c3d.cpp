@@ -247,11 +247,17 @@ int gDebugProgram = 0;   // 1: the fast entry for every world draw, 2: the full 
 u16 gMaterialFlags = 0;
 bool gNoSun = false;
 bool gNoSunProgram = false; // c3dSetNoSun (C-Stick up held at start, debug.txt nosun): no sun's stages, no sun's program
+// fix144 (c3dSetSunDebug): by default the masks (TEX_L4 in data.pak) are turned into GPU_A8 as they are loaded - the format of
+// the dissolve's noise, the one texture known to be sampled on unit 1 without trouble; GPU_L4 was used by nothing else and the
+// GPU hung whenever a mask was on unit 1 (fix133..143). Stage 1 then takes the mask's alpha. And a mask is on unit 1 only while
+// the sun's entry is bound: any other entry finds the noise (or the white 8x8) there again.
+unsigned gSunDebug = 0;
+inline bool sunA8() { return (gSunDebug & SUN_DBG_L4) == 0; }
 
 // The white 8x8 stand-in for unit 1 when the noise is not there (no dissolve) and a mask that was on it is freed.
 bool makeSunWhite() {
-	if (!gSunWhiteReady && C3D_TexInit(&gSunWhite, 8, 8, GPU_L4)) {
-		memset(gSunWhite.data, 0xFF, 32);
+	if (!gSunWhiteReady && C3D_TexInit(&gSunWhite, 8, 8, sunA8() ? GPU_A8 : GPU_L4)) {
+		memset(gSunWhite.data, 0xFF, sunA8() ? 64 : 32);
 		C3D_TexFlush(&gSunWhite);
 		C3D_TexSetFilter(&gSunWhite, GPU_NEAREST, GPU_NEAREST);
 		C3D_TexSetWrap(&gSunWhite, GPU_REPEAT, GPU_REPEAT);
@@ -271,8 +277,17 @@ void setSunStages() {
 	}
 	C3D_TexEnv* s1 = C3D_GetTexEnv(1);
 	C3D_TexEnvInit(s1);
-	C3D_TexEnvSrc(s1, C3D_RGB, GPU_PREVIOUS, GPU_TEXTURE1, GPU_PRIMARY_COLOR);
-	C3D_TexEnvFunc(s1, C3D_RGB, GPU_MODULATE);
+	if (gSunDebug & SUN_DBG_NOTEX) {
+		// (sunnotex: stage 1 passes the colour on; stage 2 then mixes it with itself - no shadow, no texture read.)
+		C3D_TexEnvSrc(s1, C3D_RGB, GPU_PREVIOUS, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+		C3D_TexEnvFunc(s1, C3D_RGB, GPU_REPLACE);
+	} else {
+		C3D_TexEnvSrc(s1, C3D_RGB, GPU_PREVIOUS, GPU_TEXTURE1, GPU_PRIMARY_COLOR);
+		// An A8 mask has its value in the alpha (its rgb reads 0): the second operand is the texel's alpha then.
+		C3D_TexEnvOpRgb(s1, GPU_TEVOP_RGB_SRC_COLOR, sunA8() ? GPU_TEVOP_RGB_SRC_ALPHA : GPU_TEVOP_RGB_SRC_COLOR,
+		                GPU_TEVOP_RGB_SRC_COLOR);
+		C3D_TexEnvFunc(s1, C3D_RGB, GPU_MODULATE);
+	}
 	C3D_TexEnvSrc(s1, C3D_Alpha, GPU_PREVIOUS, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
 	C3D_TexEnvFunc(s1, C3D_Alpha, GPU_REPLACE);
 	C3D_TexEnv* s2 = C3D_GetTexEnv(2);
@@ -317,7 +332,13 @@ void updateSun() {
 	float s = 0.0f;
 	if (gSunChunk && gSunMaterialOk && !gSkinned && !gUiPass && gPass != PASS_SKY && gFade == 255 && !gNoSunProgram) s = gSunDark;
 	const u8 c = u8(clamp(s, 0.0f, 1.0f) * 255.0f + 0.5f);
-	if (c) bindSunTexture(&gSunChunk->tex);
+	if (c && !(gSunDebug & SUN_DBG_NOTEX)) {
+		if (gSunDebug & SUN_DBG_WHITE) {
+			if (makeSunWhite()) bindSunTexture(&gSunWhite);
+		} else {
+			bindSunTexture(&gSunChunk->tex);
+		}
+	}
 	if (c == gSunConst) return;
 	gSunConst = c;
 	C3D_TexEnvColor(C3D_GetTexEnv(2), 0xFF000000u | (u32(c) << 16) | (u32(c) << 8) | u32(c));
@@ -434,6 +455,13 @@ void setDayDelta(float x, float y, float z) {
 	if (gMvpShader) C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocLightK, x / 65025.0f, y / 65025.0f, z / 65025.0f, 0.0f);
 }
 
+// fix144: a mask is on unit 1 only for the sun's entry. Any other entry (and the overlay, the sky, the characters) finds the
+// noise or the white 8x8 there: texture unit 1 samples for every pixel of every draw while it is on, whatever the stages read,
+// and those entries' texture coordinate 1 is not the mask's (sunkeep: as fix143, the mask stays).
+void guardUnit1() {
+	if (gBound != PROGRAM_FAST_SUN && gSunBound && !(gSunDebug & SUN_DBG_KEEP)) bindUnit1Default();
+}
+
 // The fast entry draws the static world, the skin entry the characters, the full one what sways.
 void bindProgram(int which) {
 	if (!gMvpShader || which == gBound) return;
@@ -453,6 +481,7 @@ void useProgram(bool fast) {
 	// (Dissolving needs texture coordinate 1 for the noise: `fadefast`, and the chunk goes without its mask until it is whole.)
 	const bool sun = gSunChunk && !gNoSunProgram && gFade == 255;
 	bindProgram(fast ? (sun ? PROGRAM_FAST_SUN : PROGRAM_FAST) : PROGRAM_FULL);
+	guardUnit1();
 }
 
 // The GPU executes a frame's command list after C3D_FrameEnd returns, so
@@ -782,7 +811,10 @@ Texture* textureCreate(const TexHeader& h, const u8* data) {
 	p.width = h.width;
 	p.height = h.height;
 	p.maxLevel = u8(h.mipCount - 1);
-	p.format = h.format == TEX_ETC1A4 ? GPU_ETC1A4 : h.format == TEX_L4 ? GPU_L4 : GPU_ETC1;
+	// fix144: a sun's mask (TEX_L4) becomes GPU_A8 here unless sunl4 (see sunA8): the same texel order, a byte a texel.
+	const bool mask = h.format == TEX_L4;
+	const bool toA8 = mask && sunA8();
+	p.format = h.format == TEX_ETC1A4 ? GPU_ETC1A4 : toA8 ? GPU_A8 : mask ? GPU_L4 : GPU_ETC1;
 	p.type = GPU_TEX_2D;
 	p.onVram = false; // VRAM is only 6 MB; see docs/ROADMAP.md
 	if (!C3D_TexInitWithParams(&t->tex, nullptr, p)) {
@@ -794,17 +826,36 @@ Texture* textureCreate(const TexHeader& h, const u8* data) {
 		}
 	}
 	// The baker already produced PICA's tile order, so each level is a memcpy.
-	for (u32 level = 0; level < h.mipCount; ++level)
-		C3D_TexLoadImage(&t->tex, data + texLevelOffset(h, level), GPU_TEXFACE_2D, int(level));
+	u8* wide = nullptr;
+	if (toA8) {
+		wide = static_cast<u8*>(malloc(u32(h.width) * h.height));
+		if (!wide) {
+			C3D_TexDelete(&t->tex);
+			free(t);
+			return nullptr;
+		}
+	}
+	for (u32 level = 0; level < h.mipCount; ++level) {
+		const u8* src = data + texLevelOffset(h, level);
+		if (toA8) {
+			// Nibble n (the low one first) is texel n in the PICA's order (g3ds/tex.h texL4Nibble): byte n of the A8 level.
+			const u32 texels = (u32(h.width) >> level) * (u32(h.height) >> level);
+			for (u32 n = 0; n < texels; ++n) wide[n] = u8(((src[n >> 1] >> ((n & 1u) * 4u)) & 15u) * 17u);
+			src = wide;
+		}
+		C3D_TexLoadImage(&t->tex, src, GPU_TEXFACE_2D, int(level));
+	}
+	free(wide);
 	C3D_TexFlush(&t->tex);
-	C3D_TexSetFilter(&t->tex, GPU_LINEAR, GPU_LINEAR);
+	const bool nearest = mask && (gSunDebug & SUN_DBG_NEAREST);
+	C3D_TexSetFilter(&t->tex, nearest ? GPU_NEAREST : GPU_LINEAR, nearest ? GPU_NEAREST : GPU_LINEAR);
 	C3D_TexSetFilterMipmap(&t->tex, GPU_NEAREST);
-	if (h.flags & TEXF_CLAMP)
+	if ((h.flags & TEXF_CLAMP) && !(mask && (gSunDebug & SUN_DBG_REPEAT)))
 		C3D_TexSetWrap(&t->tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
 	else
 		C3D_TexSetWrap(&t->tex, GPU_REPEAT, GPU_REPEAT);
 
-	t->bytes = h.dataSize;
+	t->bytes = toA8 ? h.dataSize * 2u : h.dataSize;
 	gMem.textureBytes += t->bytes;
 	++gMem.textureCount;
 	return t;
@@ -1248,6 +1299,7 @@ void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin) 
 		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, off[0], off[1], off[2], skin.posScale);
 		setSkinned(true);
 		bindProgram(PROGRAM_SKIN);
+		guardUnit1();
 	} else {
 		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocChunk, off[0], off[1], off[2], skin.posScale);
 		for (u32 b = 0; b < skin.boneCount; ++b) {
@@ -1457,6 +1509,9 @@ void c3dSetFillTest(bool on) { gFillTest = on; }
 void c3dSetNoSun(bool on) {
 	gNoSun = on;
 	gNoSunProgram = on;
+}
+void c3dSetSunDebug(unsigned flags) {
+	if (!gReady) gSunDebug = flags; // (the masks' format and the stages are chosen at init and at load)
 }
 void c3dSetDebugDraw(u16 skipFlags, int program) {
 	gDebugSkipFlags = skipFlags;

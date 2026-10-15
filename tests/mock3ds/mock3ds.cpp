@@ -43,6 +43,7 @@ C3D_RenderTarget* gLinkedR = nullptr;
 C3D_RenderTarget* gDrawingOn = nullptr; // the target the last C3D_SetFrameBuf / C3D_FrameDrawOn chose
 bool g3D = false, gWide = false, gWideSupported = true;
 C3D_Tex* gBoundTex = nullptr;
+const C3D_Tex* gBoundTex1 = nullptr; // (fix144: what unit 1 holds, for DrawCall::tex1)
 C3D_BufInfo gBufInfo {};
 C3D_AttrInfo gAttrInfo {};
 C3D_TexEnv gTexEnv[6];
@@ -424,6 +425,7 @@ unsigned violations() {
 }
 void reset() {
 	gBoundEntry = 0;
+	gBoundTex1 = nullptr;
 	gCount = Counters {};
 	gDrawingOn = nullptr;
 	gLinkedR = nullptr;
@@ -632,8 +634,13 @@ bool C3D_TexInitWithParams(C3D_Tex* tex, void*, C3D_TexInitParams p) {
 	return tex->data != nullptr;
 }
 void C3D_TexLoadImage(C3D_Tex* tex, const void* data, GPU_TEXFACE, int level) {
-	// Touch both ends: the source must be readable, the destination allocated.
-	if (level == 0 && tex->data && tex->size) static_cast<u8*>(tex->data)[0] = static_cast<const u8*>(data)[0];
+	// As citro3d: the level's bytes copied to its place (fix144: the whole level, so that tests can look at the texels).
+	if (!tex->data || !tex->size || level < 0) return;
+	const u32 bits = tex->fmt == GPU_ETC1 || tex->fmt == GPU_L4 ? 4 : 8;
+	u32 offset = 0;
+	for (int l = 0; l < level; ++l) offset += (u32(tex->width) >> l) * (u32(tex->height) >> l) * bits / 8;
+	const u32 bytes = (u32(tex->width) >> level) * (u32(tex->height) >> level) * bits / 8;
+	if (offset + bytes <= tex->size) memcpy(static_cast<u8*>(tex->data) + offset, data, bytes);
 }
 void C3D_TexFlush(C3D_Tex*) {}
 void C3D_TexDelete(C3D_Tex* tex) {
@@ -649,7 +656,7 @@ void C3D_TexBind(int unitId, C3D_Tex* tex) {
 		abort();
 	}
 	if (unitId == 0) gBoundTex = tex;
-	if (unitId == 1) ++gCount.texUnit1Binds;
+	if (unitId == 1) ++gCount.texUnit1Binds, gBoundTex1 = tex;
 }
 
 bool C3D_Init(size_t cmdBufSize) {
@@ -848,6 +855,7 @@ void C3D_DrawElements(GPU_Primitive_t, int count, int, const void* indices) {
 		memcpy(call.uniforms, gFloatUniforms, sizeof(call.uniforms));
 		call.bools = gBoolUniforms;
 		call.entry = gBoundEntry;
+		call.tex1 = gBoundTex1;
 		gDrawHook(call, gDrawHookUser);
 	}
 }

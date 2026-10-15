@@ -22,6 +22,16 @@ void c3dSetNoSun(bool on);
 // For finding faults (debug.txt): materials with any of `skipFlags` (MATF_*) are not drawn; `program` 1 draws the world with the fast
 // entry only, 2 with the full one only, 0 as usual.
 void c3dSetDebugDraw(u16 skipFlags, int program);
+// fix144, the sun's mask (debug.txt words sunl4 sunkeep sunwhite sunnotex sunnearest sunrepeat). Call before init().
+enum SunDebug : unsigned {
+	SUN_DBG_L4 = 1u << 0,      // masks stay GPU_L4 as baked (by default they become GPU_A8, the noise's format, at load)
+	SUN_DBG_KEEP = 1u << 1,    // a mask stays on unit 1 after its chunk (as fix143); by default the noise/white goes back
+	SUN_DBG_WHITE = 1u << 2,   // the white 8x8 is bound in place of every mask (sampling, no mask data)
+	SUN_DBG_NOTEX = 1u << 3,   // the sun's entry is used, but no stage reads unit 1 and no mask is bound
+	SUN_DBG_NEAREST = 1u << 4, // masks filtered NEAREST (not LINEAR)
+	SUN_DBG_REPEAT = 1u << 5,  // masks wrapped REPEAT (not CLAMP_TO_EDGE)
+};
+void c3dSetSunDebug(unsigned flags);
 // Smooths the edges: the picture is drawn twice the size each way (four times the pixels) and shrunk by the
 // display-transfer unit as it goes to the screen. Call before init(); if the bigger buffers do not fit into VRAM
 // the picture stays as it was (c3dSupersample() says which).

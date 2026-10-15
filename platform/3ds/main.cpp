@@ -156,7 +156,7 @@ static void flushHitches() {
 
 static void startHitchLog(const char* what) {
 	if (FILE* f = fopen(kHitchPath, "w")) {
-		fprintf(f, "# gothic3ds fix143 hitches: %s\n", what);
+		fprintf(f, "# gothic3ds fix144 hitches: %s\n", what);
 		fclose(f);
 	}
 	gHitchCount = 0;
@@ -182,11 +182,15 @@ static Thread gWatchdog = nullptr;
 //   nowind nowater noalpha noblend   materials of that kind not drawn (swaying, water, cut-out, see-through)
 //   fastonly fullonly                the world drawn with the fast entry only / the full entry only
 //   noladderinfo  world/<name>/ladderinfo not read;  noweathersfx  the baker's rain and thunder not taken
+//   fix144, the sun's mask (gfx::SunDebug): sunl4 (masks stay GPU_L4, not A8)  sunkeep (the mask stays on unit 1 after its
+//   chunk)  sunwhite (the white 8x8 in place of every mask)  sunnotex (the sun's entry, no mask read)  sunnearest  sunrepeat
+//   ("sunl4 sunkeep" is fix143's way)
 static char gDebugWords[256] = "";
 static u32 gDebugSkip = 0;
 static bool gDebugNoSun = false, gDebugClassic = false, gDebugPlain = false;
 static g3::u16 gDebugMatSkip = 0;
 static int gDebugProgram = 0;
+static unsigned gDebugSun = 0; // gfx::SunDebug
 static bool gDebugNoLadderInfo = false, gDebugNoWeatherSfx = false, gDebugLadderUnused = false;
 static void readDebugFile() {
 	FILE* f = fopen("sdmc:/3ds/gothic3ds/debug.txt", "rb");
@@ -226,6 +230,12 @@ static void readDebugFile() {
 		if (strcmp(w, "noladderinfo") == 0) gDebugNoLadderInfo = known = true;
 		if (strcmp(w, "ladderunused") == 0) gDebugLadderUnused = known = true;
 		if (strcmp(w, "noweathersfx") == 0) gDebugNoWeatherSfx = known = true;
+		if (strcmp(w, "sunl4") == 0) gDebugSun |= gfx::SUN_DBG_L4, known = true;
+		if (strcmp(w, "sunkeep") == 0) gDebugSun |= gfx::SUN_DBG_KEEP, known = true;
+		if (strcmp(w, "sunwhite") == 0) gDebugSun |= gfx::SUN_DBG_WHITE, known = true;
+		if (strcmp(w, "sunnotex") == 0) gDebugSun |= gfx::SUN_DBG_NOTEX, known = true;
+		if (strcmp(w, "sunnearest") == 0) gDebugSun |= gfx::SUN_DBG_NEAREST, known = true;
+		if (strcmp(w, "sunrepeat") == 0) gDebugSun |= gfx::SUN_DBG_REPEAT, known = true;
 		if (known && strlen(gDebugWords) + strlen(w) + 2 < sizeof(gDebugWords)) {
 			strcat(gDebugWords, " ");
 			strcat(gDebugWords, w);
@@ -253,7 +263,7 @@ static void watchdogMain(void*) {
 		if (still < 20 || (still - 20) % 40 != 0 || written >= 6) continue;
 		if (FILE* f = fopen(kHangPath, written == 0 ? "w" : "a")) {
 			fprintf(f, "%s%s%s%.1f s without a frame after frame %lu: in \"%s\"; %s (steps %lu, %lu at the last frame)\n",
-			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix143 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix143 watchdog: the main loop stopped\n") : "",
+			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix144 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix144 watchdog: the main loop stopped\n") : "",
 			        written == 0 && gDebugWords[0] ? gDebugWords : "", written == 0 && gDebugWords[0] ? ")\n" : "", double(still) * 0.25,
 			        static_cast<unsigned long>(frame), g3::gTrace.stage ? g3::gTrace.stage : "?",
 			        beats != lastBeats ? "it still goes from step to step (a loop)" : "no step since (stuck in that one)",
@@ -425,6 +435,7 @@ int main(int, char**) {
 	gfx::c3dSetDoubleDraws((startKeys & KEY_START) != 0); // hold START at start: every draw twice
 	gfx::c3dSetFillTest(halfPicture); // hold ZR at start: half the pixels, the same triangles
 	gfx::c3dSetNoSun((startKeys & KEY_CSTICK_UP) != 0 || gDebugNoSun);
+	gfx::c3dSetSunDebug(gDebugSun);
 	gfx::c3dSetDebugDraw(gDebugMatSkip, gDebugProgram); // hold the C-Stick up at start: no sun's shadow at all (its stages left out)
 	gfx::c3dSetFadeShader(dissolve);
 	gfx::c3dSetSupersampleMode(settings.antialias); // (a change in the menu counts after a restart)

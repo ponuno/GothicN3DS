@@ -656,10 +656,12 @@ struct SunCheck {
 	double worst = 0.0;
 	const WorldVertex* verts = nullptr;
 	float origin[3] = {0, 0, 0}, posScale = 1.0f, x0 = 0, z0 = 0, sx = 1, sz = 1;
+	const C3D_Tex* tex1 = nullptr; // what unit 1 held for the last draw
 };
 static void sunHook(const mock3ds::DrawCall& call, void* user) {
 	SunCheck& sc = *static_cast<SunCheck*>(user);
 	sc.entry = call.entry;
+	sc.tex1 = call.tex1;
 	for (unsigned i = 0; i < call.count; ++i) {
 		mock3ds::ShadedVertex out;
 		if (!mock3ds::shadeVertex(call, call.indices[i], out, true)) continue;
@@ -726,10 +728,16 @@ static void testSunMask() {
 	const int withEntry = sc.entry;
 	const double worst = sc.worst;
 	const unsigned shaded = sc.vertices;
-	// Without a mask: the short entry.
+	// fix144: the mask is on unit 1 as GPU_A8 (nibble n = texel n: 0x5A gives 10, 5, 10, 5 ... times 17).
+	const C3D_Tex* maskTex = sc.tex1;
+	CHECK(maskTex && maskTex->fmt == GPU_A8 && maskTex->width == 8 && maskTex->height == 8 && maskTex->data &&
+	      static_cast<const u8*>(maskTex->data)[0] == 170 && static_cast<const u8*>(maskTex->data)[1] == 85 &&
+	      static_cast<const u8*>(maskTex->data)[63] == 85);
+	// Without a mask: the short entry, and the mask no longer on unit 1.
 	gfx::setChunkTransform(sc.origin, sc.posScale, 1.0f / 1024.0f, nullptr);
 	gfx::draw(mesh, 0, 3);
 	const int withoutEntry = sc.entry;
+	CHECK(sc.tex1 && sc.tex1 != maskTex);
 	mock3ds::setDrawHook(nullptr, nullptr);
 	gfx::frameEnd();
 	std::printf("  sun's mask: entry %d with it (%u vertices, texture coordinate 1 within %.2g), entry %d without\n", withEntry, shaded,

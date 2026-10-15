@@ -199,6 +199,7 @@ float smooth01(float t) {
 }
 
 float wrapPi(float a) {
+	if (!(fabsf(a) < 1.0e4f)) a = 0.0f; // (fix134: an angle gone to infinity would loop here for ever)
 	while (a > 3.14159265f) a -= 6.2831853f;
 	while (a < -3.14159265f) a += 6.2831853f;
 	return a;

@@ -48,6 +48,7 @@ u32 lockLength(const char* combo) {
 
 float angleBetween(float from, float to, float t) {
 	float d = to - from;
+	if (!(fabsf(d) < 1.0e4f)) d = 0.0f; // (fix134: an angle gone to infinity would loop here for ever)
 	while (d > 3.14159265f) d -= 6.2831853f;
 	while (d < -3.14159265f) d += 6.2831853f;
 	return from + d * t;
@@ -127,6 +128,7 @@ int App::corpseNearest(bool any) const {
 		const float d = dx * dx + dz * dz;
 		if (d >= bestD || fabsf(n.pos[1] - _player.feet.y) > 160.0f) continue;
 		float diff = atan2f(dx, dz) - _hero.yaw();
+		if (!(fabsf(diff) < 1.0e4f)) diff = 0.0f; // (fix134: an angle gone to infinity would loop here for ever)
 		while (diff > 3.14159265f) diff -= 6.2831853f;
 		while (diff < -3.14159265f) diff += 6.2831853f;
 		// (Right at the feet it is in front whichever way one faces.)

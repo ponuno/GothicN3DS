@@ -705,6 +705,7 @@ int Triggers::doorNear(Vec3 feet, float yaw, float reach) const {
 		if (d2 >= bestD || fabsf(c.y - (feet.y + 100.0f)) > 220.0f) continue;
 		if (d2 > 60.0f * 60.0f) {
 			float a = atan2f(dx, dz) - yaw;
+			if (!(fabsf(a) < 1.0e4f)) a = 0.0f; // (fix134: an angle gone to infinity would loop here for ever)
 			while (a > 3.14159265f) a -= 6.2831853f;
 			while (a < -3.14159265f) a += 6.2831853f;
 			if (fabsf(a) > 1.1f) continue;

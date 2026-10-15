@@ -507,6 +507,12 @@ private:
 	float _thunderWait = -1.0f;         // seconds until the thunder is heard (<0: none)
 	u8 _thunderMade = 0;                // how many thunders were made here (engine/weather_sfx.h; 0: the game's own)
 	u32 _thunderTurn = 0;
+	// The baker's own thunders (meta/weathersfx "N name" near, "F name" far; tools/bake/weather_sfx_bake.h): a near one when the
+	// flash is close (its sound follows soon), a far one otherwise, taking turns within each.
+	const char* _thunderNear[4] = {};
+	const char* _thunderFar[4] = {};
+	u8 _thunderNearCount = 0, _thunderFarCount = 0;
+	bool _thunderClose = false;         // the thunder waiting is a near one
 	float _fps = 60.0f;      // frames per second, smoothed (the counter of Settings::showFps)
 	u32 _switches = 0;
 	bool _portalLock = false; // just arrived: ignore portals until the player has left their boxes

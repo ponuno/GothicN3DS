@@ -70,6 +70,7 @@
 #include "gfx_c3d.h"
 #include "pacer.h"
 #include "sys.h"
+#include "trace.h"
 
 #include <3ds.h>
 #include <citro3d.h>
@@ -154,7 +155,7 @@ static void flushHitches() {
 
 static void startHitchLog(const char* what) {
 	if (FILE* f = fopen(kHitchPath, "w")) {
-		fprintf(f, "# gothic3ds fix118 hitches: %s\n", what);
+		fprintf(f, "# gothic3ds fix134 hitches: %s\n", what);
 		fclose(f);
 	}
 	gHitchCount = 0;
@@ -162,15 +163,78 @@ static void startHitchLog(const char* what) {
 }
 
 
+// The watchdog (fix134): when the frames stop for 5 s while the game is not in the HOME Menu, it writes where the main
+// loop is (engine/trace.h) to hang.txt - the step it is in, whether it still moves from step to step (a loop) or not
+// (stuck in one: waiting for the GPU, a lock, an endless loop in one function), and the steps before. The file is
+// removed at every start, so one that is there after a run is from that run.
+static const char* kHangPath = "sdmc:/3ds/gothic3ds/hang.txt";
+static volatile bool gWatchdogRun = false;
+static volatile bool gWatchdogPaused = false; // the HOME Menu, the system's sleep, a load the game knows is long
+static Thread gWatchdog = nullptr;
+
+static void watchdogMain(void*) {
+	u32 lastFrame = g3::gTrace.frame, lastBeats = g3::gTrace.beats;
+	int still = 0, written = 0;
+	while (gWatchdogRun) {
+		svcSleepThread(250000000LL); // a quarter of a second
+		const u32 frame = g3::gTrace.frame, beats = g3::gTrace.beats;
+		if (frame != lastFrame || gWatchdogPaused) {
+			lastFrame = frame;
+			lastBeats = beats;
+			still = 0;
+			continue;
+		}
+		++still;
+		// After 5 s, then every 10 s while it lasts (at most 6 times: what changed in between says loop or stuck).
+		if (still < 20 || (still - 20) % 40 != 0 || written >= 6) continue;
+		if (FILE* f = fopen(kHangPath, written == 0 ? "w" : "a")) {
+			fprintf(f, "%s%.1f s without a frame after frame %lu: in \"%s\"; %s (steps %lu, %lu at the last frame)\n",
+			        written == 0 ? "# gothic3ds fix134 watchdog: the main loop stopped\n" : "", double(still) * 0.25,
+			        static_cast<unsigned long>(frame), g3::gTrace.stage ? g3::gTrace.stage : "?",
+			        beats != lastBeats ? "it still goes from step to step (a loop)" : "no step since (stuck in that one)",
+			        static_cast<unsigned long>(beats), static_cast<unsigned long>(lastBeats));
+			fprintf(f, "  the last steps, oldest first:");
+			const u32 at = g3::gTrace.recentAt;
+			for (u32 k = 0; k < 16; ++k) {
+				const char* st = g3::gTrace.recent[(at + k) & 15u];
+				if (st) fprintf(f, "\n    %s", st);
+			}
+			fprintf(f, "\n");
+			fclose(f);
+		}
+		++written;
+	}
+}
+
+static void watchdogStart() {
+	remove(kHangPath);
+	s32 priority = 0x30;
+	svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
+	gWatchdogRun = true;
+	// (Above the main thread, on its core: it runs even if the main thread never yields.)
+	gWatchdog = threadCreate(watchdogMain, nullptr, 8 * 1024, priority > 0x19 ? priority - 1 : priority, -2, false);
+	if (!gWatchdog) gWatchdogRun = false;
+}
+
+static void watchdogStop() {
+	if (!gWatchdog) return;
+	gWatchdogRun = false;
+	threadJoin(gWatchdog, U64_MAX);
+	threadFree(gWatchdog);
+	gWatchdog = nullptr;
+}
+
 // The HOME Menu was opened: the game stands still in its pause menu meanwhile.
 static volatile bool gSuspended = false;
 static aptHookCookie gAptCookie;
 static void onApt(APT_HookType hook, void*) {
 	if (hook == APTHOOK_ONSUSPEND || hook == APTHOOK_ONSLEEP) {
 		gSuspended = true;
+		gWatchdogPaused = true;
 		g3::reproject::pause(true);
 		g3::display::restore(true); // (the system's own timing while it has the screen; put back on return)
 	} else if (hook == APTHOOK_ONRESTORE || hook == APTHOOK_ONWAKEUP) {
+		gWatchdogPaused = false;
 		g3::reproject::pause(false);
 		g3::display::resume();
 	}
@@ -229,6 +293,7 @@ static void showPanel(const g3::Canvas& canvas) {
 
 static void waitForStart() {
 	while (aptMainLoop()) {
+		g3::trace("main: input");
 		hidScanInput();
 		if (hidKeysDown() & KEY_START) break;
 		gspWaitForVBlank();
@@ -270,6 +335,9 @@ int main(int, char**) {
 	const bool blind = (startKeys & KEY_DLEFT) != 0;     // no perception
 	g3::Settings settings;
 	const bool hadSettings = settings.load(kSettingsPath);
+	// The first start (no settings.bin yet): the interface in English. (Settings' own default stays Russian, which the
+	// tests and the menu's texts are keyed by; a settings.bin keeps whatever language it has.)
+	if (!hadSettings) settings.language = g3::LANG_EN;
 	// Objects dissolve in and out (a shader of its own): as the menu says,
 	// unless D-Pad Right is held.
 	const bool dissolve = settings.dissolve && !(startKeys & KEY_DRIGHT);
@@ -359,9 +427,12 @@ int main(int, char**) {
 	app.npcs().config().poseHidden = false; // (fix91: no pose for those behind walls farther than 8 m)
 	app.npcs().config().prefetchRange = 3000.0f; // (their models are read on the read-ahead's thread; the frame only builds them)
 	printf("loading...\n");
+	g3::trace("main: preload");
 	app.world().preload(app.camera().pos);
 	consoleClear();
 	aptHook(&gAptCookie, onApt, nullptr);
+	g3::trace("main: the first frame");
+	watchdogStart();
 	// When a refresh has no new picture, the old one is shown turned by the turn of the view (the menu's "Доворот кадра").
 	const bool reprojectOk = g3::reproject::start();
 	hidSetRepeatParameters(24, 6);
@@ -412,6 +483,7 @@ int main(int, char**) {
 	u32 swallowed = 0;                     // buttons a page or the menu used: the game ignores them until let go
 
 	while (aptMainLoop()) {
+		g3::trace("main: input");
 		hidScanInput();
 		// Stereo 3D: the 3D slider decides, between frames (0: one picture as usual).
 		{
@@ -798,6 +870,8 @@ int main(int, char**) {
 			msWorst = max(msWorst, fs.frameMs);
 			lateFrames += fs.frameMs > periodMs * float(interval) * 1.25f;
 		}
+		g3::gTrace.frame = frame + 1;
+		g3::trace("main: report");
 		if (++frame % 30 == 0) {
 			const WorldStats& ws = app.world().stats();
 			const gfx::MemStats mem = gfx::memStats();
@@ -1058,6 +1132,7 @@ int main(int, char**) {
 			panelShown = false;
 		}
 		if (!wantReport) {
+			g3::trace("main: bottom screen");
 			if (app.panel().draw(app.inventory(), !panelShown)) showPanel(app.panel().canvas());
 			panelShown = true;
 		}
@@ -1072,6 +1147,7 @@ int main(int, char**) {
 	g3::display::restore(); // (the screen as the system had it)
 	app.settings().save(kSettingsPath);
 	flushHitches();
+	watchdogStop();
 	g3::reproject::stop();
 	aptUnhook(&gAptCookie);
 	exitStep("exit 2/4: closing the world");

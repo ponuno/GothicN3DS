@@ -5,6 +5,7 @@
 #include "g3ds/model.h"
 #include "g3ds/tex.h"
 #include "font_bake.h"
+#include "grass_report.h"
 #include "importers.h"
 #include "model_bake.h"
 
@@ -184,6 +185,11 @@ void usage() {
 	          "  --far-cell M       its finest grid, metres (default 4; coarser if needed to fit)\n"
 	          "  --far-tris N       its most triangles, thousands (default 80)\n"
 	          "  --plant-words A,B  more words that name a tree in object/material/texture names (a mod's own)\n"
+	          "  --grass-report DIR for the grass tests: grass_<world>.txt/.png/_mask.png/_rules.txt in DIR, per outdoor world -\n"
+	          "                     where new grass could grow and what it would cost (data.pak is the same with or without it)\n"
+	          "  --grass-rules FILE the weights of the ground textures for that report (TEXTURE WEIGHT per line; its _rules.txt)\n"
+	          "  --grass-cell M     the report's map cell, metres (default 1; coarser for a big world)\n"
+	          "  --no-weather-sfx   keep the game's own (or the made) rain and thunder instead of the baker's recordings\n"
 	          "  --pack-level N     LZ4HC effort 3..12 (default 9; 12 is about 0.2 % smaller and a quarter slower to bake)\n"
 	          "  --threads N        worker threads");
 }
@@ -218,6 +224,8 @@ int main(int argc, char** argv) {
 		std::vector<std::string> levels;
 		ZenModOptions modOpt;
 		std::string extList = "sgt,sty,dls";
+		GrassReportOptions grass;
+		bool grassReport = false;
 		bool scriptCheck = true, follow = true, hero = true, withScripts = true, withFont = true;
 		int fontCodePage = 0;
 		for (int i = 2; i < argc; ++i) {
@@ -325,6 +333,10 @@ int main(int argc, char** argv) {
 			else if (a == "--light-strength") opt.light.strength = std::clamp(std::stof(value()), 0.1f, 4.0f);
 			else if (a == "--light-cell") opt.light.cell = std::clamp(std::stof(value()), 0.2f, 10.0f) * 100.0f;
 			else if (a == "--light-static") opt.light.statics = true;
+			else if (a == "--grass-report") grass.dir = value(), grassReport = true;
+			else if (a == "--grass-rules") grass.rulesFile = value();
+			else if (a == "--grass-cell") grass.cellCm = std::clamp(std::stof(value()), 0.25f, 20.0f) * 100.0f;
+			else if (a == "--no-weather-sfx") opt.weatherSfx = false;
 			else if (a == "--water-light") opt.waterLight = u8(std::clamp(std::stoi(value()), 0, 255));
 			else if (a == "--water-texture") opt.waterTexture = value() != "original";
 			else if (a == "--water-alpha") opt.waterAlpha = u8(std::clamp(std::stoi(value()), 0, 255));
@@ -558,6 +570,15 @@ int main(int argc, char** argv) {
 			}
 		}
 		if (!firstName.empty()) worlds[0].name = firstName;
+		if (grassReport)
+			for (const BakeWorld& w : worlds) {
+				try {
+					std::printf("%s\n", writeGrassReport(w.name, w.scene, grass).c_str());
+				} catch (const std::exception& ex) {
+					std::printf("WARNING: grass report of %s not written: %s\n", w.name.c_str(), ex.what());
+				}
+				std::fflush(stdout);
+			}
 
 		PakWriter pak, musicPak;
 		if (!opt.musicDir.empty()) scripts.musicPak = &musicPak;

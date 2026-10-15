@@ -31,6 +31,7 @@ const i32 kBsSit = 11 | kBsFreeHands, kBsLie = 12;
 const float kAtPoint = 165.0f;
 
 float wrapAngle(float a) {
+	if (!(fabsf(a) < 1.0e4f)) a = 0.0f; // (fix134: an angle gone to infinity would loop here for ever)
 	while (a > kPi) a -= 2.0f * kPi;
 	while (a < -kPi) a += 2.0f * kPi;
 	return a;

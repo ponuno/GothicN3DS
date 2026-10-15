@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include "sound_bake.h"
+#include "weather_sfx_bake.h"
 #include "fight_ai.h"
 #include "fight_clips.h"
 
@@ -315,8 +316,12 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				for (size_t i = 0; i < sb.unusable.size() && i < 4; ++i) text += " [" + sb.unusable[i] + "]";
 			}
 			line(text);
+			// The baker's own rain and thunder (weather_sfx_bake.h): listed first, so the game takes them before its own.
+			std::string ownWeather;
+			if (opt.weatherSfx) line(bakeWeatherSfx(pak, opt.soundRate, ownWeather));
 			// The Barrier's hum: which sound instances the scripts have for it (the engine looks for MFX_BARRIERE_AMBIENT and the like).
 			const SrcScript* names = haveSfx ? scripts.sfx : scripts.script;
+			if (!names && !ownWeather.empty()) pak.add("meta/weathersfx", ASSET_META, std::vector<u8>(ownWeather.begin(), ownWeather.end()));
 			if (names) {
 				std::string found;
 				for (const SrcSymbol& s : names->symbols) {
@@ -327,7 +332,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				line(found.empty() ? "barrier: no sound instance named like it in the scripts; the dome is silent"
 				                   : "barrier: sound instances named like it: " + found);
 				// The weather's sounds: the instances named like rain and thunder (the engine takes the first it can play; a looping one for the rain).
-				std::string rainList, thunderList, meta;
+				std::string rainList, thunderList, meta = ownWeather;
 				for (const SrcSymbol& s : names->symbols) {
 					std::string up = s.name;
 					for (char& c : up) c = char(std::toupper(static_cast<unsigned char>(c)));
@@ -358,8 +363,9 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 					(f[0][0] == 'R' ? rainList : thunderList) += (f[0][0] == 'R' ? rainList : thunderList).empty() ? stem + " (file)" : ", " + stem + " (file)";
 				}
 				if (!meta.empty()) pak.add("meta/weathersfx", ASSET_META, std::vector<u8>(meta.begin(), meta.end()));
-				line("weather sounds: rain: " + (rainList.empty() ? std::string("none (the game makes its own)") : rainList) + "; thunder: " +
-				     (thunderList.empty() ? std::string("none (the game makes its own)") : thunderList));
+				const std::string none = ownWeather.empty() ? "none (the game makes its own)" : "none (the baker's are used)";
+				line("weather sounds of the game: rain: " + (rainList.empty() ? none : rainList) + "; thunder: " + (thunderList.empty() ? none : thunderList) +
+				     (ownWeather.empty() ? "" : "; the baker's own come first"));
 			}
 		} catch (const std::exception& ex) {
 			line(std::string("WARNING: sounds not baked: ") + ex.what());

@@ -1818,6 +1818,16 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 				if (shown == PlantKind::None) shown = partKinds[p].second;
 			}
 			++plantKinds[size_t(shown)];
+			SrcPlant plant;
+			plant.pos[0] = vob.position.x;
+			plant.pos[1] = vob.position.y;
+			plant.pos[2] = vob.position.z;
+			plant.footY = footY;
+			plant.topY = topY;
+			plant.radius = inst.mesh->radius;
+			plant.kind = u8(shown);
+			plant.name = visualName;
+			scene.plants.push_back(std::move(plant));
 			++(objectKind != PlantKind::None ? plantsByName : plantsByPart)[visualName.empty() ? std::string("?") : visualName];
 		}
 	}
@@ -3754,6 +3764,7 @@ void importZenWorld(std::shared_ptr<const ZenGame> game, const ZenImportOptions&
 	scene.notes.push_back(std::string("source: ") + opt.zenName + " (" +
 	                      (version == zenkit::GameVersion::GOTHIC_1 ? "Gothic 1" : "Gothic 2") + ")");
 	appendMesh(world.world_mesh, opt, scene);
+	scene.worldTriangles = scene.triangles.size();
 	scene.indoor = world.world_bsp_tree.mode == zenkit::BspTreeType::INDOOR;
 	collectRooms(world.world_bsp_tree, scene);
 

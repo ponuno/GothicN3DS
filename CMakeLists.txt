@@ -61,7 +61,7 @@ target_compile_options(g3script PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rt
 if (NOT G3DS_BAKER_ONLY)
 add_library(g3engine STATIC engine/world.cpp engine/point_grid.cpp engine/app.cpp engine/collision.cpp engine/player.cpp engine/sky.cpp engine/weather.cpp
             engine/loader.cpp engine/readahead.cpp engine/pacer.cpp engine/model.cpp engine/hero.cpp engine/npcs.cpp engine/waynet.cpp engine/mobs.cpp engine/rooms.cpp engine/npc_world.cpp engine/triggers.cpp engine/npc_ai.cpp engine/npc_perc.cpp engine/npc_dialog.cpp engine/dialog_text.cpp engine/app_talk.cpp engine/app_doc.cpp engine/app_magic.cpp engine/app_ranged.cpp engine/recorder.cpp
-            engine/npc_fight.cpp engine/npc_items.cpp engine/ui.cpp engine/menu.cpp engine/settings.cpp engine/hud.cpp engine/inventory.cpp engine/panel.cpp engine/loot.cpp engine/particles.cpp engine/shadows.cpp engine/puddles.cpp engine/rain.cpp engine/weather_sfx.cpp engine/godrays.cpp engine/chests.cpp engine/containers.cpp engine/interact.cpp engine/trade.cpp engine/lang.cpp engine/sound.cpp engine/music.cpp engine/speech.cpp)
+            engine/npc_fight.cpp engine/npc_items.cpp engine/ui.cpp engine/menu.cpp engine/settings.cpp engine/hud.cpp engine/inventory.cpp engine/panel.cpp engine/loot.cpp engine/particles.cpp engine/shadows.cpp engine/puddles.cpp engine/rain.cpp engine/weather_sfx.cpp engine/godrays.cpp engine/chests.cpp engine/containers.cpp engine/interact.cpp engine/trade.cpp engine/lang.cpp engine/trace.cpp engine/sound.cpp engine/music.cpp engine/speech.cpp)
 target_include_directories(g3engine PUBLIC engine)
 target_link_libraries(g3engine PUBLIC g3core g3sys g3script)
 target_compile_options(g3engine PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
@@ -101,6 +101,8 @@ set(G3DS_BAKE_SOURCES
     tools/bake/visibility.cpp
     tools/bake/water_grid.cpp
     tools/bake/water_texture.cpp
+    tools/bake/grass_report.cpp
+    tools/bake/weather_sfx_bake.cpp
     tools/bake/ground_fx.cpp
     tools/bake/lod.cpp
     tools/bake/vcache.cpp
@@ -128,6 +130,11 @@ else ()
 endif ()
 
 add_library(g3tools STATIC ${G3DS_BAKE_SOURCES})
+# The baker's own rain and thunder (tools/bake/weather_sfx/*.wav) are built into it (weather_sfx_bake.cpp, .incbin).
+set(G3DS_WEATHER_SFX_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools/bake/weather_sfx)
+set_source_files_properties(tools/bake/weather_sfx_bake.cpp PROPERTIES
+    COMPILE_DEFINITIONS "G3DS_WEATHER_SFX_DIR=\"${G3DS_WEATHER_SFX_DIR}\""
+    OBJECT_DEPENDS "${G3DS_WEATHER_SFX_DIR}/G3_RAIN.wav;${G3DS_WEATHER_SFX_DIR}/G3_THUNDER_NEAR.wav;${G3DS_WEATHER_SFX_DIR}/G3_THUNDER_ROLL.wav;${G3DS_WEATHER_SFX_DIR}/G3_THUNDER_FAR.wav")
 target_include_directories(g3tools PUBLIC tools/common tools/bake)
 target_link_libraries(g3tools PUBLIC g3core g3script lz4hc rg_etc1 Threads::Threads)
 target_compile_options(g3tools PRIVATE ${G3DS_WARNINGS})

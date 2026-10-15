@@ -18,6 +18,7 @@ namespace {
 
 float turnToward(float from, float to, float maxStep) {
 	float d = to - from;
+	if (!(fabsf(d) < 1.0e4f)) d = 0.0f; // (fix134: an angle gone to infinity would loop here for ever)
 	while (d > 3.14159265f) d -= 6.2831853f;
 	while (d < -3.14159265f) d += 6.2831853f;
 	if (d > maxStep) d = maxStep;

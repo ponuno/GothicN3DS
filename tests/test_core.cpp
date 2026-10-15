@@ -4877,10 +4877,11 @@ static void testSound() {
 			sound.setHandleGain(hum, 0.2f);
 			sound.stop(hum);
 			CHECK(!sound.playing(hum));
-			// The app found no rain in this game's sounds and made its own.
+			// The baker put its own recordings in (weather_sfx_bake.h): the app takes them and makes none of its own.
 			Input none;
 			app.update(none, 1.0f / 30.0f);
-			CHECK(sound.knows("G3_RAIN_MADE") && sound.knows("G3_THUNDER_MADE_A"));
+			CHECK(sound.knows("G3_RAIN") && sound.knows("G3_THUNDER_NEAR") && sound.knows("G3_THUNDER_FAR") && sound.knows("G3_THUNDER_ROLL"));
+			CHECK(!sound.knows("G3_RAIN_MADE") && !sound.knows("G3_THUNDER_MADE_A"));
 		}
 
 		// Volume: 0 is silence, and a sound already playing follows it.

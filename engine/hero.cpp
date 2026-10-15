@@ -40,6 +40,7 @@ const float kDrawRate = 1.0f, kHolsterRate = 1.0f; // (as authored, now that the
 
 float wrapAngle(float a) {
 	const float pi = 3.14159265f;
+	if (!(fabsf(a) < 1.0e4f)) a = 0.0f; // (fix134: an angle gone to infinity would loop here for ever)
 	while (a > pi) a -= 2 * pi;
 	while (a < -pi) a += 2 * pi;
 	return a;

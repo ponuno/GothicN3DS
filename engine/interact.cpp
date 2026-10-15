@@ -15,6 +15,7 @@ namespace g3 {
 namespace {
 float angleBetween(float from, float to, float t) {
 	float d = to - from;
+	if (!(fabsf(d) < 1.0e4f)) d = 0.0f; // (fix134: an angle gone to infinity would loop here for ever)
 	while (d > 3.14159265f) d -= 6.2831853f;
 	while (d < -3.14159265f) d += 6.2831853f;
 	return from + d * t;
@@ -55,6 +56,7 @@ int App::mobNearest() const {
 	const auto inFront = [&](float dx, float dz) {
 		if (dx * dx + dz * dz <= 40.0f * 40.0f) return true;
 		float a = atan2f(dx, dz) - _hero.yaw();
+		if (!(fabsf(a) < 1.0e4f)) a = 0.0f; // (fix134: an angle gone to infinity would loop here for ever)
 		while (a > 3.14159265f) a -= 6.2831853f;
 		while (a < -3.14159265f) a += 6.2831853f;
 		return fabsf(a) <= 1.2f;

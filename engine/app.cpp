@@ -1,5 +1,6 @@
 #include "lang.h"
 #include "app.h"
+#include "trace.h"
 #include "weather_sfx.h"
 #include "stereo.h"
 #include "bytes.h"
@@ -402,8 +403,10 @@ void App::update(const Input& in, float dt) {
 	if (dt > 0.0f) _fps += (clamp(1.0f / dt, 0.0f, 120.0f) - _fps) * min(dt * 3.0f, 1.0f);
 	_env.timeOfDay += in.timeStep;
 	if (_env.dayLength > 0) _env.timeOfDay += dt * 24.0f / _env.dayLength;
+	if (!(_env.timeOfDay > -1.0e4f && _env.timeOfDay < 1.0e4f)) _env.timeOfDay = 12.0f; // (fix134: not for ever below)
 	while (_env.timeOfDay >= 24.0f) _env.timeOfDay -= 24.0f;
 	while (_env.timeOfDay < 0.0f) _env.timeOfDay += 24.0f;
+	trace("update: weather");
 	_weather.update(dt);
 	_world.config().windWeather = _world.indoor() ? 1.0f : _weather.windScale();
 
@@ -454,13 +457,17 @@ void App::update(const Input& in, float dt) {
 	}
 	for (u32 i = 0; i < _wantMobCount; ++i) _world.wantAt(_wantMobs[i]);
 	const double t0 = sys::timeMs();
+	trace("update: world");
 	_world.update(_player.eye());
 	const double t1 = sys::timeMs();
+	trace("update: npcs");
 	_npcs.update(_pak, _world, _player.eye(), _env.timeOfDay, dt);
+	trace("update: loot");
 	const double tLoot0 = sys::timeMs();
 	_times.npcUpdate = float(tLoot0 - t1);
 	if (_npcs.loaded()) _loot.update(_pak, _world, _npcs.game(), _player.eye());
 	const double tTrig0 = sys::timeMs();
+	trace("update: triggers");
 	if (_npcs.loaded()) {
 		// Riding a lift or a ferry: where the feet are on it before it moves, and after.
 		Vec3 rideLocal {0, 0, 0};
@@ -477,7 +484,9 @@ void App::update(const Input& in, float dt) {
 	}
 	const double tLoot1 = sys::timeMs();
 	_particles.setFadeStep(_world.fadeStep());
+	trace("update: particles");
 	_particles.update(dt, _player.eye());
+	trace("update: hero");
 	const double t2 = sys::timeMs();
 	_times.triggers = float(tLoot1 - tTrig0);
 	_times.particles = float(t2 - tLoot1);
@@ -616,13 +625,18 @@ void App::update(const Input& in, float dt) {
 		}
 	}
 	_moves.record(_world, _player, in, _hero.loaded() ? "GTAS"[_hero.body()] : '?', dt);
+	trace("update: portals");
 	checkPortals();
 	const double t3 = sys::timeMs();
+	trace("update: camera");
 	placeCamera(dt);
+	trace("update: sound");
 	_sound.setListener(_cam.pos, _cam.yaw);
 	_sound.update(dt, _env.timeOfDay);
 	barrierHum();
+	trace("update: weather sound");
 	weatherSound(dt);
+	trace("update: music");
 	_music.setSystemTheme(nullptr);
 	_music.update(dt, _cam.pos, _env.timeOfDay, musicSituation(dt));
 	_times.stream = float(t1 - t0);
@@ -799,6 +813,7 @@ void App::placeCamera(float dt) {
 	// How far the view hangs behind the character's turn (console: how far
 	// the character still has to turn to where it is steered).
 	float lag = heroYaw + def.bestAzimuth * rad - lookYaw;
+	if (!(fabsf(lag) < 1.0e4f)) lag = 0.0f; // (fix134: an angle gone to infinity would loop here for ever)
 	while (lag > 3.14159265f) lag -= 6.2831853f;
 	while (lag < -3.14159265f) lag += 6.2831853f;
 	if (orbit) lag = _steerLag;
@@ -867,7 +882,9 @@ void App::render() {
 		const double r1 = sys::timeMs();
 		// (The room the player's character is in picks the row of the visibility table: fix91.)
 		_world.setCameraRoom(_npcs.rooms().roomAt(_player.feet));
+		trace("render: world");
 		_world.draw(viewProj, _cam.pos, u32(u64(_clock * 1000.0)));
+		trace("render: npcs");
 		const double r2 = sys::timeMs();
 		const float indoorLight[3] = {1, 1, 1};
 		_npcs.setFadeStep(_world.fadeStep());
@@ -879,9 +896,11 @@ void App::render() {
 			_loot.draw(_cam.pos, indoor ? indoorLight : sky.light, 3500.0f, &view, _world.config().sizePixels, _world.config().focalPx);
 			_triggers.setView(&view, _world.config().sizePixels, _world.config().focalPx);
 		}
+		trace("render: triggers");
 		_triggers.draw(_pak, _world, _cam.pos, indoor ? indoorLight : sky.light, min(_world.drawReach() + 2000.0f, 20000.0f));
 		drawShowcase();
 		const double r4 = sys::timeMs();
+		trace("render: hero shadow");
 		_shadows.begin();
 		// (Always: some 14 draw calls. It used to be given up at the half rate, so at the menu's steady 30 fps it never showed.)
 		const bool castHero = _settings.shadows == SHADOWS_HERO_CAST;
@@ -911,6 +930,7 @@ void App::render() {
 			_shadows.cast(_world, _cam.pos, _hero.model(), _hero.pose(), _hero.feet(), _hero.yaw(), _hero.lean(), lightDir, strength);
 			gfx::setPass(gfx::PASS_WORLD);
 		}
+		trace("render: hero");
 		if (_heroVisible) {
 			_hero.draw();
 			drawArrows(_hero.light());
@@ -924,6 +944,7 @@ void App::render() {
 		}
 		const double r5 = sys::timeMs();
 		gfx::setPass(gfx::PASS_BLEND);
+		trace("render: puddles, shadows");
 		// Graphics+: shadows on the ground, before the water (which then covers those under it).
 		if (!indoor && _settings.wetGround && _weather.wet() > 0.12f) {
 			_puddles.draw(_world, _cam.pos, _weather.wet(), _weather.rain(), sky.horizon, _clock);
@@ -936,7 +957,9 @@ void App::render() {
 					if (_npcs.drawnVisible(i)) _shadows.add(_npcs.drawnFeet(i), _npcs.drawnRadius(i));
 			_shadows.draw(_world, _cam.pos, indoor ? 0.7f : 0.6f);
 		}
+		trace("render: blended");
 		_world.drawBlended();
+		trace("render: god rays");
 		if (!indoor && _settings.godRays && !_underwater) {
 			float sunDir[3];
 			Sky::sunDirection(_env.timeOfDay, sunDir);
@@ -948,8 +971,11 @@ void App::render() {
 			const float look[3] = {sinf(_cam.yaw), 0.0f, cosf(_cam.yaw)};
 			_godRays.draw(_world, _cam.pos, look, sunDir, low * high * clear, tint, _clock);
 		}
+		trace("render: rain");
 		if (!indoor && (_weather.rain() > 0.03f || _weather.snow() > 0.03f)) _rain.draw(_world, _cam.pos, _weather.rain(), _weather.snow(), sky.light, _clock);
+		trace("render: particles");
 		_particles.draw(d.view, _cam.pos, indoor ? indoorLight : sky.light);
+		trace("render: overlay");
 		drawOverlay();
 		const double r6 = sys::timeMs();
 		_renderTimes.world += float(r2 - r1);
@@ -958,13 +984,16 @@ void App::render() {
 		_renderTimes.hero += float(r5 - r4);
 		_renderTimes.rest += float((r1 - r0) + (r6 - r5));
 	};
+	trace("render: frame begin");
 	gfx::frameBegin(eyeDesc[0]);
 	drawEye(eyeDesc[0]);
 	if (stereo) {
 		gfx::eyeBegin(eyeDesc[1]);
 		drawEye(eyeDesc[1]);
 	}
+	trace("render: frame end");
 	gfx::frameEnd();
+	trace("render: done");
 }
 
 // ---- controls ----
@@ -972,6 +1001,7 @@ void App::render() {
 namespace {
 
 float wrapYaw(float a) {
+	if (!(fabsf(a) < 1.0e4f)) a = 0.0f; // (fix134: an angle gone to infinity would loop here for ever)
 	while (a > 3.14159265f) a -= 6.2831853f;
 	while (a < -3.14159265f) a += 6.2831853f;
 	return a;
@@ -1522,13 +1552,20 @@ void App::weatherSound(float dt) {
 			if (e->size > 0 && e->size < sizeof(text) && _pak.read(*e, text)) {
 				text[e->size] = 0;
 				const char* rainAny = nullptr;
+				const char* rainOwn = nullptr; // "L name": the baker's own loop, taken before all else
 				for (char* p = text; *p;) {
 					char* end = strchr(p, '\n');
 					if (end) *end = 0;
 					const char kind = p[0];
 					const char* name = p + 2;
 					if (p[1] == ' ' && *name && !weatherNameIsSpell(name) && _sound.knows(name)) {
-						if (kind == 'R') {
+						if (kind == 'L') {
+							if (!rainOwn) rainOwn = name;
+						} else if (kind == 'N') {
+							if (_thunderNearCount < 4) _thunderNear[_thunderNearCount++] = name;
+						} else if (kind == 'F') {
+							if (_thunderFarCount < 4) _thunderFar[_thunderFarCount++] = name;
+						} else if (kind == 'R') {
 							if (_sound.isLoop(name) && !_rainName) _rainName = name;
 							else if (!rainAny) rainAny = name;
 						} else if (kind == 'T' && !_thunderName) {
@@ -1538,7 +1575,11 @@ void App::weatherSound(float dt) {
 					if (!end) break;
 					p = end + 1;
 				}
+				if (rainOwn) _rainName = rainOwn;
 				if (!_rainName) _rainName = rainAny;
+				// (The baker's thunders come before a name of the game's.)
+				if (_thunderNearCount) _thunderName = _thunderNear[0];
+				else if (_thunderFarCount) _thunderName = _thunderFar[0];
 			}
 		}
 		if (!_rainName)
@@ -1572,14 +1613,24 @@ void App::weatherSound(float dt) {
 		}
 	}
 	float delay = 0;
-	if (_weather.takeThunder(delay)) _thunderWait = delay;
+	if (_weather.takeThunder(delay)) {
+		_thunderWait = delay;
+		// (Sound covers about 340 m a second: a flash heard within 1.3 s is less than half a kilometre away.)
+		_thunderClose = delay < 1.3f;
+	}
 	if (_thunderWait >= 0.0f) {
 		_thunderWait -= dt;
 		if (_thunderWait < 0.0f) {
 			const char* name = _thunderName;
 			// The made ones take turns.
 			if (_thunderMade == 2 && (++_thunderTurn & 1u)) name = "G3_THUNDER_MADE_B";
-			if (name) _sound.play(name, nullptr, _world.indoor() ? 0.35f : 0.9f);
+			float gain = _world.indoor() ? 0.35f : 0.9f;
+			if (_thunderNearCount || _thunderFarCount) {
+				const bool useNear = _thunderNearCount && (_thunderClose || !_thunderFarCount);
+				name = useNear ? _thunderNear[++_thunderTurn % _thunderNearCount] : _thunderFar[++_thunderTurn % _thunderFarCount];
+				if (!useNear) gain *= 0.8f;
+			}
+			if (name) _sound.play(name, nullptr, gain);
 			_thunderWait = -1.0f;
 		}
 	}

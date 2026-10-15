@@ -17,6 +17,7 @@
 // it stops the program (libctru calls svcBreak).
 #include "gfx.h"
 #include "gfx_c3d.h"
+#include "trace.h"
 
 #include "world_fade_shbin.h"
 #include "world_fast_shbin.h"
@@ -869,6 +870,7 @@ void frameBegin(const FrameDesc& f) {
 	gFrame = f;
 	gClearColor = (u32(f.clearColor[0]) << 24) | (u32(f.clearColor[1]) << 16) | (u32(f.clearColor[2]) << 8) | 0xFFu;
 	if (gClassic) {
+		g3::trace("gfx: waiting for the GPU and the display (classic)");
 		gInFrame = frameBeginSynced();
 		if (!gInFrame) return;
 		markSync();
@@ -1365,7 +1367,9 @@ void frameEnd() {
 	const u32 recorded = gpuCmdBufOffset;
 	gFrameStats.commandBufferUse = float(recorded) / float(kOwnBufferWords);
 	GPUCMD_SetBuffer(nullptr, 0, 0);
+	g3::trace("gfx: waiting for the GPU (the frame before) and the display");
 	if (!frameBeginSynced()) return; // cannot happen without C3D_FRAME_NONBLOCK; the frame is dropped
+	g3::trace("gfx: submitting the frame");
 	markSync();
 	gFrameStats.gpuMs = C3D_GetDrawingTime(); // of the frame the GPU has just finished
 	// The GPU is idle: whatever was destroyed while it drew can go. The frame

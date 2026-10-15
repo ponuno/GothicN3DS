@@ -55,6 +55,8 @@ struct BakeOptions {
 	float canopy = 0.3f;
 	float canopyReach = 1800.0f;
 	bool waterTexture = true;
+	// The baker's own rain and thunder recordings (weather_sfx_bake.h) into data.pak, before the game's (--no-weather-sfx: not).
+	bool weatherSfx = true;
 	u8 waterColor[3] = {92, 140, 156};
 	u8 waterAlpha = 110; // --water-alpha: how opaque that texture is (0..255; lower = more see-through)
 	// The water cut into a grid of this many cm along the shores (--water-grid; 0: not cut): fine enough for the runtime's

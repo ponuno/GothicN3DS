@@ -225,9 +225,23 @@ struct SrcTrigger {
 	int listMode = 0;
 };
 
+// A plant object of the world (a tree, a bush, a tuft of grass), as the importer recognised it (vertex_fx.h PlantKind):
+// for the grass report (grass_report.h), which grows more grass about trees and finds where the old grass stands.
+struct SrcPlant {
+	float pos[3];      // the object's origin
+	float footY = 0, topY = 0; // the lowest and highest point of its triangles
+	float radius = 0;  // the mesh's radius
+	u8 kind = 0;       // PlantKind: 1 tree, 2 bush, 3 grass
+	std::string name;  // its visual (upper case)
+};
+
 struct SrcScene {
 	std::vector<SrcMaterial> materials;
 	std::vector<SrcTriangle> triangles;
+	// How many of `triangles`, from the first, are the world mesh itself (the ground, the rocks, the caves; the rest are
+	// its objects). 0: not known (every triangle counts as the world's).
+	size_t worldTriangles = 0;
+	std::vector<SrcPlant> plants;
 	// Returns false if the texture does not exist. Called from worker threads
 	// under a lock, so it does not have to be thread-safe.
 	std::function<bool(const std::string& name, SrcImage& out)> loadTexture;

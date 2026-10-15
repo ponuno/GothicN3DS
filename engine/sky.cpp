@@ -137,6 +137,7 @@ void Sky::moonDirection(float hour, float out[3]) {
 }
 
 SkyColors skyColorsAt(float hour) {
+	if (!(hour > -1.0e4f && hour < 1.0e4f)) hour = 12.0f; // (fix134: not for ever below)
 	while (hour < 0) hour += 24.0f;
 	while (hour >= 24.0f) hour -= 24.0f;
 	int k = 0;

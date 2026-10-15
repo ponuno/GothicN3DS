@@ -24,6 +24,7 @@ namespace {
 const float kPi = 3.14159265f;
 
 float wrap(float a) {
+	if (!(fabsf(a) < 1.0e4f)) a = 0.0f; // (fix134: an angle gone to infinity would loop here for ever)
 	while (a > kPi) a -= 2.0f * kPi;
 	while (a < -kPi) a += 2.0f * kPi;
 	return a;

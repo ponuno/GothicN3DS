@@ -278,6 +278,7 @@ int Loot::nearest(Vec3 feet, float yaw, float reach, float halfAngle) const {
 		const float d2 = dx * dx + dz * dz;
 		if (d2 > reach * reach || dy < -80.0f || dy > 160.0f) return;
 		float off = atan2f(dx, dz) - yaw;
+		if (!(fabsf(off) < 1.0e4f)) off = 0.0f; // (fix134: an angle gone to infinity would loop here for ever)
 		while (off > 3.14159265f) off -= 6.2831853f;
 		while (off < -3.14159265f) off += 6.2831853f;
 		if (d2 > 40.0f * 40.0f && fabsf(off) > halfAngle) return;

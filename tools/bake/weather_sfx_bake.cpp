@@ -9,10 +9,17 @@
 #error "G3DS_WEATHER_SFX_DIR: the folder of the weather sounds (CMakeLists.txt sets it)"
 #endif
 
-// The WAV files go into the program as they are (GNU as: .incbin; GCC and Clang, Linux and MinGW).
+// The WAV files go into the program as they are (GNU as: .incbin; GCC and Clang, Linux and MinGW). The read-only data
+// section has another name in a Windows program, and its assembler has no ".previous": ".text" is where the compiler
+// expects to be after a top-level asm (it names its own section before each function anyway).
+#if defined(_WIN32)
+#define G3_RODATA ".section .rdata,\"dr\"\n"
+#else
+#define G3_RODATA ".section .rodata\n"
+#endif
 #define G3_INCBIN(sym, file)                                                                                                     \
-	__asm__(".section .rodata\n.global " #sym "\n.balign 16\n" #sym ":\n.incbin \"" G3DS_WEATHER_SFX_DIR "/" file "\"\n" \
-	        ".global " #sym "_end\n" #sym "_end:\n.byte 0\n.previous\n");                                                    \
+	__asm__(G3_RODATA ".global " #sym "\n.balign 16\n" #sym ":\n.incbin \"" G3DS_WEATHER_SFX_DIR "/" file "\"\n" \
+	        ".global " #sym "_end\n" #sym "_end:\n.byte 0\n.text\n");                                                         \
 	extern "C" const unsigned char sym[];                                                                                     \
 	extern "C" const unsigned char sym##_end[];
 

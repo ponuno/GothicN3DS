@@ -5589,7 +5589,20 @@ static void testLamps() {
 			if (app.lamps().active(0, at, range, rgb)) most = std::max(most, std::fabs(rgb[0]));
 		}
 		std::printf("  baked: the world's flicker at most %.3f\n", double(most));
-		CHECK(app.lamps().stats().baked && most > 0.0f && most < 0.4f);
+		// (fix149: its baked light again, BAKED_EXTRA of it, and the flicker round that.)
+		CHECK(app.lamps().stats().baked && most > 0.5f && most < 1.6f);
+		// The menu's brightness: twice as much at 200 % as at 100 %, half at 50 %.
+		float at100 = 0.0f, at200 = 0.0f, at50 = 0.0f;
+		for (int pass = 0; pass < 3; ++pass) {
+			app.settings().lampPower = u8(pass == 0 ? 100 : pass == 1 ? 200 : 50);
+			app.update(Input {}, 0.0f);
+			Vec3 at;
+			float range = 0, rgb[3];
+			CHECK(app.lamps().active(0, at, range, rgb));
+			(pass == 0 ? at100 : pass == 1 ? at200 : at50) = rgb[0];
+		}
+		std::printf("  brightness 50/100/200 %%: %.2f %.2f %.2f\n", double(at50), double(at100), double(at200));
+		CHECK(at200 > at100 * 1.5f && at50 < at100 * 0.75f);
 		app.shutdown();
 	}
 	gfx::shutdown();
@@ -9611,6 +9624,27 @@ static void testRipples() {
 	CHECK(Ripples::opacity(0.0f, 0.8f) > Ripples::opacity(0.5f, 0.8f) && Ripples::opacity(1.0f, 0.8f) == 0.0f);
 	Ripples r;
 	CHECK(r.rings() == 0);
+	// fix150: the shapes grow, fade in quickly and out at the end; the atlas has something in every tile and nothing on borders.
+	for (u32 k = 0; k < 4; ++k) {
+		const Ripples::Kind kind = Ripples::Kind(k);
+		CHECK(Ripples::extent(kind, 0.8f, 0.5f) > Ripples::extent(kind, 0.1f, 0.5f));
+		CHECK(Ripples::visibility(kind, 0.0f, 0.8f) == 0.0f && Ripples::visibility(kind, 0.3f, 0.8f) > 0.0f && Ripples::visibility(kind, 1.0f, 0.8f) == 0.0f);
+		CHECK(Ripples::tileOf(kind) == k);
+	}
+	static u8 atlas[128 * 128];
+	Ripples::makeAtlas(atlas);
+	for (int ty = 0; ty < 2; ++ty)
+		for (int tx = 0; tx < 2; ++tx) {
+			unsigned sum = 0, border = 0;
+			for (int y = 0; y < 64; ++y)
+				for (int x = 0; x < 64; ++x) {
+					const u8 v = atlas[(ty * 64 + y) * 128 + tx * 64 + x];
+					sum += v;
+					if (x == 0 || y == 0 || x == 63 || y == 63) border += v;
+				}
+			CHECK(sum > 64u * 64u * 4u);
+			CHECK(border < 64u * 4u * 4u);
+		}
 }
 
 static void testWaterFx() {

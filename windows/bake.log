@@ -1,3 +1,219 @@
+extracted 37 files (sgt,sty,dls) into C:\GOTHIC~1\windows\_MUSIC~1
+[90m2026-10-15 15:30:11 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:12 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:13 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:13 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:13 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:13 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:13 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:15 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:15 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:16 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:16 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:16 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:16 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:17 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:17 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:17 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+BAN_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/BAN_Day_Std.wav (226.8 s)
+CAM_Day_Fgt.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/CAM_Day_Fgt.wav (53.3 s)
+CAM_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/CAM_Day_Std.wav (78.9 s)
+CAM_Day_Thr.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/CAM_Day_Thr.wav (9.9 s)
+CAM_Ngt_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/CAM_Ngt_Std.wav (9.9 s)
+Default.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/Default.wav (32.0 s)
+FOC_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/FOC_Day_Std.wav (16.0 s)
+Menu.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/Menu.wav (88.2 s)
+NCI_Day_Fgt.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/NCI_Day_Fgt.wav (24.7 s)
+NCI_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/NCI_Day_Std.wav (104.0 s)
+OC_Day_Fgt.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OC_Day_Fgt.wav (25.3 s)
+OC_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OC_Day_Std.wav (131.5 s)
+OGY_Day_Fgt.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OGY_Day_Fgt.wav (19.2 s)
+OGY_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OGY_Day_Std.wav (120.0 s)
+OLM_Day_Fgt.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OLM_Day_Fgt.wav (19.2 s)
+OLM_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OLM_Day_Std.wav (96.0 s)
+OLM_Day_Thr.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OLM_Day_Thr.wav (9.6 s)
+ORC_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/ORC_Day_Std.wav (80.0 s)
+OW_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/OW_Day_Std.wav (197.3 s)
+PSI_Day_Fgt.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/PSI_Day_Fgt.wav (36.0 s)
+PSI_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/PSI_Day_Std.wav (6.6 s)
+PSI_Day_Thr.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/PSI_Day_Thr.wav (6.6 s)
+PSI_Ngt_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/PSI_Ngt_Std.wav (52.6 s)
+dmrender: 23 rendered, 0 failed
 water fx (world): 371 shore tiles; foam: 258 shore lines, 13.1 km, 32940 triangles; rivers: 6 tiles, 12 flow materials, 76 triangles (tiles by direction 0 6 0 0 0 0 0 0)
 == world 'world' (WORLD.ZEN) ==
 source: WORLD.ZEN (Gothic 1)
@@ -140,19 +356,22 @@ camera: from the game's CAMERA.DAT: CAMMODNORMAL range 2.50 m (2.00..6.00), elev
 ground colour: 43578 corners by the water darkened, 142642 under plants (3542616 rays)
 water grid (--water-grid): cells of 2.0 m along the shores: 370 shore tiles, 472 tiles cut fine (32 x 32 m), 2960 water triangles -> 409732
 lamps for the runtime: 315 (192 of fire places, 0 made for fires without one, 217 flicker by keys); their light is baked too (--lights): the runtime adds the flicker
-far layer: 197695 triangles (and 16848 in strips along 8424 seam edges; 134514 vertices) of 429339, 11298 crowns, grid 2.0-15.2 m (seams 4.5; 9 tries), 83 tiles, 2965 ranges, 3.42 MB
-visibility (--vis): 3476 rows in 762 cells (669 cells with more than one floor; 1225 rows of rooms, 6535 clusters lie wholly inside a room), 11152 places looked from, 8368134 clusters in the rows of which 5025880 (60%) hidden, 268.2 M rays in 4.4 s, radius 150 m, near 25 m; 1.08 MB
-sun's shadow (--sun-shadow): 1022 cells, the sun of 14.5 h (49 degrees up), 45666816 texels of 32 cm or finer, 22.7% of them shaded; 14829438 with no ground under them; 222.9 M rays in 7.0 s; 21.79 MB
-grass (--grass): 97383 tufts (2.0 per m2 at full density; 48941 m2 of it) in 869 tiles of 16 m, the fullest 439; pictures 42/36/11/11 %; 30967 in the sun's shadow; 318 places without ground, 0 left out of full tiles; old grass: 0 triangles taken out (kept: --grass-replace); 0.76 MB
-vertex cache order: 1485289 triangles; vertex shader runs per triangle 1.95 -> 1.54 (16-entry FIFO)
+far layer: 197469 triangles (and 17680 in strips along 8840 seam edges; 133733 vertices) of 429339, 10955 crowns, grid 2.0-6.8 m (seams 4.5; 9 tries), 83 tiles, 3002 ranges, 3.41 MB
+visibility (--vis): 3543 rows in 765 cells (676 cells with more than one floor; 1270 rows of rooms, 6535 clusters lie wholly inside a room), 11848 places looked from, 8556455 clusters in the rows of which 5178985 (61%) hidden, 287.5 M rays in 4.7 s, radius 150 m, near 25 m; 1.10 MB
+sun's shadow (--sun-shadow): 1022 cells, the sun of 14.5 h (49 degrees up), 45666816 texels of 32 cm or finer, 24.1% of them shaded; 13067251 with no ground under them; 233.5 M rays in 7.0 s; 21.79 MB
+grass (--grass): 97383 tufts (2.0 per m2 at full density; 48941 m2 of it) in 869 tiles of 16 m, the fullest 439; pictures 42/36/11/11 %; 31395 in the sun's shadow; 318 places without ground, 0 left out of full tiles; old grass: 0 triangles taken out (kept: --grass-replace); 0.76 MB
+far geometry (--lod): 437 of 1518 chunks got a stand-in, 537018 -> 333782 triangles of the simplified batches (62%), +5.01 MB, 0.1 s
+  of 1518 chunks: 0 of medium or small objects left alone (--no-lod-objects), 835 have too few simplifiable triangles (48 for the large, 200 for objects), 246 would shrink by too little; 650589 simplifiable triangles in the rest
+  chunks of medium and small objects with a stand-in (kept 40% of the triangles of what they replace): 235, +3.59 MB
+vertex cache order: 1811505 triangles; vertex shader runs per triangle 2.03 -> 1.63 (16-entry FIFO)
 things to use by the player: 837 have a name to show (he may use those), 87 have none (the inhabitants' only); 26 belong to somebody (a person or a guild)
 ambient sounds: 700 placed in world 'world'
 triggers: 0 triggers, 1 lists, 23 script triggers, 0 world starts, 32 movers (29 drawn moving), 277 doors (14 locked); 306 solid (16124 triangles), 24 meshes; key rotations read conjugated: 29, 0 the other way
 rooms: 299 (BSP sectors, 445 boxes): WALD11, WALD10, WALD9, WALD6, WALD8, WALD7, WALD1, WALD4, WALD2, WALD12, WALD5, WALD3, ...
 music zones: 40 in world 'world'
 world 'world': 1809 x 3878 x 1273 m, grid 45 x 32 cells of 40 m
-geometry: 1499483 triangles in, 1513214 out (17689 degenerate dropped), 2195323 vertices (1.45 per triangle)
-vertex sharing: 809852 distinct positions, 2023744 with UVs, 2195323 with UVs and light
+geometry: 1499483 triangles in, 1513214 out (17689 degenerate dropped), 2195302 vertices (1.45 per triangle)
+vertex sharing: 809852 distinct positions, 2023353 with UVs, 2195302 with UVs and light
 winding check: 65% of the horizontal front-facing area looks up
 chunks: 1518 (0 cells split), largest 37606 triangles / 63275 vertices / 494 batches
 position step: 1322 at 0.125 cm, 186 at 0.25 cm, 10 at 0.5 cm
@@ -160,8 +379,8 @@ seams: 21698 vertices welded to a neighbour within 0.25 cm, 18342 T-junctions cl
 chunks by detail tier (--no-split: one chunk holds everything): 1189 of the world and big things (22.4 MB, always around the camera), 184 with medium objects (8.8 MB, within their reach), 145 with small ones (10.9 MB, within theirs)
 draw distance classes: 877940 triangles always drawn, 268794 medium, 366480 small; 56597 batches (37.3 per chunk)
 clusters: the chunks are cut into 25097 boxes of 10 m (79 at most in one): 60 triangles and 2.3 batches in a box on average
-ambient occlusion (--ao low): 2940618 corners from 1502962 places, 16 rays of 2.5 m each against 631774 triangles (24.0 M rays, 2.8 s); 44% shut in on average, 1230818 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
-lamp light (--lights): 1269 lamps in the world, 315 baked (954 static ones left out), 353315 corners lit by 1.52 M shadow rays, 60000 triangles added by cutting those near a lamp (0.5 s)
+ambient occlusion (--ao low): 2940618 corners from 1502962 places, 16 rays of 2.5 m each against 631774 triangles (24.0 M rays, 3.2 s); 45% shut in on average, 1251571 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
+lamp light (--lights): 1269 lamps in the world, 315 baked (954 static ones left out), 353315 corners lit by 1.52 M shadow rays, 60000 triangles added by cutting those near a lamp (0.6 s)
 wind: 748642 corners sway, 31 world materials marked
 materials: 534 world materials from 1655 source materials, 1555 textures; 34 blended (26 water), 32 animated, 16 scrolling
 material mean colours (stand-in until the texture arrives): 1642 of 534 materials
@@ -262,7 +481,7 @@ other objects named like lights: FIRE.PFX x1 (not drawn); FIRE_SMOKE.PFX x34 (no
 water: 1 materials, opacity 230..230 of 255
 water grid (--water-grid): cells of 2.0 m along the shores: 3 shore tiles, 3 tiles cut fine (32 x 32 m), 32 water triangles -> 1513
 lamps for the runtime: 0 (0 of fire places, 0 made for fires without one, 0 flicker by keys)
-visibility (--vis): 325 rows in 89 cells (83 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 866 places looked from, 537540 clusters in the rows of which 408711 (76%) hidden, 14.3 M rays in 0.2 s, radius 150 m, near 25 m; 0.07 MB
+visibility (--vis): 325 rows in 89 cells (83 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 866 places looked from, 537540 clusters in the rows of which 408711 (76%) hidden, 14.3 M rays in 0.3 s, radius 150 m, near 25 m; 0.07 MB
 vertex cache order: 209951 triangles; vertex shader runs per triangle 2.44 -> 1.70 (16-entry FIFO)
 things to use by the player: 52 have a name to show (he may use those), 7 have none (the inhabitants' only); 0 belong to somebody (a person or a guild)
 ambient sounds: 54 placed in world 'orctempel'
@@ -603,7 +822,7 @@ seams: 30 vertices welded to a neighbour within 0.25 cm, 5972 T-junctions closed
 chunks by detail tier (--no-split: one chunk holds everything): 11 of the world and big things (1.7 MB, always around the camera), 8 with medium objects (1.1 MB, within their reach), 7 with small ones (0.6 MB, within theirs)
 draw distance classes: 82632 triangles always drawn, 32168 medium, 17976 small; 1686 batches (64.8 per chunk)
 clusters: the chunks are cut into 539 boxes of 10 m (67 at most in one): 246 triangles and 3.1 batches in a box on average
-ambient occlusion (--ao low): 197760 corners from 96281 places, 16 rays of 2.5 m each against 49322 triangles (1.5 M rays, 0.2 s); 45% shut in on average, 81480 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
+ambient occlusion (--ao low): 197760 corners from 96281 places, 16 rays of 2.5 m each against 49322 triangles (1.5 M rays, 0.1 s); 45% shut in on average, 81480 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
 lamp light (--lights): 178 lamps in the world, 45 baked (133 static ones left out), 113232 corners lit by 0.20 M shadow rays, 60000 triangles added by cutting those near a lamp (0.1 s)
 wind: 128 corners sway, 1 world materials marked
 materials: 82 world materials from 83 source materials, 72 textures; 3 blended (0 water), 0 animated, 0 scrolling
@@ -619,7 +838,7 @@ note: 90 triangles needed a private UV origin (wide texture spans)
 WARNING: 2 triangles span more than 32 texture repeats and were clamped
 == all worlds ==
 textures: 682 baked (63 cut-out), max edge 256, 99.1% of the source texels kept, 0 missing
-size: chunks 64.04 MB (44.90 MB packed), textures 43.96 MB (20.41 MB packed)
+size: chunks 69.05 MB (47.46 MB packed), textures 43.06 MB (20.19 MB packed)
 == model 'hero' ==
 character: HUMANS, skeleton HUMANS.MDH (34 nodes), body HUM_BODY_NAKED0; head HUM_HEAD_PONY; rest pose within 0.0 cm of the stored mesh; 33 of 296 skin vertices hang on more than two bones (the two strongest are kept)
 character mesh: 862 triangles, winding kept (score 0.044)
@@ -681,6 +900,8 @@ sounds: 1208 C_SFX instances name 873 files; 744 baked (66.1 MB at up to 22050 H
 weather sounds of the baker: G3_RAIN 10.0 s at 22050 Hz, G3_THUNDER_NEAR 15.5 s at 16000 Hz, G3_THUNDER_ROLL 11.7 s at 16000 Hz, G3_THUNDER_FAR 8.0 s at 16000 Hz (1.49 MB)
 barrier: sound instances named like it: MFX_BARRIERE_AMBIENT, ROPEWAY_BARRIER
 weather sounds of the game: rain: RAIN_01 (file); thunder: none (the baker's are used); the baker's own come first
+script/music: MUSIC.DAT, 10780 bytes
+music: 113 C_MUSICTHEME instances name 23 tracks; 22 baked (237.4 MB at up to 44100 Hz); 1 have no WAV in the folder: cam_ngt_thr.sgt
 the player's character: humans, body hum_body_naked0 (texture 4, skin 1), head hum_head_pony (texture 9)
 world 'world': STARTUP_WORLD puts 1030 characters into it (394 with a daily routine, 636 without), 11 items
 WARNING: 2 of them stand at places the world does not have (not drawn): OW_MONSTER_NAVIGATE02
@@ -694,6 +915,7 @@ engine functions the start-up called that do nothing yet: 5, called 821 times: W
 life: the scripts have 180 states; the people of these worlds are put into 63: ZS_MM_ALLSCHEDULER x682, ZS_SLEEP x194, ZS_SMALLTALK x97, ZS_GUARD x93, ZS_STANDAROUND x65, ZS_SITAROUND x63, ZS_SITCAMPFIRE x52, ZS_PICKORE x47, ZS_GUARDPALISADE x33, ZS_GUARDPASSAGE x27, ZS_PICKRICE x25, ZS_BOSS x24, ZS_STAND x15, ZS_WASHSELF x14, ZS_HOSTILEGUARD x13, ZS_PRACTICESWORD x12, ZS_SMOKE x11, ZS_OTMEDITATE x11, ZS_ORC_EATANDDRINK x10, ZS_ROASTSCAVENGER x10, ...
 life: the states call 146 engine functions, 134 of which the engine carries out; the others do nothing yet, by the number of states that call them: NPC_HASNEWS x8, NPC_ISWAYBLOCKED x5, SND_PLAY x4, NPC_GETNEWSVICTIM x2, NPC_MEMORYENTRY x2, MDL_STARTFACEANI x1, AI_SHOOTAT x1, AI_AIMAT x1, AI_LOOKAT x1, NPC_GETGUILDATTITUDE x1, NPC_DELETENEWS x1, NPC_GETNEWSOFFENDER x1
 dialogue: 1538 infos of 200 characters (275 important, 732 permanent); the 3979 functions they run call 163 engine functions, 148 of which the engine carries out; the others do nothing yet: PLAYVIDEO, NPC_MEMORYENTRY, NPC_HASNEWS, NPC_GETNEWSOFFENDER, NPC_GETNEWSVICTIM, NPC_DELETENEWS, AI_WAITTILLEND, AI_POINTAT, SND_PLAY, SND_ISSOURCENPC, NPC_CANSEESOURCE, MDL_STARTFACEANI, WLD_SETOBJECTROUTINE, TA_BEGINOVERLAY, TA_ENDOVERLAY
+debug report written to C:\GOTHIC~1\windows\bake_debug.txt (3 KB)
 characters the scripts put in later (talks, summoning): 46 kinds not in any world at the start, made to read their looks (1276 characters before): DEMON, SUMMONEDBYPC_DEMON, SUMMONEDBYNPC_DEMON, XARDASDEMON, DEMONLORD, SUMMONEDBYPC_STONEGOLEM, SUMMONEDBYNPC_STONEGOLEM, ORCSLAVE, SUMMONEDBYPC_SKELETON, SUMMONEDBYNPC_SKELETON, SUMMONEDBYPC_SKELETONWARRIOR, SUMMONEDBYNPC_SKELETONWARRIOR, ...
 things to use: the worlds have 44 kinds; the scripts name 33 of them: BABEBED x1, BARBQ x12, BATHTUB x1, BEDHIGH x1, BEDLOW x9, BELLOW x2, BENCH x76, BOOK x16, BSANVIL x5, BSCOOL x10, BSFIRE x4, BSSHARP x8, CAULDRON x16, CHAIR x213, FIREPLACE x244, HERB x8, LAB x9, LEVER x3, MCELLO x1, MDRUMSCHEIT x1, MHARP x1, MLUTE x1, MPIPE x3, ORE x133, PAN x8, PAUKE x1, REPAIR x29, SMOKE x14, STOMPER x4, STONEMILL x1, THRONE x2, VWHEEL x14, WASH x2; not named: BARRELO, CHESTBIG, CHESTSMALL, EXCALIBUR, ORCDRUM, PC, PILLAR, PRIESTGRAVE, SPORTAL, TOUCHPLATE, TURNSWITCH
 things in the hands: the scripts' items are used in 14 ways (BRUSH, COOLAIR, FIRESPIT, FOOD, FOODHUGE, HORN, JOINT, LUTE, MAP, MAPSEALED, MEAT, POTION, POTIONFAST, RICE); their animations are asked of every skeleton
@@ -748,12 +970,13 @@ script/particlefx: PARTICLEFX.DAT, 212096 bytes
 script/visualfx: VISUALFX.DAT, 49884 bytes
 particles: 280 effects in the scripts (144 pictures baked, 5 of the names have none), 1230 emitters in the worlds
   pictures not found: bloodkai, mfx_spell_star, water_dripping, water_dripping_ground, waveofinsanity_a0
+barrier: MAGICFRONTIER_OUT.MSH, 1680 corners, 560 triangles, box (-767 -57 -602)..(669 371 489) m, uv (-0.84 -1.24)..(1.73 0.22), top corner at (-50 371 -56) m; texture tex/modialpha02 16x16
 things lying about: 1086 (1075 from the world files, 11 from the start-up scripts) of 114 kinds of look; looks of all things of the scripts: 382, 374 models baked (26620 triangles, 0.86 MB), 336 pictures for the inventory (2.96 MB)
 WARNING: 8 looks of things not baked (they lie there unseen): ITFOFLASKHEALTH: no mesh; ITLSTORCHBURNING: no mesh; ITMIJOINT: no mesh; ITMW1HSWORD01: no mesh; ITMW1HSWORDOLD01: no mesh; ITMW2HSWORD01: no mesh; ITWRBOOK: no mesh; ITWRMAP: no mesh
-time: sources 0.3 s, world textures 12.8 s, worlds 26.7 s, hero 0.2 s, scripts and inhabitants 20.8 s
+time: sources 0.3 s, world textures 14.2 s, worlds 28.2 s, hero 0.2 s, scripts and inhabitants 21.0 s
 dialogue: 7354 lines (377 KB of text) from OU.BIN, in 16 blocks, 6 names given twice (the first kept)
 font: FONT_OLD_10_WHITE (17 px) and FONT_OLD_20_WHITE (36 px), code page 1252, 218 glyphs, atlas 256x336, 87 KB
-C:\GOTHIC~1\windows\data.pak written (8913 entries); the rest (voices, music) follows
+C:\GOTHIC~1\windows\data.pak written (8917 entries); the rest (voices, music) follows
 hero: fightclip T_JUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_RUN
 hero: fightclip T_FISTJUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_FISTRUN
 hero: fightclip T_FISTPARADEJUMPB: file T_FISTPARADEJUMPB, mds frames 1..12, 12 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next -
@@ -794,4 +1017,5 @@ hero: fightclip T_2HRUN_2_2HRUNL: file T_2HRUN_2_2HRUNL, mds frames 1..11, 11 fr
 hero: fightclip T_2HRUNL_2_2HRUN: file T_2HRUNL_2_2HRUN, mds frames 32..38, 7 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HRUN
 hero: fightclip T_2HWALK_2_2HWALKL: file T_2HWALK_2_2HWALKL, mds frames 1..18, 18 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALKL
 hero: fightclip T_2HWALKL_2_2HWALK: file T_2HWALKL_2_2HWALK, mds frames 39..49, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALK
-wrote C:\GOTHIC~1\windows\data.pak: 5 worlds, 8913 entries in 61.8 s
+wrote C:\GOTHIC~1\windows\music.pak: 22 tracks
+wrote C:\GOTHIC~1\windows\data.pak: 5 worlds, 8917 entries in 64.8 s

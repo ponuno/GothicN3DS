@@ -2203,6 +2203,8 @@ static void testStreaming() {
 		{
 			const u32 held = w.stats().chunksLoaded;
 			const u32 evicted = w.stats().evictions;
+			std::vector<bool> heldSet(w.stats().chunksTotal);
+			for (u32 i = 0; i < w.stats().chunksTotal; ++i) heldSet[i] = w.chunkResident(i);
 			app.teleport({spawn.x + 4500.0f, spawn.y, spawn.z});
 			u32 peak2 = 0;
 			for (int f = 0; f < 300; ++f) {
@@ -2212,7 +2214,14 @@ static void testStreaming() {
 			}
 			std::printf("  budget walk (%s): %u chunks held, %u evicted, peak %.2f of %.2f MB\n", names[mode], held,
 			            w.stats().evictions - evicted, double(peak2) / 1048576.0, double(shot.bytes / 2) / 1048576.0);
-			CHECK(w.stats().evictions > evicted && peak2 <= shot.bytes / 2 + 256 * 1024 && w.stats().loadFailures == 0);
+			// The player has moved on and chunks ahead have arrived, inside the budget. The background loader has to make room
+			// for chunks on their way, so it must evict what was left behind; loading on the frame frees what is out of reach
+			// before asking for the next chunk, and may never need to evict.
+			u32 fresh = 0;
+			for (u32 i = 0; i < w.stats().chunksTotal; ++i)
+				if (!heldSet[i] && w.chunkResident(i)) ++fresh;
+			CHECK(fresh > 0 && (!background || w.stats().evictions > evicted) && peak2 <= shot.bytes / 2 + 256 * 1024 &&
+			      w.stats().loadFailures == 0);
 		}
 		w.config().memoryBudget = 24u << 20;
 		// 5c. Where the platform tells how much memory is free (the 3DS's linear heap), the world takes no more

@@ -58,8 +58,8 @@ struct BakeOptions {
 	bool waterTexture = true;
 	// The baker's own rain and thunder recordings (weather_sfx_bake.h) into data.pak, before the game's (--no-weather-sfx: not).
 	bool weatherSfx = true;
-	u8 waterColor[3] = {92, 140, 156};
-	u8 waterAlpha = 110; // --water-alpha: how opaque that texture is (0..255; lower = more see-through)
+	u8 waterColor[3] = {38, 66, 70}; // fix151: darker (was 92,140,156): the deep body; the ripples mirror the sky over it
+	u8 waterAlpha = 140; // --water-alpha: how opaque that texture is (0..255; lower = more see-through; fix151: was 110)
 	// The water cut into a grid of this many cm along the shores (--water-grid; 0: not cut): fine enough for the runtime's
 	// waves to lift it corner by corner (WORLDF_WATER_GRID; see water_grid.h). `waterReach`: how far from the shore line
 	// (cm, in whole tiles of 16 cells, at least one) the fine water goes (--water-reach).

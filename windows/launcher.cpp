@@ -192,7 +192,7 @@ void pipeline(std::wstring game, bool music, bool gfxPlus, bool lod, bool simpli
 		// The sun's shadow on the ground: a 4-bit mask per grid cell (menu: Graphics+ -> Sun shadows), no extra triangles.
 		if (sun) cmd += L" --sun-shadow";
 		if (grass) cmd += L" --grass"; // (the new grass: in the game's menu Graphics+ -> Grass, off until chosen)
-		// The game's own water texture instead of the one made by the baker (soft caustics).
+		// The game's own water texture instead of the one made by the baker (wind ripples).
 		if (oldWater) cmd += L" --water-texture original";
 		// For the grass tests: where new grass could grow (grass_<world>.txt, grass_<world>.png beside the program).
 		// It only looks; data.pak is the same with or without it.
@@ -433,7 +433,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
 	SendMessageW(gNpcLod, BM_SETCHECK, BST_CHECKED, 0);
 	gSun = make(L"BUTTON", L"Sun shadows: trees, houses and hills shade the ground by day (a small mask per area, no extra triangles)", BS_AUTOCHECKBOX, 12, 260, 590, 22, ID_SUN);
 	SendMessageW(gSun, BM_SETCHECK, BST_CHECKED, 0);
-	gOldWater = make(L"BUTTON", L"Original water texture: the game's own instead of the baker's soft caustics", BS_AUTOCHECKBOX, 12, 282, 590, 22, ID_OLD_WATER);
+	gOldWater = make(L"BUTTON", L"Original water texture: the game's own instead of the baker's wind ripples", BS_AUTOCHECKBOX, 12, 282, 590, 22, ID_OLD_WATER);
 	gGrass = make(L"BUTTON", L"New grass: tufts on the meadows round the camera (about 2.5 MB; switch on in the game: Graphics+ -> Grass)", BS_AUTOCHECKBOX, 12, 304, 590, 22, ID_GRASS);
 	SendMessageW(gGrass, BM_SETCHECK, BST_CHECKED, 0);
 	gGrassReport = make(L"BUTTON", L"Grass report for testing: grass_<world>.txt and .png next to this program (data.pak unchanged)", BS_AUTOCHECKBOX, 12, 326, 590, 22, ID_GRASS_REPORT);

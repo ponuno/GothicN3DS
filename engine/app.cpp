@@ -189,9 +189,6 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	++_switches;
 	_sound.stopAll();
 	_sound.enterWorld(_pak, worldName());
-	_barrierSearched = false;
-	_barrierName = nullptr;
-	_barrierHum = 0;
 	_rainLoop = 0;
 	_thunderWait = -1.0f;
 	_ripples.release();
@@ -392,6 +389,7 @@ void App::shutdown() {
 	_npcs.release();
 	_hero.release();
 	_sky.release();
+	_barrier.release();
 	_world.close();
 	_pak.close();
 	_ahead.stop();
@@ -651,9 +649,10 @@ void App::update(const Input& in, float dt) {
 	trace("update: sound");
 	_sound.setListener(_cam.pos, _cam.yaw);
 	_sound.update(dt, _env.timeOfDay);
-	barrierHum();
 	trace("update: weather sound");
 	weatherSound(dt);
+	trace("update: barrier");
+	_barrier.update(dt, _settings.barrier, !_world.indoor(), _cam.pos, _sound, _pak);
 	trace("update: music");
 	_music.setSystemTheme(nullptr);
 	_music.update(dt, _cam.pos, _env.timeOfDay, musicSituation(dt));
@@ -926,7 +925,8 @@ void App::render() {
 		if (!indoor && !(_renderSkip & SKIP_SKY)) {
 			gfx::setPass(gfx::PASS_SKY);
 			_sky.setScene(SkyScene {_env.timeOfDay, _weather.cloud(), _weather.rain(), _weather.flash()});
-			_sky.draw(_cam.pos, _cam.zFar * 0.5f, sky, _settings.barrier ? 1.0f : 0.0f, float(_clock));
+			_sky.draw(_cam.pos, _cam.zFar * 0.5f, sky, float(_clock));
+			_barrier.draw(_cam.pos, _cam.zFar * 0.5f);
 		}
 		gfx::setPass(gfx::PASS_WORLD);
 		const Mat4 viewProj = mul(proj, fd.view);
@@ -1604,27 +1604,6 @@ void App::setGfxRelief(bool heavy) {
 void App::setWindRelief(bool halved) {
 	_windRelief = halved;
 	_world.config().wind = halved ? 0.0f : _windWanted;
-}
-
-// The names the Barrier's sound could have in the scripts (the first the sound script knows is used).
-void App::barrierHum() {
-	if (!_barrierSearched && _sound.ready()) {
-		_barrierSearched = true;
-		static const char* const kNames[] = {"MFX_BARRIERE_AMBIENT", "MFX_BARRIER_AMBIENT", "BARRIERE_AMBIENT", "BARRIER_AMBIENT", "MFX_BARRIERE_LOOP",
-		                                      "BARRIERE_LOOP"};
-		for (const char* n : kNames)
-			if (_sound.knows(n)) {
-				_barrierName = n;
-				break;
-			}
-	}
-	const bool want = _barrierName && _settings.barrier && !_world.indoor();
-	if (!want) {
-		if (_barrierHum) _sound.stop(_barrierHum);
-		_barrierHum = 0;
-		return;
-	}
-	if (!_barrierHum || !_sound.playing(_barrierHum)) _barrierHum = _sound.play(_barrierName, nullptr, 0.4f);
 }
 
 void App::weatherSound(float dt) {

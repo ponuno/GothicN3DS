@@ -1669,7 +1669,7 @@ int main(int argc, char** argv) {
 	buildSyntheticScript(script);
 	BakeScripts scripts;
 	scripts.script = &script;
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, nullptr, nullptr, nullptr};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, nullptr, nullptr, nullptr, nullptr};
 	PakWriter writer;
 	bakeWorlds(worlds, models, scripts, bo, writer);
 	const std::string pak = dir + "/frames.pak";

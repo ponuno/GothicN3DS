@@ -3346,6 +3346,87 @@ std::vector<std::string> zenOverlaysOf(const ZenGame& game, const std::string& r
 LookSource zenLookSource(std::shared_ptr<const ZenGame> game) {
 	LookSource source;
 	source.texture = textureLoader(game);
+	// fix150: the Barrier (oCBarrier::Init loads "MAGICFRONTIER_OUT.3DS": the static mesh compiled to .MSH; a
+	// multi-resolution .MRM is taken too). In world coordinates, as the game draws it.
+	source.barrier = [game](SrcBarrier& out, std::string& why) {
+		out = SrcBarrier {};
+		const std::string base = "MAGICFRONTIER_OUT";
+		try {
+			if (const zenkit::VfsNode* node = game->vfs.find(base + ".MSH")) {
+				zenkit::Mesh mesh;
+				auto rd = node->open_read();
+				mesh.load(rd.get(), false);
+				out.mesh = base + ".MSH";
+				// (Corners: a vertex with the texture coordinates of the polygon's corner; shared where both are.)
+				std::map<std::pair<u32, u32>, u32> corner;
+				auto cornerOf = [&](u32 vi, u32 fi) -> u32 {
+					auto it = corner.find({vi, fi});
+					if (it != corner.end()) return it->second;
+					const zenkit::Vec3& p = mesh.vertices.at(vi);
+					const zenkit::VertexFeature& f = mesh.features.at(fi);
+					const u32 n = u32(out.pos.size() / 3);
+					out.pos.insert(out.pos.end(), {p.x, p.y, p.z});
+					out.uv.insert(out.uv.end(), {f.texture.x, f.texture.y});
+					corner.emplace(std::make_pair(vi, fi), n);
+					return n;
+				};
+				std::map<u32, size_t> perMaterial;
+				if (!mesh.polygons.vertex_indices.empty()) {
+					const auto& vi = mesh.polygons.vertex_indices;
+					const auto& fi = mesh.polygons.feature_indices;
+					for (size_t t = 0; t + 2 < vi.size() && t + 2 < fi.size(); t += 3) {
+						for (int k = 0; k < 3; ++k) out.indices.push_back(cornerOf(vi[t + size_t(k)], fi[t + size_t(k)]));
+						if (t / 3 < mesh.polygons.material_indices.size()) ++perMaterial[mesh.polygons.material_indices[t / 3]];
+					}
+				} else {
+					for (const zenkit::Polygon& p : mesh.geometry) {
+						if (p.index_count < 3 || p.flags.is_portal || p.flags.is_ghost_occluder) continue;
+						for (size_t k = 2; k < p.index_count; ++k) {
+							for (size_t c : {size_t(0), k - 1, k})
+								out.indices.push_back(cornerOf(mesh.polygon_vertex_indices.at(p.index_offset + c),
+								                               mesh.polygon_feature_indices.at(p.index_offset + c)));
+							++perMaterial[p.material];
+						}
+					}
+				}
+				// The texture: the material most of it wears.
+				size_t best = 0;
+				for (const auto& [m, n] : perMaterial)
+					if (n > best && m < mesh.materials.size() && !mesh.materials[m].texture.empty()) {
+						best = n;
+						out.texture = mesh.materials[m].texture;
+					}
+			} else {
+				std::string w;
+				FlatPtr flat = loadVisual(game->vfs, base + ".3DS", w);
+				if (!flat || flat->subs.empty()) {
+					why = w.empty() ? base + ".MSH / .MRM: not in the game's files" : base + ": " + w;
+					return false;
+				}
+				out.mesh = base + ".MRM";
+				size_t best = 0;
+				for (const FlatSub& sub : flat->subs) {
+					for (const FlatVertex& v : sub.verts) {
+						out.indices.push_back(u32(out.pos.size() / 3));
+						out.pos.insert(out.pos.end(), {v.pos[0], v.pos[1], v.pos[2]});
+						out.uv.insert(out.uv.end(), {v.uv[0], v.uv[1]});
+					}
+					if (sub.verts.size() > best && !sub.material.texture.empty()) {
+						best = sub.verts.size();
+						out.texture = sub.material.texture;
+					}
+				}
+			}
+		} catch (const std::exception& e) {
+			why = base + ": " + e.what();
+			return false;
+		}
+		if (out.indices.size() < 3) {
+			why = out.mesh + ": no triangles";
+			return false;
+		}
+		return true;
+	};
 	// A thing lying about: its mesh (".3DS", compiled to ".MRM"; a few are
 	// morph meshes or models), one node, turned as the world file turns it.
 	source.item = [game](const std::string& visual, SrcModel& model) {

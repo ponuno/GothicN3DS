@@ -173,6 +173,7 @@ int main(int argc, char** argv) {
 	int wavesSpec = -1;
 	int grassSpec = -1;
 	int lampsSpec = -1;
+	int barrierSpec = -1; // fix150: the Barrier 0 off, 1 as in the game, 2 always
 	float budgetMb = 24.0f, drawDistance = 12000.0f, farMetres = 0.0f, lodMetres = 0.0f;
 	bool useVis = false;
 
@@ -200,6 +201,7 @@ int main(int argc, char** argv) {
 		else if (arg("--waves")) wavesSpec = atoi(argv[++i]);
 		else if (arg("--grass")) grassSpec = atoi(argv[++i]);
 		else if (arg("--lamps")) lampsSpec = atoi(argv[++i]);
+		else if (arg("--barrier")) barrierSpec = atoi(argv[++i]);
 		else if (arg("--far")) farMetres = float(atof(argv[++i]));
 		else if (!strcmp(argv[i], "--vis")) useVis = true;
 		else if (arg("--lod")) lodMetres = float(atof(argv[++i]));
@@ -247,6 +249,7 @@ int main(int argc, char** argv) {
 		app.applySettings();
 		printf("grass: %d (%s)\n", int(app.settings().grass), app.grass().available() ? "in the data" : "NOT in the data");
 	}
+	if (barrierSpec >= 0) app.settings().barrier = u8(clamp(barrierSpec, 0, 2));
 	if (lampsSpec >= 0) {
 		app.settings().lamps = u8(clamp(lampsSpec, 0, 2));
 		app.applySettings();
@@ -735,6 +738,12 @@ int main(int argc, char** argv) {
 		       "(%.2f MB of meshes), %u made, %u read in all\n",
 		       int(app.settings().grass), app.grass().available() ? "baked" : "not baked", double(gs.radius) / 100.0, gs.tiles, gs.tufts,
 		       gs.triangles, gs.drawCalls, gs.slots, double(gs.meshBytes) / 1048576.0, gs.builtTotal, gs.reads);
+	}
+	if (barrierSpec >= 0) {
+		const Barrier& b = app.barrier();
+		printf("barrier           setting %d, %u corners (%s), seen %.2f, next in %.0f s, %u bolts alive, %u thunders; hum %s, thunder %s\n",
+		       int(app.settings().barrier), b.corners(), !b.hasMesh() ? "none in the data" : b.ownTexture() ? "its texture" : "made web",
+		       double(b.level()), double(b.nextIn()), b.bolts(), b.thunders(), b.humName() ? b.humName() : "-", b.thunderName() ? b.thunderName() : "-");
 	}
 	if (lampsSpec >= 0) {
 		const LampStats& ls = app.lamps().stats();

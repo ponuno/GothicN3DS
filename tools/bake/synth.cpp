@@ -263,9 +263,80 @@ void addMaterials(SrcScene& scene) {
 
 } // namespace
 
+// fix150: a dome over the synthetic valley, as the game's MAGICFRONTIER_OUT is over the colony: flattened, standing below the
+// ground at its rim, mapped round and up like the original, with a web of lightning for its texture (SYNTH_BARRIERE).
+bool buildSyntheticBarrier(SrcBarrier& out, std::string& why) {
+	out = SrcBarrier {};
+	(void)why;
+	const int rings = 18, segs = 48;
+	const float rx = 52000.0f, ry = 26000.0f, base = -6000.0f;
+	for (int r = 0; r <= rings; ++r) {
+		const float el = float(r) / float(rings) * 1.5707963f;
+		for (int s = 0; s <= segs; ++s) {
+			const float az = float(s) / float(segs) * 6.2831853f;
+			out.pos.insert(out.pos.end(), {rx * std::cos(el) * std::sin(az), base + ry * std::sin(el), rx * std::cos(el) * std::cos(az)});
+			out.uv.insert(out.uv.end(), {float(s) / float(segs) * 6.0f, float(r) / float(rings) * 3.0f});
+		}
+	}
+	for (int r = 0; r < rings; ++r)
+		for (int s = 0; s < segs; ++s) {
+			const u32 a = u32(r * (segs + 1) + s), b = a + 1, c = a + u32(segs + 1), d = c + 1;
+			out.indices.insert(out.indices.end(), {a, b, d, a, d, c});
+		}
+	out.texture = "SYNTH_BARRIERE.TGA";
+	out.mesh = "synthetic";
+	return true;
+}
+
+namespace {
+// A web of jagged blue-white lines on black, wrapping on both sides (the look of BARRIERE.TGA).
+void synthBarrierTexture(SrcImage& img) {
+	const int N = 128;
+	img.width = img.height = N;
+	std::vector<float> lum(size_t(N * N), 0.0f);
+	u32 seed = 12345u;
+	auto rnd = [&]() {
+		seed = seed * 1664525u + 1013904223u;
+		return float(seed >> 8) / 16777216.0f;
+	};
+	auto plot = [&](float x, float y, float w) {
+		for (int oy = -2; oy <= 2; ++oy)
+			for (int ox = -2; ox <= 2; ++ox) {
+				const int px = int(std::floor(x)) + ox, py = int(std::floor(y)) + oy;
+				const float dx = float(px) + 0.5f - x, dy = float(py) + 0.5f - y;
+				const float f = std::max(0.0f, 1.0f - std::sqrt(dx * dx + dy * dy) / 1.6f) * w;
+				float& l = lum[size_t(((py % N + N) % N) * N + ((px % N + N) % N))];
+				l = std::max(l, f);
+			}
+	};
+	for (int k = 0; k < 26; ++k) {
+		float x = rnd() * N, y = rnd() * N, dir = rnd() * 6.2831853f;
+		const float w = 0.5f + 0.5f * rnd();
+		const int steps = 40 + int(rnd() * 80);
+		for (int i = 0; i < steps; ++i) {
+			dir += (rnd() - 0.5f) * 1.1f;
+			x += std::cos(dir) * 1.5f;
+			y += std::sin(dir) * 1.5f;
+			plot(x, y, w * (1.0f - 0.5f * float(i) / float(steps)));
+		}
+	}
+	img.rgba.assign(size_t(N * N * 4), 255);
+	for (int i = 0; i < N * N; ++i) {
+		const float l = lum[size_t(i)];
+		img.rgba[size_t(i) * 4 + 0] = u8(std::min(255.0f, 40.0f * l + 160.0f * l * l));
+		img.rgba[size_t(i) * 4 + 1] = u8(std::min(255.0f, 70.0f * l + 160.0f * l * l));
+		img.rgba[size_t(i) * 4 + 2] = u8(std::min(255.0f, 255.0f * l));
+	}
+}
+} // namespace
+
 bool buildSyntheticParticleTexture(const std::string& name, SrcImage& img) {
 	std::string base;
 	for (char c : name.substr(0, name.find('.'))) base += char(std::tolower((unsigned char)c));
+	if (base == "synth_barriere") {
+		synthBarrierTexture(img);
+		return true;
+	}
 	const bool spark = base == "synth_spark", smoke = base == "synth_smoke";
 	if (!spark && !smoke) return false;
 	img.width = img.height = 32;

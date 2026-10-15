@@ -36,7 +36,7 @@ struct FrameDesc {
 
 enum Pass {
 	PASS_WORLD, // opaque geometry: depth tested and written, back faces culled, fogged
-	PASS_SKY,   // backdrop: no depth, no culling, no fog
+	PASS_SKY,   // backdrop: no depth, no culling, no fog; opaque, except materials with MATF_BLEND / MATF_ADD (fix150)
 	PASS_BLEND, // translucent geometry after the opaque world: depth tested but not
 	            // written, both sides drawn, blended per material (MATF_BLEND / MATF_ADD)
 };

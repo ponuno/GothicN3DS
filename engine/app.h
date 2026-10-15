@@ -23,6 +23,7 @@
 #include "recorder.h"
 #include "settings.h"
 #include "sky.h"
+#include "barrier.h"
 #include "weather.h"
 #include "sound.h"
 #include "music.h"
@@ -144,6 +145,8 @@ public:
 	float grassRadius() const;
 	// fix148: the light of torches and fires (lamps.h): the menu's "Свет огней" 0 off, 1 the people and things, 2 the world too.
 	const Lamps& lamps() const { return _lamps; }
+	// fix150: the Barrier (the menu's "Купол Барьера": 0 off, 1 as in the game, 2 always).
+	const Barrier& barrier() const { return _barrier; }
 	Player& player() { return _player; }
 	const Hero& hero() const { return _hero; }
 	// The characters the game's scripts put into the world; not loaded with
@@ -513,9 +516,7 @@ private:
 	Environment _env;
 	const char* _error = "";
 	double _clock = 0;       // seconds since init: drives texture animation
-	u32 _barrierHum = 0;     // the Barrier's hum playing (a Sound handle)
-	const char* _barrierName = nullptr; // the scripts' name of it, found once (null: none)
-	bool _barrierSearched = false;
+	Barrier _barrier;        // fix150: the colony's Barrier (barrier.h): its dome, lightning, hum and thunder
 	void weatherSound(float dt);
 	// How dark the sun's shadow is at its darkest (gfx::setSunShadow), by Settings::sunShadows (fix146: was 0.42 for all).
 	static constexpr float kSunShadowDark[4] = {0.0f, 0.58f, 0.72f, 0.85f};
@@ -703,8 +704,6 @@ private:
 	void mobEnd(bool hurried);
 	void talkUpdate(Input& in, float dt);
 	void drawSubtitle();
-	// The Barrier's hum: heard outdoors while the setting is on, if the scripts have a sound for it.
-	void barrierHum();
 	int _talkTarget = -1;
 	void chestUpdate(Input& in, float dt);
 	void chestCommand(const PanelCommand& c);

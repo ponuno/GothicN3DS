@@ -1084,6 +1084,15 @@ int main(int, char**) {
 				     static_cast<unsigned long>(ls.crowded), static_cast<unsigned long>(fs.lampDraws),
 				     static_cast<unsigned long>(ws.lampTriangles / 1000), static_cast<unsigned long>(ls.sightTests), ls.world ? "" : " -w");
 			}
+			// fix150: the Barrier - the setting; corners of its dome ('-' none in data.pak: bake again), 'T' its own texture or 'w' the
+			// made web; how much is seen; seconds to its next appearance; bolts alive / thunders so far; the sounds found (hum, thunder).
+			if (app.settings().barrier) {
+				const g3::Barrier& b = app.barrier();
+				reportLine("bar%d %lu%c lv%.2f nx%.0f b%lu/%lu %.10s %.14s", int(app.settings().barrier), static_cast<unsigned long>(b.corners()),
+				     !b.hasMesh() ? '-' : b.ownTexture() ? 'T' : 'w', double(b.level()), double(b.nextIn()), static_cast<unsigned long>(b.bolts()),
+				     static_cast<unsigned long>(b.thunders()), b.humName() ? b.humName() + (strncmp(b.humName(), "MFX_", 4) == 0 ? 4 : 0) : "-",
+				     b.thunderName() ? b.thunderName() + (strncmp(b.thunderName(), "MFX_", 4) == 0 ? 4 : 0) : "-");
+			}
 			// (Chunks in memory: the world's own + those of medium and small objects, of all; wanted and not there: the same.)
 			// (RP: the re-projection, when asked for: columns of the last move and refreshes that showed the old picture
 			// moved; "RP!" - asked for, but the framebuffers were not found as expected, so it is not running.)

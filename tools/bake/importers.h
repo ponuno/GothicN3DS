@@ -25,6 +25,8 @@ struct SynthOptions {
 };
 
 void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene);
+// fix150: the Barrier's dome over the synthetic valley (LookSource::barrier).
+bool buildSyntheticBarrier(SrcBarrier& barrier, std::string& why);
 
 // A cave with a pool, reached through the portal of the main synthetic scene.
 void buildSyntheticCave(SrcScene& scene);

@@ -138,7 +138,7 @@ void rasterize(const ScreenVert& a, const ScreenVert& bIn, const ScreenVert& cIn
 		th = gTexture->height >> level;
 	}
 	// Blended materials are never cut out: their alpha is the blend factor.
-	const bool blend = gPass == PASS_BLEND;
+	const bool blend = gPass == PASS_BLEND || (gPass == PASS_SKY && (gMaterialFlags & MATF_TRANSLUCENT) != 0); // (fix150: the Barrier)
 	const bool additive = blend && (gMaterialFlags & MATF_ADD) != 0;
 	const bool alphaTest = !blend && (gMaterialFlags & MATF_ALPHA_TEST) != 0;
 	const bool fading = gFade < 1.0f && gPass == PASS_WORLD;

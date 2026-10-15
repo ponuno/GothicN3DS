@@ -15,6 +15,7 @@
 #include "model_bake.h"
 #include "texture_bake.h"
 #include "g3ds/pfx.h"
+#include "g3ds/barrier.h"
 #include "script_check.h"
 
 #include <algorithm>
@@ -331,6 +332,19 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				}
 				line(found.empty() ? "barrier: no sound instance named like it in the scripts; the dome is silent"
 				                   : "barrier: sound instances named like it: " + found);
+				// fix150: which of them is the hum (A) and which the lightning (T): engine/barrier.cpp takes them.
+				{
+					std::string list;
+					for (const SrcSymbol& s : names->symbols) {
+						std::string up = s.name;
+						for (char& c : up) c = char(std::toupper(static_cast<unsigned char>(c)));
+						if (up.find("BARRI") == std::string::npos) continue;
+						const bool hum = up.find("AMBIENT") != std::string::npos || up.find("LOOP") != std::string::npos ||
+						                 up.find("HUM") != std::string::npos;
+						list += std::string(hum ? "A " : "T ") + s.name + "\n";
+					}
+					if (!list.empty()) pak.add("meta/barriersfx", ASSET_META, std::vector<u8>(list.begin(), list.end()));
+				}
 				// The weather's sounds: the instances named like rain and thunder (the engine takes the first it can play; a looping one for the rain).
 				std::string rainList, thunderList, meta = ownWeather;
 				for (const SrcSymbol& s : names->symbols) {
@@ -1326,6 +1340,79 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			line("  pictures not found: " + list + (missingPics.size() > 12 ? ", ..." : ""));
 		}
 		(void)noPicture;
+	}
+
+	// ---- fix150: the Barrier's dome (g3ds/barrier.h) ----
+	if (scripts.looks.barrier) {
+		SrcBarrier src;
+		std::string why;
+		if (!scripts.looks.barrier(src, why)) {
+			line("barrier: " + why + "; the dome is not drawn");
+		} else {
+			const size_t nv = src.pos.size() / 3;
+			if (nv > 65535) {
+				line(format("barrier: %s has %zu corners (at most 65535); the dome is not drawn", src.mesh.c_str(), nv));
+			} else {
+				BarrierHeader h {};
+				h.magic = BARRIER_MAGIC;
+				h.version = BARRIER_VERSION;
+				h.vertexCount = u32(nv);
+				h.indexCount = u32(src.indices.size() / 3 * 3);
+				for (int a = 0; a < 3; ++a) {
+					h.bbMin[a] = 1e30f;
+					h.bbMax[a] = -1e30f;
+				}
+				for (size_t i = 0; i < nv; ++i)
+					for (int a = 0; a < 3; ++a) {
+						h.bbMin[a] = std::min(h.bbMin[a], src.pos[i * 3 + size_t(a)]);
+						h.bbMax[a] = std::max(h.bbMax[a], src.pos[i * 3 + size_t(a)]);
+					}
+				float uvMin[2] = {1e30f, 1e30f}, uvMax[2] = {-1e30f, -1e30f};
+				std::vector<BarrierVertex> verts(nv);
+				for (size_t i = 0; i < nv; ++i) {
+					BarrierVertex& v = verts[i];
+					for (int a = 0; a < 3; ++a) v.pos[a] = src.pos[i * 3 + size_t(a)];
+					for (int a = 0; a < 2; ++a) {
+						v.uv[a] = src.uv[i * 2 + size_t(a)];
+						uvMin[a] = std::min(uvMin[a], v.uv[a]);
+						uvMax[a] = std::max(uvMax[a], v.uv[a]);
+					}
+					v.fade = barrierFadeAt(v.pos[1], h.bbMin[1], h.bbMax[1]);
+					if (v.pos[1] > verts[h.top].pos[1]) h.top = u32(i);
+				}
+				// Its texture, as the material names it (BARRIERE.TGA); always repeated, its own alpha not used.
+				std::string texNote = "no texture named";
+				if (!src.texture.empty()) {
+					const std::string pakName = texturePakName(src.texture);
+					SrcImage img;
+					if (pak.has(pakName)) {
+						h.texture = hashName(pakName.c_str());
+						texNote = pakName + " (already baked)";
+					} else if (scripts.looks.texture && scripts.looks.texture(src.texture, img)) {
+						for (size_t p = 3; p < img.rgba.size(); p += 4) img.rgba[p] = 255;
+						pak.add(pakName, ASSET_TEXTURE, bakeTexture(img, opt.tex));
+						h.texture = hashName(pakName.c_str());
+						texNote = format("%s %dx%d", pakName.c_str(), img.width, img.height);
+					} else {
+						texNote = src.texture + " not found";
+					}
+				}
+				std::vector<u8> barrierBlob(barrierBlobSize(h.vertexCount, h.indexCount));
+				std::memcpy(barrierBlob.data(), &h, sizeof(h));
+				std::memcpy(barrierBlob.data() + sizeof(h), verts.data(), nv * sizeof(BarrierVertex));
+				u8* idx = barrierBlob.data() + sizeof(h) + nv * sizeof(BarrierVertex);
+				for (u32 i = 0; i < h.indexCount; ++i) {
+					const u16 x = u16(src.indices[i]);
+					std::memcpy(idx + i * 2u, &x, 2);
+				}
+				pak.add("fx/barrier", ASSET_META, barrierBlob);
+				line(format("barrier: %s, %u corners, %u triangles, box (%.0f %.0f %.0f)..(%.0f %.0f %.0f) m, uv (%.2f %.2f)..(%.2f %.2f), "
+				            "top corner at (%.0f %.0f %.0f) m; texture %s",
+				            src.mesh.c_str(), h.vertexCount, h.indexCount / 3, h.bbMin[0] * 0.01, h.bbMin[1] * 0.01, h.bbMin[2] * 0.01,
+				            h.bbMax[0] * 0.01, h.bbMax[1] * 0.01, h.bbMax[2] * 0.01, uvMin[0], uvMin[1], uvMax[0], uvMax[1],
+				            verts[h.top].pos[0] * 0.01, verts[h.top].pos[1] * 0.01, verts[h.top].pos[2] * 0.01, texNote.c_str()));
+			}
+		}
 	}
 
 	// ---- the things lying about: the world files' and the start-up scripts' ----

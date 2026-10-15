@@ -1268,7 +1268,8 @@ bool sunShadowSupported() { return gProgramFastSunReady; }
 
 void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, float uvOffsetV) {
 	if (!gInFrame) return;
-	const bool blended = gPass == PASS_BLEND;
+	// (fix150: the sky's own layers - the Barrier - blend too, by their material)
+	const bool blended = gPass == PASS_BLEND || (gPass == PASS_SKY && (materialFlags & MATF_TRANSLUCENT) != 0);
 	const bool textured = t != nullptr;
 	const u8 alpha = blended ? u8(clamp(opacity, 0.0f, 1.0f) * 255.0f + 0.5f) : u8(255);
 	if (textured != gTextured || alpha != gOpacity) setStage0(textured, alpha);
@@ -1281,6 +1282,7 @@ void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, 
 	applyAlphaTest();
 	const bool additive = blended && (materialFlags & MATF_ADD) != 0;
 	if (blended) setBlend(additive ? BLEND_ADD : BLEND_ALPHA);
+	else if (gPass == PASS_SKY) setBlend(BLEND_OFF);
 	if (additive != gFogToBlack) setFogStage(additive);
 	setTexOffset(uvOffsetU, uvOffsetV);
 	gMaterialFlags = u16(materialFlags);

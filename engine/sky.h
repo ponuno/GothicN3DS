@@ -32,13 +32,12 @@ public:
 	static void sunDirection(float hour, float out[3]);
 	static void moonDirection(float hour, float out[3]);
 	// Draws the dome. Call between gfx::setPass(PASS_SKY) and PASS_WORLD.
-	// `barrier` > 0 draws the colony's Barrier too: a dome of faint blue-violet
-	// webs and flashes over the sky (its strength, 0..1), moving with `seconds`.
-	void draw(Vec3 camera, float radius, const SkyColors& colors, float barrier = 0.0f, float seconds = 0.0f);
+	// (The colony's Barrier is drawn after it: engine/barrier.h.)
+	void draw(Vec3 camera, float radius, const SkyColors& colors, float seconds = 0.0f);
 	void release();
 
 private:
-	void rebuild(const SkyColors& colors, float barrier, float seconds);
+	void rebuild(const SkyColors& colors, float seconds);
 	void drawBodies(Vec3 camera, float radius, const SkyColors& colors, float seconds);
 	static constexpr u32 MESHES = 3;
 	gfx::Mesh* _meshes[MESHES] = {};
@@ -49,7 +48,6 @@ private:
 	SkyScene _scene;
 	SkyColors _built {};
 	SkyScene _builtScene;
-	float _builtBarrier = -1.0f;
 	float _builtSeconds = -100.0f;
 	bool _hasBuilt = false;
 	u32 _indexCount = 0;

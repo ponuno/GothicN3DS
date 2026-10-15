@@ -4592,7 +4592,7 @@ static void testMusic() {
 	buildSyntheticActor(models[0]);
 	BakeScripts scripts;
 	scripts.script = &script;
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays, nullptr};
 	scripts.soundFile = buildSyntheticSound;
 	SrcScript sfxScript, musicScript;
 	buildSyntheticSfxScript(sfxScript);
@@ -4744,7 +4744,7 @@ static void testSound() {
 	buildSyntheticActor(models[0]);
 	BakeScripts scripts;
 	scripts.script = &script;
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays, nullptr};
 	scripts.soundFile = buildSyntheticSound;
 	SrcScript sfxScript;
 	buildSyntheticSfxScript(sfxScript);
@@ -4967,7 +4967,7 @@ static void testInhabitants() {
 	};
 	BakeScripts scripts;
 	scripts.script = &script;
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays, nullptr};
 	const std::string path = gDir + "/people.pak";
 	BakeResult baked;
 	bake(path, scripts, &baked);
@@ -5462,7 +5462,7 @@ static BakeResult bakeLifeWorlds(const std::string& source, const std::string& p
 		buildSyntheticFightScript(fight);
 		scripts.fight = &fight;
 	}
-	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays};
+	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays, nullptr};
 	PakWriter writer;
 	const BakeResult r = bakeWorlds(worlds, models, scripts, bo, writer);
 	writer.write(path);

@@ -121,6 +121,15 @@ struct BakeResult {
 // `model` (the baker names it) and returns false, with the reason in
 // model.notes, if there is no such thing. Names are lower case, without
 // extension, as the scripts give them ("humans", "hum_grdm_armor").
+// fix150: the Barrier's dome (g3ds/barrier.h): triangles in world cm with their texture coordinates.
+struct SrcBarrier {
+	std::vector<float> pos; // x y z per vertex
+	std::vector<float> uv;  // u v per vertex
+	std::vector<u32> indices; // triangles
+	std::string texture;      // as the material names it ("BARRIERE.TGA")
+	std::string mesh;         // the file it came from
+};
+
 struct LookSource {
 	// The skeleton of a model script with its animations, and no mesh: those
 	// a character stands and goes about in, and of the names in `wanted`
@@ -142,6 +151,8 @@ struct LookSource {
 	std::function<bool(const std::string& base, const std::string& overlay, SrcModel& model)> overlay;
 	// The overlays the game has for a model script.
 	std::function<std::vector<std::string>(const std::string& base)> overlays;
+	// fix150: the Barrier's mesh (MAGICFRONTIER_OUT) as the game has it; false with `why` set if there is none.
+	std::function<bool(SrcBarrier& barrier, std::string& why)> barrier;
 };
 
 // The game's scripts: baked into the archive, run to see who lives in the

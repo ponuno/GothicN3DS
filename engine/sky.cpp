@@ -31,12 +31,6 @@ const float kRingElevation[] = {-12.0f, 0.0f, 7.0f, 18.0f, 38.0f};
 const float kRingBlend[] = {0.0f, 0.0f, 0.22f, 0.55f, 0.88f};
 const int kRings = 5;
 
-// ---- the Barrier ----
-// A finer dome (12 rings of 48 points and the zenith) whose colours are the sky's with the
-// Barrier's glow mixed in: webs of faint violet lines that drift, and flashes
-// that come and go a few times a second.
-const int kBarrierSteps = 3; // changes of the pattern per second
-
 // How far towards the zenith colour a point of the sky is, by its elevation (the sky's own rings, in between).
 float blendAtElevation(float el) {
 	if (el <= kRingElevation[0]) return kRingBlend[0];
@@ -52,36 +46,6 @@ float hash3(int x, int y, int t) {
 	return float(h & 0xFFFFu) * (1.0f / 65535.0f);
 }
 
-// Value noise with `wrap` cells round the sky (so that it has no seam), smooth between them.
-float noise(float u, float v, int wrap, int t) {
-	const int x0 = int(floorf(u)), y0 = int(floorf(v));
-	const float fx = u - float(x0), fy = v - float(y0);
-	const float sx = fx * fx * (3.0f - 2.0f * fx), sy = fy * fy * (3.0f - 2.0f * fy);
-	auto at = [&](int x, int y) { return hash3(((x % wrap) + wrap) % wrap, y, t); };
-	const float a = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * sx;
-	const float b = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * sx;
-	return a + (b - a) * sy;
-}
-
-// 0..1: how much the Barrier shines at an azimuth (0..2 pi) and elevation (degrees).
-float barrierGlow(float az, float el, int step) {
-	const float turn = az * (1.0f / 6.2831853f);
-	const float v = (el + 12.0f) * (1.0f / 102.0f);
-	// Lines where the noise crosses one half: a web, which drifts slowly.
-	const float drift = float(step) * (0.9f / float(kBarrierSteps));
-	const float n1 = noise(turn * 8.0f + drift, v * 5.0f + 3.0f, 8, 1);
-	const float n2 = noise(turn * 16.0f - drift * 1.7f, v * 9.0f, 16, 2);
-	float web = 1.0f - fabsf(n1 - 0.5f) * 5.0f;
-	web = web > 0 ? web * web : 0.0f;
-	float web2 = 1.0f - fabsf(n2 - 0.5f) * 7.0f;
-	web2 = web2 > 0 ? web2 * web2 : 0.0f;
-	// Flashes: patches that light up for a step or two.
-	const float f = noise(turn * 6.0f, v * 4.0f, 6, 100 + step);
-	const float flash = f > 0.72f ? (f - 0.72f) * (1.0f / 0.28f) : 0.0f;
-	float g = 0.10f + 0.50f * web + 0.28f * web2 + 0.85f * flash * flash;
-	return g > 1.0f ? 1.0f : g;
-}
-
 bool same(const SkyColors& a, const SkyColors& b) {
 	for (int i = 0; i < 3; ++i)
 		if (a.zenith[i] != b.zenith[i] || a.horizon[i] != b.horizon[i]) return false;
@@ -89,7 +53,7 @@ bool same(const SkyColors& a, const SkyColors& b) {
 }
 
 const float kPi = 3.14159265f;
-// The finer dome: rings of 64 points at these elevations (degrees), and a point at the zenith.
+// The dome: rings of 64 points at these elevations (degrees), and a point at the zenith.
 const float kDomeElevation[] = {-12.0f, 0.0f, 3.0f, 6.0f, 10.0f, 15.0f, 21.0f, 28.0f, 36.0f, 45.0f, 54.0f, 63.0f, 72.0f, 81.0f};
 const int kDomeRings = int(sizeof(kDomeElevation) / sizeof(kDomeElevation[0]));
 const int kDomeSegments = 64;
@@ -210,8 +174,8 @@ float dot3(const float a[3], const float b[3]) { return a[0] * b[0] + a[1] * b[1
 
 } // namespace
 
-// Colours of every point of the dome: the gradient, the clouds, the glow of the sun and the moon, and the Barrier.
-void Sky::rebuild(const SkyColors& colors, float barrier, float seconds) {
+// Colours of every point of the dome: the gradient, the clouds, the glow of the sun and the moon. (The Barrier: engine/barrier.h.)
+void Sky::rebuild(const SkyColors& colors, float seconds) {
 	buildDomeShape();
 	float sun[3], moon[3];
 	sunDirection(_scene.hour, sun);
@@ -221,7 +185,6 @@ void Sky::rebuild(const SkyColors& colors, float barrier, float seconds) {
 	const float moonUp = smooth01((moon[1] + 0.05f) / 0.2f) * (1.0f - clamp01((day - 0.35f) / 0.35f));
 	const float cover = clamp01(0.30f + 0.85f * _scene.cloud); // clear days have a few clouds
 	const float thr = 0.80f - 0.52f * cover;
-	const float strength = barrier * (0.62f - 0.34f * day);
 	// Cloud tone: white in the sun, grey in rain, dim at night; towards the sun's colour near it.
 	const float tone = clamp01(0.35f + 0.65f * clamp01((day - 0.25f) / 0.75f));
 	const float grey = clamp01(_scene.cloud * 0.55f + _scene.rain * 0.35f);
@@ -265,12 +228,6 @@ void Sky::rebuild(const SkyColors& colors, float barrier, float seconds) {
 		}
 		if (_scene.flash > 0.0f)
 			for (int k = 0; k < 3; ++k) c[k] += (235.0f - c[k]) * _scene.flash * (0.25f + 0.55f * density);
-		if (barrier > 0.0f) {
-			static const float kGlow[3] = {118.0f, 142.0f, 255.0f};
-			const float step = float(int(seconds * float(kBarrierSteps)));
-			const float s = barrierGlow(gDome.az[i], el, int(step)) * strength;
-			for (int k = 0; k < 3; ++k) c[k] += (kGlow[k] * (0.55f + 0.45f * day) - c[k]) * (s > 1.0f ? 1.0f : s);
-		}
 		WorldVertex& v = gDome.v[i];
 		v.r = u8(c[0] < 0 ? 0 : c[0] > 255 ? 255 : c[0]);
 		v.g = u8(c[1] < 0 ? 0 : c[1] > 255 ? 255 : c[1]);
@@ -302,16 +259,15 @@ void Sky::rebuild(const SkyColors& colors, float barrier, float seconds) {
 	}
 	_built = colors;
 	_builtScene = _scene;
-	_builtBarrier = barrier;
 	_builtSeconds = seconds;
 	_hasBuilt = true;
 }
 
-void Sky::draw(Vec3 camera, float radius, const SkyColors& colors, float barrier, float seconds) {
-	const bool moved = !_hasBuilt || !same(colors, _built) || barrier != _builtBarrier || fabsf(_scene.hour - _builtScene.hour) > 0.015f ||
+void Sky::draw(Vec3 camera, float radius, const SkyColors& colors, float seconds) {
+	const bool moved = !_hasBuilt || !same(colors, _built) || fabsf(_scene.hour - _builtScene.hour) > 0.015f ||
 	                   fabsf(_scene.cloud - _builtScene.cloud) > 0.01f || fabsf(_scene.rain - _builtScene.rain) > 0.02f ||
-	                   fabsf(_scene.flash - _builtScene.flash) > 0.04f || fabsf(seconds - _builtSeconds) > (barrier > 0.0f ? 0.33f : 1.5f);
-	if (moved) rebuild(colors, barrier, seconds);
+	                   fabsf(_scene.flash - _builtScene.flash) > 0.04f || fabsf(seconds - _builtSeconds) > 1.5f;
+	if (moved) rebuild(colors, seconds);
 	if (!_meshes[0]) return;
 	const float origin[3] = {camera.x - radius, camera.y - radius, camera.z - radius};
 	gfx::setChunkTransform(origin, 2.0f * radius / 32766.0f, 1.0f);

@@ -75,7 +75,7 @@ struct Settings {
 	u8 voiceVolume = 8;      // 0 (mute: the subtitles stay up as long as the line is) .. 10
 	// Version 7: the frame counter (for testing) and the flow of time.
 	u8 showFps = 0;          // the frames per second in the corner of the top screen
-	u8 barrier = 1;          // the Barrier over the sky outdoors (its glow, and its hum if the scripts have one)
+	u8 barrier = 1;          // the Barrier (barrier.h): 0 off, 1 as in the game (25 s about every 20 min), 2 always
 	u8 timeFlow = 2;         // how fast the game's clock runs: 0 stopped, 1 a day in 24 minutes, 2 in an hour, 3 in two hours
 	// Version 8: "Graphics+" (all off at first; what the data lacks does nothing).
 	u8 gfxPlus = GFX_PLUS_OFF; // the set the values below came from (GFX_PLUS_OWN: changed one by one)

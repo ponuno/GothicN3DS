@@ -323,6 +323,7 @@ struct NpcActor {
 	u32 perc[Game::PERC_TYPES] = {};
 	float percWait = 0;
 	bool heroWasNear = false; // the player was within the reach of its senses a moment ago
+	bool warned = false;      // a creature that had no reaction of its own has already been sent to threaten the player (Npcs::perceive)
 	// Who it looks at (AI_LookAtNpc), -1 for nobody; how far its head is
 	// turned right now, radians (left/right, down/up).
 	int lookAt = -1;
@@ -894,6 +895,8 @@ private:
 	static void xQuickLook(ScriptVm& vm, void* user);
 	i32 _percPlayer = 1, _percEnemy = 2; // the scripts' numbers of the active perceptions
 	u32 _fnAttackBeast = SCRIPT_NONE, _fnAttackPerson = SCRIPT_NONE; // ZS_MM_Attack, ZS_Attack
+	u32 _fnAssessBeast = SCRIPT_NONE; // ZS_MM_AssessEnemy: the creature's own threat (turn, growl, wait) before it attacks
+	bool threaten(NpcActor& a, int who);
 	enum { FIGHT_STATES = 16 };
 	u32 _fightStates[FIGHT_STATES] = {};
 	u32 _fightStateCount = 0;

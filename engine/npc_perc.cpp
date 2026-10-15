@@ -136,6 +136,21 @@ bool Npcs::provoke(NpcActor& a, int attacker) {
 	return true;
 }
 
+// A creature that had no reaction of its own to the player coming close is first sent into the
+// scripts' state of threat (ZS_MM_AssessEnemy: it turns to the player, growls, waits and goes for
+// him only if he stays or comes on) - the original's way - and not straight into the attack.
+// False if the scripts have no such state: the caller then attacks as before.
+bool Npcs::threaten(NpcActor& a, int who) {
+	if (_fnAssessBeast == SCRIPT_NONE || !_game.vm().isPlainFunction(_fnAssessBeast) || who < 0 || u32(who) >= _game.npcCount()) return false;
+	GameNpc& n = _game.npcMut(a.npc);
+	n.target = who;
+	clearQueue(a);
+	startState(a, _fnAssessBeast, false, "", false);
+	a.other = who;
+	a.percWait = 0.0f;
+	return true;
+}
+
 // Calls a reaction with OTHER (and VICTIM) as the perception has them.
 void Npcs::react(NpcActor& a, u32 fn, int other, int victim) {
 	if (!_game.vm().isPlainFunction(fn)) return;
@@ -214,14 +229,27 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 	}
 	// A creature that is hostile to the player, awake, with the player close and neither of its
 	// perceptions answered by its scripts (nothing enabled for the player or an enemy): it
-	// goes for the player on its own, rather than stand about until the player is under its nose.
+	// threatens the player first (its scripts' ZS_MM_AssessEnemy: turns, growls, waits), and goes for
+	// him only if he does not back off - rather than fall on him the moment he is near, or stand about
+	// until he is under its nose. Not while it is at its threat (or any other "assess" state: those
+	// leave their perceptions off on purpose, and a creature there was sent to attack at once).
 	if (a.state && still() && _cfg.beastsRetaliate && hero && heroInReach && _game.isMonster(n) && n.down == DOWN_NONE && !enemyFn &&
 	    !(_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer]) && !inFightState(a) &&
 	    _game.hitPoints(*hero) > 0 && hero->down == DOWN_NONE && _game.attitude(a.npc, heroIndex) == _game.constant("ATT_HOSTILE", 0)) {
 		const float dx = hero->pos[0] - n.pos[0], dy = hero->pos[1] - n.pos[1], dz = hero->pos[2] - n.pos[2];
 		const float close = _game.sensesRange(n) * 0.5f;
+		const float d2 = dx * dx + dy * dy + dz * dz;
 		const char* state = stateName(a.state);
-		if (dx * dx + dy * dy + dz * dz <= close * close && !strstr(state, "SLEEP") && sees(a, heroIndex, _heroLink.sneaking)) provoke(a, int(heroIndex));
+		const bool busy = strstr(state, "ASSESS") || strstr(state, "WARN") || strstr(state, "THREAT") || strstr(state, "FLEE");
+		if (d2 > close * close * 1.44f) a.warned = false; // (the player backed off: the next approach is warned again)
+		if (d2 <= close * close && !busy && !strstr(state, "SLEEP") && sees(a, heroIndex, _heroLink.sneaking)) {
+			if (!a.warned && threaten(a, int(heroIndex)))
+				a.warned = true;
+			else
+				provoke(a, int(heroIndex)); // (warned already and the player is still here; or no threat state in the scripts)
+		}
+	} else if (!heroInReach) {
+		a.warned = false;
 	}
 	// Somebody about with a weapon in hand (PERC_ASSESSFIGHTER); a body on
 	// the ground (PERC_ASSESSBODY). The nearest that is seen.
@@ -509,6 +537,7 @@ void Npcs::bindPerception() {
 	refuse("ZS_MM_ATTACK");
 	_fnAttackPerson = _game.function("ZS_ATTACK");
 	_fnAttackBeast = _game.function("ZS_MM_ATTACK");
+	_fnAssessBeast = _game.function("ZS_MM_ASSESSENEMY");
 	refuse("ZS_ORC_ATTACK");
 	const struct {
 		const char* name;

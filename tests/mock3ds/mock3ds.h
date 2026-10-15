@@ -76,6 +76,7 @@ struct ShadedVertex {
 	float color[4];
 	float texcoord[2];
 	float texcoord1[2];
+	float texcoord2[2];
 };
 // Runs the bound shader on vertex `index` of the call's buffer. False if the
 // bytecode does something the interpreter refuses: an unknown instruction, a

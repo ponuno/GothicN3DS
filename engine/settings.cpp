@@ -26,7 +26,7 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 20: waves on the water.
 // 21: weather, wet ground.
 // 22: light shafts.
-constexpr u32 SETTINGS_VERSION = 22;
+constexpr u32 SETTINGS_VERSION = 23;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -120,7 +120,7 @@ void Settings::sanitize() {
 	if (antialias > 2) antialias = 0;
 	if (lodFade > 2) lodFade = 1;
 	gfxPlus = gfxPresetOf();
-	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier, &visibility, &reproject, &readAhead, &farFill, &wetGround, &godRays};
+	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier, &visibility, &reproject, &readAhead, &farFill, &wetGround, &godRays, &sunShadows};
 	if (stereo > 2) stereo = 0;
 	for (u8* f : flags) *f = *f ? 1 : 0;
 }

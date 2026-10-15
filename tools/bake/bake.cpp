@@ -39,8 +39,8 @@ namespace {
 
 const float kEyeHeight = 175.0f; // cm above a named arrival point
 const size_t kMaxFrames = 32;    // animation frames per texture
-const float kLadderReach = 45.0f; // cm around a ladder from which it can be climbed
-const float kLadderTop = 100.0f;  // cm above its top the climb continues, to get over the edge
+const float kLadderReach = LADDER_BOX_REACH; // cm around a ladder from which it can be climbed (g3ds/world.h)
+const float kLadderTop = LADDER_BOX_TOP;     // cm above its top the climb continues, to get over the edge
 
 std::string lower(std::string s) {
 	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return char(std::tolower(c)); });
@@ -720,6 +720,8 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		// ---- ladders: the climbing box is the ladder plus room to stand in
 		// front of it and to step off above its top ----
 		std::vector<WorldLadder> ladders;
+		std::vector<LadderInfo> ladderInfos;
+		size_t ladderInfoCount = 0, ladderSideCount = 0;
 		for (const SrcLadder& sl : scene.ladders) {
 			WorldLadder l {};
 			for (int a = 0; a < 3; ++a) {
@@ -728,6 +730,29 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				l.bbMax[a] = sl.bbMax[a] + (a == 1 ? kLadderTop : grow);
 			}
 			ladders.push_back(l);
+			// What its model says of it (an entry with halfWidth 0 says nothing: the runtime climbs the box).
+			LadderInfo li {};
+			if (sl.hasInfo) {
+				for (int a = 0; a < 3; ++a) li.foot[a] = sl.foot[a], li.head[a] = sl.head[a];
+				li.normal[0] = sl.normal[0];
+				li.normal[1] = sl.normal[1];
+				li.halfWidth = sl.halfWidth;
+				li.halfDepth = sl.halfDepth;
+				li.side = sl.side;
+				++ladderInfoCount;
+				ladderSideCount += sl.side != 0;
+			}
+			ladderInfos.push_back(li);
+		}
+		if (ladderInfoCount) {
+			LadderInfoHeader lh {};
+			lh.magic = LADDERINFO_MAGIC;
+			lh.version = LADDERINFO_VERSION;
+			lh.count = u32(ladderInfos.size());
+			std::vector<u8> lblob(sizeof(lh));
+			std::memcpy(lblob.data(), &lh, sizeof(lh));
+			append(lblob, ladderInfos);
+			pak.add("world/" + bw.name + "/ladderinfo", ASSET_META, lblob);
 		}
 
 		WorldHeader wh {};
@@ -779,6 +804,87 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			} else {
 				line("visibility: nothing to put in it");
 			}
+		}
+		// ---- the sun's shadow (--sun-shadow): a mask per grid cell, from the scene as it is (before simplifying) ----
+		if (opt.sun.enabled && !scene.indoor) {
+			// The cells and how far their chunks reach on x and z (objects stand out of their cell).
+			std::map<std::pair<int, int>, size_t> cellOf;
+			std::vector<SunMask> cells;
+			std::vector<size_t> chunkCell(chunks.size());
+			for (size_t i = 0; i < chunks.size(); ++i) {
+				const BakedChunk& c = chunks[i];
+				auto ins = cellOf.emplace(std::make_pair(c.gridX, c.gridZ), cells.size());
+				if (ins.second) {
+					SunMask m;
+					m.gridX = c.gridX;
+					m.gridZ = c.gridZ;
+					m.x0 = c.bbMin[0];
+					m.z0 = c.bbMin[2];
+					m.x1 = c.bbMax[0];
+					m.z1 = c.bbMax[2];
+					cells.push_back(m);
+				}
+				SunMask& m = cells[ins.first->second];
+				m.x0 = std::min(m.x0, c.bbMin[0]);
+				m.z0 = std::min(m.z0, c.bbMin[2]);
+				m.x1 = std::max(m.x1, c.bbMax[0]);
+				m.z1 = std::max(m.z1, c.bbMax[2]);
+				chunkCell[i] = ins.first->second;
+			}
+			for (SunMask& m : cells) {
+				// (A little beyond, so that the last texels are not stretched over the edge.)
+				m.x0 -= 50.0f;
+				m.z0 -= 50.0f;
+				m.x1 += 50.0f;
+				m.z1 += 50.0f;
+			}
+			// What each source material is to the sun: see-through (2), plants and cut-out leaves (1, half a shadow, take none).
+			std::vector<u8> sunKind(scene.materials.size(), 0);
+			for (size_t i = 0; i < sunKind.size(); ++i) {
+				const AoMaterial& am = aoMaterials[i];
+				sunKind[i] = am.blocks <= 0.0f ? u8(2) : (am.blocks < 1.0f || (i < plantMaterial.size() && plantMaterial[i])) ? u8(1) : u8(0);
+			}
+			SunOptions so = opt.sun;
+			so.threads = opt.threads;
+			SunStats ss;
+			const std::vector<SunMask> masks = bakeSunMasks(bw.scene, sunKind, cells, so, ss);
+			std::vector<u32> maskTexture(masks.size(), SUN_NONE);
+			for (size_t m = 0; m < masks.size(); ++m) {
+				const std::string name = "world/" + bw.name + "/sun/" + std::to_string(masks[m].gridX) + "_" + std::to_string(masks[m].gridZ);
+				pak.add(name, ASSET_TEXTURE, masks[m].texture);
+				maskTexture[m] = u32(textureTable.size());
+				textureTable.push_back(hashName(name.c_str()));
+			}
+			if (textureTable.size() > 65535) throw std::runtime_error("too many textures with the sun's masks");
+			wh.textureCount = u32(textureTable.size());
+			SunHeader sh {};
+			sh.magic = SUN_MAGIC;
+			sh.version = SUN_VERSION;
+			sh.chunkCount = u32(chunks.size());
+			sh.hour = so.hour;
+			sunDirectionAt(so.hour, sh.dir);
+			sh.texel = so.texel;
+			std::vector<u8> sunBlob(sizeof(sh));
+			std::memcpy(sunBlob.data(), &sh, sizeof(sh));
+			std::vector<SunChunk> sc(chunks.size());
+			for (size_t i = 0; i < chunks.size(); ++i) {
+				const SunMask& m = masks[chunkCell[i]];
+				sc[i].texture = maskTexture[chunkCell[i]];
+				sc[i].x0 = m.x0;
+				sc[i].z0 = m.z0;
+				sc[i].scaleX = 1.0f / std::max(m.x1 - m.x0, 1.0f);
+				sc[i].scaleZ = 1.0f / std::max(m.z1 - m.z0, 1.0f);
+			}
+			append(sunBlob, sc);
+			const std::string sunName = "world/" + bw.name + "/sun";
+			pak.add(sunName, ASSET_META, sunBlob);
+			wh.sunEntry = hashName(sunName.c_str());
+			line(format("sun's shadow (--sun-shadow): %u cells, the sun of %.1f h (%.0f degrees up), %llu texels of %.0f cm or finer, "
+			            "%.1f%% of them shaded; %llu with no ground under them; %.1f M rays in %.1f s; %.2f MB",
+			            ss.cells, double(so.hour), double(std::asin(std::clamp(sh.dir[1], -1.0f, 1.0f)) * 57.29578f),
+			            static_cast<unsigned long long>(ss.texels), double(so.texel),
+			            ss.texels ? 100.0 * double(ss.shaded) / double(ss.texels) : 0.0, static_cast<unsigned long long>(ss.empty),
+			            double(ss.rays) / 1e6, ss.seconds, double(ss.bytes) / MB));
 		}
 		// ---- --simplify: fewer triangles in the geometry itself ----
 		if (opt.simplify.enabled) {
@@ -1394,7 +1500,9 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		if (!wayNote.empty()) line(wayNote);
 		if (!mobNote.empty()) line(mobNote);
 		if (!chestNote.empty()) line(chestNote);
-		if (!ladders.empty()) line(format("ladders: %zu", ladders.size()));
+		if (!ladders.empty())
+			line(format("ladders: %zu (%zu read from their models, the side to climb from known for %zu)", ladders.size(), ladderInfoCount,
+			            ladderSideCount));
 		if (!scene.portals.empty()) {
 			std::string list;
 			for (size_t i = 0; i < portalNotes.size(); ++i) list += (i ? "; " : "") + portalNotes[i];

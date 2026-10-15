@@ -28,6 +28,7 @@ public:
 	const char* infoText(u32 offset) const { return _infoNames + offset; }
 	// Whether the player's character may use it: the world's maker named it for him (a thing without a focus
 	// name is for the inhabitants), and it is not one of the kinds with their own handling (chests, doors).
+	// A bed is always his to sleep in, named or not.
 	bool forPlayer(u32 i) const;
 	const WorldMob& mob(u32 i) const { return _mobs[i]; }
 	const char* scheme(u32 i) const { return _names + _mobs[i].scheme; }

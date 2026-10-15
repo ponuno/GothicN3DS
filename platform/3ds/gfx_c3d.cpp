@@ -65,7 +65,8 @@ DVLB_s* gDvlb = nullptr;
 shaderProgram_s gProgram;     // the full shader (entry `main`); with the classic, plain and fade ones the only program
 shaderProgram_s gProgramFast; // the fast shader (entry `fastmain` of the same binary, `fadefast` with the dissolve), when gMvpShader
 shaderProgram_s gProgramSkin; // the characters' shader (entry `skinmain`), when gMvpShader
-bool gProgramReady = false, gProgramFastReady = false, gProgramSkinReady = false;
+shaderProgram_s gProgramFastSun; // the fast one with the sun's mask (entry `fastsun`, `fadefastsun`), for chunks that have one
+bool gProgramReady = false, gProgramFastReady = false, gProgramSkinReady = false, gProgramFastSunReady = false;
 bool gReady = false; // C3D_Init succeeded
 int gLocProjection = -1, gLocModelView = -1, gLocChunk = -1, gLocParams = -1, gLocDayDelta = -1, gLocTexOffset = -1;
 int gLocSkinLight = -1, gLocBones = -1, gLocSkinned = -1, gLocFading = -1;
@@ -76,7 +77,7 @@ int gLocWave = -1, gLocWavy = -1; // the water's waves (only the full entry of t
 int gLocMvp = -1, gLocFogRow = -1, gLocLightK = -1, gLocAoK = -1;
 bool gMvpShader = false;     // in use (not with the plain or classic shader; with the dissolve since fix85)
 bool gClassicShader = false; // asked for: the shader of earlier versions (world.v.pica), projection and view apart
-enum BoundProgram { PROGRAM_FULL, PROGRAM_FAST, PROGRAM_SKIN };
+enum BoundProgram { PROGRAM_FULL, PROGRAM_FAST, PROGRAM_SKIN, PROGRAM_FAST_SUN };
 int gBound = PROGRAM_FULL;   // which entry is the bound program
 float gViewDepthRow[4] = {0, 0, 1, 0}; // modelView's third row: the fog is worked out from it
 u32 gProgramSwitches = 0;    // this frame's changes of the program
@@ -175,10 +176,11 @@ void setStage0(bool textured, u8 opacity) {
 	gOpacity = opacity;
 }
 
-// Stage 1: out = previous * fog + fogColour * (1 - fog), fog = primary alpha.
+// Stage 3: out = previous * fog + fogColour * (1 - fog), fog = primary alpha.
 // Added light fades to black instead, so that it adds nothing in the distance.
+// (Stages 1 and 2 are the sun's shadow: setSunStages.)
 void setFogStage(bool toBlack) {
-	C3D_TexEnv* env = C3D_GetTexEnv(1);
+	C3D_TexEnv* env = C3D_GetTexEnv(3);
 	C3D_TexEnvInit(env);
 	C3D_TexEnvSrc(env, C3D_RGB, GPU_PREVIOUS, GPU_CONSTANT, GPU_PRIMARY_COLOR);
 	C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_ALPHA);
@@ -220,12 +222,71 @@ void makeNoise() {
 	gNoiseReady = true;
 }
 
-// Stages 2 and 3: pass the colour on; alpha = max(alpha - noise, 0) + share - 0.5.
+// ---- Graphics+: the sun's shadow (ChunkFx::sun) ----
+// The chunk's mask is on texture unit 2, laid over the ground by the vertex shader (texture coordinate 2 =
+// (x, z) * aoK.yz + texOffset.zw). Stage 1: previous * mask. Stage 2: that and stage 0's colour (kept in the combiner
+// buffer) mixed by the strength in its constant: colour * (1 - strength * (1 - mask)). Strength 0 gives stage 0's
+// colour back whatever unit 2 holds, so the stages stay set and only the constant changes.
+// (citro3d cannot unbind units 1 and 2 - see the noise - so unit 2 keeps a texture once it has had one: the mask
+// last drawn, or a white 8x8 one.)
+Texture* gSunChunk = nullptr;   // the mask of the chunk being drawn (null: none)
+bool gSunMaterialOk = true;     // the material takes the shadow
+float gSunDark = 0.0f;          // setSunShadow
+u8 gSunConst = 0;               // what stage 2's constant holds
+const C3D_Tex* gSunBound = nullptr;
+C3D_Tex gSunWhite;
+bool gSunWhiteReady = false;
+float gSunUv[4] = {0, 0, 0, 0}; // scale x, scale z, offset u, offset v (relative to the anchor)
+bool gSunUvSent = false;
+
+void setSunStages() {
+	C3D_TexEnv* s1 = C3D_GetTexEnv(1);
+	C3D_TexEnvInit(s1);
+	C3D_TexEnvSrc(s1, C3D_RGB, GPU_PREVIOUS, GPU_TEXTURE2, GPU_PRIMARY_COLOR);
+	C3D_TexEnvFunc(s1, C3D_RGB, GPU_MODULATE);
+	C3D_TexEnvSrc(s1, C3D_Alpha, GPU_PREVIOUS, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+	C3D_TexEnvFunc(s1, C3D_Alpha, GPU_REPLACE);
+	C3D_TexEnv* s2 = C3D_GetTexEnv(2);
+	C3D_TexEnvInit(s2);
+	C3D_TexEnvSrc(s2, C3D_RGB, GPU_PREVIOUS, GPU_PREVIOUS_BUFFER, GPU_CONSTANT);
+	C3D_TexEnvFunc(s2, C3D_RGB, GPU_INTERPOLATE);
+	C3D_TexEnvSrc(s2, C3D_Alpha, GPU_PREVIOUS, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+	C3D_TexEnvFunc(s2, C3D_Alpha, GPU_REPLACE);
+	C3D_TexEnvColor(s2, 0xFF000000u);
+	gSunConst = 0;
+	// Stage 0's output into the combiner buffer (stage 2 reads it as PREVIOUS_BUFFER); stage 1's does not go in.
+	C3D_TexEnvBufUpdate(C3D_RGB, BIT(0));
+}
+
+void sendSunUniforms() {
+	if (!gMvpShader) return;
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocTexOffset, gTexOffset[0], gTexOffset[1], gSunUv[2], gSunUv[3]);
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocAoK, gFx[3] / 256.0f, gSunUv[0], gSunUv[1], 0.0f);
+}
+
+void bindSunTexture(const C3D_Tex* t) {
+	if (t == gSunBound || !t) return;
+	C3D_TexBind(2, const_cast<C3D_Tex*>(t));
+	gSunBound = t;
+}
+
+// What stage 2's constant must hold now, and unit 2 with it.
+void updateSun() {
+	float s = 0.0f;
+	if (gSunChunk && gSunMaterialOk && !gSkinned && !gUiPass && gPass != PASS_SKY) s = gSunDark;
+	const u8 c = u8(clamp(s, 0.0f, 1.0f) * 255.0f + 0.5f);
+	if (c) bindSunTexture(&gSunChunk->tex);
+	if (c == gSunConst) return;
+	gSunConst = c;
+	C3D_TexEnvColor(C3D_GetTexEnv(2), 0xFF000000u | (u32(c) << 16) | (u32(c) << 8) | u32(c));
+}
+
+// Stages 4 and 5: pass the colour on; alpha = max(alpha - noise, 0) + share - 0.5.
 // The alpha test (> 0.5) then keeps an opaque pixel where noise < share, and
 // a cut-out texel (alpha 0) never.
 void setFadeStages(bool on, u8 share) {
-	C3D_TexEnv* s2 = C3D_GetTexEnv(2);
-	C3D_TexEnv* s3 = C3D_GetTexEnv(3);
+	C3D_TexEnv* s2 = C3D_GetTexEnv(4);
+	C3D_TexEnv* s3 = C3D_GetTexEnv(5);
 	C3D_TexEnvInit(s2);
 	C3D_TexEnvInit(s3);
 	if (!on) return;
@@ -251,7 +312,7 @@ void setTexOffset(float u, float v) {
 	if (u == gTexOffset[0] && v == gTexOffset[1]) return;
 	gTexOffset[0] = u;
 	gTexOffset[1] = v;
-	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocTexOffset, u, v, 0.0f, 0.0f);
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocTexOffset, u, v, gMvpShader ? gSunUv[2] : 0.0f, gMvpShader ? gSunUv[3] : 0.0f);
 }
 
 // Graphics+: the `fx` uniform, and the `windy` switch that follows from it,
@@ -263,7 +324,7 @@ void setFxUniform(float x, float y, float z, float w) {
 	gFx[2] = z;
 	gFx[3] = w;
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocFx, x, y, z, w);
-	if (gMvpShader) C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocAoK, w / 256.0f, 0.0f, 0.0f, 0.0f);
+	if (gMvpShader) C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocAoK, w / 256.0f, gSunUv[0], gSunUv[1], 0.0f);
 }
 
 void updateWindy() {
@@ -335,12 +396,18 @@ void setDayDelta(float x, float y, float z) {
 void bindProgram(int which) {
 	if (!gMvpShader || which == gBound) return;
 	if (which == PROGRAM_SKIN && !gProgramSkinReady) which = PROGRAM_FULL;
+	if (which == PROGRAM_FAST_SUN && !gProgramFastSunReady) which = PROGRAM_FAST;
 	if (which == gBound) return;
 	gBound = which;
-	C3D_BindProgram(which == PROGRAM_FAST ? &gProgramFast : which == PROGRAM_SKIN ? &gProgramSkin : &gProgram);
+	C3D_BindProgram(which == PROGRAM_FAST       ? &gProgramFast
+	                : which == PROGRAM_SKIN     ? &gProgramSkin
+	                : which == PROGRAM_FAST_SUN ? &gProgramFastSun
+	                                            : &gProgram);
 	++gProgramSwitches;
 }
-void useProgram(bool fast) { bindProgram(fast ? PROGRAM_FAST : PROGRAM_FULL); }
+// (A chunk with the sun's mask: the fast entry that lays it, for all its batches - the mask's strength, not the entry,
+// leaves out the materials that take no shadow.)
+void useProgram(bool fast) { bindProgram(fast ? (gSunChunk ? PROGRAM_FAST_SUN : PROGRAM_FAST) : PROGRAM_FULL); }
 
 // The GPU executes a frame's command list after C3D_FrameEnd returns, so
 // memory a draw call referenced must outlive that frame. Destroyed resources
@@ -469,6 +536,11 @@ bool init() {
 			shaderProgramSetVsh(&gProgramFast, &gDvlb->DVLE[gFadeShader ? 2 : 1]);
 			shaderProgramInit(&gProgramSkin);
 			shaderProgramSetVsh(&gProgramSkin, &gDvlb->DVLE[3]);
+			const bool sunEntries = gDvlb->numDVLE >= 6;
+			if (sunEntries) {
+				shaderProgramInit(&gProgramFastSun);
+				shaderProgramSetVsh(&gProgramFastSun, &gDvlb->DVLE[gFadeShader ? 5 : 4]);
+			}
 			static const char* const kShared[] = {"mvp", "fogRow", "chunk", "params", "dayDelta", "texOffset", "lightK", "aoK", "fx"};
 			static const char* const kSkin[] = {"mvp", "fogRow", "params", "texOffset", "skinLight", "bones", "fading"};
 			gMvpShader = true;
@@ -485,14 +557,23 @@ bool init() {
 				const int a = shaderInstanceGetUniformLocation(gProgram.vertexShader, name);
 				skinOk = skinOk && a >= 0 && a == shaderInstanceGetUniformLocation(gProgramSkin.vertexShader, name);
 			}
+			bool sunOk = gMvpShader && sunEntries;
+			for (const char* name : kShared) {
+				if (!sunOk) break;
+				const int a = shaderInstanceGetUniformLocation(gProgram.vertexShader, name);
+				sunOk = a >= 0 && a == shaderInstanceGetUniformLocation(gProgramFastSun.vertexShader, name);
+			}
 			if (gMvpShader) {
 				gProgramFastReady = true;
 				gProgramSkinReady = skinOk;
+				gProgramFastSunReady = sunOk;
 				if (!skinOk) shaderProgramFree(&gProgramSkin);
+				if (sunEntries && !sunOk) shaderProgramFree(&gProgramFastSun);
 			} else {
 				shaderProgramFree(&gProgram);
 				shaderProgramFree(&gProgramFast);
 				shaderProgramFree(&gProgramSkin);
+				if (sunEntries) shaderProgramFree(&gProgramFastSun);
 				DVLB_Free(gDvlb);
 				gDvlb = nullptr;
 			}
@@ -595,10 +676,15 @@ void shutdown() {
 		C3D_Fini();
 		if (gNoiseReady) C3D_TexDelete(&gNoise);
 		gNoiseReady = false;
+		if (gSunWhiteReady) C3D_TexDelete(&gSunWhite);
+		gSunWhiteReady = false;
+		gSunBound = nullptr;
+		gSunChunk = nullptr;
 		gLocFading = gLocFx = gLocWindy = gLocWave = gLocWavy = -1;
 		if (gProgramReady) shaderProgramFree(&gProgram);
 		if (gProgramFastReady) shaderProgramFree(&gProgramFast);
 		if (gProgramSkinReady) shaderProgramFree(&gProgramSkin);
+		if (gProgramFastSunReady) shaderProgramFree(&gProgramFastSun);
 		if (gDvlb) DVLB_Free(gDvlb);
 	}
 	// (Only ever allocated after citro3d was up, and freed after it is down:
@@ -613,7 +699,7 @@ void shutdown() {
 	free(gDeadMeshes.items);
 	gDeadTextures = {};
 	gDeadMeshes = {};
-	gProgramReady = gProgramFastReady = gProgramSkinReady = false;
+	gProgramReady = gProgramFastReady = gProgramSkinReady = gProgramFastSunReady = false;
 	gMvpShader = false;
 	gBound = PROGRAM_FULL;
 	gDvlb = nullptr;
@@ -645,7 +731,7 @@ Texture* textureCreate(const TexHeader& h, const u8* data) {
 	p.width = h.width;
 	p.height = h.height;
 	p.maxLevel = u8(h.mipCount - 1);
-	p.format = h.format == TEX_ETC1A4 ? GPU_ETC1A4 : GPU_ETC1;
+	p.format = h.format == TEX_ETC1A4 ? GPU_ETC1A4 : h.format == TEX_L4 ? GPU_L4 : GPU_ETC1;
 	p.type = GPU_TEX_2D;
 	p.onVram = false; // VRAM is only 6 MB; see docs/ROADMAP.md
 	if (!C3D_TexInitWithParams(&t->tex, nullptr, p)) {
@@ -662,7 +748,10 @@ Texture* textureCreate(const TexHeader& h, const u8* data) {
 	C3D_TexFlush(&t->tex);
 	C3D_TexSetFilter(&t->tex, GPU_LINEAR, GPU_LINEAR);
 	C3D_TexSetFilterMipmap(&t->tex, GPU_NEAREST);
-	C3D_TexSetWrap(&t->tex, GPU_REPEAT, GPU_REPEAT);
+	if (h.flags & TEXF_CLAMP)
+		C3D_TexSetWrap(&t->tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+	else
+		C3D_TexSetWrap(&t->tex, GPU_REPEAT, GPU_REPEAT);
 
 	t->bytes = h.dataSize;
 	gMem.textureBytes += t->bytes;
@@ -677,6 +766,19 @@ void textureDestroy(Texture* t) {
 	if (gBoundTexture == t) {
 		C3D_TexBind(0, nullptr);
 		gBoundTexture = nullptr;
+	}
+	// Unit 2 cannot be left empty (see the noise): a white texture takes the mask's place.
+	if (gSunBound == &t->tex) {
+		if (!gSunWhiteReady && C3D_TexInit(&gSunWhite, 8, 8, GPU_L4)) {
+			memset(gSunWhite.data, 0xFF, 32);
+			C3D_TexFlush(&gSunWhite);
+			gSunWhiteReady = true;
+		}
+		if (gSunWhiteReady) {
+			C3D_TexBind(2, &gSunWhite);
+			gSunBound = &gSunWhite;
+		}
+		if (gSunChunk == t) gSunChunk = nullptr;
 	}
 	if (t->bytes) {
 		gMem.textureBytes -= t->bytes;
@@ -858,6 +960,9 @@ static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target) {
 
 	// Start every frame from a known state; from here on only changes are sent.
 	setStage0(true, 255);
+	setSunStages();
+	gSunChunk = nullptr;
+	gSunUvSent = false;
 	setFogStage(false);
 	setDayDelta(f.dayLight[0] - 1.0f, f.dayLight[1] - 1.0f, f.dayLight[2] - 1.0f);
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocTexOffset, 0.0f, 0.0f, 0.0f, 0.0f);
@@ -915,6 +1020,8 @@ void setPass(Pass pass) {
 	setFade(1.0f); // (dissolving is for the opaque world only)
 	endDrawOnce();
 	gPass = pass;
+	gSunChunk = nullptr; // (each chunk says again)
+	updateSun();
 	if (pass == PASS_SKY) {
 		C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
 		C3D_CullFace(GPU_CULL_NONE);
@@ -953,6 +1060,7 @@ static void setSkinned(bool on) {
 	gSkinned = on;
 	C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocSkinned, on);
 	updateWindy(); // (a character never sways)
+	updateSun();   // (nor takes the ground's shadow)
 }
 
 void setChunkTransform(const float origin[3], float posScale, float uvScale, const ChunkFx* fx) {
@@ -970,7 +1078,21 @@ void setChunkTransform(const float origin[3], float posScale, float uvScale, con
 	gChunkWave = f.waveHeight != 0.0f;
 	gChunkWaterGrid = f.waterGrid && gLocWavy >= 0;
 	updateWindy();
+	// The sun's mask: its place relative to the anchor (u = (anchor + p - x0) * scale).
+	gSunChunk = f.sun && gProgramFastSunReady && gSunDark > 0.0f ? f.sun : nullptr;
+	if (gSunChunk) {
+		const float uv[4] = {f.sunScaleX, f.sunScaleZ, (gAnchor[0] - f.sunX0) * f.sunScaleX, (gAnchor[2] - f.sunZ0) * f.sunScaleZ};
+		if (!gSunUvSent || memcmp(uv, gSunUv, sizeof(uv)) != 0) {
+			memcpy(gSunUv, uv, sizeof(uv));
+			gSunUvSent = true;
+			sendSunUniforms();
+		}
+	}
+	updateSun();
 }
+
+void setSunShadow(float darkness) { gSunDark = clamp(darkness, 0.0f, 1.0f); }
+bool sunShadowSupported() { return gProgramFastSunReady; }
 
 void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, float uvOffsetV) {
 	if (!gInFrame) return;
@@ -992,6 +1114,8 @@ void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, 
 	gMaterialWind = (materialFlags & MATF_WIND) != 0;
 	gMaterialWater = (materialFlags & MATF_WATER) != 0;
 	updateWindy();
+	gSunMaterialOk = (materialFlags & (MATF_ALPHA_TEST | MATF_WIND | MATF_ADD | MATF_WATER)) == 0;
+	updateSun();
 }
 
 bool fadeSupported() { return gNoiseReady; }
@@ -1012,7 +1136,7 @@ void setFade(float visible) {
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocFading, on);
 		setFadeStages(on, share);
 	} else {
-		C3D_TexEnvColor(C3D_GetTexEnv(3), u32(share) << 24);
+		C3D_TexEnvColor(C3D_GetTexEnv(5), u32(share) << 24);
 	}
 	applyAlphaTest();
 }
@@ -1129,6 +1253,8 @@ static void beginUi(Texture* t) {
 	endDrawOnce();
 	gUiPass = true;
 	gPass = PASS_SKY; // (no fog terms; setPass is shut until the next frame)
+	gSunChunk = nullptr;
+	updateSun();
 	C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
 	C3D_CullFace(GPU_CULL_NONE);
 	gAlphaTest = false;

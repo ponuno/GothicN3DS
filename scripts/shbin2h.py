@@ -11,12 +11,13 @@ shader:
 and likewise world_plain.v.pica -> world_plain_shbin.h (world_plain_shbin),
 the fallback shader without characters, and world_fade.v.pica -> world_fade_shbin.h.
 
-The default shader is four source files assembled into one binary (four DVLEs
+The default shader is six source files assembled into one binary (six DVLEs
 sharing one code blob; the order of the files is the order of the entries:
-main, fastmain, fadefast, skinmain - gfx_c3d.cpp takes them by number):
+main, fastmain, fadefast, skinmain, fastsun, fadefastsun - gfx_c3d.cpp takes them by number):
 
     picasso -o world_fast.shbin platform/3ds/world_full.v.pica platform/3ds/world_fast.v.pica \
-        platform/3ds/world_fastfade.v.pica platform/3ds/world_skin.v.pica
+        platform/3ds/world_fastfade.v.pica platform/3ds/world_skin.v.pica \
+        platform/3ds/world_fastsun.v.pica platform/3ds/world_fastfadesun.v.pica
     python3 scripts/shbin2h.py world_fast.shbin platform/3ds/world_fast_shbin.h world_fast_shbin
 """
 import struct

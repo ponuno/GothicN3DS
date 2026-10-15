@@ -620,6 +620,13 @@ void buildSyntheticActor(SrcModel& model) {
 		model.clips.push_back(climb("T_JUMP_2_HANG", "S_HANG", 17, 112.0f, 0.0f, 1.0f, 1.0f));
 		model.clips.push_back(held("S_HANG", 0.0f, 1.0f));
 		model.clips.push_back(climb("T_HANG_2_STAND", "S_RUN", 25, 168.0f, 50.0f, 1.0f, 0.0f));
+		// A ladder (the scheme LADDER): onto the first rung, a stretch of rungs after another, off at the foot,
+		// over the top (from the highest stretch) - the rise in the root, as in the game's files.
+		model.clips.push_back(climb("T_LADDER_STAND_2_S0", "S_RUN", 10, 30.0f, 0.0f, 0.0f, 1.0f));
+		model.clips.push_back(climb("T_LADDER_S0_2_S1", "S_RUN", 12, 40.0f, 0.0f, 1.0f, 0.6f));
+		model.clips.push_back(climb("T_LADDER_S1_2_S2", "S_RUN", 12, 40.0f, 0.0f, 0.6f, 1.0f));
+		model.clips.push_back(climb("T_LADDER_S0_2_STAND", "S_RUN", 8, -30.0f, 0.0f, 1.0f, 0.0f));
+		model.clips.push_back(climb("T_LADDER_S2_2_STAND", "S_RUN", 20, 110.0f, 50.0f, 1.0f, 0.0f));
 		// Picking a thing up: Gothic 1's "C_..._1", the lowest of three.
 		model.clips.push_back(bend("C_STAND_2_IGET_1", "C_IGET_1", 8, 0.0f, 1.0f));
 		model.clips.push_back(makeClip("C_IGET_1", "C_IGET_2_STAND_1", 2, false, [reach, crouch](float, float, Pose& p) {

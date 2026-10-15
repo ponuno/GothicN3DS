@@ -510,8 +510,9 @@ static void testSyntheticScript() {
 		std::printf("       %s", r.report.c_str());
 		CHECK(r.ran && r.differ == 0 && r.objected == 0 && r.stateSame);
 		// (The 18 things of the inventory's test items - and the chests' key and pick - are made once each too; the 8 are the
-		// dialogues' conditions and the functions they run that the reference interpreter checks as well.)
-		CHECK(r.runs == 1 + 4 + 4 + 2 + 18 + 8 + 4 && r.same == r.runs && r.calls > 60);
+		// dialogues' conditions and the functions they run that the reference interpreter checks as well; the last 2 the
+		// conditions of the hero's own infos - a bed's sleep.)
+		CHECK(r.runs == 1 + 4 + 4 + 2 + 18 + 8 + 4 + 2 && r.same == r.runs && r.calls > 60);
 	}
 #endif
 }

@@ -105,7 +105,16 @@ struct ChunkFx {
 	// of how much of the height and the shading it takes. Such water is drawn with the full shader even when still,
 	// because the fast one reads the whole of w as occlusion.
 	bool waterGrid = false;
+	// The sun's shadow (g3ds-bake --sun-shadow): a mask (a TEX_L4 texture, 15 sunlit .. 0 shaded) lying flat over the
+	// chunk, u = (x - sunX0) * sunScaleX, v = (z - sunZ0) * sunScaleZ in world cm. Null: none. What is drawn under its
+	// dark texels is darkened by setSunShadow's strength - except cut-out, swaying, glowing and water materials, and characters.
+	Texture* sun = nullptr;
+	float sunX0 = 0.0f, sunZ0 = 0.0f, sunScaleX = 0.0f, sunScaleZ = 0.0f;
 };
+// How dark a fully shaded texel of a chunk's sun mask makes what lies under it: 0 (off) .. 1 (black). For the frame.
+void setSunShadow(float darkness);
+// Whether this backend draws the sun's masks at all (the console's older shaders do not).
+bool sunShadowSupported();
 // The water's two waves (world_full.v.pica has the same numbers): directions (x, z) and wavelengths, cm; speed in
 // waves a second.
 constexpr float WAVE_A_DIR[2] = {0.8f, 0.6f};

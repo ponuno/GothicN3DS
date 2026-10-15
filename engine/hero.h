@@ -191,6 +191,15 @@ public:
 	float useProgress() const;
 	// True if the model has the animations of the scheme.
 	bool canAnimateUse(const char* scheme) const;
+	// How long the ladder's ways on and off take as the model has them (0: it has none) - Player::ladder*Time -
+	// and how high the way over the top lifts the body.
+	float ladderMountTime() const { return _ladderMount ? _ladderMount->duration() : 0.0f; }
+	float ladderMountTopTime() const {
+		return _ladderMountTop ? _ladderMountTop->duration() : _ladderExitTop ? _ladderExitTop->duration() : 0.0f;
+	}
+	float ladderExitTopTime() const { return _ladderExitTop ? _ladderExitTop->duration() : 0.0f; }
+	float ladderExitFootTime() const { return _ladderExitFoot ? _ladderExitFoot->duration() : 0.0f; }
+	float ladderExitRise() const;
 
 	void cancelUse(); // drops any use/mantle in progress
 private:
@@ -251,11 +260,20 @@ private:
 	// and on, one for each stretch of rungs. The controller moves the body; the
 	// animation is scrubbed by the height climbed (up plays it forward, down back),
 	// so the hands and feet never slide on the rungs.
+	// Taking hold of it at the foot ("T_LADDER_STAND_2_S0"), letting go there ("T_LADDER_S0_2_STAND"), up over
+	// its top onto the floor ("T_LADDER_UP_2_STAND", else the highest "T_LADDER_S<k>_2_STAND") and the way
+	// back onto it from the top ("T_LADDER_STAND_2_UP", "T_LADDER_STAND_2_S<k>", else the way up played backwards).
 	enum { LADDER_CLIPS = 8 };
 	const Clip* _ladder[LADDER_CLIPS] = {};
 	float _ladderRise[LADDER_CLIPS] = {};
 	int _ladderCount = 0;
+	const Clip* _ladderMount = nullptr;
+	const Clip* _ladderExitFoot = nullptr;
+	const Clip* _ladderExitTop = nullptr;
+	const Clip* _ladderMountTop = nullptr; // null: _ladderExitTop backwards
 	bool _ladderOn = false;
+	bool _ladderSubtract = false; // the clip's own way up is the body's (it is taken out of the pose)
+	u8 _ladderPhase = 0;
 	float _ladderY0 = 0;
 	void ladderTick(const Player& player);
 	enum { MANTLE_STEPS = 5 };

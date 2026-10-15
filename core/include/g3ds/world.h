@@ -16,6 +16,8 @@
 #pragma once
 #include "g3ds/base.h"
 
+#include <math.h>
+
 namespace g3 {
 
 constexpr u32 WORLD_MAGIC = fourcc('G', '3', 'W', 'D');
@@ -77,7 +79,9 @@ struct WorldHeader {
 	// Pak entry of the world's visibility table (VisHeader below; g3ds-bake
 	// --vis), 0 if it has none. Ignored by a runtime that does not know it.
 	u32 visEntry;
-	u32 reserved;
+	// Pak entry of the world's sun table (SunHeader below; g3ds-bake --sun-shadow), 0 if it has none. Was `reserved`
+	// (always 0): a runtime that does not know it draws the world as before.
+	u32 sunEntry;
 };
 static_assert(sizeof(WorldHeader) == 96, "WorldHeader layout");
 
@@ -142,6 +146,32 @@ struct WorldLadder {
 	float bbMax[3];
 };
 static_assert(sizeof(WorldLadder) == 24, "WorldLadder layout");
+// How much the climbing box is bigger than the ladder (g3ds-bake): round it, and above its top.
+constexpr float LADDER_BOX_REACH = 45.0f;
+constexpr float LADDER_BOX_TOP = 100.0f;
+
+// "world/<name>/ladderinfo" (optional): the ladders as the world file has them, one per WorldLadder and in
+// the same order: the middle of the rungs at the foot and at the head (world space), the horizontal
+// direction the ladder's face looks along (`normal`; `side` +1 / -1: the one climbs it standing on that
+// side of it, 0: not known), half its width and half its depth (rails and lean). An entry with
+// halfWidth 0 says nothing (the box is all there is). A runtime that knows nothing of it climbs the box.
+constexpr u32 LADDERINFO_MAGIC = fourcc('G', '3', 'L', 'I');
+constexpr u32 LADDERINFO_VERSION = 1;
+struct LadderInfoHeader {
+	u32 magic;
+	u32 version;
+	u32 count;
+	u32 reserved;
+};
+struct LadderInfo {
+	float foot[3];
+	float head[3];
+	float normal[2]; // x, z
+	float halfWidth, halfDepth;
+	i32 side;
+	u32 reserved;
+};
+static_assert(sizeof(LadderInfo) == 48, "LadderInfo layout");
 
 // "world/<name>/rooms" (optional): the world's rooms - the sectors of its BSP
 // tree (a hut, a house, a hall), as the scripts know them by name
@@ -454,6 +484,47 @@ inline u32 visPad(u32 n) { return (4u - (n & 3u)) & 3u; }
 inline u32 visBlobSize(const VisHeader& h) {
 	return u32(sizeof(VisHeader)) + h.chunkCount * 4u + h.chunkCount + visPad(h.chunkCount) + h.chunkCount * 4u +
 	       h.viewerCount * u32(h.version >= 3 ? sizeof(VisViewer3) : h.version == 2 ? sizeof(VisViewer2) : sizeof(VisViewer)) + ((h.bitCount + 31u) / 32u) * 4u;
+}
+
+// ---- G3SN: the sun's shadow (g3ds-bake --sun-shadow) ----
+// Where the sun of one hour of the day (`hour`, `dir`) is kept off the ground by what stands in its way: for each cell of
+// the chunk grid a mask - one of the world's textures (TEX_L4, an index into the texture table; 15 sunlit, 0 in full
+// shade) - lies flat over the cell from above, and every chunk of that cell is drawn with it:
+//   u = (x - x0) * scaleX, v = (z - z0) * scaleZ   (world cm; the texture is clamped at its edges).
+// The blob: SunHeader | SunChunk[chunkCount], in the order of the world's chunks.
+constexpr u32 SUN_MAGIC = fourcc('G', '3', 'S', 'N');
+constexpr u32 SUN_VERSION = 1;
+constexpr u32 SUN_NONE = 0xFFFFFFFFu;
+
+struct SunHeader {
+	u32 magic;
+	u32 version;
+	u32 chunkCount;
+	float hour;     // the time of day it was baked for
+	float dir[3];   // unit vector towards that sun
+	float texel;    // cm: the finest texel of the masks
+	u32 reserved[2];
+};
+static_assert(sizeof(SunHeader) == 40, "SunHeader layout");
+
+struct SunChunk {
+	u32 texture; // index into the world's texture table, SUN_NONE: no mask
+	float x0, z0, scaleX, scaleZ;
+};
+static_assert(sizeof(SunChunk) == 20, "SunChunk layout");
+
+inline u32 sunBlobSize(const SunHeader& h) { return u32(sizeof(SunHeader)) + h.chunkCount * u32(sizeof(SunChunk)); }
+
+// The sky's sun (engine/sky.cpp, the baker): rises in the east at 6, highest (62 degrees, south) at 12, sets at 18.
+// Azimuth 0 is +z, turning towards +x.
+inline void sunDirectionAt(float hour, float out[3]) {
+	const float kPi = 3.14159265f;
+	const float t = (hour - 6.0f) / 12.0f * kPi;
+	const float el = 62.0f * 0.0174533f * sinf(t);
+	const float az = kPi * 0.5f + t;
+	out[0] = cosf(el) * sinf(az);
+	out[1] = sinf(el);
+	out[2] = cosf(el) * cosf(az);
 }
 
 inline u32 chunkBlobSize(u32 batches, u32 vertices, u32 indices) {

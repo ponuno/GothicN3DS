@@ -19,6 +19,8 @@
 #include <string>
 #include <vector>
 
+#include "sun_bake.h"
+
 namespace g3 {
 
 struct BakeOptions {
@@ -64,6 +66,8 @@ struct BakeOptions {
 	float riverWidth = 4000.0f;
 	// The light of the world's lamps (torches, fire places) baked into the vertices (--lights, light_bake.h).
 	LightOptions light;
+	// The sun's shadow on the ground (--sun-shadow, sun_bake.h): a mask per cell of the chunk grid, outdoor worlds only.
+	SunOptions sun;
 	// The far layer (G10, --far-lod): a coarse copy of the world drawn beyond the draw distance.
 	FarOptions far;
 	// Visibility (--vis): which parts of the world are hidden from which cell (see visibility.h).

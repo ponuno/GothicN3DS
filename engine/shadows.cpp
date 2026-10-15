@@ -39,7 +39,6 @@ void Shadows::release() {
 }
 
 void Shadows::draw(const World& world, Vec3 camera, float strength) {
-	_stats.drawn = _stats.drawCalls = 0;
 	if (_count == 0 || !(strength > 0.0f)) return;
 	if (!_texture) {
 		// A soft disc: dark in the middle third, fading out to the rim.
@@ -135,7 +134,7 @@ void Shadows::draw(const World& world, Vec3 camera, float strength) {
 		++_stats.drawCalls;
 		first = last;
 	}
-	_stats.drawn = n;
+	_stats.drawn += n;
 }
 
 bool Shadows::cast(const World& world, Vec3 camera, const Model& model, const Pose& pose, Vec3 feet, float yaw, float lean,
@@ -157,6 +156,49 @@ bool Shadows::cast(const World& world, Vec3 camera, const Model& model, const Po
 		_flat = gfx::uiTextureCreate(8, 8, solid, true);
 		if (!_flat) return false;
 	}
+	// The ground the shadow lies on: the plane under the feet, tilted up to the ground along the shadow where that rises
+	// (a slope, a bump, the foot of a wall): a plane that only fits the feet leaves the far end of a long shadow under
+	// the ground there.
+	{
+		float hx = -dir[0], hz = -dir[2];
+		const float hl = sqrtf(hx * hx + hz * hz);
+		if (hl > 0.05f) {
+			hx /= hl;
+			hz /= hl;
+			// How far along the ground the shadow of a body of some 180 cm reaches.
+			const float reach = min(180.0f * hl / max(-dir[1], 0.2f), 450.0f);
+			const Vec3 g0 = {feet.x, ground, feet.z};
+			float best = 0.0f;
+			Vec3 far {0, 0, 0};
+			for (int step = 1; step <= 3; ++step) {
+				const float t = reach * float(step) / 3.0f;
+				const float px = feet.x - hx * t, pz = feet.z - hz * t; // (the way the light travels)
+				float gy;
+				Vec3 gn;
+				if (!world.rayDown({px, ground + 250.0f, pz}, 500.0f, gy, gn)) continue;
+				// Above the plane of the feet by how much?
+				const float planeY = ground - (n.x * (px - feet.x) + n.z * (pz - feet.z)) / n.y;
+				const float rise = gy - planeY;
+				if (rise > best + 1.0f) {
+					best = rise;
+					far = {px, gy, pz};
+				}
+			}
+			if (best > 2.0f) {
+				// The plane through the feet's ground, the higher point along the shadow and the line across it.
+				const Vec3 across = {-hz, 0.0f, hx};
+				const Vec3 side = {across.x, -(n.x * across.x + n.z * across.z) / n.y, across.z};
+				const Vec3 along = far - g0;
+				Vec3 nn = cross(along, side);
+				if (nn.y < 0.0f) nn = nn * -1.0f;
+				const float len = length(nn);
+				if (len > 1e-3f) {
+					nn = nn * (1.0f / len);
+					if (nn.y > 0.35f) n = nn;
+				}
+			}
+		}
+	}
 	// The map q -> q - d (n.q + n.(o - g)) / (n.d) + n lift, q relative to the feet o, g the ground below them.
 	const float nd = n.x * dir[0] + n.y * dir[1] + n.z * dir[2];
 	if (nd > -0.1f) return false;
@@ -167,6 +209,16 @@ bool Shadows::cast(const World& world, Vec3 camera, const Model& model, const Po
 	const float off = n.y * (feet.y - ground); // (o - g) is straight above g
 	const float lift = 2.0f + dist * 0.003f;
 	for (int r = 0; r < 3; ++r) c[r] = -dir[r] * off / nd + nv[r] * lift;
+	// Drawn a little towards the eye: every point moved along its own line of sight, so the picture of the shadow is
+	// the same, but small bumps of the ground (grass tufts, the steps of the terrain's triangles) no longer cover it.
+	// p' = eye + (p - eye)(1 - e): in the map's terms K' = (1 - e) K, c' = (1 - e) c + e (eye - o).
+	{
+		const float pull = 22.0f + dist * 0.012f; // cm
+		const float e = clamp(pull / max(dist, 1.0f), 0.0f, 0.3f);
+		const float eyeRel[3] = {camera.x - feet.x, camera.y - feet.y, camera.z - feet.z};
+		for (int i = 0; i < 9; ++i) k[i] *= 1.0f - e;
+		for (int r = 0; r < 3; ++r) c[r] = c[r] * (1.0f - e) + e * eyeRel[r];
+	}
 	// Every part of the flattened body lies over others (front and back, an arm over the chest, the armour over the
 	// body): drawn once per pixel, it darkens the ground evenly - before, each layer added its darkness, and the
 	// shadow came out blotchy, darkest where the limbs crossed.
@@ -174,6 +226,7 @@ bool Shadows::cast(const World& world, Vec3 camera, const Model& model, const Po
 	model.drawFlat(pose, feet, yaw, lean, k, c, _flat, clamp(a, 0.0f, 0.9f));
 	gfx::setDrawOnce(false);
 	++_stats.drawn;
+	++_stats.cast;
 	++_stats.drawCalls;
 	return true;
 }

@@ -1568,6 +1568,44 @@ var int MOBTEST_USED;
 var int MOBTEST_ALLOW;
 func int  ANVIL_COND() { return MOBTEST_ALLOW; };
 func void ANVIL_S1()   { MOBTEST_USED = MOBTEST_USED + 1; };
+// The bed's sleep, as the game's own: its state function puts up the hero's own infos (he talks to himself).
+// (SLEEPTEST_NOSCRIPT: it puts up nothing - the engine's menu of hours comes up instead.)
+var int PLAYER_MOBSI_PRODUCTION;
+var int SLEEPTEST_NOSCRIPT;
+const int MOBSI_SLEEPABIT = 7;
+func void SLEEPABIT_S1() {
+	if (SLEEPTEST_NOSCRIPT) { return; };
+	if (Hlp_GetInstanceID(self) == Hlp_GetInstanceID(hero)) {
+		PLAYER_MOBSI_PRODUCTION = MOBSI_SLEEPABIT;
+		AI_ProcessInfos(hero);
+	};
+};
+func int PC_Sleep_Condition() { return PLAYER_MOBSI_PRODUCTION == MOBSI_SLEEPABIT; };
+instance PC_NoSleep (C_INFO) {
+	npc = PC_Hero;
+	nr = 999;
+	condition = PC_Sleep_Condition;
+	information = PC_NoSleep_Info;
+	permanent = TRUE;
+	description = "Don't sleep";
+};
+func void PC_NoSleep_Info() {
+	AI_StopProcessInfos(self);
+	PLAYER_MOBSI_PRODUCTION = 0;
+};
+instance PC_SleepTime_Morning (C_INFO) {
+	npc = PC_Hero;
+	nr = 1;
+	condition = PC_Sleep_Condition;
+	information = PC_SleepTime_Morning_Info;
+	permanent = TRUE;
+	description = "Sleep until morning";
+};
+func void PC_SleepTime_Morning_Info() {
+	AI_StopProcessInfos(self);
+	PLAYER_MOBSI_PRODUCTION = 0;
+	Wld_SetTime(8, 0);
+};
 func int DIA_Thorus_TeachSneak_Condition() { return Npc_GetTalentSkill(other, NPC_TALENT_SNEAK) == 0; };
 func void DIA_Thorus_TeachSneak_Info() {
 	if (other.lp >= LPCOST_TALENT_SNEAK) {

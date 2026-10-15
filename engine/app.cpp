@@ -144,6 +144,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	_lootTarget = -1;
 	_chestTarget = -1;
 	_mobTarget = -1;
+	_ladderTarget = -1;
 	_mobJob = MobJob();
 	_corpseTarget = -1;
 	_world.close();
@@ -556,7 +557,15 @@ void App::update(const Input& in, float dt) {
 		}
 		const Drive drive = _hero.control(heroIn, _player, dt, grab ? &ledge : nullptr, ground.found ? &ground : nullptr, wall);
 		tCtl = sys::timeMs();
+		// The ladder's ways on and off take as long as the character's animations of them.
+		_player.ladderMountTime = _hero.ladderMountTime();
+		_player.ladderMountTopTime = _hero.ladderMountTopTime();
+		_player.ladderExitTopTime = _hero.ladderExitTopTime();
+		_player.ladderExitFootTime = _hero.ladderExitFootTime();
+		_player.ladderExitRise = _hero.ladderExitRise();
 		_player.update(_world, heroIn, _hero.yaw(), 0.0f, dt, &drive);
+		// On a ladder the character faces its rungs (turning to them as it takes hold).
+		if (_player.climbing) _hero.setYaw(_player.ladderYaw());
 		tMove = sys::timeMs();
 		// The inhabitants' bodies are in the way (not while climbing, using a thing, or lying).
 		if (_npcs.loaded() && !_player.climbing && !_player.swimming && _mobJob.stage == MJ_NONE && _chest.stage == CH_NONE && !_hero.down()) {
@@ -570,10 +579,6 @@ void App::update(const Input& in, float dt) {
 				feet.z += chest.z - c0.z;
 				_player.feet = feet;
 			}
-		}
-		{
-			float ladderYaw;
-			if (_player.takeLadderTurn(ladderYaw)) _hero.setYaw(ladderYaw);
 		}
 		fallCheck();
 		tBodies = sys::timeMs();
@@ -848,6 +853,7 @@ void App::render() {
 		eyeDesc[1].view = viewLH(r.pos, r.yaw, _cam.pitch);
 	}
 	_renderTimes = RenderTimes {};
+	gfx::setSunShadow(indoor ? 0.0f : sunShadowDarkness());
 	const auto drawEye = [&](const gfx::FrameDesc& d) {
 		const double r0 = sys::timeMs();
 		if (!indoor) {
@@ -876,23 +882,6 @@ void App::render() {
 		_triggers.draw(_pak, _world, _cam.pos, indoor ? indoorLight : sky.light, min(_world.drawReach() + 2000.0f, 20000.0f));
 		drawShowcase();
 		const double r4 = sys::timeMs();
-		if (_heroVisible) {
-			_hero.draw();
-			drawArrows(_hero.light());
-			const GameNpc* hn = heroNpc();
-			if (hn && _hero.loaded())
-				_loot.drawCarried(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
-				                  hn->melee, _hero.feet(), _hero.light());
-			if (hn && _hero.loaded())
-				_loot.drawRanged(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
-				                 hn->ranged, _hero.feet(), _hero.light());
-		}
-		const double r5 = sys::timeMs();
-		gfx::setPass(gfx::PASS_BLEND);
-		// Graphics+: shadows on the ground, before the water (which then covers those under it).
-		if (!indoor && _settings.wetGround && _weather.wet() > 0.12f) {
-			_puddles.draw(_world, _cam.pos, _weather.wet(), _weather.rain(), sky.horizon, _clock);
-		}
 		_shadows.begin();
 		// (Always: some 14 draw calls. It used to be given up at the half rate, so at the menu's steady 30 fps it never showed.)
 		const bool castHero = _settings.shadows == SHADOWS_HERO_CAST;
@@ -916,11 +905,33 @@ void App::render() {
 				lightDir[1] = -e;
 				lightDir[2] = -hz * ce;
 			}
+			// Before the hero, in the blended state: the hero drawn after it covers whatever of it would lie over his feet
+			// (it is drawn a little towards the eye, see Shadows::cast).
+			gfx::setPass(gfx::PASS_BLEND);
 			_shadows.cast(_world, _cam.pos, _hero.model(), _hero.pose(), _hero.feet(), _hero.yaw(), _hero.lean(), lightDir, strength);
+			gfx::setPass(gfx::PASS_WORLD);
 		}
-		if (_settings.shadows != SHADOWS_OFF && _settings.shadows != SHADOWS_HERO_CAST) {
-			if (_heroVisible && _hero.loaded()) _shadows.add(_hero.feet(), 48.0f);
-			if (_settings.shadows == SHADOWS_ALL && !_gfxRelief)
+		if (_heroVisible) {
+			_hero.draw();
+			drawArrows(_hero.light());
+			const GameNpc* hn = heroNpc();
+			if (hn && _hero.loaded())
+				_loot.drawCarried(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
+				                  hn->melee, _hero.feet(), _hero.light());
+			if (hn && _hero.loaded())
+				_loot.drawRanged(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
+				                 hn->ranged, _hero.feet(), _hero.light());
+		}
+		const double r5 = sys::timeMs();
+		gfx::setPass(gfx::PASS_BLEND);
+		// Graphics+: shadows on the ground, before the water (which then covers those under it).
+		if (!indoor && _settings.wetGround && _weather.wet() > 0.12f) {
+			_puddles.draw(_world, _cam.pos, _weather.wet(), _weather.rain(), sky.horizon, _clock);
+		}
+		// Round ones: under the hero (unless his own shape is thrown), and with "all near" or his shape under the people and beasts.
+		if (_settings.shadows != SHADOWS_OFF) {
+			if (_heroVisible && _hero.loaded() && _settings.shadows != SHADOWS_HERO_CAST) _shadows.add(_hero.feet(), 48.0f);
+			if ((_settings.shadows == SHADOWS_ALL || _settings.shadows == SHADOWS_HERO_CAST) && !_gfxRelief)
 				for (u32 i = 0; i < _npcs.drawnCount(); ++i)
 					if (_npcs.drawnVisible(i)) _shadows.add(_npcs.drawnFeet(i), _npcs.drawnRadius(i));
 			_shadows.draw(_world, _cam.pos, indoor ? 0.7f : 0.6f);
@@ -1025,6 +1036,8 @@ Input App::steerInput(const Input& in, float dt) {
 	if (_player.climbing) {
 		// On a ladder the stick says up or down - as the camera sees it, towards the wall or away from it - and
 		// the character stays facing the ladder (it must not turn away to go down it, which it does when steered).
+		// The camera comes round behind the climber by itself (taken hold of from the top, he has turned to it).
+		if (fabsf(in.lookX) < 0.1f) _orbitYaw = wrapYaw(_orbitYaw + clamp(wrapYaw(heroYaw - _orbitYaw), -2.5f * dt, 2.5f * dt));
 		float up = 0.0f;
 		if (m > 0.2f) up = m * cosf(wrapYaw(_orbitYaw + atan2f(x, z) - heroYaw));
 		h.steer = false;
@@ -1423,6 +1436,7 @@ void App::applySettings() {
 	cfg.wind = _windRelief ? 0.0f : _windWanted;
 	_wavesWanted = _settings.waveHeightCm();
 	cfg.waves = _wavesWanted;
+	cfg.sunMasks = _settings.sunShadows != 0;
 	setLanguage(_settings.language);
 	_ahead.setEnabled(_settings.readAhead != 0);
 	_env.dayLength = _settings.dayLengthSeconds();
@@ -1443,6 +1457,25 @@ void App::applySettings() {
 		_camPlaced = false;
 		_eyePitch = 0;
 	}
+}
+
+// How dark the baked sun's shadow (g3ds-bake --sun-shadow) makes the ground now: full by day in clear weather while the
+// sky's sun is near the one baked (within an hour and a half or so), fading out farther from it, under cloud and rain,
+// and as the sun goes down. (The masks hold where the shade lies for that one sun: three hours off, it would lie wrong.)
+float App::sunShadowDarkness() const {
+	if (!_settings.sunShadows || !_world.hasSunMasks() || _world.indoor()) return 0.0f;
+	float sun[3];
+	Sky::sunDirection(_env.timeOfDay, sun);
+	const float* baked = _world.sunMaskDirection();
+	const float agree = sun[0] * baked[0] + sun[1] * baked[1] + sun[2] * baked[2];
+	auto smooth = [](float x) {
+		x = clamp(x, 0.0f, 1.0f);
+		return x * x * (3.0f - 2.0f * x);
+	};
+	const float near = smooth((agree - 0.64f) / 0.29f);
+	const float up = smooth((sun[1] - 0.05f) / 0.20f);
+	const float clear = (1.0f - 0.9f * _weather.cloud()) * (1.0f - 0.6f * _weather.rain());
+	return kSunShadowDark * near * up * clamp(clear, 0.0f, 1.0f);
 }
 
 void App::setGfxRelief(bool heavy) {

@@ -5,7 +5,7 @@ namespace g3 {
 bool texValidate(const TexHeader& h, u32 availableBytes) {
 	auto pot = [](u32 v) { return v >= TEX_MIN_SIZE && v <= TEX_MAX_SIZE && (v & (v - 1)) == 0; };
 	if (h.magic != TEX_MAGIC || !pot(h.width) || !pot(h.height)) return false;
-	if (h.format != TEX_ETC1 && h.format != TEX_ETC1A4) return false;
+	if (h.format != TEX_ETC1 && h.format != TEX_ETC1A4 && h.format != TEX_L4) return false;
 	if (h.mipCount == 0 || h.mipCount > texMaxMipCount(h.width, h.height)) return false;
 	return texLevelOffset(h, h.mipCount) == h.dataSize && h.dataSize <= availableBytes;
 }
@@ -78,6 +78,18 @@ void texSolid(u8 r, u8 g, u8 b, TexHeader& header, u8 data[32]) {
 
 void texDecodeLevel(const TexHeader& h, const u8* data, u32 level, u8* out) {
 	const u32 w = h.width >> level, hh = h.height >> level;
+	if (h.format == TEX_L4) {
+		const u8* src = data + texLevelOffset(h, level);
+		for (u32 y = 0; y < hh; ++y)
+			for (u32 x = 0; x < w; ++x) {
+				const u32 n = texL4Nibble(w, hh, x, y);
+				const u8 l = u8(((src[n >> 1] >> ((n & 1u) * 4u)) & 15u) * 17u);
+				u8* dst = out + (y * w + x) * 4;
+				dst[0] = dst[1] = dst[2] = l;
+				dst[3] = 255;
+			}
+		return;
+	}
 	const u32 blockBytes = texBytesPerBlock(h.format);
 	const bool hasAlpha = h.format == TEX_ETC1A4;
 	const u8* src = data + texLevelOffset(h, level);

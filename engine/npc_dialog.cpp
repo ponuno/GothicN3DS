@@ -17,6 +17,7 @@
 // until its queue has got as far as the line (its earlier actions are done
 // first); the queue goes on from there.
 #include "npcs.h"
+#include "lang.h"
 #include "ui.h"
 
 #include <math.h>
@@ -188,16 +189,31 @@ void Npcs::xOutput(ScriptVm& vm, void* user) {
 
 void Npcs::xProcessInfos(ScriptVm& vm, void* user) {
 	Npcs& self = *static_cast<Npcs*>(user);
+	ScriptInstance* inst = vm.popInstance();
+	const int who = self.npcFor(inst);
+	if (who >= 0 && u32(who) == self._game.heroIndex()) {
+		// The player's character with himself (a bed, a workbench: his own infos - OpenGothic's
+		// GameScript::ai_processinfos on the player opens the dialogue with the player as both).
+		self.openSelfTalk();
+		return;
+	}
 	NpcAction act;
 	act.kind = NPC_ACT_PROCESS_INFOS;
-	self.push(self.actorFor(vm.popInstance()), act);
+	self.push(self.actorFor(inst), act);
 }
 
 void Npcs::xStopProcessInfos(ScriptVm& vm, void* user) {
 	Npcs& self = *static_cast<Npcs*>(user);
+	ScriptInstance* inst = vm.popInstance();
+	const int who = self.npcFor(inst);
+	if (who >= 0 && u32(who) == self._game.heroIndex()) {
+		// (The player's character has no queue: the talk ends once what is said has been said.)
+		if (self._talk.processing) self._talk.stop = true;
+		return;
+	}
 	NpcAction act;
 	act.kind = NPC_ACT_STOP_INFOS;
-	self.push(self.actorFor(vm.popInstance()), act);
+	self.push(self.actorFor(inst), act);
 }
 
 void Npcs::xInfoManagerHasFinished(ScriptVm& vm, void* user) { vm.pushInt(!static_cast<Npcs*>(user)->_talk.processing); }
@@ -269,6 +285,56 @@ void Npcs::openTalk(NpcActor& a) {
 	++_stats.talks;
 	_game.clearAllChoices();
 	_menuDirty = true;
+}
+
+void Npcs::openSelfTalk() {
+	const u32 hero = _game.heroIndex();
+	if (hero == SCRIPT_NONE || _talk.processing) return;
+	_talk = Talk();
+	_talk.processing = true;
+	_talk.self = true;
+	_talk.npc = int(hero);
+	_talk.importantLeft = 8;
+	++_stats.talks;
+	_game.clearAllChoices();
+	_menuDirty = true;
+	refreshView();
+}
+
+namespace {
+// The engine's sleep menu: until when (hours), the last one is "not now".
+const float kSleepHours[4] = {8.0f, 12.0f, 20.0f, 0.0f};
+const char* sleepItem(u32 i) {
+	switch (i) {
+	case 0: return tr("Спать до утра");
+	case 1: return tr("Спать до полудня");
+	case 2: return tr("Спать до вечера");
+	case 3: return tr("Спать до полуночи");
+	default: return tr("Не спать");
+	}
+}
+} // namespace
+
+bool Npcs::openSleepMenu() {
+	const u32 hero = _game.heroIndex();
+	if (hero == SCRIPT_NONE || talking()) return false;
+	_talk = Talk();
+	_talk.processing = true;
+	_talk.self = true;
+	_talk.sleepMenu = true;
+	_talk.npc = int(hero);
+	_talk.choosing = true;
+	_talk.count = 5;
+	_menuDirty = true;
+	refreshView();
+	return true;
+}
+
+bool Npcs::takeSleep(float& hours) {
+	if (_sleepTo < 0.0f) return false;
+	hours = _sleepTo;
+	_sleepTo = -1.0f;
+	return true;
 }
 
 void Npcs::finishTalk() {
@@ -357,6 +423,12 @@ void Npcs::afterTold() {
 bool Npcs::talkChoose(u32 index) {
 	Talk& t = _talk;
 	if (!t.processing || !t.choosing || index >= t.count) return false;
+	if (t.sleepMenu) {
+		if (index < 4) _sleepTo = kSleepHours[index];
+		finishTalk();
+		refreshView();
+		return true;
+	}
 	const u32 ref = t.ref[index];
 	if (!t.isChoice[index]) {
 		runInfo(ref);
@@ -414,6 +486,17 @@ void Npcs::tickTalk(float dt) {
 		refreshView();
 		return;
 	}
+	if (t.self) {
+		// With himself: over when he is down, or when the scripts say so and all is said.
+		const GameNpc* me = _game.hero();
+		if (!me || me->down != DOWN_NONE) {
+			talkAbort();
+			return;
+		}
+		if (!t.choosing && !t.trading && !_say.active && !_speechCount) afterTold();
+		refreshView();
+		return;
+	}
 	NpcActor* a = actorByNpc(u32(t.npc));
 	const GameNpc& n = _game.npc(u32(t.npc));
 	const GameNpc* hero = _game.hero();
@@ -456,9 +539,14 @@ void Npcs::refreshView() {
 	if (saying && _say.speaker >= 0) scriptText(_game.nameOf(_game.npc(u32(_say.speaker))), v.speaker, sizeof(v.speaker));
 	v.count = choosing ? t.count : 0;
 	for (u32 i = 0; i < v.count; ++i) {
+		if (t.sleepMenu) {
+			copyText(v.items[i], sizeof(v.items[i]), sleepItem(i));
+			continue;
+		}
 		const char* text = t.isChoice[i] ? _game.choice(t.ref[i]).text : _game.infoDescription(t.ref[i]);
 		scriptText(text, v.items[i], sizeof(v.items[i]));
 	}
+	if (t.sleepMenu && active) copyText(v.partner, sizeof(v.partner), tr("Сон"));
 	_menuDirty = false;
 	++v.version;
 }

@@ -124,14 +124,29 @@ public:
 		float height = 0;
 	};
 	const LedgeStats& ledgeStats() const { return _ledgeStats; }
-	// Caught on a ladder out of the air (stepping off its top, a jump at it): the way the
-	// character should face to climb it - towards the wall it leans on. True once per catch.
-	bool takeLadderTurn(float& yaw) {
-		if (!_turnPending) return false;
-		_turnPending = false;
-		yaw = _turnYaw;
-		return true;
-	}
+	// ---- ladders ----
+	// On a ladder (`climbing`) the body is the ladder's: it is put on the ladder (a glide to the
+	// rungs, facing them - LADDER_MOUNT from the foot, LADDER_MOUNT_TOP over the edge from the top),
+	// goes up and down it with the stick (LADDER_CLIMB), and off it at the top (LADDER_EXIT_TOP: up
+	// over the edge onto the floor there) or at the foot (LADDER_EXIT_FOOT). The phases last as long as
+	// the character's animations of them do (set below); a jump lets go of the ladder.
+	enum LadderPhase : u8 { LADDER_OFF, LADDER_MOUNT, LADDER_MOUNT_TOP, LADDER_CLIMB, LADDER_EXIT_TOP, LADDER_EXIT_FOOT };
+	u8 ladderPhase() const { return climbing ? _lad.phase : u8(LADDER_OFF); }
+	// How far through a mount or an exit, 0..1 (1 while climbing).
+	float ladderProgress() const { return _lad.length > 0.0f ? clamp(_lad.time / _lad.length, 0.0f, 1.0f) : 1.0f; }
+	// The way the character faces on the ladder (towards its rungs), turning to it while it is put on.
+	float ladderYaw() const;
+	int ladderIndex() const { return climbing ? _lad.index : -1; }
+	// The character's animations (seconds; 0: there is none, a short glide instead) and how high
+	// the way over the top lifts the body (0: not known).
+	float ladderMountTime = 0, ladderMountTopTime = 0, ladderExitTopTime = 0, ladderExitFootTime = 0, ladderExitRise = 0;
+	// A ladder to take hold of (the use key): at its foot, or at its top from the floor it leads to.
+	// Its index (fromTop says which end), -1 for none.
+	int ladderInReach(const World& world, float yaw, bool& fromTop) const;
+	// Takes hold of it; false if it cannot be now.
+	bool grabLadder(const World& world, int index, bool fromTop, float yaw);
+	// Where a ladder's prompt goes: the middle of its rungs at the height of `y` (clamped to the ladder).
+	bool ladderPoint(const World& world, int index, float y, Vec3& out) const;
 	// An animation is putting the body (Drive::place) this frame.
 	bool placedByAnimation() const { return _mantle; }
 	// False until the ground under the spawn point has been found.
@@ -164,7 +179,26 @@ private:
 	void walk(const World& world, const Input& in, float yaw, float dt, const Drive* drive);
 	void collideWalls(const World& world);
 	bool swim(const World& world, float dt);
-	bool climb(const World& world, const Input& in, float dt);
+	// The ladder taken hold of: its line of rungs, the side it is climbed from, where the floor at its top is.
+	struct LadderRun {
+		int index = -1;
+		u8 phase = 0;
+		float time = 0, length = 0;
+		Vec3 from {0, 0, 0}, to {0, 0, 0}; // the glide of a mount or an exit
+		float yawFrom = 0, yaw = 0;
+		Vec3 foot {0, 0, 0}, head {0, 0, 0};
+		Vec3 out {0, 0, 1}; // horizontal, from the rungs towards the climber
+		float hang = 40.0f;  // how far from the rungs the body hangs
+		bool top = false;    // there is floor at the top to step onto
+		Vec3 topAt {0, 0, 0};
+	} _lad;
+	bool ladderCatch(const World& world, const Input& in, float yaw);
+	void ladderTick(const World& world, const Input& in, float dt);
+	bool ladderBegin(const World& world, int index, bool fromTop, float yaw, Vec3 dir, bool glideOnly);
+	Vec3 ladderSpot(float y) const;
+	void ladderPhaseTo(u8 phase, float length, Vec3 to);
+	void ladderOff(bool grounded);
+	float ladderExitStart() const;
 	// The nearest surface above the feet (from step height up to `reach` above
 	// them): where feet that got into the rock belong.
 	bool floorAbove(const World& world, float reach, float& y) const;
@@ -175,9 +209,6 @@ private:
 	bool _placed = false;
 	bool _blocked = false; // the last horizontal move ran into something
 	bool _letGo = false;   // jumped off a ladder: do not grab it again before landing
-	bool _turnPending = false; // see takeLadderTurn()
-	float _turnYaw = 0;
-	bool wallDirection(const World& world, float& yaw) const;
 	bool _mantle = false;  // put by an animation this frame (Drive::place)
 	Vec3 _carry {0, 0, 0}; // driven: the horizontal velocity the body keeps in the air
 	// Sliding down a slope too steep to stand on: the lowest the feet have

@@ -126,6 +126,7 @@ static inline void C3D_TexEnvSrc(C3D_TexEnv*, C3D_TexEnvMode, GPU_TEVSRC, GPU_TE
 static inline void C3D_TexEnvOpRgb(C3D_TexEnv*, GPU_TEVOP_RGB, GPU_TEVOP_RGB = GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB = GPU_TEVOP_RGB_SRC_COLOR) {}
 static inline void C3D_TexEnvFunc(C3D_TexEnv*, C3D_TexEnvMode, GPU_COMBINEFUNC) {}
 static inline void C3D_TexEnvColor(C3D_TexEnv*, u32) {}
+static inline void C3D_TexEnvBufUpdate(int, int) {}
 
 static inline void C3D_DepthTest(bool, GPU_TESTFUNC, GPU_WRITEMASK) {}
 static inline void C3D_CullFace(GPU_CULLMODE) {}

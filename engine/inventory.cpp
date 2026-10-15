@@ -1452,10 +1452,17 @@ void App::drawItemHud() {
 		Quat r;
 		Vec3 p;
 		if (_triggers.moverTransform(u32(_doorTarget), r, p)) {
+			// Over the door itself (not in front of the character: by a bed next to a hut's door that read as the bed's).
 			const bool open = _triggers.doorOpen(u32(_doorTarget));
-			tag({_player.feet.x + sinf(_hero.yaw()) * 80.0f, _player.feet.y + 150.0f, _player.feet.z + cosf(_hero.yaw()) * 80.0f},
+			const Vec3 c = _triggers.doorCenter(u32(_doorTarget));
+			tag({c.x, max(c.y, _player.feet.y + 120.0f), c.z},
 			    open ? tr("Закрыть дверь") : _triggers.doorLocked(u32(_doorTarget)) ? tr("Дверь (заперта)") : tr("Открыть дверь"));
 		}
+	}
+	if (_ladderTarget >= 0 && _mobTarget < 0 && _doorTarget < 0 && _lootTarget < 0 && _chestTarget < 0 && _chest.stage == CH_NONE) {
+		Vec3 p;
+		if (_player.ladderPoint(_world, _ladderTarget, _ladderTop ? _player.feet.y : _player.feet.y + 150.0f, p))
+			tag({p.x, _player.feet.y + 150.0f, p.z}, _ladderTop ? tr("Спуститься по лестнице") : tr("Подняться по лестнице"));
 	}
 	if (_corpseTarget >= 0 && _lootTarget < 0 && _chestTarget < 0 && _chest.stage == CH_NONE) {
 		const GameNpc& b = _npcs.game().npc(u32(_corpseTarget));

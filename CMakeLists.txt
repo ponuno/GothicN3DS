@@ -96,6 +96,7 @@ set(G3DS_BAKE_SOURCES
     tools/bake/ground.cpp
     tools/bake/vertex_fx.cpp
     tools/bake/light_bake.cpp
+    tools/bake/sun_bake.cpp
     tools/bake/far_lod.cpp
     tools/bake/visibility.cpp
     tools/bake/water_grid.cpp

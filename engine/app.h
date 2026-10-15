@@ -152,6 +152,8 @@ public:
 	bool windRelief() const { return _windRelief; }
 	bool gfxRelief() const { return _gfxRelief; }
 	const Shadows& shadows() const { return _shadows; }
+	// How dark the baked sun's shadow is drawn now (0: not at all): the time of day, the weather, the menu.
+	float sunShadowDarkness() const;
 	World& world() { return _world; }
 	const World& world() const { return _world; }
 	Pak& pak() { return _pak; }
@@ -316,6 +318,9 @@ public:
 	// The thing of the world (benches, beds, the grindstone ...) the character could use now (A; a mob's
 	// number, -1 for none), and whether he is at one.
 	int mobTarget() const { return _mobTarget; }
+	int ladderTarget() const { return _ladderTarget; }
+	// The name a thing of the world shows (its prompt).
+	void mobName(u32 mob, char* out, size_t size) const;
 	bool mobInUse() const { return _mobJob.stage != MJ_NONE; }
 	// The dead the character could search now (A; a character's index, -1 for none), and the
 	// one being searched (-1 for none: the open container is a chest).
@@ -493,6 +498,7 @@ private:
 	const char* _barrierName = nullptr; // the scripts' name of it, found once (null: none)
 	bool _barrierSearched = false;
 	void weatherSound(float dt);
+	static constexpr float kSunShadowDark = 0.42f; // how dark the sun's shadow is at its darkest (gfx::setSunShadow)
 	u32 _rainLoop = 0;                  // the rain's sound playing
 	const char* _rainName = nullptr;    // the scripts' name of it (null: none)
 	const char* _thunderName = nullptr;
@@ -647,17 +653,21 @@ private:
 		bool stay = false;   // held until the player lets go (a bed, a bench)
 		bool ran = false;    // its state function has run
 		u8 slotKind = 0;     // the place used (MobSlotKind): which "_FRONT" / "_BACK" animations
+		bool bed = false;    // a bed: lying in it, the sleep talk (the scripts', else the engine's menu of hours)
+		bool talked = false; // a talk came up while in it: he gets up when it is over
+		bool offered = false; // the engine's sleep menu has been put up
 	};
 	enum MobStage : u8 { MJ_NONE, MJ_GLIDE, MJ_IN, MJ_HELD, MJ_OUT };
 	MobJob _mobJob;
 	int _mobTarget = -1;
 	int _doorTarget = -1; // the door in front (Triggers' index), -1: none
+	int _ladderTarget = -1; // a ladder to take hold of with A (World's index), -1: none
+	bool _ladderTop = false; // ... from its top
 	void doorUse(u32 door);
 	void mobUpdate(Input& in, float dt);
 	int mobNearest() const;
 	bool mobStart(u32 mob);
 	void mobEnd(bool hurried);
-	void mobName(u32 mob, char* out, size_t size) const;
 	void talkUpdate(Input& in, float dt);
 	void drawSubtitle();
 	// The Barrier's hum: heard outdoors while the setting is on, if the scripts have a sound for it.

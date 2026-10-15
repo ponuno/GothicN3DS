@@ -99,6 +99,9 @@ struct StreamConfig {
 	// Waves on the water (gfx::ChunkFx::waveHeight): how high the crest lifts the surface, cm; 0 still. Only in a
 	// world baked with a fine water grid (hasWaterGrid()).
 	float waves = 0.0f;
+	// The sun's shadow on the ground (a world baked with --sun-shadow; hasSunMasks()): the masks are loaded with the
+	// chunks and handed to the drawing (gfx::ChunkFx::sun); how dark they make the ground is gfx::setSunShadow's.
+	bool sunMasks = false;
 	// The far layer (G10; a world baked with --far-lod): drawn out to here, cm,
 	// where the chunks are not - beyond drawDistance, and in place of chunks
 	// not loaded yet. 0 (or no farther than drawDistance): not drawn, and not
@@ -233,6 +236,13 @@ public:
 	// walls, roofs, the ground and big objects of the loaded chunks of the world itself (not those of medium and
 	// small objects, nor leaves, fences or glass), and shut doors and gates. For telling who is hidden from the eye.
 	bool sightBlocked(Vec3 a, Vec3 b) const;
+	// Where leaves hang (the light shafts stand under them): the boxes of the batches of swaying materials (MATF_WIND;
+	// in a world baked without --wind, cut-out ones) of the loaded chunks within `radius` cm of `around` on x/z, at
+	// least `minHeight` cm tall - crowns of trees, not grass. At most `max`; returns how many.
+	struct PlantBox {
+		float bbMin[3], bbMax[3];
+	};
+	u32 plantBoxes(Vec3 around, float radius, float minHeight, PlantBox* out, u32 max) const;
 	// What moves and is solid (gates, lifts, shut doors: triggers.h) - asked by these queries too; null: nothing.
 	void setDynamic(const class Triggers* dynamic) { _dynamic = dynamic; }
 	// Highest water surface under `from`, no lower than from.y - maxDrop.
@@ -246,11 +256,22 @@ public:
 	const WorldPortal* portalAt(Vec3 p) const;
 	// The ladder whose climbing box contains `p`, or null.
 	const WorldLadder* ladderAt(Vec3 p) const;
+	// The ladders: their climbing boxes, and what the bake knew of each ladder itself
+	// ("world/<name>/ladderinfo", optional: null without it, or for a ladder it says nothing of).
+	u32 ladderCount() const { return _hdr.ladderCount; }
+	const WorldLadder& ladder(u32 i) const { return _ladders[i]; }
+	const LadderInfo* ladderInfo(u32 i) const {
+		return _ladderInfo && i < _hdr.ladderCount && _ladderInfo[i].halfWidth > 0.0f ? &_ladderInfo[i] : nullptr;
+	}
 	bool indoor() const { return (_hdr.flags & WORLDF_INDOOR) != 0; }
 	// Whether the world was baked with Graphics+ data (g3ds-bake --ao, --wind).
 	bool hasOcclusion() const { return (_hdr.flags & WORLDF_AO) != 0; }
 	bool hasWind() const { return (_hdr.flags & WORLDF_WIND) != 0; }
 	bool hasWaterGrid() const { return (_hdr.flags & WORLDF_WATER_GRID) != 0; }
+	// Whether the world has the sun's shadow baked (g3ds-bake --sun-shadow), and for which sun (unit vector to it).
+	bool hasSunMasks() const { return _sun != nullptr; }
+	const float* sunMaskDirection() const { return _sunHdr.dir; }
+	float sunMaskHour() const { return _sunHdr.hour; }
 	// Whether the world has a far layer (g3ds-bake --far-lod), and whether it
 	// is drawn now: loaded and asked to reach beyond the draw distance.
 	bool hasFarLayer() const { return _hdr.farEntry != 0 && !indoor(); }
@@ -303,6 +324,7 @@ private:
 		bool requested; // handed to the background loader
 		bool hasBlended;
 		bool hasLod;    // has batches of BATCH_LOD_FAR_ONLY
+		bool sunHeld;   // holds its sun mask (acquireTexture)
 		ChunkCollider collider;
 		ChunkCollider water;
 	};
@@ -425,6 +447,8 @@ private:
 	u32* _textures = nullptr; // texture table: pak hashes
 	WorldPortal* _portals = nullptr;
 	WorldLadder* _ladders = nullptr;
+	LadderInfo* _ladderInfo = nullptr; // parallel to _ladders, or null
+	void loadLadderInfo();
 	ChunkInfo* _chunks = nullptr;
 	Loaded* _loaded = nullptr; // parallel to _chunks; mesh == nullptr when absent
 	TexSlot* _tex = nullptr;   // parallel to _textures
@@ -516,6 +540,11 @@ private:
 	bool _visRow = false;      // the camera's cell has a row and _visBase is filled from it
 	bool _visHave = false;     // _visCellNow is the cell the row was looked up for
 	int _visCellNowX = 0, _visCellNowZ = 0;
+	// The sun's shadow (G3SN): per chunk its mask (a texture of the table) and where it lies.
+	SunHeader _sunHdr {};
+	SunChunk* _sun = nullptr;
+	void loadSun();
+	gfx::Texture* sunMaskFor(Loaded& l, u32 index);
 	StreamConfig _cfg;
 	WorldStats _stats {};
 };

@@ -542,6 +542,14 @@ public:
 	DialogTexts& dialogTexts() { return _texts; }
 	// Ends the talk at once, without the scripts' say (the world changes, the player is hurt ...).
 	void talkAbort();
+	// The player's character talks to himself: the scripts' AI_ProcessInfos(hero) - a bed's
+	// "SLEEPABIT_S1" puts up his own infos (C_INFO with npc = the hero: "sleep till morning" ...).
+	bool selfTalk() const { return _talk.processing && _talk.self; }
+	// A bed whose scripts put up nothing: the engine's own menu of the hours to sleep until.
+	// False if a talk is on.
+	bool openSleepMenu();
+	// The hour chosen in it (0..24), once; false while none is.
+	bool takeSleep(float& hours);
 
 	// The thing of that kind a character would use now: the nearest free
 	// one it can see from where it stands (the scripts' Wld_IsMobAvailable,
@@ -845,7 +853,11 @@ private:
 		u32 count = 0;
 		u32 ref[TALK_ITEMS] = {};
 		bool isChoice[TALK_ITEMS] = {};
+		bool self = false;    // the player's character with himself (no partner: his own infos)
+		bool sleepMenu = false; // the engine's menu of hours (openSleepMenu)
 	} _talk;
+	float _sleepTo = -1.0f;
+	void openSelfTalk();
 	TalkView _talkView;
 	bool _menuDirty = false;
 	DialogTexts _texts;

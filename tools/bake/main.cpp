@@ -162,6 +162,10 @@ void usage() {
 	          "                     shadows; the large triangles near a lamp are cut smaller (more triangles, see --light-cell)\n"
 	          "  --light-strength F their light, 0.1..4 (default 1); --light-cell M: the edge they are cut to, metres (default 1.5)\n"
 	          "  --light-static     also the lamps the world's own compiled light has (otherwise those are left out)\n"
+	          "  --sun-shadow       Graphics+: bake the sun's shadow on the ground (trees, houses, rocks, hills) for outdoor worlds:\n"
+	          "                     a 4-bit mask per grid cell, no extra triangles (menu: Graphics+ -> Sun shadows; Gothic 1 and 2)\n"
+	          "  --sun-hour H       the sky's sun of this hour, 9..17 (default 14.5); --sun-texel CM: finest texel (default 32);\n"
+	          "                     --sun-samples N: rays per texel, 1..32 (default 6; more = softer, slower)\n"
 	          "  --water-light N    the water's own light, 0..255 (default 200): the same blue-green tone all over it,\n"
 	          "                     not the patches of the source mesh's vertex light; 0: keep the source's light\n"
 	          "  --water-texture S  the water's texture: made here (default: soft caustics; S = made) or the game's (S = original)\n"
@@ -314,6 +318,10 @@ int main(int argc, char** argv) {
 			else if (a == "--lod-ratio") opt.lod.ratio = std::clamp(std::stof(value()), 0.1f, 0.9f);
 			else if (a == "--lod-error") opt.lod.maxError = std::clamp(std::stof(value()), 1.0f, 500.0f);
 			else if (a == "--lights") opt.light.enabled = true;
+			else if (a == "--sun-shadow") opt.sun.enabled = true;
+			else if (a == "--sun-hour") opt.sun.hour = std::clamp(std::stof(value()), 9.0f, 17.0f);
+			else if (a == "--sun-texel") opt.sun.texel = std::clamp(std::stof(value()), 8.0f, 200.0f);
+			else if (a == "--sun-samples") opt.sun.samples = std::clamp(std::stoi(value()), 1, 32);
 			else if (a == "--light-strength") opt.light.strength = std::clamp(std::stof(value()), 0.1f, 4.0f);
 			else if (a == "--light-cell") opt.light.cell = std::clamp(std::stof(value()), 0.2f, 10.0f) * 100.0f;
 			else if (a == "--light-static") opt.light.statics = true;

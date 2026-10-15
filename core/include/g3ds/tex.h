@@ -19,10 +19,14 @@ constexpr u32 TEX_MAX_SIZE = 1024; // PICA maximum
 enum TexFormat : u8 {
 	TEX_ETC1 = 0,   // 4 bpp, opaque
 	TEX_ETC1A4 = 1, // 8 bpp, 4-bit alpha
+	// 4 bpp, one channel (the sun's mask of a world, g3ds-bake --sun-shadow): 8x8 tiles as above, the texels of a tile in
+	// Morton order (x bit, y bit, x bit ...: as the PICA200 reads them), two to a byte, the first in the low nibble.
+	TEX_L4 = 2,
 };
 
 enum TexFlags : u16 {
 	TEXF_ALPHA_TEST = 1 << 0, // has cut-out alpha: draw with alpha test
+	TEXF_CLAMP = 1 << 1,      // not repeated: the edge texels go on beyond it
 };
 
 struct TexHeader {
@@ -36,7 +40,14 @@ struct TexHeader {
 };
 static_assert(sizeof(TexHeader) == 16, "TexHeader layout");
 
-inline u32 texBytesPerBlock(u8 format) { return format == TEX_ETC1A4 ? 16 : 8; }
+inline u32 texBytesPerBlock(u8 format) { return format == TEX_ETC1A4 ? 16 : 8; } // (TEX_L4: 4x4 texels of 4 bits, 8 bytes too)
+
+// TEX_L4: the place of texel (x, image row y) of a w x h level, in nibbles from the level's start.
+inline u32 texL4Nibble(u32 w, u32 h, u32 x, u32 y) {
+	const u32 sy = h - 1u - y, ty = sy & 7u; // (rows stored from the bottom, as the ETC1 textures)
+	const u32 at = (x & 1u) | ((ty & 1u) << 1) | ((x & 2u) << 1) | ((ty & 2u) << 2) | ((x & 4u) << 2) | ((ty & 4u) << 3);
+	return ((sy >> 3) * (w >> 3) + (x >> 3)) * 64u + at;
+}
 
 inline u32 texLevelSize(const TexHeader& h, u32 level) {
 	u32 w = h.width >> level, hh = h.height >> level;

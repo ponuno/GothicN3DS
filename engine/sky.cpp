@@ -1,5 +1,7 @@
 #include "sky.h"
 
+#include "g3ds/world.h"
+
 #include <math.h>
 
 namespace g3 {
@@ -125,12 +127,7 @@ void dirOf(float az, float el, float out[3]) {
 
 } // namespace
 
-void Sky::sunDirection(float hour, float out[3]) {
-	const float t = (hour - 6.0f) / 12.0f * kPi; // 0 at sunrise, pi at sunset, on round
-	const float el = 62.0f * 0.0174533f * sinf(t);
-	const float az = kPi * 0.5f + t; // east, south, west, north
-	dirOf(az, el, out);
-}
+void Sky::sunDirection(float hour, float out[3]) { sunDirectionAt(hour, out); } // (g3ds/world.h: the baker's sun too)
 
 void Sky::moonDirection(float hour, float out[3]) {
 	const float t = (hour - 6.0f) / 12.0f * kPi + kPi;

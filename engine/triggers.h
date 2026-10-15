@@ -75,6 +75,8 @@ public:
 	// The door within `reach` in front of `feet` (looking along `yaw`), -1 for none.
 	int doorNear(Vec3 feet, float yaw, float reach = 220.0f) const;
 	bool doorOpen(u32 i) const { return i < _h.count && _state[i].doorOpen; }
+	// Where the door's leaf is now (the middle of it, as doorNear measures): where its prompt goes.
+	Vec3 doorCenter(u32 i) const { return i >= _h.count ? Vec3 {0, 0, 0} : solid(i) ? _state[i].worldCenter : _state[i].pos; }
 	bool doorLocked(u32 i) const { return i < _h.count && _list[i].kind == TRG_DOOR && (_list[i].flags & TRGF_LOCKED) && !_state[i].unlocked; }
 	const char* doorKey(u32 i) const { return i < _h.count ? text(_list[i].target) : ""; }
 	const char* doorPick(u32 i) const { return i < _h.count ? text(_list[i].sfx[0]) : ""; }

@@ -1258,6 +1258,28 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 				ladder.bbMin[a] = std::min(lo[a], hi[a]);
 				ladder.bbMax[a] = std::max(lo[a], hi[a]);
 			}
+			// The ladder as its model has it (its line of rungs, the way it faces): with a model that can be read.
+			if (vob->visual && !vob->visual->name.empty()) {
+				const std::string visual = upper(vob->visual->name);
+				auto it = cache.find(visual);
+				if (it == cache.end()) {
+					std::string why;
+					it = cache.emplace(visual, loadVisual(vfs, visual, why)).first;
+				}
+				const FlatPtr& mesh = it->second;
+				if (mesh && !mesh->subs.empty()) {
+					float mlo[3] = {1e30f, 1e30f, 1e30f}, mhi[3] = {-1e30f, -1e30f, -1e30f};
+					for (const FlatSub& sub : mesh->subs)
+						for (const FlatVertex& v : sub.verts)
+							for (int a = 0; a < 3; ++a) mlo[a] = std::min(mlo[a], v.pos[a]), mhi[a] = std::max(mhi[a], v.pos[a]);
+					std::vector<std::array<float, 3>> places;
+					for (const auto& [slotName, node] : mesh->slots) places.push_back({node.m[0][3], node.m[1][3], node.m[2][3]});
+					const zenkit::Vec3* c = vob->rotation.columns;
+					const float col[3][3] = {{c[0].x, c[0].y, c[0].z}, {c[1].x, c[1].y, c[1].z}, {c[2].x, c[2].y, c[2].z}};
+					const float at[3] = {vob->position.x, vob->position.y, vob->position.z};
+					ladderFromModel(ladder, mlo, mhi, reinterpret_cast<const float(*)[3]>(places.data()), places.size(), col, at);
+				}
+			}
 			// A box without height is a file without bounds, not a ladder.
 			if (ladder.bbMax[1] - ladder.bbMin[1] > 50.0f) scene.ladders.push_back(ladder);
 		}

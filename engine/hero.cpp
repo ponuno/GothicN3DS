@@ -181,6 +181,21 @@ void Hero::cacheClips() {
 		_ladderRise[_ladderCount] = c->rise() >= 20.0f ? c->rise() : 0.0f;
 		++_ladderCount;
 	}
+	// On and off: at the foot, and over the top.
+	_ladderMount = lookup("T_LADDER_STAND_2_S0");
+	_ladderExitFoot = lookup("T_LADDER_S0_2_STAND");
+	_ladderExitTop = lookup("T_LADDER_UP_2_STAND");
+	for (int k = LADDER_CLIPS + 8; !_ladderExitTop && k > 0; --k) {
+		char ladderName[48];
+		snprintf(ladderName, sizeof(ladderName), "T_LADDER_S%d_2_STAND", k);
+		_ladderExitTop = lookup(ladderName);
+	}
+	_ladderMountTop = lookup("T_LADDER_STAND_2_UP");
+	for (int k = LADDER_CLIPS + 8; !_ladderMountTop && k > 0; --k) {
+		char ladderName[48];
+		snprintf(ladderName, sizeof(ladderName), "T_LADDER_STAND_2_S%d", k);
+		_ladderMountTop = lookup(ladderName);
+	}
 	// (Clips that carry no height of their own: each is taken for a stretch of a rung's worth.)
 	bool anyRise = false;
 	for (int k = 0; k < _ladderCount; ++k) anyRise = anyRise || _ladderRise[k] > 0.0f;
@@ -219,6 +234,7 @@ void Hero::release() {
 	memset(_climb, 0, sizeof(_climb));
 	memset(_ladder, 0, sizeof(_ladder));
 	_ladderCount = 0;
+	_ladderMount = _ladderExitFoot = _ladderExitTop = _ladderMountTop = nullptr;
 	_ladderOn = false;
 	_jumpUp = false;
 	_mantle = Mantle();
@@ -712,13 +728,14 @@ bool Hero::openMob(const char* scheme, int states, int slotKind) {
 	// The clip of one step of using the thing, -1 being standing by it: "T_BENCH_S0_2_S1",
 	// "S_BENCH_S1"; from a place in front of it or behind it the model's own names have that in
 	// them first ("T_BEDHIGH_FRONT_STAND_2_S0"), as OpenGothic's Interactive::animNpc looks.
-	const char* const tags[2] = {slotKind == 1 ? "_FRONT" : slotKind == 2 ? "_BACK" : "", ""};
+	// (A place with no side of its own, or a model with the other side's only: whichever the model has - a
+	// bed's "T_BEDHIGH_BACK_STAND_2_S0" with no "T_BEDHIGH_STAND_2_S0" - rather than no lying down at all.)
+	const char* const tags[3] = {slotKind == 1 ? "_FRONT" : slotKind == 2 ? "_BACK" : "", slotKind ? "" : "_FRONT", slotKind == 1 ? "_BACK" : slotKind == 2 ? "_FRONT" : "_BACK"};
 	const auto step = [&](int from, int to) -> const Clip* {
 		char a[12], b[12], name[96];
 		snprintf(a, sizeof(a), from < 0 ? "STAND" : "S%d", from);
 		snprintf(b, sizeof(b), to < 0 ? "STAND" : "S%d", to);
-		for (int k = 0; k < 2; ++k) {
-			if (k == 1 && !tags[0][0]) break;
+		for (int k = 0; k < 3; ++k) {
 			if (from == to) snprintf(name, sizeof(name), "S_%.40s%s_%s", scheme, tags[k], a);
 			else snprintf(name, sizeof(name), "T_%.40s%s_%s_2_%s", scheme, tags[k], a, b);
 			if (const Clip* c = lookup(name)) return c;
@@ -1192,9 +1209,8 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 		break;
 	default:
 		if (player.climbing) {
-			// Ladders have no animation yet: the controller's own slow step.
-			const float pace = max(in.moveZ, 0.0f) * 120.0f * dt;
-			drive.step = {sinf(_yaw) * pace, 0, cosf(_yaw) * pace};
+			// On a ladder the controller puts the body (Player::ladderTick).
+			drive.step = {0, 0, 0};
 		} else {
 			drive.step = {moved.x, 0, moved.z};
 		}
@@ -1258,7 +1274,7 @@ void Hero::updatePose(float dt) {
 		_drawn.pos[0].y -= max(_takeoff->motion(_anim.time()).y, 0.0f);
 		return;
 	}
-	if (_ladderOn && _anim.current() && _anim.current()->rise() > 1.0f) {
+	if (_ladderOn && _ladderSubtract && _anim.current()) {
 		// The body is up the ladder by the controller; the clip's own way up must not lift the pose again.
 		_drawn.pos[0].y -= _anim.current()->motion(_anim.time()).y;
 		return;
@@ -1301,15 +1317,58 @@ void Hero::updatePose(float dt) {
 // down backwards, and standing still holds the pose - the hands stay on the
 // rungs they hold. Without the clips (an older data.pak) the legs stand.
 void Hero::ladderTick(const Player& player) {
+	const u8 phase = player.ladderPhase();
+	if (!_ladderOn) {
+		_ladderOn = true;
+		_ladderPhase = 0xFF;
+		_sneak = false;
+	}
+	const bool entered = phase != _ladderPhase;
+	_ladderPhase = phase;
+	const float u = player.ladderProgress();
+	// A way on or off: its clip, in step with the body's glide (the controller times it by the clip).
+	const auto scrub = [&](const Clip* c, bool backwards, bool subtract) -> bool {
+		if (!c) return false;
+		if (_anim.current() != c || entered) _anim.play(c, 0.1f);
+		_anim.setRate(0.0f);
+		_anim.seek(clamp(backwards ? 1.0f - u : u, 0.0f, 1.0f) * c->duration(), 0.0f);
+		_ladderSubtract = subtract;
+		return true;
+	};
+	switch (phase) {
+	case Player::LADDER_MOUNT:
+		// (The way onto the rungs lifts the body onto the first one: the pose shows it, the body stays down.)
+		if (scrub(_ladderMount, false, false)) return;
+		break;
+	case Player::LADDER_MOUNT_TOP:
+		if (_ladderMountTop ? scrub(_ladderMountTop, false, true) : scrub(_ladderExitTop, true, true)) return;
+		break;
+	case Player::LADDER_EXIT_TOP:
+		if (scrub(_ladderExitTop, false, true)) return;
+		break;
+	case Player::LADDER_EXIT_FOOT:
+		// (Down off the first rung: the pose comes down to the floor the body is on.)
+		if (scrub(_ladderExitFoot, false, false)) return;
+		break;
+	default: break;
+	}
 	if (_ladderCount == 0) {
+		_ladderSubtract = false;
 		go(_walkMode ? ST_WALK : ST_RUN, _forceNext);
 		return;
 	}
-	if (!_ladderOn) {
-		_ladderOn = true;
+	if (phase != Player::LADDER_CLIMB) {
+		// A way on or off the model has no clip for: the first rungs' pose meanwhile.
+		const Clip* c = _ladder[0];
+		if (_anim.current() != c) _anim.play(c, 0.12f);
+		_anim.setRate(0.0f);
+		_anim.seek(0.0f, 0.0f);
+		_ladderSubtract = true;
 		_ladderY0 = player.feet.y;
-		_sneak = false;
+		return;
 	}
+	if (entered) _ladderY0 = player.feet.y;
+	_ladderSubtract = true;
 	float cycle = 0;
 	for (int k = 0; k < _ladderCount; ++k) cycle += _ladderRise[k];
 	float h = fmodf(player.feet.y - _ladderY0, cycle);
@@ -1320,6 +1379,12 @@ void Hero::ladderTick(const Player& player) {
 	if (_anim.current() != c) _anim.play(c, 0.08f);
 	_anim.setRate(0.0f);
 	_anim.seek(clamp(h / _ladderRise[at], 0.0f, 1.0f) * c->duration(), 0.0f);
+}
+
+float Hero::ladderExitRise() const {
+	if (!_ladderExitTop) return 0.0f;
+	const float r = _ladderExitTop->rise();
+	return r >= 20.0f ? r : 0.0f;
 }
 
 // ---- climbing onto a ledge ----

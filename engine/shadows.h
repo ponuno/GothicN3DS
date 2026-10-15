@@ -21,6 +21,7 @@ struct ShadowStats {
 	u32 asked = 0;     // characters handed in
 	u32 drawn = 0;     // shadows laid on the ground
 	u32 drawCalls = 0;
+	u32 cast = 0;      // the hero's own shape thrown on the ground (cast)
 };
 
 class Shadows {

@@ -46,7 +46,7 @@ C3D_Tex* gBoundTex = nullptr;
 C3D_BufInfo gBufInfo {};
 C3D_AttrInfo gAttrInfo {};
 C3D_TexEnv gTexEnv[6];
-const int kMaxEntries = 4; // DVLEs of one shader binary
+const int kMaxEntries = 6; // DVLEs of one shader binary
 DVLE_s gDvle[kMaxEntries];
 DVLB_s gDvlb {0, gDvle};
 shaderInstance_s gShader[kMaxEntries];
@@ -103,7 +103,7 @@ void parseShader(const u32* file, u32 bytes) {
 	const u32 words = bytes / 4;
 	auto bad = [&](const char* what) { gSh.problem = what; };
 	if (words < 16 || file[0] != 0x424C5644u) return bad("not a DVLB file");
-	if (file[1] < 1 || file[1] > u32(kMaxEntries)) return bad("expected one to four DVLEs (vertex shaders)");
+	if (file[1] < 1 || file[1] > u32(kMaxEntries)) return bad("expected one to six DVLEs (vertex shaders)");
 	const u32 entries = file[1];
 	const u32* dvlp = file + 2 + entries;
 	if (dvlp[0] != 0x504C5644u) return bad("no DVLP block");
@@ -511,8 +511,8 @@ bool shadeVertex(const DrawCall& call, unsigned index, ShadedVertex& out, bool g
 	// Outputs by meaning: the set bits of an entry's mask are the components
 	// of its semantic, in order.
 	for (const ShaderOutput& o : en.outputs) {
-		float* target = o.type == 0 ? out.position : o.type == 2 ? out.color : o.type == 3 ? out.texcoord : o.type == 5 ? out.texcoord1 : nullptr;
-		const int limit = o.type == 3 || o.type == 5 ? 2 : 4;
+		float* target = o.type == 0 ? out.position : o.type == 2 ? out.color : o.type == 3 ? out.texcoord : o.type == 5 ? out.texcoord1 : o.type == 6 ? out.texcoord2 : nullptr;
+		const int limit = o.type == 3 || o.type == 5 || o.type == 6 ? 2 : 4;
 		if (!target || o.reg < 0 || o.reg > 15) continue;
 		int k = 0;
 		for (int j = 0; j < 4 && k < limit; ++j)
@@ -620,7 +620,7 @@ bool C3D_TexInitWithParams(C3D_Tex* tex, void*, C3D_TexInitParams p) {
 	tex->height = p.height;
 	tex->fmt = p.format;
 	u32 size = 0;
-	for (u32 l = 0; l <= p.maxLevel; ++l) size += (u32(p.width) >> l) * (u32(p.height) >> l) * (p.format == GPU_ETC1 ? 4 : 8) / 8; // (ETC1A4 and A8: a byte a texel)
+	for (u32 l = 0; l <= p.maxLevel; ++l) size += (u32(p.width) >> l) * (u32(p.height) >> l) * (p.format == GPU_ETC1 || p.format == GPU_L4 ? 4 : 8) / 8; // (ETC1A4 and A8: a byte a texel)
 	tex->data = linearAlloc(size);
 	tex->size = size;
 	return tex->data != nullptr;

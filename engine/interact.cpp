@@ -27,6 +27,14 @@ void App::mobName(u32 mob, char* out, size_t size) const {
 	const Mobs& mobs = _npcs.mobs();
 	if (mob >= mobs.count() || !mobs.hasInfo()) return;
 	const char* key = mobs.infoText(mobs.info(mob).focus);
+	if (!*key && mobs.info(mob).kind == MOBKIND_BED) {
+		// A bed nobody named: the scripts' word for a bed, else ours.
+		key = "MOBNAME_BED";
+		if (_npcs.game().vm().find(key) == SCRIPT_NONE) {
+			snprintf(out, size, "%s", tr("Кровать"));
+			return;
+		}
+	}
 	const Game& g = _npcs.game();
 	const ScriptVm& vm = g.vm();
 	const u32 sym = vm.find(key);
@@ -37,23 +45,36 @@ void App::mobName(u32 mob, char* out, size_t size) const {
 }
 
 // The thing in reach in front of the character: the nearest of those meant for him that nobody uses.
+// Near is near the thing or near a place to stand at it (a bed's origin may be at its head, a metre and
+// more from where one lies down at its side).
 int App::mobNearest() const {
 	const Mobs& mobs = _npcs.mobs();
 	if (!mobs.hasInfo()) return -1;
 	int best = -1;
 	float bestD = 170.0f * 170.0f;
+	const auto inFront = [&](float dx, float dz) {
+		if (dx * dx + dz * dz <= 40.0f * 40.0f) return true;
+		float a = atan2f(dx, dz) - _hero.yaw();
+		while (a > 3.14159265f) a -= 6.2831853f;
+		while (a < -3.14159265f) a += 6.2831853f;
+		return fabsf(a) <= 1.2f;
+	};
 	for (u32 i = 0; i < mobs.count(); ++i) {
 		if (!mobs.forPlayer(i) || mobs.userOf(i) >= 0) continue;
 		const WorldMob& m = mobs.mob(i);
+		if (fabsf(m.pos[1] - _player.feet.y) > 140.0f) continue;
 		const float dx = m.pos[0] - _player.feet.x, dz = m.pos[2] - _player.feet.z;
-		const float d2 = dx * dx + dz * dz;
-		if (d2 >= bestD || fabsf(m.pos[1] - _player.feet.y) > 140.0f) continue;
-		if (d2 > 40.0f * 40.0f) {
-			float a = atan2f(dx, dz) - _hero.yaw();
-			while (a > 3.14159265f) a -= 6.2831853f;
-			while (a < -3.14159265f) a += 6.2831853f;
-			if (fabsf(a) > 1.2f) continue;
+		float d2 = 1e30f;
+		if (inFront(dx, dz)) d2 = dx * dx + dz * dz;
+		for (u32 k = 0; k < m.slotCount; ++k) {
+			const MobSlot& sl = mobs.slot(i, k);
+			if (fabsf(sl.pos[1] - _player.feet.y) > 140.0f) continue;
+			const float sx = sl.pos[0] - _player.feet.x, sz = sl.pos[2] - _player.feet.z;
+			const float s2 = sx * sx + sz * sz;
+			// (At the place: whichever way he faces, as long as the thing is not behind him.)
+			if (s2 < d2 && (s2 <= 60.0f * 60.0f ? inFront(dx, dz) || dx * dx + dz * dz < 120.0f * 120.0f : inFront(sx, sz))) d2 = s2;
 		}
+		if (d2 >= bestD) continue;
 		bestD = d2;
 		best = int(i);
 	}
@@ -90,7 +111,9 @@ bool App::mobStart(u32 mob) {
 	_mobJob.mob = mob;
 	_mobJob.stage = MJ_GLIDE;
 	// A thing with nothing to run is a place to be at (a bed, a bench): the character stays until he lets go.
-	_mobJob.stay = mi.onState == 0;
+	// A bed always is: he lies in it while its sleep talk is up (SLEEPABIT_S1 -> AI_ProcessInfos(hero)).
+	_mobJob.bed = mi.kind == MOBKIND_BED;
+	_mobJob.stay = mi.onState == 0 || _mobJob.bed;
 	_mobJob.from = _player.feet;
 	_mobJob.to = _player.feet;
 	_mobJob.yawFrom = _hero.yaw();
@@ -129,6 +152,7 @@ void App::mobUpdate(Input& in, float dt) {
 	const int hi = heroIndex();
 	_mobTarget = -1;
 	_doorTarget = -1;
+	_ladderTarget = -1;
 	if (_mobJob.stage == MJ_NONE) {
 		if (hi < 0 || !_hero.loaded() || _hero.down() || _hero.weapon() != WEAPON_NONE || _hero.drawing() || _job.stage != JOB_NONE ||
 		    _chest.stage != CH_NONE || _panel.open() || _player.swimming || _player.climbing || _hero.mantling() ||
@@ -143,6 +167,17 @@ void App::mobUpdate(Input& in, float dt) {
 		if (_doorTarget >= 0 && (in.confirm || in.attack)) {
 			doorUse(u32(_doorTarget));
 			in.confirm = in.attack = false;
+		}
+		// A ladder at hand (nothing else to use there): A takes hold of it - at its foot to climb up, at its
+		// top to climb down. (Walking into it at its foot, or off its top, takes hold of it too.)
+		if (_mobTarget < 0 && _doorTarget < 0 && _talkTarget < 0) {
+			bool top = false;
+			_ladderTarget = _player.ladderInReach(_world, _hero.yaw(), top);
+			_ladderTop = top;
+			if (_ladderTarget >= 0 && (in.confirm || in.attack)) {
+				if (_player.grabLadder(_world, _ladderTarget, top, _hero.yaw())) _ladderTarget = -1;
+				in.confirm = in.attack = false;
+			}
 		}
 		return;
 	}
@@ -199,6 +234,29 @@ void App::mobUpdate(Input& in, float dt) {
 				if (fn == SCRIPT_NONE) fn = g.function(name);
 				if (fn != SCRIPT_NONE) g.callAs(fn, u32(hi), -1);
 				_invStamp = 0;
+			}
+		}
+		if (_mobJob.stage == MJ_HELD && _mobJob.bed) {
+			// In bed: its sleep talk (the scripts' own, or - with none come up - the engine's menu of hours).
+			// The keys are the talk's while it is up; when it is over he gets up.
+			const bool talk = _npcs.talking();
+			if (talk) {
+				_mobJob.talked = true;
+				in.confirm = in.jump = false;
+				in.moveX = in.moveZ = 0;
+				break;
+			}
+			if (_mobJob.talked) {
+				mobEnd(false);
+				break;
+			}
+			if (!_mobJob.offered && _mobJob.time > 0.6f) {
+				_mobJob.offered = true;
+				if (_npcs.openSleepMenu()) {
+					_mobJob.talked = true;
+					in.confirm = in.jump = false;
+					break;
+				}
 			}
 		}
 		if (_mobJob.stage == MJ_HELD) {

@@ -19,12 +19,12 @@
 .fvec chunk         ; xyz = origin relative to the eye's lattice point, w = position step
 .fvec params        ; x = uv scale, y = 1/255, z = fogA, w = fogB (the fog already is in fogRow; kept for the uv scale)
 .fvec dayDelta      ; xyz = dayLight - 1
-.fvec texOffset     ; xy = texture scroll offset (zw must be 0)
+.fvec texOffset     ; xy = texture scroll offset; zw = where the sun's mask starts (texture 2)
 .fvec skinLight     ; xyz = light on the character
 .fvec bones[78]     ; 26 bones, three rows of a 3x4 matrix each
 .fvec fx            ; Graphics+: xy = wind (cm per step of sway, times 4), z = wave phase, w = occlusion strength
 .fvec lightK        ; xyz = (dayLight - 1) / 255 / 255: the fast shader's daylight term
-.fvec aoK           ; x = occlusion strength / 256: the fast shader's occlusion term
+.fvec aoK           ; x = occlusion strength / 256: the fast shader's occlusion term; yz = the sun's mask per cm of x, z
 .fvec wave          ; (water waves; used by the full entry only)
 .bool skinned
 .bool windy

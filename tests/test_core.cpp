@@ -24,6 +24,7 @@
 #include "ground_fx.h"
 #include "puddles.h"
 #include "rain.h"
+#include "sun_bake.h"
 #include "weather_sfx.h"
 #include "godrays.h"
 #include "water_texture.h"
@@ -1444,6 +1445,20 @@ static void testWorlds() {
 	worlds[1].name = "cave";
 	worlds[1].level = "CAVE.ZEN";
 	buildSyntheticCave(worlds[1].scene);
+	{
+		// The cave's ladder as a model would have it (turned half round: its own +z looks away from the climber),
+		// with the place to stand at in front of it: the runtime climbs it by what the model says. (The life worlds
+		// keep the bare box: "ladder steering" climbs that.)
+		CHECK(worlds[1].scene.ladders.size() == 1);
+		SrcLadder& l = worlds[1].scene.ladders[0];
+		const float lo[3] = {-30.0f, 0.0f, -6.0f}, hi[3] = {30.0f, 320.0f, 6.0f};
+		const float places[1][3] = {{0.0f, 90.0f, 40.0f}};
+		const float col[3][3] = {{-1, 0, 0}, {0, 1, 0}, {0, 0, -1}};
+		const float at[3] = {-1200.0f, 0.0f, 3394.0f};
+		ladderFromModel(l, lo, hi, places, 1, col, at);
+		CHECK(l.hasInfo && l.side == 1 && std::fabs(l.normal[1] + 1.0f) < 1e-4f && std::fabs(l.halfWidth - 30.0f) < 1e-3f &&
+		      std::fabs(l.head[1] - 320.0f) < 1e-3f && std::fabs(l.foot[2] - 3394.0f) < 1e-3f);
+	}
 	const float gate[3] = {worlds[0].scene.points["CAMP_GATE"].pos[0], worlds[0].scene.points["CAMP_GATE"].pos[1],
 	                       worlds[0].scene.points["CAMP_GATE"].pos[2]};
 	BakeOptions bo;
@@ -1670,6 +1685,8 @@ static void testWorlds() {
 
 	// ---- an indoor world has no sky and no time of day ----
 	CHECK(w.indoor() && w.header().fogColor[0] == 14 && w.header().ladderCount == 1);
+	CHECK(w.ladderInfo(0) && w.ladderInfo(0)->side == 1 && std::fabs(w.ladderInfo(0)->normal[1] + 1.0f) < 1e-4f);
+	std::printf("  ladder from its model: %s\n", w.ladderInfo(0) ? "yes" : "no");
 	app.teleport({0, 175.0f, 900.0f});
 	app.camera().yaw = 0.4f;
 	app.environment().timeOfDay = 13.0f;
@@ -3212,7 +3229,7 @@ static void testModel() {
 		CHECK(r.triangles == 59 * 4 && r.parts >= 3 && r.largestPalette == MODEL_PALETTE && r.clips == 2 && r.textures == 1);
 		CHECK(r.report.find("skeleton: 60 nodes") != std::string::npos);
 		const ModelBakeResult a = bakeModel(actor, bo, writer);
-		CHECK(a.parts == 2 && a.clips == 71 && a.largestPalette <= MODEL_PALETTE);
+		CHECK(a.parts == 2 && a.clips == 76 && a.largestPalette <= MODEL_PALETTE);
 		CHECK(a.report.find("S_1HATTACK 1.88s 3 blows") != std::string::npos && a.report.find("T_FISTPARADE_O 0.52s parry") != std::string::npos);
 		CHECK(a.report.find("blends: 5: T_RUNL_2_WALKL 0.20s") != std::string::npos);
 		CHECK(a.report.find("T_STAND_2_JUMP 0.48s 239cm/s up 74cm") != std::string::npos);
@@ -3526,7 +3543,7 @@ static void testModel() {
 	{
 		// The test character: loops wrap, moving clips know their speed.
 		Model m;
-		CHECK(m.load(pak, "hero") && m.nodeCount() == 16 && m.clipCount() == 71 && m.blendCount() == 5);
+		CHECK(m.load(pak, "hero") && m.nodeCount() == 16 && m.clipCount() == 76 && m.blendCount() == 5);
 		// The frames of a fight come through: three blows of a combo, each
 		// with its window and its end; a parry's frames; where a draw changes hands.
 		{
@@ -5407,7 +5424,7 @@ static void testWayNet() {
 
 // The two synthetic worlds with a script of the caller's and the people it names.
 static BakeResult bakeLifeWorlds(const std::string& source, const std::string& path, std::vector<BakeWorld>& worlds,
-                                 bool withFightAi = true) {
+                                 bool withFightAi = true, bool sunShadow = false) {
 	SrcScript script;
 	compileDaedalus(source, script);
 	worlds.assign(2, BakeWorld());
@@ -5429,6 +5446,9 @@ static BakeResult bakeLifeWorlds(const std::string& source, const std::string& p
 	bo.tex.quality = 0;
 	bo.threads = 2;
 	bo.quiet = true;
+	bo.sun.enabled = sunShadow;
+	bo.sun.texel = 48.0f;
+	bo.sun.samples = 3;
 	BakeScripts scripts;
 	scripts.script = &script;
 	SrcScript fight;
@@ -5656,7 +5676,7 @@ func void Rtn_start_502() {
 		if (getenv("G3_TRACE")) std::puts(r.report.c_str());
 		// Of the animations the scripts name each skeleton got the ones it has.
 		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 14 families more; fighting 346 "
-		           "more; baked per skeleton: humans 67, scavenger 13, molerat 13"));
+		           "more; baked per skeleton: humans 72, scavenger 13, molerat 13"));
 		// ... and those of the things in the hands (drinking a potion; picking up: 3 + 3 of the 67).
 		CHECK(said("things in the hands: the scripts' items are used in 4 ways (FOOD, MEAT, POTION, POTIONFAST)"));
 		// The things of the camp, and which of them the scripts know.
@@ -7503,7 +7523,8 @@ static void testGfxPlus() {
 		app.setWindRelief(true);
 		app.render();
 		app.setWindRelief(false);
-		const u32 cast = app.shadows().stats().drawn;
+		const u32 cast = app.shadows().stats().cast;
+		const u32 roundWithCast = app.shadows().stats().drawn - cast; // (the people's and beasts' round ones, with his shape)
 		const u8* shaded = gfx::softFramebuffer();
 		u32 dark = 0;
 		float lo = 1.0f, hi = 0.0f;
@@ -7517,6 +7538,7 @@ static void testGfxPlus() {
 		}
 		std::printf("  the hero's cast shadow: %u drawn, %u pixels darkened to between %.2f and %.2f of their light\n", cast, dark,
 		            double(lo), double(hi));
+		std::printf("  with it, %u round shadows under the others\n", roundWithCast);
 		CHECK(cast == 1 && dark > 20 && hi - lo < 0.10f);
 	}
 	// Light shafts: in the morning, looking towards the sun past the trees, beams stand in gaps and fade in over a few frames.
@@ -10114,6 +10136,55 @@ static void testLadderSteering() {
 		app.update(in, dt);
 	}
 	CHECK(pl.grounded && std::fabs(pl.feet.y) < 0.5f && !pl.climbing);
+
+	// From the top with A: on the ledge by the ladder's head the prompt is up; A puts him over the edge onto
+	// the rungs, turned to face them; down to the floor, and A at the foot takes hold again.
+	app.camera().yaw = 3.14159f; // (the character faces the way the camera does when put somewhere)
+	app.teleport({-1200.0f, 300.0f + 175.0f, 3480.0f});
+	for (int i = 0; i < 30; ++i) app.update(Input {}, dt);
+	CHECK(pl.grounded && std::fabs(pl.feet.y - 300.0f) < 1.0f && !pl.climbing);
+	std::printf("  ladder (top): prompt %d\n", app.ladderTarget());
+	CHECK(app.ladderTarget() == 0);
+	Input a;
+	a.confirm = true;
+	app.update(a, dt);
+	CHECK(pl.climbing && (pl.ladderPhase() == Player::LADDER_MOUNT_TOP));
+	bool clung = false;
+	for (int i = 0; i < 60; ++i) {
+		app.update(Input {}, dt);
+		clung = clung || pl.ladderPhase() == Player::LADDER_CLIMB;
+	}
+	std::printf("  ladder (top): on it %d at %.0f cm, z %.0f, facing %.2f\n", int(clung), double(pl.feet.y), double(pl.feet.z), double(app.hero().yaw()));
+	CHECK(clung && pl.climbing && pl.feet.y < 300.0f && pl.feet.y > 100.0f && pl.feet.z < 3390.0f && std::fabs(app.hero().yaw()) < 0.2f);
+	for (int i = 0; i < 150 && !pl.grounded; ++i) {
+		Input in;
+		in.moveZ = -1.0f;
+		app.update(in, dt);
+	}
+	for (int i = 0; i < 30; ++i) app.update(Input {}, dt);
+	CHECK(pl.grounded && !pl.climbing && std::fabs(pl.feet.y) < 0.5f);
+	CHECK(app.ladderTarget() == 0);
+	app.update(a, dt);
+	CHECK(pl.climbing && pl.ladderPhase() == Player::LADDER_MOUNT);
+	// Up all the way: over the top onto the ledge - each way on, along and off the ladder with its own clip.
+	const Model& body = app.hero().model();
+	const Clip* const mountClip = body.clip("T_LADDER_STAND_2_S0");
+	const Clip* const rungs[2] = {body.clip("T_LADDER_S0_2_S1"), body.clip("T_LADDER_S1_2_S2")};
+	const Clip* const overClip = body.clip("T_LADDER_S2_2_STAND");
+	bool sawMount = false, sawRungs = false, sawOver = false;
+	for (int i = 0; i < 200 && !(pl.grounded && pl.feet.y > 290.0f); ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+		const Clip* c = app.hero().animator().current();
+		sawMount = sawMount || (mountClip && c == mountClip && pl.ladderPhase() == Player::LADDER_MOUNT);
+		sawRungs = sawRungs || ((c == rungs[0] || c == rungs[1]) && c && pl.ladderPhase() == Player::LADDER_CLIMB);
+		sawOver = sawOver || (overClip && c == overClip && pl.ladderPhase() == Player::LADDER_EXIT_TOP);
+	}
+	std::printf("  ladder (clips): on %d, rungs %d, over the top %d\n", int(sawMount), int(sawRungs), int(sawOver));
+	CHECK(sawMount && sawRungs && sawOver);
+	std::printf("  ladder (up again): standing at %.0f %.0f %.0f\n", double(pl.feet.x), double(pl.feet.y), double(pl.feet.z));
+	CHECK(pl.grounded && !pl.climbing && std::fabs(pl.feet.y - 300.0f) < 1.0f && pl.feet.z > 3420.0f);
 }
 
 static void testMobUse() {
@@ -10148,11 +10219,11 @@ static void testMobUse() {
 		if (mobs.isScheme(i, "BENCH")) bench = int(i);
 		else if (mobs.isScheme(i, "BSANVIL")) anvil = int(i);
 		else if (mobs.isScheme(i, "BEDLOW")) sharp = int(i);
-		else if (mobs.isScheme(i, "BEDHIGH")) (mobs.forPlayer(i) ? namedBed : hiddenBed) = int(i);
+		else if (mobs.isScheme(i, "BEDHIGH")) (mobs.info(i).focus ? namedBed : hiddenBed) = int(i);
 	}
 	CHECK(bench >= 0 && anvil >= 0 && sharp >= 0 && hiddenBed >= 0 && namedBed >= 0);
-	CHECK(named == 4);        // the bench, a bed, the anvil, the other
-	CHECK(hidden == 4);    // the three chests and the second hut's bed: no prompt
+	CHECK(named == 5);     // the bench, both beds (a bed is to sleep in, named or not), the anvil, the other
+	CHECK(hidden == 3);    // the three chests: no prompt
 	if (bench < 0 || anvil < 0 || sharp < 0 || hiddenBed < 0 || namedBed < 0) return;
 	const auto stand = [&](int mob, float dx, float dz, float yaw) {
 		const WorldMob& m = mobs.mob(u32(mob));
@@ -10167,12 +10238,21 @@ static void testMobUse() {
 	};
 	const auto used = [&]() { return g.vm().getInt(g.vm().find("MOBTEST_USED")); };
 
-	// 1. A bed nobody named: no prompt, A does nothing.
-	stand(hiddenBed, 90.0f, 0.0f, -1.5708f);
-	CHECK(app.mobTarget() != int(hiddenBed));
+	// 1. A bed nobody named is a bed all the same: the prompt (the scripts' word for a bed), A lies down in it,
+	//    B (the menu's last way: not now) gets up again.
+	stand(hiddenBed, -150.0f, 0.0f, 1.5708f);
+	CHECK(app.mobTarget() == int(hiddenBed));
+	{
+		char name[48];
+		app.mobName(u32(hiddenBed), name, sizeof(name));
+		CHECK(std::strcmp(name, "Bed") == 0);
+	}
 	pressA();
-	run(0.5f);
-	CHECK(!app.mobInUse());
+	run(2.5f);
+	CHECK(app.mobInUse() && npcs.talkView().active);
+	CHECK(npcs.talkBack());
+	run(3.0f);
+	CHECK(!app.mobInUse() && !npcs.talkView().active);
 
 	// 2. The bench: the prompt, A, the place is held; A again lets go.
 	stand(bench, 0.0f, -90.0f, 0.0f);
@@ -10199,6 +10279,60 @@ static void testMobUse() {
 	CHECK(used() == 1);
 	CHECK(!app.mobInUse());
 	CHECK(mobs.userOf(u32(sharp)) < 0);
+
+	// 4. The named bed: it is a bed, not a door - he lies down in it and stays; its state function (SLEEPABIT_S1)
+	//    puts up his own infos (AI_ProcessInfos(hero)); "until morning" moves the clock, and he gets up again.
+	const auto sleepTo = [&](const char* item) -> bool {
+		const TalkView& v = npcs.talkView();
+		for (u32 i = 0; i < v.count; ++i)
+			if (std::strstr(v.items[i], item)) return npcs.talkChoose(i);
+		return false;
+	};
+	app.environment().timeOfDay = 13.0f;
+	stand(namedBed, 150.0f, 0.0f, -1.5708f);
+	CHECK(app.mobTarget() == namedBed);
+	pressA();
+	run(2.5f);
+	std::printf("  bed: in use %d, talk %d (%s), %u ways\n", int(app.mobInUse()), int(npcs.talkView().active), npcs.talkView().partner,
+	            npcs.talkView().count);
+	CHECK(app.mobInUse() && mobs.userOf(u32(namedBed)) == int(hero));
+	CHECK(npcs.talkView().active && npcs.selfTalk() && npcs.talkView().count == 2);
+	// (The stick does not get him out of bed while the talk is up.)
+	for (int i = 0; i < 10; ++i) {
+		Input in;
+		in.moveZ = 1.0f;
+		app.update(in, dt);
+	}
+	CHECK(app.mobInUse() && npcs.talkView().active);
+	CHECK(sleepTo("morning"));
+	run(3.0f);
+	std::printf("  bed: slept until %.2f h, in use %d, talk %d\n", double(app.environment().timeOfDay), int(app.mobInUse()),
+	            int(npcs.talkView().active));
+	CHECK(std::fabs(app.environment().timeOfDay - 8.0f) < 0.1f);
+	CHECK(!npcs.talkView().active && !app.mobInUse() && mobs.userOf(u32(namedBed)) < 0);
+
+	// 5. The same bed when its scripts put up nothing: the engine's menu of hours; sleeping heals.
+	g.vm().setInt(g.vm().find("SLEEPTEST_NOSCRIPT"), 0, nullptr, 1);
+	app.environment().timeOfDay = 9.0f;
+	GameNpc& me = g.npcMut(hero);
+	g.setAttribute(me, 0, 1);
+	stand(namedBed, 150.0f, 0.0f, -1.5708f);
+	pressA();
+	run(2.5f);
+	CHECK(app.mobInUse() && npcs.talkView().active && npcs.talkView().count == 5);
+	CHECK(sleepTo(tr("Спать до вечера")));
+	run(3.0f);
+	std::printf("  bed (engine's menu): slept until %.2f h, hit points %d\n", double(app.environment().timeOfDay), int(g.hitPoints(g.npc(hero))));
+	CHECK(std::fabs(app.environment().timeOfDay - 20.0f) < 0.1f && g.hitPoints(g.npc(hero)) > 1);
+	CHECK(!npcs.talkView().active && !app.mobInUse());
+	// "Not now" (B: the last way): up again, the clock as it was.
+	stand(namedBed, 150.0f, 0.0f, -1.5708f);
+	pressA();
+	run(2.5f);
+	CHECK(npcs.talkView().active && npcs.talkBack());
+	run(3.0f);
+	CHECK(std::fabs(app.environment().timeOfDay - 20.0f) < 0.2f && !app.mobInUse());
+	g.vm().setInt(g.vm().find("SLEEPTEST_NOSCRIPT"), 0, nullptr, 0);
 }
 
 static void testTrade() {
@@ -11791,6 +11925,119 @@ static void testOverlays() {
 	CHECK(g.restore(src) && g.npc(hero).overlayCount() == 1 && g.npc(u32(thorus)).overlayCount() == 1);
 }
 
+// The sun's shadow, baked (sun_bake.h): a floor and a roof on posts' height above it; under the roof's shadow on the floor
+// the mask is dark, under the roof itself (the roof takes the sun) and far from it light; the masks round-trip.
+static void testSunShadow() {
+	// TEX_L4 round trip: what is written is read back at the same place (the console's layout, rows from the bottom).
+	{
+		std::vector<u8> v(16 * 8);
+		for (u32 i = 0; i < v.size(); ++i) v[i] = u8((i * 7u + i / 16u) & 15u);
+		const std::vector<u8> t = encodeL4(v, 16, 8);
+		TexHeader h;
+		std::memcpy(&h, t.data(), sizeof(h));
+		CHECK(texValidate(h, u32(t.size() - sizeof(h))) && h.format == TEX_L4 && (h.flags & TEXF_CLAMP) && h.dataSize == 64);
+		std::vector<u8> rgba(16 * 8 * 4);
+		texDecodeLevel(h, t.data() + sizeof(h), 0, rgba.data());
+		bool same = true;
+		for (u32 i = 0; i < v.size(); ++i) same = same && rgba[i * 4] == v[i] * 17 && rgba[i * 4 + 3] == 255;
+		CHECK(same);
+	}
+	SrcScene scene;
+	scene.materials.resize(2);
+	auto quad = [&](float x0, float z0, float x1, float z1, float y, u32 material) {
+		auto tri = [&](const float a[3], const float b[3], const float c[3]) {
+			SrcTriangle t {};
+			const float* p[3] = {a, b, c};
+			for (int k = 0; k < 3; ++k)
+				for (int i = 0; i < 3; ++i) t.v[k].pos[i] = p[k][i];
+			t.material = material;
+			scene.triangles.push_back(t);
+		};
+		const float a[3] = {x0, y, z0}, b[3] = {x1, y, z0}, c[3] = {x0, y, z1}, d[3] = {x1, y, z1};
+		tri(a, b, c);
+		tri(b, d, c);
+	};
+	quad(0, 0, 4000, 4000, 0, 0);            // the floor
+	quad(1800, 1800, 2200, 2200, 1000, 0);   // a roof 10 m up
+	quad(500, 3000, 900, 3400, 400, 1);      // leaves (half a shadow, take none)
+	std::vector<SunMask> cells(1);
+	cells[0].x0 = 0;
+	cells[0].z0 = 0;
+	cells[0].x1 = 4000;
+	cells[0].z1 = 4000;
+	SunOptions opt;
+	opt.enabled = true;
+	opt.texel = 40.0f;
+	SunStats st;
+	const std::vector<u8> kind = {0, 1};
+	const std::vector<SunMask> masks = bakeSunMasks(scene, kind, cells, opt, st);
+	CHECK(masks.size() == 1 && masks[0].width == 128 && masks[0].height == 128 && st.empty == 0);
+	if (masks.size() != 1) return;
+	TexHeader h;
+	std::memcpy(&h, masks[0].texture.data(), sizeof(h));
+	std::vector<u8> rgba(size_t(h.width) * h.height * 4);
+	texDecodeLevel(h, masks[0].texture.data() + sizeof(h), 0, rgba.data());
+	auto valueAt = [&](float x, float z) {
+		const int u = int(x / 4000.0f * float(h.width)), v = int(z / 4000.0f * float(h.height));
+		return rgba[(size_t(v) * h.width + size_t(u)) * 4] / 17;
+	};
+	float sun[3];
+	sunDirectionAt(opt.hour, sun);
+	// Where the roof's middle throws its shadow on the floor.
+	const float sx = 2000.0f - sun[0] * 1000.0f / sun[1], sz = 2000.0f - sun[2] * 1000.0f / sun[1];
+	CHECK(std::fabs(sx - 2000.0f) > 300.0f || std::fabs(sz - 2000.0f) > 300.0f); // (beside the roof, not under it)
+	const float lx = 900.0f - sun[0] * 400.0f / sun[1] - 200.0f, lz = 3200.0f - sun[2] * 400.0f / sun[1];
+	const int under = valueAt(2000, 2000), shade = valueAt(sx, sz), open = valueAt(3700, 300), leaves = valueAt(lx + 200.0f, lz);
+	std::printf("  sun's shadow: the roof %d, its shadow on the floor at %.0f %.0f %d, the open floor %d, under the leaves' shadow %d "
+	            "(of 15); %.1f M rays\n", under, double(sx), double(sz), shade, open, leaves, double(st.rays) / 1e6);
+	CHECK(under == 15 && shade <= 1 && open == 15 && leaves >= 5 && leaves <= 10);
+
+	// In the game: a world baked with it, on the PC's renderer. With the menu's "Sun shadows" the ground under the
+	// huts' and trees' shade gets darker, nothing lighter; off, or at night, or indoors, nothing changes.
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/sun.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds, true, true);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	CHECK(app.world().hasSunMasks() && std::fabs(app.world().sunMaskHour() - 14.5f) < 0.01f && gfx::sunShadowSupported());
+	if (!app.world().hasSunMasks()) return;
+	app.skipChapters();
+	app.npcs().game().setQuiet(true);
+	app.weather().configure(WEATHER_CLEAR, true);
+	app.weather().settle();
+	app.environment().timeOfDay = 14.5f;
+	app.settings().timeFlow = 0; // (the time stands)
+	app.applySettings();
+	app.world().preload(app.camera().pos);
+	for (int i = 0; i < 30; ++i) app.update(Input {}, 1.0f / 30.0f);
+	app.environment().timeOfDay = 14.5f;
+	CHECK(app.sunShadowDarkness() > 0.4f);
+	app.settings().sunShadows = 0;
+	app.applySettings();
+	CHECK(app.sunShadowDarkness() == 0.0f);
+	app.render();
+	const std::vector<u8> off(gfx::softFramebuffer(), gfx::softFramebuffer() + gfx::SCREEN_W * gfx::SCREEN_H * 4);
+	app.settings().sunShadows = 1;
+	app.applySettings();
+	app.render();
+	app.render(); // (the masks are asked for when first drawn, and arrive at once without the background loader)
+	const u8* on = gfx::softFramebuffer();
+	u32 darker = 0, lighter = 0;
+	for (u32 i = 0; i < u32(gfx::SCREEN_W * gfx::SCREEN_H); ++i) {
+		const int d = int(on[i * 4]) + on[i * 4 + 1] + on[i * 4 + 2] - (int(off[i * 4]) + off[i * 4 + 1] + off[i * 4 + 2]);
+		darker += d < -6;
+		lighter += d > 3;
+	}
+	app.environment().timeOfDay = 23.0f;
+	const float night = app.sunShadowDarkness();
+	app.environment().timeOfDay = 9.0f;
+	const float morning = app.sunShadowDarkness();
+	std::printf("  in the game: %u pixels darker in the sun's shadow, %u lighter; darkness %.2f at 14:30, %.2f at 9:00, %.2f at night\n",
+	            darker, lighter, 0.42, double(morning), double(night));
+	CHECK(darker > 200 && lighter == 0 && night == 0.0f && morning < 0.05f);
+}
+
 int main(int argc, char** argv) {
 	gDir = argc > 1 ? argv[1] : ".";
 	const char* only = argc > 2 ? argv[2] : nullptr; // run the tests whose name contains this
@@ -11850,6 +12097,7 @@ int main(int argc, char** argv) {
              {"corpses", testCorpses},
 	             {"settings", testSettings},
 	             {"graphics+", testGfxPlus},
+	             {"sun shadow", testSunShadow},
 	             {"far layer", testFarLayer},
 	             {"chunk tiers", testChunkTiers},
 	             {"visibility", testVisibility},

@@ -38,7 +38,8 @@ void App::talkUpdate(Input& in, float dt) {
 		const int partner = _npcs.talkPartner();
 		if (hi < 0 || _hero.down() || !_hero.loaded()) {
 			_npcs.talkAbort();
-		} else if (partner >= 0) {
+		} else if (partner >= 0 && partner != hi) {
+			// (With himself - a bed's sleep, a workbench - there is nobody to turn to.)
 			const GameNpc& n = _npcs.game().npc(u32(partner));
 			const float want = atan2f(n.pos[0] - _player.feet.x, n.pos[2] - _player.feet.z);
 			_hero.setYaw(turnToward(_hero.yaw(), want, 6.0f * dt));
@@ -57,6 +58,26 @@ void App::talkUpdate(Input& in, float dt) {
 		if (_panel.page() == InventoryPanel::PAGE_DIALOG || (_panel.page() == InventoryPanel::PAGE_CHEST && _chest.stage == CH_NONE)) {
 			_panel.openPage(InventoryPanel::PAGE_PLAY);
 			_invStamp = 0;
+		}
+	}
+	// Sleep chosen in the engine's own menu (a bed whose scripts have none): the clock to that hour, rested -
+	// as the scripts' PC_Sleep does it (Wld_SetTime, the hit points and the mana full).
+	{
+		float hours;
+		if (_npcs.takeSleep(hours) && hi >= 0) {
+			Game& g = _npcs.game();
+			GameNpc& h = g.npcMut(u32(hi));
+			const i32 hp = g.constant("ATR_HITPOINTS", 0), hpMax = g.constant("ATR_HITPOINTS_MAX", 1);
+			const i32 mana = g.constant("ATR_MANA", 2), manaMax = g.constant("ATR_MANA_MAX", 3);
+			g.setAttribute(h, hp, max(g.attributeOf(h, hpMax), i32(1)));
+			g.setAttribute(h, mana, g.attributeOf(h, manaMax));
+			float step = hours - _env.timeOfDay;
+			if (step > 12.0f) step -= 24.0f;
+			if (step < -12.0f) step += 24.0f;
+			if (fabsf(step) > 0.1f) _timeFade = kTimeFadeLength;
+			_env.timeOfDay = hours;
+			g.jumpClock(hours);
+			toast(tr("Вы выспались и отдохнули"), 3.0f);
 		}
 	}
 	// The scripts move the clock (Wld_SetTime). A jump of more than a few minutes goes under a dip to black, as

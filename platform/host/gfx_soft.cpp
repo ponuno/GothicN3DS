@@ -55,6 +55,8 @@ float bayer(int x, int y) {
 }
 float gUvOffset[2] = {0, 0};
 ChunkFx gFx; // Graphics+ of the chunk being drawn (setChunkTransform)
+float gSunDark = 0.0f; // setSunShadow
+bool gSunOn = false;   // the draw going on takes the chunk's sun mask
 bool gCull = true;
 bool gTwoSided = false; // setTwoSided: this draw keeps its back faces
 u32 gMemoryLimit = 0;
@@ -68,6 +70,7 @@ struct ClipVert {
 	float u, v;
 	float r, g, b, a;
 	float fog; // 1 = clear, 0 = fully fogged; computed per vertex like the shader does
+	float u2, v2; // the sun's mask (texture coordinate 2)
 };
 
 inline ClipVert lerpVert(const ClipVert& a, const ClipVert& b, float t) {
@@ -75,7 +78,7 @@ inline ClipVert lerpVert(const ClipVert& a, const ClipVert& b, float t) {
 	const float* pa = &a.x;
 	const float* pb = &b.x;
 	float* po = &o.x;
-	for (int i = 0; i < 11; ++i) po[i] = pa[i] + (pb[i] - pa[i]) * t;
+	for (int i = 0; i < 13; ++i) po[i] = pa[i] + (pb[i] - pa[i]) * t;
 	return o;
 }
 
@@ -84,6 +87,7 @@ struct ScreenVert {
 	float uw, vw; // u/w, v/w
 	float r, g, b, a; // already divided by w
 	float fog;        // already divided by w
+	float u2w, v2w;   // the sun's mask coordinate / w
 	i32 fx, fy;       // screen position in 1/16 pixel
 };
 
@@ -174,6 +178,26 @@ void rasterize(const ScreenVert& a, const ScreenVert& bIn, const ScreenVert& cIn
 				g *= t[1] * (1.0f / 255.0f);
 				bl *= t[2] * (1.0f / 255.0f);
 				al *= t[3] * (1.0f / 255.0f);
+			}
+			if (gSunOn) {
+				// As the console's stages 1 and 2: colour * (1 - strength * (1 - mask)), the mask filtered, clamped at its edges.
+				const Texture* m = gFx.sun;
+				const float mu = (a.u2w * w0 + b.u2w * w1 + c.u2w * w2) * w * float(m->width) - 0.5f;
+				const float mv = (a.v2w * w0 + b.v2w * w1 + c.v2w * w2) * w * float(m->height) - 0.5f;
+				const float fu = floorf(mu), fv = floorf(mv);
+				const int ix = int(fu), iy = int(fv);
+				const float tx = mu - fu, ty2 = mv - fv;
+				auto at = [&](int x, int y) {
+					x = x < 0 ? 0 : (x >= int(m->width) ? int(m->width) - 1 : x);
+					y = y < 0 ? 0 : (y >= int(m->height) ? int(m->height) - 1 : y);
+					return float(m->level[0][(y * int(m->width) + x) * 4]) * (1.0f / 255.0f);
+				};
+				const float mask = (at(ix, iy) * (1.0f - tx) + at(ix + 1, iy) * tx) * (1.0f - ty2) +
+				                   (at(ix, iy + 1) * (1.0f - tx) + at(ix + 1, iy + 1) * tx) * ty2;
+				const float k = 1.0f - gSunDark * (1.0f - mask);
+				r *= k;
+				g *= k;
+				bl *= k;
 			}
 			if (fading) {
 				// As the PICA's texture stages do it: alpha - noise (not below 0) + share - 0.5, tested > 0.5.
@@ -267,6 +291,8 @@ void drawTriangle(const ClipVert in[3]) {
 		sv[i].b = p.b * invW;
 		sv[i].a = p.a * invW;
 		sv[i].fog = p.fog * invW;
+		sv[i].u2w = p.u2 * invW;
+		sv[i].v2w = p.v2 * invW;
 	}
 
 	// Screen y points down, so a counter-clockwise (front) triangle has a
@@ -452,6 +478,7 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 	if (!m || indexCount == 0 || firstIndex + indexCount > m->indexCount) return;
 	const bool windy = (gMaterialFlags & MATF_WIND) != 0 && (gFx.windX != 0.0f || gFx.windZ != 0.0f);
 	const bool wavy = (gMaterialFlags & MATF_WATER) != 0 && gFx.waveHeight != 0.0f;
+	gSunOn = gFx.sun && gSunDark > 0.0f && gPass != PASS_SKY && (gMaterialFlags & (MATF_ALPHA_TEST | MATF_WIND | MATF_ADD | MATF_WATER)) == 0;
 	for (u32 i = 0; i + 2 < indexCount; i += 3) {
 		ClipVert cv[3];
 		for (int k = 0; k < 3; ++k) {
@@ -503,12 +530,17 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 			cv[k] = {c.x, c.y, c.z, c.w, float(v.u) * gUvScale + gUvOffset[0] + uvShift[0],
 			         float(v.v) * gUvScale + gUvOffset[1] + uvShift[1],
 			         v.r * (1.0f / 255.0f) * tint[0] * shade, v.g * (1.0f / 255.0f) * tint[1] * shade,
-			         v.b * (1.0f / 255.0f) * tint[2] * shade, 1.0f, fog};
+			         v.b * (1.0f / 255.0f) * tint[2] * shade, 1.0f, fog,
+			         (p[0] + gChunk[0] + gAnchor[0] - gFx.sunX0) * gFx.sunScaleX, (p[2] + gChunk[2] + gAnchor[2] - gFx.sunZ0) * gFx.sunScaleZ};
 		}
 		if (gPass == PASS_WORLD) ++gStats.trianglesSubmitted;
 		drawTriangle(cv);
 	}
+	gSunOn = false;
 }
+
+void setSunShadow(float darkness) { gSunDark = clamp(darkness, 0.0f, 1.0f); }
+bool sunShadowSupported() { return true; }
 
 void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin) {
 	if (!m || indexCount == 0 || firstIndex + indexCount > m->indexCount || !skin.bones) return;

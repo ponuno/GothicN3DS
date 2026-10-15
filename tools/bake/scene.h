@@ -5,6 +5,7 @@
 #include "g3ds/base.h"
 
 #include <array>
+#include <cmath>
 #include <functional>
 #include <map>
 #include <string>
@@ -57,10 +58,53 @@ struct SrcPortal {
 	std::string point; // name of the arrival point in the target world
 };
 
-// A ladder: the box of the ladder itself.
+// A ladder: the box of the ladder itself, and - when its model could be read - the ladder as the model has it
+// (world/<name>/ladderinfo, g3ds/world.h LadderInfo): the middle of its rungs at the foot and at the head, the way
+// its face looks, the side it is climbed from (+1 / -1 along `normal`, 0: not known), half its width and depth.
 struct SrcLadder {
 	float bbMin[3], bbMax[3];
+	bool hasInfo = false;
+	float foot[3] = {0, 0, 0}, head[3] = {0, 0, 0};
+	float normal[2] = {0, 1};
+	float halfWidth = 0, halfDepth = 0;
+	int side = 0;
 };
+
+// Fills the ladder's model part from its model: the model's own box (its space: up is +y; the rungs run across
+// the wider of x and z, the narrower is the way through it), the places one stands at to use it ("ZS_POS..."
+// nodes, model space; the side they are on is the side it is climbed from) - placed by the columns of the
+// object's rotation (`col[k]` is where the model's axis k goes) and its position.
+inline void ladderFromModel(SrcLadder& l, const float lo[3], const float hi[3], const float (*slots)[3], size_t slotCount, const float col[3][3],
+                            const float pos[3]) {
+	const auto place = [&](const float p[3], float out[3]) {
+		for (int a = 0; a < 3; ++a) out[a] = col[0][a] * p[0] + col[1][a] * p[1] + col[2][a] * p[2] + pos[a];
+	};
+	const float ex = hi[0] - lo[0], ez = hi[2] - lo[2];
+	if (!(hi[1] - lo[1] > 50.0f) || !(ex >= 0.0f) || !(ez >= 0.0f)) return;
+	const bool acrossX = ex >= ez; // the rungs run along x: the face looks along z
+	const float cx = 0.5f * (lo[0] + hi[0]), cz = 0.5f * (lo[2] + hi[2]);
+	const float footL[3] = {cx, lo[1], cz}, headL[3] = {cx, hi[1], cz};
+	place(footL, l.foot);
+	place(headL, l.head);
+	if (l.head[1] <= l.foot[1] + 50.0f) return; // (a ladder lying down, or upside down: the box will do)
+	const int through = acrossX ? 2 : 0;
+	float nx = col[through][0], nz = col[through][2];
+	const float len = std::sqrt(nx * nx + nz * nz);
+	if (len < 0.3f) return; // (the way through it points up: not a ladder one climbs)
+	nx /= len;
+	nz /= len;
+	l.normal[0] = nx;
+	l.normal[1] = nz;
+	l.halfWidth = 0.5f * (acrossX ? ex : ez);
+	l.halfDepth = 0.5f * (acrossX ? ez : ex);
+	int votes = 0;
+	for (size_t k = 0; k < slotCount; ++k) {
+		const float d = slots[k][through] - (acrossX ? cz : cx);
+		if (std::fabs(d) > 5.0f) votes += d > 0.0f ? 1 : -1;
+	}
+	l.side = votes > 0 ? 1 : votes < 0 ? -1 : 0;
+	l.hasInfo = l.halfWidth > 0.0f;
+}
 
 struct SrcPoint {
 	float pos[3]; // on the ground

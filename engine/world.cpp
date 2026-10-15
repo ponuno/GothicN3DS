@@ -3,6 +3,8 @@
 
 #include "readahead.h"
 
+#include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -96,7 +98,9 @@ bool World::open(Pak* pak, u32 entryHash) {
 	_headStrength = 0.0f;
 	_anchorFrame = 0xFFFFFFFFu;
 	_lastRejected = 0xFFFFFFFFu;
+	loadLadderInfo();
 	buildGrid();
+	loadSun();
 	// Failing to start the loader is not fatal: update() then loads on the spot.
 	if (_cfg.background) _loader.start(pak->path(), _materials, _hdr.materialCount, _cfg.worker);
 	return true;
@@ -122,6 +126,7 @@ void World::close() {
 	free(_textures);
 	free(_portals);
 	free(_ladders);
+	free(_ladderInfo);
 	free(_chunks);
 	free(_loaded);
 	free(_tex);
@@ -129,11 +134,15 @@ void World::close() {
 	free(_order);
 	free(_orderKey);
 	free(_tier);
+	free(_sun);
+	_sun = nullptr;
+	_sunHdr = {};
 	freeGrid();
 	_materials = nullptr;
 	_textures = nullptr;
 	_portals = nullptr;
 	_ladders = nullptr;
+	_ladderInfo = nullptr;
 	_chunks = nullptr;
 	_loaded = nullptr;
 	_tex = nullptr;
@@ -379,9 +388,47 @@ LoadStatus World::loadChunkNow(u32 index) {
 	return finishChunk(r);
 }
 
+// The sun table (WorldHeader::sunEntry): small, kept while the world is open. A table that does not fit the world is
+// ignored (the world is drawn without the sun's shadow).
+void World::loadSun() {
+	if (!_hdr.sunEntry || indoor()) return;
+	const PakEntry* e = _pak->find(_hdr.sunEntry);
+	if (!e || e->size < sizeof(SunHeader)) return;
+	u8* blob = static_cast<u8*>(_pak->readAlloc(*e));
+	if (!blob) return;
+	SunHeader h;
+	memcpy(&h, blob, sizeof(h));
+	bool ok = h.magic == SUN_MAGIC && h.version == SUN_VERSION && h.chunkCount == _hdr.chunkCount && e->size == sunBlobSize(h);
+	if (ok) {
+		_sun = static_cast<SunChunk*>(malloc(size_t(h.chunkCount) * sizeof(SunChunk) + 1));
+		ok = _sun != nullptr;
+	}
+	if (ok) {
+		memcpy(_sun, blob + sizeof(SunHeader), size_t(h.chunkCount) * sizeof(SunChunk));
+		for (u32 i = 0; i < h.chunkCount; ++i)
+			if (_sun[i].texture != SUN_NONE && _sun[i].texture >= _hdr.textureCount) _sun[i].texture = SUN_NONE;
+		_sunHdr = h;
+	} else {
+		free(_sun);
+		_sun = nullptr;
+	}
+	free(blob);
+}
+
+// The chunk's sun mask if it is wanted and there (asked for the first time here: the menu may switch it on later).
+gfx::Texture* World::sunMaskFor(Loaded& l, u32 index) {
+	if (!_sun || !_cfg.sunMasks || _sun[index].texture == SUN_NONE) return nullptr;
+	if (!l.sunHeld) {
+		l.sunHeld = true;
+		acquireTexture(_sun[index].texture);
+	}
+	return _tex[_sun[index].texture].tex;
+}
+
 void World::unloadChunk(u32 index) {
 	Loaded& l = _loaded[index];
 	if (!l.mesh) return;
+	if (l.sunHeld && _sun && _sun[index].texture != SUN_NONE) releaseTexture(_sun[index].texture);
 	for (u32 b = 0; b < l.batchCount; ++b) releaseMaterial(l.batches[b].material);
 	gfx::meshDestroy(l.mesh);
 	free(l.batches);
@@ -1386,6 +1433,31 @@ bool World::sightBlocked(Vec3 a, Vec3 b) const {
 	return _dynamic && _dynamic->segmentHits(a, b);
 }
 
+u32 World::plantBoxes(Vec3 around, float radius, float minHeight, PlantBox* out, u32 max) const {
+	const u16 want = hasWind() ? u16(MATF_WIND) : u16(MATF_ALPHA_TEST);
+	u32 n = 0;
+	for (u32 k = 0; k < _stats.chunksLoaded && n < max; ++k) {
+		const u32 i = _resident[k];
+		const Loaded& l = _loaded[i];
+		if (!l.mesh || !l.batches) continue;
+		const ChunkInfo& ci = _chunks[i];
+		const float cx = clamp(around.x, ci.bbMin[0], ci.bbMax[0]), cz = clamp(around.z, ci.bbMin[2], ci.bbMax[2]);
+		if ((cx - around.x) * (cx - around.x) + (cz - around.z) * (cz - around.z) > radius * radius) continue;
+		for (u32 b = 0; b < l.batchCount && n < max; ++b) {
+			const Batch& batch = l.batches[b];
+			const u16 flags = _materials[batch.material].flags;
+			if (!(flags & want) || (flags & (MATF_WATER | MATF_TRANSLUCENT)) || batch.lodMode == BATCH_LOD_FAR_ONLY) continue;
+			if (batch.bbMax[1] - batch.bbMin[1] < minHeight) continue;
+			const float bx = (batch.bbMin[0] + batch.bbMax[0]) * 0.5f - around.x, bz = (batch.bbMin[2] + batch.bbMax[2]) * 0.5f - around.z;
+			if (bx * bx + bz * bz > radius * radius) continue;
+			PlantBox& o = out[n++];
+			memcpy(o.bbMin, batch.bbMin, sizeof(o.bbMin));
+			memcpy(o.bbMax, batch.bbMax, sizeof(o.bbMax));
+		}
+	}
+	return n;
+}
+
 const WorldPortal* World::portalAt(Vec3 p) const {
 	for (u32 i = 0; i < _hdr.portalCount; ++i) {
 		const WorldPortal& q = _portals[i];
@@ -1394,6 +1466,39 @@ const WorldPortal* World::portalAt(Vec3 p) const {
 			return &q;
 	}
 	return nullptr;
+}
+
+// What the bake knew of the ladders themselves ("world/<name>/ladderinfo"); an archive without it climbs the boxes.
+void World::loadLadderInfo() {
+	free(_ladderInfo);
+	_ladderInfo = nullptr;
+	if (!_pak || !_hdr.ladderCount) return;
+	const PakEntry* w = _pak->find(_entryHash);
+	if (!w) return;
+	char name[128];
+	snprintf(name, sizeof(name), "%s/ladderinfo", _pak->name(*w));
+	const PakEntry* e = _pak->find(name);
+	if (!e || e->size != sizeof(LadderInfoHeader) + u64(_hdr.ladderCount) * sizeof(LadderInfo)) return;
+	u8* blob = static_cast<u8*>(_pak->readAlloc(*e));
+	if (!blob) return;
+	LadderInfoHeader h;
+	memcpy(&h, blob, sizeof(h));
+	bool ok = h.magic == LADDERINFO_MAGIC && h.version == LADDERINFO_VERSION && h.count == _hdr.ladderCount;
+	LadderInfo* info = ok ? static_cast<LadderInfo*>(malloc(size_t(h.count) * sizeof(LadderInfo))) : nullptr;
+	if (info) {
+		memcpy(info, blob + sizeof(h), size_t(h.count) * sizeof(LadderInfo));
+		for (u32 i = 0; i < h.count; ++i) {
+			LadderInfo& l = info[i];
+			bool good = l.halfWidth > 0.0f && l.halfWidth < 1000.0f && l.halfDepth >= 0.0f && l.halfDepth < 1000.0f && l.head[1] > l.foot[1];
+			for (int a = 0; a < 3 && good; ++a) good = isfinite(l.foot[a]) && isfinite(l.head[a]);
+			const float n = l.normal[0] * l.normal[0] + l.normal[1] * l.normal[1];
+			good = good && n > 0.8f && n < 1.2f;
+			if (!good) l.halfWidth = 0.0f; // (says nothing: the box)
+			if (l.side > 1 || l.side < -1) l.side = 0;
+		}
+		_ladderInfo = info;
+	}
+	free(blob);
 }
 
 const WorldLadder* World::ladderAt(Vec3 p) const {
@@ -1518,6 +1623,17 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 				fx.windPhase = gfx::windPhaseAt(l.origin, _windSeconds, kWindWavesPerSecond);
 			}
 			fx.waterGrid = hasWaterGrid();
+			if (_sun) {
+				const u32 index = _resident[l.slot];
+				if (gfx::Texture* mask = sunMaskFor(l, index)) {
+					const SunChunk& sc = _sun[index];
+					fx.sun = mask;
+					fx.sunX0 = sc.x0;
+					fx.sunZ0 = sc.z0;
+					fx.sunScaleX = sc.scaleX;
+					fx.sunScaleZ = sc.scaleZ;
+				}
+			}
 			if (_waveHeight > 0.0f) {
 				fx.waveA = gfx::wavePhaseAt(l.origin, _windSeconds, 0);
 				fx.waveB = gfx::wavePhaseAt(l.origin, _windSeconds, 1);

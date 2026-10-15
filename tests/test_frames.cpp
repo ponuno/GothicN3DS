@@ -647,6 +647,100 @@ static void testShader(const std::string& pak) {
 	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
 }
 
+// The sun's mask (g3ds-bake --sun-shadow): a chunk that has one is drawn by the fast entry that lays it (fastsun), whose
+// texture coordinate 2 is the world's x and z mapped onto the mask as the table says - checked by running the shader on
+// the vertices; a chunk without one keeps the short entry.
+struct SunCheck {
+	int entry = -1;
+	unsigned vertices = 0;
+	double worst = 0.0;
+	const WorldVertex* verts = nullptr;
+	float origin[3] = {0, 0, 0}, posScale = 1.0f, x0 = 0, z0 = 0, sx = 1, sz = 1;
+};
+static void sunHook(const mock3ds::DrawCall& call, void* user) {
+	SunCheck& sc = *static_cast<SunCheck*>(user);
+	sc.entry = call.entry;
+	for (unsigned i = 0; i < call.count; ++i) {
+		mock3ds::ShadedVertex out;
+		if (!mock3ds::shadeVertex(call, call.indices[i], out, true)) continue;
+		const WorldVertex& v = sc.verts[call.indices[i]];
+		const double x = sc.origin[0] + double(v.x) * sc.posScale, z = sc.origin[2] + double(v.z) * sc.posScale;
+		const double u = (x - sc.x0) * sc.sx, w = (z - sc.z0) * sc.sz;
+		sc.worst = std::max(sc.worst, std::max(std::fabs(out.texcoord2[0] - u), std::fabs(out.texcoord2[1] - w)));
+		++sc.vertices;
+	}
+}
+static void testSunMask() {
+	mock3ds::reset();
+	gfx::c3dSetClassicFrames(false);
+	CHECK(gfx::init() && gfx::sunShadowSupported());
+	// An 8x8 mask, and three corners of a chunk far from the world's origin (the anchor is near the eye).
+	TexHeader th {};
+	th.magic = TEX_MAGIC;
+	th.width = th.height = 8;
+	th.format = TEX_L4;
+	th.mipCount = 1;
+	th.flags = TEXF_CLAMP;
+	th.dataSize = 32;
+	u8 texels[32];
+	std::memset(texels, 0x5A, sizeof(texels));
+	gfx::Texture* mask = gfx::textureCreate(th, texels);
+	CHECK(mask != nullptr);
+	SunCheck sc;
+	static const WorldVertex verts[3] = {{-4000, 0, -4000, 1, 0, 0, 200, 200, 200, 255}, {4000, 80, -4000, 1, 1024, 0, 200, 200, 200, 255},
+	                                     {0, 160, 4000, 1, 0, 1024, 200, 200, 200, 255}};
+	static const u16 idx[3] = {0, 1, 2};
+	gfx::Mesh* mesh = gfx::meshCreate(verts, 3, idx, 3);
+	sc.verts = verts;
+	sc.origin[0] = -93000.0f;
+	sc.origin[1] = 250.0f;
+	sc.origin[2] = -116500.0f;
+	sc.posScale = 0.25f;
+	sc.x0 = -94100.0f;
+	sc.z0 = -117600.0f;
+	sc.sx = 1.0f / 4100.0f;
+	sc.sz = 1.0f / 4100.0f;
+	gfx::FrameDesc fd {};
+	const Vec3 eye = {-92900.0f, 400.0f, -116900.0f};
+	fd.view = viewLH(eye, 0.3f, -0.4f);
+	fd.eye = eye;
+	fd.fovY = 1.0f;
+	fd.zNear = 20.0f;
+	fd.zFar = 20000.0f;
+	fd.fogStart = 3000.0f;
+	fd.fogEnd = 9000.0f;
+	fd.dayLight[0] = fd.dayLight[1] = fd.dayLight[2] = 1.0f;
+	gfx::frameBegin(fd);
+	gfx::setSunShadow(0.4f);
+	gfx::setPass(gfx::PASS_WORLD);
+	gfx::ChunkFx fx;
+	fx.sun = mask;
+	fx.sunX0 = sc.x0;
+	fx.sunZ0 = sc.z0;
+	fx.sunScaleX = sc.sx;
+	fx.sunScaleZ = sc.sz;
+	mock3ds::setDrawHook(sunHook, &sc);
+	gfx::setChunkTransform(sc.origin, sc.posScale, 1.0f / 1024.0f, &fx);
+	gfx::setMaterial(nullptr, 0);
+	gfx::draw(mesh, 0, 3);
+	const int withEntry = sc.entry;
+	const double worst = sc.worst;
+	const unsigned shaded = sc.vertices;
+	// Without a mask: the short entry.
+	gfx::setChunkTransform(sc.origin, sc.posScale, 1.0f / 1024.0f, nullptr);
+	gfx::draw(mesh, 0, 3);
+	const int withoutEntry = sc.entry;
+	mock3ds::setDrawHook(nullptr, nullptr);
+	gfx::frameEnd();
+	std::printf("  sun's mask: entry %d with it (%u vertices, texture coordinate 2 within %.2g), entry %d without\n", withEntry, shaded,
+	            worst, withoutEntry);
+	CHECK(withEntry == 4 && shaded == 3 && worst < 2e-3 && withoutEntry == 1);
+	gfx::meshDestroy(mesh);
+	gfx::textureDestroy(mask);
+	gfx::shutdown();
+	CHECK(mock3ds::violations() == 0);
+}
+
 // The classic shader (ZL+ZR at start): the one of the version before the dissolve (world.v.pica), projection and
 // view apart, nothing on texture unit 1 - the GPU state that is known to work on the console. (The first build
 // with the dissolve always on gave a black screen.) It was the default before the fast one.
@@ -864,7 +958,7 @@ static void testDefaultShader(const std::string& pak) {
 	std::printf("  default shader: %u entry points, %u and %u instructions of %u, %u of 96 float registers%s%s\n", mock3ds::shaderEntries(),
 	            mock3ds::shaderEntryInstructions(0), mock3ds::shaderEntryInstructions(1), mock3ds::shaderInstructions(),
 	            mock3ds::shaderFloatRegisters(), *mock3ds::shaderProblem() ? "; PROBLEM: " : "", mock3ds::shaderProblem());
-	CHECK(!*mock3ds::shaderProblem() && mock3ds::shaderEntries() == 4);
+	CHECK(!*mock3ds::shaderProblem() && mock3ds::shaderEntries() == 6);
 	// (mvp, fogRow, five vectors, the palette, fx, lightK, aoK, wave; four constants: consts, noiseScale, the waves' two)
 	CHECK(mock3ds::shaderFloatRegisters() == 4 + 1 + 5 + MODEL_PALETTE * 3 + 1 + 1 + 1 + 1 + 4);
 	// main, fastmain, fadefast (with the dissolve: 3 more), skinmain (both ways of the dissolve counted)
@@ -872,6 +966,9 @@ static void testDefaultShader(const std::string& pak) {
 	            mock3ds::shaderEntryInstructions(2), mock3ds::shaderEntryInstructions(3));
 	CHECK(mock3ds::shaderEntryInstructions(1) <= 20 && mock3ds::shaderEntryInstructions(0) < 120); // (the water waves are most of the full entry: it draws only what waves or sways)
 	CHECK(mock3ds::shaderEntryInstructions(2) <= 28 && mock3ds::shaderEntryInstructions(3) <= 32);
+	// The sun's mask: two instructions more, in entries of their own (chunks without a mask keep the short ones).
+	CHECK(mock3ds::shaderEntryInstructions(4) == mock3ds::shaderEntryInstructions(1) + 2 &&
+	      mock3ds::shaderEntryInstructions(5) == mock3ds::shaderEntryInstructions(2) + 2);
 	shaderProgram_s probe;
 	shaderProgramInit(&probe);
 	shaderProgramSetVsh(&probe, nullptr);
@@ -1337,6 +1434,7 @@ int main(int argc, char** argv) {
 	testShader(pak);
 	std::printf("[ RUN ] the default shader, without the dissolve\n");
 	testDefaultShader(pak);
+	testSunMask();
 	testClassicShader(pak);
 	testSupersample(pak);
 	testStereo(pak);

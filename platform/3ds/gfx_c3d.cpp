@@ -243,7 +243,8 @@ bool gSunUvSent = false;
 u16 gDebugSkipFlags = 0; // c3dSetDebugDraw: materials with any of these flags are not drawn
 int gDebugProgram = 0;   // 1: the fast entry for every world draw, 2: the full entry for every one
 u16 gMaterialFlags = 0;
-bool gNoSun = false; // c3dSetNoSun: the stages of the sun's shadow never set (C-Stick up held at start)
+bool gNoSun = false;
+bool gNoSunProgram = false; // c3dSetNoSun: the sun's program is never used either // c3dSetNoSun: the stages of the sun's shadow never set (C-Stick up held at start)
 
 // The white 8x8 stand-in for the mask (unit 2 must never be left without a texture while a stage reads it).
 bool makeSunWhite() {
@@ -307,7 +308,7 @@ void bindSunTexture(const C3D_Tex* t) {
 void updateSun() {
 	if (gNoSun || !gSunBound) return;
 	float s = 0.0f;
-	if (gSunChunk && gSunMaterialOk && !gSkinned && !gUiPass && gPass != PASS_SKY) s = gSunDark;
+	if (gSunChunk && gSunMaterialOk && !gSkinned && !gUiPass && gPass != PASS_SKY && gFade == 255 && !gNoSunProgram) s = gSunDark;
 	const u8 c = u8(clamp(s, 0.0f, 1.0f) * 255.0f + 0.5f);
 	if (c) bindSunTexture(&gSunChunk->tex);
 	if (c == gSunConst) return;
@@ -441,7 +442,11 @@ void bindProgram(int which) {
 }
 // (A chunk with the sun's mask: the fast entry that lays it, for all its batches - the mask's strength, not the entry,
 // leaves out the materials that take no shadow.)
-void useProgram(bool fast) { bindProgram(fast ? (gSunChunk ? PROGRAM_FAST_SUN : PROGRAM_FAST) : PROGRAM_FULL); }
+void useProgram(bool fast) {
+	// (Dissolving needs texture coordinate 1 for the noise: `fadefast`, and the chunk goes without its mask until it is whole.)
+	const bool sun = gSunChunk && !gNoSunProgram && gFade == 255;
+	bindProgram(fast ? (sun ? PROGRAM_FAST_SUN : PROGRAM_FAST) : PROGRAM_FULL);
+}
 
 // The GPU executes a frame's command list after C3D_FrameEnd returns, so
 // memory a draw call referenced must outlive that frame. Destroyed resources
@@ -573,7 +578,11 @@ bool init() {
 			const bool sunEntries = gDvlb->numDVLE >= 6;
 			if (sunEntries) {
 				shaderProgramInit(&gProgramFastSun);
-				shaderProgramSetVsh(&gProgramFastSun, &gDvlb->DVLE[gFadeShader ? 5 : 4]);
+				// fix142: always `fastsun` (DVLE 4: position, texcoord0, colour, texcoord2), never `fadefastsun` (DVLE 5: five
+				// outputs, texcoord1 and texcoord2 both). The two entries with five outputs - `fadefastsun`, and `main` until fix138 -
+				// are what the console's GPU hung on: the world drawn with them hung (fix133..141), without them it did not. A chunk
+				// that is dissolving (gFade != 255) is drawn by `fadefast` without its sun mask meanwhile (see useProgram).
+				shaderProgramSetVsh(&gProgramFastSun, &gDvlb->DVLE[4]);
 			}
 			static const char* const kShared[] = {"mvp", "fogRow", "chunk", "params", "dayDelta", "texOffset", "lightK", "aoK", "fx"};
 			static const char* const kSkin[] = {"mvp", "fogRow", "params", "texOffset", "skinLight", "bones", "fading"};
@@ -821,8 +830,9 @@ void textureDestroy(Texture* t) {
 // fix141: the GPU finds a vertex buffer and an index buffer by their offset from the buffers' base address, in 28 bits
 // (GPUREG_ATTRIBBUFFERi_OFFSET, GPUREG_INDEXBUFFER_CONFIG; citro3d does not check). citro3d counts from 0x18000000 (VRAM):
 // so only up to 0x27FFFFFF, and a buffer of the linear heap above that (FCRAM is 0x20000000-0x2FFFFFFF on a New 3DS)
-// was found 256 MB lower - the GPU read whatever lay there, and hung. Every vertex and index buffer here is in the linear
-// heap (FCRAM), never in VRAM, so they are counted from FCRAM's start: all of it can be reached.
+// would be found 256 MB lower. Every vertex and index buffer here is in the linear heap (FCRAM), never in VRAM, so they are
+// counted from FCRAM's start: all of it can be reached. (Not what hung fix133 - the console's linear heap is at
+// 0x20000000..0x22A00000 - but a heap placed higher would hit it; kept.)
 constexpr u32 kBufferBase = 0x20000000u;
 static void initBufInfo(C3D_BufInfo* info) {
 	BufInfo_Init(info);
@@ -1176,6 +1186,7 @@ void setFade(float visible) {
 	if (share == gFade) return;
 	const bool was = gFade != 255, on = share != 255;
 	gFade = share;
+	updateSun(); // (dissolving: no mask, see useProgram)
 	if (on != was) {
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocFading, on);
 		setFadeStages(on, share);
@@ -1441,7 +1452,10 @@ void c3dSetClassicFrames(bool classic) {
 }
 
 void c3dSetFillTest(bool on) { gFillTest = on; }
-void c3dSetNoSun(bool on) { gNoSun = on; }
+void c3dSetNoSun(bool on) {
+	gNoSun = on;
+	gNoSunProgram = on;
+}
 void c3dSetDebugDraw(u16 skipFlags, int program) {
 	gDebugSkipFlags = skipFlags;
 	gDebugProgram = program;

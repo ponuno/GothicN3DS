@@ -156,7 +156,7 @@ static void flushHitches() {
 
 static void startHitchLog(const char* what) {
 	if (FILE* f = fopen(kHitchPath, "w")) {
-		fprintf(f, "# gothic3ds fix140 hitches: %s\n", what);
+		fprintf(f, "# gothic3ds fix141 hitches: %s\n", what);
 		fclose(f);
 	}
 	gHitchCount = 0;
@@ -235,6 +235,7 @@ static void readDebugFile() {
 }
 
 static void watchdogPlayerLine(FILE* f); // (after gApp, below)
+static u32 gLinearPhys[2] = {0, 0}; // the linear heap's physical start and end (fix141: the GPU's buffers are counted from 0x20000000)
 static void watchdogMain(void*) {
 	u32 lastFrame = g3::gTrace.frame, lastBeats = g3::gTrace.beats;
 	int still = 0, written = 0;
@@ -252,12 +253,13 @@ static void watchdogMain(void*) {
 		if (still < 20 || (still - 20) % 40 != 0 || written >= 6) continue;
 		if (FILE* f = fopen(kHangPath, written == 0 ? "w" : "a")) {
 			fprintf(f, "%s%s%s%.1f s without a frame after frame %lu: in \"%s\"; %s (steps %lu, %lu at the last frame)\n",
-			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix140 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix140 watchdog: the main loop stopped\n") : "",
+			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix141 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix141 watchdog: the main loop stopped\n") : "",
 			        written == 0 && gDebugWords[0] ? gDebugWords : "", written == 0 && gDebugWords[0] ? ")\n" : "", double(still) * 0.25,
 			        static_cast<unsigned long>(frame), g3::gTrace.stage ? g3::gTrace.stage : "?",
 			        beats != lastBeats ? "it still goes from step to step (a loop)" : "no step since (stuck in that one)",
 			        static_cast<unsigned long>(beats), static_cast<unsigned long>(lastBeats));
 			watchdogPlayerLine(f);
+			fprintf(f, "  linear heap at %08lx..%08lx (physical)\n", static_cast<unsigned long>(gLinearPhys[0]), static_cast<unsigned long>(gLinearPhys[1]));
 			fprintf(f, "  the last steps, oldest first:");
 			const u32 at = g3::gTrace.recentAt;
 			for (u32 k = 0; k < 16; ++k) {
@@ -380,6 +382,8 @@ int main(int, char**) {
 	// (The black pad in front of the first framebuffer for the re-projection: it has to be allocated before libctru's.)
 	g3::reproject::reserve();
 	gfxInitDefault();
+	gLinearPhys[0] = osConvertVirtToPhys(reinterpret_cast<const void*>(__ctru_linear_heap));
+	gLinearPhys[1] = gLinearPhys[0] + __ctru_linear_heap_size;
 	gfxSet3D(false);
 	g3::reproject::noteInit();
 	consoleInit(GFX_BOTTOM, nullptr);
@@ -492,9 +496,10 @@ int main(int, char**) {
 	app.applySettings();
 	app.setRenderSkip(gDebugSkip);
 	{
-		char what[160];
-		snprintf(what, sizeof(what), "preset %d, draw %d m, objects %d, life %d, shader %s", int(settings.gfxPresetOf()),
-		         int(settings.drawMetres), int(settings.objects), int(settings.life), plainShader ? "plain" : "normal");
+		char what[224];
+		snprintf(what, sizeof(what), "preset %d, draw %d m, objects %d, life %d, shader %s; linear heap at %08lx..%08lx (physical)",
+		         int(settings.gfxPresetOf()), int(settings.drawMetres), int(settings.objects), int(settings.life), plainShader ? "plain" : "normal",
+		         static_cast<unsigned long>(gLinearPhys[0]), static_cast<unsigned long>(gLinearPhys[1]));
 		startHitchLog(what);
 	}
 	if (plainShader) app.setThirdPerson(false); // (no character is drawn; for this run only, the menu keeps its setting)

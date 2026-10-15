@@ -818,6 +818,17 @@ void textureDestroy(Texture* t) {
 	if (!bury(gDeadTextures, t)) freeTexture(t);
 }
 
+// fix141: the GPU finds a vertex buffer and an index buffer by their offset from the buffers' base address, in 28 bits
+// (GPUREG_ATTRIBBUFFERi_OFFSET, GPUREG_INDEXBUFFER_CONFIG; citro3d does not check). citro3d counts from 0x18000000 (VRAM):
+// so only up to 0x27FFFFFF, and a buffer of the linear heap above that (FCRAM is 0x20000000-0x2FFFFFFF on a New 3DS)
+// was found 256 MB lower - the GPU read whatever lay there, and hung. Every vertex and index buffer here is in the linear
+// heap (FCRAM), never in VRAM, so they are counted from FCRAM's start: all of it can be reached.
+constexpr u32 kBufferBase = 0x20000000u;
+static void initBufInfo(C3D_BufInfo* info) {
+	BufInfo_Init(info);
+	info->base_paddr = kBufferBase;
+}
+
 Mesh* meshCreate(const WorldVertex* vertices, u32 vertexCount, const u16* indices, u32 indexCount) {
 	Mesh* m = static_cast<Mesh*>(calloc(1, sizeof(Mesh)));
 	if (!m) return nullptr;
@@ -843,7 +854,7 @@ Mesh* meshCreate(const WorldVertex* vertices, u32 vertexCount, const u16* indice
 	GSPGPU_FlushDataCache(m->vertices, vbytes);
 	GSPGPU_FlushDataCache(m->indices, ibytes);
 
-	BufInfo_Init(&m->buf);
+	initBufInfo(&m->buf);
 	BufInfo_Add(&m->buf, m->vertices, sizeof(WorldVertex), 3, 0x210);
 	m->vertexCount = vertexCount;
 	m->indexCount = indexCount;
@@ -1354,7 +1365,7 @@ void uiDraw(Texture* t, const UiQuad* quads, u32 count) {
 	}
 	GSPGPU_FlushDataCache(v, count * 4 * sizeof(WorldVertex));
 	gUiUsed += count;
-	BufInfo_Init(&gUiBufInfo);
+	initBufInfo(&gUiBufInfo);
 	BufInfo_Add(&gUiBufInfo, gUiVertices[gUiBuffer], sizeof(WorldVertex), 3, 0x210);
 	C3D_SetBufInfo(&gUiBufInfo);
 	gBoundMesh = nullptr;

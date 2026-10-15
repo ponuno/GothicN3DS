@@ -80,9 +80,11 @@ struct C3D_BufInfo {
 	int count;
 	int stride, attribCount;
 	u64 permutation;
+	u32 base_paddr; // (as citro3d's: what the GPU's buffer offsets are counted from)
 };
 static inline void BufInfo_Init(C3D_BufInfo* info) {
 	info->base = nullptr;
+	info->base_paddr = 0x18000000;
 	info->count = 0;
 	info->stride = 0;
 	info->attribCount = 0;

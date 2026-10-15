@@ -131,6 +131,7 @@ int main(int argc, char** argv) {
 		return 2;
 	}
 	const int frames = argc > 2 ? std::atoi(argv[2]) : 60;
+	if (getenv("LINEAR_MB")) mock3ds::setLinearLimit(size_t(atoi(getenv("LINEAR_MB"))) << 20);
 	App app;
 	// As platform/3ds/main.cpp on a first start: the dissolve on (its own shader entries), no smoothing, no stereo.
 	gfx::c3dSetFadeShader(Settings().dissolve != 0);

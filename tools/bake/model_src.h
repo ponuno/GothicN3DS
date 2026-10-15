@@ -57,6 +57,7 @@ struct SrcClip {
 		int frame = 0;
 		bool ground = false;
 		bool emptySlot = false;
+		int item = 0; // fix154: 0 a sound; else ClipSfxKind (CLIP_ITEM_*): an item tag, `name` is the item
 		float range = 0;
 		std::string name;
 	};

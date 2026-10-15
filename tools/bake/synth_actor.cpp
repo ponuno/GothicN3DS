@@ -6,6 +6,7 @@
 #include "model_bake.h"
 
 #include "g3ds/math.h"
+#include "g3ds/model.h"
 
 #include <algorithm>
 #include <cmath>
@@ -192,6 +193,16 @@ SrcClip withSteps(SrcClip clip, std::vector<int> frames) {
 		e.range = 1000.0f;
 		clip.sfx.push_back(e);
 	}
+	return clip;
+}
+
+// A clip with an item tag of the model script (DEF_*_ITEM, fix154) at `frame`.
+SrcClip withItem(SrcClip clip, int frame, int kind, const char* item = "") {
+	SrcClip::Sfx e;
+	e.frame = frame;
+	e.item = kind;
+	e.name = item;
+	clip.sfx.push_back(e);
 	return clip;
 }
 
@@ -652,6 +663,21 @@ void buildSyntheticActor(SrcModel& model) {
 	model.clips.push_back(makeClip("T_POTIONFAST_STAND_2_S0", "S_POTIONFAST_S0", 15, false, [drink](float phase, float, Pose& p) { drink(phase, p); }));
 	model.clips.push_back(makeClip("S_POTIONFAST_S0", "S_POTIONFAST_S0", 10, false, [drink](float, float, Pose& p) { drink(1.0f, p); }));
 	model.clips.push_back(makeClip("T_POTIONFAST_S0_2_STAND", "S_RUN", 12, false, [drink](float phase, float, Pose& p) { drink(1.0f - phase, p); }));
+	// A forge (fix154): the way the game's own do it - the tags of the model script change the item in his hand. He
+	// takes the nugget in (INSERT), the first step turns it into a sword (EXCHANGE), letting go leaves it with him.
+	model.clips.push_back(withItem(makeClip("T_BSFIRE_STAND_2_S0", "S_BSFIRE_S0", 8, false, [](float phase, float, Pose& p) {
+		                                p.rot[R_ARM] = aboutX(-1.2f * phase);
+	                                }),
+	                               3, CLIP_ITEM_INSERT));
+	model.clips.push_back(makeClip("S_BSFIRE_S0", "S_BSFIRE_S0", 16, false, [](float, float, Pose& p) { p.rot[R_ARM] = aboutX(-1.2f); }));
+	model.clips.push_back(withItem(makeClip("T_BSFIRE_S0_2_S1", "S_BSFIRE_S1", 8, false, [](float, float, Pose& p) { p.rot[R_ARM] = aboutX(-1.2f); }),
+	                               4, CLIP_ITEM_EXCHANGE, "ITMW_SWORD"));
+	model.clips.push_back(makeClip("S_BSFIRE_S1", "S_BSFIRE_S1", 16, false, [](float, float, Pose& p) { p.rot[R_ARM] = aboutX(-1.2f); }));
+	model.clips.push_back(withItem(makeClip("T_BSFIRE_S1_2_S0", "S_BSFIRE_S0", 8, false, [](float, float, Pose& p) { p.rot[R_ARM] = aboutX(-1.2f); }),
+	                               4, CLIP_ITEM_REMOVE));
+	model.clips.push_back(makeClip("T_BSFIRE_S0_2_STAND", "S_RUN", 8, false, [](float phase, float, Pose& p) {
+		p.rot[R_ARM] = aboutX(-1.2f * (1.0f - phase));
+	}));
 	// Where the script has no animation for a change, it names a fade.
 	model.blends = {{"T_RUNL_2_WALKL", "S_WALKL", 0.2f, 0.2f}, {"T_WALKL_2_RUNL", "S_RUNL", 0.2f, 0.2f},
 	                {"T_SWIM_2_SWIMF", "S_SWIMF", 0.3f, 0.3f}, {"T_SWIMF_2_SWIM", "S_SWIM", 0.3f, 0.3f},

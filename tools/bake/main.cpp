@@ -551,6 +551,16 @@ int main(int argc, char** argv) {
 				// Whatever is wrong with it must not cost the worlds their bake.
 				SrcModel model;
 				bool have = false;
+				// (fix155) What he does at the things of the worlds he may use - sits on a bench, works a forge, climbs a
+				// ladder - is his own animations: the model script's, by the name of the thing ("T_BSFIRE_", "S_LADDER_").
+				{
+					std::set<std::string> schemes = {"LADDER"};
+					for (const BakeWorld& bw : worlds)
+						for (const SrcMob& m : bw.scene.mobs)
+							if (!m.scheme.empty() && (!m.focus.empty() || m.kind == 1)) schemes.insert(m.scheme);
+					for (const std::string& s : schemes)
+						for (const char* head : {"T_", "S_"}) actor.clipPrefixes.push_back(head + s + "_");
+				}
 				try {
 					have = importZenActor(game, actor, model);
 				} catch (const std::exception& ex) {

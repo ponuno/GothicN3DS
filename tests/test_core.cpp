@@ -3240,7 +3240,7 @@ static void testModel() {
 		CHECK(r.triangles == 59 * 4 && r.parts >= 3 && r.largestPalette == MODEL_PALETTE && r.clips == 2 && r.textures == 1);
 		CHECK(r.report.find("skeleton: 60 nodes") != std::string::npos);
 		const ModelBakeResult a = bakeModel(actor, bo, writer);
-		CHECK(a.parts == 2 && a.clips == 76 && a.largestPalette <= MODEL_PALETTE);
+		CHECK(a.parts == 2 && a.clips == 82 && a.largestPalette <= MODEL_PALETTE);
 		CHECK(a.report.find("S_1HATTACK 1.88s 3 blows") != std::string::npos && a.report.find("T_FISTPARADE_O 0.52s parry") != std::string::npos);
 		CHECK(a.report.find("blends: 5: T_RUNL_2_WALKL 0.20s") != std::string::npos);
 		CHECK(a.report.find("T_STAND_2_JUMP 0.48s 239cm/s up 74cm") != std::string::npos);
@@ -3554,7 +3554,7 @@ static void testModel() {
 	{
 		// The test character: loops wrap, moving clips know their speed.
 		Model m;
-		CHECK(m.load(pak, "hero") && m.nodeCount() == 16 && m.clipCount() == 76 && m.blendCount() == 5);
+		CHECK(m.load(pak, "hero") && m.nodeCount() == 16 && m.clipCount() == 82 && m.blendCount() == 5);
 		// The frames of a fight come through: three blows of a combo, each
 		// with its window and its end; a parry's frames; where a draw changes hands.
 		{
@@ -6034,13 +6034,13 @@ func void Rtn_start_502() {
 		const auto said = [&](const char* text) { return r.report.find(text) != std::string::npos; };
 		if (getenv("G3_TRACE")) std::puts(r.report.c_str());
 		// Of the animations the scripts name each skeleton got the ones it has.
-		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 14 families more; fighting 346 "
-		           "more; baked per skeleton: humans 72, scavenger 13, molerat 13"));
+		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 16 families more; fighting 346 "
+		           "more; baked per skeleton: humans 78, scavenger 13, molerat 13"));
 		// ... and those of the things in the hands (drinking a potion; picking up: 3 + 3 of the 67).
 		CHECK(said("things in the hands: the scripts' items are used in 4 ways (FOOD, MEAT, POTION, POTIONFAST)"));
 		// The things of the camp, and which of them the scripts know.
-		CHECK(said("things to use: 8 of 6 kinds, with 10 places to stand at (0 have none: nobody can use those): CHESTSMALL x2, BEDHIGH x2"));
-		CHECK(said("things to use: the worlds have 6 kinds; the scripts name 4 of them: BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: CHESTBIG, CHESTSMALL"));
+		CHECK(said("things to use: 9 of 7 kinds, with 11 places to stand at (0 have none: nobody can use those): CHESTSMALL x2, BEDHIGH x2"));
+		CHECK(said("things to use: the worlds have 7 kinds; the scripts name 4 of them: BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: BSFIRE, CHESTBIG, CHESTSMALL"));
 		CHECK(said("way net: 13 points, 15 connections") && said("10 free points") && said(" 12 states, "));
 		// What the states need of the engine is on record.
 		CHECK(said("life: the scripts have 12 states; the people of these worlds are put into 7: ZS_MM_ALLSCHEDULER x6, ZS_GUARD x3"));
@@ -6086,7 +6086,7 @@ func void Rtn_start_502() {
 		const WayNet& net = npcs.wayNet();
 		CHECK(net.loaded() && net.nodeCount() == 13 && net.freeCount() == 10);
 		const Mobs& mobs = npcs.mobs();
-		CHECK(mobs.loaded() && mobs.count() == 8);
+		CHECK(mobs.loaded() && mobs.count() == 9);
 		// What a character is at: the thing's kind if it is in it, "" if not.
 		const auto inThing = [&](u32 npc) -> std::string {
 			const NpcActor* a = npcs.actorOf(npc);
@@ -6334,7 +6334,7 @@ func void Rtn_start_502() {
 				CHECK(inThing(smith) == "BEDHIGH" && npcs.actorOf(smith)->mob != a->mob && npcs.stats().mobsInUse == 2);
 				u32 free = 0;
 				for (u32 m = 0; m < mobs.count(); ++m) free += mobs.userOf(m) < 0;
-				CHECK(free == 6 && npcs.stats().mobsUsed == 4);
+				CHECK(free == 7 && npcs.stats().mobsUsed == 4);
 			}
 			CHECK((poor || night.farthestOff < 190.0f) && night.travelled > 1000.0f); // (the seat is 1.7 m off the path)
 			u32 asleep = 0;
@@ -10816,7 +10816,7 @@ static void testMobUse() {
 		else if (mobs.isScheme(i, "BEDHIGH")) (mobs.info(i).focus ? namedBed : hiddenBed) = int(i);
 	}
 	CHECK(bench >= 0 && anvil >= 0 && sharp >= 0 && hiddenBed >= 0 && namedBed >= 0);
-	CHECK(named == 5);     // the bench, both beds (a bed is to sleep in, named or not), the anvil, the other
+	CHECK(named == 6);     // the bench, both beds (a bed is to sleep in, named or not), the anvil, the forge, the other
 	CHECK(hidden == 3);    // the three chests: no prompt
 	if (bench < 0 || anvil < 0 || sharp < 0 || hiddenBed < 0 || namedBed < 0) return;
 	const auto stand = [&](int mob, float dx, float dz, float yaw) {
@@ -10955,6 +10955,33 @@ static void testMobUse() {
 		CHECK(g.itemCount(hero, sword) == swords + 1 && g.itemCount(hero, nugget) == 0);
 		CHECK(!npcs.talkView().active && !app.mobInUse() && mobs.userOf(u32(anvil)) < 0);
 		CHECK(g.vm().getInt(g.vm().find("MOBTEST_LEFT")) == 1 && app.mobUseStats().stateCalls == callsBefore + 2);
+	}
+
+	// 7. (fix154) The forge the Gothic 1 way: no function at all. It wants a nugget (nothing in his things: it says so
+	//    and he stays where he is); with one, the tags of its animations take it into his hand and turn it into a
+	//    sword, and letting go leaves him with the sword.
+	{
+		int forge = -1;
+		for (u32 i = 0; i < mobs.count(); ++i)
+			if (mobs.isScheme(i, "BSFIRE")) forge = int(i);
+		const u32 nugget = g.vm().find("ITMINUGGET"), sword = g.vm().find("ITMW_SWORD");
+		CHECK(forge >= 0 && nugget != SCRIPT_NONE && sword != SCRIPT_NONE);
+		if (forge < 0) return;
+		const i32 swords = g.itemCount(hero, sword);
+		stand(forge, 0.0f, 160.0f, 3.14159f);
+		CHECK(app.mobTarget() == forge && g.itemCount(hero, nugget) == 0);
+		pressA();
+		run(1.0f);
+		CHECK(!app.mobInUse());
+		g.giveItems(hero, nugget, 1);
+		pressA();
+		run(3.0f);
+		std::printf("  forge: in use %d, nuggets %d, swords %d (before %d)\n", int(app.mobInUse()), int(g.itemCount(hero, nugget)),
+		            int(g.itemCount(hero, sword)), int(swords));
+		CHECK(app.mobInUse() && g.itemCount(hero, nugget) == 0 && g.itemCount(hero, sword) == swords + 1);
+		pressA();
+		run(2.0f);
+		CHECK(!app.mobInUse() && g.itemCount(hero, sword) == swords + 1);
 	}
 }
 

@@ -195,7 +195,19 @@ static_assert(sizeof(ClipFight) == 64, "ClipFight layout");
 // The block is a u32 count and then the events, last in the clip's blob.
 constexpr u32 CLIP_SFX_MAX = 8;
 constexpr u32 CLIP_SFX_NAME = 24;
-enum ClipSfxKind : u8 { CLIP_SFX_PLAIN = 0, CLIP_SFX_GROUND = 1 };
+// fix154: the same block carries the item tags of the model script (DEF_CREATE_ITEM and the like), which a thing used by
+// the player runs: a forge turns the raw blade in his hand into a glowing one. `name` is the item (CREATE, EXCHANGE),
+// empty for the others; the hand is the one slot the game's tags name (ZS_RIGHTHAND, ZS_LEFTHAND).
+enum ClipSfxKind : u8 {
+	CLIP_SFX_PLAIN = 0,
+	CLIP_SFX_GROUND = 1,
+	CLIP_ITEM_CREATE = 2,   // makes `name`, in the hand
+	CLIP_ITEM_INSERT = 3,   // takes the item the thing wants into the hand
+	CLIP_ITEM_REMOVE = 4,   // lets the hand go (the item stays with him)
+	CLIP_ITEM_DESTROY = 5,  // the item in the hand is gone
+	CLIP_ITEM_PLACE = 6,    // the item in the hand is left in the thing
+	CLIP_ITEM_EXCHANGE = 7, // the item in the hand is gone, `name` is in its place
+};
 struct ClipSfxEvent {
 	u16 frame;
 	u8 kind;  // ClipSfxKind

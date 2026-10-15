@@ -469,6 +469,7 @@ private:
 	RangedStats _ranged;
 	void checkPortals();
 	void soundEvent(const ClipSfxEvent& event, int npc);
+	void itemEvent(const ClipSfxEvent& event); // fix154: an item tag of the thing's animation (a forge, a lab)
 	void startSound();
 	void startSpeech();
 	float speechBegin(u32 lineHash, int speaker, bool hero);
@@ -700,6 +701,7 @@ private:
 		bool bed = false;    // a bed: lying in it, the sleep talk (the scripts', else the engine's menu of hours)
 		bool talked = false; // a talk came up while in it: he gets up when it is over
 		bool offered = false; // the engine's sleep menu has been put up
+		u32 hand = 0xFFFFFFFFu; // fix154: the item in his hand at it (the thing's animations put it there), SCRIPT_NONE: none
 	};
 	enum MobStage : u8 { MJ_NONE, MJ_GLIDE, MJ_IN, MJ_HELD, MJ_OUT };
 	MobJob _mobJob;

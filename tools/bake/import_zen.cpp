@@ -2946,6 +2946,23 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 		};
 		for (const zenkit::MdsAnimation& a : script.animations) reachFamily(a.name);
 		for (const zenkit::MdsAnimationAlias& a : script.aliases) reachFamily(a.name);
+		// (fix155) ... and at the things of the worlds (ladders, benches, forges): the names the baker was given.
+		size_t byThing = 0;
+		if (!opt.clipPrefixes.empty()) {
+			const auto family = [&](const std::string& rawName) {
+				const std::string name = upper(rawName);
+				for (const std::string& prefix : opt.clipPrefixes)
+					if (name.compare(0, prefix.size(), prefix) == 0 && std::find(wanted.begin(), wanted.end(), name) == wanted.end()) {
+						wanted.push_back(name);
+						optional.insert(name);
+						++byThing;
+						return;
+					}
+			};
+			for (const zenkit::MdsAnimation& a : script.animations) family(a.name);
+			for (const zenkit::MdsAnimationAlias& a : script.aliases) family(a.name);
+		}
+		model.notes.push_back("character: " + std::to_string(byThing) + " animations at the things of the worlds (ladders, benches, forges, levers)");
 		model.notes.push_back("character: animations of reaching in the model script (ledges, picking up, chests):" +
 		                      (reachFound.empty() ? std::string(" none") : reachFound));
 		for (const zenkit::MdsAnimation& a : script.animations)
@@ -3074,6 +3091,25 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 				case zenkit::MdsEventType::SET_FIGHT_MODE:
 					if (lc.fightMode < 0) lc.fightMode = ownFrame(ev.frame);
 					break;
+				case zenkit::MdsEventType::ITEM_CREATE:
+				case zenkit::MdsEventType::ITEM_INSERT:
+				case zenkit::MdsEventType::ITEM_REMOVE:
+				case zenkit::MdsEventType::ITEM_DESTROY:
+				case zenkit::MdsEventType::ITEM_PLACE:
+				case zenkit::MdsEventType::ITEM_EXCHANGE: {
+					// (fix154) What using a forge, a lab, a pan does to the item in the hand.
+					SrcClip::Sfx t;
+					t.frame = ownFrame(ev.frame);
+					t.item = ev.type == zenkit::MdsEventType::ITEM_CREATE     ? CLIP_ITEM_CREATE
+					         : ev.type == zenkit::MdsEventType::ITEM_INSERT   ? CLIP_ITEM_INSERT
+					         : ev.type == zenkit::MdsEventType::ITEM_REMOVE   ? CLIP_ITEM_REMOVE
+					         : ev.type == zenkit::MdsEventType::ITEM_DESTROY  ? CLIP_ITEM_DESTROY
+					         : ev.type == zenkit::MdsEventType::ITEM_PLACE    ? CLIP_ITEM_PLACE
+					                                                          : CLIP_ITEM_EXCHANGE;
+					t.name = ev.item;
+					lc.sfx.push_back(t);
+					break;
+				}
 				default: break;
 				}
 			}

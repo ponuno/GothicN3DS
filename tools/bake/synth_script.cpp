@@ -1592,6 +1592,7 @@ instance DIA_Thorus_TeachSneak (C_INFO) {
 // Things the player uses (the world names them; the bed at the second hut has no name).
 const string MOBNAME_BENCH = "Bench";
 const string MOBNAME_ANVIL = "Anvil";
+const string MOBNAME_FORGE = "Forge";
 const string MOBNAME_BED   = "Bed";
 var int MOBTEST_USED;
 var int MOBTEST_ALLOW;

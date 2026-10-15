@@ -1879,6 +1879,15 @@ void App::triggerSoundThunk(void* user, const char* name, Vec3 at) {
 }
 
 void App::startSound() {
+	// (fix154) The hook carries the model script's item tags too, which have nothing to do with sound: set before the
+	// sound can fail to start.
+	{
+		SoundEventHook early;
+		early.fn = &App::soundEventThunk;
+		early.user = this;
+		_hero.setSoundHook(early);
+		_npcs.setSoundHook(early);
+	}
 	if (!_audio || !_npcs.loaded()) return;
 	// A few megabytes of samples at hand: the footsteps, the doors, the blows.
 	// The names of the sounds are instances of the game's sound script; an older archive has none of its own
@@ -1950,6 +1959,11 @@ void App::namedSound(const char* names, int npc, float gain) {
 // A footstep, a swish of the sword: an event of the model script's, at the
 // moment the clip reaches its frame.
 void App::soundEvent(const ClipSfxEvent& event, int npc) {
+	// (fix154) The model script's item tags: the player's only; the inhabitants' items go by the scripts.
+	if (event.kind >= CLIP_ITEM_CREATE) {
+		if (npc < 0) itemEvent(event);
+		return;
+	}
 	// The player's footsteps are heard (OpenGothic's tickAnimationTags): whoever is about and
 	// listens (a sleeping creature, a guard) gets PERC_ASSESSQUIETSOUND - unless he creeps.
 	if (npc < 0 && event.kind == CLIP_SFX_GROUND && !_hero.sneaking() && _npcs.loaded()) {

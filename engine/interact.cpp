@@ -138,6 +138,51 @@ bool App::mobStart(u32 mob) {
 	return true;
 }
 
+// fix154: what the animations of a thing do to the item in the hand, as OpenGothic's Npc::tickTimedEvt: the forge's
+// glowing blade, the lab's flask, the pan's meat. The item stays in his things all the while (the hand holds a place
+// for it), so the thing's work is a change of what he carries.
+void App::itemEvent(const ClipSfxEvent& event) {
+	const int hi = heroIndex();
+	if (hi < 0 || _mobJob.stage == MJ_NONE) return;
+	Game& g = _npcs.game();
+	const auto make = [&](const char* name) {
+		const u32 item = g.vm().find(name);
+		if (item == SCRIPT_NONE || !g.isItem(item)) return SCRIPT_NONE;
+		g.giveItems(u32(hi), item, 1);
+		return item;
+	};
+	const auto destroy = [&]() {
+		if (_mobJob.hand != SCRIPT_NONE) g.giveItems(u32(hi), _mobJob.hand, -1);
+		_mobJob.hand = SCRIPT_NONE;
+	};
+	switch (event.kind) {
+	case CLIP_ITEM_INSERT: {
+		const WorldMobInfo& mi = _npcs.mobs().info(_mobJob.mob);
+		if (mi.useItem) {
+			const u32 item = g.vm().find(_npcs.mobs().infoText(mi.useItem));
+			if (item != SCRIPT_NONE && g.itemCount(u32(hi), item) > 0) _mobJob.hand = item;
+		}
+		break;
+	}
+	case CLIP_ITEM_CREATE:
+		_mobJob.hand = make(event.name);
+		break;
+	case CLIP_ITEM_EXCHANGE:
+		destroy();
+		_mobJob.hand = make(event.name);
+		break;
+	case CLIP_ITEM_DESTROY:
+	case CLIP_ITEM_PLACE:
+		destroy();
+		break;
+	case CLIP_ITEM_REMOVE:
+		_mobJob.hand = SCRIPT_NONE;
+		break;
+	default: break;
+	}
+	_invStamp = 0;
+}
+
 bool App::mobStateFunc(u32 mob, int state, bool whole) {
 	const int hi = heroIndex();
 	Mobs& mobs = _npcs.mobs();

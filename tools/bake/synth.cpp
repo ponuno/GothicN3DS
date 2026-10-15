@@ -693,6 +693,13 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 		scene.mobs[anvil].focus = "MOBNAME_ANVIL";
 		scene.mobs[anvil].onState = "SMITHWEAPON"; // (fix153: what to make, the player's own talk; SMITHWEAPON_S1 / _S0)
 		scene.mobs[anvil].kind = 0;
+		// (fix154) A forge, the Gothic 1 way: no function, a thing it wants (a nugget); the animations' item tags turn it
+		// into a sword while he is at it.
+		const size_t forge = thing("BSFIRE", -500.0f - 160.0f, 500.0f + 260.0f, 0.0f, 1, 32.0f, 75.0f);
+		slot(forge, "ZS_POS0_DIST", 0.0f, 75.0f, 3.14159f);
+		scene.mobs[forge].focus = "MOBNAME_FORGE";
+		scene.mobs[forge].useItem = "ITMINUGGET";
+		scene.mobs[forge].kind = 0;
 		// The chests: an open one with a few things in it, among them a key and
 		// lock picks; a small one that the key opens; a small one that only a pick
 		// opens, turning it left, right, left. Each is stood before from the north.

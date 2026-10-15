@@ -89,6 +89,8 @@ struct ShadedVertex {
 bool shadeVertex(const DrawCall& call, unsigned index, ShadedVertex& out, bool gpuFloats = false);
 // What is wrong with the shader binary or its use, or "" if nothing.
 const char* shaderProblem();
+// fix145: "" or which entry left part of an output register unwritten in a shadeVertex run (the console's GPU hangs on that).
+const char* shaderPartialOutputs();
 // The bytes of the linear block `p` lies in, from `p` on (0: not in one).
 size_t blockBytes(const void* p);
 // Float registers the shader's uniforms and constants occupy (of 96).

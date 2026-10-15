@@ -743,6 +743,7 @@ static void testSunMask() {
 	std::printf("  sun's mask: entry %d with it (%u vertices, texture coordinate 1 within %.2g), entry %d without\n", withEntry, shaded,
 	            worst, withoutEntry);
 	CHECK(withEntry == 4 && shaded == 3 && worst < 2e-3 && withoutEntry == 1);
+	CHECK(!*mock3ds::shaderPartialOutputs());
 	gfx::meshDestroy(mesh);
 	gfx::textureDestroy(mask);
 	gfx::shutdown();
@@ -974,9 +975,10 @@ static void testDefaultShader(const std::string& pak) {
 	            mock3ds::shaderEntryInstructions(2), mock3ds::shaderEntryInstructions(3));
 	CHECK(mock3ds::shaderEntryInstructions(1) <= 20 && mock3ds::shaderEntryInstructions(0) < 120); // (the water waves are most of the full entry: it draws only what waves or sways)
 	CHECK(mock3ds::shaderEntryInstructions(2) <= 28 && mock3ds::shaderEntryInstructions(3) <= 32);
-	// The sun's mask: two instructions more, in entries of their own (chunks without a mask keep the short ones).
-	CHECK(mock3ds::shaderEntryInstructions(4) == mock3ds::shaderEntryInstructions(1) + 2 &&
-	      mock3ds::shaderEntryInstructions(5) == mock3ds::shaderEntryInstructions(2) + 2);
+	// The sun's mask: four instructions more, in entries of their own (chunks without a mask keep the short ones; fix145: the
+	// coordinate is built in a register and written whole, zw too).
+	CHECK(mock3ds::shaderEntryInstructions(4) == mock3ds::shaderEntryInstructions(1) + 4 &&
+	      mock3ds::shaderEntryInstructions(5) == mock3ds::shaderEntryInstructions(2) + 4);
 	shaderProgram_s probe;
 	shaderProgramInit(&probe);
 	shaderProgramSetVsh(&probe, nullptr);

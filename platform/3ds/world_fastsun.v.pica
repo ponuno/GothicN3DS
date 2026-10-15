@@ -55,13 +55,18 @@
 	mov r0.w,   one
 
 	; Graphics+ sun's shadow: texture 1 lies flat over the ground, (x, z) * aoK.yz + texOffset.zw (gfx_c3d.cpp updateSun)
+	; fix145: built in r1 and written to the output whole, xyzw, after the position. Every entry that hung the console's
+	; GPU (fastsun and fadefastsun since fix133, `main` with texture coordinate 2 until fix138) wrote a texture
+	; coordinate output in part (.xy, zw never); every entry that works writes all four components of every output.
 	mul r1.xy, aoK.yz, r0.xz
-	add outtc1.xy, texOffset.zw, r1.xy
+	add r1.xy, texOffset.zw, r1.xy
+	mov r1.zw, zero
 
 	dp4 outpos.x, mvp[0], r0
 	dp4 outpos.y, mvp[1], r0
 	dp4 outpos.z, mvp[2], r0
 	dp4 outpos.w, mvp[3], r0
+	mov outtc1, r1
 
 	; fog factor, clamped, straight into the alpha
 	dp4 r3.x, fogRow, r0

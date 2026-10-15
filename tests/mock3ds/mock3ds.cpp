@@ -79,6 +79,7 @@ struct Shader {
 	std::string problem;
 };
 Shader gSh;
+std::string gPartialOutputs; // (fix145: the last entry found writing an output in part; reset by mock3ds::reset)
 float gFloatUniforms[96][4];
 u16 gBoolUniforms = 0;
 mock3ds::DrawHook gDrawHook = nullptr;
@@ -166,6 +167,7 @@ void parseShader(const u32* file, u32 bytes) {
 struct Machine {
 	int entry; // which DVLE runs
 	float in[16][4], tmp[16][4], out[16][4];
+	u8 written[16]; // the components of each output register the run wrote (bit 0 = x)
 	float uniform[96][4];
 	u16 bools;
 	int address[3]; // a0.x, a0.y, aL
@@ -200,7 +202,10 @@ bool readSource(Machine& m, u32 reg, u32 index, u32 selector, bool negate, float
 void writeDest(Machine& m, u32 reg, u32 mask, const float v[4]) {
 	float* r = reg < 0x10 ? m.out[reg] : m.tmp[reg - 0x10];
 	for (int i = 0; i < 4; ++i)
-		if (mask & (8u >> i)) r[i] = m.gpuFloats ? toGpuFloat(v[i]) : v[i];
+		if (mask & (8u >> i)) {
+			r[i] = m.gpuFloats ? toGpuFloat(v[i]) : v[i];
+			if (reg < 0x10) m.written[reg] = u8(m.written[reg] | (1u << i));
+		}
 }
 
 bool compare(u32 op, float a, float b) {
@@ -425,6 +430,7 @@ unsigned violations() {
 }
 void reset() {
 	gBoundEntry = 0;
+	gPartialOutputs.clear();
 	gBoundTex1 = nullptr;
 	gCount = Counters {};
 	gDrawingOn = nullptr;
@@ -443,6 +449,7 @@ void setDrawHook(DrawHook hook, void* user) {
 	gDrawHookUser = user;
 }
 
+const char* shaderPartialOutputs() { return gPartialOutputs.c_str(); }
 const char* shaderProblem() { return gSh.loaded ? "" : (gSh.problem.empty() ? "no shader loaded" : gSh.problem.c_str()); }
 
 unsigned shaderFloatRegisters() {
@@ -516,6 +523,18 @@ bool shadeVertex(const DrawCall& call, unsigned index, ShadedVertex& out, bool g
 		gSh.problem = m.fault ? m.fault : "the shader failed";
 		return false;
 	}
+	// fix145: every component of every output register the entry declares must be written. The console's GPU hung on each entry
+	// that wrote a texture coordinate output in part (`add o3.xy`, zw never: fastsun, fadefastsun, `main` with texcoord2) and on
+	// none that wrote them whole - whatever the output map makes of the components left over.
+	for (const ShaderOutput& o : en.outputs)
+		if (o.reg >= 0 && o.reg < 16 && (m.written[o.reg] & 0xF) != 0xF) {
+			static char why[96];
+			snprintf(why, sizeof(why), "entry %d leaves part of output o%d unwritten (mask %x): the GPU hangs on that", call.entry,
+			         o.reg, m.written[o.reg] & 0xF);
+			gSh.problem = why;
+			gPartialOutputs = gSh.problem;
+			return false;
+		}
 	// Outputs by meaning: the set bits of an entry's mask are the components
 	// of its semantic, in order.
 	for (const ShaderOutput& o : en.outputs) {

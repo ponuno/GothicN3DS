@@ -46,14 +46,17 @@
 	mov r0.w,   one
 
 	; Graphics+ sun's shadow: texture 2 lies flat over the ground, (x, z) * aoK.yz + texOffset.zw (gfx_c3d.cpp updateSun)
+	; (fix145: written whole, xyzw, after the position - see world_fastsun.v.pica. This entry is not used since fix142.)
 	mul r1.xy, aoK.yz, r0.xz
-	add outtc2.xy, texOffset.zw, r1.xy
+	add r1.xy, texOffset.zw, r1.xy
+	mov r1.zw, zero
 
 	dp4 r6.x, mvp[0], r0
 	dp4 r6.y, mvp[1], r0
 	dp4 r6.z, mvp[2], r0
 	dp4 r6.w, mvp[3], r0
 	mov outpos, r6
+	mov outtc2, r1
 
 	; the dissolve: where on the screen, in texels of the noise (see world_fade.v.pica)
 	ifu fading

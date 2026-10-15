@@ -1,0 +1,200 @@
+# Grass weights of world's ground textures, 0 (none) .. 1 (full), for g3ds-bake --grass-rules FILE.
+# One per line: TEXTURE WEIGHT; a name ending in * stands for every texture that begins so (OW_ROCK* 0).
+# The figures after # are the open ground it covers and why the report chose the weight.
+OWODWAMOUNTAINCLOSE.TGA                  0.00   # 231516 m2, green +0.014, stone
+OWODFLGRASSMI.TGA                        0.85   # 218098 m2, green +0.036, earth, name GRAS
+OWODFLUNDERWATER.TGA                     0.15   # 142307 m2, green +0.035, earth, name WATER
+OWODFLSTRAND.TGA                         0.30   # 133560 m2, green +0.022, earth
+OWODWAMOUNTAINFAR.TGA                    0.00   # 81955 m2, green +0.001, stone
+OWODFLGRASSDA.TGA                        0.85   # 67259 m2, green +0.062, name GRAS
+PCODFLSWAMP01.TGA                        0.30   # 57966 m2, green +0.035, earth
+OWODWATRGRASSMIMOUNTAINCLOSE.TGA         0.85   # 25213 m2, green +0.018, stone, name GRAS
+OWODWAMOUNTAINFARCLOSE.TGA               0.00   # 17975 m2, green +0.005, stone
+OWODFLGRASSLI.TGA                        0.85   # 15124 m2, green +0.017, earth, name GRAS
+OWODWATRGRASSMIMOUNTAINFAR.TGA           0.85   # 14642 m2, green +0.007, stone, name GRAS
+OWODPAIGRASSMI.TGA                       0.85   # 14033 m2, green +0.025, earth, name GRAS
+OTFLTILE01.TGA                           0.15   # 12640 m2, green +0.016, earth, name TILE
+OWODWATRGRASSMIMOUNTAINFAR01.TGA         0.85   # 9689 m2, green +0.010, stone, name GRAS
+OWODWAMOUNTAINCLOSEGRASSMI.TGA           0.85   # 8704 m2, green +0.024, stone, name GRAS
+OWODWAGRASSMIMOUNTAINCLOSE2.TGA          0.85   # 7751 m2, green +0.021, earth, name GRAS
+NCODFLSAND.TGA                           0.15   # 7746 m2, green +0.009, earth, name SAND
+OWODPAIGRASSDA.TGA                       0.85   # 7060 m2, green +0.056, name GRAS
+OCODFLLIGHTGROUNDDA.TGA                  0.30   # 5326 m2, green +0.027, earth
+OWODFLGRASSDAWOOD.TGA                    0.15   # 4973 m2, green +0.041, name WOOD
+OWODWAGRASSDAMOUNTAINCLOSE.TGA           0.85   # 4959 m2, green +0.024, stone, name GRAS
+OWODFLTRGRASSDAUNDERWATER01.TGA          0.15   # 4774 m2, green +0.038, name WATER
+OWODFLTRGRASSDAUNDERWATER02.TGA          0.15   # 4485 m2, green +0.027, earth, name WATER
+OMWAGREY01.TGA                           0.03   # 4100 m2, green +0.022, stone
+OWODFLWOODGROUND.TGA                     0.15   # 3469 m2, green +0.017, earth, name WOOD
+OCODFLTRGRASSDIRT.TGA                    0.85   # 3026 m2, green +0.032, earth, name GRAS
+OWODFLGRASSMIWOOD.TGA                    0.15   # 3016 m2, green +0.029, earth, name WOOD
+OWODFLGRASSMIMOUNTAINFARCLOSE.TGA        0.85   # 2841 m2, green +0.023, earth, name GRAS
+OCODWAZIEGEL.TGA                         0.00   # 2795 m2, green -0.056, wood
+OWODPAIMOUNTAINCLOSE.TGA                 0.00   # 2771 m2, green +0.015, stone
+OCODFLRING.TGA                           0.30   # 2744 m2, green +0.029, earth
+NCODFLTRLAKESIDE.TGA                     0.30   # 2141 m2, green +0.021, earth
+OWDIRANKEN.TGA                           0.57   # 2084 m2, green +0.055
+OWODWABAUMSEITE03.TGA                    0.01   # 1965 m2, green +0.016, wood
+OCODPAIGRAS.TGA                          0.85   # 1924 m2, green +0.048, name GRAS
+OTPATILE1.TGA                            0.00   # 1914 m2, green +0.016, stone, name TILE
+OWODWATRGRASSMIUNDERWATER.TGA            0.15   # 1817 m2, green +0.041, name WATER
+OCODFLGRAS.TGA                           0.85   # 1801 m2, green +0.062, name GRAS
+OTFLTILE06.TGA                           0.04   # 1768 m2, green +0.018, name TILE
+NCODFLGRAS.TGA                           0.85   # 1750 m2, green +0.032, earth, name GRAS
+OWODTRGRASSMILI.TGA                      0.85   # 1724 m2, green +0.026, earth, name GRAS
+OWODWAGRASSMISLOP.TGA                    0.85   # 1433 m2, green +0.034, earth, name GRAS
+OCODWAHUTROOFMI.TGA                      0.00   # 1393 m2, green +0.009, wood, name ROOF
+OCODFLSAND.TGA                           0.15   # 1375 m2, green +0.024, earth, name SAND
+NCODWABROWNSTONE.TGA                     0.00   # 1273 m2, green +0.010, stone, name STONE
+OWODWAGRASSDASLOP.TGA                    0.85   # 1258 m2, green +0.039, name GRAS
+OWODFLGRASSMIMOUNTAINFAR.TGA             0.85   # 1240 m2, green +0.028, earth, name GRAS
+OWODPAIGRASSLI.TGA                       0.85   # 1221 m2, green +0.016, earth, name GRAS
+OCODWABRETTERWAND.TGA                    0.01   # 1206 m2, green +0.016, wood, name BRETT
+OCODFLSTONEFLOORMI.TGA                   0.02   # 1180 m2, green +0.021, stone, name STONE
+OWODFLTRGRASSLIDA.TGA                    0.85   # 1060 m2, green +0.038, name GRAS
+NCODFLGREY01.TGA                         0.00   # 1047 m2, green +0.013, stone
+FMCODFLGROUND.TGA                        0.00   # 1045 m2, green -0.001, stone
+OCODWAHUTROOFLI.TGA                      0.00   # 1031 m2, green +0.014, wood, name ROOF
+OWODWATRMOUNTAINCLOSEUNDERWATER.TGA      0.02   # 803 m2, green +0.019, stone, name WATER
+PCODFLSTEG01.TGA                         0.40   # 785 m2, green +0.043
+PCODWATREE03.TGA                         0.02   # 744 m2, green +0.021, wood
+OTFLTILE02.TGA                           0.06   # 648 m2, green +0.019, name TILE
+OCODFLLIGHTGROUNDLI.TGA                  0.30   # 637 m2, green +0.026, earth
+PCODWAWACHPOSTEN01.TGA                   0.01   # 623 m2, green +0.017, wood
+OTFLTILE05.TGA                           0.00   # 600 m2, green +0.012, stone, name TILE
+OCODWATORRANDLOS.TGA                     0.00   # 593 m2, green +0.007, stone
+PCODWAWAND01.TGA                         0.02   # 572 m2, green +0.019, wood
+OWODFLBRETTER.TGA                        0.04   # 553 m2, green +0.025, wood, name BRETT
+OWODFLGRASSMIMOUNTAINCLOSE.TGA           0.85   # 524 m2, green +0.026, earth, name GRAS
+OWODFLTRGRASSMIDA.TGA                    0.85   # 524 m2, green +0.050, name GRAS
+OCODWARINGBRETTERMI.TGA                  0.03   # 502 m2, green +0.023, wood, name BRETT
+OCODWARINGBRETTERLI.TGA                  0.03   # 478 m2, green +0.021, wood, name BRETT
+OWODWABAUM01.TGA                         0.00   # 475 m2, green +0.014, wood
+NCODPALIGHTROCKI.TGA                     0.00   # 465 m2, green +0.009, stone, name ROCK
+OTFLTILE06A.TGA                          0.03   # 448 m2, green +0.021, stone, name TILE
+OCODPATGRAS.TGA                          0.85   # 447 m2, green +0.041, name GRAS
+OCODWARINGTOPMI.TGA                      0.00   # 442 m2, green +0.013, wood
+OCODFLDARKDIRTSTONE.TGA                  0.15   # 421 m2, green +0.043, name STONE
+OCODPAXGRAS.TGA                          0.85   # 421 m2, green +0.036, earth, name GRAS
+NCODWAGREY04.TGA                         0.00   # 416 m2, green +0.015, stone
+OMWABROWN06.TGA                          0.00   # 407 m2, green +0.008, stone
+OWODFLGRASSDASTONE01.TGA                 0.15   # 405 m2, green +0.050, name STONE
+OCODWALATTEN.TGA                         0.03   # 394 m2, green +0.021, wood
+PCODWALSWAMP01.TGA                       0.34   # 375 m2, green +0.039
+OCODWARINGTOPLI.TGA                      0.00   # 369 m2, green +0.013, wood
+OWODPATGRASSMI.TGA                       0.85   # 366 m2, green +0.018, earth, name GRAS
+OMWATRBROWN06MOUNTAINCLOSE.TGA           0.00   # 328 m2, green +0.013, stone
+OCODPALGRAS.TGA                          0.85   # 320 m2, green +0.049, name GRAS
+OWODPAIENDEGRASSMI.TGA                   0.85   # 319 m2, green +0.033, name GRAS
+NCODWAWANDDA.TGA                         0.00   # 317 m2, green +0.012, stone
+NCODPAMEDIUMROCKI.TGA                    0.00   # 314 m2, green +0.013, stone, name ROCK
+PCODWAROCK.TGA                           0.15   # 299 m2, green +0.050, stone, name ROCK
+PCODFLSWAMP02.TGA                        0.47   # 290 m2, green +0.048
+OWODFLTRGRASSMILIPAI.TGA                 0.85   # 283 m2, green +0.021, earth, name GRAS
+FMCODFLGROUNDDOOR.TGA                    0.00   # 260 m2, green -0.002, stone
+OCODFLLIGHTGROUNDGEROELL.TGA             0.30   # 257 m2, green +0.022, earth
+OWODPAIENDGRASSDA.TGA                    0.85   # 253 m2, green +0.054, name GRAS
+OMWAGREY06.TGA                           0.10   # 234 m2, green +0.022
+NCIDWAROOF01.TGA                         0.00   # 220 m2, green +0.004, name ROOF
+MODILEATHERSLEEVE01.TGA                  0.00   # 208 m2, green +0.009
+OWODPATRGRASSMIWOOD.TGA                  0.15   # 207 m2, green +0.023, earth, name WOOD
+OWODPATRGRASSMIMOUNTAINCLOSE.TGA         0.85   # 188 m2, green +0.024, earth, name GRAS
+OMWABROWN03.TGA                          0.03   # 184 m2, green +0.021, stone
+PCODWATEMPLESTAIRS_01.TGA                0.00   # 178 m2, green +0.008
+OMWABROWN10.TGA                          0.30   # 168 m2, green +0.016, earth
+OWODWAOLDWOOD.TGA                        0.15   # 156 m2, green +0.031, name WOOD
+FMCODWAROOF.TGA                          0.00   # 152 m2, green +0.012, wood, name ROOF
+NCODPASTONEMUD.TGA                       0.04   # 149 m2, green +0.024, stone, name STONE
+OCODWATOR.TGA                            0.00   # 144 m2, green +0.007, stone
+OTRESTONE03.TGA                          0.06   # 143 m2, green +0.019, name STONE
+OCODWADARKSTONEEDGE.TGA                  0.08   # 142 m2, green +0.033, stone, name STONE
+OCODWASIFFGRABEN.TGA                     0.08   # 139 m2, green +0.033, stone
+OCODWAWOODMI.TGA                         0.15   # 138 m2, green +0.036, name WOOD
+MODIALPHA01.TGA                          0.30   # 133 m2, no colour
+OCODWABIGWOODMI.TGA                      0.00   # 126 m2, green +0.006, wood, name WOOD
+NCIDFLFELL.TGA                           0.02   # 119 m2, green +0.020, stone
+OCODWAWOODLI.TGA                         0.07   # 118 m2, green +0.031, wood, name WOOD
+OWODWAOLDWOOD01.TGA                      0.00   # 117 m2, green +0.011, wood, name WOOD
+OWODPATGRASSDA.TGA                       0.85   # 113 m2, green +0.040, name GRAS
+OTWAWALLRELIEF01.TGA                     0.00   # 109 m2, green -0.015, stone, name WALL
+FMCODWATRGROUNDCLIFF.TGA                 0.00   # 104 m2, green +0.006, stone, name CLIFF
+OTODWASMALLSONEDA.TGA                    0.05   # 103 m2, green +0.027, stone
+OCODWASMALLSTONEBROKENLI.TGA             0.07   # 96 m2, green +0.032, stone, name STONE
+NCODWAWANDLI.TGA                         0.00   # 95 m2, green +0.013, stone
+PCODWASIDEPANEL01.TGA                    0.07   # 94 m2, green +0.032, wood
+OWODWASKULLTEETH.TGA                     0.01   # 82 m2, green +0.017, stone
+OCODWA4RINGS.TGA                         0.00   # 81 m2, green -0.003, wood
+NCODWASTONEMUD.TGA                       0.11   # 79 m2, green +0.040, stone, name STONE
+ORKODWALL09.TGA                          0.00   # 78 m2, green -0.002, name WALL
+NCODWAROOF03.TGA                         0.02   # 77 m2, green +0.020, wood, name ROOF
+NCODWAPUTZ07.TGA                         0.07   # 72 m2, green +0.031, stone
+ORKODTRNCWANDDAFLOOR03.TGA               0.00   # 65 m2, green +0.008, stone, name FLOOR
+NCODFLGREY04.TGA                         0.00   # 65 m2, green +0.009, stone
+PCODWATREE01.TGA                         0.47   # 63 m2, green +0.048
+PCODWATRTREES.TGA                        0.12   # 61 m2, green +0.042, wood
+PCODWALSWAMP01END.TGA                    0.32   # 61 m2, green +0.037
+OWODWAGRASSLIMOUNTAINCLOSE.TGA           0.85   # 60 m2, green +0.015, stone, name GRAS
+PCODWATRROCKHUT.TGA                      0.15   # 58 m2, green +0.050, stone, name ROCK
+OWODWADARKSTONE.TGA                      0.00   # 55 m2, green +0.006, stone, name STONE
+ORKODREFLOOR01.TGA                       0.00   # 53 m2, green -0.005, stone, name FLOOR
+OWODPATRGRASSMI.TGA                      0.85   # 51 m2, green +0.029, earth, name GRAS
+OTODWASMALLSONELI.TGA                    0.02   # 45 m2, green +0.021, stone
+ORKODWATRWALL02.TGA                      0.00   # 40 m2, green -0.002, stone, name WALL
+MOWOWOODS01.TGA                          0.00   # 40 m2, green -0.010, name WOOD
+ORKODWALL10.TGA                          0.00   # 37 m2, green +0.011, stone, name WALL
+OCODWABIGWOODLI.TGA                      0.02   # 35 m2, green +0.019, wood, name WOOD
+NCODWADARKROCK01.TGA                     0.04   # 34 m2, green +0.025, stone, name ROCK
+OTWABILDVIELE.TGA                        0.00   # 34 m2, green +0.010, stone
+MOWORINGS.TGA                            0.06   # 34 m2, green +0.019
+OCODWATORBOGEN.TGA                       0.00   # 30 m2, green +0.005, stone
+OCODWATORABSATZTRANDLOS.TGA              0.00   # 29 m2, green +0.006, stone
+OCODWATORBOGENRANDLOS.TGA                0.00   # 28 m2, green +0.006, stone
+OTREKRALLE01.TGA                         0.00   # 27 m2, green +0.007
+ORKODREFLOOR02.TGA                       0.00   # 27 m2, green -0.008, stone, name FLOOR
+OCODWARINGDA.TGA                         0.00   # 25 m2, green +0.013, wood
+MOWOWOODS02.TGA                          0.00   # 25 m2, green +0.002, name WOOD
+OCODFLROUGHSTONE.TGA                     0.15   # 22 m2, green +0.037, name STONE
+PCODWASTEGESIDE01.TGA                    0.31   # 22 m2, green +0.037
+OCODWAOLDWOODSTONESDA.TGA                0.00   # 20 m2, green +0.014, wood, name STONE
+OTWARELIEFMI.TGA                         0.00   # 19 m2, green +0.013
+OTFLTILE06B.TGA                          0.04   # 19 m2, green +0.024, stone, name TILE
+OWODPAWOODGROUND.TGA                     0.15   # 18 m2, green +0.021, earth, name WOOD
+OTWABIGSMALLSTONE.TGA                    0.11   # 18 m2, green +0.023, name STONE
+ORKODREFLOOR05.TGA                       0.00   # 16 m2, green -0.002, stone, name FLOOR
+OCODWAWEHRGANGDA.TGA                     0.24   # 15 m2, green +0.032
+OCODWASMALLSTONELI.TGA                   0.07   # 14 m2, green +0.031, stone, name STONE
+OCODWADARKWOODLI.TGA                     0.02   # 13 m2, green +0.020, wood, name WOOD
+OTFLTILE07.TGA                           0.03   # 11 m2, green +0.021, stone, name TILE
+MOWOPLANKS01.TGA                         0.15   # 10 m2, green +0.030, name PLANK
+OCODWADARKWOODMI.TGA                     0.02   # 10 m2, green +0.020, wood, name WOOD
+OCODFLGATEMI.TGA                         0.00   # 10 m2, green -0.002, metal
+OCIDFLSTONEFLOORLI.TGA                   0.08   # 10 m2, green +0.033, stone, name STONE
+MOMESMELT01.TGA                          0.00   # 10 m2, green +0.010
+OWODFLLIGHTGROUNDGEROLL.TGA              0.30   # 8 m2, green +0.022, earth
+MODIRAIL01.TGA                           0.54   # 8 m2, green +0.053
+OCODWABIGSTONES.TGA                      0.07   # 7 m2, green +0.031, stone, name STONE
+OWODWATRMOUNTAINCLOSEMINE.TGA            0.04   # 6 m2, green +0.024, stone, name MINE
+PCODWATREE02.TGA                         0.00   # 6 m2, green +0.013, wood
+OCODWASMALLSTONEMI.TGA                   0.07   # 6 m2, green +0.032, stone, name STONE
+NCODWATILE.TGA                           0.04   # 6 m2, green +0.023, stone, name TILE
+OCODWATORABSATZ.TGA                      0.00   # 3 m2, green +0.006, stone
+OTODWASMALLSONEMI.TGA                    0.06   # 3 m2, green +0.019
+OCODWATORGERADE.TGA                      0.00   # 3 m2, green +0.007, stone
+OCODWADARKWOODHALFMI.TGA                 0.02   # 3 m2, green +0.019, wood, name WOOD
+OCODWADARKWOODHALFLI.TGA                 0.02   # 3 m2, green +0.020, wood, name WOOD
+OCODWAOLDWOODSTONESLI.TGA                0.02   # 3 m2, green +0.019, wood, name STONE
+PCODWALSWAMP01TCROSS.TGA                 0.35   # 3 m2, green +0.039
+MOWOSHIP01.TGA                           0.45   # 3 m2, green +0.046
+MOWOWHEEL01.TGA                          0.00   # 2 m2, green -0.012
+MODIBACKPACK02.TGA                       0.39   # 2 m2, green +0.043
+OMWABROWN05.TGA                          0.07   # 1 m2, green +0.031, stone
+OCODWADARKDIRTSTONES.TGA                 0.15   # 1 m2, green +0.025, name STONE
+OCODWATORHAUSKANTE.TGA                   0.00   # 1 m2, green +0.007, stone
+OCODWALIGHTWOODMI.TGA                    0.02   # 1 m2, green +0.019, wood, name WOOD
+OCODWALIGHTWOODBI.TGA                    0.02   # 1 m2, green +0.020, wood, name WOOD
+OCODWALIGHTWOODLI.TGA                    0.01   # 1 m2, green +0.018, wood, name WOOD
+OTRESTONE02.TGA                          0.00   # 1 m2, green +0.010, stone, name STONE
+FMCODWASIDE02.TGA                        0.01   # 1 m2, green +0.017, stone
+PCODWATREE04.TGA                         0.11   # 1 m2, green +0.041, wood
+OWODWASKULLEYE.TGA                       0.05   # 1 m2, green +0.027, stone
+OMWABROWNGREEN01.TGA                     0.03   # 1 m2, green +0.021, stone

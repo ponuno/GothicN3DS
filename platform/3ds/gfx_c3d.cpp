@@ -240,7 +240,36 @@ bool gSunWhiteReady = false;
 float gSunUv[4] = {0, 0, 0, 0}; // scale x, scale z, offset u, offset v (relative to the anchor)
 bool gSunUvSent = false;
 
+bool gNoSun = false; // c3dSetNoSun: the stages of the sun's shadow never set (C-Stick up held at start)
+
+// The white 8x8 stand-in for the mask (unit 2 must never be left without a texture while a stage reads it).
+bool makeSunWhite() {
+	if (!gSunWhiteReady && C3D_TexInit(&gSunWhite, 8, 8, GPU_L4)) {
+		memset(gSunWhite.data, 0xFF, 32);
+		C3D_TexFlush(&gSunWhite);
+		C3D_TexSetFilter(&gSunWhite, GPU_NEAREST, GPU_NEAREST);
+		C3D_TexSetWrap(&gSunWhite, GPU_REPEAT, GPU_REPEAT);
+		gSunWhiteReady = true;
+	}
+	return gSunWhiteReady;
+}
+
 void setSunStages() {
+	// fix134: stage 1 reads unit 2 in every draw, so unit 2 has a texture from the first draw of the first frame on (before,
+	// only once a chunk's mask had been drawn with some strength: a morning start, or a frame before any mask was loaded,
+	// read a unit with nothing bound - suspected of the GPU hang of fix133 on the console, top screen black).
+	if (!gSunBound && makeSunWhite()) {
+		C3D_TexBind(2, &gSunWhite);
+		gSunBound = &gSunWhite;
+	}
+	if (gNoSun || !gSunBound) {
+		// Stages 1 and 2 pass the colour on and read no texture.
+		C3D_TexEnvInit(C3D_GetTexEnv(1));
+		C3D_TexEnvInit(C3D_GetTexEnv(2));
+		C3D_TexEnvBufUpdate(C3D_RGB, 0);
+		gSunConst = 0;
+		return;
+	}
 	C3D_TexEnv* s1 = C3D_GetTexEnv(1);
 	C3D_TexEnvInit(s1);
 	C3D_TexEnvSrc(s1, C3D_RGB, GPU_PREVIOUS, GPU_TEXTURE2, GPU_PRIMARY_COLOR);
@@ -273,6 +302,7 @@ void bindSunTexture(const C3D_Tex* t) {
 
 // What stage 2's constant must hold now, and unit 2 with it.
 void updateSun() {
+	if (gNoSun || !gSunBound) return;
 	float s = 0.0f;
 	if (gSunChunk && gSunMaterialOk && !gSkinned && !gUiPass && gPass != PASS_SKY) s = gSunDark;
 	const u8 c = u8(clamp(s, 0.0f, 1.0f) * 255.0f + 0.5f);
@@ -770,14 +800,11 @@ void textureDestroy(Texture* t) {
 	}
 	// Unit 2 cannot be left empty (see the noise): a white texture takes the mask's place.
 	if (gSunBound == &t->tex) {
-		if (!gSunWhiteReady && C3D_TexInit(&gSunWhite, 8, 8, GPU_L4)) {
-			memset(gSunWhite.data, 0xFF, 32);
-			C3D_TexFlush(&gSunWhite);
-			gSunWhiteReady = true;
-		}
-		if (gSunWhiteReady) {
+		if (makeSunWhite()) {
 			C3D_TexBind(2, &gSunWhite);
 			gSunBound = &gSunWhite;
+		} else {
+			gSunBound = nullptr; // (the next frame's stages read no texture then)
 		}
 		if (gSunChunk == t) gSunChunk = nullptr;
 	}
@@ -1398,6 +1425,7 @@ void c3dSetClassicFrames(bool classic) {
 }
 
 void c3dSetFillTest(bool on) { gFillTest = on; }
+void c3dSetNoSun(bool on) { gNoSun = on; }
 
 void c3dSetWide(bool on) {
 	if (!gReady) gWideWanted = on; // (only before init(): the targets are made there)

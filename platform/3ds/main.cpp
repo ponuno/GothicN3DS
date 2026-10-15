@@ -62,6 +62,7 @@
 //   D-Pad Left  nobody perceives anything (sets the menu's "Восприятие: Выкл")
 //   D-Pad Right objects appear at once, without dissolving (the menu's
 //            "Растворение" otherwise decides, from the next start)
+//   C-Stick Up  the sun's shadow left out of the drawing altogether (its texture stages never set; fix134)
 #include "lang.h"
 #include "app.h"
 #include "audio_3ds.h"
@@ -155,7 +156,7 @@ static void flushHitches() {
 
 static void startHitchLog(const char* what) {
 	if (FILE* f = fopen(kHitchPath, "w")) {
-		fprintf(f, "# gothic3ds fix134 hitches: %s\n", what);
+		fprintf(f, "# gothic3ds fix135 hitches: %s\n", what);
 		fclose(f);
 	}
 	gHitchCount = 0;
@@ -189,7 +190,7 @@ static void watchdogMain(void*) {
 		if (still < 20 || (still - 20) % 40 != 0 || written >= 6) continue;
 		if (FILE* f = fopen(kHangPath, written == 0 ? "w" : "a")) {
 			fprintf(f, "%s%.1f s without a frame after frame %lu: in \"%s\"; %s (steps %lu, %lu at the last frame)\n",
-			        written == 0 ? "# gothic3ds fix134 watchdog: the main loop stopped\n" : "", double(still) * 0.25,
+			        written == 0 ? "# gothic3ds fix135 watchdog: the main loop stopped\n" : "", double(still) * 0.25,
 			        static_cast<unsigned long>(frame), g3::gTrace.stage ? g3::gTrace.stage : "?",
 			        beats != lastBeats ? "it still goes from step to step (a loop)" : "no step since (stuck in that one)",
 			        static_cast<unsigned long>(beats), static_cast<unsigned long>(lastBeats));
@@ -346,6 +347,7 @@ int main(int, char**) {
 	gfx::c3dSetClassicShader(classicShader);
 	gfx::c3dSetDoubleDraws((startKeys & KEY_START) != 0); // hold START at start: every draw twice
 	gfx::c3dSetFillTest(halfPicture); // hold ZR at start: half the pixels, the same triangles
+	gfx::c3dSetNoSun((startKeys & KEY_CSTICK_UP) != 0); // hold the C-Stick up at start: no sun's shadow at all (its stages left out)
 	gfx::c3dSetFadeShader(dissolve);
 	gfx::c3dSetSupersampleMode(settings.antialias); // (a change in the menu counts after a restart)
 	// The top screen: wide (800x240) or stereo 3D (the same, after a restart; the 3D not together with the smoothing). The wide

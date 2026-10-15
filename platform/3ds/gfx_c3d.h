@@ -17,6 +17,8 @@ void c3dSetClassicFrames(bool classic);
 void c3dSetPlainShader(bool plain);
 // Squeezes the picture into half the screen: half the pixels, the same triangles (for finding out whether the GPU is limited by the pixels).
 void c3dSetFillTest(bool on);
+// The sun's shadow left out of the drawing altogether (its texture stages never set): for finding faults (C-Stick up at start).
+void c3dSetNoSun(bool on);
 // Smooths the edges: the picture is drawn twice the size each way (four times the pixels) and shrunk by the
 // display-transfer unit as it goes to the screen. Call before init(); if the bigger buffers do not fit into VRAM
 // the picture stays as it was (c3dSupersample() says which).

@@ -42,7 +42,9 @@
 .out outtc0 texcoord0
 .out outclr color
 .out outtc1 texcoord1
-.out outtc2 texcoord2
+; (fix138: no texcoord2 here. The full entry draws what sways and the water, which never take the sun's shadow
+; (gfx_c3d.cpp gSunMaterialOk); its fifth output, added in fix131, is the prime suspect of the GPU hang of fix133 on the
+; console: the world drawn with this entry hung, with the fast one it did not.)
 
 .alias inpos v0
 .alias intc  v1
@@ -150,10 +152,6 @@
 
 	; relative to the eye's lattice point
 	add r0.xyz, chunk.xyz, r0.xyz
-
-	; Graphics+ sun's shadow: texture 2 lies flat over the ground, (x, z) * aoK.yz + texOffset.zw (gfx_c3d.cpp updateSun)
-	mul r1.xy, aoK.yz, r0.xz
-	add outtc2.xy, texOffset.zw, r1.xy
 
 	dp4 r6.x, mvp[0], r0
 	dp4 r6.y, mvp[1], r0

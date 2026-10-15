@@ -156,7 +156,7 @@ static void flushHitches() {
 
 static void startHitchLog(const char* what) {
 	if (FILE* f = fopen(kHitchPath, "w")) {
-		fprintf(f, "# gothic3ds fix137 hitches: %s\n", what);
+		fprintf(f, "# gothic3ds fix138 hitches: %s\n", what);
 		fclose(f);
 	}
 	gHitchCount = 0;
@@ -246,7 +246,7 @@ static void watchdogMain(void*) {
 		if (still < 20 || (still - 20) % 40 != 0 || written >= 6) continue;
 		if (FILE* f = fopen(kHangPath, written == 0 ? "w" : "a")) {
 			fprintf(f, "%s%s%s%.1f s without a frame after frame %lu: in \"%s\"; %s (steps %lu, %lu at the last frame)\n",
-			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix137 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix137 watchdog: the main loop stopped\n") : "",
+			        written == 0 ? (gDebugWords[0] ? "# gothic3ds fix138 watchdog: the main loop stopped (debug.txt:" : "# gothic3ds fix138 watchdog: the main loop stopped\n") : "",
 			        written == 0 && gDebugWords[0] ? gDebugWords : "", written == 0 && gDebugWords[0] ? ")\n" : "", double(still) * 0.25,
 			        static_cast<unsigned long>(frame), g3::gTrace.stage ? g3::gTrace.stage : "?",
 			        beats != lastBeats ? "it still goes from step to step (a loop)" : "no step since (stuck in that one)",

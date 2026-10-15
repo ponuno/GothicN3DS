@@ -176,6 +176,8 @@ static Thread gWatchdog = nullptr;
 // debug.txt (fix135): words that leave parts of the picture out, to find what hangs the GPU. Any of:
 //   sky world npcs things heroshadow hero ground blended godrays rain particles overlay grass  (App::RenderSkip)
 //   nograss      the same as grass (fix147): the new grass is not drawn, nor its tiles made, whatever the menu says
+//   lamps, nolamps  (fix148) torches and fires light nothing, whatever the menu says
+//   nolampshader    (fix148) the lamps' shader entry is never bound: the world as before, the lamps light only the characters
 //   all          every one of those (only the clear colour is drawn)
 //   nosun        the sun's shadow stages never set (as C-Stick up)
 //   classic      citro3d's own frames instead of the overlapped ones (as Y held)
@@ -193,6 +195,7 @@ static g3::u16 gDebugMatSkip = 0;
 static int gDebugProgram = 0;
 static unsigned gDebugSun = 0; // gfx::SunDebug
 static bool gDebugNoLadderInfo = false, gDebugNoWeatherSfx = false, gDebugLadderUnused = false;
+static bool gDebugNoLampShader = false;
 static void readDebugFile() {
 	FILE* f = fopen("sdmc:/3ds/gothic3ds/debug.txt", "rb");
 	if (!f) return;
@@ -206,7 +209,8 @@ static void readDebugFile() {
 	} kWords[] = {{"sky", App::SKIP_SKY}, {"world", App::SKIP_WORLD}, {"npcs", App::SKIP_NPCS}, {"things", App::SKIP_THINGS},
 	              {"heroshadow", App::SKIP_HERO_SHADOW}, {"hero", App::SKIP_HERO}, {"ground", App::SKIP_GROUND}, {"blended", App::SKIP_BLENDED},
 	              {"godrays", App::SKIP_GODRAYS}, {"rain", App::SKIP_RAIN}, {"particles", App::SKIP_PARTICLES}, {"overlay", App::SKIP_OVERLAY},
-	              {"grass", App::SKIP_GRASS}, {"nograss", App::SKIP_GRASS}, {"all", 0xFFFFFFFFu}};
+	              {"grass", App::SKIP_GRASS}, {"nograss", App::SKIP_GRASS}, {"lamps", App::SKIP_LAMPS}, {"nolamps", App::SKIP_LAMPS},
+	              {"all", 0xFFFFFFFFu}};
 	for (char* p = text; *p;) {
 		while (*p && !(*p >= 'a' && *p <= 'z') && !(*p >= 'A' && *p <= 'Z') && !(*p >= '0' && *p <= '9')) ++p; // (fix144: digits too - sunl4)
 		char* w = p;
@@ -231,6 +235,7 @@ static void readDebugFile() {
 		if (strcmp(w, "noladderinfo") == 0) gDebugNoLadderInfo = known = true;
 		if (strcmp(w, "ladderunused") == 0) gDebugLadderUnused = known = true;
 		if (strcmp(w, "noweathersfx") == 0) gDebugNoWeatherSfx = known = true;
+		if (strcmp(w, "nolampshader") == 0) gDebugNoLampShader = known = true;
 		if (strcmp(w, "sunl4") == 0) gDebugSun |= gfx::SUN_DBG_L4, known = true;
 		if (strcmp(w, "sunkeep") == 0) gDebugSun |= gfx::SUN_DBG_KEEP, known = true;
 		if (strcmp(w, "sunwhite") == 0) gDebugSun |= gfx::SUN_DBG_WHITE, known = true;
@@ -436,6 +441,7 @@ int main(int, char**) {
 	gfx::c3dSetDoubleDraws((startKeys & KEY_START) != 0); // hold START at start: every draw twice
 	gfx::c3dSetFillTest(halfPicture); // hold ZR at start: half the pixels, the same triangles
 	gfx::c3dSetNoSun((startKeys & KEY_CSTICK_UP) != 0 || gDebugNoSun);
+	gfx::c3dSetNoLamps(gDebugNoLampShader);
 	gfx::c3dSetSunDebug(gDebugSun);
 	gfx::c3dSetDebugDraw(gDebugMatSkip, gDebugProgram); // hold the C-Stick up at start: no sun's shadow at all (its stages left out)
 	gfx::c3dSetFadeShader(dissolve);
@@ -865,10 +871,11 @@ int main(int, char**) {
 			app.setDistanceScale(pacer.distanceScale());
 			// Graphics+ gives way first: once the pacer takes objects away, the plants
 			// stand still and only the hero keeps a shadow, until all objects are back.
-			const bool heavy = app.gfxRelief() ? pacer.detailScale() < 0.999f || pacer.interval() == 2 : pacer.detailScale() < 0.95f;
-			if (heavy != app.gfxRelief()) app.setGfxRelief(heavy);
-			// (Only when the load forced the half rate: at the menu's steady 30 fps - the quality mode - the plants sway.)
+			// (Only when the load forced the half rate: at the menu's steady 30 fps - the quality mode - the plants sway,
+			// the people keep their shadows and the grass keeps its full radius until the pacer really takes objects away.)
 			const bool halvedByLoad = pacer.interval() == 2 && !pacer.cfg.halfOnly;
+			const bool heavy = app.gfxRelief() ? pacer.detailScale() < 0.999f || halvedByLoad : pacer.detailScale() < 0.95f;
+			if (heavy != app.gfxRelief()) app.setGfxRelief(heavy);
 			if (halvedByLoad != app.windRelief()) app.setWindRelief(halvedByLoad);
 			if (pacer.interval() != interval) {
 				interval = pacer.interval();
@@ -1066,6 +1073,17 @@ int main(int, char**) {
 			     !app.grass().available() ? '-' : (app.renderSkip() & App::SKIP_GRASS) ? 'x' : ' ', double(gs.radius / 100.0f),
 			     static_cast<unsigned long>(gs.tiles), static_cast<unsigned long>(gs.slots), static_cast<unsigned long>(gs.tufts),
 			     static_cast<unsigned long>(gs.triangles / 1000));
+			// fix148: the light of torches and fires - the setting; where the lamps came from ('T' the world's table, 'B' that and baked
+			// with --lights, 'p' the particles' fires (an older data.pak), '-' none, 'x' debug.txt nolamps); lamps near / shining;
+			// boxes of the world lit / of them with more than four; draws by the lamps' entry and their thousands of triangles; sight tests.
+			{
+				const g3::LampStats& ls = app.lamps().stats();
+				const char from = (app.renderSkip() & App::SKIP_LAMPS) ? 'x' : !app.lamps().available() ? '-' : !ls.table ? 'p' : ls.baked ? 'B' : 'T';
+				reportLine("lamp%d%c %lu %lu/%lu b%lu/%lu d%lu %luk s%lu%s", int(app.settings().lamps), from, static_cast<unsigned long>(ls.lamps),
+				     static_cast<unsigned long>(ls.active), static_cast<unsigned long>(ls.shining), static_cast<unsigned long>(ls.boxes),
+				     static_cast<unsigned long>(ls.crowded), static_cast<unsigned long>(fs.lampDraws),
+				     static_cast<unsigned long>(ws.lampTriangles / 1000), static_cast<unsigned long>(ls.sightTests), ls.world ? "" : " -w");
+			}
 			// (Chunks in memory: the world's own + those of medium and small objects, of all; wanted and not there: the same.)
 			// (RP: the re-projection, when asked for: columns of the last move and refreshes that showed the old picture
 			// moved; "RP!" - asked for, but the framebuffers were not found as expected, so it is not running.)

@@ -165,11 +165,12 @@ int main(int argc, char** argv) {
 	Settings st;
 	for (int i = 3; i + 1 < argc; ++i)
 		if (std::strcmp(argv[i], "grass") == 0) st.grass = u8(std::atoi(argv[i + 1]));
+		else if (std::strcmp(argv[i], "lamps") == 0) st.lamps = u8(std::atoi(argv[i + 1]));
 	st.sanitize();
 	app.settings() = st;
 	app.applySettings();
 	if (st.grass) std::printf("grass: %d (%s)\n", int(st.grass), app.grass().available() ? "in data.pak" : "NOT in data.pak: bake with --grass");
-	if (argc > 3 && std::strcmp(argv[3], "grass") != 0) {
+	if (argc > 3 && std::strcmp(argv[3], "grass") != 0 && std::strcmp(argv[3], "lamps") != 0) {
 		float x, y, z;
 		if (std::sscanf(argv[3], "%f,%f,%f", &x, &y, &z) == 3) app.teleport({x, y, z});
 	}

@@ -711,6 +711,21 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 			e.pos[1] = height(e.pos[0], e.pos[2]) + (effect[6] == 'S' ? 60.0f : 10.0f);
 			scene.emitters.push_back(e);
 		}
+		// fix148: its light, flickering as a fire place's tree light does (range and colour keys).
+		SrcLight l;
+		l.pos[0] = scene.spawnPos[0] + 250.0f;
+		l.pos[2] = scene.spawnPos[2] - 400.0f;
+		l.pos[1] = height(l.pos[0], l.pos[2]) + 80.0f;
+		l.range = 800.0f;
+		l.color[0] = 255;
+		l.color[1] = 180;
+		l.color[2] = 100;
+		l.rangeKeys = {1.0f, 0.9f, 1.05f, 0.95f};
+		l.rangeFps = 8.0f;
+		l.colorKeys = {{255, 180, 100}, {255, 160, 80}, {240, 170, 90}};
+		l.colorFps = 5.0f;
+		l.fire = true;
+		scene.lights.push_back(l);
 	}
 	scene.notes.push_back("synthetic scene: " + std::to_string(N) + "x" + std::to_string(N) + " terrain cells, " +
 	                      std::to_string(opt.huts) + " huts, " + std::to_string(placed) + " trees, " +

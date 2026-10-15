@@ -66,8 +66,9 @@ DVLB_s* gDvlb = nullptr;
 shaderProgram_s gProgram;     // the full shader (entry `main`); with the classic, plain and fade ones the only program
 shaderProgram_s gProgramFast; // the fast shader (entry `fastmain` of the same binary, `fadefast` with the dissolve), when gMvpShader
 shaderProgram_s gProgramSkin; // the characters' shader (entry `skinmain`), when gMvpShader
-shaderProgram_s gProgramFastSun; // the fast one with the sun's mask (entry `fastsun`, `fadefastsun`), for chunks that have one
-bool gProgramReady = false, gProgramFastReady = false, gProgramSkinReady = false, gProgramFastSunReady = false;
+shaderProgram_s gProgramFastSun; // the fast one with the sun's mask (entry `fastsun`), for chunks that have one
+shaderProgram_s gProgramLamp;    // fix148: the fast one with the dissolve and four lamps (entry `lampmain`, DVLE 5)
+bool gProgramReady = false, gProgramFastReady = false, gProgramSkinReady = false, gProgramFastSunReady = false, gProgramLampReady = false;
 bool gReady = false; // C3D_Init succeeded
 int gLocProjection = -1, gLocModelView = -1, gLocChunk = -1, gLocParams = -1, gLocDayDelta = -1, gLocTexOffset = -1;
 int gLocSkinLight = -1, gLocBones = -1, gLocSkinned = -1, gLocFading = -1;
@@ -78,7 +79,7 @@ int gLocWave = -1, gLocWavy = -1; // the water's waves (only the full entry of t
 int gLocMvp = -1, gLocFogRow = -1, gLocLightK = -1, gLocAoK = -1;
 bool gMvpShader = false;     // in use (not with the plain or classic shader; with the dissolve since fix85)
 bool gClassicShader = false; // asked for: the shader of earlier versions (world.v.pica), projection and view apart
-enum BoundProgram { PROGRAM_FULL, PROGRAM_FAST, PROGRAM_SKIN, PROGRAM_FAST_SUN };
+enum BoundProgram { PROGRAM_FULL, PROGRAM_FAST, PROGRAM_SKIN, PROGRAM_FAST_SUN, PROGRAM_LAMP };
 int gBound = PROGRAM_FULL;   // which entry is the bound program
 float gViewDepthRow[4] = {0, 0, 1, 0}; // modelView's third row: the fog is worked out from it
 u32 gProgramSwitches = 0;    // this frame's changes of the program
@@ -241,6 +242,15 @@ C3D_Tex gSunWhite;
 bool gSunWhiteReady = false;
 float gSunUv[4] = {0, 0, 0, 0}; // scale x, scale z, offset u, offset v (relative to the anchor)
 bool gSunUvSent = false;
+
+// ---- fix148: the lamps (setLamps) ----
+// The set for the draws that follow, and whether the first eight rows of `bones` hold it (the characters' entry
+// overwrites them for every draw; a new frame or eye has a new anchor the positions are relative to).
+LampSet gLamps;      // wanted for the draws that follow (count 0: none); zeros past its count
+LampSet gLampsRows;  // what the rows hold while gLampsSent
+bool gLampsSent = false;
+bool gNoLampProgram = false; // c3dSetNoLamps (debug.txt nolamps): the lamps' entry is never bound
+u32 gLampDraws = 0;          // this frame's draws by it
 
 u16 gDebugSkipFlags = 0; // c3dSetDebugDraw: materials with any of these flags are not drawn
 int gDebugProgram = 0;   // 1: the fast entry for every world draw, 2: the full entry for every one
@@ -469,20 +479,42 @@ void bindProgram(int which) {
 	if (!gMvpShader || which == gBound) return;
 	if (which == PROGRAM_SKIN && !gProgramSkinReady) which = PROGRAM_FULL;
 	if (which == PROGRAM_FAST_SUN && !gProgramFastSunReady) which = PROGRAM_FAST;
+	if (which == PROGRAM_LAMP && !gProgramLampReady) which = PROGRAM_FAST;
 	if (which == gBound) return;
 	gBound = which;
 	C3D_BindProgram(which == PROGRAM_FAST       ? &gProgramFast
 	                : which == PROGRAM_SKIN     ? &gProgramSkin
 	                : which == PROGRAM_FAST_SUN ? &gProgramFastSun
+	                : which == PROGRAM_LAMP     ? &gProgramLamp
 	                                            : &gProgram);
 	++gProgramSwitches;
+}
+
+// fix148: the lamps into the first eight rows of `bones` (world_lamp.v.pica): (place relative to the anchor, -1/range^2),
+// (colour, (dayKeep - 1) / 255). A lamp that is not there: all 0 (the falloff is then 1, times colour 0).
+void sendLamps() {
+	if (gLampsSent && memcmp(&gLampsRows, &gLamps, sizeof(gLamps)) == 0) return;
+	const float dayK = (clamp(gLamps.dayKeep, 0.0f, 1.0f) - 1.0f) / 255.0f;
+	for (u32 k = 0; k < MAX_DRAW_LAMPS; ++k) {
+		const DrawLamp& l = gLamps.lamp[k];
+		const bool on = k < gLamps.count && l.range > 1.0f;
+		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocBones + int(k) * 2, on ? l.pos[0] - gAnchor[0] : 0.0f, on ? l.pos[1] - gAnchor[1] : 0.0f,
+		              on ? l.pos[2] - gAnchor[2] : 0.0f, on ? -1.0f / (l.range * l.range) : 0.0f);
+		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocBones + int(k) * 2 + 1, on ? l.rgb[0] : 0.0f, on ? l.rgb[1] : 0.0f, on ? l.rgb[2] : 0.0f, dayK);
+	}
+	gLampsRows = gLamps;
+	gLampsSent = true;
 }
 // (A chunk with the sun's mask: the fast entry that lays it, for all its batches - the mask's strength, not the entry,
 // leaves out the materials that take no shadow.)
 void useProgram(bool fast) {
 	// (Dissolving needs texture coordinate 1 for the noise: `fadefast`, and the chunk goes without its mask until it is whole.)
 	const bool sun = gSunChunk && !gNoSunProgram && gFade == 255;
-	bindProgram(fast ? (sun ? PROGRAM_FAST_SUN : PROGRAM_FAST) : PROGRAM_FULL);
+	// fix148: lamps reaching the draw - the lamps' entry (`fadefast` and the lamps; not with the sun's mask, which wins by day).
+	const bool lamps = fast && !sun && gLamps.count && gProgramLampReady && !gNoLampProgram && !gSkinned && !gUiPass && gPass == PASS_WORLD;
+	if (lamps) sendLamps();
+	bindProgram(fast ? (sun ? PROGRAM_FAST_SUN : lamps ? PROGRAM_LAMP : PROGRAM_FAST) : PROGRAM_FULL);
+	gLampDraws += lamps;
 	guardUnit1();
 }
 
@@ -614,6 +646,11 @@ bool init() {
 			shaderProgramInit(&gProgramSkin);
 			shaderProgramSetVsh(&gProgramSkin, &gDvlb->DVLE[3]);
 			const bool sunEntries = gDvlb->numDVLE >= 6;
+			// fix148: DVLE 5 is the lamps' entry (it took the place of `fadefastsun`, which was never bound since fix142).
+			if (sunEntries) {
+				shaderProgramInit(&gProgramLamp);
+				shaderProgramSetVsh(&gProgramLamp, &gDvlb->DVLE[5]);
+			}
 			if (sunEntries) {
 				shaderProgramInit(&gProgramFastSun);
 				// fix142: always `fastsun` (DVLE 4: position, texcoord0, colour, texcoord2), never `fadefastsun` (DVLE 5: five
@@ -644,17 +681,28 @@ bool init() {
 				const int a = shaderInstanceGetUniformLocation(gProgram.vertexShader, name);
 				sunOk = a >= 0 && a == shaderInstanceGetUniformLocation(gProgramFastSun.vertexShader, name);
 			}
+			// (The lamps' entry: the shared uniforms and `bones` where the full one has them, and `fading`.)
+			bool lampOk = gMvpShader && sunEntries;
+			static const char* const kLamp[] = {"mvp", "fogRow", "chunk", "params", "texOffset", "lightK", "aoK", "bones", "fading"};
+			for (const char* name : kLamp) {
+				if (!lampOk) break;
+				const int a = shaderInstanceGetUniformLocation(gProgram.vertexShader, name);
+				lampOk = a >= 0 && a == shaderInstanceGetUniformLocation(gProgramLamp.vertexShader, name);
+			}
 			if (gMvpShader) {
 				gProgramFastReady = true;
 				gProgramSkinReady = skinOk;
 				gProgramFastSunReady = sunOk;
+				gProgramLampReady = lampOk;
 				if (!skinOk) shaderProgramFree(&gProgramSkin);
 				if (sunEntries && !sunOk) shaderProgramFree(&gProgramFastSun);
+				if (sunEntries && !lampOk) shaderProgramFree(&gProgramLamp);
 			} else {
 				shaderProgramFree(&gProgram);
 				shaderProgramFree(&gProgramFast);
 				shaderProgramFree(&gProgramSkin);
 				if (sunEntries) shaderProgramFree(&gProgramFastSun);
+				if (sunEntries) shaderProgramFree(&gProgramLamp);
 				DVLB_Free(gDvlb);
 				gDvlb = nullptr;
 			}
@@ -767,6 +815,7 @@ void shutdown() {
 		if (gProgramFastReady) shaderProgramFree(&gProgramFast);
 		if (gProgramSkinReady) shaderProgramFree(&gProgramSkin);
 		if (gProgramFastSunReady) shaderProgramFree(&gProgramFastSun);
+		if (gProgramLampReady) shaderProgramFree(&gProgramLamp);
 		if (gDvlb) DVLB_Free(gDvlb);
 	}
 	// (Only ever allocated after citro3d was up, and freed after it is down:
@@ -781,7 +830,9 @@ void shutdown() {
 	free(gDeadMeshes.items);
 	gDeadTextures = {};
 	gDeadMeshes = {};
-	gProgramReady = gProgramFastReady = gProgramSkinReady = gProgramFastSunReady = false;
+	gProgramReady = gProgramFastReady = gProgramSkinReady = gProgramFastSunReady = gProgramLampReady = false;
+	gLamps = LampSet {};
+	gLampsSent = false;
 	gMvpShader = false;
 	gBound = PROGRAM_FULL;
 	gDvlb = nullptr;
@@ -996,6 +1047,7 @@ void frameBegin(const FrameDesc& f) {
 	gStereoFrame = gStereoOn && gTargetR != nullptr;
 	gUiEyeBase = 0;
 	gProgramSwitches = 0;
+	gLampDraws = 0;
 	gDropped = 0;
 	gUiUsed = 0;
 	beginPassState(f, gTarget);
@@ -1043,6 +1095,8 @@ static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target) {
 	// One view matrix for the whole frame; chunks only differ in `chunk`.
 	const EyeFrame ef = eyeFrame(f.view, f.eye);
 	memcpy(gAnchor, ef.anchor, sizeof(gAnchor));
+	gLampsSent = false; // (a new anchor; and no lamps until the world asks for them)
+	gLamps = LampSet {};
 	C3D_Mtx mv;
 	toC3D(ef.view, &mv);
 	setMatrices(proj, mv, true);
@@ -1199,6 +1253,17 @@ void setChunkTransform(const float origin[3], float posScale, float uvScale, con
 }
 
 void setSunShadow(float darkness) { gSunDark = clamp(darkness, 0.0f, 1.0f); }
+
+void setLamps(const LampSet* lamps) {
+	LampSet next {};
+	next.count = lamps ? min(lamps->count, MAX_DRAW_LAMPS) : 0u;
+	if (next.count) {
+		next.dayKeep = lamps->dayKeep;
+		for (u32 k = 0; k < next.count; ++k) next.lamp[k] = lamps->lamp[k];
+	}
+	gLamps = next; // (sent with the first draw that takes them, if the rows do not hold them already)
+}
+bool lampsSupported() { return gProgramLampReady && !gNoLampProgram; }
 bool sunShadowSupported() { return gProgramFastSunReady; }
 
 void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, float uvOffsetV) {
@@ -1285,6 +1350,7 @@ void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin) 
 	}
 	const float off[3] = {skin.origin[0] - gAnchor[0], skin.origin[1] - gAnchor[1], skin.origin[2] - gAnchor[2]};
 	setParams(skin.uvScale);
+	gLampsSent = false; // (the palette goes where the lamps were)
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocSkinLight, skin.light[0], skin.light[1], skin.light[2], 0.0f);
 	if (gProgramSkinReady) {
 		// The characters' entry: the position step and the origin go into the rows, so that one dph per row
@@ -1459,6 +1525,7 @@ void frameEnd() {
 	gFrameStats.cpuMs = float(osTickCounterRead(&gCpuClock));
 	gFrameStats.drawsDropped = gDropped;
 	gFrameStats.programSwitches = gProgramSwitches;
+	gFrameStats.lampDraws = gLampDraws;
 	gFrameStats.overlapped = !gClassic;
 	if (gClassic) {
 		// With flags = 0 citro3d flushes the whole linear heap out of the CPU
@@ -1508,6 +1575,7 @@ void c3dSetClassicFrames(bool classic) {
 }
 
 void c3dSetFillTest(bool on) { gFillTest = on; }
+void c3dSetNoLamps(bool on) { gNoLampProgram = on; }
 void c3dSetNoSun(bool on) {
 	gNoSun = on;
 	gNoSunProgram = on;

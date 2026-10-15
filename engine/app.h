@@ -14,6 +14,7 @@
 #include "ripples.h"
 #include "godrays.h"
 #include "grass.h"
+#include "lamps.h"
 #include "menu.h"
 #include "npcs.h"
 #include "panel.h"
@@ -92,6 +93,7 @@ public:
 		SKIP_SKY = 1u << 0, SKIP_WORLD = 1u << 1, SKIP_NPCS = 1u << 2, SKIP_THINGS = 1u << 3, SKIP_HERO_SHADOW = 1u << 4,
 		SKIP_HERO = 1u << 5, SKIP_GROUND = 1u << 6, SKIP_BLENDED = 1u << 7, SKIP_GODRAYS = 1u << 8, SKIP_RAIN = 1u << 9,
 		SKIP_PARTICLES = 1u << 10, SKIP_OVERLAY = 1u << 11, SKIP_GRASS = 1u << 12,
+		SKIP_LAMPS = 1u << 13, // fix148: the lamps light nothing (debug.txt lamps / nolamps)
 	};
 	void setRenderSkip(u32 skip) { _renderSkip = skip; }
 	// debug.txt `noweathersfx`: the baker's own rain and thunder (meta/weathersfx L/N/F) are not taken.
@@ -140,6 +142,8 @@ public:
 	// Graphics+: the new grass (grass.h; a world baked with --grass) and how far it is drawn now (cm; the menu, the load).
 	const Grass& grass() const { return _grass; }
 	float grassRadius() const;
+	// fix148: the light of torches and fires (lamps.h): the menu's "Свет огней" 0 off, 1 the people and things, 2 the world too.
+	const Lamps& lamps() const { return _lamps; }
 	Player& player() { return _player; }
 	const Hero& hero() const { return _hero; }
 	// The characters the game's scripts put into the world; not loaded with
@@ -650,6 +654,9 @@ private:
 	Ripples _ripples; // rings round whoever is in the water (fix141)
 	GodRays _godRays;
 	Grass _grass;
+	Lamps _lamps;
+	double _lampClock = -1.0; // the clock of the lamps' last update (their dt)
+	void updateLamps();
 	int _lootTarget = -1;
 	// The chests.
 	Chests _chests;

@@ -1,8 +1,4 @@
-grass report: world: 1180815 m2 of open ground, 146533 m2 of full-density grass (12 %), densest 25 m: 1408 m2; C:\GOTHIC~1\windows\./grass_world.txt
-grass report: orctempel is an indoor world (no sky): skipped
-grass report: oldmine is an indoor world (no sky): skipped
-grass report: orcgraveyard is an indoor world (no sky): skipped
-grass report: freemine is an indoor world (no sky): skipped
+water fx (world): 371 shore tiles; foam: 258 shore lines, 13.1 km, 32940 triangles; rivers: 6 tiles, 12 flow materials, 76 triangles (tiles by direction 0 6 0 0 0 0 0 0)
 == world 'world' (WORLD.ZEN) ==
 source: WORLD.ZEN (Gothic 1)
 dark large triangles in the source (edge 5 m or more, no corner brighter than 30/255): 536 lit from a lightmap, 164 by the vertex light; the largest (x y z in m, edge, source): [-199 8 317, 31 m, lightmap 0/0/0] [-195 4 312, 31 m, lightmap 0/10/0] [-180 6 150, 31 m, vertex 27/27/27] [-185 7 157, 31 m, vertex 27/27/27] [-159 6 162, 30 m, vertex 27/27/27] [-201 9 311, 29 m, lightmap 10/0/0] [-15 12 -25, 29 m, lightmap 29/17/24] [303 11 36, 29 m, vertex 27/27/27] [298 11 44, 29 m, vertex 27/27/27] [254 9 39, 29 m, vertex 24/24/24] [263 10 39, 29 m, vertex 24/24/24] [274 11 52, 28 m, vertex 24/24/24]
@@ -141,30 +137,32 @@ WARNING: object visual WASH_SLOT.ASC could not be read: no triangles
 water: 14 materials, opacity 150..240 of 255
 camera: from the game's CAMERA.DAT: CAMMODNORMAL range 2.50 m (2.00..6.00), elevation 25, azimuth 0, view offset 20 0, pace 30; CAMMODSWIM range 3.00 m (2.90..3.10), elevation 20, azimuth 0, view offset 15 0, pace 30; CAMMODFALL range 2.00 m (1.50..2.50), elevation 60, azimuth 0, view offset -10 0, pace 30
 ground colour: 43578 corners by the water darkened, 142642 under plants (3542616 rays)
-far layer: 197648 triangles (and 16812 in strips along 8406 seam edges; 134504 vertices) of 429247, 11304 crowns, grid 2.0-15.2 m (seams 4.5; 9 tries), 83 tiles, 2964 ranges, 3.42 MB
-visibility (--vis): 3431 rows in 744 cells (655 cells with more than one floor; 1225 rows of rooms, 6064 clusters lie wholly inside a room), 10980 places looked from, 7704468 clusters in the rows of which 4704065 (61%) hidden, 235.8 M rays in 3.6 s, radius 150 m, near 25 m; 1.00 MB
-sun's shadow (--sun-shadow): 952 cells, the sun of 14.5 h (49 degrees up), 47886848 texels of 32 cm or finer, 14.3% of them shaded; 14460412 with no ground under them; 240.1 M rays in 7.8 s; 22.85 MB
-vertex cache order: 1042549 triangles; vertex shader runs per triangle 2.39 -> 1.85 (16-entry FIFO)
+water grid (--water-grid): cells of 2.0 m along the shores: 370 shore tiles, 472 tiles cut fine (32 x 32 m), 2960 water triangles -> 409732
+far layer: 197695 triangles (and 16848 in strips along 8424 seam edges; 134514 vertices) of 429339, 11298 crowns, grid 2.0-15.2 m (seams 4.5; 9 tries), 83 tiles, 2965 ranges, 3.42 MB
+visibility (--vis): 3476 rows in 762 cells (669 cells with more than one floor; 1225 rows of rooms, 6535 clusters lie wholly inside a room), 11152 places looked from, 8368134 clusters in the rows of which 5025880 (60%) hidden, 268.2 M rays in 4.0 s, radius 150 m, near 25 m; 1.08 MB
+sun's shadow (--sun-shadow): 1022 cells, the sun of 14.5 h (49 degrees up), 45666816 texels of 32 cm or finer, 22.7% of them shaded; 14829438 with no ground under them; 222.9 M rays in 5.9 s; 21.79 MB
+grass (--grass): 97383 tufts (2.0 per m2 at full density; 48941 m2 of it) in 869 tiles of 16 m, the fullest 439; pictures 42/36/11/11 %; 30967 in the sun's shadow; 318 places without ground, 0 left out of full tiles; old grass: 0 triangles taken out (kept: --grass-replace); 0.76 MB
+vertex cache order: 1485289 triangles; vertex shader runs per triangle 1.94 -> 1.52 (16-entry FIFO)
 things to use by the player: 837 have a name to show (he may use those), 87 have none (the inhabitants' only); 26 belong to somebody (a person or a guild)
 ambient sounds: 700 placed in world 'world'
 triggers: 0 triggers, 1 lists, 23 script triggers, 0 world starts, 32 movers (29 drawn moving), 277 doors (14 locked); 306 solid (16124 triangles), 24 meshes; key rotations read conjugated: 29, 0 the other way
 rooms: 299 (BSP sectors, 445 boxes): WALD11, WALD10, WALD9, WALD6, WALD8, WALD7, WALD1, WALD4, WALD2, WALD12, WALD5, WALD3, ...
 music zones: 40 in world 'world'
 world 'world': 1809 x 3878 x 1273 m, grid 45 x 32 cells of 40 m
-geometry: 1059679 triangles in, 1070319 out (16186 degenerate dropped), 1911873 vertices (1.79 per triangle)
-vertex sharing: 660499 distinct positions, 1772402 with UVs, 1911873 with UVs and light
+geometry: 1499483 triangles in, 1513214 out (17689 degenerate dropped), 2162635 vertices (1.43 per triangle)
+vertex sharing: 809852 distinct positions, 2022995 with UVs, 2162635 with UVs and light
 winding check: 65% of the horizontal front-facing area looks up
-chunks: 1439 (0 cells split), largest 37606 triangles / 63040 vertices / 494 batches
-position step: 1137 at 0.125 cm, 292 at 0.25 cm, 10 at 0.5 cm
-seams: 1228 vertices welded to a neighbour within 0.25 cm, 15873 T-junctions closed within 0.50 cm (+26826 triangles)
-chunks by detail tier (--no-split: one chunk holds everything): 1110 of the world and big things (15.9 MB, always around the camera), 184 with medium objects (8.7 MB, within their reach), 145 with small ones (10.6 MB, within theirs)
-draw distance classes: 435045 triangles always drawn, 268794 medium, 366480 small; 50309 batches (35.0 per chunk)
-clusters: the chunks are cut into 22087 boxes of 10 m (79 at most in one): 48 triangles and 2.3 batches in a box on average
-ambient occlusion (--ao low): 2940618 corners from 1502962 places, 16 rays of 2.5 m each against 631774 triangles (24.0 M rays, 2.5 s); 44% shut in on average, 1230818 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
-lamp light (--lights): 1077 lamps in the world, 123 baked (954 static ones left out), 202118 corners lit by 0.73 M shadow rays, 60000 triangles added by cutting those near a lamp (0.3 s)
+chunks: 1518 (0 cells split), largest 37606 triangles / 63040 vertices / 494 batches
+position step: 1322 at 0.125 cm, 186 at 0.25 cm, 10 at 0.5 cm
+seams: 21698 vertices welded to a neighbour within 0.25 cm, 18342 T-junctions closed within 0.50 cm (+31420 triangles)
+chunks by detail tier (--no-split: one chunk holds everything): 1189 of the world and big things (22.3 MB, always around the camera), 184 with medium objects (8.7 MB, within their reach), 145 with small ones (10.6 MB, within theirs)
+draw distance classes: 877940 triangles always drawn, 268794 medium, 366480 small; 56597 batches (37.3 per chunk)
+clusters: the chunks are cut into 25097 boxes of 10 m (79 at most in one): 60 triangles and 2.3 batches in a box on average
+ambient occlusion (--ao low): 2940618 corners from 1502962 places, 16 rays of 2.5 m each against 631774 triangles (24.0 M rays, 2.3 s); 44% shut in on average, 1230818 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
+lamp light (--lights): 1077 lamps in the world, 123 baked (954 static ones left out), 202118 corners lit by 0.73 M shadow rays, 60000 triangles added by cutting those near a lamp (0.4 s)
 wind: 748642 corners sway, 31 world materials marked
-materials: 521 world materials from 1642 source materials, 1477 textures; 21 blended (14 water), 19 animated, 4 scrolling
-material mean colours (stand-in until the texture arrives): 1629 of 521 materials
+materials: 534 world materials from 1655 source materials, 1548 textures; 34 blended (26 water), 31 animated, 16 scrolling
+material mean colours (stand-in until the texture arrives): 1642 of 534 materials
 untextured: 13 materials drawn in their own colour: 'S:PSIT01_ABODEN' (no texture, 3 triangles, colour 108 111 77), 'SUMPFWAASER' (no texture, 1 triangles, colour 0 0 0), 'BRETT2' (no texture, 4 triangles, colour 55 37 26), 'KEINE' (no texture, 8 triangles, colour 190 103 39), 'BRETT1' (no texture, 1 triangles, colour 132 88 62), 'DEFAULT' (no texture, 12 triangles, colour 0 21 210), 'KEINETEXTUREN' (no texture, 1 triangles, colour 136 136 136), 'KNOCHEN' (no texture, 240 triangles, colour 183 183 162), 'NASE' (no texture, 52 triangles, colour 15 15 15), 'ZAHN' (no texture, 18 triangles, colour 182 174 88), '' (no texture, 7 triangles, colour 177 25 88), 'FLUEGELMUSKELN' (no texture, 7 triangles, colour 90 73 73), 'OC_O_WOOD_2' (no texture, 28 triangles, colour 79 60 40)
 places: 4973 named (way points and markers), 4881 set on the ground (41 cm down on average), 92 with no ground within 5 m below left where they are
 way net: 2784 points, 3486 connections (34.9 km of paths), 20 points without any; 1603 free points
@@ -172,8 +170,8 @@ things to use: 924 of 38 kinds, with 1092 places to stand at (48 have none: nobo
 containers: 249 (193 locked), with 1085 stacks of things inside
 ladders: 65 (65 read from their models, the side to climb from known for 0)
 portals: 4 of 6 lead to a baked world: orctempel at ENTRANCE_ORCTEMPLE_SURFACE; oldmine at ENTRANCE_OLDMINE_SURFACE; ABANDONEDMINE.ZEN (not baked); orcgraveyard at ENTRANCE_ORCGRAVEYARD_SURFACE; ORCCITY.ZEN (not baked); freemine at its start point ('ENTRANCE_FREEMINE_FREEMINECAMP' not found)
-note: 11874 triangles needed a private UV origin (wide texture spans)
-WARNING: 478 triangles span more than 32 texture repeats and were clamped
+note: 21043 triangles needed a private UV origin (wide texture spans)
+WARNING: 476 triangles span more than 32 texture repeats and were clamped
 == world 'orctempel' (ORCTEMPEL.ZEN) ==
 source: ORCTEMPEL.ZEN (Gothic 1)
 dark large triangles in the source (edge 5 m or more, no corner brighter than 30/255): 2538 lit from a lightmap, 885 by the vertex light; the largest (x y z in m, edge, source): [-85 118 -28, 94 m, vertex 0/0/0] [-90 125 -39, 94 m, vertex 0/0/0] [-76 -157 25, 86 m, vertex 0/0/0] [-77 -185 19, 86 m, vertex 0/0/0] [-81 -182 11, 85 m, vertex 0/0/0] [-69 -182 32, 85 m, vertex 0/0/0] [-32 -183 97, 83 m, vertex 0/0/0] [-28 -157 96, 83 m, vertex 0/0/0] [-79 -177 -39, 81 m, vertex 0/0/0] [-80 -180 -51, 81 m, vertex 0/0/0] [-90 92 -47, 80 m, lightmap 0/0/0] [-90 109 -58, 80 m, lightmap 0/0/0]
@@ -259,24 +257,25 @@ particle effects: 71 placed by the world, 0 from fire places' trees
 objects: 30 have no ground below them, lit with the world average
 other objects named like lights: FIRE.PFX x1 (not drawn); FIRE_SMOKE.PFX x34 (not drawn); ORC_FIREPLACE_V1.3DS x17; ORC_FIREPLACE_V2.3DS x130; ORC_FIREPLACE_V3.3DS x21; ORC_FIREPLACE_V4.3DS x10; ORC_FIREPLACE_V6.3DS x14; TPL_EVT_PLATEFIRE_01.3DS x1; TPL_LIGHTER_V1.3DS x19; TPL_LIGHTER_V2.3DS x1
 water: 1 materials, opacity 230..230 of 255
-visibility (--vis): 325 rows in 89 cells (83 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 866 places looked from, 537540 clusters in the rows of which 408704 (76%) hidden, 14.3 M rays in 0.2 s, radius 150 m, near 25 m; 0.07 MB
-vertex cache order: 207978 triangles; vertex shader runs per triangle 2.46 -> 1.71 (16-entry FIFO)
+water grid (--water-grid): cells of 2.0 m along the shores: 3 shore tiles, 3 tiles cut fine (32 x 32 m), 32 water triangles -> 1513
+visibility (--vis): 325 rows in 89 cells (83 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 866 places looked from, 537540 clusters in the rows of which 408711 (76%) hidden, 14.3 M rays in 0.2 s, radius 150 m, near 25 m; 0.07 MB
+vertex cache order: 209951 triangles; vertex shader runs per triangle 2.44 -> 1.70 (16-entry FIFO)
 things to use by the player: 52 have a name to show (he may use those), 7 have none (the inhabitants' only); 0 belong to somebody (a person or a guild)
 ambient sounds: 54 placed in world 'orctempel'
 triggers: 25 triggers, 29 lists, 16 script triggers, 0 world starts, 54 movers (54 drawn moving), 0 doors (0 locked); 41 solid (812 triangles), 15 meshes; key rotations read conjugated: 54, 0 the other way
 rooms: none in this world (no BSP sectors): nobody's house is told from the street
 music zones: 3 in world 'orctempel'
 world 'orctempel': 441 x 384 x 651 m, grid 12 x 17 cells of 40 m
-geometry: 202486 triangles in, 212791 out (281 degenerate dropped), 350917 vertices (1.65 per triangle)
-vertex sharing: 119128 distinct positions, 335751 with UVs, 350917 with UVs and light
+geometry: 203967 triangles in, 214760 out (276 degenerate dropped), 352013 vertices (1.64 per triangle)
+vertex sharing: 119666 distinct positions, 336847 with UVs, 352013 with UVs and light
 winding check: 50% of the horizontal front-facing area looks up (says nothing here: an indoor world has as much ceiling as floor)
 chunks: 181 (0 cells split), largest 18380 triangles / 28238 vertices / 193 batches
 position step: 156 at 0.125 cm, 3 at 0.25 cm, 14 at 0.5 cm, 8 at 1 cm
-seams: 580 vertices welded to a neighbour within 0.25 cm, 5156 T-junctions closed within 0.50 cm (+10586 triangles)
+seams: 744 vertices welded to a neighbour within 0.25 cm, 5397 T-junctions closed within 0.50 cm (+11069 triangles)
 chunks by detail tier (--no-split: one chunk holds everything): 116 of the world and big things (2.1 MB, always around the camera), 22 with medium objects (0.7 MB, within their reach), 43 with small ones (3.8 MB, within theirs)
-draw distance classes: 56379 triangles always drawn, 23895 medium, 132517 small; 8348 batches (46.1 per chunk)
+draw distance classes: 58348 triangles always drawn, 23895 medium, 132517 small; 8354 batches (46.2 per chunk)
 clusters: the chunks are cut into 3889 boxes of 10 m (98 at most in one): 55 triangles and 2.1 batches in a box on average
-ambient occlusion (--ao low): 603504 corners from 279922 places, 16 rays of 2.5 m each against 78546 triangles (4.5 M rays, 0.5 s); 47% shut in on average, 267371 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
+ambient occlusion (--ao low): 603504 corners from 279922 places, 16 rays of 2.5 m each against 78546 triangles (4.5 M rays, 0.3 s); 47% shut in on average, 267371 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
 lamp light (--lights): 1121 lamps in the world, 0 baked (1121 static ones left out), 0 corners lit by 0.00 M shadow rays, 0 triangles added by cutting those near a lamp (0.0 s)
 wind: 8 corners sway, 1 world materials marked
 materials: 191 world materials from 210 source materials, 192 textures; 4 blended (1 water), 2 animated, 0 scrolling
@@ -609,8 +608,8 @@ portals: 1 of 1 lead to a baked world: world at ENTRANCE_FREEMINECAMP_FREEMINE
 note: 90 triangles needed a private UV origin (wide texture spans)
 WARNING: 2 triangles span more than 32 texture repeats and were clamped
 == all worlds ==
-textures: 674 baked (55 cut-out), max edge 256, 99.1% of the source texels kept, 0 missing
-size: chunks 55.70 MB (38.91 MB packed), textures 44.92 MB (20.70 MB packed)
+textures: 675 baked (56 cut-out), max edge 256, 99.1% of the source texels kept, 0 missing
+size: chunks 62.23 MB (43.39 MB packed), textures 43.89 MB (20.39 MB packed)
 == model 'hero' ==
 character: HUMANS, skeleton HUMANS.MDH (34 nodes), body HUM_BODY_NAKED0; head HUM_HEAD_PONY; rest pose within 0.0 cm of the stored mesh; 33 of 296 skin vertices hang on more than two bones (the two strongest are kept)
 character mesh: 862 triangles, winding kept (score 0.044)
@@ -741,10 +740,10 @@ particles: 280 effects in the scripts (144 pictures baked, 5 of the names have n
   pictures not found: bloodkai, mfx_spell_star, water_dripping, water_dripping_ground, waveofinsanity_a0
 things lying about: 1086 (1075 from the world files, 11 from the start-up scripts) of 114 kinds of look; looks of all things of the scripts: 382, 374 models baked (26620 triangles, 0.86 MB), 336 pictures for the inventory (2.96 MB)
 WARNING: 8 looks of things not baked (they lie there unseen): ITFOFLASKHEALTH: no mesh; ITLSTORCHBURNING: no mesh; ITMIJOINT: no mesh; ITMW1HSWORD01: no mesh; ITMW1HSWORDOLD01: no mesh; ITMW2HSWORD01: no mesh; ITWRBOOK: no mesh; ITWRMAP: no mesh
-time: sources 0.0 s, world textures 11.8 s, worlds 23.5 s, hero 0.2 s, scripts and inhabitants 20.5 s
+time: sources 0.3 s, world textures 10.6 s, worlds 23.0 s, hero 0.2 s, scripts and inhabitants 19.8 s
 dialogue: 7354 lines (377 KB of text) from OU.BIN, in 16 blocks, 6 names given twice (the first kept)
 font: FONT_OLD_10_WHITE (17 px) and FONT_OLD_20_WHITE (36 px), code page 1252, 218 glyphs, atlas 256x336, 87 KB
-C:\GOTHIC~1\windows\data.pak written (8749 entries); the rest (voices, music) follows
+C:\GOTHIC~1\windows\data.pak written (8902 entries); the rest (voices, music) follows
 hero: fightclip T_JUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_RUN
 hero: fightclip T_FISTJUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_FISTRUN
 hero: fightclip T_FISTPARADEJUMPB: file T_FISTPARADEJUMPB, mds frames 1..12, 12 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next -
@@ -785,4 +784,4 @@ hero: fightclip T_2HRUN_2_2HRUNL: file T_2HRUN_2_2HRUNL, mds frames 1..11, 11 fr
 hero: fightclip T_2HRUNL_2_2HRUN: file T_2HRUNL_2_2HRUN, mds frames 32..38, 7 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HRUN
 hero: fightclip T_2HWALK_2_2HWALKL: file T_2HWALK_2_2HWALKL, mds frames 1..18, 18 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALKL
 hero: fightclip T_2HWALKL_2_2HWALK: file T_2HWALKL_2_2HWALK, mds frames 39..49, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALK
-wrote C:\GOTHIC~1\windows\data.pak: 5 worlds, 8749 entries in 57.1 s
+wrote C:\GOTHIC~1\windows\data.pak: 5 worlds, 8902 entries in 56.2 s

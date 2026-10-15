@@ -57,6 +57,7 @@ float gUvOffset[2] = {0, 0};
 ChunkFx gFx; // Graphics+ of the chunk being drawn (setChunkTransform)
 float gSunDark = 0.0f; // setSunShadow
 bool gSunOn = false;   // the draw going on takes the chunk's sun mask
+LampSet gLamps;        // fix148: setLamps (count 0: none)
 bool gCull = true;
 bool gTwoSided = false; // setTwoSided: this draw keeps its back faces
 u32 gMemoryLimit = 0;
@@ -429,6 +430,7 @@ void frameBegin(const FrameDesc& f) {
 	gFade = 1.0f;
 	gUvOffset[0] = gUvOffset[1] = 0.0f;
 	gFx = ChunkFx {};
+	gLamps = LampSet {};
 }
 
 bool fadeSupported() { return true; }
@@ -481,6 +483,11 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 	const bool wavy = water && gFx.waveHeight != 0.0f;
 	const bool sheen = water && gFx.waterGrid; // (fix140: the water cut in the grid, as the full shader's `wavy` block)
 	gSunOn = gFx.sun && gSunDark > 0.0f && gPass != PASS_SKY && (gMaterialFlags & (MATF_ALPHA_TEST | MATF_WIND | MATF_ADD | MATF_WATER)) == 0;
+	// fix148: the lamps, where the console binds their entry: what its fast entry draws in the world pass (not what sways,
+	// not water cut for waves), and not a chunk drawn with its sun's mask.
+	const bool lamps = gLamps.count && gPass == PASS_WORLD && (gMaterialFlags & MATF_WIND) == 0 && !wavy && !(water && gFx.waterGrid) &&
+	                   !(gFx.sun && gSunDark > 0.0f);
+	gStats.lampDraws += lamps;
 	for (u32 i = 0; i + 2 < indexCount; i += 3) {
 		ClipVert cv[3];
 		for (int k = 0; k < 3; ++k) {
@@ -538,10 +545,23 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 			const float weight = v.a * (1.0f / 255.0f);
 			const float tint[3] = {1.0f + weight * (gFrame.dayLight[0] - 1.0f), 1.0f + weight * (gFrame.dayLight[1] - 1.0f),
 			                       1.0f + weight * (gFrame.dayLight[2] - 1.0f)};
+			// The lamps as world_lamp.v.pica: after the occlusion, before the fog.
+			float lamp[3] = {0.0f, 0.0f, 0.0f};
+			if (lamps) {
+				const float at[3] = {p[0] + gChunk[0] + gAnchor[0], p[1] + gChunk[1] + gAnchor[1], p[2] + gChunk[2] + gAnchor[2]};
+				const float keep = 1.0f + weight * (clamp(gLamps.dayKeep, 0.0f, 1.0f) - 1.0f);
+				for (u32 j = 0; j < gLamps.count; ++j) {
+					const DrawLamp& l = gLamps.lamp[j];
+					if (!(l.range > 1.0f)) continue;
+					const float dx = l.pos[0] - at[0], dy = l.pos[1] - at[1], dz = l.pos[2] - at[2];
+					const float f = lampFalloff(dx * dx + dy * dy + dz * dz, l.range) * keep;
+					for (int ch = 0; ch < 3; ++ch) lamp[ch] += l.rgb[ch] * f;
+				}
+			}
 			cv[k] = {c.x, c.y, c.z, c.w, float(v.u) * gUvScale + gUvOffset[0] + uvShift[0],
 			         float(v.v) * gUvScale + gUvOffset[1] + uvShift[1],
-			         v.r * (1.0f / 255.0f) * tint[0] * shade * sheenK, v.g * (1.0f / 255.0f) * tint[1] * shade * sheenK,
-			         v.b * (1.0f / 255.0f) * tint[2] * shade * sheenK, 1.0f, fog,
+			         v.r * (1.0f / 255.0f) * tint[0] * shade * sheenK + lamp[0], v.g * (1.0f / 255.0f) * tint[1] * shade * sheenK + lamp[1],
+			         v.b * (1.0f / 255.0f) * tint[2] * shade * sheenK + lamp[2], 1.0f, fog,
 			         (p[0] + gChunk[0] + gAnchor[0] - gFx.sunX0) * gFx.sunScaleX, (p[2] + gChunk[2] + gAnchor[2] - gFx.sunZ0) * gFx.sunScaleZ};
 		}
 		if (gPass == PASS_WORLD) ++gStats.trianglesSubmitted;
@@ -551,6 +571,14 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 }
 
 void setSunShadow(float darkness) { gSunDark = clamp(darkness, 0.0f, 1.0f); }
+void setLamps(const LampSet* lamps) {
+	gLamps = LampSet {};
+	if (!lamps || !lamps->count) return;
+	gLamps.count = min(lamps->count, MAX_DRAW_LAMPS);
+	gLamps.dayKeep = lamps->dayKeep;
+	for (u32 k = 0; k < gLamps.count; ++k) gLamps.lamp[k] = lamps->lamp[k];
+}
+bool lampsSupported() { return true; }
 bool sunShadowSupported() { return true; }
 
 void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin) {

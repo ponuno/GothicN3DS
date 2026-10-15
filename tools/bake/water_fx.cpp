@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -15,7 +16,7 @@
 
 namespace g3 {
 
-const char* const kFoamTexture = "G3_FOAM.TGA";
+const char* const kFoamTexture = "G3_FOAM_A0.TGA";
 const char* const kGlintTexture = "G3_GLINT.TGA";
 
 namespace {
@@ -456,38 +457,50 @@ SrcImage makeGlintTexture(int w, int h) {
 	return img;
 }
 
-SrcImage makeFoamTexture(int w, int h) {
+SrcImage makeFoamTexture(int w, int h, int frame, int frames) {
 	SrcImage img;
 	img.width = w;
 	img.height = h;
 	img.rgba.assign(size_t(w) * size_t(h) * 4, 0);
-	// Periodic value noise in u (so that the strip tiles along the shore), a few octaves; the lace is where it lies over a
-	// threshold that rises towards the open water: solid at the bank, in bubbles and threads further out.
-	auto lattice = [&](int ix, int iy, int period) {
-		const int x = ((ix % period) + period) % period;
-		return hash01(float(x) * 12.7f + float(iy) * 78.2f + 3.1f);
+	// The lace is value noise over (u, v, time), periodic in u and in time (so the strip tiles along the shore and the
+	// animation loops), a few octaves; it is where the noise lies over a threshold that rises towards the open water. The
+	// frames are the lace moving: its noise slides through time, and the whole edge breathes in and out (the swash of a wave:
+	// the foam's front goes out and comes back) - so the shore is not a still picture.
+	const float phase = frames > 1 ? float(frame) / float(frames) : 0.0f; // 0..1 round the loop
+	const float theta = 6.2831853f * phase;
+	auto lattice = [&](int ix, int iy, int it, int periodU, int periodT) {
+		const int x = ((ix % periodU) + periodU) % periodU, t = ((it % periodT) + periodT) % periodT;
+		return hash01(float(x) * 12.7f + float(iy) * 78.2f + float(t) * 31.9f + 3.1f);
 	};
-	auto noise = [&](float u, float v, int cellsU, int cellsV) {
-		const float x = u * float(cellsU), y = v * float(cellsV);
-		const int ix = int(std::floor(x)), iy = int(std::floor(y));
-		const float fx = x - float(ix), fy = y - float(iy);
-		const float sx = fx * fx * (3.0f - 2.0f * fx), sy = fy * fy * (3.0f - 2.0f * fy);
-		const float a = lattice(ix, iy, cellsU), b = lattice(ix + 1, iy, cellsU), c = lattice(ix, iy + 1, cellsU), d = lattice(ix + 1, iy + 1, cellsU);
-		return lerpf(lerpf(a, b, sx), lerpf(c, d, sx), sy);
+	auto noise = [&](float u, float v, int cellsU, int cellsV, int cellsT) {
+		const float x = u * float(cellsU), y = v * float(cellsV), t = phase * float(cellsT);
+		const int ix = int(std::floor(x)), iy = int(std::floor(y)), it = int(std::floor(t));
+		const float fx = x - float(ix), fy = y - float(iy), ft = t - float(it);
+		const float sx = fx * fx * (3.0f - 2.0f * fx), sy = fy * fy * (3.0f - 2.0f * fy), st = ft * ft * (3.0f - 2.0f * ft);
+		auto plane = [&](int tt) {
+			const float a = lattice(ix, iy, tt, cellsU, cellsT), b = lattice(ix + 1, iy, tt, cellsU, cellsT);
+			const float c = lattice(ix, iy + 1, tt, cellsU, cellsT), d = lattice(ix + 1, iy + 1, tt, cellsU, cellsT);
+			return lerpf(lerpf(a, b, sx), lerpf(c, d, sx), sy);
+		};
+		return lerpf(plane(it), plane(it + 1), st);
 	};
+	const float swash = 0.5f + 0.5f * std::sin(theta); // 0..1: the front out .. back
 	for (int y = 0; y < h; ++y)
 		for (int x = 0; x < w; ++x) {
-			const float u = (float(x) + 0.5f) / float(w), v = (float(y) + 0.5f) / float(h);
-			const float n = 0.55f * noise(u, v, 8, 6) + 0.30f * noise(u, v, 16, 12) + 0.15f * noise(u, v, 32, 24);
-			// v: 0 = on the bank (hidden by the ground), 0.3 the water's edge, 1 the open water.
-			const float lead = std::clamp(v / 0.16f, 0.0f, 1.0f);              // fades in from the bank
+			const float u = (float(x) + 0.5f) / float(w);
+			// v: 0 = on the bank (hidden by the ground), 0.3 the water's edge, 1 the open water. The edge moves with the swash.
+			const float v0 = (float(y) + 0.5f) / float(h);
+			const float v = v0 - 0.07f * (swash - 0.5f);
+			const float n = 0.55f * noise(u, v, 8, 6, 2) + 0.30f * noise(u, v, 16, 12, 3) + 0.15f * noise(u, v, 32, 24, 4);
+			const float lead = std::clamp(v0 / 0.16f, 0.0f, 1.0f);              // fades in from the bank
 			const float reach = std::clamp((v - 0.3f) / 0.7f, 0.0f, 1.0f);     // 0 at the edge .. 1 far out
-			const float threshold = 0.10f + 0.80f * reach;                      // the lace gets thinner outwards
+			const float threshold = 0.10f + 0.80f * reach - 0.10f * swash * reach; // the lace gets thinner outwards, thicker as the front comes
 			const float lace = std::clamp((n - threshold) / 0.10f + 0.5f, 0.0f, 1.0f);
 			const float bump = (v - 0.30f) / 0.10f;
 			const float edge = std::exp(-bump * bump) * (0.45f + 0.5f * n);      // a broken line of foam right at the edge
 			float a = std::max(lace, edge) * lead;
-			a *= 1.0f - std::clamp((v - 0.88f) / 0.12f, 0.0f, 1.0f); // nothing at the outer edge
+			a *= 1.0f - std::clamp((v0 - 0.78f) / 0.16f, 0.0f, 1.0f); // nothing at the outer edge
+			a *= 0.75f + 0.25f * swash;                                // and a little fainter when it draws back
 			unsigned char* p = &img.rgba[(size_t(y) * size_t(w) + size_t(x)) * 4];
 			p[0] = 244;
 			p[1] = 250;
@@ -495,6 +508,22 @@ SrcImage makeFoamTexture(int w, int h) {
 			p[3] = (unsigned char)std::clamp(a * 235.0f + 0.5f, 0.0f, 255.0f);
 		}
 	return img;
+}
+
+bool makeFoamFrame(const std::string& name, SrcImage& img) {
+	std::string up;
+	for (char c : name) up += char(std::toupper((unsigned char)c));
+	// (a path or not: the name is the file's)
+	const size_t slash = up.find_last_of("/\\");
+	if (slash != std::string::npos) up.erase(0, slash + 1);
+	if (up.compare(0, 9, "G3_FOAM_A") != 0 || up.size() < 14) return false;
+	const std::string num = up.substr(9, up.size() - 9 - 4);
+	if (up.substr(up.size() - 4) != ".TGA" || num.empty() || num.size() > 2) return false;
+	for (char c : num) if (c < '0' || c > '9') return false;
+	const int k = std::atoi(num.c_str());
+	if (k < 0 || k >= kFoamFrames) return false;
+	img = makeFoamTexture(128, 64, k, kFoamFrames);
+	return true;
 }
 
 void bakeWaterFx(SrcScene& scene, const WaterFxOptions& opt, WaterFxStats& stats) {
@@ -809,6 +838,7 @@ void bakeWaterFx(SrcScene& scene, const WaterFxOptions& opt, WaterFxStats& stats
 		SrcMaterial foam;
 		foam.name = "G3_SHORE_FOAM";
 		foam.texture = kFoamTexture;
+		foam.animFps = 4.0f; // (the frames of the lace, 8 of them: a loop of two seconds)
 		foam.blend = SrcBlend::Alpha;
 		foam.opacity = u8(std::lround(255.0f * std::min(opt.foam, 1.0f)));
 		foam.noCollision = true;

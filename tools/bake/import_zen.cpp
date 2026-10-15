@@ -955,15 +955,21 @@ struct ObjectStats {
 		float pos[3];
 	};
 	std::map<std::string, std::vector<TreeEmitter>> trees;
+	// fix148: the lights of those trees (zCVobLight: the fire's glow and flicker), places relative to the fire likewise.
+	std::map<std::string, std::vector<SrcLight>> treeLights;
 	// Flames to be moved to their fire place's slot once the models are read.
 	struct PendingFire {
-		size_t emitter;
+		size_t emitter; // in scene.emitters, or (light) in scene.lights
+		bool light;
 		float local[3];
 		const zenkit::VirtualObject* vob;
 		std::string visual, slot;
 	};
 	std::vector<PendingFire> pendingFires;
 	u32 emitters = 0, fireEmitters = 0, fireWithoutTree = 0;
+	// fix148: lamps (zCVobLight) - of the world: static (in its compiled light), dynamic, turned off; of the fire places' trees;
+	// made for fire places whose tree has none.
+	u32 lampsStatic = 0, lampsDynamic = 0, lampsOff = 0, lampsOfFires = 0, lampsMade = 0, lampsAnimated = 0;
 	std::map<std::string, u32> lights;
 	// The things people use, with the mesh each is drawn with (null: none).
 	struct Mob {
@@ -988,14 +994,48 @@ std::string effectName(const zenkit::VirtualObject& vob) {
 	return extensionOf(upper(vob.visual->name)) == "PFX" ? n : std::string();
 }
 
+// fix148: a zCVobLight as the baker keeps it (position, range, colour, its flicker: SrcLight).
+SrcLight lampOf(const zenkit::VLight& lamp, const zenkit::Vec3& at) {
+	SrcLight l;
+	l.pos[0] = at.x;
+	l.pos[1] = at.y;
+	l.pos[2] = at.z;
+	l.range = lamp.range;
+	l.color[0] = lamp.color.r;
+	l.color[1] = lamp.color.g;
+	l.color[2] = lamp.color.b;
+	l.isStatic = lamp.is_static;
+	if (!lamp.is_static) {
+		for (float k : lamp.range_animation_scale)
+			if (std::isfinite(k)) l.rangeKeys.push_back(std::clamp(k, 0.0f, 3.9f));
+		l.rangeFps = std::isfinite(lamp.range_animation_fps) ? std::clamp(lamp.range_animation_fps, 0.0f, 120.0f) : 0.0f;
+		l.rangeSmooth = lamp.range_animation_smooth;
+		for (const zenkit::Color& c : lamp.color_animation_list) l.colorKeys.push_back({c.r, c.g, c.b});
+		l.colorFps = std::isfinite(lamp.color_animation_fps) ? std::clamp(lamp.color_animation_fps, 0.0f, 120.0f) : 0.0f;
+		l.colorSmooth = lamp.color_animation_smooth;
+	}
+	return l;
+}
+
 // The effects hanging on `vob`, their places relative to the root they belong to (the game puts the tree's
-// roots at the fire's slot and keeps the others where they are to their root).
-void treeEmitters(const zenkit::VirtualObject& vob, const zenkit::Vec3& origin, std::vector<ObjectStats::TreeEmitter>& out, int depth) {
+// roots at the fire's slot and keeps the others where they are to their root). fix148: and the lights (`lights`).
+void treeEmitters(const zenkit::VirtualObject& vob, const zenkit::Vec3& origin, std::vector<ObjectStats::TreeEmitter>& out,
+                  std::vector<SrcLight>* lights, int depth) {
 	if (depth > 6) return;
 	const std::string effect = effectName(vob);
 	if (!effect.empty()) out.push_back({effect, {vob.position.x - origin.x, vob.position.y - origin.y, vob.position.z - origin.z}});
+	if (lights && vob.type == zenkit::VirtualObjectType::zCVobLight) {
+		const auto* lamp = dynamic_cast<const zenkit::VLight*>(&vob);
+		// (A tree's light is the fire's own: the game loads the tree when the fire burns, so it is never compiled in.)
+		if (lamp && lamp->range > 1.0f && (lamp->is_static || lamp->on)) {
+			SrcLight l = lampOf(*lamp, {vob.position.x - origin.x, vob.position.y - origin.y, vob.position.z - origin.z});
+			l.isStatic = false;
+			l.fire = true;
+			lights->push_back(l);
+		}
+	}
 	for (const auto& child : vob.children)
-		if (child) treeEmitters(*child, origin, out, depth + 1);
+		if (child) treeEmitters(*child, origin, out, lights, depth + 1);
 }
 
 // The effects of a fire place's tree file (a small world file: its top level objects are the roots), empty if it
@@ -1005,6 +1045,7 @@ const std::vector<ObjectStats::TreeEmitter>& fireTree(const zenkit::Vfs& vfs, ze
 	auto it = stats.trees.find(name);
 	if (it != stats.trees.end()) return it->second;
 	std::vector<ObjectStats::TreeEmitter>& list = stats.trees[name];
+	std::vector<SrcLight>& lights = stats.treeLights[name];
 	if (name.empty()) return list;
 	try {
 		if (const zenkit::VfsNode* node = vfs.find(name)) {
@@ -1012,10 +1053,11 @@ const std::vector<ObjectStats::TreeEmitter>& fireTree(const zenkit::Vfs& vfs, ze
 			zenkit::World tree;
 			tree.load(rd.get(), version);
 			for (const auto& root : tree.world_vobs)
-				if (root) treeEmitters(*root, root->position, list, 0);
+				if (root) treeEmitters(*root, root->position, list, &lights, 0);
 		}
 	} catch (const std::exception&) {
 		list.clear();
+		lights.clear();
 	}
 	return list;
 }
@@ -1362,16 +1404,15 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 		// A light: kept for the baker's light (light_bake.h).
 		if (vob->type == zenkit::VirtualObjectType::zCVobLight) {
 			if (const auto* lamp = dynamic_cast<const zenkit::VLight*>(vob.get()); lamp && lamp->range > 1.0f) {
-				SrcLight l;
-				l.pos[0] = vob->position.x;
-				l.pos[1] = vob->position.y;
-				l.pos[2] = vob->position.z;
-				l.range = lamp->range;
-				l.color[0] = lamp->color.r;
-				l.color[1] = lamp->color.g;
-				l.color[2] = lamp->color.b;
-				l.isStatic = lamp->is_static;
-				scene.lights.push_back(l);
+				// (fix148: a dynamic light that is turned off gives none; its flicker is kept for the runtime's lamps.)
+				if (!lamp->is_static && !lamp->on) {
+					++stats.lampsOff;
+				} else {
+					SrcLight l = lampOf(*lamp, vob->position);
+					++(l.isStatic ? stats.lampsStatic : stats.lampsDynamic);
+					stats.lampsAnimated += l.rangeKeys.size() > 1 || l.colorKeys.size() > 1;
+					scene.lights.push_back(l);
+				}
 			}
 			continue;
 		}
@@ -1418,11 +1459,48 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 					if (!fire || fire->slot.empty() || !vob->visual || vob->visual->name.empty()) {
 						// (no slot to hang on: at the object's origin)
 					} else {
-						stats.pendingFires.push_back({scene.emitters.size(), {te.pos[0], te.pos[1], te.pos[2]}, vob.get(),
+						stats.pendingFires.push_back({scene.emitters.size(), false, {te.pos[0], te.pos[1], te.pos[2]}, vob.get(),
 						                              upper(vob->visual->name), upper(fire->slot)});
 					}
 					scene.emitters.push_back(e);
 					++stats.fireEmitters;
+				}
+				// fix148: the tree's lights, placed as its effects are (on the slot's node once the models are read).
+				const std::vector<SrcLight>& treeLights = stats.treeLights[treeName];
+				for (const SrcLight& tl : treeLights) {
+					SrcLight l = tl;
+					for (int a = 0; a < 3; ++a) {
+						const float* col[3] = {&c[0].x, &c[1].x, &c[2].x};
+						l.pos[a] = (&vob->position.x)[a] + col[0][a] * tl.pos[0] + col[1][a] * tl.pos[1] + col[2][a] * tl.pos[2];
+					}
+					if (fire && !fire->slot.empty() && vob->visual && !vob->visual->name.empty())
+						stats.pendingFires.push_back({scene.lights.size(), true, {tl.pos[0], tl.pos[1], tl.pos[2]}, vob.get(),
+						                              upper(vob->visual->name), upper(fire->slot)});
+					stats.lampsAnimated += l.rangeKeys.size() > 1 || l.colorKeys.size() > 1;
+					scene.lights.push_back(l);
+					++stats.lampsOfFires;
+				}
+				// A fire whose tree burns (it has flames) but has no light: one of a camp fire's warmth, flickering, a little
+				// over the flames. (ZenGin would give it none; the game's fire places all have one where we know them.)
+				if (treeLights.empty() && !tree.empty()) {
+					float sum[3] = {0, 0, 0};
+					for (const ObjectStats::TreeEmitter& te : tree)
+						for (int a = 0; a < 3; ++a) sum[a] += te.pos[a] / float(tree.size());
+					SrcLight l;
+					for (int a = 0; a < 3; ++a) {
+						const float* col[3] = {&c[0].x, &c[1].x, &c[2].x};
+						l.pos[a] = (&vob->position.x)[a] + col[0][a] * sum[0] + col[1][a] * sum[1] + col[2][a] * sum[2] + (a == 1 ? 40.0f : 0.0f);
+					}
+					l.range = 900.0f;
+					l.color[0] = 255;
+					l.color[1] = 170;
+					l.color[2] = 90;
+					l.fire = l.made = true;
+					if (fire && !fire->slot.empty() && vob->visual && !vob->visual->name.empty())
+						stats.pendingFires.push_back({scene.lights.size(), true, {sum[0], sum[1] + 40.0f, sum[2]}, vob.get(),
+						                              upper(vob->visual->name), upper(fire->slot)});
+					scene.lights.push_back(l);
+					++stats.lampsMade;
 				}
 				if (tree.empty()) {
 					// No tree file to be read: a plain fire over the place.
@@ -1522,15 +1600,15 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 		float inNode[3];
 		node->second.point(pf.local, inNode);
 		const zenkit::Vec3* c = pf.vob->rotation.columns;
-		SrcEmitter& e = scene.emitters[pf.emitter];
-		e.pos[0] = pf.vob->position.x + c[0].x * inNode[0] + c[1].x * inNode[1] + c[2].x * inNode[2];
-		e.pos[1] = pf.vob->position.y + c[0].y * inNode[0] + c[1].y * inNode[1] + c[2].y * inNode[2];
-		e.pos[2] = pf.vob->position.z + c[0].z * inNode[0] + c[1].z * inNode[1] + c[2].z * inNode[2];
+		float* pos = pf.light ? scene.lights[pf.emitter].pos : scene.emitters[pf.emitter].pos;
+		pos[0] = pf.vob->position.x + c[0].x * inNode[0] + c[1].x * inNode[1] + c[2].x * inNode[2];
+		pos[1] = pf.vob->position.y + c[0].y * inNode[0] + c[1].y * inNode[1] + c[2].y * inNode[2];
+		pos[2] = pf.vob->position.z + c[0].z * inNode[0] + c[1].z * inNode[1] + c[2].z * inNode[2];
 	}
 	if (onNode || offNode) {
 		std::string list;
 		for (const std::string& k : offKinds) list += (list.empty() ? "" : "; ") + k;
-		scene.notes.push_back("fire flames: " + std::to_string(onNode) + " hung on their place's node, " + std::to_string(offNode) +
+		scene.notes.push_back("fire flames and lights: " + std::to_string(onNode) + " hung on their place's node, " + std::to_string(offNode) +
 		                      " on the object's origin (no such node in its model)" + (list.empty() ? "" : ": " + list));
 	}
 
@@ -1939,6 +2017,11 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 		scene.notes.push_back("particle effects: " + std::to_string(stats.emitters) + " placed by the world, " +
 		                      std::to_string(stats.fireEmitters) + " from fire places' trees" +
 		                      (stats.fireWithoutTree ? " (" + std::to_string(stats.fireWithoutTree) + " fire places without a readable tree: a plain FIRE)" : std::string()));
+	if (stats.lampsStatic || stats.lampsDynamic || stats.lampsOff || stats.lampsOfFires || stats.lampsMade)
+		scene.notes.push_back("lamps (zCVobLight): " + std::to_string(stats.lampsStatic) + " static (in the world's compiled light), " +
+		                      std::to_string(stats.lampsDynamic) + " dynamic, " + std::to_string(stats.lampsOff) + " dynamic turned off (left out); " +
+		                      std::to_string(stats.lampsOfFires) + " from fire places' trees, " + std::to_string(stats.lampsMade) +
+		                      " made for fire places whose tree has none; " + std::to_string(stats.lampsAnimated) + " flicker by keys");
 	if (stats.sprites || stats.unsupported)
 		scene.notes.push_back("objects skipped (not supported yet): " + std::to_string(stats.sprites) + " camera-facing sprites, " +
 		                      std::to_string(stats.unsupported) + " other");

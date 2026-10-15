@@ -407,7 +407,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			for (size_t k = 1; k < kMaxFrames && scene.loadTexture; ++k) {
 				const std::string next = frameName(tex, k);
 				SrcImage probe;
-				if (next.empty() || !scene.loadTexture(next, probe)) break;
+				if (next.empty() || !(makeFoamFrame(next, probe) || (scene.loadTexture && scene.loadTexture(next, probe)))) break;
 				list.push_back(addJob(next, w));
 				if (scene.materials[i].water) waterNames.insert(list.back());
 			}
@@ -432,8 +432,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 					if (opt.waterTexture && waterNames.count(jobs[i].pakName)) {
 						img = makeWaterTexture(opt.waterColor, 128, opt.waterAlpha);
 						found = true;
-					} else if (jobs[i].pakName == texturePakName(kFoamTexture)) {
-						img = makeFoamTexture();
+					} else if (makeFoamFrame(jobs[i].source, img)) {
 						found = true;
 					} else if (jobs[i].pakName == texturePakName(kGlintTexture)) {
 						img = makeGlintTexture();
@@ -686,6 +685,15 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		AoStats ao;
 		if (opt.ao.level != AO_OFF) bakeOcclusion(bw.scene, aoMaterials, opt.ao, ao);
 		LightStats lightStats;
+		if (!opt.light.enabled && opt.lampExtra > 0) {
+			std::vector<SrcLight> dynamic;
+			for (const SrcLight& l : bw.scene.lights)
+				if (!l.isStatic) dynamic.push_back(l);
+			const u32 added = cutNearLights(bw.scene, aoMaterials, dynamic, opt.lampCell, opt.lampExtra);
+			if (!dynamic.empty())
+				line(format("lamps: %u triangles added by cutting the large ones near the %zu lamps to %.1f m (--lamp-cell, --lamp-extra %u)",
+				            added, dynamic.size(), double(opt.lampCell) / 100.0, opt.lampExtra));
+		}
 		{
 			LightOptions lo = opt.light;
 			lo.threads = opt.threads;
@@ -783,6 +791,25 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				ladderSideCount += sl.side != 0;
 			}
 			ladderInfos.push_back(li);
+		}
+		// fix148: the lamps for the runtime (torches and fires light the people and the world round them, and flicker).
+		{
+			const std::vector<WorldLamp> lamps = lampTable(bw.scene.lights, opt.light.enabled);
+			if (!lamps.empty()) {
+				const LampsHeader lh {LAMPS_MAGIC, LAMPS_VERSION, u32(lamps.size()), 0};
+				std::vector<u8> blob(lampsBlobSize(lh.count));
+				std::memcpy(blob.data(), &lh, sizeof(lh));
+				std::memcpy(blob.data() + sizeof(lh), lamps.data(), lamps.size() * sizeof(WorldLamp));
+				pak.add("world/" + bw.name + "/lamps", ASSET_META, blob);
+			}
+			u32 fires = 0, made = 0, keyed = 0;
+			for (const WorldLamp& lamp : lamps) {
+				fires += (lamp.flags & LAMPF_FIRE) != 0;
+				made += (lamp.flags & LAMPF_MADE) != 0;
+				keyed += lamp.rangeKeys > 1 || lamp.colorKeys > 1;
+			}
+			line(format("lamps for the runtime: %zu (%u of fire places, %u made for fires without one, %u flicker by keys)%s", lamps.size(),
+			            fires, made, keyed, lamps.empty() ? "" : opt.light.enabled ? "; their light is baked too (--lights): the runtime adds the flicker" : "; not baked (no --lights): the runtime lights the world round them"));
 		}
 		if (ladderInfoCount) {
 			LadderInfoHeader lh {};

@@ -1,0 +1,129 @@
+; fix148: the static world lit by up to four lamps (torches, fire places, lamps) - entry `lampmain`, DVLE 6 of
+; world_fast_shbin.h. What `fadefast` (world_fastfade.v.pica) does, and the lamps' light added after the occlusion:
+;
+;   light += sum over the lamps of  colour * max(0, 1 - d^2 / range^2)^4  *  (1 + weight * dayK)
+;
+; d = distance of the corner from the lamp, weight = the corner's daylight weight (its alpha, 0..255). No normals
+; and no shadows: a lamp lights what is within its reach on every side (ZenGin's dynamic lights have no shadows
+; either). The world draws that reach no lamp keep the shorter entries; gfx_c3d.cpp picks this one per draw.
+;
+; The lamps are in the first eight rows of `bones` (the characters' palette: the characters' entry writes the rows it
+; needs for every draw, and no other world entry reads them), so the entry needs no uniform of its own:
+;   bones[2k]   = xyz: the lamp relative to the eye's lattice point, w: -1 / range^2
+;   bones[2k+1] = xyz: its colour (1 = the texture at full brightness; negative darkens), w: dayK = (keep - 1) / 255,
+;                 keep = how much of the light is left where the corner sees the whole sky (by day; 1 at night)
+; A lamp that is not there has colour 0. About 54 instructions, no loop; one branch (the dissolve, as fadefast).
+; Writes every component of every output (fix145): position, texcoord0, colour, texcoord1.
+; Declares the same uniforms in the same order as the other entries, so they share locations.
+
+.fvec mvp[4]        ; projection x modelView (worked out on the CPU), rows
+.fvec fogRow        ; fog factor before clamping = dp4(fogRow, position relative to the lattice point)
+.fvec chunk         ; xyz = origin relative to the eye's lattice point, w = position step
+.fvec params        ; x = uv scale, y = 1/255
+.fvec dayDelta      ; (not used here)
+.fvec texOffset     ; xy = texture scroll offset
+.fvec skinLight     ; (not used here)
+.fvec bones[78]     ; rows 0..7: the four lamps (see above)
+.fvec fx            ; (not used here)
+.fvec lightK        ; xyz = (dayLight - 1) / 255 / 255: the fast shader's daylight term
+.fvec aoK           ; x = occlusion strength / 256
+.fvec wave          ; (water waves; used by the full entry only)
+.bool skinned
+.bool windy
+.bool fading        ; the dissolve: texture coordinate 1 is the place on the screen
+.bool wavy          ; Graphics+: the water's waves (world_full.v.pica only)
+
+.constf consts(0.0, 1.0, 0.0, 0.0)
+.constf noiseScale(15.0, 25.0, 0.0, 0.0)
+.alias zero consts.xxxx
+.alias one  consts.yyyy
+
+.out outpos position
+.out outtc0 texcoord0
+.out outclr color
+.out outtc1 texcoord1
+
+.alias inpos v0
+.alias intc  v1
+.alias inclr v2
+
+.entry lampmain
+.proc lampmain
+	; r0 = (position relative to the eye's lattice point, 1)
+	mul r0.xyz, chunk.www, inpos
+	add r0.xyz, chunk.xyz, r0.xyz
+	mov r0.w,   one
+
+	dp4 r6.x, mvp[0], r0
+	dp4 r6.y, mvp[1], r0
+	dp4 r6.z, mvp[2], r0
+	dp4 r6.w, mvp[3], r0
+	mov outpos, r6
+
+	; the dissolve: where on the screen, in texels of the noise (as fadefast)
+	ifu fading
+		rcp r7.x, r6.w
+		mul r7.xy, r6.xy, r7.xx
+		mul r7.xy, noiseScale.xy, r7.xy
+		mov r7.zw, zero
+		mov outtc1, r7
+	.else
+		mov outtc1, zero
+	.end
+
+	; fog factor, clamped, straight into the alpha
+	dp4 r3.x, fogRow, r0
+	max r3.x, zero, r3.x
+	min outclr.w, one, r3.x
+
+	mul r2, params.xxxx, intc
+	add outtc0, texOffset, r2
+
+	; light = rgb * (1/255 + weight * lightK) * (1 - w * aoK)
+	mul r5.xyz, lightK, inclr.www
+	add r5.xyz, params.yyy, r5.xyz
+	mul r4.xyz, inclr, r5.xyz
+	mul r9.x, aoK.x, inpos.w
+	add r9.x, one, -r9.x
+	mul r4.xyz, r4.xyz, r9.xxx
+
+	; the lamps: r7 = sum of colour * (1 - d^2 / range^2)^4 (r9 = 1: mad wants its third operand in a register)
+	mov r9, one
+	add r1.xyz, bones[0].xyz, -r0.xyz
+	dp3 r1.x, r1, r1
+	mad r1.x, r1.x, bones[0].w, r9.x
+	max r1.x, zero, r1.x
+	mul r1.x, r1.x, r1.x
+	mul r1.x, r1.x, r1.x
+	mul r7.xyz, bones[1].xyz, r1.xxx
+
+	add r1.xyz, bones[2].xyz, -r0.xyz
+	dp3 r1.x, r1, r1
+	mad r1.x, r1.x, bones[2].w, r9.x
+	max r1.x, zero, r1.x
+	mul r1.x, r1.x, r1.x
+	mul r1.x, r1.x, r1.x
+	mad r7.xyz, r1.xxx, bones[3].xyz, r7.xyz
+
+	add r1.xyz, bones[4].xyz, -r0.xyz
+	dp3 r1.x, r1, r1
+	mad r1.x, r1.x, bones[4].w, r9.x
+	max r1.x, zero, r1.x
+	mul r1.x, r1.x, r1.x
+	mul r1.x, r1.x, r1.x
+	mad r7.xyz, r1.xxx, bones[5].xyz, r7.xyz
+
+	add r1.xyz, bones[6].xyz, -r0.xyz
+	dp3 r1.x, r1, r1
+	mad r1.x, r1.x, bones[6].w, r9.x
+	max r1.x, zero, r1.x
+	mul r1.x, r1.x, r1.x
+	mul r1.x, r1.x, r1.x
+	mad r7.xyz, r1.xxx, bones[7].xyz, r7.xyz
+
+	; by day, outdoors, less of it: * (1 + weight * dayK)
+	mad r8.x, inclr.w, bones[1].w, r9.x
+	mad outclr.xyz, r7.xyz, r8.xxx, r4.xyz
+
+	end
+.end

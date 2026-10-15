@@ -52,6 +52,7 @@ struct MemStats {
 struct FrameStats {
 	u32 drawsDropped;     // draw calls skipped because the GPU command buffer was full
 	u32 programSwitches;  // changes between the fast and the full vertex shader in the frame (console only)
+	u32 lampDraws;        // fix148: draws by the lamps' entry in the frame (console only)
 	float commandBufferUse; // 0..1, share of the GPU command buffer the frame needed
 	// Timing; all zero where the backend has no display to keep pace with.
 	float frameMs; // from the previous frame's display sync to this one's: what the player sees
@@ -111,6 +112,30 @@ struct ChunkFx {
 	Texture* sun = nullptr;
 	float sunX0 = 0.0f, sunZ0 = 0.0f, sunScaleX = 0.0f, sunScaleZ = 0.0f;
 };
+// fix148: lamps (torches, fire places) lighting the static world - point lights without normals or shadows, as
+// ZenGin's dynamic lights. A corner at distance d from a lamp gets rgb * lampFalloff(d^2, range), times
+// (1 + weight * (dayKeep - 1)) for its daylight weight (vertex alpha / 255): by day less of it outdoors. Added after the
+// occlusion, before the fog. The draws that follow take the set until the next setLamps; only what the fast entry would
+// draw takes it (not what sways, not the water, not the characters), and not a chunk drawn with its sun's mask.
+constexpr u32 MAX_DRAW_LAMPS = 4;
+struct DrawLamp {
+	float pos[3];   // world cm
+	float range;    // cm (> 0)
+	float rgb[3];   // added at the lamp: 1 = the texture at full brightness; negative darkens (the flicker of a baked lamp)
+};
+struct LampSet {
+	u32 count = 0; // 0: none
+	DrawLamp lamp[MAX_DRAW_LAMPS];
+	float dayKeep = 1.0f; // 0..1
+};
+inline float lampFalloff(float distanceSq, float range) {
+	const float t = 1.0f - distanceSq / (range * range);
+	return t > 0.0f ? (t * t) * (t * t) : 0.0f; // (as world_lamp.v.pica: about (1 - d / range)^2 near, a little wider far)
+}
+// Null or count 0: no lamps. Copied.
+void setLamps(const LampSet* lamps);
+// False where the backend cannot light the world with lamps (the console's plain and classic shaders).
+bool lampsSupported();
 // How dark a fully shaded texel of a chunk's sun mask makes what lies under it: 0 (off) .. 1 (black). For the frame.
 void setSunShadow(float darkness);
 // Whether this backend draws the sun's masks at all (the console's older shaders do not).

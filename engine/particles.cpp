@@ -113,6 +113,37 @@ void Particles::enterWorld(Pak& pak, const char* worldName, Game& game) {
 	_stats.emitters = _emitterCount;
 }
 
+u32 Particles::fireLights(Vec3* pos, float (*rgb)[3], u32 max) {
+	u32 n = 0;
+	for (u32 i = 0; i < _emitterCount; ++i) {
+		if (_emitterDef[i] == 0xFFFE) {
+			const int di = defFor(_emitters[i].effect);
+			_emitterDef[i] = di < 0 ? 0xFFFF : u16(di);
+		}
+		if (_emitterDef[i] == 0xFFFF) continue;
+		const Def& d = _defs[_emitterDef[i]];
+		// (A flame is often white where it starts and orange where it ends: the two together.)
+		float c[3];
+		for (int a = 0; a < 3; ++a) c[a] = (d.colorStart[a] + d.colorEnd[a]) * 0.5f;
+		if (!d.additive || c[0] < 0.35f || c[0] < c[2] * 1.2f) continue;
+		const Vec3 p = {_emitters[i].pos[0], _emitters[i].pos[1], _emitters[i].pos[2]};
+		u32 k = 0;
+		for (; k < n; ++k) {
+			const Vec3 e = pos[k] - p;
+			if (dot(e, e) < 100.0f * 100.0f) break;
+		}
+		if (k == n) {
+			if (n == max) continue;
+			pos[n] = p;
+			rgb[n][0] = rgb[n][1] = rgb[n][2] = 0.0f;
+			++n;
+		}
+		if (c[0] + c[1] + c[2] > rgb[k][0] + rgb[k][1] + rgb[k][2])
+			for (int a = 0; a < 3; ++a) rgb[k][a] = clamp(c[a], 0.0f, 1.0f);
+	}
+	return n;
+}
+
 int Particles::defFor(u32 effect) {
 	for (u32 i = 0; i < _defCount; ++i)
 		if (_defs[i].hash == effect) return _defs[i].ok ? int(i) : -1;

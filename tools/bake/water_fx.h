@@ -7,6 +7,7 @@
 // geometry and materials; nothing of it is known to the runtime.
 #pragma once
 #include "scene.h"
+#include <string>
 
 namespace g3 {
 
@@ -39,7 +40,11 @@ extern const char* const kGlintTexture;
 SrcImage makeGlintTexture(int w = 128, int h = 128);
 // The foam's picture: `w` x `h` texels (powers of two), tiles along u; v = 0 is the bank, 1 the open water. White lace on a
 // clear background that fades out at both edges of the strip.
-SrcImage makeFoamTexture(int w = 128, int h = 64);
+SrcImage makeFoamTexture(int w = 128, int h = 64, int frame = 0, int frames = 1);
+// The foam is animated: kFoamFrames pictures, G3_FOAM_A0.TGA .. G3_FOAM_A7.TGA (the lace moves, the front goes out and back).
+constexpr int kFoamFrames = 8;
+// Makes the picture of a foam frame by its name (any case, with or without a path); false for any other name.
+bool makeFoamFrame(const std::string& name, SrcImage& img);
 
 // Adds the foam strips (a material of its own, drawn after the water) and the flow copies of the water materials.
 // Outdoor scenes only (the caller checks). Appends to scene.materials and scene.triangles; the ground the foam and the

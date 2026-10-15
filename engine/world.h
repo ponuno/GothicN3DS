@@ -131,6 +131,8 @@ struct WorldStats {
 	u32 windyDrawCalls;  // of them: plants swaying (the vertex shader does more there)
 	u32 waveDrawCalls;   // of them: water with waves (WorldF_WATER_GRID, the setting on)
 	u32 waveTriangles;   // their triangles
+	u32 lampDrawCalls;   // fix148: draw calls lit by lamps (Lamps::pick; the console draws them with the lamps' entry)
+	u32 lampTriangles;   // their triangles
 	u32 batchesCulled;   // batches of visible chunks skipped: out of view or too far for their size
 	u32 sizeCulled;      // of them: small objects nearer than their class's distance, but too small to be seen there
 	u32 batchesMerged;   // batches that went out in the draw call of the one before them
@@ -250,6 +252,9 @@ public:
 	u32 plantBoxes(Vec3 around, float radius, float minHeight, PlantBox* out, u32 max) const;
 	// What moves and is solid (gates, lifts, shut doors: triggers.h) - asked by these queries too; null: nothing.
 	void setDynamic(const class Triggers* dynamic) { _dynamic = dynamic; }
+	// fix148: the lamps that light the world's draws round them (null: none). The world asks them once a box of a chunk.
+	void setLamps(class Lamps* lamps) { _lamps = lamps; }
+	class Lamps* lamps() const { return _lamps; }
 	// Highest water surface under `from`, no lower than from.y - maxDrop.
 	// `waveWeight`, if given, receives how much of the waves lifts the water there (0..1; 0 where it is still).
 	bool waterBelow(Vec3 from, float maxDrop, float& surfaceY, float* waveWeight = nullptr) const;
@@ -420,6 +425,8 @@ public:
 	// Whether what stands at `p` (a torch, a fire place) is drawn just now: its chunk is in memory, within the draw distance,
 	// and a small object that near is within its distance. `chunk` is the caller's cache (start it at -2).
 	bool pointShown(Vec3 p, Vec3 eye, int& chunk, bool wasOn) const;
+	// fix148: whether the chunk `p` stands in is in memory (a lamp shines while its torch can be drawn). `chunk` as pointShown's.
+	bool chunkLoadedAt(Vec3 p, int& chunk) const;
 	// The row of the visibility table for a camera at `camera` (it is looked up while drawing; this is for tests and
 	// reports): the floor of the camera's cell in use, or -1 (no row: everything is drawn).
 	int visibilityFloor(Vec3 camera) {
@@ -435,6 +442,11 @@ public:
 	}
 private:
 	const class Triggers* _dynamic = nullptr;
+	class Lamps* _lamps = nullptr;
+	// fix148: the lamps of each cluster of the chunk being drawn (Lamps::pick's key), worked out when first wanted.
+	u32 _clusterLamps[256] = {};
+	u32 _clusterLampStamp[256] = {};
+	u32 _lampStamp = 0;
 	void loadVis();
 	void freeVis();
 	// Looks up the camera's row of the table when the camera has moved to another cell.

@@ -28,7 +28,8 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 22: light shafts.
 // 23: the sun's shadow.
 // 24: the new grass.
-constexpr u32 SETTINGS_VERSION = 24;
+// 25: the light of torches and fires.
+constexpr u32 SETTINGS_VERSION = 25;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -62,6 +63,7 @@ void Settings::resetGraphics() {
 	refresh = d.refresh;
 	reproject = d.reproject;
 	grass = d.grass;
+	lamps = d.lamps;
 	applyGfxPreset(GFX_PLUS_OFF);
 }
 
@@ -124,6 +126,7 @@ void Settings::sanitize() {
 	if (lodFade > 2) lodFade = 1;
 	if (sunShadows > 3) sunShadows = 1;
 	if (grass > 2) grass = 0;
+	if (lamps > 2) lamps = 2;
 	gfxPlus = gfxPresetOf();
 	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &barrier, &visibility, &reproject, &readAhead, &farFill, &wetGround, &godRays};
 	if (stereo > 2) stereo = 0;

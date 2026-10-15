@@ -1,4 +1,5 @@
 #include "world.h"
+#include "lamps.h"
 #include "triggers.h"
 
 #include "readahead.h"
@@ -179,6 +180,20 @@ bool World::pointShown(Vec3 p, Vec3 eye, int& chunk, bool wasOn) const {
 	const float dx = p.x - eye.x, dy = p.y - eye.y, dz = p.z - eye.z;
 	const float reach = min(_cfg.drawDistance, _cfg.detailDistance[DETAIL_SMALL] * _cfg.detailScale) * (wasOn ? _cfg.detailHysteresis : 1.0f);
 	return dx * dx + dy * dy + dz * dz <= reach * reach;
+}
+
+bool World::chunkLoadedAt(Vec3 p, int& chunk) const {
+	if (chunk == -2) {
+		chunk = -1;
+		for (u32 i = 0; i < _hdr.chunkCount && chunk < 0; ++i) {
+			const ChunkInfo& c = _chunks[i];
+			if (p.x >= c.bbMin[0] - 50.0f && p.x <= c.bbMax[0] + 50.0f && p.y >= c.bbMin[1] - 50.0f && p.y <= c.bbMax[1] + 50.0f &&
+			    p.z >= c.bbMin[2] - 50.0f && p.z <= c.bbMax[2] + 50.0f)
+				chunk = int(i);
+		}
+	}
+	// (In no chunk: a lamp in the air, or the world's chunks lie elsewhere - it shines.)
+	return chunk < 0 || (u32(chunk) < _hdr.chunkCount && _loaded[chunk].mesh != nullptr);
 }
 
 float World::distanceTo(u32 index, Vec3 c) const { return aabbDistance(_chunks[index].bbMin, _chunks[index].bbMax, c); }
@@ -1619,6 +1634,23 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 	// and triangles out of view are clipped, which is cheaper still.
 	const u32 bridge = 256 * 3;
 	u32 runFirst = 0, runCount = 0, gap = 0, runMaterial = 0;
+	// fix148: the lamps round the chunk (not for the translucent pass, nor for what sways: the full entry has none).
+	const u32 kNoLamps = 0xFFFFFFFFu;
+	u32 chunkLamps = 0, runLamps = kNoLamps;
+	if (!blended && phase != 2 && _lamps && _lamps->lightsWorld()) {
+		const ChunkInfo& ci = _chunks[u32(&l - _loaded)];
+		chunkLamps = _lamps->touching(ci.bbMin, ci.bbMax);
+		++_lampStamp;
+	}
+	auto lampsOf = [&](u32 c) -> u32 {
+		if (!chunkLamps) return kNoLamps;
+		if (_clusterLampStamp[c] != _lampStamp) {
+			_clusterLampStamp[c] = _lampStamp;
+			const Cluster& k = l.clusters[c];
+			_clusterLamps[c] = _lamps->pick(k.bbMin, k.bbMax, chunkLamps);
+		}
+		return _clusterLamps[c];
+	};
 	auto flush = [&]() {
 		gap = 0;
 		if (!runCount) return;
@@ -1674,6 +1706,15 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 		if (!tex && m.average && !(m.flags & (MATF_BLEND | MATF_ADD | MATF_ALPHA_TEST | MATF_NO_TEXTURE))) tex = solidFor(m.average);
 		gfx::setMaterial(tex, m.flags, float(m.opacity) * (1.0f / 255.0f), offset[0], offset[1]);
 		if (!blended) gfx::setFade(float(runShown) * (1.0f / 255.0f));
+		if (runLamps != kNoLamps && !(m.flags & MATF_WIND)) {
+			gfx::LampSet set;
+			_lamps->setFor(runLamps, set);
+			gfx::setLamps(&set);
+			++_stats.lampDrawCalls;
+			_stats.lampTriangles += runCount / 3;
+		} else {
+			gfx::setLamps(nullptr);
+		}
 		gfx::draw(l.mesh, runFirst, runCount);
 		++_stats.drawCalls;
 		_stats.blendedDrawCalls += blended;
@@ -1752,21 +1793,25 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 			_stats.trisByDist[nd < 1200.0f ? 0 : nd < 2500.0f ? 1 : 2] += t;
 			if (batch.lodMode == BATCH_LOD_FAR_ONLY) _stats.lodTriangles += t;
 		}
-		const bool follows = runCount && batch.material == runMaterial && batch.firstIndex == runFirst + runCount + gap;
+		const bool contiguous = runCount && batch.material == runMaterial && batch.firstIndex == runFirst + runCount + gap;
 		if (!visible) {
 			++_stats.batchesCulled;
-			if (follows && gap + batch.indexCount <= bridge)
+			// (A culled stretch bridged over is drawn with the run's lamps.)
+			if (contiguous && gap + batch.indexCount <= bridge)
 				gap += batch.indexCount;
 			else
 				flush();
 			continue;
 		}
+		const u32 lampKey = lampsOf(c);
+		const bool follows = contiguous && lampKey == runLamps;
 		if (own || (edge != 255 && shown != edge)) {
 			// Dissolving: a draw call of its own.
 			flush();
 			runFirst = batch.firstIndex;
 			runCount = batch.indexCount;
 			runMaterial = batch.material;
+			runLamps = lampKey;
 			runShown = shown;
 			flush();
 			runShown = edge;
@@ -1783,8 +1828,10 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 		runFirst = batch.firstIndex;
 		runCount = batch.indexCount;
 		runMaterial = batch.material;
+		runLamps = lampKey;
 	}
 	flush();
+	gfx::setLamps(nullptr);
 	if (edge != 255) gfx::setFade(1.0f);
 	if (!blended) gfx::setFade(1.0f);
 }
@@ -1797,6 +1844,8 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	_stats.windyDrawCalls = 0;
 	_stats.waveDrawCalls = 0;
 	_stats.waveTriangles = 0;
+	_stats.lampDrawCalls = 0;
+	_stats.lampTriangles = 0;
 	_stats.batchesCulled = 0;
 	_stats.sizeCulled = 0;
 	_stats.batchesMerged = 0;

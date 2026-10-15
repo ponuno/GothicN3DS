@@ -74,6 +74,9 @@ struct BakeOptions {
 	float waterGlint = 0.0f; // --water-glint S: sun glints, an additive layer of sparkles over the water (0: none; doubles the water)
 	// The light of the world's lamps (torches, fire places) baked into the vertices (--lights, light_bake.h).
 	LightOptions light;
+	// fix148: without --lights, the large triangles near the runtime's lamps are still cut (their light is per corner).
+	float lampCell = 150.0f; // cm
+	u32 lampExtra = 40000;   // triangles it may add (0: none cut)
 	// The sun's shadow on the ground (--sun-shadow, sun_bake.h): a mask per cell of the chunk grid, outdoor worlds only.
 	SunOptions sun;
 	// The new grass (--grass, grass_bake.h): tufts sown by the density map, outdoor worlds only.

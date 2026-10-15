@@ -19,6 +19,8 @@ void c3dSetPlainShader(bool plain);
 void c3dSetFillTest(bool on);
 // The sun's shadow left out of the drawing altogether (its texture stages never set): for finding faults (C-Stick up at start).
 void c3dSetNoSun(bool on);
+// fix148 (debug.txt nolamps): the lamps' entry is never bound - the world is drawn as before, the lamps light only the characters.
+void c3dSetNoLamps(bool on);
 // For finding faults (debug.txt): materials with any of `skipFlags` (MATF_*) are not drawn; `program` 1 draws the world with the fast
 // entry only, 2 with the full one only, 0 as usual.
 void c3dSetDebugDraw(u16 skipFlags, int program);

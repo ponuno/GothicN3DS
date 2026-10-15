@@ -15,6 +15,7 @@ struct SoftStats {
 	u32 skinnedTriangles;   // of characters ...
 	u32 skinnedBackface;    // ... turned away from the camera ...
 	u32 skinnedPixels;      // ... and the fragments of theirs that passed the depth test
+	u32 lampDraws;          // fix148: world draws lit by lamps (setLamps)
 };
 
 // Stereo test aid: how many times eyeBegin was called, and the view of the left eye (frameBegin) and of the right (eyeBegin) last time.

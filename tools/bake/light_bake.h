@@ -10,6 +10,7 @@
 // into smaller ones first (`cell`), up to `maxExtra` more triangles in all.
 #pragma once
 #include "vertex_fx.h"
+#include "g3ds/lamps.h"
 
 namespace g3 {
 
@@ -36,5 +37,15 @@ struct LightStats {
 float lampLight(float distance, float range, float facing);
 
 void bakeLights(SrcScene& scene, const std::vector<AoMaterial>& materials, const LightOptions& opt, LightStats& stats);
+
+// The large triangles within reach of `lamps` cut down to `cellCm` (up to `maxExtra` more triangles): the light is per corner.
+// bakeLights does it first; fix148: without --lights it is done for the runtime's lamps alone (--lamp-cell, --lamp-extra).
+// Returns how many triangles it added.
+u32 cutNearLights(SrcScene& scene, const std::vector<AoMaterial>& materials, const std::vector<SrcLight>& lamps, float cellCm, u32 maxExtra);
+
+// fix148: the runtime's table of the world's lamps (g3ds/lamps.h): every lamp that is not static, with its flicker
+// (more than LAMP_KEYS keys are thinned out evenly, the fps lowered to keep the cycle's length). `baked`: bakeLights
+// put their light into the vertices (--lights), so the runtime adds only the flicker to the world.
+std::vector<WorldLamp> lampTable(const std::vector<SrcLight>& lights, bool baked);
 
 } // namespace g3

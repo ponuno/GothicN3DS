@@ -97,7 +97,15 @@ public:
 	const Pose& pose() const { return _drawn; }
 	// Height of the hips above the feet at rest: what the camera looks after.
 	float hipHeight() const { return _restY; }
-	const float* light() const { return _light; }
+	const float* light() const { return _shown; }
+	// fix148: the lamps' light on him (Lamps::lightAt), added to the ground's from now on; and how much sky his ground sees (0..1).
+	void setLampLight(const float add[3]) {
+		for (int i = 0; i < 3; ++i) {
+			_lamp[i] = add[i];
+			_shown[i] = _light[i] + add[i];
+		}
+	}
+	float sky() const { return _sky; }
 	// The clip of a name, if the model has it ("S_RUNL").
 	const Clip* clip(const char* name) const { return _model.clip(name); }
 
@@ -244,6 +252,9 @@ private:
 	float _restY = 100.0f, _hipMix = 0;
 	float _exitCarry = 0, _exitTime = 1.0f; // (the climb's height left in the pose the next one fades from)
 	float _light[3] = {1, 1, 1};
+	float _lamp[3] = {0, 0, 0};  // fix148: the lamps' light on him
+	float _shown[3] = {1, 1, 1}; // the two together: what he is drawn in
+	float _sky = 1.0f;
 	float _jumpCool = 0.0f;
 	bool _placed = false, _walkMode = false, _slow = false, _jumpHeld = false, _jumping = false, _leftGround = false;
 	bool _sneak = false;

@@ -1,3 +1,4 @@
+; fix148: NOT assembled any more - DVLE 5 is the lamps' entry (world_lamp.v.pica) now; kept for reference.
 ; The same as world_fastfade.v.pica, and the sun's mask laid over the ground (texture coordinate 2): for the chunks that have one
 ; (gfx_c3d.cpp: PROGRAM_FAST_SUN). Two instructions more a vertex, so the chunks without one keep the shorter entry.
 ; The fast vertex shader with the dissolve (PICA200, assembled with picasso): entry `fadefast`, DVLE 2 of

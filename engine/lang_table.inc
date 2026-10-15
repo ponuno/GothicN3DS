@@ -435,4 +435,9 @@ const Entry kEntries[] = {
     {{"Тень темнее и дольше днём", "Darker, for more of the day", "Ciemniejszy, przez większą część dnia", "Dunkler, länger am Tag"}},
     {{"Самая тёмная тень", "The darkest shade", "Najciemniejszy cień", "Der dunkelste Schatten"}},
     {{"Тень деревьев и домов днём (--sun-shadow)", "Shade of trees and houses (--sun-shadow)", "Cień drzew i domów (--sun-shadow)", "Schatten von Bäumen, Häusern (--sun-shadow)"}},
+    {{"Свет огней", "Fire light", "Światło ognia", "Feuerlicht"}},
+    {{"Персонажи", "Characters", "Postacie", "Figuren"}},
+    {{"Факелы и костры не светят", "Torches and fires give no light", "Pochodnie i ogniska nie świecą", "Fackeln und Feuer leuchten nicht"}},
+    {{"Светят на жителей, героя и вещи рядом", "They light people, the hero and things near", "Oświetlają ludzi, bohatera i rzeczy obok", "Sie beleuchten Leute, Held und Dinge"}},
+    {{"И на землю и стены вокруг, с мерцанием", "And the ground and walls round, flickering", "Też ziemię i ściany wokół, migocząc", "Auch Boden und Wände ringsum, flackernd"}},
 };

@@ -1472,8 +1472,8 @@ static void testWorlds() {
 	const BakeResult result = bakeWorlds(worlds, bo, writer);
 	const std::string path = gDir + "/worlds.pak";
 	writer.write(path);
-	// Textures are shared: both worlds use the same water, rock and dirt (and the one foam picture, fix140).
-	CHECK(result.textures == 14 && result.report.find("== world 'cave'") != std::string::npos);
+	// Textures are shared: both worlds use the same water, rock and dirt (and the foam's eight frames, fix140).
+	CHECK(result.textures == 21 && result.report.find("== world 'cave'") != std::string::npos);
 	CHECK(result.report.find("portals: 1 of 1 lead to a baked world: cave at CAVE_ENTRY") != std::string::npos);
 	CHECK(result.report.find("portals: 1 of 1 lead to a baked world: world at CAMP_GATE") != std::string::npos);
 	CHECK(result.report.find("1 animated, 1 scrolling") != std::string::npos);
@@ -1485,7 +1485,7 @@ static void testWorlds() {
 	CHECK(std::string(app.worldName()) == "world/world");
 	World& w = app.world();
 	Player& pl = app.player();
-	CHECK(w.header().portalCount == 1 && w.header().textureCount == 15);
+	CHECK(w.header().portalCount == 1 && w.header().textureCount == 22);
 	w.preload(app.camera().pos);
 
 	// ---- detail classes: small objects are only drawn near the camera ----
@@ -5427,7 +5427,7 @@ static void testWayNet() {
 
 // The two synthetic worlds with a script of the caller's and the people it names.
 static BakeResult bakeLifeWorlds(const std::string& source, const std::string& path, std::vector<BakeWorld>& worlds,
-                                 bool withFightAi = true, bool sunShadow = false, bool grass = false) {
+                                 bool withFightAi = true, bool sunShadow = false, bool grass = false, int lampMode = 0) {
 	SrcScript script;
 	compileDaedalus(source, script);
 	worlds.assign(2, BakeWorld());
@@ -5438,12 +5438,14 @@ static BakeResult bakeLifeWorlds(const std::string& source, const std::string& p
 	so.huts = 6;
 	so.trees = 20;
 	buildSyntheticScene(so, worlds[0].scene);
+	if (lampMode == 1) worlds[0].scene.lights.clear(); // (fix148: no table of lamps - as a data.pak of before)
 	worlds[1].name = "cave";
 	worlds[1].level = "CAVE.ZEN";
 	buildSyntheticCave(worlds[1].scene);
 	std::vector<SrcModel> models(1);
 	buildSyntheticActor(models[0]);
 	BakeOptions bo;
+	bo.light.enabled = lampMode == 2;
 	bo.chunker.chunkSize = 3000.0f;
 	bo.tex.maxSize = 32;
 	bo.tex.quality = 0;
@@ -5465,6 +5467,132 @@ static BakeResult bakeLifeWorlds(const std::string& source, const std::string& p
 	const BakeResult r = bakeWorlds(worlds, models, scripts, bo, writer);
 	writer.write(path);
 	return r;
+}
+
+// fix148: the light of torches and fires (g3ds/lamps.h, engine/lamps.h). The baker's table: the dynamic lamps only, the keys
+// of their flicker thinned to eight, the baked ones marked. The game: the synthetic camp fire's lamp lights the hero (more red
+// than blue), flickers, reaches the world's boxes round it and not those far off; the menu turns it off for the world (1) and
+// for all (0); without the table the fires of the particles stand in; baked with --lights the world takes only the flicker.
+static void testLamps() {
+	{
+		std::vector<SrcLight> src(3);
+		src[0].isStatic = true;
+		src[0].range = 500.0f;
+		src[1].range = 700.0f;
+		src[1].fire = true;
+		for (int k = 0; k < 16; ++k) src[1].rangeKeys.push_back(k % 4 < 2 ? 1.2f : 0.8f); // (thinned to every second: 1.2, 0.8, ...)
+		src[1].rangeFps = 16.0f;
+		src[1].colorKeys = {{255, 0, 0}, {0, 255, 0}};
+		src[1].colorFps = 2.0f;
+		src[2].range = 0.5f; // (no reach: left out)
+		const std::vector<WorldLamp> t = lampTable(src, false), tb = lampTable(src, true);
+		CHECK(t.size() == 1 && tb.size() == 1);
+		if (t.size() == 1 && tb.size() == 1) {
+			CHECK(t[0].range == 700.0f && (t[0].flags & LAMPF_FIRE) && !(t[0].flags & LAMPF_BAKED) && (tb[0].flags & LAMPF_BAKED));
+			CHECK(t[0].rangeKeys == LAMP_KEYS && std::fabs(t[0].rangeFps - 8.0f) < 1e-4f && t[0].rangeScale[0] == 77 && t[0].rangeScale[1] == 51);
+			CHECK(t[0].colorKeys == 2 && t[0].colors[1][1] == 255 && t[0].colorFps == 2.0f);
+		}
+	}
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/lamps.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds, false);
+	gfx::init();
+	{
+		App app;
+		CHECK(app.init(path.c_str(), nullptr));
+		app.skipChapters();
+		app.npcs().game().setQuiet(true);
+		app.weather().configure(WEATHER_CLEAR, true);
+		app.weather().settle();
+		app.environment().timeOfDay = 23.0f;
+		app.settings().timeFlow = 0;
+		CHECK(app.settings().lamps == 2); // (the default)
+		app.applySettings();
+		app.world().preload(app.camera().pos);
+		CHECK(app.lamps().available() && app.lamps().stats().table && !app.lamps().stats().baked && app.lamps().stats().lamps == 1);
+		for (int i = 0; i < 30; ++i) app.update(Input {}, 1.0f / 30.0f);
+		app.environment().timeOfDay = 23.0f; // (the scripts set the morning as the game starts)
+		for (int i = 0; i < 10; ++i) app.update(Input {}, 1.0f / 30.0f);
+		app.render();
+		const LampStats& ls = app.lamps().stats();
+		Vec3 at;
+		float range = 0, rgb[3] = {0, 0, 0};
+		CHECK(ls.active == 1 && ls.shining == 1 && ls.world && app.lamps().active(0, at, range, rgb));
+		const float lit[3] = {app.hero().light()[0], app.hero().light()[1], app.hero().light()[2]};
+		std::printf("  lamp at %.0f %.0f %.0f, range %.0f, colour %.2f %.2f %.2f; hero %.2f %.2f %.2f, %u boxes of the world lit, %u draws\n",
+		            double(at.x), double(at.y), double(at.z), double(range), double(rgb[0]), double(rgb[1]), double(rgb[2]), double(lit[0]),
+		            double(lit[1]), double(lit[2]), ls.boxes, app.world().stats().lampDrawCalls);
+		CHECK(rgb[0] > rgb[2] && range > 600.0f && range < 1000.0f);
+		// Its flicker: another moment, another colour or reach.
+		float rgb2[3] = {0, 0, 0}, range2 = 0;
+		for (int i = 0; i < 7; ++i) app.update(Input {}, 1.0f / 30.0f);
+		CHECK(app.lamps().active(0, at, range2, rgb2) && (range2 != range || rgb2[0] != rgb[0] || rgb2[1] != rgb[1]));
+		// The boxes: round it, yes; far off, no.
+		{
+			Lamps& lamps = const_cast<Lamps&>(app.lamps());
+			const float near0[3] = {at.x - 100.0f, at.y - 300.0f, at.z - 100.0f}, near1[3] = {at.x + 100.0f, at.y, at.z + 100.0f};
+			const float far0[3] = {at.x + 5000.0f, at.y, at.z}, far1[3] = {at.x + 6000.0f, at.y + 100.0f, at.z + 100.0f};
+			const u32 bits = lamps.touching(near0, near1);
+			CHECK(bits == 1u && lamps.touching(far0, far1) == 0u);
+			const u32 key = lamps.pick(near0, near1, bits);
+			gfx::LampSet set;
+			lamps.setFor(key, set);
+			std::printf("  box key %08x: %u lamps, range %.0f (%.0f), keep %.2f\n", key, set.count, double(set.lamp[0].range), double(range2), double(set.dayKeep));
+			CHECK(key != 0xFFFFFFFFu && set.count == 1 && set.lamp[0].range == range2 && set.dayKeep > 0.9f);
+		}
+		// Off for the world (1): the people still; all off (0): the hero as the ground has him.
+		app.settings().lamps = 1;
+		app.update(Input {}, 1.0f / 30.0f);
+		CHECK(!app.lamps().lightsWorld() && app.lamps().stats().active == 1);
+		app.settings().lamps = 0;
+		for (int i = 0; i < 3; ++i) app.update(Input {}, 1.0f / 30.0f);
+		const float dark[3] = {app.hero().light()[0], app.hero().light()[1], app.hero().light()[2]};
+		std::printf("  hero without the lamps %.2f %.2f %.2f\n", double(dark[0]), double(dark[1]), double(dark[2]));
+		CHECK(app.lamps().stats().active == 0 && !app.lamps().lightsWorld());
+		CHECK(lit[0] - dark[0] > 0.05f && lit[0] - dark[0] > lit[2] - dark[2]);
+		// The debug word: nothing either.
+		app.settings().lamps = 2;
+		app.setRenderSkip(App::SKIP_LAMPS);
+		app.update(Input {}, 1.0f / 30.0f);
+		CHECK(app.lamps().stats().active == 0);
+		app.setRenderSkip(0);
+		app.shutdown();
+	}
+	// A data.pak without the table: the camp fire's particles stand in.
+	{
+		const std::string old = gDir + "/lamps_old.pak";
+		bakeLifeWorlds(syntheticScriptSource(), old, worlds, false, false, false, 1);
+		App app;
+		CHECK(app.init(old.c_str(), nullptr));
+		std::printf("  without the table: %u lamps from the particles\n", app.lamps().stats().lamps);
+		CHECK(app.lamps().available() && !app.lamps().stats().table && app.lamps().stats().lamps == 1);
+		app.shutdown();
+	}
+	// Baked with --lights: marked, and the world takes only the flicker (small, either way of 0).
+	{
+		const std::string baked = gDir + "/lamps_baked.pak";
+		bakeLifeWorlds(syntheticScriptSource(), baked, worlds, false, false, false, 2);
+		App app;
+		CHECK(app.init(baked.c_str(), nullptr));
+		app.skipChapters();
+		app.environment().timeOfDay = 23.0f;
+		app.settings().timeFlow = 0;
+		app.applySettings();
+		app.world().preload(app.camera().pos);
+		for (int i = 0; i < 5; ++i) app.update(Input {}, 1.0f / 30.0f);
+		app.environment().timeOfDay = 23.0f;
+		float most = 0.0f;
+		for (int i = 0; i < 20; ++i) {
+			app.update(Input {}, 1.0f / 30.0f);
+			Vec3 at;
+			float range = 0, rgb[3];
+			if (app.lamps().active(0, at, range, rgb)) most = std::max(most, std::fabs(rgb[0]));
+		}
+		std::printf("  baked: the world's flicker at most %.3f\n", double(most));
+		CHECK(app.lamps().stats().baked && most > 0.0f && most < 0.4f);
+		app.shutdown();
+	}
+	gfx::shutdown();
 }
 
 // The new grass (fix147, g3ds-bake --grass; engine/grass.h): the bake sows the same tufts every time, on the ground and
@@ -9594,6 +9722,20 @@ static void testWaterFx() {
 		}
 		CHECK(solid > 8); // some foam at the water's edge
 	}
+	// It is animated: the frames differ (the lace moves, the front goes out and back), neighbours alike, and found by name.
+	{
+		SrcImage f0, f1, f4, bad;
+		CHECK(makeFoamFrame("g3_foam_a0.tga", f0) && makeFoamFrame("tex/G3_FOAM_A1.TGA", f1) && makeFoamFrame("G3_FOAM_A4.TGA", f4));
+		CHECK(!makeFoamFrame("G3_FOAM_A8.TGA", bad) && !makeFoamFrame("G3_FOAM.TGA", bad) && !makeFoamFrame("WATER_A1.TGA", bad));
+		auto diff = [](const SrcImage& a, const SrcImage& b) {
+			double d = 0.0;
+			for (size_t i = 3; i < a.rgba.size(); i += 4) d += std::fabs(double(a.rgba[i]) - double(b.rgba[i]));
+			return d / double(a.rgba.size() / 4);
+		};
+		CHECK(f0.width == f1.width && f0.height == f1.height);
+		CHECK(diff(f0, f1) > 0.5 && diff(f0, f4) > diff(f0, f1)); // (moves, and further the further in the loop)
+		CHECK(diff(f0, f1) < 40.0);                                // (but not a different picture each time)
+	}
 }
 
 static void testWeather() {
@@ -12438,6 +12580,7 @@ int main(int argc, char** argv) {
 	             {"graphics+", testGfxPlus},
 	             {"sun shadow", testSunShadow},
              {"grass", testGrass},
+             {"lamps", testLamps},
 	             {"far layer", testFarLayer},
 	             {"chunk tiers", testChunkTiers},
 	             {"visibility", testVisibility},

@@ -71,6 +71,11 @@ public:
 
 	const ParticleStats& stats() const { return _stats; }
 
+	// fix148: the fires among the world's emitters, for a world baked without a table of lamps (Lamps falls back on them):
+	// an additive effect whose colour (its start's and end's together) is warm. Emitters within a metre of each other are one fire (the
+	// brightest colour). Up to `max` places and colours (0..1); returns how many. (Reads the effects' definitions.)
+	u32 fireLights(Vec3* pos, float (*rgb)[3], u32 max);
+
 private:
 	enum Shape : u8 { SHAPE_POINT, SHAPE_LINE, SHAPE_BOX, SHAPE_CIRCLE, SHAPE_SPHERE };
 	struct Def {

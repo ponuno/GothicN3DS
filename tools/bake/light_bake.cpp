@@ -52,27 +52,15 @@ float lampLight(float distance, float range, float facing) {
 	return fall * fall * wrap;
 }
 
-void bakeLights(SrcScene& scene, const std::vector<AoMaterial>& materials, const LightOptions& opt, LightStats& stats) {
-	stats = LightStats {};
-	if (!opt.enabled || scene.lights.empty()) return;
-	const auto start = std::chrono::steady_clock::now();
-	std::vector<SrcLight> lamps;
-	for (const SrcLight& l : scene.lights) {
-		if (l.isStatic && !opt.statics) {
-			++stats.skippedStatic;
-			continue;
-		}
-		lamps.push_back(l);
-	}
-	stats.lamps = u32(lamps.size());
-	if (lamps.empty()) return;
+u32 cutNearLights(SrcScene& scene, const std::vector<AoMaterial>& materials, const std::vector<SrcLight>& lamps, float cellCm, u32 maxExtra) {
+	if (lamps.empty() || maxExtra == 0) return 0;
 	auto mat = [&](u32 m) { return m < materials.size() ? materials[m] : AoMaterial {}; };
-
+	LightStats stats;
 	// ---- cut the large triangles near a lamp ----
 	// (Plants - what sways - are left whole, and so is what the lamps do not reach.)
-	const float cell = std::max(opt.cell, 20.0f);
+	const float cell = std::max(cellCm, 20.0f);
 	const size_t original = scene.triangles.size();
-	u32 budget = opt.maxExtra;
+	u32 budget = maxExtra;
 	std::vector<SrcTriangle> out;
 	out.reserve(original);
 	std::vector<SrcTriangle> work;
@@ -110,6 +98,27 @@ void bakeLights(SrcScene& scene, const std::vector<AoMaterial>& materials, const
 		for (const SrcTriangle& w : work) out.push_back(w); // (cut as far as the depth went)
 	}
 	scene.triangles.swap(out);
+
+	return stats.added;
+}
+
+void bakeLights(SrcScene& scene, const std::vector<AoMaterial>& materials, const LightOptions& opt, LightStats& stats) {
+	stats = LightStats {};
+	if (!opt.enabled || scene.lights.empty()) return;
+	const auto start = std::chrono::steady_clock::now();
+	std::vector<SrcLight> lamps;
+	for (const SrcLight& l : scene.lights) {
+		if (l.isStatic && !opt.statics) {
+			++stats.skippedStatic;
+			continue;
+		}
+		lamps.push_back(l);
+	}
+	stats.lamps = u32(lamps.size());
+	if (lamps.empty()) return;
+	auto mat = [&](u32 m) { return m < materials.size() ? materials[m] : AoMaterial {}; };
+
+	stats.added = cutNearLights(scene, materials, lamps, opt.cell, opt.maxExtra);
 
 	// ---- what blocks (as for the occlusion: the small objects neither block nor cast) ----
 	std::vector<Tri> blockers;
@@ -183,6 +192,36 @@ void bakeLights(SrcScene& scene, const std::vector<AoMaterial>& materials, const
 	stats.corners = corners.load();
 	stats.rays = rays.load();
 	stats.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
+
+std::vector<WorldLamp> lampTable(const std::vector<SrcLight>& lights, bool baked) {
+	std::vector<WorldLamp> out;
+	for (const SrcLight& l : lights) {
+		if (l.isStatic || !(l.range > 1.0f)) continue;
+		WorldLamp w {};
+		for (int a = 0; a < 3; ++a) w.pos[a] = l.pos[a];
+		w.range = std::min(l.range, 20000.0f);
+		for (int c = 0; c < 3; ++c) w.color[c] = l.color[c];
+		w.flags = u8((l.fire ? LAMPF_FIRE : 0) | (baked ? LAMPF_BAKED : 0) | (l.rangeSmooth ? LAMPF_RANGE_SMOOTH : 0) |
+		             (l.colorSmooth ? LAMPF_COLOR_SMOOTH : 0) | (l.made ? LAMPF_MADE : 0));
+		const size_t nr = l.rangeKeys.size(), nc = l.colorKeys.size();
+		if (nr > 1 && l.rangeFps > 0.0f) {
+			const size_t keep = std::min<size_t>(nr, LAMP_KEYS);
+			for (size_t k = 0; k < keep; ++k)
+				w.rangeScale[k] = u8(std::clamp(l.rangeKeys[k * nr / keep] * 64.0f + 0.5f, 0.0f, 255.0f));
+			w.rangeKeys = u8(keep);
+			w.rangeFps = l.rangeFps * float(keep) / float(nr);
+		}
+		if (nc > 1 && l.colorFps > 0.0f) {
+			const size_t keep = std::min<size_t>(nc, LAMP_KEYS);
+			for (size_t k = 0; k < keep; ++k)
+				for (int c = 0; c < 3; ++c) w.colors[k][c] = l.colorKeys[k * nc / keep][c];
+			w.colorKeys = u8(keep);
+			w.colorFps = l.colorFps * float(keep) / float(nc);
+		}
+		out.push_back(w);
+	}
+	return out;
 }
 
 } // namespace g3

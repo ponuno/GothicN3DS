@@ -180,7 +180,7 @@ struct ShaderCheck {
 	int locChunk = 8, locParams = 9, locDayDelta = 10, locTexOffset = 11, locBones = 13, locFx = 91;
 	bool twoEntries = false; // the fast shader: entry 1 (2 with the dissolve) draws the static world, 3 characters, 0 what sways
 	unsigned fadeBit = 2;    // the bool register of `fading` (b1 in world_fade.v.pica, b2 in the default shader)
-	unsigned fastDraws = 0, fullDraws = 0, skinDraws = 0, wrongEntry = 0, swayOnFast = 0;
+	unsigned fastDraws = 0, fullDraws = 0, skinDraws = 0, wrongEntry = 0, swayOnFast = 0, lampDraws = 0, litVertices = 0;
 	unsigned occludedVertices = 0, swayedVertices = 0, windyDraws = 0;
 	// The water's waves: the bool register of `wavy` (b3 in the default shader, 0: not looked at), the draws that had it
 	// on, and those of them that the fast entry drew (none may be).
@@ -241,7 +241,10 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 	          locBones = sc.locBones, locFx = sc.locFx; // checked in the tests of each shader
 	const bool skinned = call.bools & 1;
 	const bool windy = (call.bools & sc.windyBit) != 0;
-	const bool fastEntry = call.entry == 1 || call.entry == 2, skinEntry = call.entry == 3;
+	// (fix148: entry 5, the lamps', is the fast one with the dissolve and the lamps' light.)
+	const bool fastEntry = call.entry == 1 || call.entry == 2 || call.entry == 5, skinEntry = call.entry == 3;
+	const bool lampEntry = sc.twoEntries && call.entry == 5;
+	sc.lampDraws += lampEntry;
 	if (sc.twoEntries) {
 		// Characters have their own entry; swaying materials need the full shader; the fast one has no branches for them.
 		(fastEntry ? sc.fastDraws : skinEntry ? sc.skinDraws : sc.fullDraws) += 1;
@@ -404,6 +407,22 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 			for (int k = 0; k < 3; ++k) {
 				world[k] = double(sc.anchor[k]) + double(chunk[k]) + p[k];
 				wantColor[k] = double(rgb[k]) / 255.0 * (1.0 + double(v.a) / 255.0 * double(call.uniforms[locDayDelta][k])) * shade;
+			}
+			// fix148: the lamps' entry adds their light (world_lamp.v.pica): the first eight rows of the palette are four lamps,
+			// (place relative to the anchor, -1/range^2) and (colour, (keep - 1) / 255).
+			if (lampEntry) {
+				bool lit = false;
+				for (int l = 0; l < 4; ++l) {
+					const float* a = call.uniforms[locBones + l * 2];
+					const float* b = call.uniforms[locBones + l * 2 + 1];
+					double d2 = 0.0;
+					for (int k = 0; k < 3; ++k) d2 += (double(a[k]) - (double(chunk[k]) + p[k])) * (double(a[k]) - (double(chunk[k]) + p[k]));
+					double t = std::max(0.0, 1.0 + d2 * double(a[3]));
+					t = (t * t) * (t * t) * (1.0 + double(v.a) * double(call.uniforms[locBones + 1][3]));
+					for (int k = 0; k < 3; ++k) wantColor[k] += double(b[k]) * t;
+					lit = lit || (t > 0.0 && (b[0] != 0.0f || b[1] != 0.0f || b[2] != 0.0f));
+				}
+				sc.litVertices += lit;
 			}
 			++sc.worldVertices;
 		}
@@ -965,6 +984,139 @@ static void testClassicShader(const std::string& pak) {
 	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
 }
 
+// fix148: the lamps' entry (world_lamp.v.pica, DVLE 5). A draw with lamps set is drawn by it, and its colours are the engine's
+// maths: the baked light plus every lamp's colour * gfx::lampFalloff(distance^2, range) * (1 + weight * (keep - 1)) - worked out
+// here from the lamps' world places, so the packing into the palette's rows (relative to the anchor) is checked too; the
+// same after a new frame moved the anchor. Without lamps, with the sun's mask, or with `nolampshader`, another entry.
+struct LampCheck {
+	int entry = -1;
+	unsigned vertices = 0, lit = 0;
+	double worst = 0.0;
+	const WorldVertex* verts = nullptr;
+	float origin[3] = {0, 0, 0}, posScale = 1.0f;
+	gfx::LampSet set;
+	bool partial = false;
+};
+static void lampHook(const mock3ds::DrawCall& call, void* user) {
+	LampCheck& lc = *static_cast<LampCheck*>(user);
+	lc.entry = call.entry;
+	if (call.entry != 5) return;
+	for (unsigned i = 0; i < call.count; ++i) {
+		mock3ds::ShadedVertex out;
+		if (!mock3ds::shadeVertex(call, call.indices[i], out, false)) {
+			lc.partial = true;
+			continue;
+		}
+		const WorldVertex& v = lc.verts[call.indices[i]];
+		const double at[3] = {lc.origin[0] + double(v.x) * lc.posScale, lc.origin[1] + double(v.y) * lc.posScale, lc.origin[2] + double(v.z) * lc.posScale};
+		const double keep = 1.0 + double(v.a) / 255.0 * (double(lc.set.dayKeep) - 1.0);
+		const u8 rgb[3] = {v.r, v.g, v.b};
+		double want[3] = {rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0};
+		bool any = false;
+		for (u32 k = 0; k < lc.set.count; ++k) {
+			const gfx::DrawLamp& l = lc.set.lamp[k];
+			double d2 = 0.0;
+			for (int a = 0; a < 3; ++a) d2 += (double(l.pos[a]) - at[a]) * (double(l.pos[a]) - at[a]);
+			const double f = double(gfx::lampFalloff(float(d2), l.range)) * keep;
+			any = any || f > 0.0;
+			for (int c = 0; c < 3; ++c) want[c] += double(l.rgb[c]) * f;
+		}
+		lc.lit += any;
+		for (int c = 0; c < 3; ++c) lc.worst = std::max(lc.worst, std::fabs(double(out.color[c]) - want[c]));
+		++lc.vertices;
+	}
+}
+static void testLampEntry() {
+	mock3ds::reset();
+	gfx::c3dSetClassicFrames(false);
+	gfx::c3dSetFadeShader(true); // (as the console: the dissolve is on by default)
+	CHECK(gfx::init() && gfx::lampsSupported());
+	static const WorldVertex verts[3] = {{-4000, 0, -4000, 0, 0, 0, 120, 90, 60, 255}, {4000, 80, -4000, 0, 1024, 0, 40, 40, 40, 128},
+	                                     {0, 160, 4000, 0, 0, 1024, 200, 200, 200, 0}};
+	static const u16 idx[3] = {0, 1, 2};
+	gfx::Mesh* mesh = gfx::meshCreate(verts, 3, idx, 3);
+	LampCheck lc;
+	lc.verts = verts;
+	lc.origin[0] = -93000.0f;
+	lc.origin[1] = 250.0f;
+	lc.origin[2] = -116500.0f;
+	lc.posScale = 0.25f;
+	// Two lamps near the first and the second corner, one out of reach of all three.
+	lc.set.count = 3;
+	lc.set.dayKeep = 0.4f;
+	const float near0[3] = {-93000.0f - 1000.0f + 150.0f, 250.0f + 60.0f, -116500.0f - 1000.0f + 100.0f};
+	const float near1[3] = {-93000.0f + 1000.0f - 300.0f, 270.0f, -116500.0f - 1000.0f};
+	const float far[3] = {-80000.0f, 250.0f, -116500.0f};
+	const float* places[3] = {near0, near1, far};
+	const float ranges[3] = {800.0f, 650.0f, 900.0f};
+	const float colours[3][3] = {{0.9f, 0.6f, 0.3f}, {-0.1f, -0.05f, 0.0f}, {1.0f, 1.0f, 1.0f}};
+	for (int k = 0; k < 3; ++k) {
+		for (int a = 0; a < 3; ++a) {
+			lc.set.lamp[k].pos[a] = places[k][a];
+			lc.set.lamp[k].rgb[a] = colours[k][a];
+		}
+		lc.set.lamp[k].range = ranges[k];
+	}
+	gfx::FrameDesc fd {};
+	Vec3 eye = {-92900.0f, 400.0f, -116900.0f};
+	fd.view = viewLH(eye, 0.3f, -0.4f);
+	fd.eye = eye;
+	fd.fovY = 1.0f;
+	fd.zNear = 20.0f;
+	fd.zFar = 20000.0f;
+	fd.fogStart = 3000.0f;
+	fd.fogEnd = 9000.0f;
+	fd.dayLight[0] = fd.dayLight[1] = fd.dayLight[2] = 1.0f;
+	mock3ds::setDrawHook(lampHook, &lc);
+	int entries[6] = {-1, -1, -1, -1, -1, -1};
+	for (int frame = 0; frame < 2; ++frame) {
+		gfx::frameBegin(fd);
+		gfx::setPass(gfx::PASS_WORLD);
+		gfx::setChunkTransform(lc.origin, lc.posScale, 1.0f / 1024.0f, nullptr);
+		gfx::setMaterial(nullptr, 0);
+		gfx::setLamps(&lc.set);
+		gfx::draw(mesh, 0, 3);
+		entries[frame] = lc.entry;
+		// (A dissolving draw takes the lamps too: the entry has `fadefast`'s branch.)
+		gfx::setFade(0.5f);
+		gfx::draw(mesh, 0, 3);
+		gfx::setFade(1.0f);
+		if (frame == 1) {
+			gfx::setLamps(nullptr);
+			gfx::draw(mesh, 0, 3);
+			entries[2] = lc.entry;
+			// What sways is the full entry's, lamps or not.
+			gfx::setLamps(&lc.set);
+			gfx::setMaterial(nullptr, MATF_WIND);
+			gfx::draw(mesh, 0, 3);
+			entries[3] = lc.entry;
+			gfx::setMaterial(nullptr, 0);
+			gfx::c3dSetNoLamps(true);
+			gfx::draw(mesh, 0, 3);
+			entries[4] = lc.entry;
+			gfx::c3dSetNoLamps(false);
+			gfx::draw(mesh, 0, 3);
+			entries[5] = lc.entry;
+		}
+		gfx::frameEnd();
+		// The next frame from elsewhere: another anchor, the rows sent again.
+		eye = {-90100.0f, 900.0f, -113300.0f};
+		fd.view = viewLH(eye, 1.1f, -0.2f);
+		fd.eye = eye;
+	}
+	mock3ds::setDrawHook(nullptr, nullptr);
+	std::printf("  lamps' entry: %u corners (%u lit), colours within %.2g; entries %d %d with lamps, %d without, %d swaying, %d nolampshader, %d again\n",
+	            lc.vertices, lc.lit, lc.worst, entries[0], entries[1], entries[2], entries[3], entries[4], entries[5]);
+	CHECK(entries[0] == 5 && entries[1] == 5 && entries[2] == 2 && entries[3] == 0 && entries[4] == 2 && entries[5] == 5);
+	CHECK(lc.vertices >= 15 && lc.lit >= 10 && lc.worst < 2e-4 && !lc.partial);
+	CHECK(!*mock3ds::shaderPartialOutputs());
+	gfx::frameStats(); // (lampDraws: the console's own count)
+	gfx::meshDestroy(mesh);
+	gfx::shutdown();
+	gfx::c3dSetFadeShader(false);
+	CHECK(mock3ds::violations() == 0);
+}
+
 // The default: the shader with two entry points (world_full.v.pica, world_fast.v.pica), one combined matrix. The
 // fast entry draws the static world and the overlay, the full one the characters and what sways in the wind; the
 // vertices must come out as the engine's maths wants them from whichever entry, and the right one must be bound.
@@ -985,8 +1137,10 @@ static void testDefaultShader(const std::string& pak) {
 	CHECK(mock3ds::shaderEntryInstructions(2) <= 28 && mock3ds::shaderEntryInstructions(3) <= 32);
 	// The sun's mask: four instructions more, in entries of their own (chunks without a mask keep the short ones; fix145: the
 	// coordinate is built in a register and written whole, zw too).
-	CHECK(mock3ds::shaderEntryInstructions(4) == mock3ds::shaderEntryInstructions(1) + 4 &&
-	      mock3ds::shaderEntryInstructions(5) == mock3ds::shaderEntryInstructions(2) + 4);
+	CHECK(mock3ds::shaderEntryInstructions(4) == mock3ds::shaderEntryInstructions(1) + 4);
+	// fix148: entry 5 is the lamps' (`fadefast` and four lamps, about 7 instructions each), in place of `fadefastsun`.
+	std::printf("  lamps' entry: %u instructions\n", mock3ds::shaderEntryInstructions(5));
+	CHECK(mock3ds::shaderEntryInstructions(5) > mock3ds::shaderEntryInstructions(2) + 24 && mock3ds::shaderEntryInstructions(5) <= 64);
 	shaderProgram_s probe;
 	shaderProgramInit(&probe);
 	shaderProgramSetVsh(&probe, nullptr);
@@ -1075,6 +1229,7 @@ static void testDefaultShader(const std::string& pak) {
 		            sc.worstColor, sc.worstTex);
 		std::printf("  hero: %u draw calls, %u vertices: within %.4f px; seams: %u shared points, %u split; %u program changes in %u frames\n",
 		            sc.skinnedDraws, sc.skinnedVertices, sc.worstSkinPx, sc.sharedPoints, sc.splitPoints, switches, frames);
+		std::printf("  lamps: %u draw calls by their entry, %u corners lit (checked with the colours above)\n", sc.lampDraws, sc.litVertices);
 		CHECK(sc.worldDraws > 50 && sc.worldVertices > 5000 && sc.skinnedDraws >= 7 && sc.skinnedVertices > 500 && sc.blendedVertices > 50);
 		CHECK(sc.failed == 0 && sc.unexpected == 0);
 		CHECK(sc.fastDraws > 50 && sc.skinDraws >= sc.skinnedDraws && sc.wrongEntry == 0 && sc.swayOnFast == 0);
@@ -1527,6 +1682,7 @@ int main(int argc, char** argv) {
 	std::printf("[ RUN ] the default shader, without the dissolve\n");
 	testDefaultShader(pak);
 	testSunMask();
+	testLampEntry();
 	testClassicShader(pak);
 	testSupersample(pak);
 	testStereo(pak);

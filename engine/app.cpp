@@ -88,6 +88,11 @@ bool App::init(const char* pakPath, const char* worldName) {
 	link.user = this;
 	_npcs.setHeroLink(link);
 	_world.setDynamic(&_triggers);
+	// fix148: the lamps (after the particles: a world baked without their table takes its fires for them).
+	_lamps.enterWorld(_pak, this->worldName(), _npcs.loaded() ? &_particles : nullptr);
+	_world.setLamps(&_lamps);
+	_loot.setLamps(&_lamps);
+	_lampClock = -1.0;
 	Npcs::ShotHook shots;
 	shots.fire = npcShotThunk;
 	shots.user = this;
@@ -142,6 +147,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	_loot.leaveWorld();
 	_triggers.leaveWorld();
 	_particles.leaveWorld();
+	_lamps.leaveWorld();
 	_chests.leaveWorld();
 	_lootTarget = -1;
 	_chestTarget = -1;
@@ -177,6 +183,8 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 		_chests.enterWorld(_pak, worldName(), _world.entryHash(), _npcs.game());
 		_triggers.enterWorld(_pak, worldName(), _npcs.game());
 	}
+	_lamps.enterWorld(_pak, worldName(), _npcs.loaded() ? &_particles : nullptr);
+	_lampClock = -1.0;
 	_portalLock = true;
 	++_switches;
 	_sound.stopAll();
@@ -377,6 +385,7 @@ void App::shutdown() {
 	_ripples.release();
 	_godRays.release();
 	_grass.release();
+	_lamps.leaveWorld();
 	_chests.release();
 	_pictures.release();
 	_showModel.release();
@@ -637,6 +646,8 @@ void App::update(const Input& in, float dt) {
 	const double t3 = sys::timeMs();
 	trace("update: camera");
 	placeCamera(dt);
+	trace("update: lamps");
+	updateLamps();
 	trace("update: sound");
 	_sound.setListener(_cam.pos, _cam.yaw);
 	_sound.update(dt, _env.timeOfDay);
@@ -1209,6 +1220,24 @@ void App::syncHeroNpc() {
 }
 
 // Who is fought with: the one locked on to, else the nearest in front.
+// fix148: the lamps near the camera and their flicker, once a step (the frame drawn twice - stereo, a still picture - stays
+// the same); the hero takes their light.
+void App::updateLamps() {
+	const SkyColors sky = skyColors();
+	Lamps::Frame lf;
+	lf.eye = _cam.pos;
+	lf.seconds = _clock;
+	lf.dt = _lampClock < 0.0 ? -1.0f : float(clamp(_clock - _lampClock, 0.0, 1.0));
+	_lampClock = _clock;
+	for (int i = 0; i < 3; ++i) lf.dayLight[i] = sky.light[i];
+	lf.characters = _settings.lamps >= 1 && !(_renderSkip & SKIP_LAMPS);
+	lf.world = _settings.lamps >= 2 && !_gfxRelief && !_underwater;
+	_lamps.update(lf, &_world);
+	float add[3] = {0.0f, 0.0f, 0.0f};
+	if (_hero.loaded()) _lamps.lightAt({_hero.feet().x, _hero.feet().y + 90.0f, _hero.feet().z}, _hero.sky(), add, &_world);
+	_hero.setLampLight(add);
+}
+
 void App::updateTarget(const Input& in, float dt) {
 	if (!_npcs.loaded() || _hero.down()) {
 		_target = -1;

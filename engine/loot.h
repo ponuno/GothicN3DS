@@ -47,6 +47,8 @@ public:
 	// With a read-ahead (readahead.h) the models of things lying about are read on its thread; the frame builds them
 	// once their bytes are there (and reads them itself only after a wait, if they never came).
 	void setReadAhead(class ReadAhead* ahead) { _ahead = ahead; }
+	// fix148: the things lying near a torch or a fire take its light (null: none).
+	void setLamps(class Lamps* lamps) { _lamps = lamps; }
 	Loot() = default;
 	~Loot() { release(); }
 	Loot(const Loot&) = delete;
@@ -96,6 +98,7 @@ public:
 
 private:
 	class ReadAhead* _ahead = nullptr;
+	class Lamps* _lamps = nullptr;
 	struct Taken {
 		u32 world;
 		u32 index;

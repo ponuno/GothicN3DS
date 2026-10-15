@@ -64,6 +64,9 @@ const char* const kSunShadowNotes[] = {"Без тени от солнца (--sun
 const char* const kGrass[] = {"Выкл", "Мало", "Много"};
 const char* const kGrassNotes[] = {"Новая трава выключена (мир с --grass)", "Половина пучков, до 20 м (мир с --grass)",
                                    "Все пучки, до 28 м (мир с --grass)"};
+const char* const kLamps[] = {"Выкл", "Персонажи", "Всё"};
+const char* const kLampsNotes[] = {"Факелы и костры не светят", "Светят на жителей, героя и вещи рядом",
+                                   "И на землю и стены вокруг, с мерцанием"};
 const char* const kShadowNotes[] = {"Без теней под ногами", "Круглая тень под героем", "Под героем и жителями до 25 м", "Герой по фигуре, жители круглые"};
 
 #define NONE nullptr, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr
@@ -85,6 +88,7 @@ const Item kGraphics[] = {
     {"Густота мелких объектов", CHOICE, &Settings::density, kDensity, 3, 0, 0, nullptr, 0, nullptr, kDensityNotes},
     {"Жители вдали", CHOICE, &Settings::npcDistance, kNpcRange, 3, 0, 0, nullptr, 0, "Как далеко видны жители и звери", nullptr},
     {"Купол Барьера", TOGGLE, &Settings::barrier, nullptr, 0, 0, 0, nullptr, 0, "Сияние неба и гул, если есть в данных", nullptr},
+    {"Свет огней", CHOICE, &Settings::lamps, kLamps, 3, 0, 0, nullptr, 0, nullptr, kLampsNotes},
     {"Плавное появление", TOGGLE, &Settings::dissolve, nullptr, 0, 0, 0, nullptr, 0, "Вступит в силу после перезапуска", nullptr},
     {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 5, 0, 0, nullptr, 0, nullptr, kFrameNotes},
     {"Экран", CHOICE, &Settings::stereo, kScreen, 3, 0, 0, nullptr, 0, "Ползунок 3D или 800x240; после перезапуска", nullptr},

@@ -1,4 +1,5 @@
-; The same as world_fast.v.pica, and the sun's mask laid over the ground (texture coordinate 2): for the chunks that have one
+; The same as world_fast.v.pica, and the sun's mask laid over the ground (texture coordinate 1, unit 1; fix143 - it was
+; texture coordinate 2 on unit 2, which hung the console's GPU): for the chunks that have one
 ; (gfx_c3d.cpp: PROGRAM_FAST_SUN). Two instructions more a vertex, so the chunks without one keep the shorter entry.
 ; The fast vertex shader for the static world (PICA200, assembled with picasso).
 ; Entry `fastmain` of the same shbin as the full shader (world_full.v.pica,
@@ -40,7 +41,7 @@
 .out outpos position
 .out outtc0 texcoord0
 .out outclr color
-.out outtc2 texcoord2
+.out outtc1 texcoord1
 
 .alias inpos v0
 .alias intc  v1
@@ -53,9 +54,9 @@
 	add r0.xyz, chunk.xyz, r0.xyz
 	mov r0.w,   one
 
-	; Graphics+ sun's shadow: texture 2 lies flat over the ground, (x, z) * aoK.yz + texOffset.zw (gfx_c3d.cpp updateSun)
+	; Graphics+ sun's shadow: texture 1 lies flat over the ground, (x, z) * aoK.yz + texOffset.zw (gfx_c3d.cpp updateSun)
 	mul r1.xy, aoK.yz, r0.xz
-	add outtc2.xy, texOffset.zw, r1.xy
+	add outtc1.xy, texOffset.zw, r1.xy
 
 	dp4 outpos.x, mvp[0], r0
 	dp4 outpos.y, mvp[1], r0

@@ -224,8 +224,10 @@ void makeNoise() {
 }
 
 // ---- Graphics+: the sun's shadow (ChunkFx::sun) ----
-// The chunk's mask is on texture unit 2, laid over the ground by the vertex shader (texture coordinate 2 =
-// (x, z) * aoK.yz + texOffset.zw). Stage 1: previous * mask. Stage 2: that and stage 0's colour (kept in the combiner
+// fix143: the chunk's mask is on texture unit 1, laid over the ground by the vertex shader's `fastsun` entry (texture
+// coordinate 1 = (x, z) * aoK.yz + texOffset.zw). It was unit 2 and texture coordinate 2: the console's GPU hung on that
+// (fix133..142; with `nosun` it did not). Unit 1 is the dissolve's noise otherwise: a chunk that is dissolving is drawn
+// without its mask (useProgram, updateSun), so the two never meet in one draw. Stage 1: previous * mask. Stage 2: that and stage 0's colour (kept in the combiner
 // buffer) mixed by the strength in its constant: colour * (1 - strength * (1 - mask)). Strength 0 gives stage 0's
 // colour back whatever unit 2 holds, so the stages stay set and only the constant changes.
 // (citro3d cannot unbind units 1 and 2 - see the noise - so unit 2 keeps a texture once it has had one: the mask
@@ -244,9 +246,9 @@ u16 gDebugSkipFlags = 0; // c3dSetDebugDraw: materials with any of these flags a
 int gDebugProgram = 0;   // 1: the fast entry for every world draw, 2: the full entry for every one
 u16 gMaterialFlags = 0;
 bool gNoSun = false;
-bool gNoSunProgram = false; // c3dSetNoSun: the sun's program is never used either // c3dSetNoSun: the stages of the sun's shadow never set (C-Stick up held at start)
+bool gNoSunProgram = false; // c3dSetNoSun (C-Stick up held at start, debug.txt nosun): no sun's stages, no sun's program
 
-// The white 8x8 stand-in for the mask (unit 2 must never be left without a texture while a stage reads it).
+// The white 8x8 stand-in for unit 1 when the noise is not there (no dissolve) and a mask that was on it is freed.
 bool makeSunWhite() {
 	if (!gSunWhiteReady && C3D_TexInit(&gSunWhite, 8, 8, GPU_L4)) {
 		memset(gSunWhite.data, 0xFF, 32);
@@ -259,14 +261,7 @@ bool makeSunWhite() {
 }
 
 void setSunStages() {
-	// fix134: stage 1 reads unit 2 in every draw, so unit 2 has a texture from the first draw of the first frame on (before,
-	// only once a chunk's mask had been drawn with some strength: a morning start, or a frame before any mask was loaded,
-	// read a unit with nothing bound - suspected of the GPU hang of fix133 on the console, top screen black).
-	if (!gSunBound && makeSunWhite()) {
-		C3D_TexBind(2, &gSunWhite);
-		gSunBound = &gSunWhite;
-	}
-	if (gNoSun || !gSunBound) {
+	if (gNoSun) {
 		// Stages 1 and 2 pass the colour on and read no texture.
 		C3D_TexEnvInit(C3D_GetTexEnv(1));
 		C3D_TexEnvInit(C3D_GetTexEnv(2));
@@ -276,7 +271,7 @@ void setSunStages() {
 	}
 	C3D_TexEnv* s1 = C3D_GetTexEnv(1);
 	C3D_TexEnvInit(s1);
-	C3D_TexEnvSrc(s1, C3D_RGB, GPU_PREVIOUS, GPU_TEXTURE2, GPU_PRIMARY_COLOR);
+	C3D_TexEnvSrc(s1, C3D_RGB, GPU_PREVIOUS, GPU_TEXTURE1, GPU_PRIMARY_COLOR);
 	C3D_TexEnvFunc(s1, C3D_RGB, GPU_MODULATE);
 	C3D_TexEnvSrc(s1, C3D_Alpha, GPU_PREVIOUS, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
 	C3D_TexEnvFunc(s1, C3D_Alpha, GPU_REPLACE);
@@ -298,15 +293,27 @@ void sendSunUniforms() {
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocAoK, gFx[3] / 256.0f, gSunUv[0], gSunUv[1], 0.0f);
 }
 
-void bindSunTexture(const C3D_Tex* t) {
-	if (t == gSunBound || !t) return;
-	C3D_TexBind(2, const_cast<C3D_Tex*>(t));
-	gSunBound = t;
+// Unit 1 without a mask: the dissolve's noise, or (no dissolve) the white 8x8 - never nothing, a stage reads it.
+const C3D_Tex* gUnit1 = nullptr; // what unit 1 holds (bound once, not again every frame)
+void bindUnit1Default() {
+	C3D_Tex* t = gNoiseReady ? &gNoise : makeSunWhite() ? &gSunWhite : nullptr;
+	if (t && t != gUnit1) {
+		C3D_TexBind(1, t);
+		gUnit1 = t;
+	}
+	gSunBound = nullptr;
 }
 
-// What stage 2's constant must hold now, and unit 2 with it.
+void bindSunTexture(const C3D_Tex* t) {
+	if (t == gSunBound || !t) return;
+	C3D_TexBind(1, const_cast<C3D_Tex*>(t));
+	gSunBound = t;
+	gUnit1 = t;
+}
+
+// What stage 2's constant must hold now, and unit 1 with it.
 void updateSun() {
-	if (gNoSun || !gSunBound) return;
+	if (gNoSun) return;
 	float s = 0.0f;
 	if (gSunChunk && gSunMaterialOk && !gSkinned && !gUiPass && gPass != PASS_SKY && gFade == 255 && !gNoSunProgram) s = gSunDark;
 	const u8 c = u8(clamp(s, 0.0f, 1.0f) * 255.0f + 0.5f);
@@ -722,6 +729,7 @@ void shutdown() {
 		if (gSunWhiteReady) C3D_TexDelete(&gSunWhite);
 		gSunWhiteReady = false;
 		gSunBound = nullptr;
+		gUnit1 = nullptr;
 		gSunChunk = nullptr;
 		gLocFading = gLocFx = gLocWindy = gLocWave = gLocWavy = -1;
 		if (gProgramReady) shaderProgramFree(&gProgram);
@@ -810,16 +818,9 @@ void textureDestroy(Texture* t) {
 		C3D_TexBind(0, nullptr);
 		gBoundTexture = nullptr;
 	}
-	// Unit 2 cannot be left empty (see the noise): a white texture takes the mask's place.
-	if (gSunBound == &t->tex) {
-		if (makeSunWhite()) {
-			C3D_TexBind(2, &gSunWhite);
-			gSunBound = &gSunWhite;
-		} else {
-			gSunBound = nullptr; // (the next frame's stages read no texture then)
-		}
-		if (gSunChunk == t) gSunChunk = nullptr;
-	}
+	// A mask on unit 1: the noise (or the white one) takes its place.
+	if (gSunBound == &t->tex) bindUnit1Default();
+	if (gSunChunk == t) gSunChunk = nullptr;
 	if (t->bytes) {
 		gMem.textureBytes -= t->bytes;
 		--gMem.textureCount;
@@ -1032,7 +1033,7 @@ static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target) {
 	// The noise stays bound to unit 1: citro3d cannot unbind units 1 and 2
 	// (C3D_TexBind reads the type of the texture it is given, null or not -
 	// that crashed the console). No texture stage reads it unless dissolving.
-	if (gNoiseReady) C3D_TexBind(1, &gNoise);
+	bindUnit1Default();
 	gFade = 255;
 	gBlend = BLEND_UNSET;
 	setBlend(BLEND_OFF);
@@ -1187,6 +1188,7 @@ void setFade(float visible) {
 	const bool was = gFade != 255, on = share != 255;
 	gFade = share;
 	updateSun(); // (dissolving: no mask, see useProgram)
+	if (on && gSunBound) bindUnit1Default(); // (the noise back on unit 1 for the dissolve)
 	if (on != was) {
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocFading, on);
 		setFadeStages(on, share);

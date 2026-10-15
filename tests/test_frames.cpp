@@ -666,7 +666,7 @@ static void sunHook(const mock3ds::DrawCall& call, void* user) {
 		const WorldVertex& v = sc.verts[call.indices[i]];
 		const double x = sc.origin[0] + double(v.x) * sc.posScale, z = sc.origin[2] + double(v.z) * sc.posScale;
 		const double u = (x - sc.x0) * sc.sx, w = (z - sc.z0) * sc.sz;
-		sc.worst = std::max(sc.worst, std::max(std::fabs(out.texcoord2[0] - u), std::fabs(out.texcoord2[1] - w)));
+		sc.worst = std::max(sc.worst, std::max(std::fabs(out.texcoord1[0] - u), std::fabs(out.texcoord1[1] - w))); // (fix143: coordinate 1)
 		++sc.vertices;
 	}
 }
@@ -732,7 +732,7 @@ static void testSunMask() {
 	const int withoutEntry = sc.entry;
 	mock3ds::setDrawHook(nullptr, nullptr);
 	gfx::frameEnd();
-	std::printf("  sun's mask: entry %d with it (%u vertices, texture coordinate 2 within %.2g), entry %d without\n", withEntry, shaded,
+	std::printf("  sun's mask: entry %d with it (%u vertices, texture coordinate 1 within %.2g), entry %d without\n", withEntry, shaded,
 	            worst, withoutEntry);
 	CHECK(withEntry == 4 && shaded == 3 && worst < 2e-3 && withoutEntry == 1);
 	gfx::meshDestroy(mesh);
@@ -942,7 +942,7 @@ static void testClassicShader(const std::string& pak) {
 		CHECK(sc.worstWorldPx < 0.02 && sc.worstGpuWorldPx < 0.25 && sc.worstGpuSkyPx < 0.75 && sc.worstColor < 1e-4 && sc.worstTex < 1e-3);
 		app.shutdown();
 	}
-	CHECK(mock3ds::counters().texUnit1Binds == 0 && mock3ds::counters().programSwitches == 0);
+	CHECK(mock3ds::counters().texUnit1Binds <= 1 && mock3ds::counters().programSwitches == 0); // (fix143: the white stand-in, once)
 	gfx::shutdown();
 	gfx::c3dSetClassicShader(false);
 	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
@@ -1075,7 +1075,7 @@ static void testDefaultShader(const std::string& pak) {
 		CHECK(switches > 0 && switches < frames * 120);
 		app.shutdown();
 	}
-	CHECK(mock3ds::counters().texUnit1Binds == 0);
+	CHECK(mock3ds::counters().texUnit1Binds <= 1); // (fix143: unit 1 holds the white stand-in without the dissolve: once)
 	gfx::shutdown();
 	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
 }

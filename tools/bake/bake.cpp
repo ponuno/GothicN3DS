@@ -1234,6 +1234,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			size_t chestItems = 0, chestLocked = 0;
 			std::map<std::string, u32> byScheme;
 			std::map<std::string, u32> byFunction; // (fix153) onStateFunc (scheme, item) -> how many
+			std::map<std::string, u32> byFields; // (fix154) every field the player's things carry, per kind
 			size_t withoutSlots = 0;
 			for (const SrcMob& src : scene.mobs) {
 				if (mobs.size() >= 65534) break;
@@ -1303,6 +1304,12 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 						if (!src.useItem.empty()) what += ", needs " + upper(src.useItem);
 						++byFunction[what + ")"];
 					}
+					if (!src.container && (!src.onState.empty() || !src.condition.empty() || !src.useItem.empty() || !src.target.empty() ||
+					                       !src.focus.empty())) {
+						++byFields[format("%s: focus '%s', onState '%s', condition '%s', needs '%s', target '%s'", src.scheme.c_str(),
+						                  src.focus.c_str(), src.onState.c_str(), src.condition.c_str(), src.useItem.c_str(),
+						                  src.target.c_str())];
+					}
 					infoNamed += info.focus != 0;
 					infoHidden += info.focus == 0;
 					mobInfos.push_back(info);
@@ -1358,6 +1365,18 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 						break;
 					}
 					fns += format("%s%s x%u", fns.empty() ? "" : ", ", what.c_str(), count);
+				}
+				// (fix154) What every kind of thing carries: how a game that is not run by <function>_S1 does its crafting.
+				line(format("fields of the things to use (%zu combinations; the forge, the lab and the cauldron are in here):", byFields.size()));
+				{
+					size_t n = 0;
+					for (const auto& [what, count] : byFields) {
+						if (++n > 80) {
+							line("  ...");
+							break;
+						}
+						line(format("  %s x%u", what.c_str(), count));
+					}
 				}
 				line(format("things of the player's that run the scripts (<function>_S1 when used, _S0 when left): %zu kinds: ",
 				            byFunction.size()) +

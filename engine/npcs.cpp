@@ -1,4 +1,5 @@
 #include "npcs.h"
+#include "lamps.h"
 
 #include "readahead.h"
 #include "loot.h"
@@ -805,6 +806,9 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3], const World* worl
 			const float sky = float(a.light[3]) * (1.0f / 255.0f);
 			light[i] = max(baked * (1.0f + sky * (dayLight[i] - 1.0f)) * 1.15f, 0.22f);
 		}
+		// fix148: and the torches and fires near (a lamp behind a wall gives nothing).
+		if (world && world->lamps())
+			world->lamps()->lightAt({feet.x, feet.y + 90.0f, feet.z}, float(a.light[3]) * (1.0f / 255.0f), light, world);
 		const bool scaled = n.look.scale[0] != 1.0f || n.look.scale[1] != 1.0f || n.look.scale[2] != 1.0f;
 		const float* scale = scaled ? n.look.scale : nullptr;
 		// Body and head are on one skeleton: its bone matrices serve both.

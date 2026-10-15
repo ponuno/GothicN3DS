@@ -189,6 +189,16 @@ struct SrcLight {
 	float range = 0;
 	u8 color[3] = {255, 255, 255};
 	bool isStatic = false;
+	// fix148: what the runtime needs to make it flicker (g3ds/lamps.h). ZenGin's rangeAniScale (shares of the range) and
+	// colorAniList, played at their fps, blended or stepped.
+	std::vector<float> rangeKeys;
+	float rangeFps = 0;
+	bool rangeSmooth = true;
+	std::vector<std::array<u8, 3>> colorKeys;
+	float colorFps = 0;
+	bool colorSmooth = true;
+	bool fire = false; // of a fire place (its tree file), or made for one
+	bool made = false; // made by the baker (a fire place whose tree has no light)
 };
 
 struct SrcImage {

@@ -1,4 +1,5 @@
 #include "loot.h"
+#include "lamps.h"
 
 #include "game.h"
 #include "gfx.h"
@@ -196,6 +197,7 @@ void Loot::draw(Vec3 eye, const float dayLight[3], float range, const Frustum* v
 		}
 		float light[3];
 		for (int c = 0; c < 3; ++c) light[c] = max(it.light[c] * (1.0f + it.sky * (dayLight[c] - 1.0f)), 0.22f);
+		if (_lamps) _lamps->lightAt({it.pos.x, it.pos.y + 15.0f, it.pos.z}, it.sky, light, nullptr); // (fix148; no look past walls for a thing)
 		const Mat34 skin = mat34From(it.rot, {0, 0, 0});
 		m.drawSkinned(&skin, it.pos, light);
 		++_stats.drawn;

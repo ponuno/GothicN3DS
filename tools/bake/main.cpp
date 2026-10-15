@@ -163,6 +163,8 @@ void usage() {
 	          "                     shadows; the large triangles near a lamp are cut smaller (more triangles, see --light-cell)\n"
 	          "  --light-strength F their light, 0.1..4 (default 1); --light-cell M: the edge they are cut to, metres (default 1.5)\n"
 	          "  --light-static     also the lamps the world's own compiled light has (otherwise those are left out)\n"
+	          "  --lamp-cell M      without --lights: the large triangles near a lamp are still cut to this edge for the\n"
+	          "                     runtime's lamp light (default 1.5); --lamp-extra N: at most this many more (default 40000, 0: none)\n"
 	          "  --sun-shadow       Graphics+: bake the sun's shadow on the ground (trees, houses, rocks, hills) for outdoor worlds:\n"
 	          "                     a 4-bit mask per grid cell, no extra triangles (menu: Graphics+ -> Sun shadows; Gothic 1 and 2)\n"
 	          "  --sun-hour H       the sky's sun of this hour, 9..17 (default 14.5); --sun-texel CM: finest texel (default 32);\n"
@@ -344,6 +346,8 @@ int main(int argc, char** argv) {
 			else if (a == "--light-strength") opt.light.strength = std::clamp(std::stof(value()), 0.1f, 4.0f);
 			else if (a == "--light-cell") opt.light.cell = std::clamp(std::stof(value()), 0.2f, 10.0f) * 100.0f;
 			else if (a == "--light-static") opt.light.statics = true;
+			else if (a == "--lamp-cell") opt.lampCell = std::clamp(std::stof(value()), 0.2f, 10.0f) * 100.0f;
+			else if (a == "--lamp-extra") opt.lampExtra = u32(std::clamp(std::stoi(value()), 0, 5000000));
 			else if (a == "--grass-report") grass.dir = value(), grassReport = true;
 			else if (a == "--grass-rules") grass.rulesFile = opt.grass.map.rulesFile = value();
 			else if (a == "--grass-cell") grass.cellCm = opt.grass.map.cellCm = std::clamp(std::stof(value()), 0.25f, 20.0f) * 100.0f;

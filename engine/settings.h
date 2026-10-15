@@ -125,6 +125,8 @@ struct Settings {
 	u8 grass = 0;
 	float grassRadiusCm() const { return grass == 1 ? 2000.0f : grass == 2 ? 2800.0f : 0.0f; }
 	float grassShare() const { return grass == 1 ? 0.5f : 1.0f; }
+	// Version 25 (fix148): the light of torches and fires (engine/lamps.h): 0 off, 1 the people and things, 2 the world round them too.
+	u8 lamps = 2;
 	float waveHeightCm() const { return waves == 1 ? 10.0f : waves == 2 ? 22.0f : waves == 3 ? 40.0f : 0.0f; }
 	float lodFadeMs() const { return lodFade == 0 ? 1.0f : lodFade == 2 ? 900.0f : 350.0f; }
 	float lodDistanceCm() const;

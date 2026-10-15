@@ -24,6 +24,8 @@
 #include "ground_fx.h"
 #include "puddles.h"
 #include "rain.h"
+#include "weather_sfx.h"
+#include "godrays.h"
 #include "water_texture.h"
 #include "model_bake.h"
 #include "pacer.h"
@@ -4819,6 +4821,51 @@ static void testSound() {
 		sound.play("SFX_NOT_THERE", nullptr);
 		CHECK(sound.stats().unknown == unknownBefore + 1);
 
+		// The weather: a spell's sound is never the rain; with none of its own the game makes rain and thunder.
+		CHECK(weatherNameIsSpell("MFX_FIRERAIN_RAIN") && weatherNameIsSpell("mfx_thunderball_cast") && !weatherNameIsSpell("RAIN_01") &&
+		      !weatherNameIsSpell("THUNDER"));
+		{
+			static i16 rain[RAIN_SFX_FRAMES];
+			makeRainSound(rain);
+			double sum = 0, step = 0;
+			int peak = 0;
+			for (u32 i = 0; i < RAIN_SFX_FRAMES; ++i) {
+				sum += double(rain[i]) * rain[i];
+				peak = std::max(peak, std::abs(int(rain[i])));
+				if (i) step += std::abs(int(rain[i]) - int(rain[i - 1]));
+			}
+			const double rms = std::sqrt(sum / RAIN_SFX_FRAMES), meanStep = step / (RAIN_SFX_FRAMES - 1);
+			const int seam = std::abs(int(rain[0]) - int(rain[RAIN_SFX_FRAMES - 1]));
+			std::printf("  made rain: rms %.0f, peak %d, mean step %.0f, the seam %d\n", rms, peak, meanStep, seam);
+			CHECK(rms > 2000 && peak <= 32000 && seam < meanStep * 6.0);
+			static i16 thunder[THUNDER_SFX_FRAMES];
+			makeThunderSound(thunder, 7);
+			double tsum = 0;
+			for (u32 i = 0; i < THUNDER_SFX_FRAMES; ++i) tsum += double(thunder[i]) * thunder[i];
+			CHECK(std::sqrt(tsum / THUNDER_SFX_FRAMES) > 1000 && thunder[THUNDER_SFX_FRAMES - 1] == 0);
+			// A made sample plays by its name, loops by playLoop, and its handle stops it.
+			CHECK(sound.addSynthetic("G3_TEST_RAIN", rain, RAIN_SFX_FRAMES, RAIN_SFX_RATE, true) && sound.knows("G3_TEST_RAIN"));
+			CHECK(!sound.addSynthetic("G3_TEST_RAIN", rain, RAIN_SFX_FRAMES, RAIN_SFX_RATE, true));
+			n = audio.startedCount();
+			const u32 h = sound.playLoop("G3_TEST_RAIN", 0.5f);
+			CHECK(h && sound.playing(h) && audio.startedCount() == n + 1 && audio.last().loop && audio.last().rate == RAIN_SFX_RATE &&
+			      audio.last().frames == RAIN_SFX_FRAMES);
+			sound.stop(h);
+			CHECK(!sound.playing(h));
+			// A loop whose sample is still being read: the handle holds while it waits, and stops what starts from it.
+			n = audio.startedCount();
+			const u32 hum = sound.playLoop("SFX_TEST_HUM", 0.5f);
+			CHECK(hum && sound.playing(hum));
+			CHECK(soundWait(sound, audio, n + 1) && audio.last().loop && sound.playing(hum));
+			sound.setHandleGain(hum, 0.2f);
+			sound.stop(hum);
+			CHECK(!sound.playing(hum));
+			// The app found no rain in this game's sounds and made its own.
+			Input none;
+			app.update(none, 1.0f / 30.0f);
+			CHECK(sound.knows("G3_RAIN_MADE") && sound.knows("G3_THUNDER_MADE_A"));
+		}
+
 		// Volume: 0 is silence, and a sound already playing follows it.
 		app.settings().soundVolume = 0;
 		app.applySettings();
@@ -7430,6 +7477,72 @@ static void testGfxPlus() {
 	std::printf("  shadows: %u characters, %u laid (%u under load); %u channel values darker, %u lighter\n", asked, all, relieved, darker,
 	            lighter);
 	CHECK(all >= 1 && asked >= all && darker > 30 && lighter == 0 && relieved == 1);
+	// The hero's own shape thrown by the sun: drawn at the steady 30 fps too (the wind's relief), and evenly dark - each
+	// pixel once, however many parts of the body lie over it there.
+	{
+		app.skipChapters();
+		app.environment().timeOfDay = 16.0f; // (a low sun behind the camera: the shadow reaches out ahead of the hero)
+		app.weather().configure(WEATHER_CLEAR, true);
+		app.weather().settle();
+		// The camera turned to look along +Z: the sun stands on the -Z side all day, the shadow falls away from the eye.
+		for (int i = 0; i < 400; ++i) {
+			float y = app.camera().yaw;
+			while (y > 3.14159265f) y -= 6.2831853f;
+			while (y < -3.14159265f) y += 6.2831853f;
+			if (std::fabs(y) < 0.1f) break;
+			Input turn;
+			turn.lookX = y > 0.0f ? -0.5f : 0.5f;
+			app.update(turn, 1.0f / 30.0f);
+		}
+		app.settings().shadows = SHADOWS_OFF;
+		app.applySettings();
+		app.render();
+		const std::vector<u8> plain(gfx::softFramebuffer(), gfx::softFramebuffer() + gfx::SCREEN_W * gfx::SCREEN_H * 4);
+		app.settings().shadows = SHADOWS_HERO_CAST;
+		app.applySettings();
+		app.setWindRelief(true);
+		app.render();
+		app.setWindRelief(false);
+		const u32 cast = app.shadows().stats().drawn;
+		const u8* shaded = gfx::softFramebuffer();
+		u32 dark = 0;
+		float lo = 1.0f, hi = 0.0f;
+		for (u32 i = 0; i < u32(gfx::SCREEN_W * gfx::SCREEN_H); ++i) {
+			const int before = plain[i * 4] + plain[i * 4 + 1] + plain[i * 4 + 2], after = shaded[i * 4] + shaded[i * 4 + 1] + shaded[i * 4 + 2];
+			if (before < 90 || after > before - 9) continue; // (a dark ground says little, and the unshaded are left out)
+			++dark;
+			const float k = float(after) / float(before);
+			lo = std::min(lo, k);
+			hi = std::max(hi, k);
+		}
+		std::printf("  the hero's cast shadow: %u drawn, %u pixels darkened to between %.2f and %.2f of their light\n", cast, dark,
+		            double(lo), double(hi));
+		CHECK(cast == 1 && dark > 20 && hi - lo < 0.10f);
+	}
+	// Light shafts: in the morning, looking towards the sun past the trees, beams stand in gaps and fade in over a few frames.
+	{
+		app.settings().shadows = SHADOWS_OFF;
+		app.settings().godRays = 1;
+		app.applySettings();
+		app.environment().timeOfDay = 7.6f;
+		for (int i = 0; i < 400; ++i) {
+			float y = app.camera().yaw - 3.14159265f;
+			while (y > 3.14159265f) y -= 6.2831853f;
+			while (y < -3.14159265f) y += 6.2831853f;
+			if (std::fabs(y) < 0.1f) break;
+			Input turn;
+			turn.lookX = y > 0.0f ? -0.5f : 0.5f;
+			app.update(turn, 1.0f / 30.0f);
+		}
+		u32 most = 0;
+		for (int i = 0; i < 60; ++i) {
+			app.update(Input {}, 1.0f / 30.0f);
+			app.render();
+			most = std::max(most, app.godRays().drawn());
+		}
+		std::printf("  light shafts: up to %u beams\n", most);
+		CHECK(most > 0 && most <= GodRays::MAX);
+	}
 	// The menu: the page is under Graphics, its set puts the values, a change by hand makes it "own".
 	{
 		Menu m;

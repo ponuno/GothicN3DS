@@ -167,9 +167,12 @@ bool Shadows::cast(const World& world, Vec3 camera, const Model& model, const Po
 	const float off = n.y * (feet.y - ground); // (o - g) is straight above g
 	const float lift = 2.0f + dist * 0.003f;
 	for (int r = 0; r < 3; ++r) c[r] = -dir[r] * off / nd + nv[r] * lift;
-	// (Both sides of the flattened body are drawn, so a point is covered twice: half the darkness each.)
-	const float layer = 1.0f - sqrtf(1.0f - clamp(a, 0.0f, 0.95f));
-	model.drawFlat(pose, feet, yaw, lean, k, c, _flat, layer);
+	// Every part of the flattened body lies over others (front and back, an arm over the chest, the armour over the
+	// body): drawn once per pixel, it darkens the ground evenly - before, each layer added its darkness, and the
+	// shadow came out blotchy, darkest where the limbs crossed.
+	gfx::setDrawOnce(true);
+	model.drawFlat(pose, feet, yaw, lean, k, c, _flat, clamp(a, 0.0f, 0.9f));
+	gfx::setDrawOnce(false);
 	++_stats.drawn;
 	++_stats.drawCalls;
 	return true;

@@ -57,6 +57,7 @@ bool Sound::init(Pak& pak, ScriptVm* vm, AudioOut* out, u32 cacheBytes, bool thr
 	for (Sample& s : _samples) s = Sample {};
 	for (Voice& v : _voices) v = Voice {};
 	for (Pending& p : _pending) p = Pending {};
+	for (Ticket& t : _tickets) t = Ticket {};
 	_classSfx = vm->find("C_SFX");
 	if (_classSfx != SCRIPT_NONE && vm->symbol(_classSfx).type != SCRIPT_CLASS) _classSfx = SCRIPT_NONE;
 	_mFile = vm->findMember("C_SFX", "FILE");
@@ -440,7 +441,7 @@ u32 Sound::startNow(int sample, bool located, Vec3 pos, float gain, float range,
 	return handle;
 }
 
-u32 Sound::request(int defIndex, bool located, Vec3 pos, float gain, float range, int forceLoop, int ambient) {
+u32 Sound::request(int defIndex, bool located, Vec3 pos, float gain, float range, int forceLoop, int ambient, u32 ticket) {
 	if (defIndex < 0 || !ready()) return 0;
 	const Def& d = _defs[defIndex];
 	if (d.state != 1) return 0;
@@ -465,7 +466,11 @@ u32 Sound::request(int defIndex, bool located, Vec3 pos, float gain, float range
 	sys::mutexLock(_lock);
 	state = _samples[s].state;
 	sys::mutexUnlock(_lock);
-	if (state == S_READY) return startNow(s, located, pos, g, r, pitch, loop, ambient);
+	if (state == S_READY) {
+		const u32 h = startNow(s, located, pos, g, r, pitch, loop, ambient);
+		setOwn(h, d.gain);
+		return h;
+	}
 	if (state == S_MISSING) {
 		++_stats.absent;
 		return 0;
@@ -482,6 +487,7 @@ u32 Sound::request(int defIndex, bool located, Vec3 pos, float gain, float range
 			p.pitch = pitch;
 			p.loop = loop;
 			p.ambient = ambient;
+			p.ticket = ticket;
 			return 0;
 		}
 	++_stats.culled;
@@ -553,7 +559,88 @@ u32 Sound::playGround(const char* base, u8 group, const Vec3* at, float gain, fl
 	return play(base, at, gain, range);
 }
 
+u32 Sound::playLoop(const char* name, float gain) {
+	if (!ready() || !name || !name[0]) return 0;
+	const int d = defFor(hashName(name), name);
+	if (d < 0 || _defs[d].state != 1) {
+		++_stats.unknown;
+		note(name, false);
+		return 0;
+	}
+	const u32 ticket = 0x80000000u | (_nextTicket++ & 0x7FFFFFFFu);
+	const u32 h = request(d, false, Vec3 {0, 0, 0}, gain, 0.0f, 1, -1, ticket);
+	if (h) return h;
+	for (const Pending& p : _pending)
+		if (p.used && p.ticket == ticket) return ticket;
+	return 0;
+}
+
+bool Sound::addSynthetic(const char* name, const i16* samples, u32 frames, u32 rate, bool loop) {
+	if (!ready() || !name || !name[0] || !samples || frames == 0 || rate < SOUND_MIN_RATE) return false;
+	const int d = defFor(hashName(name), name);
+	if (d < 0 || _defs[d].state == 1) return false;
+	const u32 hash = hashName(name) ^ 0x5A17C0DEu; // (no archive entry has it)
+	const u32 bytes = frames * u32(sizeof(i16));
+	sys::mutexLock(_lock);
+	int slot = -1;
+	for (int i = 0; i < SAMPLES && slot < 0; ++i)
+		if (_samples[i].state == S_EMPTY) slot = i;
+	void* block = slot >= 0 && makeRoom(bytes) ? _out->allocSamples(bytes) : nullptr;
+	if (!block) {
+		sys::mutexUnlock(_lock);
+		return false;
+	}
+	memcpy(block, samples, bytes);
+	_out->publishSamples(block, bytes);
+	Sample& s = _samples[slot];
+	s = Sample {};
+	s.hash = hash;
+	s.state = S_READY;
+	s.pins = 1; // never given up for another
+	s.block = block;
+	s.data = static_cast<const i16*>(block);
+	s.frames = frames;
+	s.rate = rate;
+	s.bytes = bytes;
+	s.used = _tick;
+	_cacheBytes += bytes;
+	sys::mutexUnlock(_lock);
+	Def& def = _defs[d];
+	def.sample = hash;
+	def.gain = 1.0f;
+	def.loop = loop;
+	def.pitchOff = def.pitchVar = 0.0f;
+	def.variants = 0;
+	def.state = 1;
+	return true;
+}
+
+u32 Sound::resolve(u32 handle) const {
+	if (!(handle & 0x80000000u)) return handle;
+	for (const Ticket& t : _tickets)
+		if (t.ticket == handle) return t.handle;
+	return 0;
+}
+
+void Sound::setOwn(u32 handle, float own) {
+	const u32 vi = (handle & 0xFFu);
+	if (vi == 0 || vi > u32(VOICES)) return;
+	Voice& v = _voices[vi - 1];
+	if (v.active && v.serial == u16(handle >> 8)) v.own = own;
+}
+
 void Sound::stop(u32 handle) {
+	if (handle & 0x80000000u) {
+		for (Pending& p : _pending)
+			if (p.used && p.ticket == handle) p.used = false;
+		for (Ticket& t : _tickets)
+			if (t.ticket == handle) {
+				const u32 h = t.handle;
+				t = Ticket {};
+				stop(h);
+			}
+		return;
+	}
 	const u32 vi = (handle & 0xFFu);
 	if (!ready() || vi == 0 || vi > u32(VOICES)) return;
 	Voice& v = _voices[vi - 1];
@@ -563,11 +650,16 @@ void Sound::stop(u32 handle) {
 }
 
 void Sound::setHandleGain(u32 handle, float gain) {
+	if (handle & 0x80000000u) {
+		for (Pending& p : _pending)
+			if (p.used && p.ticket == handle) p.gain = clamp(gain, 0.0f, 1.0f) * _defs[p.def].gain;
+		handle = resolve(handle);
+	}
 	const u32 vi = (handle & 0xFFu);
 	if (!ready() || vi == 0 || vi > u32(VOICES)) return;
 	Voice& v = _voices[vi - 1];
 	if (!v.active || v.serial != u16(handle >> 8)) return;
-	v.gain = clamp(gain, 0.0f, 1.0f);
+	v.gain = clamp(gain, 0.0f, 1.0f) * v.own;
 }
 
 void Sound::stopAll() {
@@ -578,9 +670,15 @@ void Sound::stopAll() {
 			release(_voices[i]);
 		}
 	for (Pending& p : _pending) p.used = false;
+	for (Ticket& t : _tickets) t = Ticket {};
 }
 
 bool Sound::playing(u32 handle) const {
+	if (handle & 0x80000000u) {
+		for (const Pending& p : _pending)
+			if (p.used && p.ticket == handle) return true; // (still waiting for its sample: on its way)
+		handle = resolve(handle);
+	}
 	const u32 vi = (handle & 0xFFu);
 	if (!ready() || vi == 0 || vi > u32(VOICES)) return false;
 	const Voice& v = _voices[vi - 1];
@@ -626,9 +724,14 @@ void Sound::update(float dt, float hours) {
 		}
 		if (state == S_READY) {
 			p.used = false;
-			if (p.age <= WAIT_FOR_SAMPLE || p.loop)
-				startNow(s, p.located, p.pos, p.gain, p.range, p.pitch, p.loop, p.ambient);
-			else
+			if (p.age <= WAIT_FOR_SAMPLE || p.loop) {
+				const u32 h = startNow(s, p.located, p.pos, p.gain, p.range, p.pitch, p.loop, p.ambient);
+				setOwn(h, d.gain);
+				if (p.ticket && h) {
+					_tickets[_ticketTurn] = Ticket {p.ticket, h};
+					_ticketTurn = (_ticketTurn + 1) % u32(sizeof(_tickets) / sizeof(_tickets[0]));
+				}
+			} else
 				++_stats.late;
 		} else if (state == S_MISSING) {
 			p.used = false;

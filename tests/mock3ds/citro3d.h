@@ -130,6 +130,8 @@ static inline void C3D_TexEnvColor(C3D_TexEnv*, u32) {}
 static inline void C3D_DepthTest(bool, GPU_TESTFUNC, GPU_WRITEMASK) {}
 static inline void C3D_CullFace(GPU_CULLMODE) {}
 static inline void C3D_AlphaTest(bool, GPU_TESTFUNC, int) {}
+static inline void C3D_StencilTest(bool, GPU_TESTFUNC, int, int, int) {}
+static inline void C3D_StencilOp(GPU_STENCILOP, GPU_STENCILOP, GPU_STENCILOP) {}
 static inline void C3D_AlphaBlend(GPU_BLENDEQUATION, GPU_BLENDEQUATION, GPU_BLENDFACTOR, GPU_BLENDFACTOR, GPU_BLENDFACTOR, GPU_BLENDFACTOR) {}
 
 enum { C3D_UNSIGNED_BYTE = 0, C3D_UNSIGNED_SHORT = 1 };

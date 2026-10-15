@@ -499,6 +499,8 @@ private:
 	bool _weatherSoundSearched = false;
 	float _rainRetry = 0.0f;            // seconds before asking for the rain sound again
 	float _thunderWait = -1.0f;         // seconds until the thunder is heard (<0: none)
+	u8 _thunderMade = 0;                // how many thunders were made here (engine/weather_sfx.h; 0: the game's own)
+	u32 _thunderTurn = 0;
 	float _fps = 60.0f;      // frames per second, smoothed (the counter of Settings::showFps)
 	u32 _switches = 0;
 	bool _portalLock = false; // just arrived: ignore portals until the player has left their boxes

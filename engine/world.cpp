@@ -1738,7 +1738,10 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
 	if (hasWind() && _cfg.wind > 0.0f) {
 		const double t = _windSeconds;
 		const float gust = 0.75f + 0.25f * float(sin(t * 0.31) * sin(t * 0.17 + 1.3));
-		const float push = clamp(_cfg.wind * _cfg.windWeather, 0.0f, 3.4f) * WORLD_WIND_UNIT * gust;
+		// (kWindGain: the sway the baker gives - a tree's crown 4..20 cm, a bush's 2..10 - is what a big screen shows; on the
+		// 3DS's 400x240 it was a sway of 2..8 cm in clear weather, nothing to see. Three and a half times that reads as wind.)
+		constexpr float kWindGain = 3.5f;
+		const float push = clamp(_cfg.wind * _cfg.windWeather * kWindGain, 0.0f, 7.0f) * WORLD_WIND_UNIT * gust;
 		_windX = push * 0.8f;
 		_windZ = push * 0.6f;
 	}

@@ -1,5 +1,6 @@
 #include "lang.h"
 #include "app.h"
+#include "weather_sfx.h"
 #include "stereo.h"
 #include "bytes.h"
 
@@ -180,6 +181,8 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	_barrierHum = 0;
 	_rainLoop = 0;
 	_thunderWait = -1.0f;
+	_rain.release();    // (what they asked of the ground was the other world's)
+	_godRays.release();
 	_music.enterWorld(_pak, worldName());
 	return true;
 }
@@ -891,7 +894,8 @@ void App::render() {
 			_puddles.draw(_world, _cam.pos, _weather.wet(), _weather.rain(), sky.horizon, _clock);
 		}
 		_shadows.begin();
-		const bool castHero = _settings.shadows == SHADOWS_HERO_CAST && !_windRelief; // (only given up at the halved frame rate)
+		// (Always: some 14 draw calls. It used to be given up at the half rate, so at the menu's steady 30 fps it never showed.)
+		const bool castHero = _settings.shadows == SHADOWS_HERO_CAST;
 		if (castHero && _heroVisible && _hero.loaded()) {
 			// The light: the sun by day, the moon at night, a lamp overhead indoors; fainter under cloud and rain.
 			float lightDir[3] = {0.25f, -0.96f, 0.1f};
@@ -930,7 +934,8 @@ void App::render() {
 			const float clear = clamp(1.0f - _weather.cloud() * 1.3f, 0.0f, 1.0f) * (1.0f - clamp(_weather.rain() * 2.0f, 0.0f, 1.0f));
 			const float warm = clamp(1.0f - el * 2.5f, 0.0f, 1.0f);
 			const float tint[3] = {255.0f, 235.0f - 55.0f * warm, 190.0f - 80.0f * warm};
-			_godRays.draw(_world, _cam.pos, sunDir, low * high * clear, tint, _clock);
+			const float look[3] = {sinf(_cam.yaw), 0.0f, cosf(_cam.yaw)};
+			_godRays.draw(_world, _cam.pos, look, sunDir, low * high * clear, tint, _clock);
 		}
 		if (!indoor && (_weather.rain() > 0.03f || _weather.snow() > 0.03f)) _rain.draw(_world, _cam.pos, _weather.rain(), _weather.snow(), sky.light, _clock);
 		_particles.draw(d.view, _cam.pos, indoor ? indoorLight : sky.light);
@@ -1474,10 +1479,11 @@ void App::barrierHum() {
 void App::weatherSound(float dt) {
 	if (!_weatherSoundSearched && _sound.ready()) {
 		_weatherSoundSearched = true;
+		// Gothic 1 has no sound of rain or thunder of its own; these are names other builds and mods use, and the
+		// baker's list (meta/weathersfx: "R name" / "T name") comes first. A spell's sound (MFX_FIRERAIN_RAIN,
+		// MFX_THUNDERBALL_*: the only matches the baker finds in Gothic 1) is never taken for the weather.
 		static const char* const kRain[] = {"RAIN_LOOP", "AMB_RAIN", "AMBIENT_RAIN", "RAIN", "REGEN_LOOP", "REGEN", "RAIN_01", "RAIN_A1", "WEATHER_RAIN"};
 		static const char* const kThunder[] = {"THUNDER", "THUNDER_01", "THUNDER_A1", "THUNDER_1", "AMB_THUNDER", "DONNER", "THUNDER_LOUD", "WEATHER_THUNDER"};
-		// The names the baker found in the scripts (meta/weathersfx: "R name" / "T name" lines) come first.
-		u32 used = 0;
 		if (const PakEntry* e = _pak.find("meta/weathersfx")) {
 			static char text[2048];
 			if (e->size > 0 && e->size < sizeof(text) && _pak.read(*e, text)) {
@@ -1488,7 +1494,7 @@ void App::weatherSound(float dt) {
 					if (end) *end = 0;
 					const char kind = p[0];
 					const char* name = p + 2;
-					if (p[1] == ' ' && *name && _sound.knows(name)) {
+					if (p[1] == ' ' && *name && !weatherNameIsSpell(name) && _sound.knows(name)) {
 						if (kind == 'R') {
 							if (_sound.isLoop(name) && !_rainName) _rainName = name;
 							else if (!rainAny) rainAny = name;
@@ -1500,10 +1506,8 @@ void App::weatherSound(float dt) {
 					p = end + 1;
 				}
 				if (!_rainName) _rainName = rainAny;
-				used = e->size;
 			}
 		}
-		(void)used;
 		if (!_rainName)
 			for (const char* n : kRain)
 				if (_sound.knows(n) && (!_rainName || _sound.isLoop(n))) {
@@ -1516,14 +1520,33 @@ void App::weatherSound(float dt) {
 					_thunderName = n;
 					break;
 				}
+		// None in the game: made here (engine/weather_sfx.h).
+		if (!_rainName) {
+			static i16 rain[RAIN_SFX_FRAMES];
+			makeRainSound(rain);
+			if (_sound.addSynthetic("G3_RAIN_MADE", rain, RAIN_SFX_FRAMES, RAIN_SFX_RATE, true)) _rainName = "G3_RAIN_MADE";
+		}
+		if (!_thunderName) {
+			static i16 thunder[THUNDER_SFX_FRAMES];
+			static const char* const kMade[] = {"G3_THUNDER_MADE_A", "G3_THUNDER_MADE_B"};
+			for (u32 k = 0; k < 2; ++k) {
+				makeThunderSound(thunder, 7u + k * 31u);
+				if (_sound.addSynthetic(kMade[k], thunder, THUNDER_SFX_FRAMES, THUNDER_SFX_RATE, false)) {
+					if (!_thunderName) _thunderName = kMade[k];
+					_thunderMade = u8(k + 1);
+				}
+			}
+		}
 	}
 	float delay = 0;
 	if (_weather.takeThunder(delay)) _thunderWait = delay;
 	if (_thunderWait >= 0.0f) {
 		_thunderWait -= dt;
 		if (_thunderWait < 0.0f) {
-			if (_thunderName && !_world.indoor()) _sound.play(_thunderName, nullptr, 0.9f);
-			else if (_thunderName) _sound.play(_thunderName, nullptr, 0.35f);
+			const char* name = _thunderName;
+			// The made ones take turns.
+			if (_thunderMade == 2 && (++_thunderTurn & 1u)) name = "G3_THUNDER_MADE_B";
+			if (name) _sound.play(name, nullptr, _world.indoor() ? 0.35f : 0.9f);
 			_thunderWait = -1.0f;
 		}
 	}
@@ -1536,11 +1559,14 @@ void App::weatherSound(float dt) {
 	}
 	const float gain = 0.15f + 0.65f * amount;
 	_rainRetry -= dt;
+	// playLoop's handle holds while the sample is read, so one request is all; again only if the loop was lost
+	// (its voice taken by louder sounds, or its sample never came).
 	if (_rainLoop && _sound.playing(_rainLoop)) {
 		_sound.setHandleGain(_rainLoop, gain);
 	} else if (_rainRetry <= 0.0f) {
-		_rainLoop = _sound.play(_rainName, nullptr, gain);
-		_rainRetry = 0.25f;
+		if (_rainLoop) _sound.stop(_rainLoop);
+		_rainLoop = _sound.playLoop(_rainName, gain);
+		_rainRetry = 1.0f;
 	}
 }
 

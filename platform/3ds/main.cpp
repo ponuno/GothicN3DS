@@ -698,7 +698,9 @@ int main(int, char**) {
 			// stand still and only the hero keeps a shadow, until all objects are back.
 			const bool heavy = app.gfxRelief() ? pacer.detailScale() < 0.999f || pacer.interval() == 2 : pacer.detailScale() < 0.95f;
 			if (heavy != app.gfxRelief()) app.setGfxRelief(heavy);
-			if ((pacer.interval() == 2) != app.windRelief()) app.setWindRelief(pacer.interval() == 2);
+			// (Only when the load forced the half rate: at the menu's steady 30 fps - the quality mode - the plants sway.)
+			const bool halvedByLoad = pacer.interval() == 2 && !pacer.cfg.halfOnly;
+			if (halvedByLoad != app.windRelief()) app.setWindRelief(halvedByLoad);
 			if (pacer.interval() != interval) {
 				interval = pacer.interval();
 				C3D_FrameRate(interval == 2 ? 30.0f : 60.0f);

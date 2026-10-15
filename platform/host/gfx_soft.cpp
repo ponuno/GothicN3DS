@@ -32,6 +32,10 @@ namespace {
 
 u8 gColor[SCREEN_W * SCREEN_H * 4];
 float gDepth[SCREEN_W * SCREEN_H];
+// setDrawOnce: the shape that last drew each pixel (as the console's stencil does it).
+u8 gOnce[SCREEN_W * SCREEN_H];
+u8 gOnceRef = 0;
+bool gOnceOn = false;
 FrameDesc gFrame;
 Mat4 gProj, gViewProj;  // gViewProj takes positions relative to gAnchor
 float gAnchor[3] = {0, 0, 0};
@@ -149,6 +153,10 @@ void rasterize(const ScreenVert& a, const ScreenVert& bIn, const ScreenVert& cIn
 			const float z = a.z * w0 + b.z * w1 + c.z * w2;
 			gStats.pixelsTested += count;
 			if (depthTest && z >= gDepth[idx]) continue;
+			if (gOnceOn && blend) {
+				if (gOnce[idx] == gOnceRef) continue;
+				gOnce[idx] = gOnceRef;
+			}
 
 			const float invW = a.invW * w0 + b.invW * w1 + c.invW * w2;
 			const float w = 1.0f / invW;
@@ -385,6 +393,9 @@ void frameBegin(const FrameDesc& f) {
 		gColor[i * 4 + 3] = 255;
 		gDepth[i] = 1.0f;
 	}
+	memset(gOnce, 0, sizeof(gOnce));
+	gOnceRef = 0;
+	gOnceOn = false;
 	gStats = {};
 	gTexture = nullptr;
 	gMaterialFlags = 0;
@@ -398,10 +409,16 @@ bool fadeSupported() { return true; }
 
 void setFade(float visible) { gFade = clamp(visible, 0.0f, 1.0f); }
 
+void setDrawOnce(bool on) {
+	gOnceOn = on && gPass == PASS_BLEND;
+	if (gOnceOn) gOnceRef = u8(gOnceRef >= 255 ? 1 : gOnceRef + 1);
+}
+
 void setTwoSided(bool both) { gTwoSided = both && gPass == PASS_WORLD; }
 
 void setPass(Pass pass) {
 	gTwoSided = false;
+	gOnceOn = false;
 	if (pass == gPass) return;
 	gPass = pass;
 	gFade = 1.0f; // (dissolving is for the opaque world only)
@@ -585,6 +602,7 @@ void stereoSet(bool on) { gStereo = on; }
 void eyeBegin(const FrameDesc& f) {
 	++gEyes;
 	gEyeView[1] = f.view;
+	gOnceOn = false;
 }
 SoftEyes softEyes() { return SoftEyes {gEyes, gEyeView[0], gEyeView[1]}; }
 

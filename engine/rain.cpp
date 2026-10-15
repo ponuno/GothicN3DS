@@ -11,7 +11,7 @@ namespace {
 
 constexpr float kPosScale = 0.25f;
 constexpr int kRingLevels = 4;
-constexpr float kRainSpeed = 1000.0f; // cm/s
+constexpr float kRainSpeed = 2300.0f; // cm/s (real drops fall at 9 m/s, but on a small screen that reads as a drizzle)
 constexpr float kSnowSpeed = 90.0f;
 
 float smooth(float x) {
@@ -168,7 +168,7 @@ void Rain::draw(const World& world, Vec3 camera, float rain, float snow, const f
 				if (rl > 1.0f) {
 					rx /= rl;
 					rz /= rl;
-					const float len = snowing ? 3.0f + dist * 0.003f : 110.0f + 40.0f * phase;
+					const float len = snowing ? 3.0f + dist * 0.003f : 170.0f + 60.0f * phase; // (the way it falls in about a frame at 30 fps: a streak)
 					const float half = (snowing ? 1.8f : 0.7f) + dist * (snowing ? 0.0018f : 0.0020f);
 					const float yTop = y + (snowing ? len : len * 0.5f), yBot = max(y - (snowing ? 0.0f : len * 0.5f), c.y);
 					if (yTop > c.y + 1.0f) {

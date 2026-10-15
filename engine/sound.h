@@ -83,8 +83,15 @@ public:
 	void stopAll();
 	// The handle's sound is sounding.
 	bool playing(u32 handle) const;
-	// Changes the gain of a sound already playing (a loop that swells and fades).
+	// Changes the gain of a sound already playing (a loop that swells and fades), on top of the sound's own.
 	void setHandleGain(u32 handle, float gain);
+	// Plays `name` over and over with no place (the rain), whether or not the scripts make it a loop. Unlike play(),
+	// the handle is good from the start: also while the sample is still being read (play() gives 0 then, and the loop
+	// would start a moment later where stop() could not reach it). 0 if it cannot be played at all.
+	u32 playLoop(const char* name, float gain);
+	// A sample made here, not read from the archive (a stand-in for a sound the game does not have): `name` plays it
+	// from now on. Kept in memory until shutdown. False if there is no memory or slot for it, or the name is taken.
+	bool addSynthetic(const char* name, const i16* samples, u32 frames, u32 rate, bool loop);
 	// Does a sound of this name exist (an instance of C_SFX, or a sample of that name)?
 	bool knows(const char* name);
 	// True if the instance of that name plays in a loop (false if unknown).
@@ -142,6 +149,7 @@ private:
 		float lastL = -1, lastR = -1;
 		int ambient = -1;
 		u32 started = 0;
+		float own = 1.0f; // the sound's own gain (C_SFX vol), kept under setHandleGain
 	};
 	struct Pending {
 		bool used = false;
@@ -152,6 +160,11 @@ private:
 		bool loop = false;
 		int ambient = -1;
 		float age = 0;
+		u32 ticket = 0; // playLoop's handle while it waits
+	};
+	// playLoop's handles (top bit set) and the voice handles they turned into once their sample came.
+	struct Ticket {
+		u32 ticket = 0, handle = 0;
 	};
 	struct Emitter {
 		u32 handle = 0;
@@ -169,7 +182,9 @@ private:
 	void queueLoad(int sample);
 	bool makeRoom(u32 bytes); // lock held
 	u32 startNow(int sample, bool located, Vec3 pos, float gain, float range, float pitch, bool loop, int ambient);
-	u32 request(int defIndex, bool located, Vec3 pos, float gain, float range, int forceLoop, int ambient);
+	u32 request(int defIndex, bool located, Vec3 pos, float gain, float range, int forceLoop, int ambient, u32 ticket = 0);
+	u32 resolve(u32 handle) const; // a voice handle (playLoop's ticket followed), 0 if none
+	void setOwn(u32 handle, float own);
 	int pickVoice(float loudness);
 	void release(Voice& v);
 	void mixOf(const Voice& v, float& left, float& right) const;
@@ -196,6 +211,8 @@ private:
 	Sample _samples[SAMPLES];
 	Voice _voices[VOICES];
 	Pending _pending[PENDING];
+	Ticket _tickets[8];
+	u32 _ticketTurn = 0, _nextTicket = 1;
 	SoundStats _stats;
 	Missing _log[LOG];
 	u32 _logCount = 0;

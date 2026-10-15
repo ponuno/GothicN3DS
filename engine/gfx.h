@@ -180,6 +180,11 @@ bool fadeSupported();
 // Both faces of the following draws, not only the front (PASS_WORLD; the
 // other passes draw both anyway). setPass and frameBegin end it.
 void setTwoSided(bool both);
+// Draw-once (PASS_BLEND): while on, a pixel is drawn at most once by the following draws - the first triangle there
+// wins, the ones over it are not drawn. A flat shape made of overlapping parts (the hero's body thrown onto the
+// ground) then darkens the ground evenly, not twice and thrice where an arm lies over the body. Each `true` starts
+// a new shape (what an earlier one drew does not count). setPass, frameBegin and eyeBegin end it.
+void setDrawOnce(bool on);
 
 // Skinned geometry (characters). The mesh is made with meshCreate from
 // vertices in the layout model.h describes: every vertex follows two of the

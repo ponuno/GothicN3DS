@@ -331,15 +331,35 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				for (const SrcSymbol& s : names->symbols) {
 					std::string up = s.name;
 					for (char& c : up) c = char(std::toupper(static_cast<unsigned char>(c)));
-					const bool rain = up.find("RAIN") != std::string::npos || up.find("REGEN") != std::string::npos;
-					const bool thunder = up.find("THUNDER") != std::string::npos || up.find("DONNER") != std::string::npos ||
-					                     up.find("GEWITTER") != std::string::npos;
+					// (A spell's sound - MFX_FIRERAIN_RAIN, MFX_THUNDERBALL_* - is not the weather.)
+					const bool spell = up.rfind("MFX_", 0) == 0 || up.rfind("SPELL", 0) == 0 || up.rfind("SPL_", 0) == 0;
+					const bool rain = !spell && (up.find("RAIN") != std::string::npos || up.find("REGEN") != std::string::npos);
+					const bool thunder = !spell && (up.find("THUNDER") != std::string::npos || up.find("DONNER") != std::string::npos ||
+					                                up.find("GEWITTER") != std::string::npos);
 					if (rain) { rainList += (rainList.empty() ? "" : ", ") + s.name; meta += "R " + s.name + "\n"; }
 					if (thunder) { thunderList += (thunderList.empty() ? "" : ", ") + s.name; meta += "T " + s.name + "\n"; }
 				}
+				// Files no instance names but the engine of the game may play by itself (ZenGin's sky plays the rain).
+				static const char* const kFiles[][2] = {{"R", "RAIN_01.WAV"}, {"R", "RAIN.WAV"}, {"R", "RAIN_LOOP.WAV"}, {"R", "AMB_RAIN.WAV"},
+				                                        {"T", "THUNDER_01.WAV"}, {"T", "THUNDER.WAV"}, {"T", "THUNDER_A1.WAV"}, {"T", "DONNER.WAV"}};
+				for (const auto& f : kFiles) {
+					std::vector<u8> bytes;
+					SrcSound snd;
+					std::string why;
+					if (!scripts.soundFile(f[1], bytes) || !decodeWav(bytes, snd, why)) continue;
+					resampleSound(snd, opt.soundRate);
+					if (snd.samples.size() > SOUND_MAX_FRAMES || snd.rate < SOUND_MIN_RATE) continue;
+					std::string stem = f[1];
+					stem = stem.substr(0, stem.find('.'));
+					std::string lower = stem;
+					for (char& c : lower) c = char(std::tolower(static_cast<unsigned char>(c)));
+					if (!pak.has("sfx/" + lower)) pak.add("sfx/" + lower, ASSET_SOUND, encodeSound(snd), false);
+					meta += std::string(f[0]) + " " + stem + "\n";
+					(f[0][0] == 'R' ? rainList : thunderList) += (f[0][0] == 'R' ? rainList : thunderList).empty() ? stem + " (file)" : ", " + stem + " (file)";
+				}
 				if (!meta.empty()) pak.add("meta/weathersfx", ASSET_META, std::vector<u8>(meta.begin(), meta.end()));
-				line("weather sounds: rain: " + (rainList.empty() ? std::string("none") : rainList) + "; thunder: " +
-				     (thunderList.empty() ? std::string("none") : thunderList));
+				line("weather sounds: rain: " + (rainList.empty() ? std::string("none (the game makes its own)") : rainList) + "; thunder: " +
+				     (thunderList.empty() ? std::string("none (the game makes its own)") : thunderList));
 			}
 		} catch (const std::exception& ex) {
 			line(std::string("WARNING: sounds not baked: ") + ex.what());

@@ -581,7 +581,7 @@ static void testShader(const std::string& pak) {
 		CHECK(sc.fadedVertices > 5000 && sc.fadeChanged == 0.0 && sc.worstNoise < 1e-4);
 		std::printf("  Graphics+: %u world vertices darkened by their occlusion, %u swayed in %u draw calls (at most %.1f cm)\n",
 		            sc.occludedVertices, sc.swayedVertices, sc.windyDraws, sc.worstSway);
-		CHECK(sc.occludedVertices > 1000 && sc.swayedVertices > 50 && sc.windyDraws > 0 && sc.worstSway > 0.5 && sc.worstSway < 40.0);
+		CHECK(sc.occludedVertices > 1000 && sc.swayedVertices > 50 && sc.windyDraws > 0 && sc.worstSway > 0.5 && sc.worstSway < 140.0); // (World kWindGain 3.5: a crown sways tens of cm)
 		// The static world by the fast entry with the dissolve, the characters by theirs.
 		std::printf("  entries: %u draws fast, %u characters', %u full\n", sc.fastDraws, sc.skinDraws, sc.fullDraws);
 		CHECK(sc.fastDraws > 50 && sc.skinDraws >= sc.skinnedDraws && sc.wrongEntry == 0 && sc.swayOnFast == 0);
@@ -967,7 +967,7 @@ static void testDefaultShader(const std::string& pak) {
 		CHECK(sc.worstGpuWorldPx < 0.25 && sc.worstGpuSkinPx < 0.25 && sc.worstGpuSkyPx < 0.75);
 		CHECK(sc.worstDepth < 1e-3 && sc.worstColor < 1e-4 && sc.worstTex < 1e-3);
 		CHECK(sc.sharedPoints > 20 && sc.splitPoints == 0);
-		CHECK(sc.occludedVertices > 1000 && sc.swayedVertices > 50 && sc.windyDraws > 0 && sc.worstSway > 0.5 && sc.worstSway < 40.0);
+		CHECK(sc.occludedVertices > 1000 && sc.swayedVertices > 50 && sc.windyDraws > 0 && sc.worstSway > 0.5 && sc.worstSway < 140.0); // (World kWindGain 3.5: a crown sways tens of cm)
 		// The water's waves: where there is water in view, it waved with the full entry (never the fast one, which would
 		// read the waves' weights as occlusion); and the report counts what waved.
 		std::printf("  waves: %u wavy draw calls, %u of them on the fast entry; %u triangles in the last frame\n", sc.wavyDraws, sc.wavyOnFast,

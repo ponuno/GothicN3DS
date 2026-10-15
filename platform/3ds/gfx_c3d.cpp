@@ -794,7 +794,34 @@ void frameBegin(const FrameDesc& f) {
 
 // Everything a pass (one eye of a frame) starts from: the state is set down in the command list afresh, as the
 // first draw of the frame would find it.
+// setDrawOnce: the stencil, cleared to 0 with the depth at the start of each eye's picture. Each shape takes the next
+// value: a pixel is drawn where the stencil is not yet that value, and the drawing sets it.
+u8 gOnceRef = 0;
+bool gOnceOn = false;
+
+static void endDrawOnce() {
+	if (!gOnceOn) return;
+	gOnceOn = false;
+	C3D_StencilTest(false, GPU_ALWAYS, 0, 0xFF, 0x00);
+	C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
+}
+
+void setDrawOnce(bool on) {
+	if (!gInFrame || gUiPass) return;
+	if (!on || gPass != PASS_BLEND) {
+		endDrawOnce();
+		return;
+	}
+	gOnceRef = u8(gOnceRef >= 255 ? 1 : gOnceRef + 1);
+	gOnceOn = true;
+	C3D_StencilTest(true, GPU_NOTEQUAL, gOnceRef, 0xFF, 0xFF);
+	C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_REPLACE);
+}
+
 static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target) {
+	gOnceOn = true; // (whatever the last frame left: off)
+	endDrawOnce();
+	gOnceRef = 0;
 	// The picture squeezed into half the screen: the same triangles and draws, half the pixels. (A scissor did not do
 	// this: the GPU still worked on what it cut away.)
 	if (gFillTest) C3D_SetViewport(0, 0, target->frameBuf.width, target->frameBuf.height / 2);
@@ -886,6 +913,7 @@ void stereoSet(bool on) {
 void setPass(Pass pass) {
 	if (!gInFrame || gUiPass || pass == gPass) return;
 	setFade(1.0f); // (dissolving is for the opaque world only)
+	endDrawOnce();
 	gPass = pass;
 	if (pass == PASS_SKY) {
 		C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
@@ -1098,6 +1126,7 @@ Texture* uiTextureCreate(u16 w, u16 h, const u8* coverage, bool smooth) {
 // the texture stage's constant instead - one draw call per run of equal alpha.
 static void beginUi(Texture* t) {
 	setFade(1.0f);
+	endDrawOnce();
 	gUiPass = true;
 	gPass = PASS_SKY; // (no fog terms; setPass is shut until the next frame)
 	C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);

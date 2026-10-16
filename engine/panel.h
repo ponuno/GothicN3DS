@@ -158,6 +158,12 @@ public:
 	void setCursor(bool on) { openPage(on ? PAGE_INVENTORY : PAGE_PLAY); }
 	// Choosing a slot for the chosen thing (the ten slots are up).
 	bool assigning() const { return _assigning; }
+	// (fix166) ZL held: one of the ten slots lit as the D-Pad moves (-1: none).
+	void setChoice(int slot) {
+		if (slot != _choiceSlot) _dirty = true;
+		_choiceSlot = slot;
+	}
+	int choice() const { return _choiceSlot; }
 
 	ItemTab tab() const { return ItemTab(_tab); }
 	void setTab(ItemTab t);
@@ -245,6 +251,7 @@ private:
 	bool _dirty = true;
 	bool _assigning = false; // the ten slots are up: the next tap (or the D-Pad and A) picks one
 	int _pickerSlot = 0;
+	int _choiceSlot = -1; // (fix166) ZL held: the quick slot the D-Pad points at on the play page
 	float _inspect = 0;
 	// The touch in progress.
 	bool _touching = false;

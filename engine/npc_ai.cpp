@@ -670,6 +670,8 @@ void Npcs::clearState(NpcActor& a, bool finalize) {
 		if (finalize && a.endFn != SCRIPT_NONE) invoke(a, a.endFn);
 		a.prevState = a.state;
 	}
+	// (A chase is over: the creature, back at its place, threatens the player anew rather than falling on him at once.)
+	if (a.state && refusesState(a.state)) a.warned = false;
 	a.state = 0;
 	a.started = false;
 	a.loopFn = a.endFn = SCRIPT_NONE;
@@ -1305,6 +1307,7 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 		a.heroWasNear = near;
 		if (_cfg.perceive && a.percWait <= 0.0f && n.down == DOWN_NONE) perceive(a, world);
 		turnHead(a, dt);
+		faceHero(a, dt);
 	}
 	tickFight(a, dt);
 	// A thing in hand goes when the weapon comes out or the character goes down, or when

@@ -1235,4 +1235,46 @@ bool ScriptVm::loadObject(ScriptInstance* inst, const u32* strings, u32 stringCo
 	return !in.bad;
 }
 
+u32 ScriptVm::callSites(u32 callee, u32 args, u32* out, u32 maxSites) const {
+	if (!_code || callee >= _h.symbolCount || args == 0 || args > 8) return 0;
+	u32 pushed[8];
+	u32 count = 0, found = 0;
+	u32 pc = 0;
+	while (pc < _h.codeSize) {
+		const u8 op = _code[pc];
+		u32 size = 1;
+		switch (op) {
+		case OP_BL:
+		case OP_BE:
+		case OP_PUSHI:
+		case OP_PUSHV:
+		case OP_PUSHVI:
+		case OP_B:
+		case OP_BZ:
+		case OP_GMOVI: size = 5; break;
+		case OP_PUSHVV: size = 6; break;
+		default: break;
+		}
+		if (pc + size > _h.codeSize) break;
+		u32 operand = 0;
+		if (size >= 5) memcpy(&operand, _code + pc + 1, 4);
+		if (op == OP_PUSHV || op == OP_PUSHI) { // (an integer literal is its value, not a symbol)
+			if (count == 8) {
+				for (u32 k = 1; k < 8; ++k) pushed[k - 1] = pushed[k];
+				--count;
+			}
+			pushed[count++] = operand;
+		} else {
+			if ((op == OP_BE || op == OP_BL) && operand == callee && count >= args) {
+				if (found < maxSites && out)
+					for (u32 k = 0; k < args; ++k) out[found * args + k] = pushed[count - args + k];
+				++found;
+			}
+			count = 0;
+		}
+		pc += size;
+	}
+	return found;
+}
+
 } // namespace g3

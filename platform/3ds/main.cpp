@@ -17,15 +17,16 @@
 //   C-Stick       turn the camera about the character; locked on: flick left or right
 //                 for the next target to that side
 //   B             jump            A  attack (the D-Pad held left/right: a blow from that side);
-//                                    hold for a combo: press again as a blow ends
-//   Y             parry (held)    X  draw the last weapon / put it away
-//   ZL            melee weapon (fists without one)
+//                                    press again within a blow's window to go on with the combo
+//   Y             parry (held)    X  the last weapon, bow or spell used in hand / put it away
+//   ZL            tap: the next weapon, bow or spell of the quick slots (food and potions passed by);
+//                 held: the slots lit on the bottom screen, the D-Pad chooses, letting go takes it
+//   L / R         classic scheme: step aside
 //   ZR            lock on to the enemy in front / let go (drawing a weapon locks
 //                 on to a hostile one in front by itself: the menu's "Автозахват цели")
 //   D-Pad Left/Right  with a weapon in hand: the direction of a blow (held as A is pressed)
 //   D-Pad Up      with empty hands: the fists on / off
 //   D-Pad Down    sneak on / off
-//   L             quick magic (not yet)
 //   START         pause menu: continue, graphics, controls, faults, save, leave
 //   (console: SELECT takes the bow; classic: L+SELECT the bow, SELECT the spell)
 //   SELECT        opens the inventory on the bottom screen (D-Pad choose, L / R
@@ -583,6 +584,11 @@ int main(int, char**) {
 	bool flicked = false;                  // the C-Stick was flicked aside (locked on: the next target)
 	bool reportShown = true;
 	bool panelShown = false;               // the inventory's picture is on the bottom screen
+	// (fix166) ZL: a tap the next weapon of the quick slots; held, the slots lit on the bottom screen,
+	// the D-Pad moves along them and letting go takes the lit one.
+	bool zlWas = false, zlChoosing = false;
+	float zlTime = 0;
+	int zlSlot = 0;
 	u32 swallowed = 0;                     // buttons a page or the menu used: the game ignores them until let go
 
 	while (aptMainLoop()) {
@@ -660,6 +666,40 @@ int main(int, char**) {
 			app.settings().save(kSettingsPath);
 		}
 		if (!inventoryScreen || menu.isOpen()) panel.setCursor(false);
+		bool zlCycle = false;
+		{
+			const bool zlNow = (held & KEY_ZL) != 0 && !menu.isOpen() && !panel.cursor() && app.steersHero();
+			const u32 dirs = KEY_DUP | KEY_DDOWN | KEY_DLEFT | KEY_DRIGHT;
+			if (zlNow) {
+				if (!zlWas) {
+					zlTime = 0;
+					zlChoosing = false;
+				} else {
+					zlTime += dt;
+				}
+				// (Without the slots on the bottom screen - the report is up - only the tap.)
+				if (!zlChoosing && inventoryScreen && (zlTime > 0.3f || (down & dirs))) {
+					zlChoosing = true;
+					zlSlot = app.quickSlotInHand();
+					if (zlSlot < 0) zlSlot = 0;
+				}
+				if (zlChoosing) {
+					taken |= dirs;
+					if ((repeat & KEY_DLEFT) && zlSlot % 5 > 0) --zlSlot;
+					if ((repeat & KEY_DRIGHT) && zlSlot % 5 < 4) ++zlSlot;
+					if ((repeat & KEY_DUP) && zlSlot >= 5) zlSlot -= 5;
+					if ((repeat & KEY_DDOWN) && zlSlot < 5) zlSlot += 5;
+					panel.setChoice(zlSlot);
+				}
+			} else if (zlWas) {
+				if (zlChoosing && !menu.isOpen() && !panel.cursor()) app.quickArm(zlSlot);
+				else if (!zlChoosing) zlCycle = true;
+				zlChoosing = false;
+				panel.setChoice(-1);
+			}
+			zlWas = zlNow;
+			if (zlNow) taken |= KEY_ZL;
+		}
 		// A button the inventory (or the menu) took stays taken while it is held:
 		// B closes the inventory and must not then also be a jump.
 		swallowed = (swallowed | taken | (menu.isOpen() ? held : 0u)) & held;
@@ -708,9 +748,11 @@ int main(int, char**) {
 			if (app.steersHero()) {
 				in.jump = (gameHeld & KEY_B) != 0;
 				in.attack = in.confirm = (gameDown & KEY_A) != 0;
+				// (fix166) As the original's: X (its space) the last weapon, bow or spell used / away with it;
+				// Y held: parry; ZL: the next weapon, bow or spell of the quick slots (food and potions passed by).
 				in.parry = (gameHeld & KEY_Y) != 0;
 				in.drawWeapon = (gameDown & KEY_X) != 0;
-				in.meleeSlot = (gameDown & KEY_ZL) != 0;
+				in.cycleWeapon = zlCycle;
 				// ZR locks on to a target / lets go; the D-Pad gives a blow its direction.
 				in.focus = (gameDown & KEY_ZR) != 0;
 				in.blowDir = (gameHeld & KEY_DRIGHT) ? 1 : (gameHeld & KEY_DLEFT) ? -1 : 0;
@@ -747,12 +789,8 @@ int main(int, char**) {
 					if (in.lookX < 0.3f && in.lookX > -0.3f) flicked = false;
 					in.lookX = 0;
 				}
-				if (console) {
-					if ((gameDown & KEY_L) && !rHeld) in.magic = true;
-				} else {
 					in.strafe = (gameHeld & KEY_R ? 1.0f : 0.0f) - (gameHeld & KEY_L ? 1.0f : 0.0f);
-				}
-				// The classic scheme has L for the step aside: the magic stance is SELECT's.
+					// SELECT: the bow (console) / the spell stance (classic; L+SELECT the bow).
 				if ((gameDown & KEY_SELECT) && !rHeld && !(held & KEY_START) && !inventoryScreen) {
 					if (console) in.rangedSlot = true; // (the inventory is on the bottom screen)
 					else if (gameHeld & KEY_L) in.rangedSlot = true;

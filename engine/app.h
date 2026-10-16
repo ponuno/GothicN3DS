@@ -268,6 +268,9 @@ public:
 	bool itemAction(u32 symbol);
 	// Quick slots 0..3 (R + D-Pad up, right, down, left).
 	bool quickUse(int slot);
+	// (fix166) ZL held: the slot chosen on the bottom screen used - a weapon, a bow or a spell in hand (not toggled), the rest as a tap.
+	bool quickArm(int slot);
+	int quickSlotInHand() const; // the quick slot of what is in hand (or was last), -1 none
 	void setQuickSlot(int slot, u32 symbol);
 	u32 quickSlot(int slot) const { return slot >= 0 && slot < QUICK_SLOTS ? _quick[slot] : SCRIPT_NONE; }
 	// Something is being used or waits for the character's hands.
@@ -497,6 +500,13 @@ private:
 	void heroBlow();
 	u8 meleeMode();
 	bool heroTake(u8 mode);
+	// (fix166) ZL: the next weapon / bow / spell of the quick slots; X: the last one used.
+	void heroCycleWeapon();
+	bool heroTakeLast();
+	bool heroArm(u32 symbol);   // that weapon / bow / spell in hand now (false: cannot)
+	void heroSwitchTick();      // the one waiting for the hands to be empty
+	u32 _switchTo = 0xFFFFFFFFu;
+	float _switchWait = 0;
 	static void heroHitThunk(void* user, u32 attacker);
 	void heroHit(u32 attacker);
 	void syncHeroNpc();

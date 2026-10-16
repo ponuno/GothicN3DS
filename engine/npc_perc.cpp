@@ -227,20 +227,30 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 				break;
 			}
 	}
+	// A creature with the player in sight and close notices him (it turns to face him: faceHero).
+	if (hero && heroInReach && _game.isMonster(n) && n.down == DOWN_NONE) {
+		const float dx = hero->pos[0] - n.pos[0], dy = hero->pos[1] - n.pos[1], dz = hero->pos[2] - n.pos[2];
+		const float close = _game.sensesRange(n) * 0.5f;
+		const float d2 = dx * dx + dy * dy + dz * dz;
+		if (d2 <= close * close) a.noticed = sees(a, heroIndex, _heroLink.sneaking);
+		else if (d2 > close * close * 1.44f) a.noticed = false;
+	} else {
+		a.noticed = false;
+	}
 	// A creature that is hostile to the player, awake, with the player close and neither of its
 	// perceptions answered by its scripts (nothing enabled for the player or an enemy): it
 	// threatens the player first (its scripts' ZS_MM_AssessEnemy: turns, growls, waits), and goes for
 	// him only if he does not back off - rather than fall on him the moment he is near, or stand about
 	// until he is under its nose. Not while it is at its threat (or any other "assess" state: those
 	// leave their perceptions off on purpose, and a creature there was sent to attack at once).
-	if (a.state && still() && _cfg.beastsRetaliate && hero && heroInReach && _game.isMonster(n) && n.down == DOWN_NONE && !enemyFn &&
+	if ((a.state || a.queueCount || a.phase == NpcActor::MOVING) && still() && _cfg.beastsRetaliate && hero && heroInReach && _game.isMonster(n) && n.down == DOWN_NONE && !enemyFn &&
 	    !(_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer]) && !inFightState(a) &&
 	    _game.hitPoints(*hero) > 0 && hero->down == DOWN_NONE && _game.attitude(a.npc, heroIndex) == _game.constant("ATT_HOSTILE", 0)) {
 		const float dx = hero->pos[0] - n.pos[0], dy = hero->pos[1] - n.pos[1], dz = hero->pos[2] - n.pos[2];
 		const float close = _game.sensesRange(n) * 0.5f;
 		const float d2 = dx * dx + dy * dy + dz * dz;
-		const char* state = stateName(a.state);
-		const bool busy = strstr(state, "ASSESS") || strstr(state, "WARN") || strstr(state, "THREAT") || strstr(state, "FLEE");
+		const char* state = a.state ? stateName(a.state) : "";
+		const bool busy = a.state && (strstr(state, "ASSESS") || strstr(state, "WARN") || strstr(state, "THREAT") || strstr(state, "FLEE"));
 		if (d2 > close * close * 1.44f) a.warned = false; // (the player backed off: the next approach is warned again)
 		if (d2 <= close * close && !busy && !strstr(state, "SLEEP") && sees(a, heroIndex, _heroLink.sneaking)) {
 			if (!a.warned && threaten(a, int(heroIndex)))
@@ -330,6 +340,30 @@ bool Npcs::debugLastHit(char* out, size_t size, int row) const {
 
 // Turns the head towards whoever it looks at, at a natural pace, as far as a
 // neck goes; and back again.
+// A creature that has the player in sight and close turns to face him, whatever it was doing in place (a roamer between
+// two spots, one that has just come back from a chase): the body turns on the spot, the way a beast turns to what it
+// has noticed. Not asleep, not fighting, not walking, not in the middle of an animation of its own.
+void Npcs::faceHero(NpcActor& a, float dt) {
+	if (!a.noticed) return;
+	const GameNpc& n = _game.npc(a.npc);
+	const GameNpc* hero = _game.hero();
+	if (!hero || !hero->placed || hero->world != n.world || n.down != DOWN_NONE || !_game.isMonster(n) || a.flee > 0.0f) {
+		a.noticed = false;
+		return;
+	}
+	const float dx = hero->pos[0] - n.pos[0], dz = hero->pos[2] - n.pos[2];
+	const float close = _game.sensesRange(n) * 0.5f;
+	if (dx * dx + dz * dz > close * close * 1.44f) {
+		a.noticed = false; // (he went away)
+		return;
+	}
+	if (a.phase != NpcActor::IDLE && a.phase != NpcActor::WAITING) return;
+	if (a.action.kind != NPC_ACT_NONE && a.action.kind != NPC_ACT_WAIT) return;
+	if (a.state && (inFightState(a) || strstr(stateName(a.state), "SLEEP"))) return;
+	if (dx * dx + dz * dz < 1.0f) return;
+	turn(a, atan2f(dx, dz), 3.6f, dt);
+}
+
 void Npcs::turnHead(NpcActor& a, float dt) {
 	float wantYaw = 0, wantPitch = 0;
 	if (a.lookAt >= 0 && u32(a.lookAt) < _game.npcCount() && a.rig) {

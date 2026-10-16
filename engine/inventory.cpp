@@ -1656,4 +1656,176 @@ void App::drawItemHud() {
 	}
 }
 
+
+// ---- (fix166) ZL: the next weapon of the quick slots; X: the last one used ----
+
+namespace {
+bool armsKind(u8 k) { return k == IK_MELEE || k == IK_RANGED || k == IK_RUNE || k == IK_SCROLL; }
+} // namespace
+
+// Puts `symbol` (a melee weapon, a bow or a spell the character carries) in hand. With
+// another in hand it goes away first and this one follows (heroSwitchTick).
+bool App::heroArm(u32 symbol) {
+	const int hi = heroIndex();
+	if (hi < 0 || symbol == NONE) return false;
+	Game& g = _npcs.game();
+	const GameItemInfo* it = g.itemInfo(symbol);
+	if (!it || g.itemCount(u32(hi), symbol) <= 0) return false;
+	const u8 kind = kindOf(g, *it);
+	if (!armsKind(kind)) return false;
+	if (_job.stage != JOB_NONE || _cast.stage != CAST_NONE || _hero.drawing()) return false;
+	if (kind == IK_RUNE || kind == IK_SCROLL) {
+		if (_hero.weapon() == WEAPON_MAG) {
+			// Already the stance: only another spell, as the D-Pad's choice does.
+			return _spellItem == symbol || selectSpell(symbol);
+		}
+		if (_hero.weapon() != WEAPON_NONE) {
+			_switchTo = symbol;
+			_switchWait = 0;
+			return heroTake(WEAPON_NONE);
+		}
+		return selectSpell(symbol);
+	}
+	GameNpc& h = g.npcMut(u32(hi));
+	char why[48];
+	if (!meetsNeeds(*it, why, sizeof(why))) {
+		itemMessage(why);
+		return false;
+	}
+	const bool melee = kind == IK_MELEE;
+	const u32 belt = melee ? h.melee : h.ranged;
+	const u8 held = _hero.weapon();
+	const bool sameInHand = belt == symbol && (melee ? (held == WEAPON_1H || held == WEAPON_2H) : (held == WEAPON_BOW || held == WEAPON_CBOW));
+	if (sameInHand) return true;
+	if (held != WEAPON_NONE) {
+		// The hands first empty (the belt changes only then: the model's weapon follows it).
+		_switchTo = symbol;
+		_switchWait = 0;
+		return heroTake(WEAPON_NONE);
+	}
+	if (belt != symbol) {
+		(melee ? h.melee : h.ranged) = symbol;
+		++_equipVersion;
+		_invStamp = 0;
+	}
+	char name[48];
+	scriptText(g.text(it->description ? it->description : it->name), name, sizeof(name));
+	const u8 mode = melee ? meleeMode() : rangedMode();
+	if (!heroTake(mode)) {
+		itemMessage(tr("Сейчас нельзя"));
+		return false;
+	}
+	toast(name);
+	return true;
+}
+
+void App::heroSwitchTick() {
+	if (_switchTo == NONE) return;
+	if (++_switchWait > 240.0f || _hero.down()) {
+		_switchTo = NONE;
+		return;
+	}
+	if (_hero.drawing()) return;
+	if (_hero.weapon() != WEAPON_NONE) {
+		heroTake(WEAPON_NONE);
+		return;
+	}
+	const u32 s = _switchTo;
+	_switchTo = NONE;
+	heroArm(s);
+}
+
+void App::heroCycleWeapon() {
+	const int hi = heroIndex();
+	if (hi < 0) return;
+	Game& g = _npcs.game();
+	// The quick slots that hold something to fight with (food, potions and the rest are passed by).
+	int list[QUICK_SLOTS];
+	int n = 0;
+	for (int q = 0; q < QUICK_SLOTS; ++q) {
+		const u32 s = _quick[q];
+		if (s == NONE || g.itemCount(u32(hi), s) <= 0) continue;
+		const GameItemInfo* it = g.itemInfo(s);
+		if (it && armsKind(kindOf(g, *it))) list[n++] = q;
+	}
+	if (!n) {
+		itemMessage(tr("В быстрых слотах нет оружия"));
+		return;
+	}
+	// Where the cycle stands: what is in hand, else what was last.
+	const GameNpc& h = g.npc(u32(hi));
+	u8 w = _switchTo != NONE ? u8(WEAPON_MODES) : _hero.weapon();
+	u32 cur = _switchTo;
+	if (w == WEAPON_NONE || w == WEAPON_FIST) w = _lastWeapon;
+	if (cur == NONE) cur = w == WEAPON_MAG ? _spellItem : (w == WEAPON_BOW || w == WEAPON_CBOW) ? h.ranged : (w == WEAPON_1H || w == WEAPON_2H) ? h.melee : NONE;
+	int at = -1;
+	for (int k = 0; k < n; ++k)
+		if (_quick[list[k]] == cur) at = k;
+	const bool empty = _hero.weapon() == WEAPON_NONE || _hero.weapon() == WEAPON_FIST;
+	for (int step = 1; step <= n; ++step) {
+		const int k = (at + step) % n;
+		const u32 s = _quick[list[k]];
+		if (s == cur && !empty) continue; // (the one in hand)
+		if (_switchTo != NONE && s != _switchTo) {
+			_switchTo = s; // (pressed again while the hands empty: the next one waits instead)
+			return;
+		}
+		if (heroArm(s)) return;
+	}
+	if (!empty) itemMessage(tr("Другого оружия в быстрых слотах нет"));
+}
+
+// X with empty hands: the last one used - the weapon, the bow or the spell.
+bool App::heroTakeLast() {
+	const int hi = heroIndex();
+	if (hi < 0) return heroTake(meleeMode());
+	Game& g = _npcs.game();
+	if (_lastWeapon == WEAPON_MAG) {
+		u32 item = _spellItem;
+		if (item == NONE || g.itemCount(u32(hi), item) <= 0) item = nextSpell(1);
+		if (item != NONE && selectSpell(item)) return true;
+	} else if (_lastWeapon == WEAPON_BOW || _lastWeapon == WEAPON_CBOW) {
+		const u8 r = rangedMode();
+		if (r != WEAPON_NONE && heroTake(r)) return true;
+	}
+	return heroTake(_lastWeapon == WEAPON_1H || _lastWeapon == WEAPON_2H ? meleeMode() : _lastWeapon == WEAPON_FIST ? u8(WEAPON_FIST) : meleeMode());
+}
+
+
+bool App::quickArm(int slot) {
+	if (slot < 0 || slot >= QUICK_SLOTS) return false;
+	const int hi = heroIndex();
+	const u32 s = _quick[slot];
+	if (hi < 0 || s == NONE) {
+		itemMessage(tr("Слот пуст"));
+		return false;
+	}
+	Game& g = _npcs.game();
+	const GameItemInfo* it = g.itemInfo(s);
+	// Anything of the slots, whenever: food and potions as the touch screen's tap does (fix166).
+	if (!it || !armsKind(kindOf(g, *it))) return quickUse(slot);
+	if (g.itemCount(u32(hi), s) <= 0) return itemAction(s); // (says what is missing)
+	_panel.invalidate();
+	if (_switchTo != NONE) {
+		_switchTo = s;
+		return true;
+	}
+	return heroArm(s) || (itemMessage(tr("Сейчас нельзя")), false);
+}
+
+int App::quickSlotInHand() const {
+	const int hi = heroIndex();
+	if (hi < 0) return -1;
+	const GameNpc& h = _npcs.game().npc(u32(hi));
+	u8 w = _hero.weapon();
+	if (w == WEAPON_NONE || w == WEAPON_FIST) w = _lastWeapon;
+	const u32 cur = _switchTo != NONE ? _switchTo
+	                : w == WEAPON_MAG ? _spellItem
+	                : (w == WEAPON_BOW || w == WEAPON_CBOW) ? h.ranged
+	                : (w == WEAPON_1H || w == WEAPON_2H) ? h.melee : NONE;
+	for (int q = 0; q < QUICK_SLOTS; ++q)
+		if (cur != NONE && _quick[q] == cur) return q;
+	return -1;
+}
+
 } // namespace g3

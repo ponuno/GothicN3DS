@@ -883,7 +883,7 @@ void InventoryPanel::slotTile(int slot, const InventoryView& v, bool picker) {
 	slotCentre(slot, cx, cy);
 	const int x = cx - SLOT_W / 2 + 1, y = cy - SLOT_H / 2, w = SLOT_W - 3, h = SLOT_H;
 	const bool pressed = _touching && !_moved && (_start.region == R_SLOT || _start.region == R_PICKER) && _start.index == slot;
-	const bool lit = (_flash > 0.0f && _flashSlot == slot) || pressed || (picker && _pickerSlot == slot);
+	const bool lit = (_flash > 0.0f && _flashSlot == slot) || pressed || (picker && _pickerSlot == slot) || (!picker && _choiceSlot == slot);
 	// A key of a keyboard, in the colours of the console's cells.
 	if (lit) _canvas.gradient(x, y, x + w, y + h, SEL_TOP, SEL_BOTTOM);
 	else _canvas.gradient(x, y, x + w, y + h, 0x262A30F0u, 0x14171AF0u);

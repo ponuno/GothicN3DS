@@ -197,3 +197,7 @@
 - fix158 (16.10): у торговцев конечный запас руды (платят из своего кошелька). См. HANDOFF.
 - fix159: chapter card waits until the talk ends (OpenGothic pendingChapter).
 - fix160: chapter card pictures (baked card/<name>, RGB565, top screen).
+- fix161: chapter cards only from IntroduceChapter calls (callSites); overlay diagnostics line.
+- fix162: lidded chests exempt from small-object thinning; lid = most-turning node; creatures face the player (faceHero).
+- fix163: rooms from the sector-flagged floor polygons (1 m cells inside the polygon).
+- fix164–166: controls as the original's: X the last weapon/bow/spell, Y parry, ZL tap the next arms of the quick slots (food skipped), ZL held picks a slot with the D-Pad on the bottom screen.

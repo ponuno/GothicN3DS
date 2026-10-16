@@ -1366,8 +1366,13 @@ void App::fightInput(const Input& in, float dt) {
 	if (!_npcs.loaded() && !_hero.loaded()) return;
 	const auto take = [&](u8 mode) { heroTake(mode); };
 	if (in.drawWeapon) {
-		if (_hero.weapon() != WEAPON_NONE) take(WEAPON_NONE);
-		else take(_lastWeapon == WEAPON_FIST || _lastWeapon == WEAPON_NONE ? meleeMode() : _lastWeapon);
+		// As the original's space: away with it, or the last one used in hand - weapon, bow or spell (fix166).
+		if (_hero.weapon() != WEAPON_NONE) {
+			_switchTo = SCRIPT_NONE;
+			take(WEAPON_NONE);
+		} else {
+			heroTakeLast();
+		}
 	}
 	if (in.meleeSlot) {
 		const u8 want = meleeMode();
@@ -1376,6 +1381,8 @@ void App::fightInput(const Input& in, float dt) {
 	// (On the console D-Pad up takes the fists when the hands are empty; with a weapon it is the blow ahead.)
 	if (in.fistSlot || (in.dpadUp && (_hero.weapon() == WEAPON_NONE || _hero.weapon() == WEAPON_FIST)))
 		take(_hero.weapon() == WEAPON_FIST ? u8(WEAPON_NONE) : u8(WEAPON_FIST));
+	if (in.cycleWeapon) heroCycleWeapon();
+	heroSwitchTick();
 	_attackHeld = in.attackHeld;
 	magicInput(in);
 	rangedInput(in);
@@ -1407,7 +1414,7 @@ bool App::heroTake(u8 mode) {
 	const int hi = heroIndex();
 	const bool drawing = _hero.drawing() ? true : mode != WEAPON_NONE;
 	const bool puttingAway = mode == WEAPON_NONE || (before != WEAPON_NONE && _hero.drawing() && before != mode);
-	if (drawing && !puttingAway && mode != WEAPON_NONE && mode != WEAPON_MAG) _lastWeapon = mode;
+	if (drawing && !puttingAway && mode != WEAPON_NONE) _lastWeapon = mode; // (fix166: the magic stance and the bow too, for X)
 	if (hi >= 0) {
 		// The scripts ask "is he in fight mode?" at once: the weapon is already reached for.
 		if (!puttingAway) _npcs.game().npcMut(u32(hi)).weapon = _hero.weaponIntent();

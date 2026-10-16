@@ -41,6 +41,7 @@ struct Input {
 	bool attackHeld = false;  // held: A (a spell is charged while it is)
 	int spellStep = 0;        // pressed: -1 / +1 the previous / next spell (D-Pad left / right in the magic stance)
 	bool rangedSlot = false;  // pressed: the bow in hand / away
+	bool cycleWeapon = false; // pressed: the next weapon or spell of the quick slots in hand (fix166; food and potions skipped)
 	bool dodge = false;       // pressed: D-Pad down - with a weapon in hand a hop back (as the stick pulled back)
 	float switchTarget = 0;   // -1 / +1 pressed: the next target to the left / right
 	bool confirm = false;     // pressed: A (to get up again after death)

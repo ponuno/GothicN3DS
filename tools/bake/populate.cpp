@@ -1186,13 +1186,32 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				const std::string u = upper(str);
 				if (u.size() > 4 && u.compare(u.size() - 4, 4, ".MDS") == 0) named.insert(u.substr(0, u.size() - 4));
 			}
+		// (And the literal arguments of the calls that apply one: the strings of the symbols may miss them.)
+		size_t fromStrings = named.size(), fromCalls = 0;
+		for (const char* fn : {"MDL_APPLYOVERLAYMDS", "MDL_APPLYOVERLAYMDSTIMED"}) {
+			const u32 callee = game.vm().find(fn);
+			if (callee == SCRIPT_NONE) continue;
+			const u32 args = std::string(fn) == "MDL_APPLYOVERLAYMDS" ? 2u : 3u;
+			static u32 sites[256 * 3];
+			const u32 found = std::min<u32>(game.vm().callSites(callee, args, sites, 256), 256);
+			for (u32 k = 0; k < found; ++k) {
+				const u32 sym = sites[k * args + 1];
+				if (sym >= game.vm().symbolCount() || game.vm().symbol(sym).type != SCRIPT_STRING) continue;
+				std::string u = upper(game.vm().getString(sym));
+				if (u.size() > 4 && u.compare(u.size() - 4, 4, ".MDS") == 0) u.resize(u.size() - 4);
+				if (named.insert(u).second) ++fromCalls;
+			}
+		}
 		std::set<std::string> bases {"HUMANS"};
 		for (const auto& r : rigs)
 			if (r.second.hash) bases.insert(upper(r.first));
 		size_t overlays = 0, overlayClips = 0;
 		std::string list, failed;
+		size_t candidates = 0, candidatesNamed = 0;
 		for (const std::string& base : bases) {
 			for (const std::string& ovl : scripts.looks.overlays(base)) {
+				++candidates;
+				if (named.count(ovl)) ++candidatesNamed;
 				if (!named.count(ovl)) continue;
 				SrcModel m;
 				try {
@@ -1216,6 +1235,10 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		}
 		line(format("overlays: %zu baked (%zu animations): ", overlays, overlayClips) + (list.empty() ? std::string("none") : list) +
 		     (overlays > 16 ? ", ..." : "") + (failed.empty() ? "" : "; not usable: " + failed));
+		line(format("overlays: the scripts name %zu (%zu in strings, %zu more in calls to apply one); the game has %zu for %zu skeletons, "
+		            "%zu of them named%s",
+		            named.size(), fromStrings, fromCalls, candidates, bases.size(), candidatesNamed,
+		            named.empty() ? " - the scripts' names could not be read" : candidates == 0 ? " - no files <SKELETON>_*.MSB/.MDS found" : ""));
 	}
 
 	// ---- transformations (fix151) ----
@@ -1537,18 +1560,25 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			if (!table.empty()) std::memcpy(itemsBlob.data() + sizeof(ih), table.data(), table.size() * sizeof(WorldItem));
 			pak.add("world/" + worlds[w].name + "/items", ASSET_META, itemsBlob);
 		}
-		// The cards of the chapters (IntroduceChapter's texture): every ".tga" the scripts name as a string. Each
+		// The cards of the chapters (IntroduceChapter's texture): the picture named in each call. Each
 		// is fitted into the top screen (letterboxed on black) and kept as RGB565: "card/<name>".
 		{
 			std::set<std::string> names;
 			ScriptVm& cvm = game.vm();
-			for (u32 sym = 0; sym < cvm.symbolCount(); ++sym) {
-				const ScriptSymbol& sy = cvm.symbol(sym);
-				if (sy.type != SCRIPT_STRING || !(sy.flags & SCRIPTF_CONST) || (sy.flags & SCRIPTF_MEMBER)) continue;
-				std::string text = cvm.getString(sym);
-				std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return char(std::tolower(c)); });
-				if (text.size() > 4 && text.size() < 40 && text.compare(text.size() - 4, 4, ".tga") == 0 && text.find_first_of("*/\\") == std::string::npos)
-					names.insert(text.substr(0, text.size() - 4));
+			// (The third argument of every IntroduceChapter call that names its picture as a literal.)
+			const u32 intro = cvm.find("INTRODUCECHAPTER");
+			if (intro != SCRIPT_NONE) {
+				u32 sites[64 * 5] = {};
+				const u32 found = std::min<u32>(cvm.callSites(intro, 5, sites, 64), 64);
+				for (u32 k = 0; k < found; ++k) {
+					const u32 sym = sites[k * 5 + 2];
+					if (sym >= cvm.symbolCount() || cvm.symbol(sym).type != SCRIPT_STRING) continue;
+					std::string text = cvm.getString(sym);
+					std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+					const size_t dot = text.rfind('.');
+					if (dot != std::string::npos) text.resize(dot);
+					if (!text.empty() && text.size() < 40 && text.find_first_of("*/\\") == std::string::npos) names.insert(text);
+				}
 			}
 			size_t cards = 0, cardBytes = 0;
 			std::string absent;
@@ -1586,7 +1616,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				++cards;
 				cardBytes += blob.size();
 			}
-			line(format("chapter cards: %zu pictures named by the scripts, %zu baked (%.2f MB)%s%s", names.size(), cards,
+			line(format("chapter cards: %zu pictures named by IntroduceChapter calls, %zu baked (%.2f MB)%s%s", names.size(), cards,
 			            double(cardBytes) / 1048576.0, absent.empty() ? "" : "; not in the game's files: ", absent.c_str()));
 		}
 		const size_t lying = visuals.size();

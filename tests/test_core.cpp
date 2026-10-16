@@ -6977,6 +6977,56 @@ static void testRanged() {
 		for (int i = 0; i < 60; ++i) app.update(Input {}, dt);
 		CHECK(app.hero().weapon() == WEAPON_NONE);
 	}
+	// 5. (fix166) X: the last one used (the bow) in hand; ZL: the next weapon of the quick slots, food passed by.
+	{
+		const u32 sword = g.vm().find("ITMW_SWORD"), apple = g.vm().find("ITFOAPPLE");
+		CHECK(sword != SCRIPT_NONE && apple != SCRIPT_NONE);
+		g.giveItems(hero, sword, 1);
+		g.giveItems(hero, apple, 3);
+		const i32 apples = g.itemCount(hero, apple);
+		g.giveItems(hero, arrow, 5);
+		g.setAttribute(g.npcMut(hero), 4, 100);
+		for (int q = 0; q < QUICK_SLOTS; ++q) app.setQuickSlot(q, SCRIPT_NONE);
+		app.setQuickSlot(0, apple);
+		app.setQuickSlot(1, bow);
+		app.setQuickSlot(3, sword);
+		const auto press = [&](bool x, bool zl) {
+			Input in;
+			in.drawWeapon = x;
+			in.cycleWeapon = zl;
+			app.update(in, dt);
+			for (int i = 0; i < 150; ++i) app.update(Input {}, dt);
+		};
+		press(true, false);
+		CHECK(app.hero().weapon() == WEAPON_BOW);
+		press(false, true);
+		std::printf("  ZL from the bow: weapon %d, melee is the sword %d, apples %d\n", int(app.hero().weapon()), int(g.npc(hero).melee == sword),
+		            int(g.itemCount(hero, apple)));
+		CHECK((app.hero().weapon() == WEAPON_1H || app.hero().weapon() == WEAPON_2H) && g.npc(hero).melee == sword);
+		CHECK(g.itemCount(hero, apple) == apples);
+		press(false, true);
+		CHECK(app.hero().weapon() == WEAPON_BOW && g.itemCount(hero, apple) == apples);
+		press(true, false);
+		CHECK(app.hero().weapon() == WEAPON_NONE);
+		press(false, true); // (empty hands: the one after the last, the sword)
+		CHECK(app.hero().weapon() == WEAPON_1H || app.hero().weapon() == WEAPON_2H);
+		press(true, false);
+		press(true, false); // (the last: the sword)
+		CHECK(app.hero().weapon() == WEAPON_1H || app.hero().weapon() == WEAPON_2H);
+		press(true, false);
+		// ZL held: the slot chosen takes it; the apple's slot does nothing (it is not eaten).
+		CHECK(app.quickSlotInHand() == 3);
+		CHECK(app.quickArm(0)); // (the apple: as a tap on its slot - eaten)
+		for (int i = 0; i < 200; ++i) app.update(Input {}, dt);
+		CHECK(g.itemCount(hero, apple) == apples - 1);
+		CHECK(app.quickArm(1));
+		for (int i = 0; i < 150; ++i) app.update(Input {}, dt);
+		CHECK(app.hero().weapon() == WEAPON_BOW && app.quickSlotInHand() == 1);
+		CHECK(app.quickArm(3));
+		for (int i = 0; i < 200; ++i) app.update(Input {}, dt);
+		CHECK((app.hero().weapon() == WEAPON_1H || app.hero().weapon() == WEAPON_2H) && app.quickSlotInHand() == 3);
+		press(true, false);
+	}
 }
 
 static void testMagic() {
@@ -10570,6 +10620,20 @@ static void testDialogs() {
 		CHECK(g.chapterNumber() == 2);
 		CHECK(std::strcmp(g.chapter().title, "Chapter 2") == 0 && g.chapter().serial == 2);
 		CHECK(app.chapterSeen() == 2);
+		{
+			// The baker finds the pictures the scripts name for the chapters (the calls' literal arguments).
+			u32 sites[16 * 5] = {};
+			const u32 intro = g.vm().find("INTRODUCECHAPTER");
+			const u32 found = intro == SCRIPT_NONE ? 0 : g.vm().callSites(intro, 5, sites, 16);
+			CHECK(found >= 2);
+			bool one = false, two = false;
+			for (u32 k = 0; k < found && k < 16; ++k) {
+				const char* pic = g.vm().getString(sites[k * 5 + 2]);
+				one = one || std::strcmp(pic, "chapter1.tga") == 0;
+				two = two || std::strcmp(pic, "chapter2.tga") == 0;
+			}
+			CHECK(one && two);
+		}
 		run(11.0f);
 		CHECK(app.chapterTime() <= 0.0f);
 

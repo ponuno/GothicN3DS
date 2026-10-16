@@ -78,6 +78,13 @@ public:
 	// The n-th parameter of a function.
 	u32 parameter(u32 function, u32 n) const { return function + 1 + n; }
 
+	// ---- code reading (for the baker) ----
+	// Every call of the function `callee` (an external or a script function) whose last `args` pushes are
+	// symbols or integer literals (an integer comes as its value), straight before the call: `out` gets `args` symbols per call, first argument
+	// first; returns how many calls were found (at most maxSites are written). Calls whose
+	// arguments are worked out by code in between are not found.
+	u32 callSites(u32 callee, u32 args, u32* out, u32 maxSites) const;
+
 	// ---- externals ----
 	// Gives the external function `name` an implementation. It takes its
 	// arguments from the stack, last one first, and pushes its result if it

@@ -323,6 +323,7 @@ struct NpcActor {
 	u32 perc[Game::PERC_TYPES] = {};
 	float percWait = 0;
 	bool heroWasNear = false; // the player was within the reach of its senses a moment ago
+	bool noticed = false;     // a creature has the player in sight and close: it turns to face him (Npcs::faceHero)
 	bool warned = false;      // a creature that had no reaction of its own has already been sent to threaten the player (Npcs::perceive)
 	// Who it looks at (AI_LookAtNpc), -1 for nobody; how far its head is
 	// turned right now, radians (left/right, down/up).
@@ -882,6 +883,7 @@ private:
 	bool provoke(NpcActor& a, int attacker);
 	bool inFightState(const NpcActor& a) const { return a.state && refusesState(a.state); }
 	void turnHead(NpcActor& a, float dt);
+	void faceHero(NpcActor& a, float dt);
 	static void xPercEnable(ScriptVm& vm, void* user);
 	static void xPercDisable(ScriptVm& vm, void* user);
 	static void xPerceiveAll(ScriptVm& vm, void* user);

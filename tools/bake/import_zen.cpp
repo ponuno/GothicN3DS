@@ -949,6 +949,8 @@ struct ObjectInstance {
 struct ChestLid {
 	FlatPtr base, lid; // the chest without the lid; the lid in its node's own space
 	M34 closed, open;  // the lid's node in the model's space, shut and open
+	size_t lidTriangles = 0, baseTriangles = 0; // for the report
+	std::string lidNode;
 	float seconds = 0; // how long the opening takes
 };
 
@@ -1039,30 +1041,34 @@ static bool chestLidOf(const zenkit::Vfs& vfs, const std::string& visual, const 
 		conjugated += angleOf(c, rq);
 	}
 	const float sign = conjugated <= asIs ? -1.0f : 1.0f;
-	// What moves: the tracks whose last frame is not their first.
+	// What moves: the tracks whose last frame is not their first. The lid is the node that TURNS most (a hinge);
+	// a parent that only shifts a little with it (the chest's own node) is not the lid, or the whole chest would be.
 	const size_t last = size_t(ani.frame_count - 1) * ani.node_count;
-	std::vector<char> moves(n, 0);
+	int lid = -1;
+	float lidAngle = 0.0f;
+	uint32_t moving = 0;
 	for (uint32_t t = 0; t < ani.node_count; ++t) {
 		const zenkit::AnimationSample &a = ani.samples[t], &b = ani.samples[last + t];
 		const float qa[4] = {a.rotation.x, a.rotation.y, a.rotation.z, a.rotation.w}, qb[4] = {b.rotation.x, b.rotation.y, b.rotation.z, b.rotation.w};
 		const float dx = b.position.x - a.position.x, dy = b.position.y - a.position.y, dz = b.position.z - a.position.z;
-		if (angleOf(qa, qb) > 0.05f || dx * dx + dy * dy + dz * dz > 2.0f * 2.0f) moves[ani.node_indices[t]] = 1;
-	}
-	int lid = -1, tops = 0;
-	for (size_t i = 0; i < n; ++i) {
-		if (!moves[i]) continue;
-		const int parent = h.nodes[i].parent_index;
-		if (parent < 0) {
-			why = "the root moves";
-			return false;
+		const float turn = angleOf(qa, qb);
+		if (turn > 0.05f || dx * dx + dy * dy + dz * dz > 2.0f * 2.0f) {
+			++moving;
+			const int node = int(ani.node_indices[t]);
+			if (node >= 0 && size_t(node) < n && h.nodes[size_t(node)].parent_index < 0) {
+				why = "the root moves";
+				return false;
+			}
+			// (The turn first; a move without a turn only if nothing turns.)
+			const float score = turn > 0.05f ? turn : 0.001f;
+			if (node >= 0 && size_t(node) < n && score > lidAngle) {
+				lidAngle = score;
+				lid = node;
+			}
 		}
-		if (!moves[size_t(parent)]) {
-			lid = int(i);
-			++tops;
-		}
 	}
-	if (tops != 1) {
-		why = tops == 0 ? "nothing moves in the animation" : std::to_string(tops) + " nodes move";
+	if (lid < 0) {
+		why = "nothing moves in the animation";
 		return false;
 	}
 	// The node and what hangs below it.
@@ -1103,6 +1109,20 @@ static bool chestLidOf(const zenkit::Vfs& vfs, const std::string& visual, const 
 	if (lidMesh->subs.empty() || baseMesh->subs.empty()) {
 		why = lidMesh->subs.empty() ? "no part of the mesh hangs on the moving node" : "the lid is the whole chest";
 		return false;
+	}
+	{
+		// A lid is the smaller part: when it holds most of the chest, the node found is not the lid.
+		size_t lidTris = 0, baseTris = 0;
+		for (const FlatSub& sub : lidMesh->subs) lidTris += sub.verts.size() / 3;
+		for (const FlatSub& sub : baseMesh->subs) baseTris += sub.verts.size() / 3;
+		if (baseTris * 3 < lidTris) {
+			why = "the moving node ('" + h.nodes[size_t(lid)].name + "') holds " + std::to_string(lidTris) + " of " + std::to_string(lidTris + baseTris) +
+			      " triangles: not a lid";
+			return false;
+		}
+		out.lidTriangles = lidTris;
+		out.baseTriangles = baseTris;
+		out.lidNode = h.nodes[size_t(lid)].name;
 	}
 	// The lid's last pose: its own place in the parent, from the animation's last frame.
 	int track = -1;
@@ -2031,6 +2051,11 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 		for (const auto& kv : reasons) why += (why.empty() ? "" : "; ") + kv.first + " x" + std::to_string(kv.second);
 		scene.notes.push_back("chest lids: " + std::to_string(lidsMade) + " chests have a lid that opens (" + std::to_string(stats.lids.size()) +
 		                      " kinds); " + std::to_string(stats.lidWhy.size()) + " kinds of chest stay whole" + (why.empty() ? "" : " (" + why + ")"));
+		std::string kinds;
+		for (const auto& kv : stats.lids)
+			kinds += "\n  " + kv.first + ": lid '" + kv.second.lidNode + "' " + std::to_string(kv.second.lidTriangles) + " triangles, the rest " +
+			         std::to_string(kv.second.baseTriangles) + ", " + std::to_string(int(kv.second.seconds * 100.0f) / 100.0) + " s";
+		if (!kinds.empty()) scene.notes.push_back("chest lids by kind:" + kinds);
 	}
 	if (!slotNotes.empty()) {
 		std::string all;
@@ -2096,7 +2121,9 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 		const u32 spot = u32(int(vob.position.x)) * 73856093u ^ u32(int(vob.position.y)) * 19349663u ^ u32(int(vob.position.z)) * 83492791u;
 		// ... and by how big they are (size bands: the smaller, the nearer they are drawn; g3ds/world.h sizeBandOf).
 		const u8 band = detail == DETAIL_SMALL ? sizeBandOf(inst.mesh->radius) : u8(0);
-		const u8 layered = detail == DETAIL_SMALL ? u8(detail | (((spot >> 9) & 3u) << 2) | (band << 4)) : detail;
+		// (fix162: a chest whose lid is a mover is never thinned out: the lid is always drawn, so the body must be too.)
+		const bool lidded = vob.type == zenkit::VirtualObjectType::oCMobContainer && stats.lids.count(visualName) != 0;
+		const u8 layered = detail == DETAIL_SMALL ? u8(detail | ((lidded ? 0u : ((spot >> 9) & 3u)) << 2) | (band << 4)) : detail;
 		{
 			size_t tris = 0;
 			for (const FlatSub& sub : inst.mesh->subs) tris += sub.verts.size() / 3;
@@ -4286,6 +4313,82 @@ static void collectRooms(const zenkit::BspTree& bsp, const zenkit::Mesh& mesh, S
 			if (it == owner.end()) owner.emplace(node, ins.first->second);
 			else if (it->second != ins.first->second) claims[node] = -1;
 		}
+	}
+	// (fix163) First, as ZenGin knows it: a polygon of the world mesh carries the sector it belongs to (its flags:
+	// is_sector, sector_index - zCPolygon::sectorIndex, what the game reads under the feet; OpenGothic asks the floor
+	// under the feet too). A room is then its own floors and nothing else: each floor polygon's footprint, cut into
+	// cells of a metre where it is larger, only the cells whose middle lies on the polygon (a slanting triangle's box
+	// would reach into the street). Standing on it: from a little under the floor to well above a head.
+	{
+		std::vector<SrcScene::RoomBoxSrc> floorBoxes;
+		size_t floors = 0;
+		std::set<u32> roomsWithFloors;
+		for (size_t pi = 0; pi < mesh.geometry.size(); ++pi) {
+			const zenkit::Polygon& poly = mesh.geometry[pi];
+			if (!poly.flags.is_sector || poly.flags.is_portal || poly.index_count < 3) continue;
+			const int si = poly.flags.sector_index;
+			if (si < 0 || size_t(si) >= bsp.sectors.size() || bsp.sectors[size_t(si)].name.empty()) continue;
+			if (poly.plane_normal.y < 0.35f && -poly.plane_normal.y < 0.35f) continue; // (walls: no one stands on them)
+			const auto room = byName.find(upper(bsp.sectors[size_t(si)].name));
+			if (room == byName.end()) continue;
+			std::vector<std::array<float, 3>> pts;
+			bool ok = true;
+			for (size_t c = 0; c < poly.index_count; ++c) {
+				const size_t k = size_t(poly.index_offset) + c;
+				if (k >= mesh.polygon_vertex_indices.size() || mesh.polygon_vertex_indices[k] >= mesh.vertices.size()) {
+					ok = false;
+					break;
+				}
+				const zenkit::Vec3& v = mesh.vertices[mesh.polygon_vertex_indices[k]];
+				pts.push_back({v.x, v.y, v.z});
+			}
+			if (!ok) continue;
+			// (Only floors: a ceiling faces down; the room's height comes from the floor.)
+			if (poly.plane_normal.y < 0.0f) continue;
+			++floors;
+			float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+			for (const auto& p : pts)
+				for (int a2 = 0; a2 < 3; ++a2) {
+					lo[a2] = std::min(lo[a2], p[size_t(a2)]);
+					hi[a2] = std::max(hi[a2], p[size_t(a2)]);
+				}
+			const auto inside = [&](float x, float z) {
+				bool in = false;
+				for (size_t i = 0, j = pts.size() - 1; i < pts.size(); j = i++) {
+					const float xi = pts[i][0], zi = pts[i][2], xj = pts[j][0], zj = pts[j][2];
+					if (((zi > z) != (zj > z)) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) in = !in;
+				}
+				return in;
+			};
+			const float cell = 100.0f;
+			const int nx = std::max(1, int(std::ceil((hi[0] - lo[0]) / cell))), nz = std::max(1, int(std::ceil((hi[2] - lo[2]) / cell)));
+			const float cx = (hi[0] - lo[0]) / float(nx), cz = (hi[2] - lo[2]) / float(nz);
+			for (int iz = 0; iz < nz; ++iz) {
+				int runStart = -1;
+				for (int ix = 0; ix <= nx; ++ix) {
+					const bool on = ix < nx && (nx * nz == 1 || inside(lo[0] + (float(ix) + 0.5f) * cx, lo[2] + (float(iz) + 0.5f) * cz));
+					if (on && runStart < 0) runStart = ix;
+					if (!on && runStart >= 0) {
+						SrcScene::RoomBoxSrc bx;
+						bx.bbMin[0] = lo[0] + float(runStart) * cx, bx.bbMax[0] = lo[0] + float(ix) * cx;
+						bx.bbMin[2] = lo[2] + float(iz) * cz, bx.bbMax[2] = lo[2] + float(iz + 1) * cz;
+						bx.bbMin[1] = lo[1] - 60.0f, bx.bbMax[1] = hi[1] + 250.0f;
+						bx.room = room->second;
+						floorBoxes.push_back(bx);
+						runStart = -1;
+					}
+				}
+			}
+			roomsWithFloors.insert(room->second);
+		}
+		if (!floorBoxes.empty() && floorBoxes.size() <= 600000) {
+			scene.notes.push_back("rooms: " + std::to_string(floorBoxes.size()) + " boxes from the floors of the sectors (" + std::to_string(floors) +
+			                      " floor polygons marked with their sector, " + std::to_string(roomsWithFloors.size()) + " of " +
+			                      std::to_string(scene.roomNames.size()) + " rooms have floors)");
+			for (const auto& bx : floorBoxes) scene.roomBoxes.push_back(bx);
+			return;
+		}
+		scene.notes.push_back("rooms: no polygon of the world mesh is marked with its sector: the BSP leaves are used");
 	}
 	// (fix156) A leaf's box is a box round all its polygons: a hut that stands crooked, a slope, a wall running
 	// out of the leaf - and the street beside the hut was "in the room", the guards drove the player out of

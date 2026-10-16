@@ -553,6 +553,7 @@ int main(int, char**) {
 	const auto pace = [&]() {
 		const g3::Settings& st = app.settings();
 		pacer.cfg.minDetail = st.minDetail(); // (steady: too heavy means 30 fps, the objects stay)
+		pacer.cfg.farMin = st.frameRate == g3::FRAMES_30 && st.farCm() > 25000.0f ? 25000.0f / st.farCm() : 1.0f; // (the steady 30 fps only; not under 250 m)
 		pacer.cfg.halfOnly = st.frameRate == g3::FRAMES_30 || (st.frameRate == g3::FRAMES_30F && !displayOk);
 		pacer.cfg.freeRate = st.frameRate == g3::FRAMES_FREE || (st.frameRate == g3::FRAMES_40 && displayOk) || (st.frameRate == g3::FRAMES_30F && displayOk) || (st.refreshHold() && displayOk);
 		// Leaving a mode (the steady 30 above all) starts the pacer afresh: its half rate must not outlive the setting.
@@ -561,6 +562,7 @@ int main(int, char**) {
 			pacer.reset();
 			app.world().config().detailScale = pacer.detailScale();
 			app.setDistanceScale(pacer.distanceScale());
+			app.setFarScale(pacer.farScale());
 			if (interval != 1) {
 				interval = 1;
 				C3D_FrameRate(60.0f);
@@ -919,9 +921,12 @@ int main(int, char**) {
 		fadingSum += app.world().stats().batchesFading;
 		// (A world switch or any other pause is not a frame to learn from.)
 		if (pacing && updateMs < 50.0f && !record) {
-			pacer.update(load, turning);
+			const g3::WorldStats& fs = app.world().stats();
+			const float farShare = fs.farTriangles ? float(fs.farTriangles) / float(fs.farTriangles + fs.trianglesDrawn + 1) : 0.0f;
+			pacer.update(load, turning, farShare);
 			app.world().config().detailScale = pacer.detailScale();
 			app.setDistanceScale(pacer.distanceScale());
+			app.setFarScale(pacer.farScale());
 			// Graphics+ gives way first: once the pacer takes objects away, the plants
 			// stand still and only the hero keeps a shadow, until all objects are back.
 			// (Only when the load forced the half rate: at the menu's steady 30 fps - the quality mode - the plants sway,

@@ -274,11 +274,17 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 	return bakeWorlds(worlds, models, BakeScripts(), opt, pak);
 }
 
-void waterTint(u8 brightness, float rgb[3]) {
+void waterTint(u8 brightness, float rgb[3], bool swamp) {
 	const float k = float(brightness) / 255.0f;
-	rgb[0] = k * 0.82f;
-	rgb[1] = k * 0.95f;
-	rgb[2] = k;
+	rgb[0] = k * (swamp ? 0.95f : 0.82f);
+	rgb[1] = k * (swamp ? 1.0f : 0.95f);
+	rgb[2] = k * (swamp ? 0.72f : 1.0f);
+}
+
+bool isSwampWaterTexture(const std::string& name) {
+	std::string low = name;
+	for (char& c : low) c = char(std::tolower(static_cast<unsigned char>(c)));
+	return low.find("swamp") != std::string::npos;
 }
 
 size_t applyWaterBiome(SrcScene& scene, float strength) {
@@ -315,13 +321,16 @@ size_t applyWaterBiome(SrcScene& scene, float strength) {
 
 size_t applyWaterLight(SrcScene& scene, u8 brightness) {
 	if (brightness == 0) return 0;
-	float f[3];
+	float f[3], fs[3];
 	waterTint(brightness, f);
+	waterTint(brightness, fs, true);
 	const u8 tint[3] = {u8(f[0] * 255.0f + 0.5f), u8(f[1] * 255.0f + 0.5f), u8(f[2] * 255.0f + 0.5f)};
+	const u8 swampTint[3] = {u8(fs[0] * 255.0f + 0.5f), u8(fs[1] * 255.0f + 0.5f), u8(fs[2] * 255.0f + 0.5f)};
 	size_t n = 0;
 	for (SrcTriangle& t : scene.triangles) {
 		if (t.material >= scene.materials.size() || !scene.materials[t.material].water) continue;
-		for (SrcVertex& v : t.v) std::copy_n(tint, 3, v.rgba);
+		const u8* use = isSwampWaterTexture(scene.materials[t.material].texture) ? swampTint : tint;
+		for (SrcVertex& v : t.v) std::copy_n(use, 3, v.rgba);
 		++n;
 	}
 	return n;
@@ -386,15 +395,16 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			if (scene.indoor) continue;
 			WaterFxOptions fo;
 			fo.foam = opt.waterFoam;
+			fo.foamMinWidth = opt.foamMinWidth;
 			fo.flow = opt.riverFlow;
 			fo.glint = opt.waterGlint;
 			WaterFxStats fs;
 			bakeWaterFx(scene, fo, fs);
 			if (fs.glintTriangles) line(format("water glints (%s): %llu triangles", worlds[w].name.c_str(), static_cast<unsigned long long>(fs.glintTriangles)));
 			if (fs.foamTriangles || fs.flowMaterials)
-				line(format("water fx (%s): %u shore tiles; foam: %u shore lines, %.1f km, %llu triangles; rivers: %u tiles, %u flow materials, "
+				line(format("water fx (%s): %u shore tiles; foam: %u shore lines (%u narrow ones left bare), %.1f km, %llu triangles; rivers: %u tiles, %u flow materials, "
 				            "%llu triangles (tiles by direction %u %u %u %u %u %u %u %u)",
-				            worlds[w].name.c_str(), fs.shoreTiles, fs.shoreChains, double(fs.shoreLength) / 100000.0,
+				            worlds[w].name.c_str(), fs.shoreTiles, fs.shoreChains, fs.foamChainsNarrow, double(fs.shoreLength) / 100000.0,
 				            static_cast<unsigned long long>(fs.foamTriangles), fs.riverTiles, fs.flowMaterials,
 				            static_cast<unsigned long long>(fs.flowTriangles), fs.flowTiles[0], fs.flowTiles[1], fs.flowTiles[2],
 				            fs.flowTiles[3], fs.flowTiles[4], fs.flowTiles[5], fs.flowTiles[6], fs.flowTiles[7]));
@@ -408,6 +418,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 	std::map<std::string, size_t> jobIndex;                 // pak name -> job
 	std::map<std::string, std::vector<std::string>> frames; // base pak name -> pak names of all frames
 	std::set<std::string> waterNames; // pak names of the textures water uses
+	std::set<std::string> landNames;  // ... and of those a material that is not water uses (those keep the game's picture)
 	auto addJob = [&](const std::string& source, size_t world) {
 		const std::string name = texturePakName(source);
 		if (jobIndex.emplace(name, jobs.size()).second) {
@@ -432,7 +443,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			const std::string& tex = scene.materials[i].texture;
 			if (!used[w][i] || tex.empty()) continue;
 			const std::string base = addJob(tex, w);
-			if (scene.materials[i].water) waterNames.insert(base);
+			(scene.materials[i].water ? waterNames : landNames).insert(base);
 			if (frames.count(base)) continue;
 			std::vector<std::string>& list = frames[base];
 			list.push_back(base);
@@ -442,11 +453,42 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				SrcImage probe;
 				if (next.empty() || !(makeFoamFrame(next, probe) || (scene.loadTexture && scene.loadTexture(next, probe)))) break;
 				list.push_back(addJob(next, w));
-				if (scene.materials[i].water) waterNames.insert(list.back());
+				(scene.materials[i].water ? waterNames : landNames).insert(list.back());
 			}
 		}
 	}
 
+	// A texture that water and something else both use (a swamp's mud and its water, say) stays the game's: the made one would
+	// repaint the ground too. What is replaced and what is kept is told, by name.
+	if (opt.waterTexture) {
+		std::vector<std::string> shared, replaced;
+		const auto kept = [&](const std::string& name) {
+			std::string low = name;
+			for (char& c : low) c = char(std::tolower(static_cast<unsigned char>(c)));
+			for (const std::string& k : opt.waterKeep)
+				if (low.rfind(k, 0) == 0 || low.rfind("tex/" + k, 0) == 0) return true;
+			return false;
+		};
+		for (auto it = waterNames.begin(); it != waterNames.end();) {
+			// (A frame of an animation is never kept alone: the water would flicker between the game's frame and the made ones.)
+			const std::string& nm = *it;
+			const bool frame = nm.size() > 3 && nm[nm.size() - 3] == '_' && nm[nm.size() - 2] == 'a' && std::isdigit(static_cast<unsigned char>(nm.back()));
+			if ((landNames.count(nm) && !frame) || kept(nm)) {
+				shared.push_back(*it);
+				it = waterNames.erase(it);
+			} else {
+				replaced.push_back(*it);
+				++it;
+			}
+		}
+		const auto names = [](const std::vector<std::string>& v) {
+			std::string out;
+			for (size_t i = 0; i < v.size() && i < 24; ++i) out += (i ? ", " : "") + v[i];
+			return out + (v.size() > 24 ? ", ..." : "");
+		};
+		line(format("water textures: %zu made here (%s); %zu kept the game's because land uses them too (%s)", replaced.size(), names(replaced).c_str(),
+		            shared.size(), names(shared).c_str()));
+	}
 	lap("sources");
 	// ---- textures (ETC1 encoding dominates the bake time, so fan it out) ----
 	{
@@ -463,7 +505,8 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 					SrcImage img;
 					bool found;
 					if (opt.waterTexture && waterNames.count(jobs[i].pakName)) {
-						img = makeWaterTexture(opt.waterColor, 128, opt.waterAlpha);
+						const bool swamp = isSwampWaterTexture(jobs[i].pakName);
+						img = makeWaterTexture(swamp ? opt.swampColor : opt.waterColor, 128, swamp ? opt.swampAlpha : opt.waterAlpha);
 						found = true;
 					} else if (makeFoamFrame(jobs[i].source, img)) {
 						found = true;
@@ -653,7 +696,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			// (The far layer's water is the colour the near water has: the texture's average in the water's own light.)
 			if (sm.water && opt.waterLight > 0) {
 				float tint[3];
-				waterTint(opt.waterLight, tint);
+				waterTint(opt.waterLight, tint, isSwampWaterTexture(sm.texture));
 				for (int c = 0; c < 3; ++c) farColor[i][size_t(c)] = u8(std::clamp(float(farColor[i][size_t(c)]) * tint[c], 0.0f, 255.0f) + 0.5f);
 			}
 			// Glass, water and glow let the sky through and are not shaded; a

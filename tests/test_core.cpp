@@ -1501,6 +1501,7 @@ static void testWorlds() {
 	bo.tex.quality = 0;
 	bo.threads = 2;
 	bo.quiet = true;
+	bo.foamMinWidth = 0.0f; // (the synthetic lake is small: the foam's eight textures are counted below)
 	PakWriter writer;
 	const BakeResult result = bakeWorlds(worlds, bo, writer);
 	const std::string path = gDir + "/worlds.pak";

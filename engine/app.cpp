@@ -374,6 +374,18 @@ void App::setDistanceScale(float scale) {
 	_env.fogStart = cfg.drawDistance * scale * 0.2f;
 }
 
+void App::setFarScale(float scale) {
+	StreamConfig& cfg = _world.config();
+	const float base = _settings.farCm();
+	if (base <= 0.0f || !_world.hasFarLayer()) return;
+	const float d = max(max(base * clamp(scale, 0.0f, 1.0f), 25000.0f), cfg.drawDistance + 1000.0f);
+	if (cfg.farDistance == d) return;
+	cfg.farDistance = min(d, base);
+	_env.fogEnd = cfg.farDistance;
+	_env.fogStart = max(cfg.drawDistance * 0.5f, cfg.farDistance * 0.2f);
+	_cam.zFar = cfg.farDistance + _world.header().chunkSize * 4.0f;
+}
+
 void App::shutdown() {
 	chapterPictureFree();
 	_chatter.shutdown();
@@ -2180,9 +2192,11 @@ MusicSituation App::musicSituation(float dt) {
 		_musicScan = 0.5f;
 		if (_hero.loaded() && _hero.down()) _musicHold = 3.0f;
 		else if (_npcs.loaded() && _npcs.targetsHero()) _musicHold = 3.0f;
+		// The second stage begins when the enemy comes to attack (armed, in its fight state, within 6 m), not at the first blow.
+		_musicAttack = _musicHold > 0.0f && _npcs.loaded() && _npcs.attacksHero(600.0f);
 	}
 	if (_musicHold <= 0.0f) return MUSIC_CALM;
-	return _hero.weapon() == WEAPON_NONE ? MUSIC_THREAT : MUSIC_FIGHT;
+	return _hero.weapon() == WEAPON_NONE && !_musicAttack ? MUSIC_THREAT : MUSIC_FIGHT;
 }
 
 } // namespace g3

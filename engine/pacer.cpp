@@ -5,6 +5,10 @@ namespace g3 {
 void FramePacer::reset() {
 	_detail = 1.0f;
 	_dist = 1.0f;
+	_far = 1.0f;
+	_farOver = _sinceFar = _farRoom = 0;
+	_farWait = cfg.farRecoverEvery;
+	_sinceFarCut = 100000;
 	_load = 0.0f;
 	_interval = 1;
 	_over = _under = _calm = 0;
@@ -15,7 +19,7 @@ void FramePacer::reset() {
 	_probeWait = cfg.probeEvery;
 }
 
-void FramePacer::update(float frameLoad, bool turning) {
+void FramePacer::update(float frameLoad, bool turning, float farShare) {
 	float now = frameLoad;
 	if (!(now >= 0.0f)) now = 0.0f; // also catches NaN
 	now = min(now, 4.0f);
@@ -29,7 +33,10 @@ void FramePacer::update(float frameLoad, bool turning) {
 		_probing = false;
 	}
 
+	if (_farWait == 0) _farWait = cfg.farRecoverEvery;
+	if (_sinceFarCut < 1000000) ++_sinceFarCut;
 	if (_interval == 1) {
+		_far = min(_far + 0.01f, 1.0f); // (the far layer is shortened at half rate only)
 		++_atFullRate;
 		++_sinceStep;
 		++_sinceDist;
@@ -106,7 +113,23 @@ void FramePacer::update(float frameLoad, bool turning) {
 		return;
 	}
 
-	if (_load > cfg.halfHigh) {
+	++_sinceFar;
+	const bool farCan = cfg.farMin < 0.999f && _far > cfg.farMin + 0.001f && farShare >= cfg.farShareMin;
+	_farOver = _load > cfg.halfHigh ? _farOver + 1 : 0;
+	const auto cutFar = [&]() {
+		if (_sinceFar < cfg.farEvery) return;
+		_far -= clamp((_load - cfg.halfHigh) * 0.05f, 0.004f, cfg.farStep);
+		_sinceFar = 0;
+		// Cut again soon after it was given back: the next step back waits longer.
+		if (_sinceFarCut < 900) _farWait = min(_farWait * 2, cfg.farRecoverMax);
+		_sinceFarCut = 0;
+		_farRoom = 0;
+	};
+	if (_load > cfg.halfHigh && farCan && _load <= cfg.halfDistParallel) {
+		// A load that lasts: the far layer gives, the objects wait. A dip that passes costs nothing.
+		if (_farOver >= cfg.farHold) cutFar();
+	} else if (_load > cfg.halfHigh) {
+		if (farCan) cutFar(); // (far over: the far layer goes along with the rest)
 		if (_detail > cfg.minDetail + 0.001f) {
 			_detail -= clamp((_load - cfg.halfHigh) * 0.5f, 0.01f, 0.08f);
 			if (_load > cfg.halfDistParallel) _dist -= clamp((_load - cfg.halfDistParallel) * 0.05f, 0.001f, 0.01f);
@@ -114,11 +137,25 @@ void FramePacer::update(float frameLoad, bool turning) {
 			_dist -= clamp((_load - cfg.halfDistOver) * 0.1f, 0.002f, cfg.halfDistStep);
 		}
 	} else if (_load < cfg.halfLow) {
-		if (_dist < 1.0f)
+		if (_dist < 1.0f) {
 			_dist += cfg.halfDistRecover;
-		else
+		} else if (_detail < 1.0f) {
 			_detail += cfg.recover;
+		} else {
+			_detail = 1.0f;
+			// The far layer comes back last, a step at a time, with room to spare.
+			if (_far < 1.0f && _load < cfg.farRecoverLow) {
+				if (++_farRoom >= _farWait) {
+					_far = min(_far + cfg.farRecoverStep, 1.0f);
+					_farRoom = 0;
+				}
+			} else {
+				_farRoom = 0;
+			}
+			if (_far >= 1.0f && _sinceFarCut > 1800) _farWait = cfg.farRecoverEvery;
+		}
 	}
+	_far = clamp(_far, min(cfg.farMin, 1.0f), 1.0f);
 	_detail = clamp(_detail, cfg.minDetail, 1.0f);
 	_dist = clamp(_dist, cfg.minDistance, 1.0f);
 

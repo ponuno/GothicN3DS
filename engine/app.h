@@ -120,6 +120,8 @@ public:
 	void setDrawDistance(float cm);
 	// The pacer's share of the draw distance (the world and its fog; ignored with the far layer).
 	void setDistanceScale(float scale);
+	// The far layer's distance as a share of the one set (the pacer shortens it at 30 fps; never under 250 m or the full-detail reach).
+	void setFarScale(float scale);
 	// Moves the player's eyes to `eye` (keeps walking or flying as it was).
 	void teleport(Vec3 eye);
 	// Switches to another world of the archive. `eye` null uses its start
@@ -525,6 +527,7 @@ private:
 	Music _music;
 	Speech _speech;
 	float _musicScan = 0, _musicHold = 0; // (musicSituation)
+	bool _musicAttack = false;
 	Speech _chatter {Speech::WORLD_CHANNEL}; // what the world says, outside the player's talk
 	World _world;
 	static constexpr u32 kWantMobs = 8;

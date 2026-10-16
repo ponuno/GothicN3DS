@@ -18,6 +18,7 @@ struct WaterFxOptions {
 	float cell = 100.0f;      // cm: the lattice the shore line is found on
 	float flow = 0.0f;        // cm/s: the speed of the water in rivers (0: no flow)
 	float glint = 0.0f;       // 0..1: sun glints, a second additive layer of sparkles over the water (0: none)
+	float foamMinWidth = 0.0f; // cm: shores of water narrower than this (across) get no foam: puddles, ponds, rivers (0: all)
 	float riverMaxWidth = 1400.0f; // cm: a channel narrower than this, and long, is a river
 };
 
@@ -26,6 +27,7 @@ struct WaterFxStats {
 	u32 shoreChains = 0;    // shore lines found (a chain of segments)
 	u64 shoreLength = 0;    // cm
 	u64 foamTriangles = 0;
+	u32 foamChainsNarrow = 0; // shore lines left bare because the water there is narrow (foamMinWidth)
 	u64 glintTriangles = 0;
 	u32 riverTiles = 0;     // tiles taken for a river
 	u32 flowMaterials = 0;  // copies of the water material made

@@ -55,6 +55,18 @@ struct PacerConfig {
 	float halfDistParallel = 2.4f;  // load above which it shortens along with the objects
 	float halfDistStep = 0.015f;    // most taken away in a frame
 	float halfDistRecover = 0.0025f; // given back per frame while the load is below halfLow
+	// The far layer (Graphics+ -> Far plan, 400-600 m): at half rate it is the first thing to give when the frame does not fit -
+	// it lies in the fog, the nearer objects do not. But only for a load that lasts (not every dip), and only when the far layer
+	// is a real part of the frame; it comes back last, slowly, and the slower the oftener the load came back.
+	float farMin = 1.0f;       // the shortest far distance, as a share of the set one (the app: 250 m over it; 1 = never shortened)
+	float farShareMin = 0.12f; // the far layer's share of the triangles drawn, below which shortening it would not help
+	u32 farHold = 75;          // frames the load must stay over halfHigh before it starts (2.5 s at 30 fps)
+	float farStep = 0.012f;    // most taken away in a step
+	u32 farEvery = 15;         // frames between two steps
+	float farRecoverStep = 0.03f;
+	u32 farRecoverEvery = 150; // frames of room (load below farRecoverLow) before a step back
+	u32 farRecoverMax = 1200;  // ... that doubles up to this when the load came back soon after a step back
+	float farRecoverLow = 1.50f;
 	float leaveHalf = 0.80f; // load below which full rate returns straight away
 	u32 leaveFrames = 60;    // consecutive light frames before that
 	float probeBelow = 1.30f; // load at full detail below which it is worth asking whether 60 fps would fit with less
@@ -80,12 +92,15 @@ public:
 	// refresh (1.0 = 16.7 ms). What counts as "needed" is the platform's
 	// business (see platform/3ds/main.cpp). `turning`: the view turns fast
 	// this frame - nothing is given back now, and the calm starts over.
-	void update(float frameLoad, bool turning = false);
+	// `farShare`: the far layer's share of the triangles drawn in that frame (0..1; 0 when there is none).
+	void update(float frameLoad, bool turning = false, float farShare = 0.0f);
 
 	// Factor for StreamConfig::detailScale.
 	float detailScale() const { return _detail; }
 	// Factor for the draw distance of the world itself (1 unless the objects are already at their minimum).
 	float distanceScale() const { return _dist; }
+	// Factor for the far layer's distance (1 unless it was shortened at half rate; never below cfg.farMin).
+	float farScale() const { return _far; }
 	// Refreshes per frame: 1 (60 fps) or 2 (30 fps).
 	int interval() const { return _interval; }
 	// The smoothed load the decisions are based on.
@@ -96,6 +111,8 @@ public:
 private:
 	float _detail = 1.0f;
 	float _dist = 1.0f;
+	float _far = 1.0f;
+	u32 _farOver = 0, _sinceFar = 0, _farRoom = 0, _farWait = 0, _sinceFarCut = 100000;
 	float _load = 0.0f;
 	int _interval = 1;
 	u32 _over = 0, _under = 0, _calm = 0, _sinceStep = 0, _sinceDist = 0;

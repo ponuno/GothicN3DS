@@ -208,7 +208,11 @@ u32 Music::tryTheme(const char* zone, bool day, const char* sit, char* nameOut, 
 u32 Music::choose(const char* zone, const char* defaultZone, bool day, MusicSituation situation, char* nameOut, u32 size, float& volume) {
 	static const char* const kSit[3] = {"STD", "THR", "FGT"};
 	const char* sits[3] = {kSit[situation], situation == MUSIC_THREAT ? kSit[MUSIC_FIGHT] : kSit[MUSIC_CALM], kSit[MUSIC_CALM]};
-	const char* zones[2] = {zone, defaultZone};
+	// OpenGothic names the themes after what follows the first '_' of the zone's name (OLDCAMP_OC -> OC_DAY_STD): the whole
+	// name first (a game of its own), then that tail; the default zone the same way.
+	const char* zoneTails[2] = {zone && strchr(zone, '_') ? strchr(zone, '_') + 1 : nullptr,
+	                            defaultZone && strchr(defaultZone, '_') ? strchr(defaultZone, '_') + 1 : nullptr};
+	const char* zones[4] = {zone, zoneTails[0], defaultZone, zoneTails[1]};
 	for (const char* z : zones) {
 		if (!z || !*z) continue;
 		for (int d = 0; d < 2; ++d) {

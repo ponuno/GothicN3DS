@@ -588,6 +588,31 @@ void bakeWaterFx(SrcScene& scene, const WaterFxOptions& opt, WaterFxStats& stats
 			finder.tile(ix, iz);
 		}
 		foamChains = finder.chains();
+		// Narrow water gets no foam: puddles, ponds and rivers. Across the shore (the way its normal points, into the water)
+		// the open water must go on for `foamMinWidth`; a chain where that fails at half of its points is left bare.
+		if (opt.foamMinWidth > 0.0f) {
+			std::vector<ShoreFinder::Chain> wide;
+			for (ShoreFinder::Chain& c : foamChains) {
+				u32 tested = 0, narrow = 0;
+				for (size_t k = 0; k < c.p.size(); k += 5) {
+					const EdgePoint& e = c.p[k];
+					float run = 0.0f;
+					while (run < opt.foamMinWidth) {
+						const Depth d = field.at(e.x + e.nx * (run + 100.0f), e.z + e.nz * (run + 100.0f));
+						if (!(d.water && d.d > 0.0f)) break;
+						run += 100.0f;
+					}
+					++tested;
+					narrow += run < opt.foamMinWidth;
+				}
+				if (tested > 0 && narrow * 2 >= tested) {
+					++stats.foamChainsNarrow;
+					continue;
+				}
+				wide.push_back(std::move(c));
+			}
+			foamChains = std::move(wide);
+		}
 	}
 
 	// ---- rivers ----

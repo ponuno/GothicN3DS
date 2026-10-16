@@ -175,8 +175,10 @@ void usage() {
 	          "  --water-texture S  the water's texture: made here (default: wind ripples; S = made) or the game's (S = original)\n"
 	          "  --water-alpha N    how opaque the made water is, 0..255 (default 140; lower = more see-through)\n"
 	          "  --water-color R,G,B  the deep colour of that texture (default 38,66,70)\n"
-	          "  --no-fog-zones     leave the world's fog zones (swamp, orc city ...) out of data.pak\n"
-	          "  --water-biome S    the water tinted by the fog zone it lies in, 0..1 (default 0.6; 0: one colour all over)\n"
+	          "  --fog-zones        put the world's fog zones (zCZoneZFog) into data.pak, the fog then follows them (default off: G1 has one)\n"
+	          "  --water-biome S    the water tinted by the fog zone it lies in, 0..1 (default 0 = off)\n"
+	          "  --swamp-water-color R,G,B / --swamp-water-alpha N  the swamp's water (textures named *swamp*): default 50,60,34 and 190\n"
+	          "  --water-keep A,B   textures (names start with these) that keep the game's picture though water uses them (e.g. ncodflgrasda)\n"
 	          "  --water-clear      clearer water: alpha 75 and colour 52,90,96 unless --water-alpha / --water-color say otherwise\n"
 	          "  --water-shore S    colour by depth and foam in the fine water, 0..1 (default 1; needs --water-grid)\n"
 	          "  --wet-shore S      the ground at the water's edge darker (wet sand), 0..1 (default 1)\n"
@@ -185,6 +187,7 @@ void usage() {
 	          "  --water-grid M     cut the water along the shores into a grid of M metres (try 2; 0 = off, the default), fine\n"
 	          "                     enough for the game's \"Waves on the water\" setting to lift it; the open water stays coarse\n"
 	          "  --river-width M    water narrower than this stays calm: rivers, ponds (default 40; 0: waves everywhere)\n"
+	          "  --foam-min-width M no foam on water narrower than M metres across: puddles, ponds, rivers (default 20; 0: foam everywhere)\n"
 	          "  --water-foam S     foam strips along the shore lines, 0..1 (default 0.8; 0: none)\n"
 	          "  --water-glint S    sun glints: an additive layer of sparkles over the water, 0..1 (default 0: off; doubles the water's triangles)\n"
 	          "  --river-flow CMS   the speed of the water in rivers, cm/s (default 70; 0: the game's scroll, one way everywhere)\n"
@@ -362,7 +365,27 @@ int main(int argc, char** argv) {
 			else if (a == "--water-light") opt.waterLight = u8(std::clamp(std::stoi(value()), 0, 255));
 			else if (a == "--water-texture") opt.waterTexture = value() != "original";
 			else if (a == "--water-clear") waterClear = true;
-			else if (a == "--no-fog-zones") opt.fogZones = false;
+			else if (a == "--swamp-water-alpha") opt.swampAlpha = u8(std::clamp(std::stoi(value()), 0, 255));
+			else if (a == "--swamp-water-color") {
+				const std::string v = value();
+				int r, g, b;
+				if (std::sscanf(v.c_str(), "%d,%d,%d", &r, &g, &b) != 3) throw std::runtime_error("--swamp-water-color wants R,G,B");
+				opt.swampColor[0] = u8(std::clamp(r, 0, 255));
+				opt.swampColor[1] = u8(std::clamp(g, 0, 255));
+				opt.swampColor[2] = u8(std::clamp(b, 0, 255));
+			}
+			else if (a == "--water-keep") {
+				std::string v = value();
+				for (char& c : v) c = char(std::tolower(static_cast<unsigned char>(c)));
+				size_t from = 0;
+				while (from <= v.size()) {
+					size_t to = v.find(',', from);
+					if (to == std::string::npos) to = v.size();
+					if (to > from) opt.waterKeep.push_back(v.substr(from, to - from));
+					from = to + 1;
+				}
+			}
+			else if (a == "--fog-zones") opt.fogZones = true;
 			else if (a == "--water-biome") opt.waterBiome = std::clamp(std::stof(value()), 0.0f, 1.0f);
 			else if (a == "--water-alpha") opt.waterAlpha = u8(std::clamp(std::stoi(value()), 0, 255)), waterAlphaGiven = true;
 			else if (a == "--water-color") {
@@ -380,6 +403,7 @@ int main(int argc, char** argv) {
 			else if (a == "--canopy-reach") opt.canopyReach = std::clamp(std::stof(value()), 2.0f, 60.0f) * 100.0f;
 			else if (a == "--water-grid") opt.waterGrid = std::clamp(std::stof(value()), 0.0f, 50.0f) * 100.0f;
 			else if (a == "--river-width") opt.riverWidth = std::clamp(std::stof(value()), 0.0f, 500.0f) * 100.0f;
+			else if (a == "--foam-min-width") opt.foamMinWidth = std::clamp(std::stof(value()), 0.0f, 500.0f) * 100.0f;
 			else if (a == "--water-foam") opt.waterFoam = std::clamp(std::stof(value()), 0.0f, 1.0f);
 			else if (a == "--water-glint") opt.waterGlint = std::clamp(std::stof(value()), 0.0f, 1.0f);
 			else if (a == "--river-flow") opt.riverFlow = std::clamp(std::stof(value()), 0.0f, 400.0f);

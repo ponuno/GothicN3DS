@@ -476,6 +476,8 @@ public:
 	// Somebody near is after the player's character in a fight state, with a weapon drawn or a beast (the music's
 	// "targeted": OpenGothic's WorldObjects::isTargetedBy).
 	bool targetsHero() const;
+	// Somebody who targets the hero is in its fight state with its weapon out (or is a beast) within `range` cm: the attack has begun.
+	bool attacksHero(float range) const;
 	// Which way the player's character faces (the scripts and the fight AI look at it).
 	void setHeroYaw(float yaw) { _heroYaw = yaw; }
 	// A perception for one actor only (PERC_ASSESSTHREAT: the player aims at it).

@@ -1202,6 +1202,19 @@ bool Npcs::targetsHero() const {
 	return false;
 }
 
+bool Npcs::attacksHero(float range) const {
+	const u32 hero = _game.heroIndex();
+	if (hero == SCRIPT_NONE) return false;
+	for (const NpcActor& a : _actors) {
+		if (!a.used || !a.ready || a.npc == hero || a.dist2 > range * range) continue;
+		const GameNpc& n = _game.npc(a.npc);
+		if (n.target != int(hero) || n.down != DOWN_NONE || !inFightState(a)) continue;
+		if (n.weapon == WEAPON_NONE && !_game.isMonster(n)) continue;
+		return true;
+	}
+	return false;
+}
+
 void Npcs::emitSvm(u32 npc, const char* what) {
 	if (npc >= _game.npcCount()) return;
 	const i32 voice = _game.npcInt(_game.npc(npc), _game.vm().findMember("C_NPC", "VOICE"));

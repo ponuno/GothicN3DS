@@ -92,10 +92,18 @@ const Item kGraphics[] = {
     {"Купол Барьера", CHOICE, &Settings::barrier, kBarrier, 3, 0, 0, nullptr, 0, nullptr, kBarrierNotes},
     {"Свет огней", CHOICE, &Settings::lamps, kLamps, 3, 0, 0, nullptr, 0, nullptr, kLampsNotes},
     {"Плавное появление", TOGGLE, &Settings::dissolve, nullptr, 0, 0, 0, nullptr, 0, "Вступит в силу после перезапуска", nullptr},
-    {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 5, 0, 0, nullptr, 0, nullptr, kFrameNotes},
+    {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 3, 0, 0, nullptr, 0, nullptr, kFrameNotes},
     {"Экран", CHOICE, &Settings::stereo, kScreen, 3, 0, 0, nullptr, 0, "Ползунок 3D или 800x240; после перезапуска", nullptr},
     {"Графика+", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GFX_PLUS, "Затенение углов, листва, тени, даль", nullptr},
+    {"Экспериментально", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_EXPERIMENTAL, "Разгон экрана: 40 Гц, 80 Гц. Риск!", nullptr},
     {"Сбросить графику", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_RESET_GRAPHICS, "Вернуть значения по умолчанию", nullptr},
+};
+const Item kExperimental[] = {
+    {"ВНИМАНИЕ: разгон экрана", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, 0, "Он не предусмотрен Nintendo", nullptr},
+    {"Это может сократить жизнь экрана", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, 0, "Возможны полосы, мерцание, перегрев", nullptr},
+    {"Вся ответственность на вас", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, 0, "Автор не отвечает за последствия", nullptr},
+    {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 5, 0, 0, nullptr, 0, nullptr, kFrameNotes},
+    {"Частота экрана", CHOICE, &Settings::refresh, kRefresh, 6, 0, 0, nullptr, 0, "Экран подстраивается под кадр", nullptr},
 };
 const Item kGame[] = {
     {"Автозахват цели", TOGGLE, &Settings::autoTarget, nullptr, 0, 0, 0, nullptr, 0, "Взял оружие — цель захвачена", nullptr},
@@ -130,7 +138,6 @@ const Item kGfxPlus[] = {
     {"Трава", CHOICE, &Settings::grass, kGrass, 3, 0, 0, nullptr, 0, nullptr, kGrassNotes},
     {"Дальний план", CHOICE, &Settings::farLayer, kFarLayer, 4, 0, 0, nullptr, 0, nullptr, kFarLayerNotes},
     {"Дальняя геометрия", CHOICE, &Settings::farGeometry, kFarGeometry, 4, 0, 0, nullptr, 0, "Упрощённые дальние чанки (мир с --lod)", nullptr},
-    {"Частота экрана", CHOICE, &Settings::refresh, kRefresh, 6, 0, 0, nullptr, 0, "Экран подстраивается под кадр (опыт)", nullptr},
     {"Доворот кадра", TOGGLE, &Settings::reproject, nullptr, 0, 0, 0, nullptr, 0, "Старый кадр довёрнут, пока ждём новый", nullptr},
     {"Сглаживание", CHOICE, &Settings::antialias, kAntialias, 3, 0, 0, nullptr, 0, nullptr, kAntialiasNotes},
 };
@@ -180,14 +187,14 @@ const PageDef kPages[Menu::PAGES] = {
     PAGE_OF("Пауза", kMain),         PAGE_OF("Графика", kGraphics),   PAGE_OF("Игра", kGame),
     PAGE_OF("Управление", kControls), PAGE_OF("Интерфейс", kInterface), PAGE_OF("Звук", kSound),
     PAGE_OF("Отладка", kDebug),      PAGE_OF("Жители", kDebugNpc),    PAGE_OF("Герой и вещи", kDebugHero),
-    PAGE_OF("Мир и время", kDebugWorld), PAGE_OF("Графика+", kGfxPlus),
+    PAGE_OF("Мир и время", kDebugWorld), PAGE_OF("Графика+", kGfxPlus), PAGE_OF("Экспериментально", kExperimental),
 };
 #undef PAGE_OF
 
 } // namespace
 
 Menu::Page Menu::parentOf(Page page) {
-	if (page == PAGE_GFX_PLUS) return PAGE_GRAPHICS;
+	if (page == PAGE_GFX_PLUS || page == PAGE_EXPERIMENTAL) return PAGE_GRAPHICS;
 	return page == PAGE_DEBUG_NPC || page == PAGE_DEBUG_HERO || page == PAGE_DEBUG_WORLD ? PAGE_DEBUG : PAGE_MAIN;
 }
 

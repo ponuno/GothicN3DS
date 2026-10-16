@@ -48,10 +48,12 @@ struct BakeOptions {
 	// brightness (0..255) instead of what the source mesh has (big polygons, lightmapped per corner: patches of very
 	// different brightness). 0 keeps the source's light.
 	u8 waterLight = 200;
-	// Fog zones of the world (zCZoneZFog) into data.pak (--no-fog-zones: not) and the water tinted by the zone it lies in
-	// (--water-biome S, 0..1, default 0.6; 0: one colour all over).
-	bool fogZones = true;
-	float waterBiome = 0.6f;
+	// Fog zones of the world (zCZoneZFog) into data.pak (--fog-zones; off by default: G1 has one) and the water tinted by the zone it lies in
+	// (--water-biome S, 0..1, default 0: one colour all over).
+	bool fogZones = false;
+	float waterBiome = 0.0f;
+	// --water-keep A,B: textures (names start with these, case does not matter) that keep the game's picture though a water material uses them.
+	std::vector<std::string> waterKeep;
 	// The water's texture made here (--water-texture, on; "original" keeps the game's) in this colour (--water-color).
 	// Colour by depth and foam in the fine water (--water-shore S, 0..1; needs --water-grid), wet ground at the water's edge
 	// (--wet-shore S) and the shade of plants on the ground (--canopy S, rays up to --canopy-reach M); 0 switches each off.
@@ -63,6 +65,8 @@ struct BakeOptions {
 	// The baker's own rain and thunder recordings (weather_sfx_bake.h) into data.pak, before the game's (--no-weather-sfx: not).
 	bool weatherSfx = true;
 	u8 waterColor[3] = {38, 66, 70}; // fix151: darker (was 92,140,156): the deep body; the ripples mirror the sky over it
+	u8 swampColor[3] = {50, 60, 34}; // --swamp-water-color: the deep colour of the swamp's water (fix170)
+	u8 swampAlpha = 190;             // --swamp-water-alpha: murkier (more opaque) than the open water
 	u8 waterAlpha = 140; // --water-alpha: how opaque that texture is (0..255; lower = more see-through; fix151: was 110)
 	// The water cut into a grid of this many cm along the shores (--water-grid; 0: not cut): fine enough for the runtime's
 	// waves to lift it corner by corner (WORLDF_WATER_GRID; see water_grid.h). `waterReach`: how far from the shore line
@@ -73,6 +77,7 @@ struct BakeOptions {
 	float riverWidth = 4000.0f;
 	// fix140: shore foam (--water-foam S, 0..1: strips of lace along every shore line, 0: none) and the flow of rivers
 	// (--river-flow CM_PER_S: water in narrow channels moves along them, downhill; 0: none). water_fx.h.
+	float foamMinWidth = 2000.0f; // --foam-min-width M: no foam on water narrower than this across (puddles, ponds, rivers); 0: all
 	float waterFoam = 0.8f;
 	float riverFlow = 70.0f;
 	float waterGlint = 0.0f; // --water-glint S: sun glints, an additive layer of sparkles over the water (0: none; doubles the water)
@@ -198,7 +203,9 @@ std::string texturePakName(const std::string& texture);
 // Returns how many triangles it set. (0 as the brightness: nothing is changed.)
 size_t applyWaterLight(SrcScene& scene, u8 brightness);
 // The colour that light has, as a share of the white (the far layer's water is the texture's average in it).
-void waterTint(u8 brightness, float rgb[3]);
+void waterTint(u8 brightness, float rgb[3], bool swamp = false);
+// A swamp's water (its texture's name has "swamp" in it: OWODSEA2SWAMP): murky green-brown instead of the blue-green of the rest.
+bool isSwampWaterTexture(const std::string& name);
 // Tints the water's triangles by the fog zone they lie in (the zone's colour, taken as a hue, by `strength` 0..1 and the zone's
 // weight at the triangle's middle). Returns how many triangles changed. Run after applyWaterLight.
 size_t applyWaterBiome(SrcScene& scene, float strength);

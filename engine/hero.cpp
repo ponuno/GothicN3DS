@@ -1694,8 +1694,10 @@ void Hero::follow(const Player& player, const World& world, const float dayLight
 	if (world.rayDown({feet.x, feet.y + 80.0f, feet.z}, 600.0f, y, n, l)) {
 		const float w = float(l[3]) * (1.0f / 255.0f);
 		_sky = w;
+		// fix186: under a cloud's shadow, as far as the ground there sees the sky.
+		const float cloud = 1.0f + w * (world.cloudShade(feet.x, feet.z) - 1.0f);
 		for (int i = 0; i < 3; ++i) {
-			float target = float(l[i]) * (1.0f / 255.0f) * (1.0f + w * (dayLight[i] - 1.0f));
+			float target = float(l[i]) * (1.0f / 255.0f) * (1.0f + w * (dayLight[i] - 1.0f)) * cloud;
 			target = max(target * 1.15f, 0.22f); // never a silhouette
 			_light[i] += (target - _light[i]) * min(dt * 5.0f, 1.0f);
 		}

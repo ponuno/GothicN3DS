@@ -56,6 +56,7 @@ float bayer(int x, int y) {
 float gUvOffset[2] = {0, 0};
 ChunkFx gFx; // Graphics+ of the chunk being drawn (setChunkTransform)
 float gSunDark = 0.0f; // setSunShadow
+float gChunkSunDark = 0.0f; // fix186: the strength the chunk's mask is drawn with (ChunkFx::sunDark, else gSunDark)
 bool gSunOn = false;   // the draw going on takes the chunk's sun mask
 LampSet gLamps;        // fix148: setLamps (count 0: none)
 bool gCull = true;
@@ -195,7 +196,7 @@ void rasterize(const ScreenVert& a, const ScreenVert& bIn, const ScreenVert& cIn
 				};
 				const float mask = (at(ix, iy) * (1.0f - tx) + at(ix + 1, iy) * tx) * (1.0f - ty2) +
 				                   (at(ix, iy + 1) * (1.0f - tx) + at(ix + 1, iy + 1) * tx) * ty2;
-				const float k = 1.0f - gSunDark * (1.0f - mask);
+				const float k = 1.0f - gChunkSunDark * (1.0f - mask);
 				r *= k;
 				g *= k;
 				bl *= k;
@@ -352,6 +353,15 @@ Texture* textureCreate(const TexHeader& h, const u8* data) {
 	return t;
 }
 
+void textureUpdateMask(Texture* t, const u8* texels) {
+	if (!t || !texels || !t->level[0]) return;
+	for (u32 y = 0; y < t->height; ++y)
+		for (u32 x = 0; x < t->width; ++x) {
+			u8* p = t->level[0] + (size_t(y) * t->width + x) * 4;
+			p[0] = p[1] = p[2] = texels[texL4Nibble(t->width, t->height, x, y)];
+		}
+}
+
 void textureDestroy(Texture* t) {
 	if (!t) return;
 	if (t->bytes) {
@@ -482,11 +492,12 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 	const bool water = (gMaterialFlags & MATF_WATER) != 0;
 	const bool wavy = water && gFx.waveHeight != 0.0f;
 	const bool sheen = water && gFx.waterGrid; // (fix140: the water cut in the grid, as the full shader's `wavy` block)
-	gSunOn = gFx.sun && gSunDark > 0.0f && gPass != PASS_SKY && (gMaterialFlags & (MATF_ALPHA_TEST | MATF_WIND | MATF_ADD | MATF_WATER)) == 0;
+	gChunkSunDark = gFx.sunDark >= 0.0f ? clamp(gFx.sunDark, 0.0f, 1.0f) : gSunDark;
+	gSunOn = gFx.sun && gChunkSunDark > 0.0f && gPass != PASS_SKY && (gMaterialFlags & (MATF_ALPHA_TEST | MATF_WIND | MATF_ADD | MATF_WATER)) == 0;
 	// fix148: the lamps, where the console binds their entry: what its fast entry draws in the world pass (not what sways,
 	// not water cut for waves), and not a chunk drawn with its sun's mask.
 	const bool lamps = gLamps.count && gPass == PASS_WORLD && (gMaterialFlags & MATF_WIND) == 0 && !wavy && !(water && gFx.waterGrid) &&
-	                   !(gFx.sun && gSunDark > 0.0f);
+	                   !(gFx.sun && gChunkSunDark > 0.0f);
 	gStats.lampDraws += lamps;
 	for (u32 i = 0; i + 2 < indexCount; i += 3) {
 		ClipVert cv[3];

@@ -102,6 +102,9 @@ struct StreamConfig {
 	// The sun's shadow on the ground (a world baked with --sun-shadow; hasSunMasks()): the masks are loaded with the
 	// chunks and handed to the drawing (gfx::ChunkFx::sun); how dark they make the ground is gfx::setSunShadow's.
 	bool sunMasks = false;
+	// fix186: the clouds' shadows are written into the sun's masks (updateClouds; needs sunMasks): the masks keep a copy of
+	// what they were baked with.
+	bool clouds = false;
 	// The far layer (G10; a world baked with --far-lod): drawn out to here, cm,
 	// where the chunks are not - beyond drawDistance, and in place of chunks
 	// not loaded yet. 0 (or no farther than drawDistance): not drawn, and not
@@ -265,6 +268,16 @@ public:
 	void grassFx(const float origin[3], gfx::ChunkFx& fx) const;
 	float waveHeight() const { return _waveHeight; }
 
+	// fix186: the clouds' shadows. Once a frame before draw(): the field of this frame and the strength the sun's shadow
+	// has now (gfx::setSunShadow's). Writes a few of the resident sun's masks anew with both in them; the chunks of a mask
+	// written so are drawn with gfx::ChunkFx::sunDark 1. With WorldConfig::clouds off it puts back what was changed.
+	void updateClouds(const class Clouds& clouds, float sunDark);
+	// What the clouds leave of the sky's light at (x, z) now (1: no cloud, or none drawn) - for what takes no mask.
+	float cloudShade(float x, float z) const;
+	u32 cloudMasksWritten() const { return _cloudWrites; }
+	// For the tests: how many of the resident masks carry the clouds now.
+	u32 cloudMasksReady() const;
+
 	// The portal whose box contains `p`, or null.
 	const WorldPortal* portalAt(Vec3 p) const;
 	// The ladder whose climbing box contains `p`, or null.
@@ -348,6 +361,16 @@ private:
 	gfx::Texture* _solid[48] = {};
 	u16 _solidColour[48] = {};
 	u32 _solidNext = 0;
+	// fix186: a sun's mask the clouds are written into: what it was baked with, where it lies, what it holds now.
+	struct CloudSlot {
+		u8* src;        // level 0 as baked (TEX_L4, PICA order)
+		u16 w, h;
+		bool placed;    // x0 ... known (from a chunk that uses it)
+		bool ready;     // holds the clouds and the sun (drawn with sunDark 1)
+		float x0, z0, scaleX, scaleZ;
+		u32 written;    // the updateClouds call that last wrote it
+		float sun, dark; // the sun's strength and the clouds' darkness it was written with
+	};
 	struct TexSlot {
 		gfx::Texture* tex;
 		u32 refs;
@@ -355,7 +378,17 @@ private:
 		bool failed;    // bad data: never retried
 		bool waiting;   // wanted, but not there yet
 		bool requested; // handed to the background loader
+		CloudSlot* cloud; // fix186: a sun's mask while the clouds are on (null: none)
 	};
+	void cloudSource(TexSlot& s, const u8* blob, u32 size);
+	void freeCloud(TexSlot& s);
+	void writeCloud(TexSlot& s, float sun, float dark, bool restore);
+	const class Clouds* _clouds = nullptr;
+	bool _cloudsLive = false;  // the masks' chunks take what updateClouds wrote (the effect is on and there)
+	u32 _cloudTick = 0;
+	u32 _cloudWrites = 0;
+	u8* _cloudBuf = nullptr;
+	u32 _cloudBufSize = 0;
 
 	bool chunkJob(u32 index, LoadJob& job) const;
 	bool textureJob(u32 texture, LoadJob& job) const;

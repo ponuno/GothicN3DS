@@ -765,6 +765,21 @@ static void testSunMask() {
 	gfx::draw(mesh, 0, 3);
 	const int withoutEntry = sc.entry;
 	CHECK(sc.tex1 && sc.tex1 != maskTex);
+	// fix186: the clouds written into the mask (gfx::textureUpdateMask, a byte a texel in the PICA's order), and a chunk drawn
+	// with its own strength (ChunkFx::sunDark) while setSunShadow says none: still the sun's entry, with the new texels.
+	u8 bytes[64];
+	for (int i = 0; i < 64; ++i) bytes[i] = u8(i * 4);
+	gfx::textureUpdateMask(mask, bytes);
+	gfx::setSunShadow(0.0f);
+	gfx::setChunkTransform(sc.origin, sc.posScale, 1.0f / 1024.0f, &fx);
+	gfx::draw(mesh, 0, 3);
+	const int noSunEntry = sc.entry;
+	fx.sunDark = 1.0f;
+	gfx::setChunkTransform(sc.origin, sc.posScale, 1.0f / 1024.0f, &fx);
+	gfx::draw(mesh, 0, 3);
+	const int ownEntry = sc.entry;
+	CHECK(noSunEntry == 1 && ownEntry == 4 && sc.tex1 == maskTex && static_cast<const u8*>(maskTex->data)[0] == 0 &&
+	      static_cast<const u8*>(maskTex->data)[1] == 4 && static_cast<const u8*>(maskTex->data)[63] == 252);
 	mock3ds::setDrawHook(nullptr, nullptr);
 	gfx::frameEnd();
 	std::printf("  sun's mask: entry %d with it (%u vertices, texture coordinate 1 within %.2g), entry %d without\n", withEntry, shaded,

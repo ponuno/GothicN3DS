@@ -1,5 +1,7 @@
 #include "grass.h"
 
+#include "clouds.h"
+
 #include "g3ds/tex.h"
 #include "trace.h"
 #include "world.h"
@@ -168,6 +170,14 @@ float Grass::staleness(const Slot& s, const Frame& f) const {
 		if (moved > 150.0f) worth = max(worth, moved);
 	}
 	if (fabsf(f.darkness - s.darkness) > 0.04f) worth = max(worth, 100.0f + 400.0f * fabsf(f.darkness - s.darkness));
+	// fix186: the clouds have drifted on (a few metres: their edges are soft), or come or gone.
+	const float cloudDark = f.clouds ? f.clouds->dark() : 0.0f;
+	if (fabsf(cloudDark - s.cloudDark) > 0.04f) worth = max(worth, 100.0f + 400.0f * fabsf(cloudDark - s.cloudDark));
+	if (cloudDark > 0.003f) {
+		const float dx = f.clouds->driftX() - s.cloudX, dz = f.clouds->driftZ() - s.cloudZ;
+		const float drift = sqrtf(dx * dx + dz * dz);
+		if (drift > 400.0f) worth = max(worth, 60.0f + drift * 0.25f);
+	}
 	return worth;
 }
 
@@ -235,7 +245,8 @@ void Grass::build(Slot& s, const Frame& f) {
 			topY = height * (1.0f - 0.6f * kk);
 		}
 		// The colour: the ground's light there, darker at the foot; in the sun's shadow as dark as the ground is now.
-		const float sunK = 1.0f - f.darkness * float(grassShade(g.lean)) * (1.0f / 3.0f);
+		float sunK = 1.0f - f.darkness * float(grassShade(g.lean)) * (1.0f / 3.0f);
+		if (f.clouds) sunK *= f.clouds->shade(px, pz); // fix186
 		const float r = float((g.colour >> 11) & 31u) * (255.0f / 31.0f) * sunK, gg = float((g.colour >> 5) & 63u) * (255.0f / 63.0f) * sunK,
 		            b = float(g.colour & 31u) * (255.0f / 31.0f) * sunK;
 		const u8 top[3] = {u8(min(r * 1.06f, 255.0f)), u8(min(gg * 1.06f, 255.0f)), u8(min(b * 1.06f, 255.0f))};
@@ -296,6 +307,9 @@ void Grass::build(Slot& s, const Frame& f) {
 	s.radius = f.radius;
 	s.share = f.share;
 	s.darkness = f.darkness;
+	s.cloudDark = f.clouds ? f.clouds->dark() : 0.0f;
+	s.cloudX = f.clouds ? f.clouds->driftX() : 0.0f;
+	s.cloudZ = f.clouds ? f.clouds->driftZ() : 0.0f;
 	s.pressN = u8(pn);
 	for (u32 k = 0; k < pn; ++k) {
 		s.pressX[k] = f.press[in[k]].feet.x;

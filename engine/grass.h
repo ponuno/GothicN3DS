@@ -69,6 +69,7 @@ public:
 		Presser press[PRESSERS];
 		u32 pressCount = 0;
 		float darkness = 0.0f; // how dark the sun's shadow is drawn now (gfx::setSunShadow)
+		const class Clouds* clouds = nullptr; // fix186: the clouds' shadows of this frame (null: none drawn)
 	};
 	// Once a frame before drawing: which tiles are wanted, reading and making at most a little of them (from the archive
 	// enterWorld read: it must stay open).
@@ -98,6 +99,7 @@ private:
 		// What it was made for.
 		bool built = false;
 		float camX = 0, camY = 0, camZ = 0, radius = 0, share = 0, darkness = 0;
+		float cloudX = 0, cloudZ = 0, cloudDark = 0; // fix186: the clouds' drift and darkness it was made with
 		u8 pressN = 0;               // who pressed it then (their feet on x/z)
 		float pressX[PRESSERS] = {}, pressZ[PRESSERS] = {};
 		float nearSq = 0, farSq = 0; // the tile's square on x/z: nearest and farthest from the camera then (squared)

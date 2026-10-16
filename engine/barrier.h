@@ -76,6 +76,7 @@ public:
 	float nextIn() const { return _wait; }
 	u32 bolts() const;
 	u32 thunders() const { return _thunders; }
+	u32 thunderMisses() const { return _thunderMisses; } // strikes whose sound did not start at once (sample loading or none)
 	const char* thunderName() const { return _thunderName; }
 	const char* humName() const { return nullptr; } // (the game's Barrier has no hum: MFX_Barriere_Ambient is its thunder)
 	bool ownTexture() const { return _texture && !_madeTexture; }
@@ -173,6 +174,7 @@ private:
 	Bolt _bolt[MAX_BOLTS];
 	u32 _seed = 0x9E3779B9u;
 	u32 _thunders = 0;
+	u32 _thunderMisses = 0;
 
 	// Sounds.
 	bool _soundsSearched = false;

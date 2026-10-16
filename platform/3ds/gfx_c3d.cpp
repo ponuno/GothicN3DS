@@ -236,6 +236,7 @@ void makeNoise() {
 Texture* gSunChunk = nullptr;   // the mask of the chunk being drawn (null: none)
 bool gSunMaterialOk = true;     // the material takes the shadow
 float gSunDark = 0.0f;          // setSunShadow
+float gChunkSunDark = 0.0f;     // fix186: the strength the chunk being drawn takes (ChunkFx::sunDark, else gSunDark)
 u8 gSunConst = 0;               // what stage 2's constant holds
 const C3D_Tex* gSunBound = nullptr;
 C3D_Tex gSunWhite;
@@ -340,7 +341,7 @@ void bindSunTexture(const C3D_Tex* t) {
 void updateSun() {
 	if (gNoSun) return;
 	float s = 0.0f;
-	if (gSunChunk && gSunMaterialOk && !gSkinned && !gUiPass && gPass != PASS_SKY && gFade == 255 && !gNoSunProgram) s = gSunDark;
+	if (gSunChunk && gSunMaterialOk && !gSkinned && !gUiPass && gPass != PASS_SKY && gFade == 255 && !gNoSunProgram) s = gChunkSunDark;
 	const u8 c = u8(clamp(s, 0.0f, 1.0f) * 255.0f + 0.5f);
 	if (c && !(gSunDebug & SUN_DBG_NOTEX)) {
 		if (gSunDebug & SUN_DBG_WHITE) {
@@ -914,6 +915,20 @@ Texture* textureCreate(const TexHeader& h, const u8* data) {
 	return t;
 }
 
+void textureUpdateMask(Texture* t, const u8* texels) {
+	if (!t || !texels || !t->tex.data) return;
+	const u32 texels0 = u32(t->tex.width) * t->tex.height;
+	u8* dst = static_cast<u8*>(t->tex.data); // (level 0 first; a mask has no other)
+	if (t->tex.fmt == GPU_A8) {
+		memcpy(dst, texels, texels0);
+	} else if (t->tex.fmt == GPU_L4) {
+		for (u32 n = 0; n + 1 < texels0; n += 2) dst[n >> 1] = u8((texels[n] >> 4) | (texels[n + 1] & 0xF0u));
+	} else {
+		return;
+	}
+	C3D_TexFlush(&t->tex);
+}
+
 void textureDestroy(Texture* t) {
 	if (!t) return;
 	// citro3d keeps the pointer of the bound texture and reads it again
@@ -1240,7 +1255,8 @@ void setChunkTransform(const float origin[3], float posScale, float uvScale, con
 	gChunkWaterGrid = f.waterGrid && gLocWavy >= 0;
 	updateWindy();
 	// The sun's mask: its place relative to the anchor (u = (anchor + p - x0) * scale).
-	gSunChunk = f.sun && gProgramFastSunReady && gSunDark > 0.0f ? f.sun : nullptr;
+	gChunkSunDark = f.sunDark >= 0.0f ? clamp(f.sunDark, 0.0f, 1.0f) : gSunDark;
+	gSunChunk = f.sun && gProgramFastSunReady && gChunkSunDark > 0.0f ? f.sun : nullptr;
 	if (gSunChunk) {
 		const float uv[4] = {f.sunScaleX, f.sunScaleZ, (gAnchor[0] - f.sunX0) * f.sunScaleX, (gAnchor[2] - f.sunZ0) * f.sunScaleZ};
 		if (!gSunUvSent || memcmp(uv, gSunUv, sizeof(uv)) != 0) {

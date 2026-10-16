@@ -179,6 +179,7 @@ static Thread gWatchdog = nullptr;
 //   sky world npcs things heroshadow hero ground blended godrays rain particles overlay grass  (App::RenderSkip)
 //   nograss      the same as grass (fix147): the new grass is not drawn, nor its tiles made, whatever the menu says
 //   lamps, nolamps  (fix148) torches and fires light nothing, whatever the menu says
+//   clouds, noclouds (fix186) no clouds' shadows, whatever the menu says
 //   nolampshader    (fix148) the lamps' shader entry is never bound: the world as before, the lamps light only the characters
 //   all          every one of those (only the clear colour is drawn)
 //   nosun        the sun's shadow stages never set (as C-Stick up)
@@ -212,6 +213,7 @@ static void readDebugFile() {
 	              {"heroshadow", App::SKIP_HERO_SHADOW}, {"hero", App::SKIP_HERO}, {"ground", App::SKIP_GROUND}, {"blended", App::SKIP_BLENDED},
 	              {"godrays", App::SKIP_GODRAYS}, {"rain", App::SKIP_RAIN}, {"particles", App::SKIP_PARTICLES}, {"overlay", App::SKIP_OVERLAY},
 	              {"grass", App::SKIP_GRASS}, {"nograss", App::SKIP_GRASS}, {"lamps", App::SKIP_LAMPS}, {"nolamps", App::SKIP_LAMPS},
+	              {"clouds", App::SKIP_CLOUDS}, {"noclouds", App::SKIP_CLOUDS},
 	              {"all", 0xFFFFFFFFu}};
 	for (char* p = text; *p;) {
 		while (*p && !(*p >= 'a' && *p <= 'z') && !(*p >= 'A' && *p <= 'Z') && !(*p >= '0' && *p <= '9')) ++p; // (fix144: digits too - sunl4)
@@ -1179,9 +1181,10 @@ int main(int, char**) {
 			// made web; how much is seen; seconds to its next appearance; bolts alive / thunders so far; the sounds found (hum, thunder).
 			if (app.settings().barrier) {
 				const g3::Barrier& b = app.barrier();
-				reportLine("bar%d %lu%c lv%.2f nx%.0f b%lu/%lu %.10s %.14s", int(app.settings().barrier), static_cast<unsigned long>(b.corners()),
+				// (fix184: no hum any more; m = strikes whose thunder did not start at once)
+				reportLine("bar%d %lu%c lv%.2f nx%.0f b%lu/%lu m%lu %.16s", int(app.settings().barrier), static_cast<unsigned long>(b.corners()),
 				     !b.hasMesh() ? '-' : b.ownTexture() ? 'T' : 'w', double(b.level()), double(b.nextIn()), static_cast<unsigned long>(b.bolts()),
-				     static_cast<unsigned long>(b.thunders()), b.humName() ? b.humName() + (strncmp(b.humName(), "MFX_", 4) == 0 ? 4 : 0) : "-",
+				     static_cast<unsigned long>(b.thunders()), static_cast<unsigned long>(b.thunderMisses()),
 				     b.thunderName() ? b.thunderName() + (strncmp(b.thunderName(), "MFX_", 4) == 0 ? 4 : 0) : "-");
 			}
 			// (Chunks in memory: the world's own + those of medium and small objects, of all; wanted and not there: the same.)

@@ -322,6 +322,21 @@ bool Sound::knows(const char* name) {
 	return d >= 0 && _defs[d].state == 1;
 }
 
+bool Sound::playable(const char* name) {
+	if (!ready() || !name || !_pak) return false;
+	const int d = defFor(hashName(name), name);
+	if (d < 0 || _defs[d].state != 1) return false;
+	const u32 hash = _defs[d].sample;
+	const PakEntry* e = _pak->find(hash);
+	if (e && e->type == ASSET_SOUND && e->size >= sizeof(SoundHeader)) return true;
+	// A sample made here (addSynthetic): kept in memory, no archive entry.
+	bool made = false;
+	sys::mutexLock(_lock);
+	for (int i = 0; i < SAMPLES && !made; ++i) made = _samples[i].state == S_READY && _samples[i].hash == hash && _samples[i].pins > 0;
+	sys::mutexUnlock(_lock);
+	return made;
+}
+
 bool Sound::isLoop(const char* name) {
 	if (!ready() || !name) return false;
 	const int d = defFor(hashName(name), name);
@@ -494,7 +509,7 @@ u32 Sound::request(int defIndex, bool located, Vec3 pos, float gain, float range
 	return 0;
 }
 
-u32 Sound::play(const char* name, const Vec3* at, float gain, float range) {
+u32 Sound::play(const char* name, const Vec3* at, float gain, float range, bool once) {
 	if (!ready() || !name || !name[0]) return 0;
 	int d = defFor(hashName(name), name);
 	if (d < 0 || _defs[d].state != 1) {
@@ -523,7 +538,7 @@ u32 Sound::play(const char* name, const Vec3* at, float gain, float range) {
 			if (vd >= 0 && _defs[vd].state == 1) d = vd;
 		}
 	}
-	return request(d, at != nullptr, at ? *at : Vec3 {0, 0, 0}, gain, range, -1, -1);
+	return request(d, at != nullptr, at ? *at : Vec3 {0, 0, 0}, gain, range, once ? 0 : -1, -1);
 }
 
 u32 Sound::playHash(u32 nameHash, const Vec3* at, float gain, float range) {

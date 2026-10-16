@@ -1,4 +1,6 @@
 #include "world.h"
+
+#include "clouds.h"
 #include "lamps.h"
 #include "triggers.h"
 
@@ -130,7 +132,13 @@ void World::close() {
 	free(_ladderInfo);
 	free(_chunks);
 	free(_loaded);
+	if (_tex)
+		for (u32 i = 0; i < _hdr.textureCount; ++i) freeCloud(_tex[i]);
 	free(_tex);
+	free(_cloudBuf);
+	_cloudBuf = nullptr;
+	_cloudBufSize = 0;
+	_cloudsLive = false;
 	free(_resident);
 	free(_order);
 	free(_orderKey);
@@ -246,6 +254,7 @@ void World::finishTexture(LoadResult& r) {
 		TexHeader h;
 		memcpy(&h, r.blob, sizeof(h));
 		s.tex = gfx::textureCreate(h, r.blob + sizeof(TexHeader));
+		if (s.tex && h.format == TEX_L4 && _cfg.clouds) cloudSource(s, r.blob, r.size);
 		if (s.tex) {
 			s.bytes = h.dataSize;
 			_stats.residentBytes += s.bytes;
@@ -286,6 +295,7 @@ void World::acquireTexture(u32 texture) {
 void World::releaseTexture(u32 texture) {
 	TexSlot& s = _tex[texture];
 	if (s.refs == 0 || --s.refs != 0) return;
+	freeCloud(s);
 	if (s.tex) {
 		gfx::textureDestroy(s.tex);
 		_stats.residentBytes -= s.bytes;
@@ -438,6 +448,201 @@ gfx::Texture* World::sunMaskFor(Loaded& l, u32 index) {
 		acquireTexture(_sun[index].texture);
 	}
 	return _tex[_sun[index].texture].tex;
+}
+
+// ---- fix186: the clouds' shadows, written into the sun's masks ----
+
+void World::cloudSource(TexSlot& s, const u8* blob, u32 size) {
+	if (s.cloud || size < sizeof(TexHeader)) return;
+	TexHeader h;
+	memcpy(&h, blob, sizeof(h));
+	const u32 bytes = u32(h.width) * h.height / 2u;
+	if (h.format != TEX_L4 || h.mipCount < 1 || size < sizeof(TexHeader) + bytes) return;
+	CloudSlot* c = static_cast<CloudSlot*>(calloc(1, sizeof(CloudSlot)));
+	u8* src = static_cast<u8*>(malloc(bytes));
+	if (!c || !src) {
+		free(c);
+		free(src);
+		return;
+	}
+	memcpy(src, blob + sizeof(TexHeader), bytes);
+	c->src = src;
+	c->w = h.width;
+	c->h = h.height;
+	s.cloud = c;
+}
+
+void World::freeCloud(TexSlot& s) {
+	if (!s.cloud) return;
+	free(s.cloud->src);
+	free(s.cloud);
+	s.cloud = nullptr;
+}
+
+// The mask as the GPU takes it: texel = 255 * (1 - sun * (1 - baked / 15)) * (1 - dark * (1 - field)), drawn with strength 1.
+// `restore`: as baked (texel = baked * 17), for the ordinary way (setSunShadow's strength).
+void World::writeCloud(TexSlot& s, float sun, float dark, bool restore) {
+	CloudSlot& c = *s.cloud;
+	const u32 w = c.w, h = c.h, n = w * h;
+	if (!s.tex || !w || !h) return;
+	if (_cloudBufSize < n) {
+		u8* b = static_cast<u8*>(realloc(_cloudBuf, n));
+		if (!b) return;
+		_cloudBuf = b;
+		_cloudBufSize = n;
+	}
+	float lut[16];
+	for (int m = 0; m < 16; ++m) lut[m] = restore ? float(m * 17) : 255.0f * (1.0f - sun * (1.0f - float(m) * (1.0f / 15.0f)));
+	const bool field = !restore && _clouds && dark > 0.003f;
+	// The field at the corners of the 8 x 8 tiles (the clouds are tens of metres across: between them it is drawn straight).
+	const u32 gw = w / 8u + 1u, gh = h / 8u + 1u;
+	static float corner[33 * 33];
+	if (field && gw <= 33 && gh <= 33) {
+		for (u32 j = 0; j < gh; ++j)
+			for (u32 i = 0; i < gw; ++i) {
+				const float x = c.x0 + float(i * 8u) / float(w) / c.scaleX, z = c.z0 + float(j * 8u) / float(h) / c.scaleZ;
+				corner[j * gw + i] = 1.0f - dark * (1.0f - _clouds->light(x, z));
+			}
+	}
+	const bool useField = field && gw <= 33 && gh <= 33;
+	// In the order the texels lie in memory (g3ds/tex.h texL4Nibble): 8 x 8 tiles from the bottom row of the image up, each
+	// in Morton order (x bit, row bit, ...) with its rows from the bottom too. In fixed point: the light 0..256, the texel 0..255.
+	static u8 tileX[64], tileRow[64];
+	static bool tileReady = false;
+	if (!tileReady) {
+		for (u32 at = 0; at < 64; ++at) {
+			tileX[at] = u8((at & 1u) | ((at >> 1) & 2u) | ((at >> 2) & 4u));
+			tileRow[at] = u8(((at >> 1) & 1u) | ((at >> 2) & 2u) | ((at >> 3) & 4u)); // (counted from the tile's bottom)
+		}
+		tileReady = true;
+	}
+	u32 level[16];
+	for (int m = 0; m < 16; ++m) level[m] = u32(lut[m] <= 0.0f ? 0.0f : lut[m] >= 255.0f ? 255.0f : lut[m] + 0.5f);
+	u32 kk[8][8]; // the light of the tile's texels, by image row and column within it (256 = all)
+	u32 pos = 0;
+	const u32 tilesX = w / 8u, tilesY = h / 8u;
+	for (u32 sty = 0; sty < tilesY; ++sty) {
+		const u32 j = tilesY - 1u - sty; // (the tile's row in the image)
+		for (u32 i = 0; i < tilesX; ++i) {
+			if (useField) {
+				const float a = corner[j * gw + i], b = corner[j * gw + i + 1], cc = corner[(j + 1) * gw + i], d = corner[(j + 1) * gw + i + 1];
+				for (u32 y = 0; y < 8; ++y) {
+					const float fy = (float(y) + 0.5f) * 0.125f;
+					const float left = a + (cc - a) * fy, right = b + (d - b) * fy;
+					for (u32 x = 0; x < 8; ++x) {
+						const float k = left + (right - left) * ((float(x) + 0.5f) * 0.125f);
+						kk[y][x] = u32(k <= 0.0f ? 0.0f : k >= 1.0f ? 256.0f : k * 256.0f + 0.5f);
+					}
+				}
+			}
+			const u8* src = c.src + (pos >> 1);
+			u8* out = _cloudBuf + pos;
+			if (useField) {
+				for (u32 at = 0; at < 64; at += 2) {
+					const u32 pair = src[at >> 1];
+					out[at] = u8((level[pair & 15u] * kk[7u - tileRow[at]][tileX[at]]) >> 8);
+					out[at + 1] = u8((level[pair >> 4] * kk[7u - tileRow[at + 1]][tileX[at + 1]]) >> 8);
+				}
+			} else {
+				for (u32 at = 0; at < 64; at += 2) {
+					const u32 pair = src[at >> 1];
+					out[at] = u8(level[pair & 15u]);
+					out[at + 1] = u8(level[pair >> 4]);
+				}
+			}
+			pos += 64;
+		}
+	}
+	gfx::textureUpdateMask(s.tex, _cloudBuf);
+	c.ready = !restore;
+	c.written = _cloudTick;
+	c.sun = sun;
+	c.dark = field ? dark : 0.0f;
+	++_cloudWrites;
+}
+
+void World::updateClouds(const Clouds& clouds, float sunDark) {
+	++_cloudTick;
+	_clouds = &clouds;
+	const bool want = _cfg.clouds && _cfg.sunMasks && _sun && _tex && !indoor();
+	if (!want) {
+		// Off (or no masks): what was written goes back as baked, and the copies go.
+		_cloudsLive = false;
+		if (_tex)
+			for (u32 i = 0; i < _hdr.textureCount; ++i) {
+				TexSlot& s = _tex[i];
+				if (!s.cloud) continue;
+				if (s.cloud->ready) writeCloud(s, 1.0f, 0.0f, true);
+				freeCloud(s);
+			}
+		return;
+	}
+	const float dark = clouds.dark();
+	// Nothing to draw (night, overcast, rain, and the sun's shadow gone too): the masks are left as they are and the
+	// chunks take setSunShadow's strength (about 0) - no texture is read for it.
+	_cloudsLive = sunDark > 0.003f || dark > 0.003f;
+	if (!_cloudsLive) return;
+	// The masks of the resident chunks: where they lie; the copy of one that came before the clouds were on (one a frame);
+	// and the ones most worth writing: never written first, then the longest ago.
+	TexSlot* pick[3] = {nullptr, nullptr, nullptr};
+	u32 pickAge[3] = {0, 0, 0};
+	bool fetched = false;
+	for (u32 r = 0; r < _stats.chunksLoaded; ++r) {
+		const u32 index = _resident[r];
+		const Loaded& l = _loaded[index];
+		if (!l.sunHeld || _sun[index].texture == SUN_NONE) continue;
+		TexSlot& s = _tex[_sun[index].texture];
+		if (!s.tex) continue;
+		if (!s.cloud) {
+			if (fetched || !_pak) continue;
+			fetched = true;
+			if (const PakEntry* e = _pak->find(_textures[_sun[index].texture]))
+				if (u8* blob = static_cast<u8*>(_pak->readAlloc(*e))) {
+					cloudSource(s, blob, e->size);
+					free(blob);
+				}
+			if (!s.cloud) continue;
+		}
+		CloudSlot& c = *s.cloud;
+		if (!c.placed) {
+			const SunChunk& sc = _sun[index];
+			c.x0 = sc.x0;
+			c.z0 = sc.z0;
+			c.scaleX = sc.scaleX > 0.0f ? sc.scaleX : 1.0f;
+			c.scaleZ = sc.scaleZ > 0.0f ? sc.scaleZ : 1.0f;
+			c.placed = true;
+		}
+		if (c.written == _cloudTick) continue; // (another chunk of the same cell)
+		// Up to date: no clouds then nor now, and the sun's strength as it was.
+		if (c.ready && dark <= 0.003f && c.dark <= 0.003f && fabsf(c.sun - sunDark) < 0.01f) continue;
+		const u32 age = c.ready ? _cloudTick - c.written : 0xFFFFFFFFu;
+		for (int k = 0; k < 3; ++k)
+			if (!pick[k] || age > pickAge[k]) {
+				for (int m = 2; m > k; --m) {
+					pick[m] = pick[m - 1];
+					pickAge[m] = pickAge[m - 1];
+				}
+				pick[k] = &s;
+				pickAge[k] = age;
+				break;
+			}
+	}
+	// One a frame (all of a cell grid's masks in well under a second at 60 fps); three while some were never written.
+	const int count = pick[0] && pickAge[0] == 0xFFFFFFFFu ? 3 : 1;
+	for (int k = 0; k < count; ++k)
+		if (pick[k] && (k == 0 || pickAge[k] == 0xFFFFFFFFu)) writeCloud(*pick[k], sunDark, dark, false);
+}
+
+float World::cloudShade(float x, float z) const {
+	if (!_cloudsLive || !_clouds) return 1.0f;
+	return _clouds->shade(x, z);
+}
+
+u32 World::cloudMasksReady() const {
+	u32 n = 0;
+	if (_tex)
+		for (u32 i = 0; i < _hdr.textureCount; ++i) n += _tex[i].cloud && _tex[i].cloud->ready;
+	return n;
 }
 
 void World::unloadChunk(u32 index) {
@@ -1672,6 +1877,8 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 					fx.sunZ0 = sc.z0;
 					fx.sunScaleX = sc.scaleX;
 					fx.sunScaleZ = sc.scaleZ;
+					const CloudSlot* cs = _tex[sc.texture].cloud;
+					if (_cloudsLive && cs && cs->ready) fx.sunDark = 1.0f; // (the mask holds the whole darkness: updateClouds)
 				}
 			}
 			if (_waveHeight > 0.0f) {

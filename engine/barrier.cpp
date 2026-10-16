@@ -273,7 +273,7 @@ void Barrier::findSounds(Sound& sound, Pak& pak) {
 	// (meta/barriersfx, the scripts' sounds named like the Barrier), then similar names, then the weather's thunder.
 	static const char* const kThunder[] = {"MFX_BARRIERE_AMBIENT", "MFX_BARRIER_AMBIENT", "BARRIERE_AMBIENT"};
 	for (const char* n : kThunder)
-		if (sound.knows(n)) {
+		if (sound.playable(n)) { // (named in the scripts AND its sample baked: otherwise it would be silent)
 			_thunderName = n;
 			return;
 		}
@@ -284,7 +284,7 @@ void Barrier::findSounds(Sound& sound, Pak& pak) {
 			for (char* p = text; *p && !_thunderName;) {
 				char* end = strchr(p, '\n');
 				if (end) *end = 0;
-				if (p[0] && p[1] == ' ' && p[2] && sound.knows(p + 2)) {
+				if (p[0] && p[1] == ' ' && p[2] && sound.playable(p + 2)) {
 					const u32 len = u32(strlen(p + 2));
 					if (len < sizeof(_names)) {
 						memcpy(_names, p + 2, len + 1);
@@ -299,7 +299,7 @@ void Barrier::findSounds(Sound& sound, Pak& pak) {
 	if (_thunderName) return;
 	static const char* const kOther[] = {"MFX_BARRIERE_SHOOT", "MFX_BARRIERE_THUNDER"};
 	for (const char* n : kOther)
-		if (sound.knows(n)) {
+		if (sound.playable(n)) {
 			_thunderName = n;
 			return;
 		}
@@ -311,7 +311,7 @@ void Barrier::chooseThunder(u8 choice, Sound& sound) {
 	if (!_gameThunder) _gameThunder = _thunderName ? _thunderName : "";
 	auto first = [&](std::initializer_list<const char*> names) -> const char* {
 		for (const char* n : names)
-			if (n && *n && sound.knows(n)) return n;
+			if (n && *n && sound.playable(n)) return n;
 		return nullptr;
 	};
 	const char* own = *_gameThunder ? _gameThunder : nullptr;
@@ -323,8 +323,8 @@ void Barrier::chooseThunder(u8 choice, Sound& sound) {
 		                      "MFX_THUNDERBALL_COLLIDE", own, "G3_THUNDER_FAR"});
 		break;
 	case THUNDER_NONE: _thunderName = nullptr; break;
-	default: // as in the game: MFX_Barriere_Ambient; a game without it gets the far thunder
-		_thunderName = first({own, "G3_THUNDER_FAR", "G3_THUNDER_MADE_A"});
+	default: // as in the game: MFX_Barriere_Ambient; without its sample the long roll (sounds closest to it)
+		_thunderName = first({own, "G3_THUNDER_ROLL", "G3_THUNDER_FAR", "G3_THUNDER_MADE_A"});
 		break;
 	}
 }
@@ -427,7 +427,10 @@ void Barrier::spawnBolt(u32 sector, Sound& sound, Vec3 camera) {
 	++_thunders;
 	// Its thunder: MFX_Barriere_Ambient, played at the camera (oCBarrier::Render: PlaySound3D on the camera's vob), as loud
 	// wherever one stands under the dome. The quadrant waits for it to end.
-	if (_thunderName && sound.ready()) _sectorSound[sector] = sound.play(_thunderName, nullptr, 1.0f);
+	if (_thunderName && sound.ready()) {
+		_sectorSound[sector] = sound.play(_thunderName, nullptr, 1.0f, 0.0f, true); // (once, even if the scripts loop it)
+		if (!_sectorSound[sector]) ++_thunderMisses;
+	}
 	// No handle to ask (no sound, or its sample still on the way): the thunder is taken to last as the game's does.
 	if (!_sectorSound[sector]) _sectorBusy[sector] = THUNDER_SECONDS;
 	if (!_startCount[sector]) return;

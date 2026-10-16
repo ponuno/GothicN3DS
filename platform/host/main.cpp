@@ -56,6 +56,8 @@ static void usage() {
 	     "  --waves N           waves on the water 0..3 (data baked with --water-grid)\n"
 	     "  --grass N           the new grass 0 off, 1 few, 2 many (data baked with --grass)\n"
 	     "  --lamps N           light of torches and fires: 0 off, 1 the people and things, 2 the world too (default)\n"
+	     "  --clouds N[,C]      clouds' shadows 0 off, 1 on, 2 darker (data baked with --sun-shadow); C: their coverage 0..1\n"
+	     "                      instead of the weather's\n"
 	     "  --gfx-plus A,W,S    Graphics+: occlusion 0..100 %, wind 0..3, shadows 0 off / 1 hero / 2 all near / 3 hero outline\n"
 	     "  --stats FILE        write a JSON summary");
 }
@@ -173,6 +175,8 @@ int main(int argc, char** argv) {
 	int wavesSpec = -1;
 	int grassSpec = -1;
 	int lampsSpec = -1;
+	int cloudsSpec = -1;
+	float cloudsCover = -1.0f;
 	int barrierSpec = -1; // fix150: the Barrier 0 off, 1 as in the game, 2 always
 	float budgetMb = 24.0f, drawDistance = 12000.0f, farMetres = 0.0f, lodMetres = 0.0f;
 	bool useVis = false;
@@ -201,6 +205,11 @@ int main(int argc, char** argv) {
 		else if (arg("--waves")) wavesSpec = atoi(argv[++i]);
 		else if (arg("--grass")) grassSpec = atoi(argv[++i]);
 		else if (arg("--lamps")) lampsSpec = atoi(argv[++i]);
+		else if (arg("--clouds")) {
+			const char* v = argv[++i];
+			cloudsSpec = atoi(v);
+			if (const char* comma = strchr(v, ',')) cloudsCover = float(atof(comma + 1));
+		}
 		else if (arg("--barrier")) barrierSpec = atoi(argv[++i]);
 		else if (arg("--far")) farMetres = float(atof(argv[++i]));
 		else if (!strcmp(argv[i], "--vis")) useVis = true;
@@ -250,6 +259,12 @@ int main(int argc, char** argv) {
 		printf("grass: %d (%s)\n", int(app.settings().grass), app.grass().available() ? "in the data" : "NOT in the data");
 	}
 	if (barrierSpec >= 0) app.settings().barrier = u8(clamp(barrierSpec, 0, 2));
+	if (cloudsSpec >= 0) {
+		app.settings().cloudShadows = u8(clamp(cloudsSpec, 0, 2));
+		app.setCloudCoverage(cloudsCover);
+		app.applySettings();
+		printf("clouds' shadows: %d (%s)\n", int(app.settings().cloudShadows), app.world().hasSunMasks() ? "sun's masks in the data" : "NOT in the data: no sun's masks");
+	}
 	if (lampsSpec >= 0) {
 		app.settings().lamps = u8(clamp(lampsSpec, 0, 2));
 		app.applySettings();
@@ -748,6 +763,12 @@ int main(int argc, char** argv) {
 		printf("barrier quadrants centre (%.0f %.0f %.0f) cm; strikes Q1 %u Q2 %u Q3 %u Q4 %u; starts %u %u %u %u\n",
 		       double(b.thunderCentre()[0]), double(b.thunderCentre()[1]), double(b.thunderCentre()[2]), b.strikesIn(0), b.strikesIn(1),
 		       b.strikesIn(2), b.strikesIn(3), b.startsIn(0), b.startsIn(1), b.startsIn(2), b.startsIn(3));
+	}
+	if (cloudsSpec >= 0) {
+		const Vec3 c = app.camera().pos;
+		printf("clouds            setting %d, coverage %.2f, darkness %.2f; %u masks written, %u carry them; light left at the camera %.2f\n",
+		       int(app.settings().cloudShadows), double(app.clouds().coverage()), double(app.clouds().dark()), app.world().cloudMasksWritten(),
+		       app.world().cloudMasksReady(), double(app.world().cloudShade(c.x, c.z)));
 	}
 	if (lampsSpec >= 0) {
 		const LampStats& ls = app.lamps().stats();

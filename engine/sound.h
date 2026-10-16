@@ -77,7 +77,8 @@ public:
 	// own; `range` cm the sound carries (0: the default). Returns a handle
 	// for stop(), 0 if nothing was started (it may still start a moment
 	// later, when its sample is in memory).
-	u32 play(const char* name, const Vec3* at, float gain = 1.0f, float range = 0.0f);
+	// `once`: played one time even if the scripts make it a loop (fix184: the Barrier's thunder).
+	u32 play(const char* name, const Vec3* at, float gain = 1.0f, float range = 0.0f, bool once = false);
 	u32 playHash(u32 nameHash, const Vec3* at, float gain = 1.0f, float range = 0.0f);
 	void stop(u32 handle);
 	void stopAll();
@@ -94,6 +95,8 @@ public:
 	bool addSynthetic(const char* name, const i16* samples, u32 frames, u32 rate, bool loop);
 	// Does a sound of this name exist (an instance of C_SFX, or a sample of that name)?
 	bool knows(const char* name);
+	// Known, and its sample is in the archive (knows() only asks the scripts: a file the baker could not take is silent).
+	bool playable(const char* name);
 	// True if the instance of that name plays in a loop (false if unknown).
 	bool isLoop(const char* name);
 

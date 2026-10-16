@@ -856,6 +856,9 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			chunkerOpt.water.riverWidth = opt.riverWidth;
 			chunkerOpt.water.shore = opt.waterShore;
 			chunkerOpt.water.reachTiles = std::max(1, int(std::lround(opt.waterReach / (opt.waterGrid * float(chunkerOpt.water.cellsPerTile)))));
+			chunkerOpt.water.reflect = scene.indoor ? 0.0f : opt.waterReflect;
+			chunkerOpt.water.reflectReach = opt.waterReflectReach;
+			chunkerOpt.water.threads = opt.threads;
 		}
 		chunkerOpt.vertexFx = opt.ao.level != AO_OFF || hasWind || waterGrid;
 		ChunkerStats cs;
@@ -870,6 +873,11 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				            static_cast<unsigned long long>(cs.water.waterIn), static_cast<unsigned long long>(cs.water.waterOut)));
 			else
 				line("water grid (--water-grid): no shore found - the water is left flat");
+			if (cs.water.reflectCorners > 0)
+				line(format("water reflections (--water-reflect %.2f, %.0f m): %llu corners (%llu under the ground), %llu rays, %llu water vertices tinted",
+				            double(chunkerOpt.water.reflect), double(opt.waterReflectReach) / 100.0,
+				            static_cast<unsigned long long>(cs.water.reflectCorners), static_cast<unsigned long long>(cs.water.reflectBuried),
+				            static_cast<unsigned long long>(cs.water.reflectRays), static_cast<unsigned long long>(cs.water.reflectVertices)));
 		}
 
 		// ---- portals ----

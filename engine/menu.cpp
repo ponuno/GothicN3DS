@@ -61,6 +61,8 @@ const char* const kFarLayerNotes[] = {"Дальше дальности прор�
 const char* const kSunShadows[] = {"Выкл", "Обычные", "Сильные", "Максимум"};
 const char* const kSunShadowNotes[] = {"Без тени от солнца (--sun-shadow)", "Тень деревьев и домов днём (--sun-shadow)", "Тень темнее и дольше днём",
                                        "Самая тёмная тень"};
+const char* const kCloudShadows[] = {"Выкл", "Обычные", "Тёмные"};
+const char* const kCloudShadowNotes[] = {"Без теней от облаков", "Плывут по земле днём (нужна тень солнца)", "Темнее (нужна тень от солнца)"};
 const char* const kGrass[] = {"Выкл", "Мало", "Много"};
 const char* const kGrassNotes[] = {"Новая трава выключена (мир с --grass)", "Половина пучков, до 20 м (мир с --grass)",
                                    "Все пучки, до 28 м (мир с --grass)"};
@@ -139,6 +141,7 @@ const Item kGfxPlus[] = {
     {"Волны на воде", CHOICE, &Settings::waves, kWaves, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --water-grid", nullptr},
     {"Тени персонажей", CHOICE, &Settings::shadows, kShadows, 4, 0, 0, nullptr, 0, nullptr, kShadowNotes},
     {"Тени от солнца", CHOICE, &Settings::sunShadows, kSunShadows, 4, 0, 0, nullptr, 0, nullptr, kSunShadowNotes},
+    {"Тени облаков", CHOICE, &Settings::cloudShadows, kCloudShadows, 3, 0, 0, nullptr, 0, nullptr, kCloudShadowNotes},
     {"Трава", CHOICE, &Settings::grass, kGrass, 3, 0, 0, nullptr, 0, nullptr, kGrassNotes},
     {"Дальний план", CHOICE, &Settings::farLayer, kFarLayer, 4, 0, 0, nullptr, 0, nullptr, kFarLayerNotes},
     {"Дальняя геометрия", CHOICE, &Settings::farGeometry, kFarGeometry, 4, 0, 0, nullptr, 0, "Упрощённые дальние чанки (мир с --lod)", nullptr},

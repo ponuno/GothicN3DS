@@ -133,6 +133,10 @@ struct Settings {
 	// (fix184) The Barrier's thunder (Barrier::Thunder): 0 as in the game (MFX_Barriere_Ambient; else the far thunder), 1 near, 2 the long roll, 3 the game's
 	// lightning spell, 4 none. (At the end: an older file, shorter, keeps the default.)
 	u8 barrierThunder = 0;
+	// (fix186) The shadows of clouds drifting over the land (clouds.h; needs the sun's shadow): 0 off, 1 on, 2 darker.
+	// (At the end: an older file keeps the default.)
+	u8 cloudShadows = 0;
+	float cloudShadowScale() const { return cloudShadows == 1 ? 1.0f : cloudShadows == 2 ? 1.45f : 0.0f; }
 	float waveHeightCm() const { return waves == 1 ? 10.0f : waves == 2 ? 22.0f : waves == 3 ? 40.0f : 0.0f; }
 	float lodFadeMs() const { return lodFade == 0 ? 1.0f : lodFade == 2 ? 900.0f : 350.0f; }
 	float lodDistanceCm() const;

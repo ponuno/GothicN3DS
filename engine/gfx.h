@@ -69,6 +69,10 @@ void shutdown();
 // `data` is the PICA-native mip chain that follows the TexHeader.
 Texture* textureCreate(const TexHeader& h, const u8* data);
 void textureDestroy(Texture* t);
+// fix186: writes a sun's mask (made from a TEX_L4 texture of one level) anew: `texels` is width x height bytes, 0..255, in
+// the PICA's order (g3ds/tex.h texL4Nibble: texel n is nibble n of the TEX_L4 level). In place: a frame the GPU is still
+// drawing may see part of the new values (they change little from one write to the next).
+void textureUpdateMask(Texture* t, const u8* texels);
 
 Mesh* meshCreate(const WorldVertex* vertices, u32 vertexCount, const u16* indices, u32 indexCount);
 void meshDestroy(Mesh* m);
@@ -111,6 +115,9 @@ struct ChunkFx {
 	// dark texels is darkened by setSunShadow's strength - except cut-out, swaying, glowing and water materials, and characters.
 	Texture* sun = nullptr;
 	float sunX0 = 0.0f, sunZ0 = 0.0f, sunScaleX = 0.0f, sunScaleZ = 0.0f;
+	// fix186: >= 0: the strength this chunk's mask is drawn with instead of setSunShadow's - 1 for a mask the clouds were
+	// written into (World::updateClouds: it holds the whole darkness itself, the sun's and the clouds').
+	float sunDark = -1.0f;
 };
 // fix148: lamps (torches, fire places) lighting the static world - point lights without normals or shadows, as
 // ZenGin's dynamic lights. A corner at distance d from a lamp gets rgb * lampFalloff(d^2, range), times

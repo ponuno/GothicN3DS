@@ -5,6 +5,7 @@
 #include "audio_host.h"
 #include "bake.h"
 #include "water_grid.h"
+#include "clouds.h"
 #include "sound_bake.h"
 #include "chunker.h"
 #include "vcache.h"
@@ -343,6 +344,70 @@ static void testWaterGrid() {
 		CHECK(channel(400.0f, true) == 0);   // a 8 m wide river: calm
 		CHECK(channel(6000.0f, true) > 60);  // a 120 m wide water: waves
 	}
+}
+
+// fix185: reflections baked into the fine water (WaterGridOptions::reflect).
+static void testWaterReflect() {
+	SrcScene scene;
+	scene.materials.resize(2);
+	scene.materials[1].water = true;
+	auto tri = [&](u32 m, float x0, float y0, float z0, float x1, float y1, float z1, float x2, float y2, float z2, u8 r, u8 g, u8 b) {
+		SrcTriangle t {};
+		t.material = m;
+		const float p[3][3] = {{x0, y0, z0}, {x1, y1, z1}, {x2, y2, z2}};
+		for (int k = 0; k < 3; ++k) {
+			for (int a = 0; a < 3; ++a) t.v[k].pos[a] = p[k][a];
+			t.v[k].rgba[0] = r, t.v[k].rgba[1] = g, t.v[k].rgba[2] = b;
+			t.v[k].rgba[3] = 255;
+		}
+		scene.triangles.push_back(t);
+	};
+	tri(1, -20000, 0, -20000, 20000, 0, -20000, -20000, 0, 20000, 180, 180, 180);
+	tri(1, 20000, 0, -20000, 20000, 0, 20000, -20000, 0, 20000, 180, 180, 180);
+	// a shore, and a green cliff 30 m high standing in the water along z = 0, x -1000..3000
+	tri(0, 0, -300, 0, 2000, 300, 0, 0, 300, 2000, 120, 120, 120);
+	tri(0, 2000, 300, 0, 2000, 300, 2000, 0, 300, 2000, 120, 120, 120);
+	tri(0, -1000, -200, 0, 3000, -200, 0, -1000, 3000, 0, 60, 140, 60);
+	tri(0, 3000, -200, 0, 3000, 3000, 0, -1000, 3000, 0, 60, 140, 60);
+	auto run = [&](float reflect, unsigned threads, WaterGridStats* st = nullptr) {
+		WaterGridOptions o;
+		o.cell = 200.0f;
+		o.reflect = reflect;
+		o.threads = threads;
+		WaterGrid g(scene, o);
+		std::vector<SrcTriangle> out;
+		for (int i = 0; i < 2; ++i) g.cut(scene.triangles[size_t(i)], out);
+		if (st) *st = g.stats();
+		return out;
+	};
+	const std::vector<SrcTriangle> off = run(0.0f, 1);
+	WaterGridStats st;
+	const std::vector<SrcTriangle> on = run(0.8f, 1, &st);
+	CHECK(off.size() == on.size() && st.reflectCorners > 0 && st.reflectRays > 0 && st.reflectVertices > 0);
+	// without it nothing changes; with it the water by the cliff (in front of it, z -300..-700) is darker and greener,
+	// and the open sea far out is as it was
+	bool offPlain = true, farPlain = true;
+	int nearN = 0, nearDark = 0, nearGreen = 0;
+	for (size_t i = 0; i < on.size(); ++i)
+		for (int k = 0; k < 3; ++k) {
+			const SrcVertex& a = off[i].v[k];
+			const SrcVertex& b = on[i].v[k];
+			offPlain = offPlain && a.rgba[0] == 180 && a.rgba[1] == 180;
+			if (std::fabs(b.pos[0]) > 12000 || std::fabs(b.pos[2]) > 12000) farPlain = farPlain && b.rgba[0] == 180 && b.rgba[1] == 180 && b.rgba[2] == 180;
+			if (b.pos[0] > 0 && b.pos[0] < 2000 && b.pos[2] < -300 && b.pos[2] > -700) {
+				++nearN;
+				nearDark += b.rgba[0] < 140;
+				nearGreen += b.rgba[1] > b.rgba[0] && b.rgba[1] > b.rgba[2];
+			}
+		}
+	CHECK(offPlain && farPlain);
+	CHECK(nearN > 10 && nearDark == nearN && nearGreen == nearN);
+	// the same with threads
+	const std::vector<SrcTriangle> par = run(0.8f, 4);
+	bool same = par.size() == on.size();
+	for (size_t i = 0; same && i < on.size(); ++i)
+		for (int k = 0; k < 3; ++k) same = same && std::equal(par[i].v[k].rgba, par[i].v[k].rgba + 4, on[i].v[k].rgba);
+	CHECK(same);
 }
 
 static void testHash() {
@@ -4834,7 +4899,7 @@ static void testSound() {
 		// fix184: the Barrier's thunder follows the menu's choice (the game's MFX_Barriere_Ambient, else the baker's thunders).
 		if (sound.knows("G3_THUNDER_FAR") && sound.knows("G3_THUNDER_NEAR") && sound.knows("G3_THUNDER_ROLL")) {
 			Barrier bar;
-			const char* const want[] = {"G3_THUNDER_FAR", "G3_THUNDER_NEAR", "G3_THUNDER_ROLL"};
+			const char* const want[] = {"G3_THUNDER_ROLL", "G3_THUNDER_NEAR", "G3_THUNDER_ROLL"}; // (0: no game sound here: the roll)
 			for (u8 c = 0; c < 3; ++c) {
 				bar.update(0.016f, Barrier::OFF, c, true, {0, 0, 0}, sound, app.pak());
 				CHECK(bar.thunderName() && std::strcmp(bar.thunderName(), want[c]) == 0);
@@ -4846,6 +4911,7 @@ static void testSound() {
 			// A game that has it: "As in the game" is MFX_Barriere_Ambient (oCBarrier plays it for every strike).
 			static i16 click[256] = {};
 			CHECK(sound.addSynthetic("MFX_BARRIERE_AMBIENT", click, 256, 16000, false));
+			CHECK(sound.playable("MFX_BARRIERE_AMBIENT") && sound.playable("G3_THUNDER_ROLL") && !sound.playable("SFX_NO_SUCH_THING"));
 			Barrier own;
 			own.update(0.016f, Barrier::OFF, Barrier::THUNDER_FAR, true, {0, 0, 0}, sound, app.pak());
 			CHECK(own.thunderName() && std::strcmp(own.thunderName(), "MFX_BARRIERE_AMBIENT") == 0);
@@ -12958,6 +13024,110 @@ static void testSunShadow() {
 	CHECK(darker > 200 && lighter == 0 && night == 0.0f && morning < 0.05f);
 }
 
+// fix186: the clouds' shadows.
+static void testClouds() {
+	// The field: the share asked for is under a cloud (roughly), the edges are soft, and it drifts with the wind.
+	Clouds c;
+	c.set(0.3f, 0.5f, 100.0);
+	u32 under = 0, total = 0;
+	float worstStep = 0.0f;
+	for (int j = 0; j < 200; ++j)
+		for (int i = 0; i < 200; ++i) {
+			const float x = float(i) * 2300.0f - 50000.0f, z = float(j) * 2100.0f - 50000.0f;
+			const float l = c.light(x, z);
+			under += l < 0.5f;
+			++total;
+			worstStep = std::max(worstStep, std::fabs(c.light(x + 100.0f, z) - l));
+		}
+	const float share = float(under) / float(total);
+	std::printf("  clouds: %.0f%% of the land under a cloud (asked 30%%), at most %.3f of light per metre\n", double(share * 100.0f), double(worstStep));
+	CHECK(share > 0.15f && share < 0.45f && worstStep < 0.12f);
+	Clouds later;
+	later.set(0.3f, 0.5f, 110.0);
+	float moved = 0.0f;
+	for (int i = 0; i < 50; ++i) {
+		const float x = float(i) * 1300.0f, z = float(i) * -700.0f;
+		moved = std::max(moved, std::fabs(later.light(x + Clouds::WIND_X * 10.0f, z + Clouds::WIND_Z * 10.0f) - c.light(x, z)));
+	}
+	CHECK(moved < 0.02f);
+	// The darkness: what is left of the light; none with no darkness.
+	CHECK(std::fabs(c.shade(0, 0) - (1.0f - 0.5f * (1.0f - c.light(0, 0)))) < 1e-5f);
+	Clouds none;
+	none.set(0.9f, 0.0f, 5.0);
+	CHECK(!none.active() && none.shade(1234, 5678) == 1.0f);
+	// The weather: by day in fair weather, none at night, in rain or when it is overcast.
+	float cov = 0, dark = 0;
+	Clouds::fromWeather(0.0f, 0.0f, 0.8f, cov, dark);
+	CHECK(dark > 0.3f && cov > 0.15f && cov < 0.3f);
+	Clouds::fromWeather(0.0f, 0.0f, -0.3f, cov, dark);
+	CHECK(dark == 0.0f);
+	Clouds::fromWeather(0.3f, 1.0f, 0.8f, cov, dark);
+	CHECK(dark == 0.0f);
+	Clouds::fromWeather(1.0f, 0.0f, 0.8f, cov, dark);
+	CHECK(dark < 0.01f);
+
+	// In the game (the world of the sun's test, on the PC's renderer): the masks are written with the clouds in them, the
+	// ground under a cloud is darker, nothing is lighter; at night nothing is written; off, the masks are as baked again.
+	const std::string path = gDir + "/sun.pak";
+	{
+		std::vector<BakeWorld> worlds;
+		bakeLifeWorlds(syntheticScriptSource(), path, worlds, true, true);
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.world().hasSunMasks()) return;
+	app.skipChapters();
+	app.npcs().game().setQuiet(true);
+	app.weather().configure(WEATHER_CLEAR, true);
+	app.weather().settle();
+	app.settings().timeFlow = 0;
+	app.settings().sunShadows = 1;
+	app.settings().cloudShadows = 0;
+	app.applySettings();
+	app.environment().timeOfDay = 10.0f; // (the sun's shadow is all but gone so far from the hour baked: what darkens is the clouds)
+	app.world().preload(app.camera().pos);
+	for (int i = 0; i < 30; ++i) app.update(Input {}, 1.0f / 30.0f);
+	app.environment().timeOfDay = 10.0f;
+	app.render();
+	app.render();
+	const std::vector<u8> off(gfx::softFramebuffer(), gfx::softFramebuffer() + gfx::SCREEN_W * gfx::SCREEN_H * 4);
+	CHECK(app.world().cloudMasksWritten() == 0);
+	app.settings().cloudShadows = 1;
+	app.applySettings();
+	app.setCloudCoverage(1.0f); // (a cloud over all of it)
+	for (int i = 0; i < 40; ++i) app.render();
+	const u32 written = app.world().cloudMasksWritten(), ready = app.world().cloudMasksReady();
+	const u8* on = gfx::softFramebuffer();
+	u32 darker = 0, lighter = 0;
+	for (u32 i = 0; i < u32(gfx::SCREEN_W * gfx::SCREEN_H); ++i) {
+		const int d = int(on[i * 4]) + on[i * 4 + 1] + on[i * 4 + 2] - (int(off[i * 4]) + off[i * 4 + 1] + off[i * 4 + 2]);
+		darker += d < -6;
+		lighter += d > 3;
+	}
+	const Vec3 cam = app.camera().pos;
+	std::printf("  in the game: %u masks written (%u carry the clouds), %u pixels darker, %u lighter; the light left at the camera %.2f\n",
+	            written, ready, darker, lighter, double(app.world().cloudShade(cam.x, cam.z)));
+	CHECK(written > 0 && ready > 0 && darker > 2000 && lighter == 0 && app.world().cloudShade(cam.x, cam.z) < 0.8f);
+	// At night: nothing drawn, nothing written.
+	app.environment().timeOfDay = 23.0f;
+	app.render();
+	const u32 atNight = app.world().cloudMasksWritten();
+	for (int i = 0; i < 10; ++i) app.render();
+	CHECK(app.world().cloudMasksWritten() == atNight && app.world().cloudShade(cam.x, cam.z) == 1.0f);
+	// Off: the masks as baked, the picture as before.
+	app.environment().timeOfDay = 10.0f;
+	app.settings().cloudShadows = 0;
+	app.applySettings();
+	app.setCloudCoverage(-1.0f);
+	app.render();
+	app.render();
+	const u8* back = gfx::softFramebuffer();
+	u32 differ = 0;
+	for (u32 i = 0; i < u32(gfx::SCREEN_W * gfx::SCREEN_H) * 4; ++i) differ += std::abs(int(back[i]) - int(off[i])) > 2;
+	CHECK(app.world().cloudMasksReady() == 0 && differ < 50);
+}
+
 int main(int argc, char** argv) {
 	gDir = argc > 1 ? argv[1] : ".";
 	const char* only = argc > 2 ? argv[2] : nullptr; // run the tests whose name contains this
@@ -12989,6 +13159,8 @@ int main(int argc, char** argv) {
              {"water light", testWaterLight},
              {"fog zones", testFogZones},
              {"water grid", testWaterGrid},
+             {"water reflect", testWaterReflect},
+             {"clouds", testClouds},
              {"lamp light", testLampLight},
 	             {"detail fade", testDetailFade},
              {"thinning", testThinning},

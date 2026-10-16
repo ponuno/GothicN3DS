@@ -26,6 +26,7 @@
 #include "settings.h"
 #include "sky.h"
 #include "barrier.h"
+#include "clouds.h"
 #include "weather.h"
 #include "sound.h"
 #include "music.h"
@@ -97,8 +98,12 @@ public:
 		SKIP_HERO = 1u << 5, SKIP_GROUND = 1u << 6, SKIP_BLENDED = 1u << 7, SKIP_GODRAYS = 1u << 8, SKIP_RAIN = 1u << 9,
 		SKIP_PARTICLES = 1u << 10, SKIP_OVERLAY = 1u << 11, SKIP_GRASS = 1u << 12,
 		SKIP_LAMPS = 1u << 13, // fix148: the lamps light nothing (debug.txt lamps / nolamps)
+		SKIP_CLOUDS = 1u << 14, // fix186: no clouds' shadows, whatever the menu says (debug.txt noclouds)
 	};
 	void setRenderSkip(u32 skip) { _renderSkip = skip; }
+	// fix186, for the tests: the clouds' coverage, 0..1, whatever the weather says (< 0: the weather's).
+	void setCloudCoverage(float coverage) { _cloudCoverage = coverage; }
+	const Clouds& clouds() const { return _clouds; }
 	// debug.txt `noweathersfx`: the baker's own rain and thunder (meta/weathersfx L/N/F) are not taken.
 	void setOwnWeatherSfx(bool on) { _ownWeatherSfx = on; }
 	u32 renderSkip() const { return _renderSkip; }
@@ -551,6 +556,8 @@ private:
 	Npcs _npcs;
 	Sky _sky;
 	Weather _weather;
+	Clouds _clouds; // fix186: the clouds' shadows of this frame (render())
+	float _cloudCoverage = -1.0f; // >= 0: the share of the land under a cloud, whatever the weather says (setCloudCoverage)
 	Camera _cam;
 	Environment _env;
 	const char* _error = "";

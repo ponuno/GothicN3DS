@@ -806,6 +806,14 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3], const World* worl
 			const float sky = float(a.light[3]) * (1.0f / 255.0f);
 			light[i] = max(baked * (1.0f + sky * (dayLight[i] - 1.0f)) * 1.15f, 0.22f);
 		}
+		// fix186: under a cloud's shadow, as far as the place sees the sky.
+		if (world) {
+			const float cloud = world->cloudShade(feet.x, feet.z);
+			if (cloud < 1.0f) {
+				const float k = 1.0f + float(a.light[3]) * (1.0f / 255.0f) * (cloud - 1.0f);
+				for (int i = 0; i < 3; ++i) light[i] = max(light[i] * k, 0.22f);
+			}
+		}
 		// fix148: and the torches and fires near (a lamp behind a wall gives nothing).
 		if (world && world->lamps())
 			world->lamps()->lightAt({feet.x, feet.y + 90.0f, feet.z}, float(a.light[3]) * (1.0f / 255.0f), light, world);

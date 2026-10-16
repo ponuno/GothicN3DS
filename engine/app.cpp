@@ -1024,6 +1024,20 @@ void App::render() {
 	}
 	_renderTimes = RenderTimes {};
 	gfx::setSunShadow(indoor ? 0.0f : sunShadowDarkness());
+	// fix186: the clouds' shadows - the field of this frame, then a few of the sun's masks written anew with it.
+	bool cloudsDrawn = false;
+	{
+		float sun[3];
+		Sky::sunDirection(_env.timeOfDay, sun);
+		float coverage = 0.0f, dark = 0.0f;
+		Clouds::fromWeather(_weather.cloud(), _weather.rain(), sun[1], coverage, dark);
+		if (_cloudCoverage >= 0.0f) coverage = _cloudCoverage;
+		_world.config().clouds = _settings.sunShadows != 0 && _settings.cloudShadows != 0 && !(_renderSkip & SKIP_CLOUDS);
+		const bool on = !indoor && _world.config().clouds && _world.hasSunMasks() && !_underwater;
+		_clouds.set(coverage, on ? min(dark * _settings.cloudShadowScale(), 0.85f) : 0.0f, _clock);
+		_world.updateClouds(_clouds, indoor ? 0.0f : sunShadowDarkness());
+		cloudsDrawn = on && _clouds.active();
+	}
 	// Graphics+: the new grass - which tiles round the camera, made into meshes a little a frame (once, for both eyes).
 	{
 		Grass::Frame gf;
@@ -1031,6 +1045,7 @@ void App::render() {
 		gf.radius = indoor || _underwater || (_renderSkip & SKIP_GRASS) ? 0.0f : grassRadius();
 		gf.share = _settings.grassShare();
 		gf.darkness = indoor ? 0.0f : sunShadowDarkness();
+		gf.clouds = cloudsDrawn ? &_clouds : nullptr;
 		// Who presses it aside: the hero first, then the inhabitants and beasts nearest the camera (within 15 m).
 		if (_hero.loaded() && _heroVisible && !_player.flying) gf.press[gf.pressCount++] = Grass::Frame::Presser {_hero.feet(), Grass::TRAMPLE};
 		float nearSq[Grass::PRESSERS];
@@ -1750,6 +1765,7 @@ void App::applySettings() {
 	_wavesWanted = _settings.waveHeightCm();
 	cfg.waves = _wavesWanted;
 	cfg.sunMasks = _settings.sunShadows != 0;
+	cfg.clouds = cfg.sunMasks && _settings.cloudShadows != 0 && !(_renderSkip & SKIP_CLOUDS);
 	setLanguage(_settings.language);
 	_ahead.setEnabled(_settings.readAhead != 0);
 	_env.dayLength = _settings.dayLengthSeconds();

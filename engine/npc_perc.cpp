@@ -376,6 +376,13 @@ void Npcs::faceHero(NpcActor& a, float dt) {
 	}
 	// One that eats a carcass pays the player no heed (ZS_MM_RTN_EATGROUND): it neither turns nor threatens; one asleep does turn.
 	if (a.state && strstr(stateName(a.state), "EAT")) return;
+	// fix190: nor one in a state of its scripts that turns it itself (ZS_MM_AssessEnemy: AI_TurnToNpc to OTHER, who
+	// need not be the player - the nearest enemy may be a person of the camp). Turning it to the player as well, between
+	// its own turns, had the two pull it to and fro.
+	if (a.state) {
+		const char* s = stateName(a.state);
+		if (strstr(s, "ASSESS") || strstr(s, "WARN") || strstr(s, "THREAT") || strstr(s, "FLEE") || strstr(s, "ATTACK")) return;
+	}
 	if (a.phase != NpcActor::IDLE && a.phase != NpcActor::WAITING) return;
 	if (a.action.kind != NPC_ACT_NONE && a.action.kind != NPC_ACT_WAIT) return;
 	if (a.state && inFightState(a)) return; // (asleep it turns too: the beast has noticed him)

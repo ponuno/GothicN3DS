@@ -133,6 +133,7 @@ struct NpcStats {
 	u32 stateCalls = 0;   // script functions of states called since the start
 	u32 actions = 0;      // actions carried out since the start
 	u32 queueFull = 0;    // actions dropped because a queue was full
+	u32 queueAborts = 0;  // fix190: actions in hand ended by the scripts' Npc_ClearAIQueue (a walk, a wait, a gesture)
 	u32 paths = 0;        // ways found through the net
 	u32 noPath = 0;       // ways not found (walked straight instead)
 	u32 snapped = 0;      // characters put at their goal because they could not get there

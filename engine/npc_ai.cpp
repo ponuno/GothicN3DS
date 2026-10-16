@@ -1542,8 +1542,22 @@ bool Npcs::takeHeroTeleport(float pos[3], float& yaw) {
 void Npcs::xClearQueue(ScriptVm& vm, void* user) {
 	Npcs& self = *static_cast<Npcs*>(user);
 	if (NpcActor* a = self.actorFor(vm.popInstance())) {
-		// (The action that called this, if any, goes with the rest.)
-		a->queueHead = a->queueCount = 0;
+		// fix190: the action in hand goes too, as OpenGothic's Npc::clearAiQueue has it (the walk, the wait, the
+		// gesture end at once) - not only what was queued after it. Before, a beast walking to its roaming spot or
+		// in the middle of R_ROAM kept at it while its reaction to the player (B_MM_AssessEnemy: Npc_ClearAIQueue,
+		// AI_StartState ZS_MM_AssessEnemy) waited behind it: seconds, or for good if the walk never ended - and it
+		// never turned to him. (Not an action that runs scripts itself - a state being begun, a talk - nor a fight
+		// move or a thing in hand: those end their own way.)
+		const u8 k = a->action.kind;
+		const bool interruptible = k == NPC_ACT_GOTO_NODE || k == NPC_ACT_GOTO_POS || k == NPC_ACT_GOTO_NEXT_FP || k == NPC_ACT_GOTO_NPC ||
+		                           k == NPC_ACT_ALIGN || k == NPC_ACT_TURN_NPC || k == NPC_ACT_PLAY_ANI || k == NPC_ACT_WAIT ||
+		                           k == NPC_ACT_STAND_UP || k == NPC_ACT_USE_MOB || k == NPC_ACT_LOOK;
+		if (interruptible) {
+			self.abortActions(*a);
+			++self._stats.queueAborts;
+		} else {
+			a->queueHead = a->queueCount = 0;
+		}
 	}
 }
 

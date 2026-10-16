@@ -51,6 +51,7 @@
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <cmath>
 #include <set>
 #include <climits>
@@ -12161,6 +12162,264 @@ static void testChests() {
 }
 
 
+// fix190: beasts turn to the player with the game's own threat (ZS_MM_AssessEnemy of Gothic 1, as written there:
+// B_MM_AssessEnemy starts it; its loop turns the beast (AI_TurnToNpc) and growls (T_WARN) while the player is within
+// its threat range, and attacks after AIV_MM_DrohTime). The player comes up behind a scavenger on its way along the net:
+// within two seconds it faces him. (Before fix190 Npc_ClearAIQueue left the walk in hand going and the beast went on
+// with its back to him.)
+static void testBeastTurn() {
+	std::string source = syntheticScriptSource();
+	const std::string old = "func void B_MM_AssessEnemy() {\n\tmm_enemy_seen += 1;\n\tNpc_SetTarget(self, other);\n\tAI_StartState(self, ZS_MM_Attack, 0, \"\");\n};";
+	CHECK(source.find(old) != std::string::npos);
+	if (source.find(old) == std::string::npos) return;
+	source.replace(source.find(old), old.size(), R"(
+const int AIV_MM_Behaviour = 30;
+const int AIV_MM_PercRange = 31;
+const int AIV_MM_DrohRange = 32;
+const int AIV_MM_AttackRange = 33;
+const int AIV_MM_DrohTime = 34;
+const int PASSIVE = 1;
+const int HUNTER = 2;
+const int PACKHUNTER = 3;
+var int mm_assess_loops;
+extern func int Npc_CanSeeNpc(var C_NPC a, var C_NPC b);
+func void B_MM_AssessEnemy() {
+	mm_enemy_seen += 1;
+	if ((Npc_GetDistToNpc(self, other) < self.aivar[AIV_MM_PercRange]) && Npc_CanSeeNpcFreeLOS(self, other)) {
+		if (Wld_GetGuildAttitude(self.guild, other.guild) != ATT_HOSTILE) { return; };
+		Npc_ClearAIQueue(self);
+		AI_StartState(self, ZS_MM_AssessEnemy, 0, "");
+	};
+};
+func void ZS_MM_AssessEnemy() {
+	Npc_SetPercTime(self, 2);
+	Npc_PercEnable(self, PERC_ASSESSDAMAGE, B_MM_ReactToDamage);
+	if (self.aivar[AIV_MM_Behaviour] == HUNTER) {
+		AI_StandUp(self);
+		AI_TurnToNpc(self, other);
+		AI_PlayAni(self, "T_WARN");
+		AI_SetWalkmode(self, NPC_WALK);
+	};
+	if ((self.aivar[AIV_MM_Behaviour] == PASSIVE) || (self.aivar[AIV_MM_Behaviour] == PACKHUNTER)) {
+		AI_StandUp(self);
+		AI_LookAtNpc(self, other);
+	};
+};
+func int ZS_MM_AssessEnemy_loop() {
+	mm_assess_loops += 1;
+	if (Npc_GetDistToNpc(self, other) > self.aivar[AIV_MM_PercRange]) { return 1; };
+	if ((Npc_GetDistToNpc(self, other) <= self.aivar[AIV_MM_PercRange]) && (Npc_GetDistToNpc(self, other) > self.aivar[AIV_MM_DrohRange])) {
+		if ((self.aivar[AIV_MM_Behaviour] == PASSIVE) || (self.aivar[AIV_MM_Behaviour] == PACKHUNTER)) {
+			if (!Npc_CanSeeNpc(self, other)) { AI_TurnToNpc(self, other); };
+		};
+		if (self.aivar[AIV_MM_Behaviour] == HUNTER) { AI_GotoNpc(self, other); };
+	};
+	if ((Npc_GetDistToNpc(self, other) <= self.aivar[AIV_MM_DrohRange]) && (Npc_GetDistToNpc(self, other) > self.aivar[AIV_MM_AttackRange])) {
+		if ((self.aivar[AIV_MM_Behaviour] == PASSIVE) || (self.aivar[AIV_MM_Behaviour] == PACKHUNTER)) {
+			if (Npc_GetStateTime(self) > self.aivar[AIV_MM_DrohTime]) {
+				Npc_SetTarget(self, other);
+				Npc_ClearAIQueue(self);
+				AI_StartState(self, ZS_MM_Attack, 0, "");
+			} else {
+				AI_TurnToNpc(self, other);
+				AI_PlayAni(self, "T_WARN");
+				Npc_SendPassivePerc(self, PERC_ASSESSWARN, other, self);
+			};
+		};
+		if (self.aivar[AIV_MM_Behaviour] == HUNTER) { AI_GotoNpc(self, other); };
+	} else {
+		Npc_SetStateTime(self, 0);
+	};
+	if (Npc_GetDistToNpc(self, other) <= self.aivar[AIV_MM_AttackRange]) {
+		Npc_SetTarget(self, other);
+		Npc_ClearAIQueue(self);
+		AI_StandUp(self);
+		AI_StartState(self, ZS_MM_Attack, 0, "");
+	};
+	return 0;
+};
+func void ZS_MM_AssessEnemy_end() {
+	AI_StopLookAt(self);
+};)");
+	const std::string proto = "\tguild = GIL_SCAVENGER;\n\taivar[AIV_WASDEFEATED] = FALSE;";
+	CHECK(source.find(proto) != std::string::npos);
+	if (source.find(proto) == std::string::npos) return;
+	source.replace(source.find(proto), proto.size(), proto + "\n\taivar[AIV_MM_Behaviour] = PASSIVE; aivar[AIV_MM_PercRange] = 1200; aivar[AIV_MM_DrohRange] = 1000;\n\taivar[AIV_MM_AttackRange] = 700; aivar[AIV_MM_DrohTime] = 5;");
+	// Roaming is a long walk to and fro (the original's AI_GotoWP along the net): the beast is mostly on its way.
+	{
+		const std::string roam = "\t\tif (Wld_IsNextFPAvailable(self, \"FP_ROAM\")) {\n\t\t\tAI_GotoNextFP(self, \"FP_ROAM\");\n\t\t\tAI_PlayAni(self, \"T_WARN\");\n\t\t};";
+		CHECK(source.find(roam) != std::string::npos);
+		if (source.find(roam) != std::string::npos)
+			source.replace(source.find(roam), roam.size(),
+			               "\t\tif (Npc_GetDistToWP(self, \"ROAD_1\") < 300) { AI_GotoWP(self, \"FOREST_SCAVENGER_3\"); } else { AI_GotoWP(self, \"ROAD_1\"); };");
+	}
+	// Only the player is its enemy here (the people of the camp would be, too: the nearest is threatened).
+	{
+		const std::string att = "\tWld_SetGuildAttitude(GIL_SCAVENGER, ATT_HOSTILE, GIL_NONE);";
+		CHECK(source.find(att) != std::string::npos);
+		if (source.find(att) != std::string::npos)
+			source.replace(source.find(att), att.size(), att + "\n\tWld_SetGuildAttitude(GIL_SCAVENGER, ATT_NEUTRAL, GIL_GRD);\n\tWld_SetGuildAttitude(GIL_SCAVENGER, ATT_NEUTRAL, GIL_VLK);");
+	}
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/beastturn.pak";
+	bakeLifeWorlds(source, path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 1;
+	app.settings().perception = 1;
+	app.settings().immortal = 1;
+	app.applySettings();
+	npcs.config().range = 20000.0f;
+	app.environment().timeOfDay = 12.0f;
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	const auto global = [&](const char* name) { return g.vm().getInt(g.vm().find(name)); };
+	app.teleport({-7000.0f, 900.0f, -7000.0f});
+	run(3.0f);
+	int b = -1;
+	for (u32 i = 0; i < g.npcCount() && b < 0; ++i)
+		if (g.isMonster(g.npc(i)) && std::strcmp(g.nameOf(g.npc(i)), "Scavenger") == 0 && g.npc(i).placed && g.npc(i).world == g.currentWorld()) b = int(i);
+	CHECK(b >= 0);
+	if (b < 0) return;
+	const GameNpc& bn = g.npc(u32(b));
+	const GameNpc& hn = *g.hero();
+	// Behind it, 9 m off: within its threat range (10 m), out of its attack range (7 m).
+	for (int round = 0; round < 2; ++round) {
+		const float behind = round == 0 ? 900.0f : 1100.0f;
+		// Caught on its way (the player out of the reach of its senses until then).
+		app.teleport({bn.pos[0] + 3500.0f, bn.pos[1] + 200.0f, bn.pos[2]});
+		for (int k = 0; k < 600; ++k) {
+			const NpcActor* w = npcs.actorOf(u32(b));
+			if (w && w->phase == NpcActor::MOVING) break;
+			if (getenv("G3_TRACE") && k % 30 == 0 && w)
+				std::printf("   [wait %d] %s act %d ph %d q %d at %.0f %.0f t %.1f\n", k, npcs.stateName(w->state), int(w->action.kind), int(w->phase), int(w->queueCount), double(bn.pos[0]), double(bn.pos[2]), double(w->stateTime));
+			app.update(Input {}, dt);
+		}
+		{
+			const NpcActor* w = npcs.actorOf(u32(b));
+			CHECK(w && w->phase == NpcActor::MOVING);
+		}
+		app.teleport({bn.pos[0] - std::sin(bn.yaw) * behind, bn.pos[1] + 10.0f, bn.pos[2] - std::cos(bn.yaw) * behind});
+		const i32 loops0 = global("MM_ASSESS_LOOPS");
+		float err = 9.0f;
+		float tm = 0;
+		for (; tm < 4.0f; tm += dt) {
+			app.update(Input {}, dt);
+			const float want = std::atan2(hn.pos[0] - bn.pos[0], hn.pos[2] - bn.pos[2]);
+			err = std::fabs(std::remainder(want - bn.yaw, 6.2831853f));
+			const NpcActor* a = npcs.actorOf(u32(b));
+			if (getenv("G3_TRACE") && int(tm / dt) % 3 == 0)
+				std::printf("   [%.0f cm, %.1f s] %s act %d ph %d q %d err %.2f loops %d yaw %.2f at %.0f %.0f hero %.0f %.0f\n", double(behind), double(tm), a ? npcs.stateName(a->state) : "-",
+				            a ? int(a->action.kind) : -1, a ? int(a->phase) : -1, a ? int(a->queueCount) : -1, double(err), int(global("MM_ASSESS_LOOPS")), double(bn.yaw), double(bn.pos[0]), double(bn.pos[2]), double(hn.pos[0]), double(hn.pos[2]));
+			if (getenv("G3_TRACE") && int(tm / dt) % 3 == 0 && a)
+				std::printf("      other %s act.i %d pt %.2f\n", a->other >= 0 ? g.nameOf(g.npc(u32(a->other))) : "-", int(a->action.i), double(a->percTime));
+			if (err < 0.3f) break;
+		}
+		const NpcActor* a = npcs.actorOf(u32(b));
+		std::printf("  beast turn, player %.0f cm behind a walking beast: faced him after %.1f s (error %.2f rad), state %s, %d loops, %u walks cut short\n", double(behind),
+		            double(tm), double(err), a ? npcs.stateName(a->state) : "-", int(global("MM_ASSESS_LOOPS") - loops0), npcs.stats().queueAborts);
+		CHECK(err < 0.3f && tm < 2.0f);
+		app.teleport({-7000.0f, 900.0f, -7000.0f});
+		run(6.0f);
+	}
+}
+
+// The real scripts of Gothic 1, compiled from their sources (G3_G1_SCRIPT: one file, see the handoff), on the synthetic
+// world: a scavenger at day (ZS_MM_Rtn_EatGround) and a wolf; the player comes up behind each, 9 m off. It must turn
+// to face him (ZS_MM_AssessEnemy: AI_TurnToNpc + T_WARN) within a few seconds. Skipped without the file.
+static void testG1Beasts() {
+	const char* file = getenv("G3_G1_SCRIPT");
+	if (!file) {
+		std::printf("  (no G3_G1_SCRIPT: skipped)\n");
+		return;
+	}
+	std::ifstream in(file);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	std::string source = ss.str() + R"(
+func void STARTUP_WORLD() {
+	Kapitel = 1;
+	Wld_InsertNpc(Scavenger, "FOREST_SCAVENGER_1");
+	Wld_InsertNpc(Molerat, "FOREST_MOLERAT_1");
+};
+func void INIT_WORLD() {
+	B_InitMonsterAttitudes();
+	B_InitGuildAttitudes();
+};
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/g1beasts.pak";
+	try {
+		bakeLifeWorlds(source, path, worlds);
+	} catch (const std::exception& e) {
+		std::printf("  bake failed: %s\n", e.what());
+		CHECK(false);
+		return;
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 1;
+	app.settings().perception = 1;
+	app.settings().immortal = 1;
+	app.applySettings();
+	npcs.config().range = 20000.0f;
+	app.environment().timeOfDay = 12.0f;
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	app.teleport({-7000.0f, 900.0f, -7000.0f});
+	run(4.0f);
+	const GameNpc& hn = *g.hero();
+	for (const char* who : {"Scavenger", "Molerat"}) {
+		int b = -1;
+		for (u32 i = 0; i < g.npcCount() && b < 0; ++i)
+			if (g.isMonster(g.npc(i)) && std::strcmp(g.nameOf(g.npc(i)), who) == 0 && g.npc(i).placed && g.npc(i).world == g.currentWorld()) b = int(i);
+		std::printf("  %s: %s\n", who, b >= 0 ? "placed" : "missing");
+		CHECK(b >= 0);
+		if (b < 0) continue;
+		const GameNpc& bn = g.npc(u32(b));
+		{
+			const NpcActor* a = npcs.actorOf(u32(b));
+			std::printf("   before: actor %d ready %d rig %d, state %s, att to hero %d, guild %d\n", a ? 1 : 0, a ? int(a->ready) : -1, a ? int(a->rig != nullptr) : -1, a ? npcs.stateName(a->state) : "-", int(g.attitude(u32(b), u32(&hn - &g.npc(0)))), int(g.guildOf(bn)));
+		}
+		const float behind = 900.0f;
+		app.teleport({bn.pos[0] - std::sin(bn.yaw) * behind, bn.pos[1] + 10.0f, bn.pos[2] - std::cos(bn.yaw) * behind});
+		float err = 9.0f, tm = 0;
+		for (; tm < 6.0f; tm += dt) {
+			app.update(Input {}, dt);
+			const float want = std::atan2(hn.pos[0] - bn.pos[0], hn.pos[2] - bn.pos[2]);
+			err = std::fabs(std::remainder(want - bn.yaw, 6.2831853f));
+			const NpcActor* a = npcs.actorOf(u32(b));
+			if (getenv("G3_TRACE") && int(tm / dt) % 3 == 0)
+				std::printf("   [%s %.1f s] %s act %d ph %d q %d err %.2f dist %.0f stance %s perc %u pw %.2f\n", who, double(tm), a ? npcs.stateName(a->state) : "-",
+				            a ? int(a->action.kind) : -1, a ? int(a->phase) : -1, a ? int(a->queueCount) : -1, double(err),
+				            double(std::hypot(hn.pos[0] - bn.pos[0], hn.pos[2] - bn.pos[2])), a ? a->stance : "", npcs.stats().perceived, a ? double(a->percWait) : -1.0);
+			if (err < 0.3f) break;
+		}
+		const NpcActor* a = npcs.actorOf(u32(b));
+		std::printf("   noModel %u waiting %u actors %u pos %.0f %.0f %.0f hero %.0f %.0f %.0f\n", npcs.stats().noModel, npcs.stats().waiting, npcs.stats().actors, double(bn.pos[0]), double(bn.pos[1]), double(bn.pos[2]), double(hn.pos[0]), double(hn.pos[1]), double(hn.pos[2]));
+		std::printf("  G1 %s, player 9 m behind: error %.2f rad after %.1f s, state %s\n", who, double(err), double(tm), a ? npcs.stateName(a->state) : "-");
+		CHECK(err < 0.3f);
+		app.teleport({-7000.0f, 900.0f, -7000.0f});
+		run(8.0f);
+	}
+}
+
 // The inhabitants' wits: a walker stops to be talked to, creatures notice the player at once and
 // from every side and answer a blow, and a person does not fall on somebody with no quarrel.
 static void testNpcAi() {
@@ -13584,6 +13843,8 @@ int main(int argc, char** argv) {
              {"saves", testSaves},
              {"start menu", testStartMenu},
              {"npcai", testNpcAi},
+	             {"beast turn", testBeastTurn},
+	             {"g1 beasts", testG1Beasts},
              {"npc items", testNpcItems},
              {"corpses", testCorpses},
 	             {"settings", testSettings},

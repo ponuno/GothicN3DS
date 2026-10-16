@@ -107,6 +107,7 @@ void Settings::sanitize() {
 	if (frameRate >= FRAME_MODES) frameRate = FRAMES_60;
 	if (scheme >= CONTROL_SCHEMES) scheme = CONTROLS_CLASSIC;
 	if (language > 3) language = 0;
+	if (chapter != 255 && chapter > 6) chapter = 6;
 	if (density > 2) density = 0;
 	if (npcDistance > 2) npcDistance = 1;
 	soundVolume = u8(clamp<int>(soundVolume, 0, 10));
@@ -203,6 +204,7 @@ bool Settings::load(const char* path) {
 	if (h.version < 3) s.report = 0;
 	if (h.version < 18 && s.antialias == 1) s.antialias = 2; // (the old "on" is the full smoothing)
 	s.sanitize();
+	s.chapter = 255; // (never kept: it follows the game)
 	*this = s;
 	return true;
 }

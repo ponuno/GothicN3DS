@@ -432,6 +432,22 @@ i32 Game::debugLevelUp() {
 	return level;
 }
 
+int Game::debugSetChapter(i32 chapter) {
+	if (_kapitel == SCRIPT_NONE || _hero == SCRIPT_NONE) return 0;
+	const u32 fn = _vm.find("B_KAPITELWECHSEL");
+	if (fn != SCRIPT_NONE && _vm.isPlainFunction(fn) && _vm.symbol(fn).count <= 2) {
+		_vm.pushInt(chapter);
+		if (_vm.symbol(fn).count == 2) _vm.pushInt(0); // (the second: the world, in the later games)
+		_vm.call(fn);
+		if (_vm.getInt(_kapitel) != chapter) _vm.setInt(_kapitel, 0, nullptr, chapter);
+		++_logVersion;
+		return 1;
+	}
+	_vm.setInt(_kapitel, 0, nullptr, chapter);
+	++_logVersion;
+	return 2;
+}
+
 u32 Game::debugLearnAll() {
 	if (_hero == SCRIPT_NONE) return 0;
 	GameNpc& h = _npcs[_hero];

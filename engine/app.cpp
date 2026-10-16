@@ -420,6 +420,7 @@ void App::checkPortals() {
 
 void App::update(const Input& given, float dt) {
 	collisionStatsReset(); // (what collisionStats() says is one frame's worth)
+	if (_npcs.loaded()) _settings.chapter = u8(clamp<i32>(_npcs.game().chapterNumber(), 0, 6)); // (the menu's chapter slider follows the game)
 	// (fix152) A camera flight that holds the player: the keys do nothing but A, which skips it (the clock goes on).
 	Input in = given;
 	if (_triggers.cutsceneActive() && !_triggers.cutsceneMovable() && !_player.flying) {
@@ -1572,6 +1573,17 @@ void App::respawn(const char* statePath) {
 
 void App::applySettings() {
 	_settings.sanitize();
+	// (fix168) The chapter slider moved: the chapter is changed (the scripts' own change if they have it).
+	if (_settings.chapter != 255 && _npcs.loaded()) {
+		Game& g = _npcs.game();
+		if (i32(_settings.chapter) != g.chapterNumber()) {
+			const int how = g.debugSetChapter(i32(_settings.chapter));
+			_invStamp = 0;
+			if (how == 1) snprintf(_menuMessage, sizeof(_menuMessage), tr("Глава %d: скриптами игры"), int(_settings.chapter));
+			else if (how == 2) snprintf(_menuMessage, sizeof(_menuMessage), tr("Глава %d: только номер (нет B_Kapitelwechsel)"), int(_settings.chapter));
+			else snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Нет героя или номера главы"));
+		}
+	}
 	_world.config().farDistance = _settings.farCm(); // (before the fog, which follows it)
 	_world.config().farFillNear = _settings.farFill != 0;
 	_world.config().lodFadeMs = _settings.lodFadeMs();

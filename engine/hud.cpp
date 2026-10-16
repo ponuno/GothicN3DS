@@ -108,9 +108,12 @@ void App::drawOverlay() {
 		const float a = min(min(t / 0.8f, _chapterTime / 1.0f), 1.0f);
 		const u32 alpha = u32(clamp(a, 0.0f, 1.0f) * 255.0f);
 		if (_chapterPic) {
-			// The game's picture of the chapter fills the screen; no words over it.
+			// The game's picture of the chapter fills the screen; over it, as OpenGothic's ChapterScreen puts them,
+			// the title near the top and the subtitle near the bottom (fix168: the words were left off).
 			_ui.rect(0, 0, W, H, (0x000000u << 8) | alpha);
 			_ui.picture(_chapterPic, CARD_W, CARD_H, u8(alpha));
+			_ui.text(W / 2, 22, _chapterCard.title, (ui::WHITE & 0xFFFFFF00u) | alpha, ui::TITLE, ui::CENTER);
+			_ui.text(W / 2, H - 22 - Ui::lineHeight(), _chapterCard.subtitle, (ui::WHITE & 0xFFFFFF00u) | alpha, ui::TEXT, ui::CENTER);
 		} else {
 			_ui.rect(0, 0, W, H, (0x000000u << 8) | (alpha * 200u / 255u));
 			_ui.text(W / 2, H / 2 - 26, _chapterCard.title, (ui::GOLD & 0xFFFFFF00u) | alpha, ui::TITLE, ui::CENTER);

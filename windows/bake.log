@@ -1,195 +1,195 @@
 extracted 37 files (sgt,sty,dls) into C:\GOTHIC~1\windows\_MUSIC~1
-[90m2026-10-16 12:41:03 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:04 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:04 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:05 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:05 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:05 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:05 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:05 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:05 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
-[90m2026-10-16 12:41:06 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:07 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:07 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:07 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:08 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:08 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:08 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:08 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:09 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:10 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:11 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:11 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
-[90m2026-10-16 12:41:11 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:11 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:12 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:13 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:13 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:13 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:13 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:13 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:14 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmPerformance: Curve type 5 not implemented (midi channel pressure)
+[90m2026-10-15 15:30:15 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:15 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:16 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:16 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:16 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:16 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:17 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:17 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:17 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
+[90m2026-10-15 15:30:19 [0m[[35m[1mDirectMusic[0m] ([33mWARN [0m) › DmSegment: NULL passed to `DmSegment_release`
 BAN_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/BAN_Day_Std.wav (226.8 s)
 CAM_Day_Fgt.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/CAM_Day_Fgt.wav (53.3 s)
 CAM_Day_Std.sgt -> C:\GOTHIC~1\windows\_MUSIC~2/CAM_Day_Std.wav (78.9 s)
@@ -221,20 +221,7 @@ dark large triangles in the source (edge 5 m or more, no corner brighter than 30
 world mesh: 106722 triangles, 2263 materials, 2126 lightmaps
 average baked vertex light: 99 / 255
 lightmaps: 13612 triangles, 13612 lit from their lightmap (100% of the corners inside the lightmap rectangle)
-rooms: no polygon of the world mesh is marked with its sector: the BSP leaves are used
-rooms: 21092 boxes from the polygons of 445 leaves
 fire flames and lights: 468 hung on their place's node, 36 on the object's origin (no such node in its model): PC_CRYSTALLIGHT_02.3DS at BIP01 FIRE
-chest lids: 249 chests have a lid that opens (9 kinds); 0 kinds of chest stay whole
-chest lids by kind:
-  CHESTBIG_OCCHESTLARGE.MDS: lid 'BIP01 CHEST_BIG_1' 24 triangles, the rest 28, 1.160000 s
-  CHESTBIG_OCCHESTLARGELOCKED.MDS: lid 'BIP01 CHEST_BIG_1' 24 triangles, the rest 42, 1.160000 s
-  CHESTBIG_OCCHESTMEDIUM.MDS: lid 'BIP01 CHEST_BIG_1' 24 triangles, the rest 28, 1.160000 s
-  CHESTBIG_OCCHESTMEDIUMLOCKED.MDS: lid 'BIP01 CHEST_BIG_1' 24 triangles, the rest 42, 1.160000 s
-  CHESTBIG_OCCRATELARGE.MDS: lid 'BIP01 CHEST_BIG_1' 12 triangles, the rest 26, 1.160000 s
-  CHESTBIG_OCCRATELARGELOCKED.MDS: lid 'BIP01 CHEST_BIG_1' 12 triangles, the rest 40, 1.160000 s
-  CHESTSMALL_OCCHESTSMALLLOCKED.MDS: lid 'BIP01 CHEST_SMALL_1' 24 triangles, the rest 42, 1.160000 s
-  CHESTSMALL_OCCRATESMALL.MDS: lid 'BIP01 CHEST_SMALL_1' 12 triangles, the rest 28, 1.160000 s
-  CHESTSMALL_OCCRATESMALLLOCKED.MDS: lid 'BIP01 CHEST_SMALL_1' 12 triangles, the rest 42, 1.160000 s
 places to stand at, the first thing of each kind:
   BABEBED BABEBED_1.ASC: ZS_POS0 at -166 106 -2 facing +1, 106 cm above the ground
   BARRELO BARRELO_OC.ASC: ZS_POS0_DIST at -0 100 -69 facing -0, 113 cm above the ground
@@ -274,7 +261,7 @@ places to stand at, the first thing of each kind:
 plants that sway (kept with --wind): 638 trees, 2039 bushes, 0 grasses
   by the object's name: OW_LOB_BUSH_V4.3DS x585, OW_LOB_BUSH_V7.3DS x362, OW_LOB_BUSH_V1.3DS x293, OW_LOB_BUSH_V5.3DS x219, OW_LOB_BUSH_REED_V1.3DS x188, WATERPLANT_1.MMS x164, OW_LOB_BUSH_V8.3DS x115, OW_FOREST_TREE_V2.3DS x79, OW_LOB_TREE_V11.3DS x66, OW_LOB_TREE_V8.3DS x51, OW_FOREST_TREE_V1.3DS x48, OW_LOB_TREE_DESTROYED_V2.3DS x44, ... (32 kinds)
   by a part's material or texture: OW_CAVEWEBS_V1.3DS x43, OW_LOB_PSIBUSHES_V1.3DS x6
-objects: 8879 placed from 351 meshes, 887461 triangles, 2887 without collision; winding kept (score 20.480070)
+objects: 8879 placed from 351 meshes, 892957 triangles, 2887 without collision; winding kept (score 20.480070)
 mirrored placements (negative determinant, winding corrected): 0 copies of 0 visuals
 placement check: 0 object copies lie away from the bounding box the world file gives them, 0 visuals
   bed BABEBED_1.ASC: 1 copies, 0 away from its box
@@ -284,8 +271,8 @@ placement check: 0 object copies lie away from the bounding box the world file g
 objects by kind: 7185 meshes, 1144 models in rest pose, 164 morph meshes, 386 decals
 models: 4 skinned parts; rest pose within 0.0 cm of the stored mesh, worst BSFIRE_OC.MDS
 objects by size: 2041 large, 2552 medium, 4286 small
-object triangles by class (before --simplify): 262627 large, 265828 medium, 359006 small
-small objects by size (radius; band: objects, triangles): 60 cm and more: 3288, 319333; 30-60 cm: 849, 33461; 15-30 cm: 137, 6075; under 15 cm: 12, 137 (bands 1-3 are drawn only as far as they are a few pixels across)
+object triangles by class (before --simplify): 262627 large, 265828 medium, 364502 small
+small objects by size (radius; band: objects, triangles): 60 cm and more: 3383, 327725; 30-60 cm: 754, 30565; 15-30 cm: 137, 6075; under 15 cm: 12, 137 (bands 1-3 are drawn only as far as they are a few pixels across)
 heaviest small objects (triangles x copies = all, radius):
   WATERPLANT_1.MMS 176 x 164 = 28864, 116 cm
   OW_LOB_BUSH_V4.3DS 48 x 585 = 28080, 127 cm
@@ -300,12 +287,12 @@ heaviest small objects (triangles x copies = all, radius):
   DT_SKELETON_V01.3DS 714 x 10 = 7140, 133 cm
   ORC_SKELETON_V1.3DS 816 x 8 = 6528, 73 cm
   OC_CHICKENSTICK_CHICKEN_V01.3DS 224 x 28 = 6272, 134 cm
+  CHESTBIG_OCCHESTMEDIUMLOCKED.MDS 66 x 94 = 6204, 65 cm
   OC_LOB_LIGHTER_HUGE3.3DS 212 x 22 = 4664, 143 cm
   OC_BARREL_V1_DESTROYED.3DS 84 x 53 = 4452, 76 cm
   OC_BARRELHOLDER_V01.3DS 144 x 30 = 4320, 74 cm
   OC_FIREWOOD_V2.3DS 146 x 29 = 4234, 77 cm
   ORC_SKELETON_V4.3DS 816 x 5 = 4080, 150 cm
-  CHESTBIG_OCCHESTMEDIUMLOCKED.MDS 42 x 94 = 3948, 59 cm
   NC_LOB_LIGHTER.3DS 56 x 67 = 3752, 30 cm
 heaviest medium objects (triangles x copies = all, radius):
   OW_MUSHROOM_V2.3DS 660 x 69 = 45540, 237 cm
@@ -366,92 +353,34 @@ other objects named like lights: BSFIRE_OC.MDS x4 <- BSFIRE_OC.MDM + BSFIRE_OC.M
 WARNING: object visual WASH_SLOT.ASC could not be read: no triangles
 water: 14 materials, opacity 150..240 of 255
 camera: from the game's CAMERA.DAT: CAMMODNORMAL range 2.50 m (2.00..6.00), elevation 25, azimuth 0, view offset 20 0, pace 30; CAMMODSWIM range 3.00 m (2.90..3.10), elevation 20, azimuth 0, view offset 15 0, pace 30; CAMMODFALL range 2.00 m (1.50..2.50), elevation 60, azimuth 0, view offset -10 0, pace 30
-ground colour: 43578 corners by the water darkened, 142347 under plants (3506874 rays)
+ground colour: 43578 corners by the water darkened, 142642 under plants (3542616 rays)
 water grid (--water-grid): cells of 2.0 m along the shores: 370 shore tiles, 472 tiles cut fine (32 x 32 m), 2960 water triangles -> 409732
 lamps for the runtime: 315 (192 of fire places, 0 made for fires without one, 217 flicker by keys); their light is baked too (--lights): the runtime adds the flicker
 far layer: 197469 triangles (and 17680 in strips along 8840 seam edges; 133733 vertices) of 429339, 10955 crowns, grid 2.0-6.8 m (seams 4.5; 9 tries), 83 tiles, 3002 ranges, 3.41 MB
-visibility (--vis): 3636 rows in 792 cells (707 cells with more than one floor; 1277 rows of rooms, 3861 clusters lie wholly inside a room), 114631 places looked from, 8771573 clusters in the rows of which 5166497 (59%) hidden, 2592.3 M rays in 40.2 s, radius 150 m, near 25 m; 1.13 MB
-sun's shadow (--sun-shadow): 1022 cells, the sun of 14.5 h (49 degrees up), 45666816 texels of 32 cm or finer, 24.1% of them shaded; 13067251 with no ground under them; 233.5 M rays in 6.9 s; 21.79 MB
-grass (--grass): 104435 tufts (2.0 per m2 at full density; 52491 m2 of it) in 971 tiles of 16 m, the fullest 439; pictures 42/36/11/11 %; 35347 in the sun's shadow; 347 places without ground, 0 left out of full tiles; old grass: 0 triangles taken out (kept: --grass-replace); 0.82 MB
-vertex cache order: 1478865 triangles; vertex shader runs per triangle 1.95 -> 1.54 (16-entry FIFO)
+visibility (--vis): 3543 rows in 765 cells (676 cells with more than one floor; 1270 rows of rooms, 6535 clusters lie wholly inside a room), 11848 places looked from, 8556455 clusters in the rows of which 5178985 (61%) hidden, 287.5 M rays in 4.7 s, radius 150 m, near 25 m; 1.10 MB
+sun's shadow (--sun-shadow): 1022 cells, the sun of 14.5 h (49 degrees up), 45666816 texels of 32 cm or finer, 24.1% of them shaded; 13067251 with no ground under them; 233.5 M rays in 7.0 s; 21.79 MB
+grass (--grass): 97383 tufts (2.0 per m2 at full density; 48941 m2 of it) in 869 tiles of 16 m, the fullest 439; pictures 42/36/11/11 %; 31395 in the sun's shadow; 318 places without ground, 0 left out of full tiles; old grass: 0 triangles taken out (kept: --grass-replace); 0.76 MB
+far geometry (--lod): 437 of 1518 chunks got a stand-in, 537018 -> 333782 triangles of the simplified batches (62%), +5.01 MB, 0.1 s
+  of 1518 chunks: 0 of medium or small objects left alone (--no-lod-objects), 835 have too few simplifiable triangles (48 for the large, 200 for objects), 246 would shrink by too little; 650589 simplifiable triangles in the rest
+  chunks of medium and small objects with a stand-in (kept 40% of the triangles of what they replace): 235, +3.59 MB
+vertex cache order: 1811505 triangles; vertex shader runs per triangle 2.03 -> 1.63 (16-entry FIFO)
 things to use by the player: 837 have a name to show (he may use those), 87 have none (the inhabitants' only); 26 belong to somebody (a person or a guild)
-fields of the things to use (59 combinations; the forge, the lab and the cauldron are in here):
-  BABEBED: focus 'BED', onState 'SLEEPABIT', condition '', needs '', target '' x1
-  BARBQ: focus 'BARBQ_SCAV', onState '', condition '', needs '', target '' x10
-  BARRELO: focus 'LARGE OPENED BARREL', onState '', condition '', needs '', target '' x1
-  BATHTUB: focus 'BATHTUB', onState '', condition '', needs '', target '' x1
-  BEDHIGH: focus 'BED', onState '', condition '', needs '', target '' x1
-  BEDLOW: focus 'BED', onState '', condition '', needs '', target '' x9
-  BENCH: focus 'BENCH', onState '', condition '', needs '', target '' x58
-  BENCH: focus 'THRONE', onState '', condition '', needs '', target '' x7
-  BOOK: focus 'BOOK', onState '', condition '', needs '', target '' x11
-  BSANVIL: focus '', onState '', condition '', needs 'ITMISWORDRAWHOT', target '' x3
-  BSANVIL: focus 'ANVIL', onState '', condition '', needs 'ITMISWORDRAWHOT', target '' x2
-  BSCOOL: focus '', onState '', condition '', needs 'ITMISWORDBLADEHOT', target '' x5
-  BSCOOL: focus 'BUCKET', onState '', condition '', needs 'ITMISWORDBLADEHOT', target '' x5
-  BSFIRE: focus '', onState '', condition '', needs 'ITMISWORDRAW', target '' x2
-  BSFIRE: focus 'FORGE', onState '', condition '', needs 'ITMISWORDRAW', target '' x2
-  BSSHARP: focus '', onState '', condition '', needs 'ITMISWORDBLADE', target '' x2
-  BSSHARP: focus 'GRINDSTONE', onState '', condition '', needs 'ITMISWORDBLADE', target '' x5
-  CAULDRON: focus 'CAULDRON', onState '', condition '', needs 'ITMISCOOP', target '' x12
-  CAULDRON: focus 'TOPF', onState '', condition '', needs '', target '' x1
-  CHAIR: focus 'CHAIR', onState '', condition '', needs '', target '' x201
-  FIREPLACE: focus 'CAMP', onState '', condition '', needs 'ITLSTORCHBURNING', target '' x21
-  FIREPLACE: focus 'TORCH', onState '', condition '', needs '', target '' x15
-  FIREPLACE: focus 'TORCH', onState '', condition '', needs 'ITLSTORCGBURNING', target '' x1
-  FIREPLACE: focus 'TORCH', onState '', condition '', needs 'ITLSTORCH', target '' x3
-  FIREPLACE: focus 'TORCH', onState '', condition '', needs 'ITLSTORCHBURNING', target '' x109
-  FIREPLACE: focus 'TORCH', onState '', condition '', needs 'ITLSTORCHBURNING', target 'TORCHSCRIPT' x4
-  FIREPLACE: focus 'TORCHHOLDER', onState '', condition '', needs 'ITLSTORCHBURNING', target '' x4
-  HERB: focus 'HERBSTOMPER', onState '', condition '', needs 'ITMISTOMPER', target '' x8
-  LAB: focus 'LAB', onState '', condition '', needs 'ITMIFLASK', target '' x7
-  LAB: focus 'LABORATORY', onState '', condition '', needs 'ITMIFLASK', target '' x2
-  LEVER: focus '', onState '', condition '', needs '', target 'EVT_OW_MOUNTAINRUIN_01' x1
-  LEVER: focus 'LEVER', onState '', condition 'MC_ORCCITY_SUNCTUM_OUTERGATE', needs '', target 'EVT_ORC_GATE_02' x1
-  LEVER: focus 'SWITCH', onState '', condition '', needs '', target 'CAGEDOORS' x1
-  MPIPE: focus '', onState '', condition '', needs 'ITMIBLUEPIPE', target '' x1
-  ORE: focus 'ORE', onState '', condition '', needs 'ITMWPICKAXE', target '' x17
-  PAN: focus 'PAN', onState '', condition '', needs 'ITFOMUTTONRAW', target '' x8
-  PILLAR: focus 'PILLAR', onState '', condition '', needs '', target '' x1
-  REPAIR: focus 'REPAIR', onState '', condition '', needs '', target '' x1
-  REPAIR: focus 'REPAIR', onState '', condition '', needs 'ITMIHAMMER', target '' x28
-  SMOKE: focus 'WATERPIPE', onState '', condition '', needs '', target '' x14
-  STOMPER: focus 'STOMPER', onState '', condition '', needs '', target '' x1
-  THRONE: focus 'BARONSTHRONE', onState '', condition '', needs '', target '' x1
-  THRONE: focus 'THRONE', onState '', condition '', needs '', target '' x1
-  TOUCHPLATE: focus '', onState '', condition '', needs '', target 'EVT_SURF_ORCSECRET_02' x2
-  TOUCHPLATE: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_CASTLE_LIFT_01' x1
-  TOUCHPLATE: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_CASTLE_LIFT_02' x1
-  TOUCHPLATE: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_CASTLE_TRIGGER_LIST_1' x1
-  VWHEEL: focus '', onState '', condition 'MC_FM_GATE', needs '', target 'FREEMINEGATE' x1
-  VWHEEL: focus 'WHEEL', onState '', condition '', needs '', target '//EVT_NC_LOCKOUT_MOVER_01' x1
-  VWHEEL: focus 'WHEEL', onState '', condition '', needs '', target '//EVT_OW_STARTLOCKOUT_MOVER' x1
-  VWHEEL: focus 'WHEEL', onState '', condition '', needs '', target 'EVT_NC_MAINGATE01_MOVER' x1
-  VWHEEL: focus 'WHEEL', onState '', condition '', needs '', target 'EVT_OC_INNERMAINGATE' x1
-  VWHEEL: focus 'WHEEL', onState '', condition '', needs '', target 'EVT_OC_MAINGATE01_01' x1
-  VWHEEL: focus 'WHEEL', onState '', condition '', needs '', target 'EVT_OC_MAINGATE02_02' x1
-  VWHEEL: focus 'WHEEL', onState '', condition 'EVT_TROLLSCHLUCHT_GATE_TRIGGER', needs '', target 'EVT_TROLLSCHLUCHT_GATE' x1
-  VWHEEL: focus 'WHEEL', onState '', condition 'MC_MONASTERYRUIN_GATE', needs '', target 'EVT_OW_FOKUS_GATE_MOVER_01' x1
-  VWHEEL: focus 'WHEEL', onState '', condition 'MC_OGY_GATE', needs '', target 'EVT_ORCGRAVYARD_MOVER_01' x1
-  VWHEEL: focus 'WHEEL', onState '', condition 'MC_OLDMINE_ENTRANCE', needs '', target 'EVT_AM_LOB_GATE_BIG' x1
-  VWHEEL: focus 'WHEEL', onState '', condition 'MC_ORCCITY_GATE', needs '', target 'OW_ORC_MAINGATE_01' x1
-things of the player's that run the scripts (<function>_S1 when used, _S0 when left): 1 kinds: SLEEPABIT (BABEBED) x1
 ambient sounds: 700 placed in world 'world'
-triggers: 0 triggers, 1 lists, 23 script triggers, 0 world starts, 281 movers (278 drawn moving), 277 doors (14 locked), 0 camera flights; 306 solid (16124 triangles), 33 meshes; key rotations read conjugated: 29, 0 the other way
-rooms: 299 (BSP sectors, 21092 boxes): WALD11, WALD10, WALD9, WALD6, WALD8, WALD7, WALD1, WALD4, WALD2, WALD12, WALD5, WALD3, ...
+triggers: 0 triggers, 1 lists, 23 script triggers, 0 world starts, 32 movers (29 drawn moving), 277 doors (14 locked); 306 solid (16124 triangles), 24 meshes; key rotations read conjugated: 29, 0 the other way
+rooms: 299 (BSP sectors, 445 boxes): WALD11, WALD10, WALD9, WALD6, WALD8, WALD7, WALD1, WALD4, WALD2, WALD12, WALD5, WALD3, ...
 music zones: 40 in world 'world'
 world 'world': 1809 x 3878 x 1273 m, grid 45 x 32 cells of 40 m
-geometry: 1493987 triangles in, 1506786 out (17689 degenerate dropped), 2186046 vertices (1.45 per triangle)
-vertex sharing: 807400 distinct positions, 2014378 with UVs, 2186046 with UVs and light
+geometry: 1499483 triangles in, 1513214 out (17689 degenerate dropped), 2195302 vertices (1.45 per triangle)
+vertex sharing: 809852 distinct positions, 2023353 with UVs, 2195302 with UVs and light
 winding check: 65% of the horizontal front-facing area looks up
-chunks: 1517 (0 cells split), largest 37178 triangles / 62690 vertices / 490 batches
-position step: 1321 at 0.125 cm, 186 at 0.25 cm, 10 at 0.5 cm
-seams: 21625 vertices welded to a neighbour within 0.25 cm, 18232 T-junctions closed within 0.50 cm (+30488 triangles)
-chunks by detail tier (--no-split: one chunk holds everything): 1189 of the world and big things (22.4 MB, always around the camera), 183 with medium objects (8.8 MB, within their reach), 145 with small ones (10.8 MB, within theirs)
-draw distance classes: 877942 triangles always drawn, 268794 medium, 360050 small; 56551 batches (37.3 per chunk)
-clusters: the chunks are cut into 25091 boxes of 10 m (79 at most in one): 60 triangles and 2.3 batches in a box on average
-ambient occlusion (--ao low): 2924130 corners from 1496986 places, 16 rays of 2.5 m each against 631774 triangles (24.0 M rays, 3.1 s); 45% shut in on average, 1241321 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
-lamp light (--lights): 1269 lamps in the world, 315 baked (954 static ones left out), 352058 corners lit by 1.50 M shadow rays, 60000 triangles added by cutting those near a lamp (0.6 s)
+chunks: 1518 (0 cells split), largest 37606 triangles / 63275 vertices / 494 batches
+position step: 1322 at 0.125 cm, 186 at 0.25 cm, 10 at 0.5 cm
+seams: 21698 vertices welded to a neighbour within 0.25 cm, 18342 T-junctions closed within 0.50 cm (+31420 triangles)
+chunks by detail tier (--no-split: one chunk holds everything): 1189 of the world and big things (22.4 MB, always around the camera), 184 with medium objects (8.8 MB, within their reach), 145 with small ones (10.9 MB, within theirs)
+draw distance classes: 877940 triangles always drawn, 268794 medium, 366480 small; 56597 batches (37.3 per chunk)
+clusters: the chunks are cut into 25097 boxes of 10 m (79 at most in one): 60 triangles and 2.3 batches in a box on average
+ambient occlusion (--ao low): 2940618 corners from 1502962 places, 16 rays of 2.5 m each against 631774 triangles (24.0 M rays, 3.2 s); 45% shut in on average, 1251571 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
+lamp light (--lights): 1269 lamps in the world, 315 baked (954 static ones left out), 353315 corners lit by 1.52 M shadow rays, 60000 triangles added by cutting those near a lamp (0.6 s)
 wind: 748642 corners sway, 31 world materials marked
 materials: 534 world materials from 1655 source materials, 1555 textures; 34 blended (26 water), 32 animated, 16 scrolling
 material mean colours (stand-in until the texture arrives): 1642 of 534 materials
@@ -470,11 +399,6 @@ dark large triangles in the source (edge 5 m or more, no corner brighter than 30
 world mesh: 37661 triangles, 120 materials, 4607 lightmaps
 average baked vertex light: 30 / 255
 lightmaps: 35249 triangles, 35249 lit from their lightmap (100% of the corners inside the lightmap rectangle)
-rooms: no polygon of the world mesh is marked with its sector: the BSP leaves are used
-chest lids: 4 chests have a lid that opens (2 kinds); 1 kinds of chest stay whole (no model script x1)
-chest lids by kind:
-  CHESTBIG_OCCHESTLARGELOCKED.MDS: lid 'BIP01 CHEST_BIG_1' 24 triangles, the rest 42, 1.160000 s
-  CHESTBIG_OCCRATELARGE.MDS: lid 'BIP01 CHEST_BIG_1' 12 triangles, the rest 26, 1.160000 s
 places to stand at, the first thing of each kind:
   BENCH BENCH_1_NC.MDS: ZS_POS1 at -37 97 75 facing +26, 86 cm above the ground; ZS_POS0 at 44 97 75 facing -30, 86 cm above the ground; ZS_POS2 at 44 97 -91 facing +26, 88 cm above the ground
   CHESTBIG CHESTBIG_OCCHESTLARGELOCKED.MDS: ZS_POS0 at 0 98 94 facing -0, 97 cm above the ground; ZS_POS0 at 0 98 94 facing -0, 97 cm above the ground; ZS_POS0 at -0 33 -82 facing -0, 89 cm above the ground
@@ -485,13 +409,13 @@ places to stand at, the first thing of each kind:
   TURNSWITCH TURNSWITCH_BLOCK.MDS: ZS_POS0 at 0 98 -55 facing -0, 97 cm above the ground; ZS_POS0 at 0 98 -55 facing -0, 12 cm above the ground; ZS_POS0 at 0 98 -55 facing -0, 14 cm above the ground
 plants that sway (kept with --wind): 0 trees, 1 bushes, 0 grasses
   by a part's material or texture: OW_CAVEWEBS_V1.3DS x1
-objects: 1311 placed from 68 meshes, 164753 triangles, 767 without collision; winding kept (score 7.322281)
+objects: 1311 placed from 68 meshes, 164825 triangles, 767 without collision; winding kept (score 7.322281)
 mirrored placements (negative determinant, winding corrected): 0 copies of 0 visuals
 placement check: 0 object copies lie away from the bounding box the world file gives them, 0 visuals
 objects by kind: 635 meshes, 59 models in rest pose, 0 morph meshes, 617 decals
 objects by size: 252 large, 623 medium, 436 small
-object triangles by class (before --simplify): 18458 large, 23719 medium, 122576 small
-small objects by size (radius; band: objects, triangles): 60 cm and more: 414, 121472; 30-60 cm: 14, 896; 15-30 cm: 0, 0; under 15 cm: 8, 208 (bands 1-3 are drawn only as far as they are a few pixels across)
+object triangles by class (before --simplify): 18458 large, 23719 medium, 122648 small
+small objects by size (radius; band: objects, triangles): 60 cm and more: 414, 121544; 30-60 cm: 14, 896; 15-30 cm: 0, 0; under 15 cm: 8, 208 (bands 1-3 are drawn only as far as they are a few pixels across)
 heaviest small objects (triangles x copies = all, radius):
   ORC_SKELETON_V3.3DS 816 x 53 = 43248, 125 cm
   ORC_FIREPLACE_V2.3DS 180 x 130 = 23400, 134 cm
@@ -509,10 +433,10 @@ heaviest small objects (triangles x copies = all, radius):
   EXCALIBUR_1.ASC 42 x 7 = 294, 50 cm
   OC_SHELF_V3.3DS 126 x 2 = 252, 151 cm
   TOUCHPLATE_STONE.MDS 26 x 8 = 208, 14 cm
-  CHESTBIG_OCCHESTLARGELOCKED.MDS 42 x 2 = 84, 81 cm
+  CHESTBIG_OCCHESTLARGELOCKED.MDS 66 x 2 = 132, 86 cm
   OC_BARREL_V1_DESTROYED.3DS 84 x 1 = 84, 76 cm
+  CHESTBIG_OCCRATELARGE.MDS 38 x 2 = 76, 85 cm
   TPL_EVT_PURPURSKULLSTONE_1X1M.3DS 10 x 7 = 70, 72 cm
-  CHESTBIG_OCCRATELARGE.MDS 26 x 2 = 52, 80 cm
 heaviest medium objects (triangles x copies = all, radius):
   TPL_ORCSTATUE.3DS 622 x 6 = 3732, 351 cm
   OW_MUSHROOM_V1.3DS 496 x 7 = 3472, 362 cm
@@ -557,56 +481,24 @@ other objects named like lights: FIRE.PFX x1 (not drawn); FIRE_SMOKE.PFX x34 (no
 water: 1 materials, opacity 230..230 of 255
 water grid (--water-grid): cells of 2.0 m along the shores: 3 shore tiles, 3 tiles cut fine (32 x 32 m), 32 water triangles -> 1513
 lamps for the runtime: 0 (0 of fire places, 0 made for fires without one, 0 flicker by keys)
-visibility (--vis): 325 rows in 89 cells (83 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 866 places looked from, 537540 clusters in the rows of which 408698 (76%) hidden, 14.3 M rays in 0.2 s, radius 150 m, near 25 m; 0.07 MB
-vertex cache order: 209871 triangles; vertex shader runs per triangle 2.44 -> 1.70 (16-entry FIFO)
+visibility (--vis): 325 rows in 89 cells (83 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 866 places looked from, 537540 clusters in the rows of which 408711 (76%) hidden, 14.3 M rays in 0.3 s, radius 150 m, near 25 m; 0.07 MB
+vertex cache order: 209951 triangles; vertex shader runs per triangle 2.44 -> 1.70 (16-entry FIFO)
 things to use by the player: 52 have a name to show (he may use those), 7 have none (the inhabitants' only); 0 belong to somebody (a person or a guild)
-fields of the things to use (30 combinations; the forge, the lab and the cauldron are in here):
-  EXCALIBUR: focus 'SWORDSTONE', onState '', condition '', needs 'BANNKLINGE', target 'EVT_TPL_LASTEVENT_CODEMASTER_01' x1
-  EXCALIBUR: focus 'SWORDSTONE', onState '', condition '', needs 'DAEMONENSTREICH', target 'EVT_TPL_LASTEVENT_CODEMASTER_01' x1
-  EXCALIBUR: focus 'SWORDSTONE', onState '', condition '', needs 'LICHTBRINGER', target 'EVT_TPL_07_MSGFILTER_TO_PRIESTDOOR' x1
-  EXCALIBUR: focus 'SWORDSTONE', onState '', condition '', needs 'LICHTBRINGER', target 'EVT_TPL_LASTEVENT_CODEMASTER_01' x1
-  EXCALIBUR: focus 'SWORDSTONE', onState '', condition '', needs 'WELTENSPALTER', target 'EVT_TPL_06_TRIGGERLIST_02' x1
-  EXCALIBUR: focus 'SWORDSTONE', onState '', condition '', needs 'WELTENSPALTER', target 'EVT_TPL_LASTEVENT_CODEMASTER_01' x1
-  EXCALIBUR: focus 'SWORDSTONE', onState '', condition '', needs 'ZEITENKLINGE', target 'EVT_TPL_LASTEVENT_CODEMASTER_01' x1
-  PRIESTGRAVE: focus 'SARCOPHAGUS', onState '', condition '', needs '', target 'EVT_TPL_08_GATE_02' x1
-  SPORTAL: focus 'SHRINE', onState '', condition '', needs 'BANNKLINGE', target 'EVT_TPL_TRIGGERLIST_SLEEPERHEARTS_01' x1
-  SPORTAL: focus 'SHRINE', onState '', condition '', needs 'DAEMONENSTREICH', target 'EVT_TPL_TRIGGERLIST_SLEEPERHEARTS_05' x1
-  SPORTAL: focus 'SHRINE', onState '', condition '', needs 'LICHTBRINGER', target 'EVT_TPL_TRIGGERLIST_SLEEPERHEARTS_03' x1
-  SPORTAL: focus 'SHRINE', onState '', condition '', needs 'WELTENSPALTER', target 'EVT_TPL_TRIGGERLIST_SLEEPERHEARTS_04' x1
-  SPORTAL: focus 'SHRINE', onState '', condition '', needs 'ZEITENKLINGE', target 'EVT_TPL_TRIGGERLIST_SLEEPERHEARTS_02' x1
-  TOUCHPLATE: focus '', onState '', condition '', needs '', target 'EVT_TPL_10_SECRETWALL_01' x1
-  TOUCHPLATE: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_01_CODEMASTER_01' x2
-  TOUCHPLATE: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_01_MSGFLT_01' x1
-  TOUCHPLATE: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_03_MSGFILTER_01' x1
-  TOUCHPLATE: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_05_DOOR_01' x2
-  TOUCHPLATE: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_12_ELEVATOR_01' x1
-  TURNSWITCH: focus '', onState '', condition '', needs '', target 'EVT_TPL_12_ELEVATOR_01' x1
-  TURNSWITCH: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_02_CODEMASTER_01' x3
-  TURNSWITCH: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_03_MSGFILTER_03' x1
-  TURNSWITCH: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_03_TRIGGERLIST_02' x1
-  TURNSWITCH: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_07_TRIGGERLIST_03' x3
-  TURNSWITCH: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_13_TRIGGERLIST_02' x1
-  TURNSWITCH: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_13_TRIGGERLIST_03' x1
-  TURNSWITCH: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_15_TRIGGER_TO_BRIDGE_01' x1
-  TURNSWITCH: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_15_TRIGGER_TO_BRIDGE_02' x1
-  TURNSWITCH: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_15_TRIGGER_TO_BRIDGE_03' x1
-  TURNSWITCH: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_TPL_16_CODEMASTER_01' x3
-things of the player's that run the scripts (<function>_S1 when used, _S0 when left): 0 kinds: none
 ambient sounds: 54 placed in world 'orctempel'
-triggers: 25 triggers, 29 lists, 16 script triggers, 0 world starts, 58 movers (58 drawn moving), 0 doors (0 locked), 13 camera flights; 41 solid (812 triangles), 17 meshes; key rotations read conjugated: 54, 0 the other way
+triggers: 25 triggers, 29 lists, 16 script triggers, 0 world starts, 54 movers (54 drawn moving), 0 doors (0 locked); 41 solid (812 triangles), 15 meshes; key rotations read conjugated: 54, 0 the other way
 rooms: none in this world (no BSP sectors): nobody's house is told from the street
 music zones: 3 in world 'orctempel'
 world 'orctempel': 441 x 384 x 651 m, grid 12 x 17 cells of 40 m
-geometry: 203895 triangles in, 214680 out (276 degenerate dropped), 351893 vertices (1.64 per triangle)
-vertex sharing: 119630 distinct positions, 336727 with UVs, 351893 with UVs and light
+geometry: 203967 triangles in, 214760 out (276 degenerate dropped), 352013 vertices (1.64 per triangle)
+vertex sharing: 119666 distinct positions, 336847 with UVs, 352013 with UVs and light
 winding check: 50% of the horizontal front-facing area looks up (says nothing here: an indoor world has as much ceiling as floor)
 chunks: 181 (0 cells split), largest 18380 triangles / 28238 vertices / 193 batches
 position step: 156 at 0.125 cm, 3 at 0.25 cm, 14 at 0.5 cm, 8 at 1 cm
-seams: 742 vertices welded to a neighbour within 0.25 cm, 5397 T-junctions closed within 0.50 cm (+11061 triangles)
+seams: 744 vertices welded to a neighbour within 0.25 cm, 5397 T-junctions closed within 0.50 cm (+11069 triangles)
 chunks by detail tier (--no-split: one chunk holds everything): 116 of the world and big things (2.1 MB, always around the camera), 22 with medium objects (0.7 MB, within their reach), 43 with small ones (3.8 MB, within theirs)
-draw distance classes: 58348 triangles always drawn, 23895 medium, 132437 small; 8354 batches (46.2 per chunk)
+draw distance classes: 58348 triangles always drawn, 23895 medium, 132517 small; 8354 batches (46.2 per chunk)
 clusters: the chunks are cut into 3889 boxes of 10 m (98 at most in one): 55 triangles and 2.1 batches in a box on average
-ambient occlusion (--ao low): 603288 corners from 279826 places, 16 rays of 2.5 m each against 78546 triangles (4.5 M rays, 0.4 s); 47% shut in on average, 267276 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
+ambient occlusion (--ao low): 603504 corners from 279922 places, 16 rays of 2.5 m each against 78546 triangles (4.5 M rays, 0.4 s); 47% shut in on average, 267371 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
 lamp light (--lights): 1121 lamps in the world, 0 baked (1121 static ones left out), 0 corners lit by 0.00 M shadow rays, 0 triangles added by cutting those near a lamp (0.0 s)
 wind: 8 corners sway, 1 world materials marked
 materials: 191 world materials from 210 source materials, 192 textures; 4 blended (1 water), 2 animated, 0 scrolling
@@ -626,12 +518,7 @@ dark large triangles in the source (edge 5 m or more, no corner brighter than 30
 world mesh: 9914 triangles, 51 materials, 790 lightmaps
 average baked vertex light: 31 / 255
 lightmaps: 9138 triangles, 9138 lit from their lightmap (100% of the corners inside the lightmap rectangle)
-rooms: no polygon of the world mesh is marked with its sector: the BSP leaves are used
 fire flames and lights: 129 hung on their place's node, 0 on the object's origin (no such node in its model)
-chest lids: 11 chests have a lid that opens (2 kinds); 0 kinds of chest stay whole
-chest lids by kind:
-  CHESTBIG_OCCRATELARGE.MDS: lid 'BIP01 CHEST_BIG_1' 12 triangles, the rest 26, 1.160000 s
-  CHESTBIG_OCCRATELARGELOCKED.MDS: lid 'BIP01 CHEST_BIG_1' 12 triangles, the rest 40, 1.160000 s
 places to stand at, the first thing of each kind:
   BARRELO BARRELO_OC.ASC: ZS_POS0_DIST at -0 100 -69 facing -0, 90 cm above the ground; ZS_POS0_DIST at -0 100 -69 facing -0, 101 cm above the ground; ZS_POS0_DIST at -0 100 -69 facing -0, 50 cm above the ground
   BELLOW BELLOW_MINE.MDS: ZS_POS0 at 0 97 -100 facing -0, 91 cm above the ground
@@ -646,14 +533,14 @@ places to stand at, the first thing of each kind:
   VWHEEL VWHEEL_1_OC.MDS: ZS_POS0 at -8 98 -133 facing -3, 106 cm above the ground; ZS_POS1 at 8 98 133 facing -3, no ground of the world below
 plants that sway (kept with --wind): 0 trees, 13 bushes, 0 grasses
   by a part's material or texture: OW_CAVEWEBS_V1.3DS x13
-objects: 1369 placed from 81 meshes, 135456 triangles, 612 without collision; winding kept (score 5.751085)
+objects: 1369 placed from 81 meshes, 135588 triangles, 612 without collision; winding kept (score 5.751085)
 mirrored placements (negative determinant, winding corrected): 0 copies of 0 visuals
 placement check: 0 object copies lie away from the bounding box the world file gives them, 0 visuals
 objects by kind: 836 meshes, 192 models in rest pose, 0 morph meshes, 341 decals
 models: 1 skinned parts; rest pose within 0.0 cm of the stored mesh, worst BELLOW_MINE.MDS
 objects by size: 580 large, 399 medium, 390 small
-object triangles by class (before --simplify): 32396 large, 50345 medium, 52715 small
-small objects by size (radius; band: objects, triangles): 60 cm and more: 333, 49899; 30-60 cm: 55, 2612; 15-30 cm: 2, 204; under 15 cm: 0, 0 (bands 1-3 are drawn only as far as they are a few pixels across)
+object triangles by class (before --simplify): 32396 large, 50345 medium, 52847 small
+small objects by size (radius; band: objects, triangles): 60 cm and more: 333, 50031; 30-60 cm: 55, 2612; 15-30 cm: 2, 204; under 15 cm: 0, 0 (bands 1-3 are drawn only as far as they are a few pixels across)
 heaviest small objects (triangles x copies = all, radius):
   ORE_GROUND.ASC 124 x 103 = 12772, 92 cm
   ORC_SKELETON_V2.3DS 816 x 12 = 9792, 110 cm
@@ -668,10 +555,10 @@ heaviest small objects (triangles x copies = all, radius):
   MIN_LOB_HANDRAIL_2.3DS 48 x 16 = 768, 123 cm
   CR_DI_OPENEGG.3DS 86 x 8 = 688, 53 cm
   MIN_LOB_HANDRAIL_1.3DS 32 x 17 = 544, 85 cm
+  CHESTBIG_OCCRATELARGELOCKED.MDS 52 x 10 = 520, 86 cm
   OC_SAECKE_01.3DS 252 x 2 = 504, 134 cm
   OC_BARREL_V2_DESTROYED.3DS 80 x 6 = 480, 125 cm
   BARRELO_OC.ASC 108 x 4 = 432, 89 cm
-  CHESTBIG_OCCRATELARGELOCKED.MDS 40 x 10 = 400, 82 cm
   CAULDRON_OC.ASC 195 x 2 = 390, 96 cm
   OC_SACK_V01.3DS 70 x 4 = 280, 64 cm
   MIN_MOB_STONE_V2_20.3DS 42 x 5 = 210, 143 cm
@@ -726,36 +613,24 @@ fire places: 43 objects of 2 kinds (their flames are not drawn yet):
 other objects named like lights: FIRE.PFX x11 (not drawn); FIRE_MEDIUM.PFX x4 (not drawn); FIRE_SMOKE.PFX x7 (not drawn); OC_FIREPLACEBIG_V01.3DS x1; OC_FIREWOOD_V1.3DS x11; OC_FIREWOOD_V2.3DS x1; OC_FIREWOOD_V3.3DS x5
 lamps for the runtime: 48 (43 of fire places, 0 made for fires without one, 48 flicker by keys); their light is baked too (--lights): the runtime adds the flicker
 visibility (--vis): 58 rows in 17 cells (13 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 149 places looked from, 74001 clusters in the rows of which 52479 (71%) hidden, 2.6 M rays in 0.1 s, radius 150 m, near 25 m; 0.01 MB
-vertex cache order: 214064 triangles; vertex shader runs per triangle 2.09 -> 1.60 (16-entry FIFO)
+vertex cache order: 214196 triangles; vertex shader runs per triangle 2.09 -> 1.60 (16-entry FIFO)
 things to use by the player: 175 have a name to show (he may use those), 1 have none (the inhabitants' only); 11 belong to somebody (a person or a guild)
-fields of the things to use (10 combinations; the forge, the lab and the cauldron are in here):
-  BARRELO: focus 'BARRELO_OC', onState '', condition '', needs '', target '' x4
-  BELLOW: focus 'BELLOW', onState '', condition '', needs '', target '' x1
-  BENCH: focus 'BENCH', onState '', condition '', needs '', target '' x4
-  CAULDRON: focus 'CAULDRON', onState '', condition '', needs 'ITMISCOOP', target '' x2
-  CHAIR: focus 'CHAIR', onState '', condition '', needs '', target '' x3
-  FIREPLACE: focus 'TORCH', onState '', condition '', needs 'ITLSTORCHBURNING', target '' x43
-  ORE: focus 'ORE', onState '', condition '', needs 'ITMWPICKAXE', target '' x103
-  STOMPER: focus 'STOMPER', onState '', condition '', needs '', target '' x2
-  STONEMILL: focus 'MILL', onState '', condition '', needs '', target '' x1
-  VWHEEL: focus 'WHEEL', onState '', condition 'MC_OLDMINE_ASGHAN', needs '', target 'EVT_OM_CRAWLER_01' x1
-things of the player's that run the scripts (<function>_S1 when used, _S0 when left): 0 kinds: none
 ambient sounds: 32 placed in world 'oldmine'
-triggers: 0 triggers, 0 lists, 1 script triggers, 0 world starts, 12 movers (12 drawn moving), 0 doors (0 locked), 0 camera flights; 1 solid (4 triangles), 3 meshes; key rotations read conjugated: 1, 0 the other way
+triggers: 0 triggers, 0 lists, 1 script triggers, 0 world starts, 1 movers (1 drawn moving), 0 doors (0 locked); 1 solid (4 triangles), 1 meshes; key rotations read conjugated: 1, 0 the other way
 rooms: none in this world (no BSP sectors): nobody's house is told from the street
 music zones: 1 in world 'oldmine'
 world 'oldmine': 171 x 113 x 158 m, grid 6 x 5 cells of 40 m
-geometry: 205370 triangles in, 214929 out (74 degenerate dropped), 325449 vertices (1.51 per triangle)
-vertex sharing: 129554 distinct positions, 306105 with UVs, 325449 with UVs and light
+geometry: 205502 triangles in, 215061 out (74 degenerate dropped), 325716 vertices (1.51 per triangle)
+vertex sharing: 129643 distinct positions, 306371 with UVs, 325716 with UVs and light
 winding check: 49% of the horizontal front-facing area looks up (says nothing here: an indoor world has as much ceiling as floor)
 chunks: 59 (0 cells split), largest 26433 triangles / 26818 vertices / 334 batches
 position step: 56 at 0.125 cm, 3 at 0.25 cm
 seams: 274 vertices welded to a neighbour within 0.25 cm, 7508 T-junctions closed within 0.50 cm (+9633 triangles)
 chunks by detail tier (--no-split: one chunk holds everything): 28 of the world and big things (2.6 MB, always around the camera), 15 with medium objects (1.7 MB, within their reach), 16 with small ones (1.9 MB, within theirs)
-draw distance classes: 107506 triangles always drawn, 50528 medium, 56895 small; 3575 batches (60.6 per chunk)
-clusters: the chunks are cut into 1276 boxes of 10 m (108 at most in one): 168 triangles and 2.8 batches in a box on average
-ambient occlusion (--ao low): 434100 corners from 219028 places, 16 rays of 2.5 m each against 91985 triangles (3.5 M rays, 0.3 s); 47% shut in on average, 190657 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
-lamp light (--lights): 115 lamps in the world, 48 baked (67 static ones left out), 99155 corners lit by 0.22 M shadow rays, 60000 triangles added by cutting those near a lamp (0.1 s)
+draw distance classes: 107506 triangles always drawn, 50528 medium, 57027 small; 3580 batches (60.7 per chunk)
+clusters: the chunks are cut into 1276 boxes of 10 m (108 at most in one): 169 triangles and 2.8 batches in a box on average
+ambient occlusion (--ao low): 434496 corners from 219292 places, 16 rays of 2.5 m each against 91985 triangles (3.5 M rays, 0.4 s); 47% shut in on average, 190868 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
+lamp light (--lights): 115 lamps in the world, 48 baked (67 static ones left out), 99298 corners lit by 0.22 M shadow rays, 60000 triangles added by cutting those near a lamp (0.1 s)
 wind: 104 corners sway, 1 world materials marked
 materials: 124 world materials from 134 source materials, 105 textures; 3 blended (0 water), 1 animated, 0 scrolling
 material mean colours (stand-in until the texture arrives): 133 of 124 materials
@@ -775,8 +650,6 @@ dark large triangles in the source (edge 5 m or more, no corner brighter than 30
 world mesh: 12685 triangles, 32 materials, 1370 lightmaps
 average baked vertex light: 18 / 255
 lightmaps: 12004 triangles, 12004 lit from their lightmap (100% of the corners inside the lightmap rectangle)
-rooms: no polygon of the world mesh is marked with its sector: the BSP leaves are used
-chest lids: 0 chests have a lid that opens (0 kinds); 1 kinds of chest stay whole (no model script x1)
 places to stand at, the first thing of each kind:
   CHESTBIG CHESTBIG_ORCMUMMY.ASC: ZS_POS0 at -0 33 -82 facing -0, 66 cm above the ground; ZS_POS0 at -0 33 -82 facing -0, 58 cm above the ground; ZS_POS0 at -0 33 -82 facing -0, 49 cm above the ground
   TOUCHPLATE TOUCHPLATE_STONE.MDS: ZS_POS0 at 0 98 -43 facing -0, 77 cm above the ground; ZS_POS0 at 0 98 -43 facing -0, 89 cm above the ground; ZS_POS0 at 0 98 -43 facing -0, 100 cm above the ground
@@ -822,16 +695,8 @@ lamps for the runtime: 34 (0 of fire places, 0 made for fires without one, 34 fl
 visibility (--vis): 25 rows in 12 cells (10 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 92 places looked from, 10575 clusters in the rows of which 4470 (42%) hidden, 0.3 M rays in 0.0 s, radius 150 m, near 25 m; 0.00 MB
 vertex cache order: 158905 triangles; vertex shader runs per triangle 1.75 -> 1.32 (16-entry FIFO)
 things to use by the player: 42 have a name to show (he may use those), 0 have none (the inhabitants' only); 0 belong to somebody (a person or a guild)
-fields of the things to use (6 combinations; the forge, the lab and the cauldron are in here):
-  TOUCHPLATE: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_ORCGRYRD_GATE_01' x1
-  TOUCHPLATE: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_ORCGRYRD_GATE_02' x1
-  TOUCHPLATE: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_ORCGRYRD_GATE_03' x1
-  TOUCHPLATE: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_ORCGRYRD_GATE_04' x1
-  TOUCHPLATE: focus 'SWITCH', onState '', condition '', needs '', target 'EVT_ORCGRYRD_GATE_05' x1
-  VWHEEL: focus 'WHEEL', onState '', condition '', needs '', target 'EVT_GRAVEYARD_HIDDEN_01' x1
-things of the player's that run the scripts (<function>_S1 when used, _S0 when left): 0 kinds: none
 ambient sounds: 18 placed in world 'orcgraveyard'
-triggers: 0 triggers, 0 lists, 0 script triggers, 0 world starts, 6 movers (6 drawn moving), 0 doors (0 locked), 0 camera flights; 6 solid (72 triangles), 2 meshes; key rotations read conjugated: 6, 0 the other way
+triggers: 0 triggers, 0 lists, 0 script triggers, 0 world starts, 6 movers (6 drawn moving), 0 doors (0 locked); 6 solid (72 triangles), 2 meshes; key rotations read conjugated: 6, 0 the other way
 rooms: none in this world (no BSP sectors): nobody's house is told from the street
 music zones: 1 in world 'orcgraveyard'
 world 'orcgraveyard': 122 x 41 x 148 m, grid 4 x 5 cells of 40 m
@@ -844,7 +709,7 @@ seams: 152 vertices welded to a neighbour within 0.25 cm, 19268 T-junctions clos
 chunks by detail tier (--no-split: one chunk holds everything): 15 of the world and big things (2.0 MB, always around the camera), 9 with medium objects (1.0 MB, within their reach), 7 with small ones (0.9 MB, within theirs)
 draw distance classes: 103038 triangles always drawn, 28222 medium, 27999 small; 1634 batches (52.7 per chunk)
 clusters: the chunks are cut into 423 boxes of 10 m (36 at most in one): 376 triangles and 3.9 batches in a box on average
-ambient occlusion (--ao low): 218109 corners from 102212 places, 16 rays of 2.5 m each against 45517 triangles (1.6 M rays, 0.1 s); 52% shut in on average, 107336 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
+ambient occlusion (--ao low): 218109 corners from 102212 places, 16 rays of 2.5 m each against 45517 triangles (1.6 M rays, 0.2 s); 52% shut in on average, 107336 corners more than half; 0 triangles added by cutting the large ones near something (--ao-extra)
 lamp light (--lights): 316 lamps in the world, 34 baked (282 static ones left out), 46061 corners lit by 0.23 M shadow rays, 60000 triangles added by cutting those near a lamp (0.1 s)
 wind: 80 corners sway, 1 world materials marked
 materials: 55 world materials from 60 source materials, 47 textures; 2 blended (0 water), 0 animated, 0 scrolling
@@ -861,7 +726,6 @@ dark large triangles in the source (edge 5 m or more, no corner brighter than 30
 world mesh: 4141 triangles, 29 materials, 385 lightmaps
 average baked vertex light: 22 / 255
 lightmaps: 4086 triangles, 4086 lit from their lightmap (100% of the corners inside the lightmap rectangle)
-rooms: no polygon of the world mesh is marked with its sector: the BSP leaves are used
 fire flames and lights: 132 hung on their place's node, 0 on the object's origin (no such node in its model)
 places to stand at, the first thing of each kind:
   BELLOW BELLOW_MINE.MDS: ZS_POS0 at 0 97 -100 facing -0, 89 cm above the ground
@@ -945,12 +809,6 @@ lamps for the runtime: 45 (44 of fire places, 0 made for fires without one, 44 f
 visibility (--vis): 30 rows in 11 cells (9 cells with more than one floor; 0 rows of rooms, 0 clusters lie wholly inside a room), 82 places looked from, 16170 clusters in the rows of which 9517 (59%) hidden, 0.5 M rays in 0.0 s, radius 150 m, near 25 m; 0.00 MB
 vertex cache order: 132462 triangles; vertex shader runs per triangle 1.80 -> 1.43 (16-entry FIFO)
 things to use by the player: 59 have a name to show (he may use those), 8 have none (the inhabitants' only); 0 belong to somebody (a person or a guild)
-fields of the things to use (4 combinations; the forge, the lab and the cauldron are in here):
-  BELLOW: focus 'BELLOW', onState '', condition '', needs '', target '' x1
-  FIREPLACE: focus 'TORCH', onState '', condition '', needs 'ITLSTORCHBURNING', target '' x44
-  ORE: focus 'ORE', onState '', condition '', needs 'ITMWPICKAXE', target '' x13
-  STOMPER: focus 'STOMPER', onState '', condition '', needs '', target '' x1
-things of the player's that run the scripts (<function>_S1 when used, _S0 when left): 0 kinds: none
 ambient sounds: 11 placed in world 'freemine'
 rooms: none in this world (no BSP sectors): nobody's house is told from the street
 music zones: 1 in world 'freemine'
@@ -980,12 +838,11 @@ note: 90 triangles needed a private UV origin (wide texture spans)
 WARNING: 2 triangles span more than 32 texture repeats and were clamped
 == all worlds ==
 textures: 682 baked (63 cut-out), max edge 256, 99.1% of the source texels kept, 0 missing
-size: chunks 63.85 MB (44.78 MB packed), textures 43.06 MB (20.19 MB packed)
+size: chunks 69.05 MB (47.46 MB packed), textures 43.06 MB (20.19 MB packed)
 == model 'hero' ==
 character: HUMANS, skeleton HUMANS.MDH (34 nodes), body HUM_BODY_NAKED0; head HUM_HEAD_PONY; rest pose within 0.0 cm of the stored mesh; 33 of 296 skin vertices hang on more than two bones (the two strongest are kept)
 character mesh: 862 triangles, winding kept (score 0.044)
 character skin: HUM_BODY_NAKED_V4_C1.TGA, HUM_HEAD_V9_C1.TGA
-character: 237 animations at the things of the worlds (ladders, benches, forges, levers)
 character: animations of reaching in the model script (ledges, picking up, chests): T_STAND_2_JUMPUPLOW, S_JUMPUPLOW, T_JUMPUPLOW_2_STAND, T_STAND_2_JUMPUPMID, S_JUMPUPMID, T_JUMPUPMID_2_STAND, T_JUMP_2_HANG, T_STAND_2_JUMPUP, S_JUMPUP, S_HANG, T_HANG_2_STAND, T_SWIM_2_HANG, C_STAND_2_IGET_1, C_STAND_2_IGET_2, C_STAND_2_IGET_3, C_IGET_1, C_IGET_2, C_IGET_3, C_IGET_2_STAND_1, C_IGET_2_STAND_2, C_IGET_2_STAND_3, T_CANNOTTAKE, T_CHESTSMALL_STAND_2_S0, S_CHESTSMALL_S0, T_CHESTSMALL_S0_2_S1, S_CHESTSMALL_S1, T_CHESTSMALL_S1_2_S0, T_CHESTSMALL_S0_UNLOCK, T_CHESTSMALL_S0_TRY, T_CHESTSMALL_S0_PICKLEFT, T_CHESTBIG_STAND_2_S0, S_CHESTBIG_S0, T_CHESTBIG_S0_2_S1, S_CHESTBIG_S1, T_CHESTBIG_S1_2_S0, T_CHESTBIG_S0_UNLOCK, T_CHESTBIG_S0_TRY, T_CHESTBIG_S0_PICKLEFT, T_LGUARD_CHANGELEG, T_IGETYOU, T_PLUNDER, T_RUNL_2_JUMPUPLOW, T_RUNR_2_JUMPUPLOW, T_RUNL_2_JUMPUPMID, T_RUNR_2_JUMPUPMID, T_FALLDN_2_HANG, T_STAND_2_HANG, T_CHESTSMALL_S0_2_STAND, T_CHESTSMALL_S0_LOCK, T_CHESTSMALL_S0_PICKRIGHT, T_CHESTBIG_S0_2_STAND, T_CHESTBIG_S0_LOCK, T_CHESTBIG_S0_PICKRIGHT,
 fightclip T_JUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_RUN
 fightclip T_FISTJUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_FISTRUN
@@ -1027,12 +884,12 @@ fightclip T_2HRUN_2_2HRUNL: file T_2HRUN_2_2HRUNL, mds frames 1..11, 11 frames @
 fightclip T_2HRUNL_2_2HRUN: file T_2HRUNL_2_2HRUN, mds frames 32..38, 7 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HRUN
 fightclip T_2HWALK_2_2HWALKL: file T_2HWALK_2_2HWALKL, mds frames 1..18, 18 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALKL
 fightclip T_2HWALKL_2_2HWALK: file T_2HWALKL_2_2HWALK, mds frames 39..49, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALK
-animations: rotations read conjugated (mean distance from the rest pose 19 degrees; the other way 69); bone offsets within 1.1 cm of the skeleton's on average
+animations: rotations read conjugated (mean distance from the rest pose 21 degrees; the other way 70); bone offsets within 1.3 cm of the skeleton's on average
 character faces +Z (S_RUNL carries it 263 cm along +Z)
 animations: hips 99.9 cm above the ground at rest, 97.7 cm in S_RUN
 skeleton: 34 nodes; mesh: 862 triangles, 607 vertices (30% follow two bones), 4 draw calls, largest palette 20 of 26 bones; vertex shader runs per triangle 1.65 -> 0.80 (16-entry FIFO)
 size: 69 x 188 x 36 cm, feet at y = -1.8, position step 0.0078 cm
-clips: 578 (3617 KB): S_RUN 2.00s loop, S_RUNL 0.80s loop 345cm/s, S_WALK 2.00s loop, S_WALKL 0.96s loop 143cm/s, S_WALKBL 0.96s loop 143cm/s, S_WALKWL 1.50s loop 153cm/s, S_JUMP 0.04s loop, S_FALLDN 0.04s loop, S_FALL 1.20s loop, S_SWIM 2.00s loop, S_SWIMF 1.20s loop 233cm/s, S_SWIMB 1.12s loop 106cm/s, T_JUMPB 0.52s 173cm/s, T_RUNSTRAFEL 1.00s 139cm/s, T_RUNSTRAFER 1.00s 160cm/s, T_WALKSTRAFEL 0.68s 112cm/s, T_WALKSTRAFER 0.68s 112cm/s, T_RUNTURNL 0.84s loop, T_RUNTURNR 0.80s loop, T_WALKTURNL 0.84s loop, T_WALKTURNR 0.80s loop, T_SWIMTURNL 0.96s loop, T_SWIMTURNR 0.96s loop, S_FISTRUN 2.00s loop, S_FISTRUNL 0.80s loop 346cm/s, S_FISTWALK 2.00s loop, S_FISTWALKL 0.92s loop 142cm/s, T_FISTRUNSTRAFEL 0.76s loop 368cm/s, T_FISTRUNSTRAFER 0.76s loop 368cm/s, T_FISTRUNTURNL 0.84s loop, T_FISTRUNTURNR 0.80s loop, T_FISTWALKTURNL 0.84s loop, T_FISTWALKTURNR 0.84s loop, T_FISTJUMPB 0.52s 173cm/s, T_FISTPARADEJUMPB 0.44s 204cm/s, S_FISTATTACK 1.16s loop 50cm/s 2 blows, T_FISTATTACKMOVE 1.12s 195cm/s up 49cm 1 blow, T_FISTPARADE_O 0.44s 211cm/s, T_RUN_2_FIST 0.08s, T_FIST_2_FISTRUN 0.08s 102cm/s, T_FISTRUN_2_FIST 0.08s 102cm/s, T_FIST_2_RUN 0.08s, T_MOVE_2_FISTMOVE 0.52s, T_FISTMOVE_2_MOVE 0.52s, S_1HRUN 2.00s loop, S_1HRUNL 0.80s loop 345cm/s, S_1HWALK 2.00s loop, S_1HWALKL 0.80s loop 195cm/s, T_1HRUNSTRAFEL 0.76s loop 368cm/s, T_1HRUNSTRAFER 0.76s loop 368cm/s, T_1HRUNTURNL 1.00s loop 7cm/s, T_1HRUNTURNR 1.00s loop 6cm/s, T_1HWALKTURNL 1.00s loop 7cm/s, T_1HWALKTURNR 1.00s loop 6cm/s, T_1HJUMPB 0.52s 244cm/s, T_1HPARADEJUMPB 0.52s 244cm/s, S_1HATTACK 0.80s loop 160cm/s 1 blow, T_1HATTACKL 1.16s 1 blow, T_1HATTACKR 1.16s 1 blow, T_1HATTACKMOVE 1.12s 1 blow, T_1HPARADE_O 1.12s, T_1HSFINISH 5.50s, T_RUN_2_1H 0.08s, T_1H_2_1HRUN 0.76s 42cm/s, T_1HRUN_2_1H 0.76s 42cm/s, T_1H_2_RUN 0.08s, T_MOVE_2_1HMOVE 0.92s, T_1HMOVE_2_MOVE 0.92s, S_2HRUN 2.40s loop, S_2HRUNL 0.80s loop 343cm/s, S_2HWALK 2.40s loop, S_2HWALKL 0.80s loop 195cm/s, T_2HRUNSTRAFEL 0.76s loop 368cm/s, T_2HRUNSTRAFER 0.76s loop 368cm/s, T_2HRUNTURNL 1.00s loop, T_2HRUNTURNR 1.00s loop, T_2HWALKTURNL 1.00s loop, T_2HWALKTURNR 1.00s loop, T_2HJUMPB 0.92s 194cm/s, T_2HPARADEJUMPB 1.12s, S_2HATTACK 1.64s loop 35cm/s 1 blow, T_2HATTACKL 1.40s 6cm/s 1 blow, T_2HATTACKR 1.40s 4cm/s 1 blow, T_2HPARADE_O 1.12s, T_2HSFINISH 5.50s, T_RUN_2_2H 0.08s, T_2H_2_2HRUN 0.76s 20cm/s, T_2HRUN_2_2H 0.76s 20cm/s, T_2H_2_RUN 0.08s, T_MOVE_2_2HMOVE 0.92s, T_2HMOVE_2_MOVE 0.92s, T_STUMBLE 0.32s 93cm/s, T_STUMBLEB 0.32s 135cm/s, T_GOTHIT 0.32s, T_DEAD 2.50s 38cm/s, T_DEADB 0.84s 183cm/s, S_DEAD 0.04s loop, S_DEADB 0.04s loop, T_STAND_2_WOUNDED 1.90s 42cm/s, S_WOUNDED 2.00s loop, T_WOUNDED_2_STAND 3.30s 24cm/s up 73cm, T_STAND_2_WOUNDEDB 1.30s 44cm/s, S_WOUNDEDB 1.60s loop, T_WOUNDEDB_2_STAND 3.90s 15cm/s up 83cm, T_WOUNDED_TRY 1.90s, T_WOUNDED_2_DEAD 5.50s 5cm/s, T_WOUNDEDB_2_DEADB 5.50s, T_SURPRISE_CW 0.60s 15cm/s, T_SURPRISE_CCW 0.60s 15cm/s, S_SNEAK 2.10s loop, S_SNEAKL 1.64s loop 77cm/s, S_SNEAKBL 1.64s loop 77cm/s, T_SNEAK_2_SNEAKL 0.40s 82cm/s, T_SNEAKL_2_SNEAK 0.40s 126cm/s, T_SNEAKTURNL 1.00s loop, T_SNEAKTURNR 1.00s loop, T_SNEAKSTRAFEL 0.96s 88cm/s, T_SNEAKSTRAFER 0.96s 88cm/s, T_SNEAKBL_2_SNEAK 0.40s 82cm/s, T_SNEAK_2_SNEAKBL 0.40s 126cm/s, S_BOWRUN 2.40s loop, S_BOWRUNL 0.80s loop 345cm/s, S_BOWWALK 2.40s loop, S_BOWWALKL 0.80s loop 195cm/s, T_BOWRUN_2_BOWRUNL 0.40s 328cm/s, T_BOWRUNL_2_BOWRUN 0.24s 49cm/s, T_BOWWALK_2_BOWWALKL 0.68s 115cm/s, T_BOWWALKL_2_BOWWALK 0.40s 149cm/s, T_BOW_2_BOWRUN 0.48s 51cm/s, T_BOWRUN_2_BOW 0.48s 51cm/s, T_RUN_2_BOW 0.16s, T_BOW_2_RUN 0.16s, T_MOVE_2_BOWMOVE 0.72s, T_BOWMOVE_2_MOVE 0.72s, S_BOWSHOOT 0.04s loop, T_BOWRELOAD 1.12s, T_BOWRUNSTRAFEL 0.76s loop 368cm/s, T_BOWRUNSTRAFER 0.76s loop 368cm/s, T_BOWRUNTURNL 1.00s loop, T_BOWRUNTURNR 1.00s loop, T_BOWWALKTURNL 1.00s loop, T_BOWWALKTURNR 1.00s loop, T_BOWJUMPB 0.52s 180cm/s, S_CBOWRUN 2.00s loop, S_CBOWRUNL 0.80s loop 346cm/s, S_CBOWWALK 2.00s loop, S_CBOWWALKL 0.80s loop 195cm/s, T_CBOWRUN_2_CBOWRUNL 0.40s 281cm/s, T_CBOWRUNL_2_CBOWRUN 0.24s 22cm/s, T_CBOWWALK_2_CBOWWALKL 0.68s 125cm/s, T_CBOWWALKL_2_CBOWWALK 0.40s 176cm/s, T_CBOW_2_CBOWRUN 1.32s 10cm/s, T_CBOWRUN_2_CBOW 1.32s 10cm/s, T_RUN_2_CBOW 0.12s, T_CBOW_2_RUN 0.12s, T_MOVE_2_CBOWMOVE 1.52s, T_CBOWMOVE_2_MOVE 1.52s, S_CBOWSHOOT 0.04s loop, T_CBOWRELOAD 1.28s, T_CBOWRUNSTRAFEL 0.76s loop 368cm/s, T_CBOWRUNSTRAFER 0.76s loop 368cm/s, T_CBOWRUNTURNL 1.00s loop, T_CBOWRUNTURNR 1.00s loop, T_CBOWWALKTURNL 1.00s loop, T_CBOWWALKTURNR 1.00s loop, T_CBOWJUMPB 0.52s 268cm/s, S_MAGRUN 2.00s loop, S_MAGRUNL 0.80s loop 346cm/s, S_MAGWALK 2.00s loop, S_MAGWALKL 0.96s loop 142cm/s, T_MAGRUN_2_MAGRUNL 0.40s 290cm/s, T_MAGRUNL_2_MAGRUN 0.20s 28cm/s, T_MAGWALK_2_MAGWALKL 0.32s 136cm/s, T_MAGWALKL_2_MAGWALK 0.20s 38cm/s, T_MAG_2_MAGRUN 0.32s, T_MAGRUN_2_MAG 0.32s, T_RUN_2_MAG 0.32s, T_MAG_2_RUN 0.32s, T_MOVE_2_MAGMOVE 0.72s, T_MAGMOVE_2_MOVE 0.72s, T_CASTFAIL 1.32s, T_MAGRUNSTRAFEL 0.96s loop 160cm/s, T_MAGRUNSTRAFER 0.96s loop 159cm/s, T_MAGRUNTURNL 1.00s loop, T_MAGRUNTURNR 1.00s loop, T_MAGWALKTURNL 1.00s loop, T_MAGWALKTURNR 1.00s loop, T_MAGJUMPB 0.52s 156cm/s, T_MAGRUN_2_SLESHOOT 1.50s 5cm/s, S_SLESHOOT 0.04s loop, T_SLESHOOT_2_STAND 0.72s 10cm/s, T_MAGRUN_2_FIBCAST 0.12s, S_FIBCAST 2.10s loop, S_FIBSHOOT 0.04s loop, T_FIBSHOOT_2_STAND 0.60s 12cm/s, T_MAGRUN_2_TRFSHOOT 1.52s, S_TRFSHOOT 1.44s loop, T_TRFSHOOT_2_STAND 3.20s 8cm/s up 45cm, T_MAGRUN_2_FEASHOOT 1.52s 11cm/s, S_FEASHOOT 0.80s loop, T_FEASHOOT_2_STAND 0.56s 35cm/s, T_MAGRUN_2_HEASHOOT 1.40s 9cm/s up 20cm, S_HEASHOOT 10.60s loop, T_HEASHOOT_2_STAND 1.50s 10cm/s, T_MAGRUN_2_SUMSHOOT 1.12s, S_SUMSHOOT 1.00s loop, T_SUMSHOOT_2_STAND 1.70s, T_MAGRUN_2_WNDCAST 0.12s, S_WNDCAST 1.20s loop, S_WNDSHOOT 0.04s loop, T_WNDSHOOT_2_STAND 0.16s 82cm/s, T_MAGRUN_2_TELSHOOT 2.90s, S_TELSHOOT 0.04s loop, T_TELSHOOT_2_STAND 1.70s, T_MAGRUN_2_PYRSHOOT 0.80s, S_PYRSHOOT 0.44s loop, T_PYRSHOOT_2_STAND 0.24s, T_MAGRUN_2_CONSHOOT 0.72s 19cm/s, S_CONSHOOT 1.60s loop, T_CONSHOOT_2_STAND 0.32s 40cm/s, T_MAGRUN_2_FBTSHOOT 0.28s, S_FBTSHOOT 0.04s loop, T_FBTSHOOT_2_STAND 0.60s 12cm/s, T_MAGRUN_2_LINSHOOT 0.20s 116cm/s, S_LINSHOOT 2.90s loop, T_LINSHOOT_2_STAND 0.36s 63cm/s, T_MAGRUN_2_FRZSHOOT 1.00s 6cm/s, S_FRZSHOOT 3.00s loop, T_FRZSHOOT_2_STAND 0.88s 8cm/s, T_POTION_STAND_2_S0 1.70s 4cm/s, S_POTION_S0 0.04s loop, T_POTION_S0_2_STAND 5.10s, T_POTIONFAST_STAND_2_S0 0.16s, S_POTIONFAST_S0 0.04s loop, T_POTIONFAST_S0_2_STAND 1.28s, T_FOOD_STAND_2_S0 0.32s, S_FOOD_S0 0.04s loop, T_FOOD_S0_2_STAND 0.72s, T_FOODHUGE_STAND_2_S0 0.32s, S_FOODHUGE_S0 0.04s loop, T_FOODHUGE_S0_2_STAND 1.16s, T_MEAT_STAND_2_S0 0.32s, S_MEAT_S0 0.04s loop, T_MEAT_S0_2_STAND 1.12s, T_RICE_STAND_2_S0 0.32s, S_RICE_S0 0.04s loop, T_RICE_S0_2_STAND 1.92s, T_JOINT_STAND_2_S0 1.56s, S_JOINT_S0 0.04s loop, T_JOINT_S0_2_STAND 6.30s, C_STAND_2_IGET_1 0.32s 32cm/s, C_IGET_1 0.04s, C_IGET_2_STAND_1 0.32s 34cm/s up 34cm, T_CHESTBIG_STAND_2_S0 0.52s, S_CHESTBIG_S0 0.04s loop, T_CHESTBIG_S0_2_S1 1.16s, S_CHESTBIG_S1 0.04s loop, T_CHESTBIG_S1_2_S0 0.52s, T_CHESTBIG_S0_2_STAND 0.52s up 46cm, T_CHESTSMALL_STAND_2_S0 0.52s, S_CHESTSMALL_S0 0.04s loop, T_CHESTSMALL_S0_2_S1 1.16s, S_CHESTSMALL_S1 0.04s loop, T_CHESTSMALL_S1_2_S0 0.52s, T_CHESTSMALL_S0_2_STAND 0.52s up 46cm, T_STAND_2_JUMPUPLOW 0.12s 46cm/s, T_STAND_2_JUMPUPMID 0.32s, T_STAND_2_JUMPUP 0.36s 27cm/s, T_JUMP_2_HANG 0.68s 36cm/s up 112cm, T_STAND_2_HANG 1.00s 38cm/s, S_HANG 0.04s loop, T_HANG_2_STAND 1.00s 38cm/s up 168cm, T_JUMPUPLOW_2_STAND 0.32s 149cm/s up 26cm, T_JUMPUPMID_2_STAND 0.80s 72cm/s up 91cm, S_JUMPUPLOW 0.20s 100cm/s up 56cm, S_JUMPUPMID 0.12s 92cm/s up 37cm, S_JUMPUP 0.04s loop, T_SWIM_2_HANG 0.64s, C_STAND_2_IGET_2 0.32s, C_STAND_2_IGET_3 0.32s, C_IGET_2 0.04s, C_IGET_3 0.04s, C_IGET_2_STAND_2 0.32s, C_IGET_2_STAND_3 0.32s, T_CANNOTTAKE 1.20s, T_CHESTSMALL_S0_UNLOCK 1.16s, T_CHESTSMALL_S0_TRY 1.12s up 51cm, T_CHESTSMALL_S0_PICKLEFT 0.32s, T_CHESTBIG_S0_UNLOCK 1.16s, T_CHESTBIG_S0_TRY 1.12s up 59cm, T_CHESTBIG_S0_PICKLEFT 0.32s, T_LGUARD_CHANGELEG 1.90s, T_IGETYOU 2.30s, T_PLUNDER 2.90s, T_RUNL_2_JUMPUPLOW 0.20s 100cm/s up 56cm, T_RUNR_2_JUMPUPLOW 0.20s 100cm/s up 56cm, T_RUNL_2_JUMPUPMID 0.12s 92cm/s up 37cm, T_RUNR_2_JUMPUPMID 0.12s 92cm/s up 37cm, T_FALLDN_2_HANG 0.68s 36cm/s up 112cm, T_CHESTSMALL_S0_LOCK 1.16s, T_CHESTSMALL_S0_PICKRIGHT 0.32s, T_CHESTBIG_S0_LOCK 1.16s, T_CHESTBIG_S0_PICKRIGHT 0.32s, T_LEVER_STAND_2_S0 0.32s, S_LEVER_S0 0.04s loop, S_LEVER_S1 0.04s loop, T_LEVER_S1_2_STAND 0.32s, T_LEVER_S0_2_S1 1.12s, T_VWHEEL_STAND_2_S0 0.36s 17cm/s, S_VWHEEL_S0 0.04s loop, T_VWHEEL_S0_2_S1 0.92s 45cm/s, S_VWHEEL_S1 0.04s loop, T_VWHEEL_S1_2_STAND 0.36s 94cm/s up 26cm, T_BEDHIGH_FRONT_STAND_2_S0 0.16s 31cm/s, S_BEDHIGH_FRONT_S0 0.04s loop, T_BEDHIGH_FRONT_S0_2_S1 2.00s 34cm/s, S_BEDHIGH_FRONT_S1 1.56s loop, T_BEDHIGH_BACK_STAND_2_S0 0.16s 31cm/s, S_BEDHIGH_BACK_S0 0.04s loop, T_BEDHIGH_BACK_S0_2_S1 2.00s 34cm/s, S_BEDHIGH_BACK_S1 1.56s loop, T_BEDLOW_FRONT_STAND_2_S0 0.04s, S_BEDLOW_FRONT_S0 0.04s loop, T_BEDLOW_FRONT_S0_2_S1 3.00s 22cm/s, S_BEDLOW_FRONT_S1 1.56s loop, T_BEDLOW_FRONT_S1_2_S0 2.40s 16cm/s up 66cm, T_BEDLOW_BACK_STAND_2_S0 0.04s, S_BEDLOW_BACK_S0 0.04s loop, T_BEDLOW_BACK_S0_2_S1 3.00s 22cm/s, S_BEDLOW_BACK_S1 1.56s loop, T_BEDLOW_BACK_S1_2_S0 2.40s 16cm/s up 66cm, T_CHAIR_STAND_2_S0 0.16s, S_CHAIR_S0 0.04s loop, T_CHAIR_S0_2_S1 1.36s 59cm/s, S_CHAIR_S1 1.60s loop, T_BENCH_STAND_2_S0 0.16s, S_BENCH_S0 0.04s loop, T_BENCH_S0_2_S1 1.32s 55cm/s, S_BENCH_S1 1.60s loop, T_THRONE_STAND_2_S0 0.16s, S_THRONE_S0 0.04s loop, T_THRONE_S0_2_STAND 0.16s, T_THRONE_S0_2_S1 1.32s 56cm/s, S_THRONE_S1 1.60s loop, T_THRONE_S1_2_S0 1.08s 67cm/s up 34cm, T_LADDER_STAND_2_S0 0.52s, S_LADDER_S0 0.04s loop, T_LADDER_S0_2_S1 1.20s up 100cm, T_LADDER_S1_2_STAND 0.72s 130cm/s up 92cm, T_LADDER_STAND_2_S1 1.12s 84cm/s, T_BARRELO_STAND_2_S0 0.08s 81cm/s, S_BARRELO_S0 0.04s loop, T_BARRELO_S0_2_S1 1.16s 46cm/s up 31cm, S_BARRELO_S1 0.04s loop, T_BELLOW_STAND_2_S0 0.56s 12cm/s, S_BELLOW_S0 0.04s loop, T_BELLOW_S0_2_S1 2.50s, S_BELLOW_S1 0.04s loop, T_BOOK_STAND_2_S0 0.40s, S_BOOK_S0 0.04s loop, T_BOOK_S0_2_S1 1.90s, S_BOOK_S1 7.40s loop, T_REPAIR_STAND_2_S0 0.72s 26cm/s, S_REPAIR_S0 0.04s loop, T_REPAIR_S0_2_STAND 0.72s 26cm/s, T_REPAIR_S0_2_S1 0.36s 16cm/s, S_REPAIR_S1 1.44s loop, T_REPAIR_RANDOM_1 2.30s, T_CAULDRON_STAND_2_S0 1.16s, S_CAULDRON_S0 0.04s loop, T_CAULDRON_S0_2_STAND 1.16s, T_CAULDRON_S0_2_S1 2.00s, S_CAULDRON_S1 1.60s loop, T_ORE_STAND_2_S0 0.16s 42cm/s, S_ORE_S0 0.04s loop, T_ORE_S0_2_STAND 0.16s 42cm/s, T_SMOKE_STAND_2_S0 0.12s, S_SMOKE_S0 0.04s loop, T_SMOKE_S0_2_S1 1.50s 5cm/s, S_SMOKE_S1 5.90s loop, T_PAN_STAND_2_S0 0.96s 16cm/s, S_PAN_S0 0.04s loop, T_PAN_S0_2_S1 0.32s, S_PAN_S1 2.00s loop, T_PAN_S1_2_S0 0.32s, T_LAB_STAND_2_S0 0.08s, S_LAB_S0 0.04s loop, T_LAB_S0_2_STAND 0.08s, T_LAB_S0_2_S1 0.12s, T_LAB_S1_2_S0 0.08s, S_LAB_S1 14.80s loop, T_HERB_STAND_2_S0 2.30s 44cm/s, S_HERB_S0 0.04s loop, T_HERB_S0_2_STAND 2.30s 44cm/s up 40cm, T_HERB_S0_2_S1 2.80s, S_HERB_S1 1.30s loop, T_HERB_S1_2_S0 2.30s, T_PILLAR_STAND_2_S0 0.16s, S_PILLAR_S0 0.04s loop, T_PILLAR_S0_2_S1 6.70s 1cm/s, S_PILLAR_S1 0.04s loop, T_PILLAR_S1_2_S0 0.76s 7cm/s, T_PILLAR_S1_2_STAND 0.08s, T_TURNSWITCH_STAND_2_S0 1.36s 15cm/s, S_TURNSWITCH_S0 0.04s loop, T_TURNSWITCH_S0_2_S1 1.92s, S_TURNSWITCH_S1 0.04s loop, T_TOUCHPLATE_STAND_2_S0 0.20s, S_TOUCHPLATE_S0 0.04s loop, T_TOUCHPLATE_S0_2_S1 1.08s, S_TOUCHPLATE_S1 0.04s loop, T_BSFIRE_STAND_2_S0 0.08s, S_BSFIRE_S0 0.04s loop, T_BSFIRE_S0_2_STAND 0.08s, T_BSFIRE_S0_2_S1 1.32s 34cm/s, S_BSFIRE_S1 2.48s loop, T_BSFIRE_S1_2_S0 1.32s 34cm/s, T_BSANVIL_STAND_2_S0 0.08s, S_BSANVIL_S0 0.04s loop, T_BSANVIL_S0_2_STAND 0.08s, T_BSANVIL_S0_2_S1 0.20s 27cm/s, S_BSANVIL_S1 1.52s loop, T_BSANVIL_S1_2_S0 0.20s 27cm/s, T_BSCOOL_STAND_2_S0 0.08s, S_BSCOOL_S0 0.04s loop, T_BSCOOL_S0_2_STAND 0.08s, T_BSCOOL_S0_2_S1 0.20s 53cm/s, S_BSCOOL_S1 1.64s loop, T_BSCOOL_S1_2_S0 0.20s 53cm/s, T_BSSHARP_STAND_2_S0 0.08s, S_BSSHARP_S0 0.04s loop, T_BSSHARP_S0_2_STAND 0.08s, T_BSSHARP_S0_2_S1 0.40s 27cm/s, S_BSSHARP_S1 2.64s loop, T_BSSHARP_S1_2_S0 0.40s 27cm/s, T_BARBQ_STAND_2_S0 0.08s, S_BARBQ_S0 0.03s loop, T_BARBQ_S0_2_S1 0.32s 39cm/s, S_BARBQ_S1 5.40s loop, T_SPORTAL_STAND_2_S0 0.76s 44cm/s, S_SPORTAL_S0 0.04s loop, T_SPORTAL_S0_2_STAND 0.76s 44cm/s, T_SPORTAL_S0_2_S1 2.70s 11cm/s up 21cm, S_SPORTAL_S1 0.04s loop, T_SPORTAL_S1_2_STAND 0.40s 38cm/s, T_PRIESTGRAVE_STAND_2_S0 0.36s 27cm/s, S_PRIESTGRAVE_S0 0.04s loop, T_PRIESTGRAVE_S0_2_STAND 0.36s 27cm/s, T_PRIESTGRAVE_S0_2_S1 1.16s, S_PRIESTGRAVE_S1 0.04s loop, T_PRIESTGRAVE_S1_2_STAND 0.28s 20cm/s, T_EXCALIBUR_STAND_2_S0 0.20s, S_EXCALIBUR_S0 0.04s loop, T_EXCALIBUR_S0_2_S1 1.60s, S_EXCALIBUR_S1 0.04s loop, T_EXCALIBUR_S1_2_STAND 0.60s up 31cm, T_LEVER_S0_2_STAND 0.32s, T_LEVER_STAND_2_S1 0.32s, T_LEVER_S1_2_S0 1.12s, T_VWHEEL_S0_2_STAND 0.36s 17cm/s, T_VWHEEL_STAND_2_S1 0.36s 94cm/s, T_VWHEEL_S1_2_S0 0.92s 45cm/s, T_BEDHIGH_FRONT_S0_2_STAND 0.16s 31cm/s, T_BEDHIGH_FRONT_S1_2_S0 2.00s 34cm/s up 29cm, T_BEDHIGH_BACK_S0_2_STAND 0.16s 31cm/s, T_BEDHIGH_BACK_S1_2_S0 2.00s 34cm/s up 29cm, T_BEDLOW_FRONT_S0_2_STAND 0.04s, T_BEDLOW_BACK_S0_2_STAND 0.04s, T_CHAIR_S0_2_STAND 0.16s, T_CHAIR_S1_2_S0 1.36s 59cm/s up 35cm, T_BENCH_S0_2_STAND 0.16s, T_BENCH_S1_2_S0 1.32s 55cm/s up 33cm, T_LADDER_S0_2_STAND 0.52s, S_LADDER_S1 0.04s loop, T_LADDER_S1_2_S0 1.20s, T_LADDER_S1_2_S2 1.20s up 100cm, S_LADDER_S2 0.04s loop, T_LADDER_S2_2_STAND 0.72s 130cm/s up 92cm, T_LADDER_STAND_2_S2 1.12s 84cm/s, T_LADDER_S2_2_S1 1.20s, T_LADDER_S2_2_S3 1.20s up 100cm, S_LADDER_S3 0.04s loop, T_LADDER_S3_2_STAND 0.72s 130cm/s up 92cm, T_LADDER_STAND_2_S3 0.72s 130cm/s, T_LADDER_S3_2_S2 1.20s, T_LADDER_S3_2_S4 1.20s up 100cm, S_LADDER_S4 0.04s loop, T_LADDER_S4_2_STAND 0.72s 130cm/s up 92cm, T_LADDER_STAND_2_S4 1.12s 84cm/s, T_LADDER_S4_2_S3 1.20s, T_LADDER_S4_2_S5 1.20s up 100cm, S_LADDER_S5 0.04s loop, T_LADDER_S5_2_STAND 0.72s 130cm/s up 92cm, T_LADDER_STAND_2_S5 1.12s 84cm/s, T_LADDER_S5_2_S4 1.20s, T_LADDER_S5_2_S6 1.20s up 100cm, S_LADDER_S6 0.04s loop, T_LADDER_S6_2_STAND 0.72s 130cm/s up 92cm, T_LADDER_STAND_2_S6 1.12s 84cm/s, T_LADDER_S6_2_S5 1.20s, T_LADDER_S6_2_S7 1.20s up 100cm, S_LADDER_S7 0.04s loop, T_LADDER_S7_2_STAND 0.72s 130cm/s up 92cm, T_LADDER_STAND_2_S7 1.12s 84cm/s, T_LADDER_S7_2_S6 1.20s, T_LADDER_S7_2_S8 1.20s up 100cm, S_LADDER_S8 0.04s loop, T_LADDER_S8_2_STAND 0.72s 130cm/s up 92cm, T_LADDER_STAND_2_S8 1.12s 84cm/s, T_LADDER_S8_2_S7 1.20s, T_LADDER_S8_2_S9 1.20s up 100cm, S_LADDER_S9 0.04s loop, T_LADDER_S9_2_STAND 0.72s 130cm/s up 92cm, T_LADDER_STAND_2_S9 1.12s 84cm/s, T_LADDER_S9_2_S8 1.20s, T_BARRELO_S0_2_STAND 0.08s 81cm/s, T_BARRELO_S1_2_S0 1.16s 46cm/s up 95cm, T_BELLOW_S0_2_STAND 0.56s 12cm/s, T_BELLOW_S1_2_S0 2.50s, T_BELLOW_STAND_2_S1 0.56s 12cm/s, T_BELLOW_S1_2_STAND 0.56s 12cm/s, T_BOOK_S0_2_STAND 0.40s, T_BOOK_S1_2_S0 1.90s, T_REPAIR_S1_2_S0 0.36s 16cm/s, T_CAULDRON_S1_2_S0 1.50s, T_SMOKE_S0_2_STAND 0.12s, T_SMOKE_S1_2_S0 1.50s 5cm/s up 76cm, T_PAN_S0_2_STAND 0.96s 16cm/s up 58cm, T_PILLAR_S0_2_STAND 0.16s, T_TURNSWITCH_S0_2_STAND 1.36s 15cm/s up 24cm, T_TURNSWITCH_S1_2_S0 1.92s, T_TURNSWITCH_STAND_2_S1 1.36s 15cm/s, T_TURNSWITCH_S1_2_STAND 1.36s 15cm/s up 24cm, T_TOUCHPLATE_S0_2_STAND 0.20s, T_TOUCHPLATE_S1_2_S0 1.08s, T_TOUCHPLATE_STAND_2_S1 0.20s, T_TOUCHPLATE_S1_2_STAND 0.20s, T_BARBQ_S0_2_STAND 0.08s, T_BARBQ_S1_2_S0 0.32s 39cm/s, T_EXCALIBUR_S0_2_STAND 0.20s, T_RUN_2_RUNL 0.44s 256cm/s, T_RUNL_2_RUN 0.24s 45cm/s, T_WALK_2_WALKL 0.32s 83cm/s, T_WALKL_2_WALK 0.20s 107cm/s, T_WALKBL_2_WALK 0.28s 147cm/s, T_RUN_2_SNEAK 0.40s 35cm/s, T_STAND_2_JUMP 0.92s 289cm/s up 44cm, T_JUMP_2_STAND 0.20s 136cm/s, T_RUNL_2_JUMP 0.72s 556cm/s up 36cm, T_FALLDN_2_STAND 0.40s 13cm/s, T_WALK_2_WALKWL 0.48s 116cm/s, T_WALKWL_2_WALK 0.40s 97cm/s, T_FISTRUN_2_FISTRUNL 0.40s 273cm/s, T_FISTRUNL_2_FISTRUN 0.24s 60cm/s, T_FISTWALK_2_FISTWALKL 0.32s 121cm/s, T_FISTWALKL_2_FISTWALK 0.24s 51cm/s, T_1HRUN_2_1HRUNL 0.40s 343cm/s, T_1HRUNL_2_1HRUN 0.24s 49cm/s, T_1HWALK_2_1HWALKL 0.56s 137cm/s, T_1HWALKL_2_1HWALK 0.40s 153cm/s, T_2HRUN_2_2HRUNL 0.40s 270cm/s, T_2HRUNL_2_2HRUN 0.24s 70cm/s, T_2HWALK_2_2HWALKL 0.68s 118cm/s, T_2HWALKL_2_2HWALK 0.40s 188cm/s, T_WALK_2_WALKBL 0.20s 107cm/s, T_SNEAK_2_RUN 0.40s 35cm/s up 20cm, T_FISTRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_MAGRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_1HRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_2HRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_BOWRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_CBOWRUNL_2_JUMP 0.72s 556cm/s up 36cm, S_FIST 0.04s loop, S_1H 0.04s loop, S_2H 0.04s loop, S_BOW 0.04s loop, S_CBOW 0.04s loop, S_MAG 0.04s loop
+clips: 341 (2187 KB): S_RUN 2.00s loop, S_RUNL 0.80s loop 345cm/s, S_WALK 2.00s loop, S_WALKL 0.96s loop 143cm/s, S_WALKBL 0.96s loop 143cm/s, S_WALKWL 1.50s loop 153cm/s, S_JUMP 0.04s loop, S_FALLDN 0.04s loop, S_FALL 1.20s loop, S_SWIM 2.00s loop, S_SWIMF 1.20s loop 233cm/s, S_SWIMB 1.12s loop 106cm/s, T_JUMPB 0.52s 173cm/s, T_RUNSTRAFEL 1.00s 139cm/s, T_RUNSTRAFER 1.00s 160cm/s, T_WALKSTRAFEL 0.68s 112cm/s, T_WALKSTRAFER 0.68s 112cm/s, T_RUNTURNL 0.84s loop, T_RUNTURNR 0.80s loop, T_WALKTURNL 0.84s loop, T_WALKTURNR 0.80s loop, T_SWIMTURNL 0.96s loop, T_SWIMTURNR 0.96s loop, S_FISTRUN 2.00s loop, S_FISTRUNL 0.80s loop 346cm/s, S_FISTWALK 2.00s loop, S_FISTWALKL 0.92s loop 142cm/s, T_FISTRUNSTRAFEL 0.76s loop 368cm/s, T_FISTRUNSTRAFER 0.76s loop 368cm/s, T_FISTRUNTURNL 0.84s loop, T_FISTRUNTURNR 0.80s loop, T_FISTWALKTURNL 0.84s loop, T_FISTWALKTURNR 0.84s loop, T_FISTJUMPB 0.52s 173cm/s, T_FISTPARADEJUMPB 0.44s 204cm/s, S_FISTATTACK 1.16s loop 50cm/s 2 blows, T_FISTATTACKMOVE 1.12s 195cm/s up 49cm 1 blow, T_FISTPARADE_O 0.44s 211cm/s, T_RUN_2_FIST 0.08s, T_FIST_2_FISTRUN 0.08s 102cm/s, T_FISTRUN_2_FIST 0.08s 102cm/s, T_FIST_2_RUN 0.08s, T_MOVE_2_FISTMOVE 0.52s, T_FISTMOVE_2_MOVE 0.52s, S_1HRUN 2.00s loop, S_1HRUNL 0.80s loop 345cm/s, S_1HWALK 2.00s loop, S_1HWALKL 0.80s loop 195cm/s, T_1HRUNSTRAFEL 0.76s loop 368cm/s, T_1HRUNSTRAFER 0.76s loop 368cm/s, T_1HRUNTURNL 1.00s loop 7cm/s, T_1HRUNTURNR 1.00s loop 6cm/s, T_1HWALKTURNL 1.00s loop 7cm/s, T_1HWALKTURNR 1.00s loop 6cm/s, T_1HJUMPB 0.52s 244cm/s, T_1HPARADEJUMPB 0.52s 244cm/s, S_1HATTACK 0.80s loop 160cm/s 1 blow, T_1HATTACKL 1.16s 1 blow, T_1HATTACKR 1.16s 1 blow, T_1HATTACKMOVE 1.12s 1 blow, T_1HPARADE_O 1.12s, T_1HSFINISH 5.50s, T_RUN_2_1H 0.08s, T_1H_2_1HRUN 0.76s 42cm/s, T_1HRUN_2_1H 0.76s 42cm/s, T_1H_2_RUN 0.08s, T_MOVE_2_1HMOVE 0.92s, T_1HMOVE_2_MOVE 0.92s, S_2HRUN 2.40s loop, S_2HRUNL 0.80s loop 343cm/s, S_2HWALK 2.40s loop, S_2HWALKL 0.80s loop 195cm/s, T_2HRUNSTRAFEL 0.76s loop 368cm/s, T_2HRUNSTRAFER 0.76s loop 368cm/s, T_2HRUNTURNL 1.00s loop, T_2HRUNTURNR 1.00s loop, T_2HWALKTURNL 1.00s loop, T_2HWALKTURNR 1.00s loop, T_2HJUMPB 0.92s 194cm/s, T_2HPARADEJUMPB 1.12s, S_2HATTACK 1.64s loop 35cm/s 1 blow, T_2HATTACKL 1.40s 6cm/s 1 blow, T_2HATTACKR 1.40s 4cm/s 1 blow, T_2HPARADE_O 1.12s, T_2HSFINISH 5.50s, T_RUN_2_2H 0.08s, T_2H_2_2HRUN 0.76s 20cm/s, T_2HRUN_2_2H 0.76s 20cm/s, T_2H_2_RUN 0.08s, T_MOVE_2_2HMOVE 0.92s, T_2HMOVE_2_MOVE 0.92s, T_STUMBLE 0.32s 93cm/s, T_STUMBLEB 0.32s 135cm/s, T_GOTHIT 0.32s, T_DEAD 2.50s 38cm/s, T_DEADB 0.84s 183cm/s, S_DEAD 0.04s loop, S_DEADB 0.04s loop, T_STAND_2_WOUNDED 1.90s 42cm/s, S_WOUNDED 2.00s loop, T_WOUNDED_2_STAND 3.30s 24cm/s up 73cm, T_STAND_2_WOUNDEDB 1.30s 44cm/s, S_WOUNDEDB 1.60s loop, T_WOUNDEDB_2_STAND 3.90s 15cm/s up 83cm, T_WOUNDED_TRY 1.90s, T_WOUNDED_2_DEAD 5.50s 5cm/s, T_WOUNDEDB_2_DEADB 5.50s, T_SURPRISE_CW 0.60s 15cm/s, T_SURPRISE_CCW 0.60s 15cm/s, S_SNEAK 2.10s loop, S_SNEAKL 1.64s loop 77cm/s, S_SNEAKBL 1.64s loop 77cm/s, T_SNEAK_2_SNEAKL 0.40s 82cm/s, T_SNEAKL_2_SNEAK 0.40s 126cm/s, T_SNEAKTURNL 1.00s loop, T_SNEAKTURNR 1.00s loop, T_SNEAKSTRAFEL 0.96s 88cm/s, T_SNEAKSTRAFER 0.96s 88cm/s, T_SNEAKBL_2_SNEAK 0.40s 82cm/s, T_SNEAK_2_SNEAKBL 0.40s 126cm/s, S_BOWRUN 2.40s loop, S_BOWRUNL 0.80s loop 345cm/s, S_BOWWALK 2.40s loop, S_BOWWALKL 0.80s loop 195cm/s, T_BOWRUN_2_BOWRUNL 0.40s 328cm/s, T_BOWRUNL_2_BOWRUN 0.24s 49cm/s, T_BOWWALK_2_BOWWALKL 0.68s 115cm/s, T_BOWWALKL_2_BOWWALK 0.40s 149cm/s, T_BOW_2_BOWRUN 0.48s 51cm/s, T_BOWRUN_2_BOW 0.48s 51cm/s, T_RUN_2_BOW 0.16s, T_BOW_2_RUN 0.16s, T_MOVE_2_BOWMOVE 0.72s, T_BOWMOVE_2_MOVE 0.72s, S_BOWSHOOT 0.04s loop, T_BOWRELOAD 1.12s, T_BOWRUNSTRAFEL 0.76s loop 368cm/s, T_BOWRUNSTRAFER 0.76s loop 368cm/s, T_BOWRUNTURNL 1.00s loop, T_BOWRUNTURNR 1.00s loop, T_BOWWALKTURNL 1.00s loop, T_BOWWALKTURNR 1.00s loop, T_BOWJUMPB 0.52s 180cm/s, S_CBOWRUN 2.00s loop, S_CBOWRUNL 0.80s loop 346cm/s, S_CBOWWALK 2.00s loop, S_CBOWWALKL 0.80s loop 195cm/s, T_CBOWRUN_2_CBOWRUNL 0.40s 281cm/s, T_CBOWRUNL_2_CBOWRUN 0.24s 22cm/s, T_CBOWWALK_2_CBOWWALKL 0.68s 125cm/s, T_CBOWWALKL_2_CBOWWALK 0.40s 176cm/s, T_CBOW_2_CBOWRUN 1.32s 10cm/s, T_CBOWRUN_2_CBOW 1.32s 10cm/s, T_RUN_2_CBOW 0.12s, T_CBOW_2_RUN 0.12s, T_MOVE_2_CBOWMOVE 1.52s, T_CBOWMOVE_2_MOVE 1.52s, S_CBOWSHOOT 0.04s loop, T_CBOWRELOAD 1.28s, T_CBOWRUNSTRAFEL 0.76s loop 368cm/s, T_CBOWRUNSTRAFER 0.76s loop 368cm/s, T_CBOWRUNTURNL 1.00s loop, T_CBOWRUNTURNR 1.00s loop, T_CBOWWALKTURNL 1.00s loop, T_CBOWWALKTURNR 1.00s loop, T_CBOWJUMPB 0.52s 268cm/s, S_MAGRUN 2.00s loop, S_MAGRUNL 0.80s loop 346cm/s, S_MAGWALK 2.00s loop, S_MAGWALKL 0.96s loop 142cm/s, T_MAGRUN_2_MAGRUNL 0.40s 290cm/s, T_MAGRUNL_2_MAGRUN 0.20s 28cm/s, T_MAGWALK_2_MAGWALKL 0.32s 136cm/s, T_MAGWALKL_2_MAGWALK 0.20s 38cm/s, T_MAG_2_MAGRUN 0.32s, T_MAGRUN_2_MAG 0.32s, T_RUN_2_MAG 0.32s, T_MAG_2_RUN 0.32s, T_MOVE_2_MAGMOVE 0.72s, T_MAGMOVE_2_MOVE 0.72s, T_CASTFAIL 1.32s, T_MAGRUNSTRAFEL 0.96s loop 160cm/s, T_MAGRUNSTRAFER 0.96s loop 159cm/s, T_MAGRUNTURNL 1.00s loop, T_MAGRUNTURNR 1.00s loop, T_MAGWALKTURNL 1.00s loop, T_MAGWALKTURNR 1.00s loop, T_MAGJUMPB 0.52s 156cm/s, T_MAGRUN_2_SLESHOOT 1.50s 5cm/s, S_SLESHOOT 0.04s loop, T_SLESHOOT_2_STAND 0.72s 10cm/s, T_MAGRUN_2_FIBCAST 0.12s, S_FIBCAST 2.10s loop, S_FIBSHOOT 0.04s loop, T_FIBSHOOT_2_STAND 0.60s 12cm/s, T_MAGRUN_2_TRFSHOOT 1.52s, S_TRFSHOOT 1.44s loop, T_TRFSHOOT_2_STAND 3.20s 8cm/s up 45cm, T_MAGRUN_2_FEASHOOT 1.52s 11cm/s, S_FEASHOOT 0.80s loop, T_FEASHOOT_2_STAND 0.56s 35cm/s, T_MAGRUN_2_HEASHOOT 1.40s 9cm/s up 20cm, S_HEASHOOT 10.60s loop, T_HEASHOOT_2_STAND 1.50s 10cm/s, T_MAGRUN_2_SUMSHOOT 1.12s, S_SUMSHOOT 1.00s loop, T_SUMSHOOT_2_STAND 1.70s, T_MAGRUN_2_WNDCAST 0.12s, S_WNDCAST 1.20s loop, S_WNDSHOOT 0.04s loop, T_WNDSHOOT_2_STAND 0.16s 82cm/s, T_MAGRUN_2_TELSHOOT 2.90s, S_TELSHOOT 0.04s loop, T_TELSHOOT_2_STAND 1.70s, T_MAGRUN_2_PYRSHOOT 0.80s, S_PYRSHOOT 0.44s loop, T_PYRSHOOT_2_STAND 0.24s, T_MAGRUN_2_CONSHOOT 0.72s 19cm/s, S_CONSHOOT 1.60s loop, T_CONSHOOT_2_STAND 0.32s 40cm/s, T_MAGRUN_2_FBTSHOOT 0.28s, S_FBTSHOOT 0.04s loop, T_FBTSHOOT_2_STAND 0.60s 12cm/s, T_MAGRUN_2_LINSHOOT 0.20s 116cm/s, S_LINSHOOT 2.90s loop, T_LINSHOOT_2_STAND 0.36s 63cm/s, T_MAGRUN_2_FRZSHOOT 1.00s 6cm/s, S_FRZSHOOT 3.00s loop, T_FRZSHOOT_2_STAND 0.88s 8cm/s, T_POTION_STAND_2_S0 1.70s 4cm/s, S_POTION_S0 0.04s loop, T_POTION_S0_2_STAND 5.10s, T_POTIONFAST_STAND_2_S0 0.16s, S_POTIONFAST_S0 0.04s loop, T_POTIONFAST_S0_2_STAND 1.28s, T_FOOD_STAND_2_S0 0.32s, S_FOOD_S0 0.04s loop, T_FOOD_S0_2_STAND 0.72s, T_FOODHUGE_STAND_2_S0 0.32s, S_FOODHUGE_S0 0.04s loop, T_FOODHUGE_S0_2_STAND 1.16s, T_MEAT_STAND_2_S0 0.32s, S_MEAT_S0 0.04s loop, T_MEAT_S0_2_STAND 1.12s, T_RICE_STAND_2_S0 0.32s, S_RICE_S0 0.04s loop, T_RICE_S0_2_STAND 1.92s, T_JOINT_STAND_2_S0 1.56s, S_JOINT_S0 0.04s loop, T_JOINT_S0_2_STAND 6.30s, C_STAND_2_IGET_1 0.32s 32cm/s, C_IGET_1 0.04s, C_IGET_2_STAND_1 0.32s 34cm/s up 34cm, T_CHESTBIG_STAND_2_S0 0.52s, S_CHESTBIG_S0 0.04s loop, T_CHESTBIG_S0_2_S1 1.16s, S_CHESTBIG_S1 0.04s loop, T_CHESTBIG_S1_2_S0 0.52s, T_CHESTBIG_S0_2_STAND 0.52s up 46cm, T_CHESTSMALL_STAND_2_S0 0.52s, S_CHESTSMALL_S0 0.04s loop, T_CHESTSMALL_S0_2_S1 1.16s, S_CHESTSMALL_S1 0.04s loop, T_CHESTSMALL_S1_2_S0 0.52s, T_CHESTSMALL_S0_2_STAND 0.52s up 46cm, T_STAND_2_JUMPUPLOW 0.12s 46cm/s, T_STAND_2_JUMPUPMID 0.32s, T_STAND_2_JUMPUP 0.36s 27cm/s, T_JUMP_2_HANG 0.68s 36cm/s up 112cm, T_STAND_2_HANG 1.00s 38cm/s, S_HANG 0.04s loop, T_HANG_2_STAND 1.00s 38cm/s up 168cm, T_JUMPUPLOW_2_STAND 0.32s 149cm/s up 26cm, T_JUMPUPMID_2_STAND 0.80s 72cm/s up 91cm, S_JUMPUPLOW 0.20s 100cm/s up 56cm, S_JUMPUPMID 0.12s 92cm/s up 37cm, S_JUMPUP 0.04s loop, T_SWIM_2_HANG 0.64s, C_STAND_2_IGET_2 0.32s, C_STAND_2_IGET_3 0.32s, C_IGET_2 0.04s, C_IGET_3 0.04s, C_IGET_2_STAND_2 0.32s, C_IGET_2_STAND_3 0.32s, T_CANNOTTAKE 1.20s, T_CHESTSMALL_S0_UNLOCK 1.16s, T_CHESTSMALL_S0_TRY 1.12s up 51cm, T_CHESTSMALL_S0_PICKLEFT 0.32s, T_CHESTBIG_S0_UNLOCK 1.16s, T_CHESTBIG_S0_TRY 1.12s up 59cm, T_CHESTBIG_S0_PICKLEFT 0.32s, T_LGUARD_CHANGELEG 1.90s, T_IGETYOU 2.30s, T_PLUNDER 2.90s, T_RUNL_2_JUMPUPLOW 0.20s 100cm/s up 56cm, T_RUNR_2_JUMPUPLOW 0.20s 100cm/s up 56cm, T_RUNL_2_JUMPUPMID 0.12s 92cm/s up 37cm, T_RUNR_2_JUMPUPMID 0.12s 92cm/s up 37cm, T_FALLDN_2_HANG 0.68s 36cm/s up 112cm, T_CHESTSMALL_S0_LOCK 1.16s, T_CHESTSMALL_S0_PICKRIGHT 0.32s, T_CHESTBIG_S0_LOCK 1.16s, T_CHESTBIG_S0_PICKRIGHT 0.32s, T_RUN_2_RUNL 0.44s 256cm/s, T_RUNL_2_RUN 0.24s 45cm/s, T_WALK_2_WALKL 0.32s 83cm/s, T_WALKL_2_WALK 0.20s 107cm/s, T_WALKBL_2_WALK 0.28s 147cm/s, T_RUN_2_SNEAK 0.40s 35cm/s, T_STAND_2_JUMP 0.92s 289cm/s up 44cm, T_JUMP_2_STAND 0.20s 136cm/s, T_RUNL_2_JUMP 0.72s 556cm/s up 36cm, T_FALLDN_2_STAND 0.40s 13cm/s, T_WALK_2_WALKWL 0.48s 116cm/s, T_WALKWL_2_WALK 0.40s 97cm/s, T_FISTRUN_2_FISTRUNL 0.40s 273cm/s, T_FISTRUNL_2_FISTRUN 0.24s 60cm/s, T_FISTWALK_2_FISTWALKL 0.32s 121cm/s, T_FISTWALKL_2_FISTWALK 0.24s 51cm/s, T_1HRUN_2_1HRUNL 0.40s 343cm/s, T_1HRUNL_2_1HRUN 0.24s 49cm/s, T_1HWALK_2_1HWALKL 0.56s 137cm/s, T_1HWALKL_2_1HWALK 0.40s 153cm/s, T_2HRUN_2_2HRUNL 0.40s 270cm/s, T_2HRUNL_2_2HRUN 0.24s 70cm/s, T_2HWALK_2_2HWALKL 0.68s 118cm/s, T_2HWALKL_2_2HWALK 0.40s 188cm/s, T_WALK_2_WALKBL 0.20s 107cm/s, T_SNEAK_2_RUN 0.40s 35cm/s up 20cm, T_FISTRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_MAGRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_1HRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_2HRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_BOWRUNL_2_JUMP 0.72s 556cm/s up 36cm, T_CBOWRUNL_2_JUMP 0.72s 556cm/s up 36cm, S_FIST 0.04s loop, S_1H 0.04s loop, S_2H 0.04s loop, S_BOW 0.04s loop, S_CBOW 0.04s loop, S_MAG 0.04s loop
 blends: 56: T_RUN_2_WALK 0.20s, T_WALK_2_RUN 0.20s, T_WALK_2_SNEAK 0.20s, T_SNEAK_2_WALK 0.20s, T_RUNL_2_WALKL 0.20s, T_WALKL_2_RUNL 0.20s, T_SNEAKL_2_RUNL 0.20s, T_RUNL_2_SNEAKL 0.20s, T_WALKL_2_SNEAKL 0.20s, T_SNEAKL_2_WALKL 0.20s, T_JUMP_2_RUNL 0.20s, T_JUMP_2_FALLDN 0.20s, T_FALLDN_2_RUNL 0.20s, T_FALLDN_2_FALL 0.50s, T_SNEAKL_2_WALKWL 0.20s, T_WALKWL_2_SNEAKL 0.20s, T_WALKL_2_WALKWL 0.20s, T_WALKWL_2_WALKL 0.20s, T_RUNL_2_WALKWL 0.20s, T_WALKWL_2_RUNL 0.20s, T_WALKWL_2_SWIMF 0.20s, T_SWIMF_2_WALKWL 0.40s, T_SWIM_2_SWIMF 0.30s, T_SWIMF_2_SWIM 0.50s, T_SWIM_2_SWIMB 0.30s, T_SWIMB_2_SWIM 0.30s, T_FISTRUN_2_FISTWALK 0.10s, T_FISTWALK_2_FISTRUN 0.10s, T_FISTRUNL_2_FISTWALKL 0.20s, T_FISTWALKL_2_FISTRUNL 0.20s, T_JUMP_2_FISTRUNL 0.20s, T_MAGRUN_2_MAGWALK 0.10s, T_MAGWALK_2_MAGRUN 0.10s, T_MAGRUNL_2_MAGWALKL 0.20s, T_MAGWALKL_2_MAGRUNL 0.20s, T_JUMP_2_MAGRUNL 0.20s, T_1HRUN_2_1HWALK 0.20s, T_1HWALK_2_1HRUN 0.20s, T_1HRUNL_2_1HWALKL 0.20s, T_1HWALKL_2_1HRUNL 0.20s, T_JUMP_2_1HRUNL 0.20s, T_2HRUN_2_2HWALK 0.20s, T_2HWALK_2_2HRUN 0.20s, T_2HRUNL_2_2HWALKL 0.20s, T_2HWALKL_2_2HRUNL 0.20s, T_JUMP_2_2HRUNL 0.20s, T_BOWRUN_2_BOWWALK 0.20s, T_BOWWALK_2_BOWRUN 0.20s, T_BOWRUNL_2_BOWWALKL 0.20s, T_BOWWALKL_2_BOWRUNL 0.20s, T_JUMP_2_BOWRUNL 0.20s, T_CBOWRUN_2_CBOWWALK 0.00s, T_CBOWWALK_2_CBOWRUN 0.00s, T_CBOWRUNL_2_CBOWWALKL 0.20s, T_CBOWWALKL_2_CBOWRUNL 0.20s, T_JUMP_2_CBOWRUNL 0.20s
 == scripts ==
 scripts: GOTHIC.DAT: 36106 symbols, 8899 functions and instances (2830 instances), 291 externals, 180 states, 9 classes with 291 members, 1086 KB of code, 409 KB of text; image 2.32 MB
@@ -1058,15 +915,14 @@ engine functions the start-up called that do nothing yet: 5, called 821 times: W
 life: the scripts have 180 states; the people of these worlds are put into 63: ZS_MM_ALLSCHEDULER x682, ZS_SLEEP x194, ZS_SMALLTALK x97, ZS_GUARD x93, ZS_STANDAROUND x65, ZS_SITAROUND x63, ZS_SITCAMPFIRE x52, ZS_PICKORE x47, ZS_GUARDPALISADE x33, ZS_GUARDPASSAGE x27, ZS_PICKRICE x25, ZS_BOSS x24, ZS_STAND x15, ZS_WASHSELF x14, ZS_HOSTILEGUARD x13, ZS_PRACTICESWORD x12, ZS_SMOKE x11, ZS_OTMEDITATE x11, ZS_ORC_EATANDDRINK x10, ZS_ROASTSCAVENGER x10, ...
 life: the states call 146 engine functions, 134 of which the engine carries out; the others do nothing yet, by the number of states that call them: NPC_HASNEWS x8, NPC_ISWAYBLOCKED x5, SND_PLAY x4, NPC_GETNEWSVICTIM x2, NPC_MEMORYENTRY x2, MDL_STARTFACEANI x1, AI_SHOOTAT x1, AI_AIMAT x1, AI_LOOKAT x1, NPC_GETGUILDATTITUDE x1, NPC_DELETENEWS x1, NPC_GETNEWSOFFENDER x1
 dialogue: 1538 infos of 200 characters (275 important, 732 permanent); the 3979 functions they run call 163 engine functions, 148 of which the engine carries out; the others do nothing yet: PLAYVIDEO, NPC_MEMORYENTRY, NPC_HASNEWS, NPC_GETNEWSOFFENDER, NPC_GETNEWSVICTIM, NPC_DELETENEWS, AI_WAITTILLEND, AI_POINTAT, SND_PLAY, SND_ISSOURCENPC, NPC_CANSEESOURCE, MDL_STARTFACEANI, WLD_SETOBJECTROUTINE, TA_BEGINOVERLAY, TA_ENDOVERLAY
+debug report written to C:\GOTHIC~1\windows\bake_debug.txt (3 KB)
 characters the scripts put in later (talks, summoning): 46 kinds not in any world at the start, made to read their looks (1276 characters before): DEMON, SUMMONEDBYPC_DEMON, SUMMONEDBYNPC_DEMON, XARDASDEMON, DEMONLORD, SUMMONEDBYPC_STONEGOLEM, SUMMONEDBYNPC_STONEGOLEM, ORCSLAVE, SUMMONEDBYPC_SKELETON, SUMMONEDBYNPC_SKELETON, SUMMONEDBYPC_SKELETONWARRIOR, SUMMONEDBYNPC_SKELETONWARRIOR, ...
 things to use: the worlds have 44 kinds; the scripts name 33 of them: BABEBED x1, BARBQ x12, BATHTUB x1, BEDHIGH x1, BEDLOW x9, BELLOW x2, BENCH x76, BOOK x16, BSANVIL x5, BSCOOL x10, BSFIRE x4, BSSHARP x8, CAULDRON x16, CHAIR x213, FIREPLACE x244, HERB x8, LAB x9, LEVER x3, MCELLO x1, MDRUMSCHEIT x1, MHARP x1, MLUTE x1, MPIPE x3, ORE x133, PAN x8, PAUKE x1, REPAIR x29, SMOKE x14, STOMPER x4, STONEMILL x1, THRONE x2, VWHEEL x14, WASH x2; not named: BARRELO, CHESTBIG, CHESTSMALL, EXCALIBUR, ORCDRUM, PC, PILLAR, PRIESTGRAVE, SPORTAL, TOUCHPLATE, TURNSWITCH
 things in the hands: the scripts' items are used in 14 ways (BRUSH, COOLAIR, FIRESPIT, FOOD, FOODHUGE, HORN, JOINT, LUTE, MAP, MAPSEALED, MEAT, POTION, POTIONFAST, RICE); their animations are asked of every skeleton
 shared meshes: 602 models share 162 meshes (1.68 MB); the engine keeps the 127 most worn (1.27 MB) in memory: they dress 3261 of 3296 body and head places
 overlays: 0 baked (0 animations): none
-overlays: the scripts name 50 (50 in strings, 0 more in calls to apply one); the game has 0 for 22 skeletons, 0 of them named - no files <SKELETON>_*.MSB/.MDS found
-transformations: 11 creatures baked whole for the player (497 animations, 4.65 MB): BLOODFLY 31, LURKER 51, MEATBUG 33, MINECRAWLER 39, MOLERAT 51, ORCDOG 50, SCAVENGER 50, SHADOWBEAST 52, SNAPPER 47, WARAN 43, WOLF 50
 coarse bodies (--npc-lod): 149, 36712 triangles (the full bodies they stand in for: 100620)
-inhabitants: 1276 characters with 372 different looks; models for 372 of them (1321 characters): 22 skeletons with 1848 animations, 149 bodies, 304 heads; 188296 triangles, 301 textures, 3.64 MB of models, 22.41 MB of animations and 7.87 MB of textures
+inhabitants: 1276 characters with 372 different looks; models for 372 of them (1321 characters): 22 skeletons with 1848 animations, 149 bodies, 304 heads; 188296 triangles, 301 textures, 3.51 MB of models, 17.89 MB of animations and 7.87 MB of textures
 animations: the scripts name or imply 154, and using the things they name takes 90 families more; fighting 341 more; baked per skeleton: humans 712, babe 115, waran 43, zombie 34, scavenger 49, lurker 48, wolf 50, meatbug 25, orc 318, crawler 40, golem 63, swampshark 28, shadow 52, snapper 48, gobbo 47, bloodfly 30, molerat 46, harpie 23, demon 28, troll 36, crwqueen 8, sleeper 5
 things to use: what humans has for 28 kinds of them:
   BARBQ: T_BARBQ_STAND_2_S0 0.12s ->S_BARBQ_S0 root +0 +0 +0 M (carries), S_BARBQ_S0 0.03s loop root held at -0 98 9 M, T_BARBQ_S0_2_S1 0.36s ->S_BARBQ_S1 root +0 +0 +13 M (carries), S_BARBQ_S1 5.40s loop root held at -0 98 23 M, T_BARBQ_S0_2_STAND 0.12s root +0 +0 -0 M (carries), T_BARBQ_S1_2_S0 0.36s ->S_BARBQ_S0 root +0 +0 -13 M (carries)
@@ -1115,13 +971,12 @@ script/visualfx: VISUALFX.DAT, 49884 bytes
 particles: 280 effects in the scripts (144 pictures baked, 5 of the names have none), 1230 emitters in the worlds
   pictures not found: bloodkai, mfx_spell_star, water_dripping, water_dripping_ground, waveofinsanity_a0
 barrier: MAGICFRONTIER_OUT.MSH, 1680 corners, 560 triangles, box (-767 -57 -602)..(669 371 489) m, uv (-0.84 -1.24)..(1.73 0.22), top corner at (-50 371 -56) m; texture tex/modialpha02 16x16
-chapter cards: 6 pictures named by IntroduceChapter calls, 6 baked (1.10 MB)
-things lying about: 1086 (1075 from the world files, 11 from the start-up scripts) of 114 kinds of look; looks of all things of the scripts: 391, 383 models baked (26788 triangles, 0.87 MB), 336 pictures for the inventory (2.96 MB)
+things lying about: 1086 (1075 from the world files, 11 from the start-up scripts) of 114 kinds of look; looks of all things of the scripts: 382, 374 models baked (26620 triangles, 0.86 MB), 336 pictures for the inventory (2.96 MB)
 WARNING: 8 looks of things not baked (they lie there unseen): ITFOFLASKHEALTH: no mesh; ITLSTORCHBURNING: no mesh; ITMIJOINT: no mesh; ITMW1HSWORD01: no mesh; ITMW1HSWORDOLD01: no mesh; ITMW2HSWORD01: no mesh; ITWRBOOK: no mesh; ITWRMAP: no mesh
-time: sources 0.3 s, world textures 12.4 s, worlds 63.0 s, hero 0.2 s, scripts and inhabitants 21.9 s
+time: sources 0.3 s, world textures 14.2 s, worlds 28.2 s, hero 0.2 s, scripts and inhabitants 21.0 s
 dialogue: 7354 lines (377 KB of text) from OU.BIN, in 16 blocks, 6 names given twice (the first kept)
 font: FONT_OLD_10_WHITE (17 px) and FONT_OLD_20_WHITE (36 px), code page 1252, 218 glyphs, atlas 256x336, 87 KB
-C:\GOTHIC~1\windows\data.pak written (9683 entries); the rest (voices, music) follows
+C:\GOTHIC~1\windows\data.pak written (8917 entries); the rest (voices, music) follows
 hero: fightclip T_JUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_RUN
 hero: fightclip T_FISTJUMPB: file T_JUMPB, mds frames 1..14, 14 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_FISTRUN
 hero: fightclip T_FISTPARADEJUMPB: file T_FISTPARADEJUMPB, mds frames 1..12, 12 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next -
@@ -1163,4 +1018,4 @@ hero: fightclip T_2HRUNL_2_2HRUN: file T_2HRUNL_2_2HRUN, mds frames 32..38, 7 fr
 hero: fightclip T_2HWALK_2_2HWALKL: file T_2HWALK_2_2HWALKL, mds frames 1..18, 18 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALKL
 hero: fightclip T_2HWALKL_2_2HWALK: file T_2HWALKL_2_2HWALK, mds frames 39..49, 11 frames @ 25 fps, moves; hits -; hitEnds -; windows -; parry -; fightMode -1; next S_2HWALK
 wrote C:\GOTHIC~1\windows\music.pak: 22 tracks
-wrote C:\GOTHIC~1\windows\data.pak: 5 worlds, 9683 entries in 99.0 s
+wrote C:\GOTHIC~1\windows\data.pak: 5 worlds, 8917 entries in 64.8 s

@@ -201,3 +201,5 @@
 - fix162: lidded chests exempt from small-object thinning; lid = most-turning node; creatures face the player (faceHero).
 - fix163: rooms from the sector-flagged floor polygons (1 m cells inside the polygon).
 - fix164–166: controls as the original's: X the last weapon/bow/spell, Y parry, ZL tap the next arms of the quick slots (food skipped), ZL held picks a slot with the D-Pad on the bottom screen.
+- fix167: rooms from the floors named after their sector (OpenGothic: the ground material's name); side blows on the D-Pad without A.
+- fix168: the chapter card shows its title (top) and subtitle (bottom) over the picture; debug slider "Глава" (B_Kapitelwechsel).

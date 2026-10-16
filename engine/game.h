@@ -500,6 +500,9 @@ public:
 	// (skills and values of the character, the scripts' PLAYER_TALENT_*/KNOWS_* variables set).
 	// Both return the new level / the number of things set.
 	i32 debugLevelUp();
+	// (fix168) The chapter changed by hand: the scripts' B_Kapitelwechsel (their own changes of the chapter: routines,
+	// the card) if they have it, else the variable only. 0 nothing done, 1 the scripts' function, 2 the variable only.
+	int debugSetChapter(i32 chapter);
 	u32 debugLearnAll();
 	// The talk flag (AIV_INVINCIBLE) off: fighters wait (AI_Wait in ZS_Attack) for as long as the player 'is talking'.
 	void clearTalkFlag(u32 npc, bool clear = true);

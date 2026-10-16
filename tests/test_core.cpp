@@ -10621,6 +10621,17 @@ static void testDialogs() {
 		CHECK(std::strcmp(g.chapter().title, "Chapter 2") == 0 && g.chapter().serial == 2);
 		CHECK(app.chapterSeen() == 2);
 		{
+			// (fix168) The debug page's chapter slider: it follows the game, and moved, it changes the chapter.
+			app.update(a, dt);
+			CHECK(app.settings().chapter == 2);
+			app.settings().chapter = 4;
+			app.applySettings();
+			CHECK(g.chapterNumber() == 4);
+			app.settings().chapter = 2;
+			app.applySettings();
+			CHECK(g.chapterNumber() == 2);
+		}
+		{
 			// The baker finds the pictures the scripts name for the chapters (the calls' literal arguments).
 			u32 sites[16 * 5] = {};
 			const u32 intro = g.vm().find("INTRODUCECHAPTER");

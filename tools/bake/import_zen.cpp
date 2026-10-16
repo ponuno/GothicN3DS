@@ -4314,38 +4314,42 @@ static void collectRooms(const zenkit::BspTree& bsp, const zenkit::Mesh& mesh, S
 			else if (it->second != ins.first->second) claims[node] = -1;
 		}
 	}
-	// (fix163) First, as ZenGin knows it: a polygon of the world mesh carries the sector it belongs to (its flags:
-	// is_sector, sector_index - zCPolygon::sectorIndex, what the game reads under the feet; OpenGothic asks the floor
-	// under the feet too). A room is then its own floors and nothing else: each floor polygon's footprint, cut into
-	// cells of a metre where it is larger, only the cells whose middle lies on the polygon (a slanting triangle's box
-	// would reach into the street). Standing on it: from a little under the floor to well above a head.
+	// (fix167) The floor under the feet says the room, as OpenGothic reads it (MoveAlgo::portalName: the name of the
+	// ground's material; World::guildOfRoom takes the part between ':' and '_'): ZenGin names the materials of a
+	// sector's polygons after it ("S:<sector>_<material>"). A room is then its own floors and nothing else: each floor
+	// polygon's footprint, cut into cells of a metre, only the cells whose middle lies on the polygon (a slanting
+	// triangle's box would reach into the street). Standing on it: from a little under the floor to well above a head.
+	// Without such names (fix163): the polygons' sector flags; without those, the BSP leaves.
 	{
-		std::vector<SrcScene::RoomBoxSrc> floorBoxes;
-		size_t floors = 0;
-		std::set<u32> roomsWithFloors;
-		for (size_t pi = 0; pi < mesh.geometry.size(); ++pi) {
-			const zenkit::Polygon& poly = mesh.geometry[pi];
-			if (!poly.flags.is_sector || poly.flags.is_portal || poly.index_count < 3) continue;
-			const int si = poly.flags.sector_index;
-			if (si < 0 || size_t(si) >= bsp.sectors.size() || bsp.sectors[size_t(si)].name.empty()) continue;
-			if (poly.plane_normal.y < 0.35f && -poly.plane_normal.y < 0.35f) continue; // (walls: no one stands on them)
-			const auto room = byName.find(upper(bsp.sectors[size_t(si)].name));
-			if (room == byName.end()) continue;
+		const auto roomOfMaterial = [&](u32 mi) -> int {
+			if (mi >= mesh.materials.size()) return -1;
+			const std::string& n = mesh.materials[mi].name;
+			const size_t colon = n.find(':');
+			if (colon == std::string::npos) return -1;
+			std::string rest = upper(n.substr(colon + 1));
+			const size_t us = rest.find('_');
+			auto it = byName.find(us == std::string::npos ? rest : rest.substr(0, us));
+			if (it == byName.end()) it = byName.find(rest); // (a sector named with an underscore of its own)
+			if (it == byName.end() && us != std::string::npos) {
+				// The longest sector name the material's name starts with.
+				size_t best = 0;
+				for (const auto& [name, idx] : byName)
+					if (name.size() > best && rest.compare(0, name.size(), name) == 0 && (rest.size() == name.size() || rest[name.size()] == '_')) {
+						best = name.size();
+						it = byName.find(name);
+					}
+			}
+			return it == byName.end() ? -1 : int(it->second);
+		};
+		const auto floorCells = [&](const zenkit::Polygon& poly, u32 room, std::vector<SrcScene::RoomBoxSrc>& out) -> bool {
+			if (poly.index_count < 3 || poly.plane_normal.y < 0.35f) return false; // (walls and ceilings: no one stands on them)
 			std::vector<std::array<float, 3>> pts;
-			bool ok = true;
 			for (size_t c = 0; c < poly.index_count; ++c) {
 				const size_t k = size_t(poly.index_offset) + c;
-				if (k >= mesh.polygon_vertex_indices.size() || mesh.polygon_vertex_indices[k] >= mesh.vertices.size()) {
-					ok = false;
-					break;
-				}
+				if (k >= mesh.polygon_vertex_indices.size() || mesh.polygon_vertex_indices[k] >= mesh.vertices.size()) return false;
 				const zenkit::Vec3& v = mesh.vertices[mesh.polygon_vertex_indices[k]];
 				pts.push_back({v.x, v.y, v.z});
 			}
-			if (!ok) continue;
-			// (Only floors: a ceiling faces down; the room's height comes from the floor.)
-			if (poly.plane_normal.y < 0.0f) continue;
-			++floors;
 			float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
 			for (const auto& p : pts)
 				for (int a2 = 0; a2 < 3; ++a2) {
@@ -4373,22 +4377,69 @@ static void collectRooms(const zenkit::BspTree& bsp, const zenkit::Mesh& mesh, S
 						bx.bbMin[0] = lo[0] + float(runStart) * cx, bx.bbMax[0] = lo[0] + float(ix) * cx;
 						bx.bbMin[2] = lo[2] + float(iz) * cz, bx.bbMax[2] = lo[2] + float(iz + 1) * cz;
 						bx.bbMin[1] = lo[1] - 60.0f, bx.bbMax[1] = hi[1] + 250.0f;
-						bx.room = room->second;
-						floorBoxes.push_back(bx);
+						bx.room = room;
+						out.push_back(bx);
 						runStart = -1;
 					}
 				}
 			}
-			roomsWithFloors.insert(room->second);
+			return true;
+		};
+		// What the names say against what the flags say (for the log: which of the two the world has).
+		size_t named = 0, namedFloors = 0, flagged = 0, flaggedFloors = 0, agree = 0, unknownNames = 0;
+		std::set<std::string> unknownSample;
+		std::vector<SrcScene::RoomBoxSrc> byMaterial, byFlag;
+		std::set<u32> roomsByMaterial, roomsByFlag;
+		for (size_t pi = 0; pi < mesh.geometry.size(); ++pi) {
+			const zenkit::Polygon& poly = mesh.geometry[pi];
+			if (poly.flags.is_portal) continue;
+			const int rm = roomOfMaterial(poly.material);
+			if (rm < 0 && poly.material < mesh.materials.size() && mesh.materials[poly.material].name.find(':') != std::string::npos) {
+				++unknownNames;
+				if (unknownSample.size() < 6) unknownSample.insert(mesh.materials[poly.material].name);
+			}
+			int rf = -1;
+			if (poly.flags.is_sector) {
+				const int si = poly.flags.sector_index;
+				if (si >= 0 && size_t(si) < bsp.sectors.size() && !bsp.sectors[size_t(si)].name.empty()) {
+					const auto room = byName.find(upper(bsp.sectors[size_t(si)].name));
+					if (room != byName.end()) rf = int(room->second);
+				}
+			}
+			if (rm >= 0) {
+				++named;
+				if (floorCells(poly, u32(rm), byMaterial)) {
+					++namedFloors;
+					roomsByMaterial.insert(u32(rm));
+				}
+			}
+			if (rf >= 0) {
+				++flagged;
+				if (floorCells(poly, u32(rf), byFlag)) {
+					++flaggedFloors;
+					roomsByFlag.insert(u32(rf));
+				}
+			}
+			if (rm >= 0 && rf >= 0 && rm == rf) ++agree;
 		}
-		if (!floorBoxes.empty() && floorBoxes.size() <= 600000) {
-			scene.notes.push_back("rooms: " + std::to_string(floorBoxes.size()) + " boxes from the floors of the sectors (" + std::to_string(floors) +
-			                      " floor polygons marked with their sector, " + std::to_string(roomsWithFloors.size()) + " of " +
-			                      std::to_string(scene.roomNames.size()) + " rooms have floors)");
-			for (const auto& bx : floorBoxes) scene.roomBoxes.push_back(bx);
+		std::string sample;
+		for (const auto& n : unknownSample) sample += (sample.empty() ? "" : ", ") + n;
+		scene.notes.push_back("rooms: polygons named after a sector " + std::to_string(named) + " (" + std::to_string(namedFloors) + " floors, " +
+		                      std::to_string(roomsByMaterial.size()) + " rooms), flagged with a sector " + std::to_string(flagged) + " (" +
+		                      std::to_string(flaggedFloors) + " floors, " + std::to_string(roomsByFlag.size()) + " rooms), the two agree on " +
+		                      std::to_string(agree) + "; named with ':' but no such sector " + std::to_string(unknownNames) +
+		                      (sample.empty() ? std::string() : " (" + sample + ")"));
+		for (int pass = 0; pass < 2; ++pass) {
+			const auto& boxes = pass == 0 ? byMaterial : byFlag;
+			if (boxes.empty() || boxes.size() > 600000) continue;
+			scene.notes.push_back(std::string("rooms: ") + std::to_string(boxes.size()) + " boxes from the floors " +
+			                      (pass == 0 ? "named after their sector (as OpenGothic)" : "flagged with their sector") + ", " +
+			                      std::to_string((pass == 0 ? roomsByMaterial : roomsByFlag).size()) + " of " + std::to_string(scene.roomNames.size()) +
+			                      " rooms have floors");
+			for (const auto& bx : boxes) scene.roomBoxes.push_back(bx);
 			return;
 		}
-		scene.notes.push_back("rooms: no polygon of the world mesh is marked with its sector: the BSP leaves are used");
+		scene.notes.push_back("rooms: no floor is named or flagged with its sector: the BSP leaves are used");
 	}
 	// (fix156) A leaf's box is a box round all its polygons: a hut that stands crooked, a slope, a wall running
 	// out of the leaf - and the street beside the hut was "in the room", the guards drove the player out of

@@ -159,6 +159,7 @@ const Item kDebugWorld[] = {
     {"Полёт вкл/выкл", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_FLY, "Свободная камера без столкновений", nullptr},
     {"Следующий мир", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_NEXT_WORLD, nullptr, nullptr},
     {"Время +1 час", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_HOUR, nullptr, nullptr},
+    {"Глава", RANGE, &Settings::chapter, nullptr, 1, 0, 6, "", 0, "Меняет главу скриптами игры", nullptr},
     {"Дальний план вблизи", TOGGLE, &Settings::farFill, nullptr, 0, 0, 0, nullptr, 0, "Затычка на месте незагруженных чанков", nullptr},
     {"Смена LOD", CHOICE, &Settings::lodFade, kLodFade, 3, 0, 0, nullptr, 0, "Смена дальних чанков (рябь)", nullptr},
     {"Погода", CHOICE, &Settings::weather, kWeather, 6, 0, 0, nullptr, 0, "Авто: меняется сама; иначе держится", nullptr},

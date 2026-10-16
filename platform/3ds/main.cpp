@@ -24,7 +24,7 @@
 //   L / R         classic scheme: step aside
 //   ZR            lock on to the enemy in front / let go (drawing a weapon locks
 //                 on to a hostile one in front by itself: the menu's "Автозахват цели")
-//   D-Pad Left/Right  with a weapon in hand: the direction of a blow (held as A is pressed)
+//   D-Pad Left/Right  with a melee weapon in hand: a blow from that side (no A needed; again in the window: the combo)
 //   D-Pad Up      with empty hands: the fists on / off
 //   D-Pad Down    sneak on / off
 //   START         pause menu: continue, graphics, controls, faults, save, leave
@@ -768,6 +768,21 @@ int main(int, char**) {
 					} else if (gameDown & KEY_DUP) {
 						in.attack = true;
 						in.blowDir = 0;
+					}
+				}
+				// (fix167) With a melee weapon (or the fists) in hand the D-Pad's left and right are the side blows by
+				// themselves - no A to hold; a press within a blow's window goes on with the combo, as A does.
+				{
+					const u8 hw = app.hero().weapon();
+					const bool melee = hw == g3::WEAPON_FIST || hw == g3::WEAPON_1H || hw == g3::WEAPON_2H;
+					if (melee && !(gameHeld & KEY_A)) {
+						if (gameDown & KEY_DLEFT) {
+							in.attack = true;
+							in.blowDir = -1;
+						} else if (gameDown & KEY_DRIGHT) {
+							in.attack = true;
+							in.blowDir = 1;
+						}
 					}
 				}
 				in.dpadUp = (gameDown & dpad & KEY_DUP) != 0 && !(gameHeld & KEY_A); // (with A held it is a blow, not the fists)

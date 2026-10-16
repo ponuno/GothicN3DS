@@ -68,6 +68,8 @@ public:
 
 	// The engine's own effect for the tail of an arrow (no script has one): a thin glowing streak. Start it with start().
 	static u32 arrowTrail();
+	// The engine's own spray of blood (a short burst; use play()): for when the scripts' blood emitter is missing.
+	static u32 bloodSplash();
 
 	const ParticleStats& stats() const { return _stats; }
 

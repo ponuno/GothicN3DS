@@ -473,6 +473,12 @@ public:
 		void* user = nullptr;
 	};
 	void setShotHook(const ShotHook& hook) { _shotHook = hook; }
+	// A blow that did harm landed on `victim` (not the player's character: App::heroHit has its own): blood.
+	struct BloodHook {
+		void (*splash)(void* user, u32 victim, u32 attacker, i32 damage) = nullptr;
+		void* user = nullptr;
+	};
+	void setBloodHook(const BloodHook& hook) { _bloodHook = hook; }
 	// Somebody near is after the player's character in a fight state, with a weapon drawn or a beast (the music's
 	// "targeted": OpenGothic's WorldObjects::isTargetedBy).
 	bool targetsHero() const;
@@ -689,6 +695,7 @@ private:
 	int nextTarget(const NpcActor& a, bool set);
 	// ---- ranged fighting: bows and spells (npc_fight.cpp) ----
 	ShotHook _shotHook;
+	BloodHook _bloodHook;
 	bool rangedWeapon(const GameNpc& n) const { return n.weapon == WEAPON_BOW || n.weapon == WEAPON_CBOW || n.weapon == WEAPON_MAG; }
 	float rangedReach(const GameNpc& n) const;
 	bool startShot(NpcActor& a);

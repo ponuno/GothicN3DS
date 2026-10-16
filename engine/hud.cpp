@@ -18,6 +18,7 @@ void App::drawOverlay() {
 	const bool character = _hero.loaded() && !_player.flying;
 	// (While the inventory's info box is up, it has the bottom of the picture.)
 	const bool items = itemOverlay();
+	if (!menuOpen && character && _npcs.loaded()) drawLowHealth();
 	if (_settings.hud && !menuOpen && character) {
 		// The character's health, bottom left - only while the bottom screen
 		// shows the report: otherwise its bars are there, as on the console.

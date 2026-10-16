@@ -576,6 +576,8 @@ public:
 	bool spellStriking() const { return _strikeSpell >= 0 || _strikeIsArrow; }
 	// The guilds' table of numbers (C_GILVALUES), an entry of it; `otherwise` if none.
 	i32 guildValue(const char* member, i32 guild, i32 otherwise);
+	// The same for a text member (blood_emitter, blood_texture); "" if none.
+	const char* guildString(const char* member, i32 guild);
 	// What a fall from `drop` cm costs a character, as OpenGothic's DamageCalculator::damageFall has it:
 	// the guild's FALLDOWN_DAMAGE per metre beyond its FALLDOWN_HEIGHT, less the PROT_FALL protection.
 	// 0 for none (a guild that is never hurt by falling has the height 9999, or a protection below 0).

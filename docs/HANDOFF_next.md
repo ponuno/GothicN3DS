@@ -204,3 +204,11 @@ The `frames` waves check was failing since fix119 (calm rivers): fixed in the te
 - FramePacer: far distance (`farScale()`, cfg.farMin/farHold/farStep/farEvery/farRecover*). Only in the steady 30 fps mode (main.cpp sets farMin = 250 m / farCm, otherwise 1). Cut only after the load stays over halfHigh for 75 frames, only if the far layer is >=12% of triangles drawn, 1.2% per 15 frames, floor 250 m; comes back last, 3% per 150 frames of room, wait doubles if it was cut again soon. `App::setFarScale` moves farDistance, fog and zFar.
 - Menu: PAGE_EXPERIMENTAL (under Graphics) with a warning about screen overclocking, the full frame-rate list (40, floating 30) and "Частота экрана"; Graphics keeps 60 / 30 / free.
 - Not tested on console. Frame reprojection (fix49) still undecided (user: too harsh).
+
+## fix174 — blood
+- Npcs::BloodHook (npc_fight.cpp after emitHit, dmg>0) and App::heroHit -> App::bloodAt: GIL_VALUES blood_emitter (Game::guildString) if the scripts have it, else Particles::bloodSplash() (G3_BLOOD_SPLASH, built in; short burst). BLOOD_DISABLED respected. Not played beyond 25 m.
+- App::drawLowHealth (hud.cpp): red pulsing frame at the screen edge under 35% hp, flash for 0.45 s after a blow taken, stronger when down.
+- No menu toggle (would need a settings version). Untested on console.
+
+## fix175 — swamp water by place
+- applyWaterLight: water triangles inside a fog zone (G1: the swamp's) get a murky vertex tint (0.62,0.80,0.40) on top of the swamp tint, since the swamp camp uses owodwat, not a "swamp" texture. Needs a rebake. Foam/flicker fixes (fix170/171) are baker-side too: bake.log must show "narrow ones left bare" and no "kept the game's" for *_a0 frames.

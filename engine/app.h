@@ -464,6 +464,10 @@ private:
 	void boltUpdate(float dt);
 	void boltImpact(Bolt& b, int victim, Vec3 at);
 	// An inhabitant shoots (Npcs::ShotHook): an arrow of its bow (`spell` < 0) or a spell, at `target`.
+	static void bloodThunk(void* user, u32 victim, u32 attacker, i32 damage);
+	void bloodAt(u32 victim, u32 attacker, i32 damage);
+	void drawLowHealth();
+	float _bloodPain = 0.0f; // a red flash at the screen's edge after a blow taken (s)
 	static bool npcShotThunk(void* user, u32 shooter, int target, i32 spell, i32 level);
 	bool npcShot(u32 shooter, int target, i32 spell, i32 level);
 	Bolt* freeBolt();

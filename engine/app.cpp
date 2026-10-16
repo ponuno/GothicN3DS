@@ -102,6 +102,10 @@ bool App::init(const char* pakPath, const char* worldName) {
 	shots.fire = npcShotThunk;
 	shots.user = this;
 	_npcs.setShotHook(shots);
+	Npcs::BloodHook blood;
+	blood.splash = bloodThunk;
+	blood.user = this;
+	_npcs.setBloodHook(blood);
 	startSound();
 	startSpeech();
 	// The overlay (menus, the HUD): without it the game still runs.
@@ -444,6 +448,7 @@ void App::update(const Input& given, float dt) {
 		in.toggleFly = given.toggleFly;
 	}
 	_clock += dt;
+	if (_bloodPain > 0.0f) _bloodPain = max(_bloodPain - dt, 0.0f);
 	if (dt > 0.0f) _fps += (clamp(1.0f / dt, 0.0f, 120.0f) - _fps) * min(dt * 3.0f, 1.0f);
 	_env.timeOfDay += in.timeStep;
 	if (_env.dayLength > 0) _env.timeOfDay += dt * 24.0f / _env.dayLength;
@@ -1279,6 +1284,51 @@ const GameNpc* App::heroNpc() const {
 	return i >= 0 ? &_npcs.game().npc(u32(i)) : nullptr;
 }
 
+void App::bloodThunk(void* user, u32 victim, u32 attacker, i32 damage) { static_cast<App*>(user)->bloodAt(victim, attacker, damage); }
+
+// Blood where a blow lands: the guild's own emitter (GIL_VALUES blood_emitter) if the scripts have one, else the engine's.
+void App::bloodAt(u32 victim, u32 attacker, i32 damage) {
+	if (!_npcs.loaded() || damage <= 0) return;
+	Game& g = _npcs.game();
+	if (victim >= g.npcCount()) return;
+	const GameNpc& v = g.npc(victim);
+	const i32 guild = g.guildOf(v);
+	if (g.guildValue("BLOOD_DISABLED", guild, 0)) return;
+	Vec3 at {v.pos[0], v.pos[1] + (g.isMonster(v) ? 70.0f : 120.0f), v.pos[2]};
+	// Not for what is out of sight (or far): the pool is small.
+	const Vec3 d {at.x - _cam.pos.x, at.y - _cam.pos.y, at.z - _cam.pos.z};
+	if (d.x * d.x + d.y * d.y + d.z * d.z > 2500.0f * 2500.0f) return;
+	(void)attacker;
+	const char* name = g.guildString("BLOOD_EMITTER", guild);
+	float secs = 0.12f;
+	if (name && *name && _particles.play(hashName(name), at, 0.0f, 0.6f)) return;
+	_particles.play(Particles::bloodSplash(), at, 0.0f, secs + (damage > 30 ? 0.06f : 0.0f));
+}
+
+// Low health: the edge of the picture reddens and beats with the heart; a blow taken flashes it.
+void App::drawLowHealth() {
+	const i32 hp = heroHitPoints(), mx = heroHitPointsMax();
+	if (mx <= 0) return;
+	float low = 0.0f;
+	if (hp > 0) low = clamp((0.35f - float(hp) / float(mx)) / 0.35f, 0.0f, 1.0f);
+	const float flash = clamp(_bloodPain / 0.45f, 0.0f, 1.0f);
+	float a = low * (0.45f + 0.25f * sinf(float(_clock) * (4.0f + 3.0f * low))) + flash * 0.5f;
+	if (_hero.down() && hp <= 0) a = max(a, 0.6f);
+	if (a <= 0.01f) return;
+	const int W = gfx::SCREEN_W, H = gfx::SCREEN_H;
+	// A few frames inside each other, the outer the reddest.
+	for (int i = 0; i < 5; ++i) {
+		const int t = 3 + i * 4, x = i * 5;
+		const u32 al = u32(clamp(a * (1.0f - 0.18f * float(i)), 0.0f, 1.0f) * 70.0f);
+		if (al == 0) continue;
+		const u32 col = 0xB00000u << 8 | al;
+		_ui.rect(0, 0, W, t + x, col);
+		_ui.rect(0, H - t - x, W, H, col);
+		_ui.rect(0, t + x, t + x, H - t - x, col);
+		_ui.rect(W - t - x, t + x, W, H - t - x, col);
+	}
+}
+
 i32 App::heroHitPoints() const {
 	const GameNpc* h = heroNpc();
 	return h ? _npcs.game().hitPoints(*h) : 0;
@@ -1550,6 +1600,10 @@ void App::heroHit(u32 attacker) {
 	h.lastHit = int(attacker);
 	++_fight.blowsTaken;
 	_npcs.emitHit(attacker, u32(hi));
+	if (dmg > 0) {
+		bloodAt(u32(hi), attacker, dmg);
+		_bloodPain = 0.45f;
+	}
 	if (hp > 1 && dmg > 0 && (_fight.blowsTaken & 1)) _npcs.emitSvm(u32(hi), "AARGH");
 	_hero.hit(fromBehind);
 	_npcs.sendPerception("PERC_ASSESSFIGHTSOUND", u32(hi), int(attacker), hi);

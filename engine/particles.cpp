@@ -162,7 +162,52 @@ u32 Particles::arrowTrail() {
 	return h;
 }
 
+u32 Particles::bloodSplash() {
+	static const u32 h = hashName("G3_BLOOD_SPLASH");
+	return h;
+}
+
 void Particles::loadDef(Def& d, u32 effect) {
+	if (effect == bloodSplash()) {
+		d.pps = 420;
+		d.ppsKeys[0] = 1;
+		d.ppsKeyCount = 1;
+		d.ppsLooping = true;
+		d.shape = SHAPE_SPHERE;
+		d.volume = true;
+		d.dim[0] = d.dim[1] = d.dim[2] = 10;
+		d.objectFrame = false;
+		d.headVar = 3.14159f;
+		d.elevAngle = 0.3f;
+		d.elevVar = 1.0f;
+		d.velAvg = 0.22f;
+		d.velVar = 0.1f;
+		d.lifeAvg = 480;
+		d.lifeVar = 160;
+		d.gravity[1] = -0.0009f;
+		d.additive = false;
+		d.colorStart[0] = 0.62f;
+		d.colorStart[1] = 0.03f;
+		d.colorStart[2] = 0.03f;
+		d.colorEnd[0] = 0.32f;
+		d.colorEnd[1] = d.colorEnd[2] = 0.0f;
+		d.sizeStart[0] = d.sizeStart[1] = 5;
+		d.sizeEndScale = 0.8f;
+		d.alphaStart = 1.0f;
+		d.alphaEnd = 0.0f;
+		static const char* const pics[] = {"tex/synth_smoke", "tex/smoke", "tex/firesmoke", "tex/fireflare", "tex/synth_spark"};
+		for (const char* pic : pics) {
+			const u32 hash = hashName(pic);
+			if (gfx::Texture* t = _textures.acquire(*_pak, hash)) {
+				d.frames[0] = t;
+				d.frameHash[0] = hash;
+				d.frameCount = 1;
+				break;
+			}
+		}
+		d.ok = d.frameCount > 0;
+		return;
+	}
 	if (effect == arrowTrail()) {
 		d.pps = 220;
 		d.ppsKeys[0] = 1;

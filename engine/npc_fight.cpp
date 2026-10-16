@@ -1060,6 +1060,7 @@ i32 Npcs::strike(u32 attacker, u32 victim, bool fromBehind) {
 	const i32 dmg = _game.meleeDamage(attacker, victim);
 	++_stats.blows;
 	emitHit(attacker, victim);
+	if (dmg > 0 && _bloodHook.splash) _bloodHook.splash(_bloodHook.user, victim, attacker, dmg);
 	if (a && a->ready && a->mob < 0 && dmg > 0 && a->stumble <= -0.75f) {
 		// Reeling: from in front back, from behind forward. (A blow that does
 		// no harm - armour - does not stagger, nor does one that comes while

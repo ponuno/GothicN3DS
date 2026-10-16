@@ -262,6 +262,16 @@ i32 Game::guildValue(const char* member, i32 guild, i32 otherwise) {
 	return v ? v : otherwise;
 }
 
+const char* Game::guildString(const char* member, i32 guild) {
+	guildValue(member, guild, 0); // (makes the table)
+	if (!_gilValues || guild < 0) return "";
+	if (guild < constant("GIL_SEPERATOR_HUM", 16)) guild = constant("GIL_HUMAN", 1);
+	const u32 m = _vm.findMember("C_GILVALUES", member);
+	if (m == SCRIPT_NONE || _vm.symbol(m).type != SCRIPT_STRING || u32(guild) >= _vm.symbol(m).count) return "";
+	const char* s = _vm.getString(m, u32(guild), _gilValues);
+	return s ? s : "";
+}
+
 i32 Game::fallDamage(u32 npc, float drop) {
 	if (npc >= _npcCount) return 0;
 	const GameNpc& n = _npcs[npc];

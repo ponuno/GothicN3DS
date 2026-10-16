@@ -212,3 +212,14 @@ The `frames` waves check was failing since fix119 (calm rivers): fixed in the te
 
 ## fix175 — swamp water by place
 - applyWaterLight: water triangles inside a fog zone (G1: the swamp's) get a murky vertex tint (0.62,0.80,0.40) on top of the swamp tint, since the swamp camp uses owodwat, not a "swamp" texture. Needs a rebake. Foam/flicker fixes (fix170/171) are baker-side too: bake.log must show "narrow ones left bare" and no "kept the game's" for *_a0 frames.
+
+## fix176 — far layer shortened in rooms
+- App::updateEnclosed (every 0.3 s, two equal answers): sightBlocked up 7 m and >=3 of 4 horizontal 9 m rays => enclosed; setFarScale then uses drawDistance+15 m (below the 250 m floor). From a user photo: hut in the camp, far 17195 tris/18 calls vs 6713 near, gpu 100%. Untested on console.
+- The Windows g3ds-bake.exe in windows/ must be rebuilt (build_baker.bat) from this source for the fix170-175 baker changes.
+
+## fix177 — fog zones on by default
+- BakeOptions::fogZones = true (--no-fog-zones turns off): the swamp's zCZoneZFog blends the fog colour/range in the engine. User photo: swamp lake under a clear sky, "no swamp atmosphere". Not seen on console yet; if the haze is too weak, the zone's own range/colour from the ZEN are used as they are (tune in App::render fog blend).
+
+## fix178 — NPCs and the weapon; D-Pad up
+- Npcs::perceive (npc_perc.cpp): a character whose state waits for PERC_ASSESSREMOVEWEAPON gets it as a state check too (hero weapon NONE, in reach, seen), not only from the one-shot sendPerception at the moment the weapon goes away - a busy/not-yet-started NPC used to miss it and keep asking.
+- App: the D-Pad up no longer takes the fists (only the fist slot does).

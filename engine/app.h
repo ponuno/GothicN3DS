@@ -122,6 +122,9 @@ public:
 	void setDistanceScale(float scale);
 	// The far layer's distance as a share of the one set (the pacer shortens it at 30 fps; never under 250 m or the full-detail reach).
 	void setFarScale(float scale);
+	// Shut in a room (a roof above and walls around): the far layer is then drawn at the shortest reach - behind the walls it is
+	// a quarter of the frame's triangles for nothing (a hut in the camp: 17 000 far triangles against 6 700 near ones).
+	bool enclosed() const { return _enclosed; }
 	// Moves the player's eyes to `eye` (keeps walking or flying as it was).
 	void teleport(Vec3 eye);
 	// Switches to another world of the archive. `eye` null uses its start
@@ -467,6 +470,10 @@ private:
 	static void bloodThunk(void* user, u32 victim, u32 attacker, i32 damage);
 	void bloodAt(u32 victim, u32 attacker, i32 damage);
 	void drawLowHealth();
+	bool _enclosed = false;
+	u8 _enclosedVotes = 0;
+	float _enclosedClock = 0.0f, _farScaleSet = 1.0f;
+	void updateEnclosed(float dt);
 	float _bloodPain = 0.0f; // a red flash at the screen's edge after a blow taken (s)
 	static bool npcShotThunk(void* user, u32 shooter, int target, i32 spell, i32 level);
 	bool npcShot(u32 shooter, int target, i32 spell, i32 level);

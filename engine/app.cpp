@@ -382,12 +382,40 @@ void App::setFarScale(float scale) {
 	StreamConfig& cfg = _world.config();
 	const float base = _settings.farCm();
 	if (base <= 0.0f || !_world.hasFarLayer()) return;
-	const float d = max(max(base * clamp(scale, 0.0f, 1.0f), 25000.0f), cfg.drawDistance + 1000.0f);
+	_farScaleSet = scale;
+	float d = max(max(base * clamp(scale, 0.0f, 1.0f), 25000.0f), cfg.drawDistance + 1000.0f);
+	if (_enclosed) d = cfg.drawDistance + 1500.0f; // (under a roof: the shortest, whatever the floor of the pacer)
 	if (cfg.farDistance == d) return;
 	cfg.farDistance = min(d, base);
 	_env.fogEnd = cfg.farDistance;
 	_env.fogStart = max(cfg.drawDistance * 0.5f, cfg.farDistance * 0.2f);
 	_cam.zFar = cfg.farDistance + _world.header().chunkSize * 4.0f;
+}
+
+void App::updateEnclosed(float dt) {
+	_enclosedClock += dt;
+	if (_enclosedClock < 0.3f) return;
+	_enclosedClock = 0.0f;
+	bool now = false;
+	if (_world.farActive() && !_world.indoor() && !_underwater) {
+		const Vec3 e {_cam.pos.x, _cam.pos.y, _cam.pos.z};
+		const auto blocked = [&](float dx, float dy, float dz) { return _world.sightBlocked(e, Vec3 {e.x + dx, e.y + dy, e.z + dz}); };
+		if (blocked(0, 700, 0)) {
+			const int walls = int(blocked(900, 0, 0)) + int(blocked(-900, 0, 0)) + int(blocked(0, 0, 900)) + int(blocked(0, 0, -900));
+			now = walls >= 3;
+		}
+	}
+	// Two answers alike in a row before it changes: a doorway is not a flicker of the far layer.
+	if (now == _enclosed) {
+		_enclosedVotes = 0;
+		return;
+	}
+	if (++_enclosedVotes < 2) return;
+	_enclosed = now;
+	_enclosedVotes = 0;
+	_farScaleSet += 0.0f;
+	_world.config().farDistance = 0.0f; // (setFarScale sees the change)
+	setFarScale(_farScaleSet);
 }
 
 void App::shutdown() {
@@ -448,6 +476,7 @@ void App::update(const Input& given, float dt) {
 		in.toggleFly = given.toggleFly;
 	}
 	_clock += dt;
+	updateEnclosed(dt);
 	if (_bloodPain > 0.0f) _bloodPain = max(_bloodPain - dt, 0.0f);
 	if (dt > 0.0f) _fps += (clamp(1.0f / dt, 0.0f, 120.0f) - _fps) * min(dt * 3.0f, 1.0f);
 	_env.timeOfDay += in.timeStep;
@@ -1491,7 +1520,7 @@ void App::fightInput(const Input& in, float dt) {
 		take(_hero.weapon() == want ? u8(WEAPON_NONE) : want);
 	}
 	// (On the console D-Pad up takes the fists when the hands are empty; with a weapon it is the blow ahead.)
-	if (in.fistSlot || (in.dpadUp && (_hero.weapon() == WEAPON_NONE || _hero.weapon() == WEAPON_FIST)))
+	if (in.fistSlot) // (fix178: the D-Pad up no longer takes the fists)
 		take(_hero.weapon() == WEAPON_FIST ? u8(WEAPON_NONE) : u8(WEAPON_FIST));
 	if (in.cycleWeapon) heroCycleWeapon();
 	heroSwitchTick();

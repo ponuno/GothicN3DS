@@ -175,7 +175,7 @@ void usage() {
 	          "  --water-texture S  the water's texture: made here (default: wind ripples; S = made) or the game's (S = original)\n"
 	          "  --water-alpha N    how opaque the made water is, 0..255 (default 140; lower = more see-through)\n"
 	          "  --water-color R,G,B  the deep colour of that texture (default 38,66,70)\n"
-	          "  --fog-zones        put the world's fog zones (zCZoneZFog) into data.pak, the fog then follows them (default off: G1 has one)\n"
+	          "  --fog-zones        put the world's fog zones (zCZoneZFog) into data.pak, the fog then follows them (default on: the swamp's greenish haze; --no-fog-zones turns it off)\n"
 	          "  --water-biome S    the water tinted by the fog zone it lies in, 0..1 (default 0 = off)\n"
 	          "  --swamp-water-color R,G,B / --swamp-water-alpha N  the swamp's water (textures named *swamp*): default 50,60,34 and 190\n"
 	          "  --water-keep A,B   textures (names start with these) that keep the game's picture though water uses them (e.g. ncodflgrasda)\n"
@@ -386,6 +386,7 @@ int main(int argc, char** argv) {
 				}
 			}
 			else if (a == "--fog-zones") opt.fogZones = true;
+			else if (a == "--no-fog-zones") opt.fogZones = false;
 			else if (a == "--water-biome") opt.waterBiome = std::clamp(std::stof(value()), 0.0f, 1.0f);
 			else if (a == "--water-alpha") opt.waterAlpha = u8(std::clamp(std::stoi(value()), 0, 255)), waterAlphaGiven = true;
 			else if (a == "--water-color") {

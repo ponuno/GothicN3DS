@@ -50,7 +50,7 @@ struct BakeOptions {
 	u8 waterLight = 200;
 	// Fog zones of the world (zCZoneZFog) into data.pak (--fog-zones; off by default: G1 has one) and the water tinted by the zone it lies in
 	// (--water-biome S, 0..1, default 0: one colour all over).
-	bool fogZones = false;
+	bool fogZones = true;
 	float waterBiome = 0.0f;
 	// --water-keep A,B: textures (names start with these, case does not matter) that keep the game's picture though a water material uses them.
 	std::vector<std::string> waterKeep;

@@ -194,6 +194,13 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 	if (_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer] && hero && within(_percPlayer, *hero) &&
 	    sees(a, heroIndex, _heroLink.sneaking))
 		react(a, a.perc[_percPlayer], int(heroIndex), -1);
+	// "Put the weapon away": a state that asks for it (ZS_ReactToWeapon ...) waits for PERC_ASSESSREMOVEWEAPON, which the
+	// engine sends once, at the moment the weapon goes away - and a character busy then (turning, speaking, a state
+	// not begun) missed it, and went on asking. So it is also looked at as a state of the player: not in the fighting
+	// stance (nothing in the hands, none being drawn) and a character that waits for it hears it, at its next look.
+	if (_percRemoveWeapon >= 0 && _percRemoveWeapon < Game::PERC_TYPES && a.perc[_percRemoveWeapon] && hero && hero->weapon == WEAPON_NONE &&
+	    heroInReach && still() && within(_percRemoveWeapon, *hero) && sees(a, heroIndex, false))
+		react(a, a.perc[_percRemoveWeapon], int(heroIndex), -1);
 	// The nearest enemy: anybody about it is hostile to, the player too.
 	const u32 enemyFn = _percEnemy >= 0 && _percEnemy < Game::PERC_TYPES ? a.perc[_percEnemy] : 0;
 	if (enemyFn && still()) {

@@ -12282,6 +12282,13 @@ func void ZS_MM_AssessEnemy_end() {
 		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
 	};
 	const auto global = [&](const char* name) { return g.vm().getInt(g.vm().find(name)); };
+	// What the growl asks the sound engine for (the fallback names, when the clip has no tag): never "SCAVENGER.MDS_WARN".
+	static std::string asked;
+	asked.clear();
+	Npcs::NamedSoundHook spy;
+	spy.fn = [](void*, const char* names, int, float) { asked += names; asked += ';'; };
+	spy.user = nullptr;
+	npcs.setNamedSoundHook(spy);
 	app.teleport({-7000.0f, 900.0f, -7000.0f});
 	run(3.0f);
 	int b = -1;
@@ -12330,6 +12337,8 @@ func void ZS_MM_AssessEnemy_end() {
 		app.teleport({-7000.0f, 900.0f, -7000.0f});
 		run(6.0f);
 	}
+	std::printf("  the growl asks for: %s\n", asked.c_str());
+	CHECK(asked.find("SCAVENGER_WARN") != std::string::npos && asked.find(".MDS") == std::string::npos);
 }
 
 // The real scripts of Gothic 1, compiled from their sources (G3_G1_SCRIPT: one file, see the handoff), on the synthetic

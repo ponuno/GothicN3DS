@@ -297,9 +297,14 @@ bool Npcs::playAni(NpcActor& a, const char* rawName, i32 bodyState) {
 	if (strcmp(name, "T_WARN") == 0 && c->sfxCount() == 0) {
 		const GameNpc& n = _game.npc(a.npc);
 		if (_game.isMonster(n) && n.look.script) {
-			char base[24], names[192];
+			char base[24], names[320];
 			upperCopy(base, sizeof(base), _game.text(n.look.script));
-			snprintf(names, sizeof(names), "%s_WARN|%s_GROWL|%s_THREAT|%s_AGGRO|%s_ANGRY|%s_ATTACK", base, base, base, base, base, base);
+			// fix191: "Scavenger.mds" is the model script's name; the creature's name is the word before the dot
+			// (the names below were tried with ".MDS" in them, and none could ever be found).
+			if (char* dot = strchr(base, '.')) *dot = 0;
+			char brief[4] = {base[0], base[1], base[2], 0}; // (SCA_WARN style)
+			snprintf(names, sizeof(names), "%s_WARN|%s_GROWL|%s_THREAT|%s_AGGRO|%s_ANGRY|%s_ATTACK|%s_WARN|%s_GROWL|%s_AGGRO", base, base, base, base, base,
+			         base, brief, brief, brief);
 			emitSound(a.npc, names, 1.0f);
 		}
 	}

@@ -326,6 +326,7 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 	// ---- clips ----
 	std::vector<ModelClipRef> clipRefs;
 	std::vector<std::string> clipNotes;
+	std::vector<std::string> threatNotes;
 	std::set<u32> clipNames;
 	size_t clipBytes = 0;
 	for (const SrcClip& clip : model.clips) {
@@ -414,6 +415,15 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 			sfxEvents.push_back(ev);
 		}
 		std::stable_sort(sfxEvents.begin(), sfxEvents.end(), [](const ClipSfxEvent& a, const ClipSfxEvent& b) { return a.frame < b.frame; });
+		// fix191: what a creature's threat and attack clips say (the log answers "why is the growl not heard": no tag at all,
+		// a name the sound script lacks, or a range too short).
+		if (clip.name.size() >= 6 && (lowerName(clip.name) == "t_warn" || lowerName(clip.name).rfind("t_warn", 0) == 0 || lowerName(clip.name) == "s_warn")) {
+			std::string t = clip.name + ": ";
+			if (sfxEvents.empty()) t += "no sound tag";
+			for (size_t k = 0; k < sfxEvents.size(); ++k)
+				t += format("%s%s@%d range %.0f", k ? ", " : "", sfxEvents[k].name, int(sfxEvents[k].frame), double(sfxEvents[k].range));
+			threatNotes.push_back(t);
+		}
 		h.flags = u16((loop ? CLIPF_LOOP : 0) | (!motion.empty() ? CLIPF_MOVES : 0) | (clip.fly ? CLIPF_FLY : 0) | (fight ? CLIPF_FIGHT : 0) | (!sfxEvents.empty() ? CLIPF_SOUND : 0));
 		h.layer = u16(std::clamp(clip.layer, 0, 65535));
 		h.blendIn = std::clamp(clip.blendIn, 0.0f, 5.0f);
@@ -572,6 +582,11 @@ ModelBakeResult bakeModel(const SrcModel& model, const BakeOptions& opt, PakWrit
 		std::string list;
 		for (size_t i = 0; i < clipNotes.size(); ++i) list += (i ? ", " : "") + clipNotes[i];
 		line(format("clips: %zu (%.0f KB): ", clipRefs.size(), double(clipBytes) / 1024.0) + list);
+	}
+	if (!threatNotes.empty()) {
+		std::string list;
+		for (size_t i = 0; i < threatNotes.size(); ++i) list += (i ? "; " : "") + threatNotes[i];
+		line("threat sounds (clip tags): " + list);
 	}
 	if (!blends.empty()) line(format("blends: %zu: ", blends.size()) + blendList);
 	if (!missing.empty()) {

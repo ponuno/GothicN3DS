@@ -2272,7 +2272,11 @@ void App::soundEvent(const ClipSfxEvent& event, int npc) {
 		const GameNpc& n = _npcs.game().npc(u32(npc));
 		at = {n.pos[0], n.pos[1], n.pos[2]};
 	}
-	const float range = event.range > 0.0f ? event.range : 1000.0f;
+	float range = event.range > 0.0f ? event.range : 1000.0f;
+	// fix191: a creature's growl is heard where its threat is made (the scripts' AIV_MM_PercRange, 12-30 m): OpenGothic gives a
+	// tag without a range 35 m (Sound::Sound), and the threat turns a creature at 9-11 m, where a range of 10 m is silence.
+	// Footsteps (ground tags) keep theirs.
+	if (npc >= 0 && event.kind == CLIP_SFX_PLAIN) range = event.range > 0.0f && event.range > 2500.0f ? event.range : 2500.0f;
 	// Out of earshot: not worth finding the ground for.
 	if (length(at - _cam.pos) > range * 1.2f) return;
 	if (event.kind == CLIP_SFX_GROUND) {

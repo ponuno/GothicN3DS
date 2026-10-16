@@ -9,6 +9,7 @@
 #include "loot.h"
 #include "triggers.h"
 #include "particles.h"
+#include "blood_stains.h"
 #include "shadows.h"
 #include "puddles.h"
 #include "rain.h"
@@ -691,6 +692,7 @@ public:
 	Triggers& triggers() { return _triggers; }
 private:
 	Particles _particles;
+	BloodStains _bloodStains;
 	Shadows _shadows;
 	Puddles _puddles;
 	Rain _rain;

@@ -223,3 +223,7 @@ The `frames` waves check was failing since fix119 (calm rivers): fixed in the te
 ## fix178 — NPCs and the weapon; D-Pad up
 - Npcs::perceive (npc_perc.cpp): a character whose state waits for PERC_ASSESSREMOVEWEAPON gets it as a state check too (hero weapon NONE, in reach, seen), not only from the one-shot sendPerception at the moment the weapon goes away - a busy/not-yet-started NPC used to miss it and keep asking.
 - App: the D-Pad up no longer takes the fists (only the fist slot does).
+
+## fix179 — blood stains on the ground, far distance remembered by place
+- engine/blood_stains.{h,cpp} (BloodStains, 32 patches, 70 s life, dries darker, drawn in PASS_BLEND next to the puddles; added from App::bloodAt at the victim's feet; cleared at loadFogZones = world entry). No stains on clothes/models yet (would need a per-model tint or decal; not done).
+- FramePacer::seedFar + platform/3ds/main.cpp: the far scale found is kept per 40 m cell (48 cells) and seeded when the cell is entered again (main.cpp is 3DS-only: syntax of the snippet checked on the host only).

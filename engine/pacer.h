@@ -101,6 +101,15 @@ public:
 	float distanceScale() const { return _dist; }
 	// Factor for the far layer's distance (1 unless it was shortened at half rate; never below cfg.farMin).
 	float farScale() const { return _far; }
+	// Takes the far distance this place was left with last time (the app remembers it by place): the search for it need not
+	// begin anew. Only at half rate, never past the config's own limits; the recovery goes on from there.
+	void seedFar(float scale) {
+		if (_interval == 2 && cfg.farMin < 0.999f) {
+			_far = scale < cfg.farMin ? cfg.farMin : scale > 1.0f ? 1.0f : scale;
+			_farRoom = 0;
+			_farOver = 0;
+		}
+	}
 	// Refreshes per frame: 1 (60 fps) or 2 (30 fps).
 	int interval() const { return _interval; }
 	// The smoothed load the decisions are based on.

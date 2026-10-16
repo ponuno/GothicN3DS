@@ -432,6 +432,7 @@ void App::shutdown() {
 	_particles.release();
 	_shadows.release();
 	_puddles.release();
+	_bloodStains.release();
 	_rain.release();
 	_ripples.release();
 	_godRays.release();
@@ -930,6 +931,7 @@ void App::placeCamera(float dt) {
 }
 
 void App::loadFogZones() {
+	_bloodStains.clear(); // (a world was entered: the stains of the last one are not here)
 	free(_fogZones);
 	_fogZones = nullptr;
 	_fogZoneCount = 0;
@@ -1139,6 +1141,7 @@ void App::render() {
 		if (!indoor && _settings.wetGround && _weather.wet() > 0.12f && !(_renderSkip & SKIP_GROUND)) {
 			_puddles.draw(_world, _cam.pos, _weather.wet(), _weather.rain(), sky.horizon, _clock);
 		}
+		_bloodStains.draw(_cam.pos, _clock);
 		// Round ones: under the hero (unless his own shape is thrown), and with "all near" or his shape under the people and beasts.
 		if (_settings.shadows != SHADOWS_OFF && !(_renderSkip & SKIP_GROUND)) {
 			if (_heroVisible && _hero.loaded() && _settings.shadows != SHADOWS_HERO_CAST) _shadows.add(_hero.feet(), 48.0f);
@@ -1328,6 +1331,7 @@ void App::bloodAt(u32 victim, u32 attacker, i32 damage) {
 	const Vec3 d {at.x - _cam.pos.x, at.y - _cam.pos.y, at.z - _cam.pos.z};
 	if (d.x * d.x + d.y * d.y + d.z * d.z > 2500.0f * 2500.0f) return;
 	(void)attacker;
+	_bloodStains.add(_world, Vec3 {v.pos[0], v.pos[1], v.pos[2]}, clamp(float(damage) / 60.0f, 0.1f, 1.0f), _clock);
 	const char* name = g.guildString("BLOOD_EMITTER", guild);
 	float secs = 0.12f;
 	if (name && *name && _particles.play(hashName(name), at, 0.0f, 0.6f)) return;

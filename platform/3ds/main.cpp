@@ -71,6 +71,7 @@
 #include "reproject_3ds.h"
 #include "gfx_c3d.h"
 #include "pacer.h"
+#include <math.h>
 #include "sys.h"
 #include "trace.h"
 
@@ -548,6 +549,25 @@ int main(int, char**) {
 	bool displayWritten = false;
 	u32 lastPerceived = 0;
 	g3::FramePacer pacer;
+	// What the pacer found for the far layer, by place (a cell of 40 m): coming back to a place of the camp starts from there.
+	struct FarMemo {
+		int cx = 0, cz = 0;
+		float scale = 1.0f;
+		bool used = false;
+	} farMemo[48];
+	int farCellX = 0x7FFFFFFF, farCellZ = 0, farMemoNext = 0;
+	const auto farMemoFor = [&](int cx, int cz, bool create) -> FarMemo* {
+		for (FarMemo& f : farMemo)
+			if (f.used && f.cx == cx && f.cz == cz) return &f;
+		if (!create) return nullptr;
+		FarMemo& f = farMemo[farMemoNext];
+		farMemoNext = (farMemoNext + 1) % 48;
+		f.used = true;
+		f.cx = cx;
+		f.cz = cz;
+		f.scale = 1.0f;
+		return &f;
+	};
 	int pacedMode = app.settings().frameRate;
 	int interval = 1;
 	const auto pace = [&]() {
@@ -926,6 +946,19 @@ int main(int, char**) {
 			pacer.update(load, turning, farShare);
 			app.world().config().detailScale = pacer.detailScale();
 			app.setDistanceScale(pacer.distanceScale());
+			// The far layer by place: leaving a cell it keeps what the pacer found, entering one it starts from what that had.
+			{
+				const g3::Vec3 cp = app.camera().pos;
+				const int cx = int(floorf(cp.x / 4000.0f)), cz = int(floorf(cp.z / 4000.0f));
+				if (cx != farCellX || cz != farCellZ) {
+					if (farCellX != 0x7FFFFFFF && pacer.farScale() < 0.999f) farMemoFor(farCellX, farCellZ, true)->scale = pacer.farScale();
+					else if (farCellX != 0x7FFFFFFF)
+						if (FarMemo* old = farMemoFor(farCellX, farCellZ, false)) old->scale = 1.0f; // (nothing was cut there now: forgotten)
+					farCellX = cx;
+					farCellZ = cz;
+					if (const FarMemo* f = farMemoFor(cx, cz, false)) pacer.seedFar(f->scale);
+				}
+			}
 			app.setFarScale(pacer.farScale());
 			// Graphics+ gives way first: once the pacer takes objects away, the plants
 			// stand still and only the hero keeps a shadow, until all objects are back.

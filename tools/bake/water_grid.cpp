@@ -1,8 +1,14 @@
 #include "water_grid.h"
 
+#include "bvh.h"
+
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cmath>
+#include <mutex>
 #include <queue>
+#include <thread>
 
 namespace g3 {
 
@@ -143,6 +149,223 @@ WaterGrid::WaterGrid(const SrcScene& scene, const WaterGridOptions& opt) : _opt(
 	if (_opt.riverWidth > 0.0f && !_fine.empty()) buildOpenness(scene, level, shore);
 	_active = !_fine.empty();
 	if (_active && _opt.shore > 0.0f) _ground.build(scene, scene.triangles.size(), true);
+	if (_active && _opt.reflect > 0.0f) buildReflections(scene, level);
+}
+
+// ---- fix185: reflections baked into the fine water ----
+
+namespace {
+
+// The sky as the water's vertex colour shows it (its share of white): a reflected thing of this colour leaves the water as it
+// is. The water's texture already mirrors the sky (fix151), so a corner is only darkened and tinted by what stands in front
+// of the sky, by its colour against this.
+constexpr float kSkyRef[3] = {0.62f, 0.72f, 0.80f};
+// The rings of rays: elevation over the level (degrees) and weight. The water mirrors grazing rays most (Fresnel), and a
+// player looking at water a few metres off sees it at 5..30 degrees.
+constexpr float kRingDeg[5] = {4.0f, 10.0f, 18.0f, 30.0f, 45.0f};
+constexpr float kRingW[5] = {1.0f, 0.85f, 0.6f, 0.35f, 0.2f};
+constexpr int kAzimuths = 12;
+constexpr float kLift = 20.0f;    // cm over the level: the ray starts over the ripples
+constexpr float kBuried = 50.0f;  // cm: a ray stopped this close, or by the back of a surface, counts for "in the ground"
+} // namespace
+
+float WaterGrid::edgeWeight(float x, float z) const {
+	const int ix = tileOf(x), iz = tileOf(z);
+	float best = _opt.fade;
+	for (int dx = -1; dx <= 1; ++dx)
+		for (int dz = -1; dz <= 1; ++dz) {
+			if (fine(ix + dx, iz + dz) || !_water.count(key(ix + dx, iz + dz))) continue;
+			const float d = distToRect(x, z, float(ix + dx) * _tile, float(iz + dz) * _tile, float(ix + dx + 1) * _tile, float(iz + dz + 1) * _tile);
+			best = std::min(best, d);
+		}
+	return std::clamp(best / _opt.fade, 0.0f, 1.0f);
+}
+
+void WaterGrid::buildReflections(const SrcScene& scene, const std::unordered_map<uint64_t, std::pair<float, float>>& level) {
+	using namespace geo;
+	// What the water mirrors: everything that is not water and not see-through (glass, glow); leaves are (their texture's
+	// solid part gives the colour). `blocks` carries the source triangle's index + 1.
+	std::vector<Tri> tris;
+	if (scene.triangles.size() >= (1u << 24)) return; // (the index rides in a float)
+	for (size_t i = 0; i < scene.triangles.size(); ++i) {
+		const SrcTriangle& t = scene.triangles[i];
+		if (t.material >= scene.materials.size()) continue;
+		const SrcMaterial& m = scene.materials[t.material];
+		if (m.water || m.blend != SrcBlend::Opaque) continue;
+		const V3 a {t.v[0].pos[0], t.v[0].pos[1], t.v[0].pos[2]};
+		const V3 e1 = V3 {t.v[1].pos[0], t.v[1].pos[1], t.v[1].pos[2]} - a, e2 = V3 {t.v[2].pos[0], t.v[2].pos[1], t.v[2].pos[2]} - a;
+		if (length(cross(e1, e2)) < 1e-4f) continue;
+		tris.push_back(Tri {a, e1, e2, float(i + 1)});
+	}
+	if (tris.empty()) return;
+	Bvh bvh;
+	bvh.build(std::move(tris));
+
+	// The materials' colours (the texture's average; its solid texels for a cut-out), read when first hit.
+	std::vector<std::array<float, 3>> albedo(scene.materials.size(), std::array<float, 3> {0.5f, 0.5f, 0.5f});
+	std::vector<std::atomic<u8>> albedoState(scene.materials.size());
+	for (auto& a : albedoState) a.store(0);
+	std::mutex albedoLock;
+	std::unordered_map<std::string, std::array<float, 3>> byTexture;
+	auto albedoOf = [&](u32 mat) -> const std::array<float, 3>& {
+		if (albedoState[mat].load(std::memory_order_acquire)) return albedo[mat];
+		std::lock_guard<std::mutex> lock(albedoLock);
+		if (albedoState[mat].load(std::memory_order_relaxed)) return albedo[mat];
+		const SrcMaterial& m = scene.materials[mat];
+		std::array<float, 3> c {0.5f, 0.5f, 0.5f};
+		if (m.hasColor) c = {float(m.color[0]) / 255.0f, float(m.color[1]) / 255.0f, float(m.color[2]) / 255.0f};
+		if (!m.texture.empty()) {
+			auto it = byTexture.find(m.texture);
+			if (it != byTexture.end()) c = it->second;
+			else {
+				SrcImage img;
+				if (scene.loadTexture && scene.loadTexture(m.texture, img) && !img.rgba.empty()) {
+					double sum[2][3] = {{0, 0, 0}, {0, 0, 0}}, n[2] = {0, 0};
+					for (size_t p = 0; p + 3 < img.rgba.size(); p += 4) {
+						const int solid = img.rgba[p + 3] >= 128 ? 1 : 0;
+						for (int k = 0; k < 3; ++k) sum[solid][k] += img.rgba[p + size_t(k)];
+						n[solid] += 1;
+					}
+					const int s = n[1] > 0 ? 1 : 0;
+					if (n[s] > 0)
+						for (int k = 0; k < 3; ++k) c[size_t(k)] = float(sum[s][k] / n[s] / 255.0);
+				}
+				byTexture.emplace(m.texture, c);
+			}
+		}
+		albedo[mat] = c;
+		albedoState[mat].store(1, std::memory_order_release);
+		return albedo[mat];
+	};
+
+	// The rays (the same for every corner).
+	struct Ray {
+		V3 d;
+		float w;
+	};
+	std::vector<Ray> rays;
+	float wSum = 0.0f;
+	for (int r = 0; r < 5; ++r) {
+		const float el = kRingDeg[r] * 3.14159265f / 180.0f;
+		for (int k = 0; k < kAzimuths; ++k) {
+			const float az = (float(k) + 0.5f * float(r & 1)) * 6.2831853f / float(kAzimuths);
+			rays.push_back(Ray {V3 {std::cos(el) * std::cos(az), std::sin(el), std::cos(el) * std::sin(az)}, kRingW[r]});
+			wSum += kRingW[r];
+		}
+	}
+
+	const int n = _opt.cellsPerTile + 1;
+	std::vector<uint64_t> jobs(_fine.begin(), _fine.end());
+	std::sort(jobs.begin(), jobs.end()); // (the same work in the same order, whatever the hash does)
+	std::vector<ReflectTile> out(jobs.size());
+	const float reach = std::max(_opt.reflectReach, 100.0f);
+	std::atomic<size_t> next {0};
+	std::atomic<u64> buried {0}, cast {0};
+	auto work = [&]() {
+		u64 myBuried = 0, myCast = 0;
+		for (;;) {
+			const size_t j = next.fetch_add(1);
+			if (j >= jobs.size()) break;
+			const int ix = int(uint32_t(jobs[j] >> 32)) - (1 << 30), iz = int(uint32_t(jobs[j] & 0xFFFFFFFFu)) - (1 << 30);
+			auto lv = level.find(jobs[j]);
+			const float y = (lv != level.end() ? lv->second.second : 0.0f) + kLift;
+			ReflectTile& rt = out[j];
+			rt.m.assign(size_t(n * n * 3), 1.0f);
+			rt.ok.assign(size_t(n * n), 0);
+			for (int a = 0; a < n; ++a)
+				for (int b = 0; b < n; ++b) {
+					const V3 o {float(ix) * _tile + float(a) * _opt.cell, y, float(iz) * _tile + float(b) * _opt.cell};
+					float acc[3] = {0, 0, 0};
+					int near = 0;
+					for (const Ray& ray : rays) {
+						float t = 0.0f;
+						const Tri* hit = nullptr;
+						const float id = bvh.nearest(o, ray.d, 0.5f, reach, t, &hit);
+						float r[3] = {1.0f, 1.0f, 1.0f};
+						if (id > 0.0f && hit) {
+							const SrcTriangle& st = scene.triangles[size_t(id) - 1];
+							// the light where it was hit (barycentric on the source triangle)
+							const V3 p = o + ray.d * t - hit->a;
+							const V3 nn = cross(hit->e1, hit->e2);
+							// (its back: the front is -cross(e1, e2), see the winding check. Ground seen from below - the corner is
+							// under it - or very close: in it.)
+							if (t < kBuried || dot(ray.d, nn) < 0.0f) ++near;
+							const float nl = std::max(dot(nn, nn), 1e-12f);
+							const float u = std::clamp(dot(cross(p, hit->e2), nn) / nl, 0.0f, 1.0f);
+							const float v = std::clamp(dot(cross(hit->e1, p), nn) / nl, 0.0f, 1.0f - u);
+							const std::array<float, 3>& al = albedoOf(st.material);
+							const float haze = (t / reach) * (t / reach);
+							for (int c = 0; c < 3; ++c) {
+								const float light = (float(st.v[0].rgba[c]) * (1.0f - u - v) + float(st.v[1].rgba[c]) * u + float(st.v[2].rgba[c]) * v) / 255.0f;
+								const float seen = std::clamp(al[size_t(c)] * light / kSkyRef[c], 0.15f, 1.1f);
+								r[c] = seen + (1.0f - seen) * haze;
+							}
+						}
+						for (int c = 0; c < 3; ++c) acc[c] += r[c] * ray.w;
+					}
+					myCast += rays.size();
+					const size_t at = size_t(a * n + b);
+					if (near * 2 >= int(rays.size())) {
+						++myBuried;
+						continue;
+					}
+					rt.ok[at] = 1;
+					for (int c = 0; c < 3; ++c) rt.m[at * 3 + size_t(c)] = acc[c] / wSum;
+				}
+		}
+		buried += myBuried;
+		cast += myCast;
+	};
+	std::vector<std::thread> pool;
+	for (unsigned i = 1; i < std::max(1u, _opt.threads); ++i) pool.emplace_back(work);
+	work();
+	for (std::thread& t : pool) t.join();
+	for (size_t j = 0; j < jobs.size(); ++j) _reflect.emplace(jobs[j], std::move(out[j]));
+	_stats.reflectCorners += u64(jobs.size()) * u64(n * n);
+	_stats.reflectBuried += buried.load();
+	_stats.reflectRays += cast.load();
+}
+
+bool WaterGrid::reflectAt(float x, float z, float m[3]) const {
+	const int n = _opt.cellsPerTile + 1;
+	// (a corner on a tile's edge belongs to both: take the tile that has it)
+	const float eps = 0.01f;
+	const int xs[2] = {tileOf(x - eps), tileOf(x + eps)}, zs[2] = {tileOf(z - eps), tileOf(z + eps)};
+	for (int ax : xs)
+		for (int az : zs) {
+			auto it = _reflect.find(key(ax, az));
+			if (it == _reflect.end()) continue;
+			const ReflectTile& rt = it->second;
+			const float fx = std::clamp((x - float(ax) * _tile) / _opt.cell, 0.0f, float(n - 1));
+			const float fz = std::clamp((z - float(az) * _tile) / _opt.cell, 0.0f, float(n - 1));
+			const int a0 = std::min(int(fx), n - 2), b0 = std::min(int(fz), n - 2);
+			const float ta = fx - float(a0), tb = fz - float(b0);
+			float acc[3] = {0, 0, 0}, wsum = 0.0f;
+			for (int da = 0; da <= 1; ++da)
+				for (int db = 0; db <= 1; ++db) {
+					const size_t at = size_t((a0 + da) * n + (b0 + db));
+					if (!rt.ok[at]) continue;
+					const float w = (da ? ta : 1.0f - ta) * (db ? tb : 1.0f - tb) + 1e-4f;
+					for (int c = 0; c < 3; ++c) acc[c] += rt.m[at * 3 + size_t(c)] * w;
+					wsum += w;
+				}
+			if (wsum <= 0.0f) continue;
+			for (int c = 0; c < 3; ++c) m[c] = acc[c] / wsum;
+			return true;
+		}
+	return false;
+}
+
+void WaterGrid::reflectColour(SrcVertex& v) {
+	float m[3];
+	if (!reflectAt(v.pos[0], v.pos[2], m)) return;
+	const float k = std::min(_opt.reflect, 1.0f) * edgeWeight(v.pos[0], v.pos[2]);
+	if (k <= 0.0f) return;
+	for (int c = 0; c < 3; ++c) {
+		const float col = float(v.rgba[c]) * (1.0f + (m[c] - 1.0f) * k);
+		v.rgba[c] = u8(std::clamp(col, 0.0f, 255.0f) + 0.5f);
+	}
+	++_stats.reflectVertices;
 }
 
 // Openness of the fine water, cell by cell: the distance to the nearest bank (the line where ground or an object crosses
@@ -366,6 +589,8 @@ void WaterGrid::emit(const Poly& poly, bool dense, std::vector<SrcTriangle>& out
 		for (SrcVertex& v : piece.v) v.wind = dense ? u8(std::lround(127.0f * weightAt(v.pos[0], v.pos[2]))) : u8(0);
 		if (dense && _opt.shore > 0.0f)
 			for (SrcVertex& v : piece.v) shoreColour(v);
+		if (dense && !_reflect.empty())
+			for (SrcVertex& v : piece.v) reflectColour(v);
 		out.push_back(piece);
 	}
 }

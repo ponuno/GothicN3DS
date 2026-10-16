@@ -73,6 +73,10 @@ struct BakeOptions {
 	// (cm, in whole tiles of 16 cells, at least one) the fine water goes (--water-reach).
 	float waterGrid = 0.0f;
 	float waterReach = 3200.0f;
+	// fix185: reflections baked into the fine water's vertex colours (--water-reflect S, 0..1; 0: off, the default; needs
+	// --water-grid) and how far its rays look (--water-reflect-reach M). Outdoor worlds only. water_grid.h.
+	float waterReflect = 0.0f;
+	float waterReflectReach = 6000.0f;
 	// cm: water narrower than this (rivers, ponds) gets no waves (--river-width; 0: waves everywhere).
 	float riverWidth = 4000.0f;
 	// fix140: shore foam (--water-foam S, 0..1: strips of lace along every shore line, 0: none) and the flow of rivers

@@ -192,6 +192,9 @@ void usage() {
 	          "  --water-glint S    sun glints: an additive layer of sparkles over the water, 0..1 (default 0: off; doubles the water's triangles)\n"
 	          "  --river-flow CMS   the speed of the water in rivers, cm/s (default 70; 0: the game's scroll, one way everywhere)\n"
 	          "  --water-reach M    how far from the shore line the fine water goes, metres (default 32; a multiple of 16 cells)\n"
+	          "  --water-reflect S  reflections baked into the fine water: banks, trees and cliffs darken and tint it, 0..1\n"
+	          "                     (default 0 = off; try 0.6; needs --water-grid; no cost at run time, the bake takes longer)\n"
+	          "  --water-reflect-reach M  how far those reflections look, metres (default 60)\n"
 	          "  --far-lod          Graphics+: a coarse copy of the world drawn beyond the draw distance and where\n"
 	          "                     chunks are not loaded yet (far layer; about 1.5-2 MB on the console)\n"
 	          "  --far-cell M       its finest grid, metres (default 4; coarser if needed to fit)\n"
@@ -409,6 +412,8 @@ int main(int argc, char** argv) {
 			else if (a == "--water-glint") opt.waterGlint = std::clamp(std::stof(value()), 0.0f, 1.0f);
 			else if (a == "--river-flow") opt.riverFlow = std::clamp(std::stof(value()), 0.0f, 400.0f);
 			else if (a == "--water-reach") opt.waterReach = std::clamp(std::stof(value()), 1.0f, 500.0f) * 100.0f;
+			else if (a == "--water-reflect") opt.waterReflect = std::clamp(std::stof(value()), 0.0f, 1.0f);
+			else if (a == "--water-reflect-reach") opt.waterReflectReach = std::clamp(std::stof(value()), 1.0f, 1000.0f) * 100.0f;
 			else if (a == "--vis") opt.vis.enabled = true;
 			else if (a == "--vis-high") opt.vis.high = true;
 			else if (a == "--vis-radius") opt.vis.radius = std::clamp(std::stof(value()), 40.0f, 500.0f) * 100.0f;

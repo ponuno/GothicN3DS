@@ -24,6 +24,15 @@ struct WaterGridOptions {
 	// lighter and greener than the deep (which is the colour the coarse water has, so the two meet); where the water is
 	// less than 50 cm deep, or the ground over it is within 3 m of the level, it fades towards white.
 	float shore = 0.0f;
+	// fix185, 0..1: reflections baked into the fine water's vertex colours (0: off). Every lattice corner of the fine water
+	// looks round at grazing angles (4..45 degrees over the level, as the water mirrors them most); what it sees there - a
+	// bank, a tree, a cliff, a wall - darkens and tints the corner by its colour (the texture's average times its baked
+	// light) against the sky's, the sky leaves it as it is. Soft and the same from every side (no picture of the bank, its
+	// shade in the right place). Fades out towards the coarse water, so the two meet. Costs nothing at run time: the same
+	// vertices, shader and draws.
+	float reflect = 0.0f;
+	float reflectReach = 6000.0f; // cm: how far the corners look; what is farther goes into the sky's haze
+	unsigned threads = 1;         // for the reflections' rays
 };
 
 struct WaterGridStats {
@@ -31,6 +40,10 @@ struct WaterGridStats {
 	u64 waterOut = 0;      // and what they became
 	u32 shoreTiles = 0;    // tiles where the ground meets the water
 	u32 fineTiles = 0;     // tiles cut into cells (the shore tiles and their neighbours)
+	u64 reflectCorners = 0; // lattice corners that looked round for reflections (fix185)
+	u64 reflectBuried = 0;  // ... of them under the ground (left out of the blend)
+	u64 reflectRays = 0;
+	u64 reflectVertices = 0; // water vertices tinted by them
 };
 
 // The water (every triangle of a material with `water`) is cut in two scales. Everything lies on one lattice of tiles; a
@@ -63,6 +76,16 @@ private:
 	void cutTile(const Poly& poly, int ix, int iz, std::vector<SrcTriangle>& out, const SrcTriangle& proto);
 
 	void shoreColour(SrcVertex& v) const;
+	// fix185: reflections (WaterGridOptions::reflect).
+	struct ReflectTile {
+		std::vector<float> m; // (cellsPerTile + 1)^2 corners x rgb: the colour factor, 1 = the sky's
+		std::vector<u8> ok;   // the corner is above the ground
+	};
+	void buildReflections(const SrcScene& scene, const std::unordered_map<uint64_t, std::pair<float, float>>& level);
+	bool reflectAt(float x, float z, float m[3]) const;
+	float edgeWeight(float x, float z) const; // 0 at the border of the fine water .. 1 `fade` inside it
+	void reflectColour(SrcVertex& v);
+	std::unordered_map<uint64_t, ReflectTile> _reflect;
 	GroundSampler _ground;
 	WaterGridOptions _opt;
 	bool _active = false;

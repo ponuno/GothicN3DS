@@ -13,7 +13,7 @@ struct Entry {
 #include "lang_table.inc"
 
 constexpr u32 ENTRIES = sizeof(kEntries) / sizeof(kEntries[0]);
-constexpr u32 SLOTS = 1024; // (a power of two, at least twice ENTRIES)
+constexpr u32 SLOTS = 2048; // (a power of two, at least twice ENTRIES)
 static_assert(ENTRIES * 2 <= SLOTS, "lang slots");
 
 u8 gLang = LANG_RU;

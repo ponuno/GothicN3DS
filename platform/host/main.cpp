@@ -764,6 +764,10 @@ int main(int argc, char** argv) {
 		       double(b.thunderCentre()[0]), double(b.thunderCentre()[1]), double(b.thunderCentre()[2]), b.strikesIn(0), b.strikesIn(1),
 		       b.strikesIn(2), b.strikesIn(3), b.startsIn(0), b.startsIn(1), b.startsIn(2), b.startsIn(3));
 	}
+	if (app.weather().rain() > 0.03f || app.weather().snow() > 0.03f)
+		printf("rain              %.2f (snow %.2f), kind %d, day %d %.2f h; last frame %u drops, %u rings on water, %u splashes on the ground\n",
+		       double(app.weather().rain()), double(app.weather().snow()), int(app.weather().kind()), int(app.npcs().game().day()),
+		       double(app.environment().timeOfDay), app.rain().drops(), app.rain().rings(), app.rain().splashes());
 	if (cloudsSpec >= 0) {
 		const Vec3 c = app.camera().pos;
 		printf("clouds            setting %d, coverage %.2f, darkness %.2f; %u masks written, %u carry them; light left at the camera %.2f\n",

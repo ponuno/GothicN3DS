@@ -37,6 +37,7 @@ bool importZenSfxScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<
 bool importZenParticleScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<std::string>&) { unavailable(); }
 bool importZenVisualFxScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<std::string>&) { unavailable(); }
 bool importZenMusicScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<std::string>&) { unavailable(); }
+bool importZenMenuScript(std::shared_ptr<const ZenGame>, SrcScript&, std::vector<std::string>&) { unavailable(); }
 bool importZenFonts(std::shared_ptr<const ZenGame>, SrcFonts&, std::vector<std::string>&) { unavailable(); }
 bool importZenDialogue(std::shared_ptr<const ZenGame>, SrcDialogue&, std::vector<std::string>&) { unavailable(); }
 

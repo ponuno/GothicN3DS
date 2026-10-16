@@ -12,6 +12,7 @@
 #include "g3ds/math.h"
 #include "g3ds/item_view.h"
 #include "g3ds/card.h"
+#include "g3ds/pic.h"
 #include "item_icon.h"
 #include "model_bake.h"
 #include "texture_bake.h"
@@ -196,6 +197,68 @@ const char* libraryOf(const std::string& name) {
 	for (const char* p : unionLib)
 		if (name.compare(0, std::strlen(p), p) == 0) return "Union/Systempack";
 	return "the game / the mod";
+}
+
+// A picture of the interface (g3ds/pic.h): shrunk to fit `maxW` x `maxH` (never made larger), or with `fill` stretched
+// to exactly that (a picture behind the whole screen, as the game stretches it over its window). RGBA4 if any part of
+// it is see-through, RGB565 if not.
+std::vector<u8> bakePicture(const SrcImage& img, int maxW, int maxH, bool fill) {
+	int dw = img.width, dh = img.height;
+	if (fill) {
+		dw = maxW;
+		dh = maxH;
+	} else if (dw > maxW || dh > maxH) {
+		const float k = std::min(float(maxW) / float(dw), float(maxH) / float(dh));
+		dw = std::max(1, int(float(dw) * k + 0.5f));
+		dh = std::max(1, int(float(dh) * k + 0.5f));
+	}
+	const auto pot = [](int v) { int p = 8; while (p < v) p *= 2; return p; };
+	const int tw = pot(dw), th = pot(dh);
+	bool alpha = false;
+	for (size_t i = 3; i < img.rgba.size(); i += 4) alpha = alpha || img.rgba[i] < 250;
+	std::vector<u8> blob(sizeof(PicHeader) + size_t(tw) * th * 2, 0);
+	PicHeader h {};
+	h.magic = PIC_MAGIC;
+	h.version = PIC_VERSION;
+	h.width = u16(dw);
+	h.height = u16(dh);
+	h.texW = u16(tw);
+	h.texH = u16(th);
+	h.format = alpha ? PIC_RGBA4 : PIC_RGB565;
+	h.origW = u16(std::min(img.width, 65535));
+	h.origH = u16(std::min(img.height, 65535));
+	std::memcpy(blob.data(), &h, sizeof(h));
+	u16* px = reinterpret_cast<u16*>(blob.data() + sizeof(h));
+	for (int y = 0; y < dh; ++y)
+		for (int x = 0; x < dw; ++x) {
+			// (A box over the source texels this pixel covers; the colour weighed by how opaque it is.)
+			const int sx0 = x * img.width / dw, sx1 = std::max(sx0 + 1, (x + 1) * img.width / dw);
+			const int sy0 = y * img.height / dh, sy1 = std::max(sy0 + 1, (y + 1) * img.height / dh);
+			u32 sum[4] = {0, 0, 0, 0}, n = 0;
+			for (int sy = sy0; sy < sy1 && sy < img.height; ++sy)
+				for (int sx = sx0; sx < sx1 && sx < img.width; ++sx) {
+					const u8* c = &img.rgba[(size_t(sy) * img.width + size_t(sx)) * 4];
+					for (int k = 0; k < 3; ++k) sum[k] += u32(c[k]) * c[3];
+					sum[3] += c[3];
+					++n;
+				}
+			if (!n) continue;
+			const u32 a = sum[3] / n;
+			const u32 r = sum[3] ? sum[0] / sum[3] : 0, g = sum[3] ? sum[1] / sum[3] : 0, b = sum[3] ? sum[2] / sum[3] : 0;
+			px[size_t(y) * tw + size_t(x)] = alpha ? u16(((r >> 4) << 12) | ((g >> 4) << 8) | ((b >> 4) << 4) | (a >> 4))
+			                                       : u16(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+		}
+	return blob;
+}
+
+// "MENU_INGAME.TGA" -> "menu_ingame"
+std::string pictureName(std::string text) {
+	std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+	const size_t dot = text.rfind('.');
+	if (dot != std::string::npos) text.resize(dot);
+	const size_t slash = text.find_last_of("/\\");
+	if (slash != std::string::npos) text = text.substr(slash + 1);
+	return text;
 }
 
 } // namespace
@@ -1630,6 +1693,66 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			}
 			line(format("chapter cards: %zu pictures named by IntroduceChapter calls, %zu baked (%.2f MB)%s%s", names.size(), cards,
 			            double(cardBytes) / 1048576.0, absent.empty() ? "" : "; not in the game's files: ", absent.c_str()));
+		}
+
+		// The start menu (MENU.DAT's MENU_MAIN, as OpenGothic builds it): the script itself, and the pictures - the
+		// screen behind it (STARTSCREEN), its frame and its items' pictures (as the script names them), and the loading
+		// screen's (LOADING, PROGRESS, PROGRESS_BAR).
+		{
+			ScriptVm menuVm;
+			const bool haveMenu = sideScript(scripts.menu, "script/menu", menuVm);
+			std::vector<std::pair<std::string, bool>> wanted = {{"startscreen", true}, {"loading", true}, {"progress", false}, {"progress_bar", false}};
+			if (haveMenu) {
+				const u32 cls = menuVm.find("C_MENU");
+				const u32 back = menuVm.findMember("C_MENU", "BACKPIC"), items = menuVm.findMember("C_MENU", "ITEMS");
+				const u32 itemBack = menuVm.findMember("C_MENU_ITEM", "BACKPIC");
+				const u32 main = menuVm.find("MENU_MAIN");
+				menuVm.setQuiet(true);
+				if (cls != SCRIPT_NONE && main != SCRIPT_NONE && back != SCRIPT_NONE) {
+					if (ScriptInstance* m = menuVm.create(main)) {
+						const auto add = [&](const char* name) {
+							const std::string n = pictureName(name ? name : "");
+							if (n.empty()) return;
+							for (const auto& w : wanted)
+								if (w.first == n) return;
+							wanted.push_back({n, false});
+						};
+						add(menuVm.getString(back, 0, m));
+						for (u32 k = 0; items != SCRIPT_NONE && itemBack != SCRIPT_NONE && k < 150; ++k) {
+							const char* itemName = menuVm.getString(items, k, m);
+							if (!itemName || !*itemName) continue;
+							std::string up = itemName;
+							std::transform(up.begin(), up.end(), up.begin(), [](unsigned char c) { return char(std::toupper(c)); });
+							const u32 sym = menuVm.find(up.c_str());
+							if (sym == SCRIPT_NONE) continue;
+							if (ScriptInstance* it = menuVm.create(sym)) {
+								add(menuVm.getString(itemBack, 0, it));
+								menuVm.destroy(it);
+							}
+						}
+						menuVm.destroy(m);
+					}
+				}
+			}
+			size_t pics = 0, picBytes = 0;
+			std::string absent, baked;
+			for (const auto& w : wanted) {
+				SrcImage img;
+				if (!scripts.looks.texture || !scripts.looks.texture(w.first + ".tga", img) || img.width < 2 || img.height < 2 ||
+				    img.rgba.size() != size_t(img.width) * img.height * 4) {
+					absent += (absent.empty() ? "" : " ") + w.first;
+					continue;
+				}
+				// (The top screen is 400 x 240; the game's layout is of 640 x 480, drawn here at half that.)
+				const std::vector<u8> picBlob = bakePicture(img, w.second ? 400 : std::min(400, std::max(8, img.width / 2)),
+				                                         w.second ? 240 : std::min(240, std::max(8, img.height / 2)), w.second);
+				pak.add("pic/" + w.first, ASSET_META, picBlob);
+				baked += (baked.empty() ? "" : " ") + w.first;
+				++pics;
+				picBytes += picBlob.size();
+			}
+			line(format("start menu: %s; %zu pictures baked (%.2f MB): %s%s%s", haveMenu ? "MENU_MAIN of the menu script" : "no menu script (the engine's own menu)",
+			            pics, double(picBytes) / 1048576.0, baked.c_str(), absent.empty() ? "" : "; not in the game's files: ", absent.c_str()));
 		}
 		const size_t lying = visuals.size();
 		// Every thing of the scripts may end up in the inventory: all their

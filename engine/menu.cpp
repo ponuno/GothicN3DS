@@ -85,8 +85,8 @@ const Item kMain[] = {
     {"Интерфейс", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_INTERFACE, "Язык, подсказки, нижний экран", nullptr},
     {"Звук", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_SOUND, "Громкость", nullptr},
     {"Отладка", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG, nullptr, nullptr},
-    {"Сохранить позицию", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_SAVE, "То же: R + START в игре", nullptr},
-    {"Загрузить позицию", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_LOAD, "То же: R + SELECT в игре", nullptr},
+    {"Сохранить игру", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_SAVE, "10 ячеек; быстро — R + START в игре", nullptr},
+    {"Загрузить игру", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_LOAD, "Быстрая загрузка — R + SELECT в игре", nullptr},
     {"Выйти в Homebrew Launcher", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_EXIT, "Позиция и настройки сохранятся", nullptr},
 };
 const Item kGraphics[] = {
@@ -127,6 +127,14 @@ const Item kInterface[] = {
     {"Интерфейс в игре", TOGGLE, &Settings::hud, nullptr, 0, 0, 0, nullptr, 0, "Здоровье, цель, подсказки", nullptr},
     {"Показывать FPS", TOGGLE, &Settings::showFps, nullptr, 0, 0, 0, nullptr, 0, "Счётчик кадров сверху справа", nullptr},
     {"Нижний экран", CHOICE, &Settings::report, kBottom, 2, 0, 0, nullptr, 0, "Отчёт: цифры для проверки", nullptr},
+};
+// The start menu's "options" (the original's MENU_OPTIONS): the settings' pages.
+const Item kOptions[] = {
+    {"Графика", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GRAPHICS, "Дальность, детали, частота кадров", nullptr},
+    {"Игра", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GAME, "Бой и предметы", nullptr},
+    {"Управление", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_CONTROLS, "Схема, камера", nullptr},
+    {"Интерфейс", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_INTERFACE, "Язык, подсказки, нижний экран", nullptr},
+    {"Звук", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_SOUND, "Громкость", nullptr},
 };
 const Item kSound[] = {
     {"Громкость", RANGE, &Settings::soundVolume, nullptr, 1, 0, 10, "", 0, "Шаги, бой, звуки мира; 0 — без звука", nullptr},
@@ -195,6 +203,8 @@ const PageDef kPages[Menu::PAGES] = {
     PAGE_OF("Управление", kControls), PAGE_OF("Интерфейс", kInterface), PAGE_OF("Звук", kSound),
     PAGE_OF("Отладка", kDebug),      PAGE_OF("Жители", kDebugNpc),    PAGE_OF("Герой и вещи", kDebugHero),
     PAGE_OF("Мир и время", kDebugWorld), PAGE_OF("Графика+", kGfxPlus), PAGE_OF("Экспериментально", kExperimental),
+    {"Сохранить игру", nullptr, 0}, {"Загрузить игру", nullptr, 0}, // (lists of slots: Menu::drawSaves)
+    PAGE_OF("Настройки", kOptions),
 };
 #undef PAGE_OF
 
@@ -205,10 +215,11 @@ Menu::Page Menu::parentOf(Page page) {
 	return page == PAGE_DEBUG_NPC || page == PAGE_DEBUG_HERO || page == PAGE_DEBUG_WORLD ? PAGE_DEBUG : PAGE_MAIN;
 }
 
-void Menu::open() {
+void Menu::open(Page root) {
 	_open = true;
-	_page = PAGE_MAIN;
-	_sel[PAGE_MAIN] = 0;
+	_root = root < PAGES ? root : PAGE_MAIN;
+	_page = _root;
+	_sel[_page] = 0;
 }
 
 int Menu::itemCount(Page page) const { return page < PAGES ? kPages[page].count : 0; }
@@ -256,15 +267,36 @@ MenuAction Menu::update(const MenuInput& in, Settings& s) {
 		_open = false;
 		return MENU_CLOSED;
 	}
+	if (savePage(_page)) {
+		const int n = slotCount(_page);
+		int& sel = _sel[_page];
+		sel = clamp(sel, 0, n - 1);
+		if (in.back) {
+			if (_page == _root) {
+				_open = false;
+				return MENU_CLOSED;
+			}
+			_page = _root;
+			return MENU_NONE;
+		}
+		if (in.up) sel = (sel + n - 1) % n;
+		if (in.down) sel = (sel + 1) % n;
+		// (Left and right: five on, as the pages of the original's list.)
+		if (in.left) sel = max(sel - 5, 0);
+		if (in.right) sel = min(sel + 5, n - 1);
+		if (in.confirm) return _page == PAGE_SAVE ? MENU_SAVE_SLOT : MENU_LOAD_SLOT;
+		return MENU_NONE;
+	}
 	const PageDef& page = kPages[_page];
 	int& sel = _sel[_page];
 	sel = clamp(sel, 0, page.count - 1);
 	if (in.back) {
-		if (_page == PAGE_MAIN) {
+		if (_page == _root) {
 			_open = false;
 			return MENU_CLOSED;
 		}
-		_page = parentOf(_page);
+		const Page up = parentOf(_page);
+		_page = up == PAGE_MAIN ? _root : up;
 		return MENU_NONE;
 	}
 	if (in.up) sel = (sel + page.count - 1) % page.count;
@@ -311,8 +343,140 @@ MenuAction Menu::update(const MenuInput& in, Settings& s) {
 	return MENU_NONE;
 }
 
-void Menu::draw(Ui& ui, const Settings& s, const char* status, const char* message) const {
+namespace {
+
+// `text` cut to `width` pixels, with "…" where it was cut.
+const char* fitText(const Ui& ui, const char* text, int width, char* buf, u32 size) {
+	if (ui.measure(text) <= width) return text;
+	const int dots = ui.measure("\xE2\x80\xA6");
+	u32 n = 0;
+	for (const char* p = text; *p;) {
+		const char* at = p;
+		utf8Next(p);
+		const u32 len = u32(p - text);
+		if (len + 4 > size) break;
+		memcpy(buf, text, len);
+		buf[len] = 0;
+		if (ui.measure(buf) + dots > width) {
+			n = u32(at - text);
+			break;
+		}
+		n = len;
+	}
+	memcpy(buf, text, n);
+	memcpy(buf + n, "\xE2\x80\xA6", 4);
+	return buf;
+}
+
+} // namespace
+
+void Menu::drawSaves(Ui& ui, const char* message, const SaveMenuView* v) const {
+	const int W = gfx::SCREEN_W, H = gfx::SCREEN_H;
+	const int x0 = 6, x1 = W - 6, top = 6, bottom = H - 6;
+	const int line = Ui::lineHeight(ui::TEXT) + 2, lh = Ui::lineHeight(ui::TEXT); // (eleven rows fit)
+	ui.rect(0, 0, W, H, 0x00000070u);
+	ui.rect(x0, top, x1, bottom, ui::PANEL);
+	ui.frame(x0, top, x1, bottom, 0x8C7A50FFu);
+	ui.text(W / 2, top + 5, tr(kPages[_page].title), ui::GOLD, ui::TITLE, ui::CENTER);
+	const bool saving = _page == PAGE_SAVE;
+	const int n = slotCount(_page);
+	const int sel = clamp(_sel[_page], 0, n - 1);
+	char buf[96], cut[96];
+
+	// The slots, left.
+	const int lx0 = x0 + 6, lx1 = 202, ly0 = top + 8 + Ui::lineHeight(ui::TITLE);
+	const int foot = bottom - 5 - lh, listBottom = foot - lh - 3;
+	const int visible = max((listBottom - ly0) / line, 3);
+	const int first = n > visible ? clamp(sel - visible / 2, 0, n - visible) : 0;
+	const int last = min(n, first + visible);
+	int y = ly0;
+	for (int i = first; i < last; ++i, y += line) {
+		const int slot = slotOfEntry(_page, i);
+		const SaveInfo* info = v && v->slots ? &v->slots[slot] : nullptr;
+		const bool on = i == sel;
+		if (on) ui.rect(lx0, y - 1, lx1, y + line - 2, 0x6E5A2E90u);
+		int tx = lx0 + 6;
+		if (slot > 0) {
+			snprintf(buf, sizeof(buf), "%d.", slot);
+			ui.text(lx0 + 22, y, buf, on ? ui::GOLD : ui::DARK, ui::TEXT, ui::RIGHT);
+			tx = lx0 + 26;
+		}
+		const char* name;
+		u32 colour = on ? ui::WHITE : ui::GREY;
+		if (!info || !info->used) {
+			name = slot == 0 ? tr("Быстрое сохранение — нет") : tr("— пусто —");
+			colour = on ? ui::GREY : ui::DARK;
+		} else if (!info->readable) {
+			name = tr("(повреждено)");
+			colour = ui::RED;
+		} else if (slot == 0) {
+			name = tr("Быстрое сохранение");
+			if (!on) colour = 0xC8B48CFFu;
+		} else {
+			name = info->title[0] ? info->title : tr("Без названия");
+		}
+		ui.text(tx, y, fitText(ui, name, lx1 - 6 - tx, cut, sizeof(cut)), colour);
+	}
+	if (first > 0) ui.text(lx1 - 4, ly0 - line + 5, "\xE2\x96\xB2", ui::DARK, ui::TEXT, ui::RIGHT);
+	if (last < n) ui.text(lx1 - 4, listBottom - 3, "\xE2\x96\xBC", ui::DARK, ui::TEXT, ui::RIGHT);
+
+	// The picture and what is known of the save, right.
+	const int rx0 = 210, rx1 = x1 - 6, rw = rx1 - rx0;
+	const int px0 = rx0 + (rw - THUMB_W) / 2, py0 = ly0 + 1, px1 = px0 + THUMB_W, py1 = py0 + THUMB_H;
+	const SaveInfo* info = v && v->slots ? &v->slots[slotOfEntry(_page, sel)] : nullptr;
+	const bool current = v && v->current;
+	const SaveInfo* shown = current ? &v->now : info && info->used && info->readable ? info : nullptr;
+	ui.rect(px0, py0, px1, py1, 0x000000C0u);
+	if (shown && v->picture) {
+		ui.picture(v->picture, THUMB_W, THUMB_H, px0, py0, px1, py1, 0xFFFFFFFFu);
+	} else {
+		const char* what = !info || !info->used ? (current ? "" : tr("Пусто")) : !info->readable ? tr("Файл повреждён") : tr("Нет картинки");
+		ui.text((px0 + px1) / 2, (py0 + py1) / 2 - lh / 2, what, ui::DARK, ui::TEXT, ui::CENTER);
+	}
+	ui.frame(px0 - 1, py0 - 1, px1 + 1, py1 + 1, 0x8C7A50FFu);
+	y = py1 + 6;
+	if (shown) {
+		const char* title = current ? tr("Новое сохранение") : slotOfEntry(_page, sel) == 0 ? tr("Быстрое сохранение") : shown->title[0] ? shown->title : tr("Без названия");
+		ui.text(rx0, y, fitText(ui, title, rw, cut, sizeof(cut)), ui::GOLD);
+		y += lh;
+		if (shown->world[0]) {
+			ui.text(rx0, y, fitText(ui, worldTitle(shown->world), rw, cut, sizeof(cut)), ui::WHITE);
+			y += lh;
+		}
+		char when[48];
+		formatGameTime(when, sizeof(when), shown->day, shown->timeOfDay);
+		if (shown->chapter > 0) {
+			snprintf(buf, sizeof(buf), tr("%s, глава %d"), when, int(shown->chapter));
+			ui.text(rx0, y, fitText(ui, buf, rw, cut, sizeof(cut)), ui::GREY);
+		} else {
+			ui.text(rx0, y, fitText(ui, when, rw, cut, sizeof(cut)), ui::GREY);
+		}
+		y += lh;
+		if (!current && shown->savedAt > 0) {
+			char date[32];
+			formatSaveDate(date, sizeof(date), shown->savedAt);
+			snprintf(buf, sizeof(buf), tr("Сохранено: %s"), date);
+			ui.text(rx0, y, fitText(ui, buf, rw, cut, sizeof(cut)), ui::GREY);
+			y += lh;
+		}
+		if (!shown->legacy) {
+			char played[32];
+			formatPlayTime(played, sizeof(played), shown->playSeconds);
+			snprintf(buf, sizeof(buf), tr("Время в игре: %s"), played);
+			ui.text(rx0, y, fitText(ui, buf, rw, cut, sizeof(cut)), ui::GREY);
+		}
+	}
+
+	if (message && *message) ui.text(W / 2, foot - lh - 1, message, ui::GREEN, ui::TEXT, ui::CENTER);
+	ui.text(W / 2, foot, saving ? tr("A — сохранить   B — назад") : tr("A — загрузить   B — назад"), ui::DARK + 0x20202000u, ui::TEXT, ui::CENTER);
+}
+
+void Menu::draw(Ui& ui, const Settings& s, const char* status, const char* message, const SaveMenuView* saves) const {
 	if (!_open) return;
+	if (savePage(_page)) {
+		drawSaves(ui, message, saves);
+		return;
+	}
 	const PageDef& page = kPages[_page];
 	const int line = Ui::lineHeight(ui::TEXT) + 3;
 	const int w = 320, x0 = (gfx::SCREEN_W - w) / 2, x1 = x0 + w;
@@ -365,7 +529,7 @@ void Menu::draw(Ui& ui, const Settings& s, const char* status, const char* messa
 		ui.text(gfx::SCREEN_W / 2, foot - Ui::lineHeight(ui::TEXT), message, ui::GREEN, ui::TEXT, ui::CENTER);
 	else if (*noteOf(cur, &s))
 		ui.text(gfx::SCREEN_W / 2, foot - Ui::lineHeight(ui::TEXT), noteOf(cur, &s), ui::DARK + 0x30303000u, ui::TEXT, ui::CENTER);
-	ui.text(gfx::SCREEN_W / 2, foot, _page == PAGE_MAIN ? tr("A — выбрать   B, START — вернуться в игру") : tr("A — выбрать   \xE2\x97\x80\xE2\x96\xB6 — изменить   B — назад"),
+	ui.text(gfx::SCREEN_W / 2, foot, _page == PAGE_MAIN && _root == PAGE_MAIN ? tr("A — выбрать   B, START — вернуться в игру") : tr("A — выбрать   \xE2\x97\x80\xE2\x96\xB6 — изменить   B — назад"),
 	        ui::DARK + 0x20202000u, ui::TEXT, ui::CENTER);
 }
 

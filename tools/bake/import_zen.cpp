@@ -4227,6 +4227,11 @@ bool importZenMusicScript(std::shared_ptr<const ZenGame> game, SrcScript& script
 	return importZenCompiled(game, "MUSIC.DAT", "music", "there is no music", script, dat, notes);
 }
 
+bool importZenMenuScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes) {
+	std::vector<u8> dat;
+	return importZenCompiled(game, "MENU.DAT", "menus", "the start menu is the engine's own", script, dat, notes);
+}
+
 // The words people say: the game's output units, a cutscene library of its
 // The two faces of the overlay: the first name found in each list.
 bool importZenFonts(std::shared_ptr<const ZenGame> game, SrcFonts& fonts, std::vector<std::string>& notes) {

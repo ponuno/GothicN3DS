@@ -3,6 +3,8 @@
 // lands). A drop falls onto what is under it - the ground, a roof, the water (World::rayDown, World::waterBelow, asked
 // once per cell of a grid and kept) and makes a splash there: a small ring on the ground, wider rings on the water, which lie on
 // the water's waves (their height and their slope, as the shader lifts the surface). Under a roof there is no rain.
+// fix187, closer to the game's look: denser, the streaks slanted by the wind (more in a storm), and on the ground a
+// splash - a little crown of droplets thrown up where a drop lands - instead of a ring.
 #pragma once
 #include "g3ds/math.h"
 #include "gfx.h"
@@ -13,7 +15,7 @@ class World;
 
 class Rain {
 public:
-	static constexpr u32 MAX_DROPS = 380;
+	static constexpr u32 MAX_DROPS = 640;
 	static constexpr u32 MAX_RINGS = 120;
 	static constexpr float RADIUS = 1700.0f; // cm from the camera
 	static constexpr float CELL = 130.0f;    // cm: one drop (and its splash) to a cell
@@ -24,7 +26,11 @@ public:
 	Rain& operator=(const Rain&) = delete;
 
 	// In PASS_BLEND, after the water. `rain`, `snow`: 0..1 amounts; `sky`: the horizon colour (the drops' brightness follows the light).
-	void draw(const World& world, Vec3 camera, float rain, float snow, const float skyLight[3], double seconds);
+	// `slant`: cm the rain moves sideways (along the wind, WIND_X / WIND_Z) for each cm it falls.
+	void draw(const World& world, Vec3 camera, float rain, float snow, const float skyLight[3], double seconds, float slant = 0.0f);
+	// The way the wind blows the rain (a unit vector on x/z: the plants' wind, world.cpp).
+	static constexpr float WIND_X = 0.8f, WIND_Z = 0.6f;
+	u32 splashes() const { return _splashes; }
 	// Forgets what was asked of the ground (a world was left) and frees the meshes and the texture.
 	void release();
 	u32 drops() const { return _drops; }
@@ -45,9 +51,10 @@ private:
 	static constexpr u32 MESHES = 3;
 	Cell _cells[GRID * GRID] = {};
 	gfx::Texture* _texture = nullptr;
+	gfx::Texture* _crown = nullptr; // fix187: the splash on the ground
 	gfx::Mesh* _meshes[MESHES] = {};
 	u32 _meshTurn = 0;
-	u32 _drops = 0, _rings = 0;
+	u32 _drops = 0, _rings = 0, _splashes = 0;
 };
 
 } // namespace g3

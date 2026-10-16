@@ -27,6 +27,41 @@ unsigned mix(unsigned h) {
 
 } // namespace
 
+RainEvent Weather::rainOfDay(i32 day) {
+	// Three numbers of the day, the same whenever it is asked (a save loaded, the time slept through).
+	const unsigned h = mix(unsigned(day) * 0x9E3779B9u ^ 0x5EA50Fu);
+	const float a = float(h & 0xFFFFu) * (1.0f / 65535.0f), b = float(mix(h + 1u) & 0xFFFFu) * (1.0f / 65535.0f),
+	            c = float(mix(h + 2u) & 0xFFFFu) * (1.0f / 65535.0f);
+	RainEvent e;
+	// The first rain between 16:30 and 17:30; the others at any hour, day or night.
+	e.start = day <= 0 ? 16.5f + a : a * 24.0f;
+	e.stop = e.start + 1.0f + 1.5f * b; // 1 .. 2.5 hours
+	// Only rain on the first three days; then lightning with a chance of 40 %.
+	e.lightning = day >= 3 && c < 0.4f;
+	return e;
+}
+
+void Weather::scheduleAt(i32 day, float hours, float& rain, float& cloud, bool& lightning) {
+	rain = cloud = 0.0f;
+	lightning = false;
+	auto smooth = [](float x) {
+		x = clamp(x, 0.0f, 1.0f);
+		return x * x * (3.0f - 2.0f * x);
+	};
+	// Today's rain, and yesterday's if it went on past midnight.
+	for (int back = 0; back <= 1; ++back) {
+		if (day - back < 0) continue;
+		const RainEvent e = rainOfDay(day - back);
+		const float t = hours + 24.0f * float(back);
+		// The rain: a quarter of an hour to come and to go; the clouds three quarters before it and after.
+		const float r = smooth((t - e.start) / 0.25f) * smooth((e.stop - t) / 0.25f);
+		const float c = smooth((t - (e.start - 0.75f)) / 0.75f) * smooth((e.stop + 0.75f - t) / 0.75f);
+		if (r > rain) rain = r;
+		if (c > cloud) cloud = c;
+		if (r > 0.0f) lightning = lightning || e.lightning;
+	}
+}
+
 float Weather::rnd() {
 	_seed = _seed * 1664525u + 1013904223u;
 	return float((_seed >> 8) & 0xFFFFu) * (1.0f / 65535.0f);
@@ -61,13 +96,28 @@ void Weather::pickNext() {
 void Weather::update(float dt) {
 	if (!(dt > 0.0f)) return;
 	if (dt > 0.5f) dt = 0.5f;
-	if (_mode == WEATHER_AUTO) {
-		_timer -= dt;
-		if (_timer <= 0.0f) pickNext();
+	Target t;
+	if (_mode == WEATHER_AUTO && _clockKnown) {
+		// fix187: the game's schedule.
+		float r, c;
+		bool lightning;
+		scheduleAt(_day, _hours, r, c, lightning);
+		const Target& full = kTargets[lightning ? WEATHER_STORM : WEATHER_RAIN];
+		t.cloud = full.cloud * c;
+		t.rain = full.rain * r;
+		t.snow = 0.0f;
+		_kind = r > 0.0f ? (lightning ? WEATHER_STORM : WEATHER_RAIN) : c > 0.0f ? WEATHER_CLOUDY : WEATHER_CLEAR;
+		_scheduleRain = r;
+		_scheduleCloud = c;
 	} else {
-		_kind = _mode;
+		if (_mode == WEATHER_AUTO) {
+			_timer -= dt;
+			if (_timer <= 0.0f) pickNext();
+		} else {
+			_kind = _mode;
+		}
+		t = kTargets[_kind];
 	}
-	const Target& t = kTargets[_kind];
 	const float step = dt / 12.0f; // twelve seconds from nothing to full
 	_cloud = approach(_cloud, t.cloud, step);
 	_rain = approach(_rain, t.rain, step);
@@ -94,7 +144,15 @@ void Weather::update(float dt) {
 }
 
 void Weather::settle() {
-	const Target& t = kTargets[_kind];
+	Target t = kTargets[_kind];
+	if (_mode == WEATHER_AUTO && _clockKnown) {
+		float r, c;
+		bool lightning;
+		scheduleAt(_day, _hours, r, c, lightning);
+		const Target& full = kTargets[lightning ? WEATHER_STORM : WEATHER_RAIN];
+		t = Target {full.cloud * c, full.rain * r, 0.0f};
+		_kind = r > 0.0f ? (lightning ? WEATHER_STORM : WEATHER_RAIN) : c > 0.0f ? WEATHER_CLOUDY : WEATHER_CLEAR;
+	}
 	_cloud = t.cloud;
 	_rain = t.rain;
 	_snow = t.snow;

@@ -482,7 +482,7 @@ int main(int argc, char** argv) {
 		std::vector<SrcModel> models;
 		CameraSet camera = defaultCameraSet();
 		bool haveCamera = false;
-		SrcScript script, fightScript, sfxScript, musicScript, particleScript, visualFxScript;
+		SrcScript script, fightScript, sfxScript, musicScript, particleScript, visualFxScript, menuScript;
 		SrcDialogue dialogue;
 		bool haveDialogue = false;
 		SrcFonts fonts;
@@ -497,6 +497,8 @@ int main(int argc, char** argv) {
 				buildSyntheticMusicScript(musicScript);
 				scripts.sfx = &sfxScript;
 				scripts.music = &musicScript;
+				buildSyntheticMenuScript(menuScript);
+				scripts.menu = &menuScript;
 				scripts.script = &script;
 				scripts.fight = &fightScript;
 				scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays, buildSyntheticBarrier, buildSyntheticForm};
@@ -631,6 +633,8 @@ int main(int argc, char** argv) {
 				if (importZenParticleScript(game, particleScript, worlds[0].scene.notes)) scripts.particles = &particleScript;
 				if (importZenVisualFxScript(game, visualFxScript, worlds[0].scene.notes)) scripts.visualfx = &visualFxScript;
 				if (!opt.musicDir.empty() && importZenMusicScript(game, musicScript, worlds[0].scene.notes)) scripts.music = &musicScript;
+				// ... and its menus (the start menu is built from them).
+				if (importZenMenuScript(game, menuScript, worlds[0].scene.notes)) scripts.menu = &menuScript;
 				// ... and what they say.
 				haveDialogue = importZenDialogue(game, dialogue, worlds[0].scene.notes);
 			}

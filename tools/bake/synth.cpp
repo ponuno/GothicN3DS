@@ -338,6 +338,43 @@ bool buildSyntheticParticleTexture(const std::string& name, SrcImage& img) {
 		synthBarrierTexture(img);
 		return true;
 	}
+	// The interface's pictures (the start menu and the loading screen), as plain stand-ins of the game's.
+	if (base == "startscreen" || base == "loading" || base == "menu_ingame" || base == "menu_gothic" || base == "progress" || base == "progress_bar") {
+		const bool frame = base == "menu_ingame", logo = base == "menu_gothic", box = base == "progress", bar = base == "progress_bar";
+		img.width = frame ? 256 : logo ? 128 : box ? 128 : bar ? 64 : 320;
+		img.height = frame ? 256 : logo ? 32 : box ? 16 : bar ? 8 : 240;
+		img.rgba.assign(size_t(img.width) * img.height * 4, 255);
+		for (int y = 0; y < img.height; ++y)
+			for (int x = 0; x < img.width; ++x) {
+				u8* px = &img.rgba[(size_t(y) * img.width + x) * 4];
+				const float fy = float(y) / float(img.height - 1), fx = float(x) / float(img.width - 1);
+				if (frame) {
+					const bool edge = x < 12 || y < 12 || x >= img.width - 12 || y >= img.height - 12;
+					const u8 v = edge ? u8(120 + ((x * 7 + y * 13) % 40)) : u8(28 + ((x + y) % 5));
+					px[0] = v;
+					px[1] = v;
+					px[2] = u8(v * 9 / 10);
+				} else if (logo) {
+					const bool ink = ((x / 8 + y / 8) % 2 == 0) && y > 4 && y < 28 && (x % 18) < 12;
+					px[0] = px[1] = px[2] = 210;
+					px[3] = ink ? 255 : 0;
+				} else if (box) {
+					const bool edge = x < 2 || y < 2 || x >= img.width - 2 || y >= img.height - 2;
+					px[0] = px[1] = px[2] = edge ? 160 : 20;
+				} else if (bar) {
+					px[0] = 200;
+					px[1] = u8(60 + 80 * fy);
+					px[2] = 30;
+				} else {
+					// A dark sky over a glow at the horizon (the loading screen a little bluer).
+					const float glow = std::max(0.0f, 1.0f - std::fabs(fy - 0.75f) * 4.0f) * (1.0f - std::fabs(fx - 0.5f));
+					px[0] = u8(std::min(255.0f, 20 + 200 * glow));
+					px[1] = u8(std::min(255.0f, 14 + 90 * glow));
+					px[2] = u8(base == "loading" ? 60 : 10);
+				}
+			}
+		return true;
+	}
 	const bool spark = base == "synth_spark", smoke = base == "synth_smoke";
 	if (!spark && !smoke) return false;
 	img.width = img.height = 32;

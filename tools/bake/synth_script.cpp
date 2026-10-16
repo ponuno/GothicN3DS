@@ -1992,6 +1992,185 @@ instance SYS_MENU (C_MUSICTHEME) {
 )DAEDALUS";
 }
 
+const char* syntheticMenuScriptSource() {
+	return R"DAEDALUS(
+const int MENU_ITEM_MAX = 150;
+const int MENU_OVERTOP = 1;
+const int MENU_EXCLUSIVE = 2;
+const int MENU_DONTSCALE_DIM = 8;
+const int MENU_ALIGN_CENTER = 32;
+const int MENU_SHOW_INFO = 64;
+const int IT_SELECTABLE = 4;
+const int IT_TXT_CENTER = 16;
+const int IT_ONLY_OUT_GAME = 256;
+const int IT_ONLY_IN_GAME = 512;
+const int MENU_ITEM_TEXT = 1;
+const int SEL_ACTION_BACK = 1;
+const int SEL_ACTION_STARTMENU = 2;
+const int SEL_ACTION_CLOSE = 4;
+const int SEL_ACTION_EXECCOMMANDS = 7;
+const string MENU_FONT_DEFAULT = "font_old_20_white.tga";
+const string MENU_FONT_SMALL = "font_old_10_white.tga";
+const int MENU_MAIN_Y = 2900;
+const int MENU_MAIN_DY = 546;
+
+class C_MENU {
+	var string backPic;
+	var string backWorld;
+	var int posx;
+	var int posy;
+	var int dimx;
+	var int dimy;
+	var int alpha;
+	var string musicTheme;
+	var int eventTimerMSec;
+	var string items[150];
+	var int flags;
+	var int defaultOutGame;
+	var int defaultInGame;
+};
+class C_MENU_ITEM {
+	var string fontName;
+	var string text[10];
+	var string backPic;
+	var string alphaMode;
+	var int alpha;
+	var int type;
+	var int onSelAction[5];
+	var string onSelAction_S[5];
+	var string onChgSetOption;
+	var string onChgSetOptionSection;
+	var int onEventAction[10];
+	var int posx;
+	var int posy;
+	var int dimx;
+	var int dimy;
+	var float sizeStartScale;
+	var int flags;
+	var float openDelayTime;
+	var float openDuration;
+	var float userFloat[4];
+	var string userString[4];
+	var int frameSizeX;
+	var int frameSizeY;
+	var string hideIfOptionSectionSet;
+	var string hideIfOptionSet;
+	var int hideOnValue;
+};
+
+prototype C_MENU_DEF (C_MENU) {
+	backPic = "menu_ingame.tga";
+	posx = 0;
+	posy = 0;
+	dimx = 8192;
+	dimy = 8192;
+	alpha = 255;
+	flags = MENU_OVERTOP | MENU_EXCLUSIVE | MENU_DONTSCALE_DIM | MENU_ALIGN_CENTER;
+	defaultOutGame = -1;
+	defaultInGame = -1;
+};
+prototype C_MENU_ITEM_DEF (C_MENU_ITEM) {
+	fontName = MENU_FONT_DEFAULT;
+	alpha = 254;
+	type = MENU_ITEM_TEXT;
+	posx = 0;
+	posy = 0;
+	dimx = -1;
+	dimy = -1;
+	flags = IT_SELECTABLE | IT_TXT_CENTER;
+	hideOnValue = -1;
+};
+
+instance MENU_MAIN (C_MENU_DEF) {
+	backPic = "menu_ingame.tga";
+	musicTheme = "SYS_Menu";
+	items[0] = "MENUITEM_MAIN_HEADLINE";
+	items[1] = "MENUITEM_MAIN_NEWGAME";
+	items[2] = "MENUITEM_MAIN_SAVEGAME_LOAD";
+	items[3] = "MENUITEM_MAIN_SAVEGAME_SAVE";
+	items[4] = "MENUITEM_MAIN_RESUME";
+	items[5] = "MENUITEM_MAIN_OPTIONS";
+	items[6] = "MENUITEM_MAIN_INTRO";
+	items[7] = "MENUITEM_MAIN_CREDITS";
+	items[8] = "MENUITEM_MAIN_EXIT";
+	defaultOutGame = 1;
+	defaultInGame = 4;
+	flags = flags | MENU_SHOW_INFO;
+};
+instance MENUITEM_MAIN_HEADLINE (C_MENU_ITEM_DEF) {
+	backPic = "menu_gothic.tga";
+	posx = 1200;
+	posy = 700;
+	dimx = 5800;
+	dimy = 1800;
+	flags = 0;
+};
+instance MENUITEM_MAIN_NEWGAME (C_MENU_ITEM_DEF) {
+	text[0] = "New Game";
+	text[1] = "Set out on a new adventure.";
+	posy = MENU_MAIN_Y;
+	onSelAction[0] = SEL_ACTION_CLOSE;
+	onSelAction_S[0] = "NEW_GAME";
+};
+instance MENUITEM_MAIN_SAVEGAME_LOAD (C_MENU_ITEM_DEF) {
+	text[0] = "Load Game";
+	text[1] = "Load a saved game.";
+	posy = MENU_MAIN_Y + MENU_MAIN_DY;
+	onSelAction[0] = SEL_ACTION_STARTMENU;
+	onSelAction_S[0] = "MENU_SAVEGAME_LOAD";
+};
+instance MENUITEM_MAIN_SAVEGAME_SAVE (C_MENU_ITEM_DEF) {
+	text[0] = "Save Game";
+	text[1] = "Save the current game.";
+	posy = MENU_MAIN_Y + MENU_MAIN_DY * 2;
+	onSelAction[0] = SEL_ACTION_STARTMENU;
+	onSelAction_S[0] = "MENU_SAVEGAME_SAVE";
+	flags = flags | IT_ONLY_IN_GAME;
+};
+instance MENUITEM_MAIN_RESUME (C_MENU_ITEM_DEF) {
+	text[0] = "Continue";
+	text[1] = "Continue the current game.";
+	posy = MENU_MAIN_Y + MENU_MAIN_DY * 3;
+	onSelAction[0] = SEL_ACTION_BACK;
+	flags = flags | IT_ONLY_IN_GAME;
+};
+instance MENUITEM_MAIN_OPTIONS (C_MENU_ITEM_DEF) {
+	text[0] = "Options";
+	text[1] = "Settings for game, graphics, sound and controls.";
+	posy = MENU_MAIN_Y + MENU_MAIN_DY * 4;
+	onSelAction[0] = SEL_ACTION_STARTMENU;
+	onSelAction_S[0] = "MENU_OPTIONS";
+};
+instance MENUITEM_MAIN_INTRO (C_MENU_ITEM_DEF) {
+	text[0] = "Play Intro";
+	text[1] = "Watch the intro.";
+	posy = MENU_MAIN_Y + MENU_MAIN_DY * 5;
+	onSelAction[0] = SEL_ACTION_EXECCOMMANDS;
+	onSelAction_S[0] = "PLAY_VIDEO INTRO.BIK";
+};
+instance MENUITEM_MAIN_CREDITS (C_MENU_ITEM_DEF) {
+	text[0] = "Credits";
+	text[1] = "Who made Gothic.";
+	posy = MENU_MAIN_Y + MENU_MAIN_DY * 6;
+	onSelAction[0] = SEL_ACTION_STARTMENU;
+	onSelAction_S[0] = "MENU_CREDITS";
+};
+instance MENUITEM_MAIN_EXIT (C_MENU_ITEM_DEF) {
+	text[0] = "Exit Gothic";
+	text[1] = "Leave the game.";
+	posy = MENU_MAIN_Y + MENU_MAIN_DY * 7;
+	onSelAction[0] = SEL_ACTION_CLOSE;
+	onSelAction_S[0] = "LEAVE_GAME";
+};
+)DAEDALUS";
+}
+
+void buildSyntheticMenuScript(SrcScript& script) {
+	script = SrcScript();
+	script.source = "the built-in menu script";
+	compileDaedalus(syntheticMenuScriptSource(), script);
+}
+
 void buildSyntheticSfxScript(SrcScript& script) {
 	script = SrcScript();
 	script.source = "the built-in sound script";

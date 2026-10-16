@@ -140,7 +140,8 @@ void App::drawOverlay() {
 		const char* world = worldName();
 		const char* slash = strrchr(world, '/');
 		snprintf(status, sizeof(status), "%s, %02d:%02d", slash ? slash + 1 : world, int(_env.timeOfDay), int(_env.timeOfDay * 60.0f) % 60);
-		_menu.draw(_ui, _settings, status, _menuMessage);
+		syncSaveMenu();
+		_menu.draw(_ui, _settings, status, _menuMessage, &_saveView);
 	}
 	_ui.flush();
 }

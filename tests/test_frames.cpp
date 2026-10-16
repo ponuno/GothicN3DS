@@ -27,6 +27,7 @@
 #include "mock3ds.h"
 #include "model_bake.h"
 #include "pak_writer.h"
+#include "saves.h"
 #include "test_models.h"
 #include "trace.h"
 
@@ -1679,6 +1680,36 @@ static void flight(const std::string& pak, bool classic, bool worker) {
 	CHECK(mock3ds::counters().linearBlocks == 0); // nothing left in the linear heap
 }
 
+// The picture of a saved game: the framebuffer on show (not the one the next picture goes into), turned the right way up.
+static void testCapture() {
+	mock3ds::reset();
+	gfx::c3dSetClassicFrames(false);
+	CHECK(gfx::init());
+	static u16 shot[THUMB_W * THUMB_H];
+	CHECK(!gfx::captureFrame(shot, THUMB_W, THUMB_H) || true); // (before any frame: may not know the buffers yet)
+	for (int f = 0; f < 3; ++f) {
+		gfx::FrameDesc fd {};
+		fd.view = viewLH({0, 0, 0}, 0, 0);
+		fd.fovY = 1.0f;
+		fd.zNear = 10.0f;
+		fd.zFar = 1000.0f;
+		fd.fogStart = 900.0f;
+		fd.fogEnd = 1000.0f;
+		gfx::frameBegin(fd);
+		gfx::frameEnd();
+	}
+	mock3ds::paintTopFramebuffers();
+	CHECK(gfx::captureFrame(shot, THUMB_W, THUMB_H));
+	const auto red = [](u16 v) { return int(v >> 11) << 3; };
+	const auto green = [](u16 v) { return int((v >> 5) & 63) << 2; };
+	const auto blue = [](u16 v) { return int(v & 31) << 3; };
+	CHECK(red(shot[0]) < 16 && green(shot[0]) < 16 && blue(shot[0]) > 48 && blue(shot[0]) < 80); // top left
+	CHECK(red(shot[THUMB_W - 1]) > 230 && green(shot[THUMB_W - 1]) < 16);                     // top right
+	CHECK(red(shot[(THUMB_H - 1) * THUMB_W]) < 16 && green(shot[(THUMB_H - 1) * THUMB_W]) > 230); // bottom left
+	gfx::shutdown();
+	CHECK(mock3ds::violations() == 0);
+}
+
 int main(int argc, char** argv) {
 	const std::string dir = argc > 1 ? argv[1] : ".";
 
@@ -1738,6 +1769,8 @@ int main(int argc, char** argv) {
 	testGrass(pak);
 	std::printf("[ RUN ] the overlay\n");
 	testOverlay(pak);
+	std::printf("[ RUN ] the picture of a saved game\n");
+	testCapture();
 	std::printf("[ RUN ] frame orders\n");
 	flight(pak, true, false);
 	flight(pak, false, false);

@@ -41,6 +41,8 @@ void buildSyntheticFightScript(SrcScript& script);
 // Its sounds (SFX.DAT: C_SFX) and music themes (MUSIC.DAT: C_MUSICTHEME), scripts of their own as the game's.
 void buildSyntheticSfxScript(SrcScript& script);
 void buildSyntheticMusicScript(SrcScript& script);
+// A menu script laid out as Gothic's MENU_MAIN (for the tests and the synthetic archives).
+void buildSyntheticMenuScript(SrcScript& script);
 
 // What the people of the synthetic worlds say (the lines their dialogues name).
 void buildSyntheticDialogue(SrcDialogue& dialogue);
@@ -174,6 +176,8 @@ bool importZenParticleScript(std::shared_ptr<const ZenGame> game, SrcScript& scr
 bool importZenVisualFxScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
 bool importZenSfxScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
 bool importZenMusicScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
+// The menus (MENU.DAT): the start menu's items, texts and layout.
+bool importZenMenuScript(std::shared_ptr<const ZenGame> game, SrcScript& script, std::vector<std::string>& notes);
 
 // The game's fonts (Fonts.vdf): the one of the text and the one of the titles.
 // False, with a line in `notes`, if they are not in the archives.

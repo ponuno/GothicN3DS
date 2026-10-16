@@ -18,6 +18,7 @@
 #include "grass.h"
 #include "lamps.h"
 #include "menu.h"
+#include "start_menu.h"
 #include "npcs.h"
 #include "panel.h"
 #include "player.h"
@@ -141,9 +142,53 @@ public:
 	// so the next start continues from there. loadState returns false and
 	// changes nothing if the file is missing, damaged or names a world that is
 	// not in this archive.
+	// The file begins with the header of a saved game (saves.h: the name, the
+	// world, the picture...), the position after it; a file of before the
+	// header loads as it always did.
 	bool saveState(const char* path) const;
 	bool loadState(const char* path);
 	bool loadGameSection(FILE* f);
+
+	// ---- the saved games: ten slots and the quick one (saves.h) ----
+	// Where the slots are kept (a folder, made when the first is saved). Unset: "saves" beside the quick save.
+	void setSaveDir(const char* dir);
+	// The file of a slot: 0 the quick save (the state path), 1..SAVE_SLOTS the player's.
+	void slotPath(int slot, char* out, u32 size) const;
+	// Into a slot, with the name given (null or empty: one made up, "Колония, день 3"); a screen with a progress bar
+	// meanwhile. The menu closes on success; otherwise its line says why not.
+	bool saveSlot(int slot, const char* title);
+	// From a slot (0: the quick save), with a progress bar over its picture.
+	bool loadSlot(int slot);
+	// The game may be saved now: not dead, not in a talk.
+	bool canSave() const;
+	// What the menu shows of a slot (read anew each time a save or load page is opened, or by this).
+	const SaveInfo& slotInfo(int slot) const { return _slots[slot >= 0 && slot <= SAVE_SLOTS ? slot : 0]; }
+	void refreshSlots();
+	// The game as it is, as a save describes it (the name left empty).
+	SaveInfo currentSaveInfo() const;
+	// Seconds played: update() counts them (the pause menu does not), the saves keep them.
+	double playSeconds() const { return _playSeconds; }
+	void setPlaySeconds(double seconds) { _playSeconds = seconds; }
+	// The picture of the moment (the frame on show when the menu was opened; for a quick save, the one on show then),
+	// THUMB_W x THUMB_H RGB565; null if the backend gave none.
+	const u16* savePicture() const { return _savePicOk ? _savePic : nullptr; }
+	// The frames the progress screen has drawn (each step of a load or save is one), for tests.
+	u32 progressFrames() const { return _progressFrames; }
+
+	// ---- the start menu (start_menu.h): the original's main menu over its start screen ----
+	// Opens it (reads the archive's menu script and pictures the first time). While it is open render() draws it
+	// instead of the world, and the platform gives startMenuInput() the buttons instead of update().
+	void openStartMenu();
+	bool startMenuActive() const { return _startActive; }
+	const StartMenu& startMenu() const { return _start; }
+	struct StartResult {
+		bool exit = false;            // "Выход": the platform leaves
+		bool settingsChanged = false; // the options changed a setting: apply and keep them (as MENU_CHANGED)
+	};
+	// New game (the world as init() made it), continue (the quick save), the load page, the options.
+	StartResult startMenuInput(const MenuInput& in);
+	// The version in the corner of the start menu.
+	static const char* versionText();
 	float drawDistance() const { return _world.config().drawDistance; }
 
 	Camera& camera() { return _cam; }
@@ -638,6 +683,42 @@ private:
 	u8 _heldBefore = 0; // what was in the hands the frame before (WeaponMode)
 	float _downTime = 0, _deadTime = 0;
 	const char* _statePath = nullptr; // where respawning after death loads from
+	// The saved games.
+	bool writeSave(const char* path, const char* title);
+	bool writeState(FILE* f);
+	void captureSavePicture();
+	void syncSaveMenu();
+	void freeSlotPicture();
+	gfx::Texture* thumbTexture(const u16* thumb) const;
+	void progressBegin(const char* what, const char* title, gfx::Texture* picture, bool loading = false);
+	void progress(float share);
+	void progressEnd();
+	void drawProgressFrame();
+	double _playSeconds = 0;
+	u16* _savePic = nullptr;  // THUMB_W x THUMB_H
+	bool _savePicOk = false;  // _savePic holds the picture of the moment
+	bool _menuShot = false; // taken for this opening of the menu
+	SaveInfo _slots[SAVE_SLOTS + 1];
+	int _slotsPage = -1;   // the save or load page the slots were read for (-1: read them again)
+	gfx::Texture* _slotPic = nullptr;
+	int _slotPicFor = -100; // the slot _slotPic shows (-2: the game as it is)
+	SaveMenuView _saveView;
+	char _saveDir[160] = "";
+	struct Progress {
+		bool on = false;
+		float share = 0;
+		char what[48] = "", title[48] = "";
+		gfx::Texture* picture = nullptr;
+	} _progress;
+	u32 _progressFrames = 0;
+	// The start menu, and the original's loading screen (LOADING, PROGRESS, PROGRESS_BAR) while a save is loaded.
+	void renderStartMenu();
+	void closeStartMenu();
+	void menuSound(const char* name);
+	static gfx::FrameDesc blankFrame();
+	StartMenu _start;
+	bool _startActive = false;
+	UiPicture _loadingPic, _progressBox, _progressBar;
 	FightStats _fight;
 	Mat4 _viewProj;
 	// The inventory.

@@ -2,6 +2,7 @@
 // chunker, streaming. Usage: test_core <scratch dir>
 #include <set>
 #include "app.h"
+#include "saves.h"
 #include "audio_host.h"
 #include "bake.h"
 #include "water_grid.h"
@@ -5562,7 +5563,7 @@ static void testWayNet() {
 
 // The two synthetic worlds with a script of the caller's and the people it names.
 static BakeResult bakeLifeWorlds(const std::string& source, const std::string& path, std::vector<BakeWorld>& worlds,
-                                 bool withFightAi = true, bool sunShadow = false, bool grass = false, int lampMode = 0) {
+                                 bool withFightAi = true, bool sunShadow = false, bool grass = false, int lampMode = 0, bool menu = false) {
 	SrcScript script;
 	compileDaedalus(source, script);
 	worlds.assign(2, BakeWorld());
@@ -5598,6 +5599,11 @@ static BakeResult bakeLifeWorlds(const std::string& source, const std::string& p
 		scripts.fight = &fight;
 	}
 	scripts.looks = LookSource {buildSyntheticRig, buildSyntheticBody, buildSyntheticHead, buildSyntheticItem, buildSyntheticParticleTexture, buildSyntheticOverlay, buildSyntheticOverlays, nullptr, buildSyntheticForm};
+	SrcScript menuScript;
+	if (menu) {
+		buildSyntheticMenuScript(menuScript);
+		scripts.menu = &menuScript;
+	}
 	PakWriter writer;
 	const BakeResult r = bakeWorlds(worlds, models, scripts, bo, writer);
 	writer.write(path);
@@ -10115,6 +10121,66 @@ static void testWeather() {
 		sawClear |= au.kind() == WEATHER_CLEAR;
 	}
 	CHECK(sawRain && sawClear);
+	// fix187: the game's schedule (Inside-Gothic). Every day one rain of 1 .. 2.5 hours, at any hour; the first between 16:30
+	// and 17:30; no lightning on the first three days, then about 40 % of the rains.
+	{
+		const RainEvent first = Weather::rainOfDay(0);
+		CHECK(first.start >= 16.5f && first.start <= 17.5f && !first.lightning);
+		int lightning = 0, late = 0, early = 0;
+		bool lengths = true, sameEachTime = true, firstDays = true;
+		for (int d = 0; d < 400; ++d) {
+			const RainEvent e = Weather::rainOfDay(d), again = Weather::rainOfDay(d);
+			sameEachTime = sameEachTime && e.start == again.start && e.stop == again.stop && e.lightning == again.lightning;
+			lengths = lengths && e.stop - e.start >= 1.0f && e.stop - e.start <= 2.5f && e.start >= 0.0f && e.start < 24.0f;
+			if (d < 3) firstDays = firstDays && !e.lightning;
+			else lightning += e.lightning;
+			late += e.start >= 20.0f;
+			early += e.start < 6.0f;
+		}
+		const float share = float(lightning) / 397.0f;
+		std::printf("  rain schedule: first rain %.2f-%.2f h; lightning in %.0f%% of the rains from day 4; %d start at night (before 6), %d after 20\n",
+		            double(first.start), double(first.stop), double(share * 100.0f), early, late);
+		CHECK(sameEachTime && lengths && firstDays && share > 0.32f && share < 0.48f && early > 50 && late > 50);
+		// The amounts over the first day: nothing in the morning, full rain in the middle of it, clouds before it starts.
+		float r, c;
+		bool l;
+		Weather::scheduleAt(0, 10.0f, r, c, l);
+		CHECK(r == 0.0f && c == 0.0f);
+		Weather::scheduleAt(0, (first.start + first.stop) * 0.5f, r, c, l);
+		CHECK(r == 1.0f && c == 1.0f && !l);
+		Weather::scheduleAt(0, first.start - 0.3f, r, c, l);
+		CHECK(r == 0.0f && c > 0.2f);
+		// A rain that goes on past midnight is still there the next day.
+		for (int d = 3; d < 400; ++d) {
+			const RainEvent e = Weather::rainOfDay(d);
+			if (e.stop <= 24.5f) continue;
+			Weather::scheduleAt(d + 1, (e.stop - 24.0f) * 0.5f, r, c, l);
+			CHECK(r > 0.5f && l == e.lightning);
+			break;
+		}
+		// The weather in automatic mode follows it on the game's clock: the first day clear at noon, raining in the evening.
+		Weather g;
+		g.configure(WEATHER_AUTO, true);
+		g.setClock(0, 12.0f);
+		for (int i = 0; i < 400; ++i) g.update(0.1f);
+		CHECK(g.kind() == WEATHER_CLEAR && g.rain() == 0.0f);
+		g.setClock(0, (first.start + first.stop) * 0.5f);
+		for (int i = 0; i < 400; ++i) g.update(0.1f);
+		CHECK(g.kind() == WEATHER_RAIN && g.rain() > 0.55f && g.raining());
+		// A day with lightning: a storm with flashes.
+		int stormDay = -1;
+		for (int d = 3; d < 60 && stormDay < 0; ++d)
+			if (Weather::rainOfDay(d).lightning) stormDay = d;
+		CHECK(stormDay >= 3);
+		const RainEvent se = Weather::rainOfDay(stormDay);
+		float peak = 0.0f;
+		for (int i = 0; i < 3000; ++i) {
+			g.setClock((se.start + se.stop) * 0.5f >= 24.0f ? stormDay + 1 : stormDay, std::fmod((se.start + se.stop) * 0.5f, 24.0f));
+			g.update(0.1f);
+			peak = std::max(peak, g.flash());
+		}
+		CHECK(g.kind() == WEATHER_STORM && peak > 0.9f);
+	}
 	// Puddles: the same cell always gives the same puddle, about a third of the cells have one, small and flat.
 	{
 		int have = 0, total = 0;
@@ -10143,7 +10209,7 @@ static void testWeather() {
 			heavy += a;
 			light += Rain::cellDrop(ix, iz, 0.3f, x2, z2, ph, sp);
 		}
-		CHECK(heavy > 170 && heavy < 270 && light > 30 && light < heavy / 2);
+		CHECK(heavy > 250 && heavy < 350 && light > 50 && light < heavy / 2); // (fix187: denser - 0.75 of the cells at full rain)
 	}
 	// The waves under a ring: height and slope as the shader's (the slope is the height's derivative).
 	{
@@ -10633,6 +10699,334 @@ static void testSettings() {
 	}
 }
 
+
+// The saved games: ten slots and the quick one, as the original's - the header the menu reads (name, world, hour,
+// chapter, when, time played, picture), the files of before the header, the menu's pages, the progress screen.
+static void writePpm(const std::string& path) {
+	FILE* f = fopen(path.c_str(), "wb");
+	if (!f) return;
+	std::fprintf(f, "P6\n%d %d\n255\n", gfx::SCREEN_W, gfx::SCREEN_H);
+	const u8* fb = gfx::softFramebuffer();
+	for (int i = 0; i < gfx::SCREEN_W * gfx::SCREEN_H; ++i) fwrite(fb + i * 4, 3, 1, f);
+	fclose(f);
+}
+
+static void testSaves() {
+	// 1. The header on its own.
+	{
+		const std::string path = gDir + "/header.sav";
+		SaveInfo in;
+		copySaveTitle(in.title, sizeof(in.title), "Перед шахтой");
+		std::snprintf(in.world, sizeof(in.world), "oldmine");
+		in.day = 4;
+		in.timeOfDay = 21.5f;
+		in.chapter = 2;
+		in.playSeconds = 2 * 3600 + 5 * 60 + 7;
+		in.savedAt = 1792160000;
+		static u16 thumb[THUMB_W * THUMB_H], back[THUMB_W * THUMB_H];
+		for (int i = 0; i < THUMB_W * THUMB_H; ++i) thumb[i] = u16(i * 37);
+		FILE* f = fopen(path.c_str(), "wb");
+		CHECK(f && writeSaveHeader(f, in, thumb));
+		fputs("POSITION", f);
+		fclose(f);
+		SaveInfo out;
+		f = fopen(path.c_str(), "rb");
+		CHECK(readSaveHeader(f, out, back));
+		char rest[9] = {};
+		CHECK(fread(rest, 8, 1, f) == 1 && std::strcmp(rest, "POSITION") == 0); // (it stands where the position begins)
+		fclose(f);
+		CHECK(out.used && out.readable && !out.legacy && out.picture && std::strcmp(out.title, "Перед шахтой") == 0 &&
+		      std::strcmp(out.world, "oldmine") == 0 && out.day == 4 && out.chapter == 2 && out.playSeconds == in.playSeconds &&
+		      out.savedAt == in.savedAt && std::fabs(out.timeOfDay - 21.5f) < 1e-5f);
+		CHECK(std::memcmp(thumb, back, sizeof(thumb)) == 0);
+		// Damaged: refused (and the file is not loaded).
+		f = fopen(path.c_str(), "r+b");
+		fseek(f, 20, SEEK_SET);
+		fputc('X', f);
+		fclose(f);
+		CHECK(!readSaveInfo(path.c_str(), out, nullptr) && out.used && !out.readable);
+		CHECK(!readSaveInfo((gDir + "/no-such.sav").c_str(), out, nullptr) && !out.used);
+		// A file of before the header: legacy, read from its start.
+		f = fopen(path.c_str(), "wb");
+		fputs("G3STxxxx", f);
+		fclose(f);
+		CHECK(readSaveInfo(path.c_str(), out, nullptr) && out.legacy && out.readable && !out.picture);
+		// The texts.
+		setLanguage(LANG_RU);
+		char buf[64];
+		formatGameTime(buf, sizeof(buf), 4, 21.5f);
+		CHECK(std::strcmp(buf, "День 5, 21:30") == 0);
+		formatPlayTime(buf, sizeof(buf), in.playSeconds);
+		CHECK(std::strcmp(buf, "2 ч 05 мин") == 0);
+		formatPlayTime(buf, sizeof(buf), 59 * 60 + 59);
+		CHECK(std::strcmp(buf, "59 мин") == 0);
+		CHECK(std::strcmp(worldTitle("world/oldmine"), "Старая шахта") == 0 && std::strcmp(worldTitle("WORLD"), "Колония") == 0 &&
+		      std::strcmp(worldTitle("cave"), "cave") == 0);
+		defaultSaveTitle(buf, sizeof(buf), "world", 2);
+		CHECK(std::strcmp(buf, "Колония, день 3") == 0);
+		formatSaveDate(buf, sizeof(buf), 0);
+		CHECK(buf[0] == 0);
+		formatSaveDate(buf, sizeof(buf), in.savedAt);
+		CHECK(std::strlen(buf) == 16 && buf[2] == '.' && buf[5] == '.' && buf[13] == ':');
+		setLanguage(LANG_DE);
+		formatGameTime(buf, sizeof(buf), 0, 6.0f);
+		CHECK(std::strcmp(buf, "Tag 1, 06:00") == 0 && std::strcmp(worldTitle("world"), "Die Kolonie") == 0);
+		setLanguage(LANG_RU);
+		// A name is cut between letters, never inside one (Cyrillic: two bytes each).
+		char cut[8];
+		copySaveTitle(cut, sizeof(cut), "Шахта");
+		CHECK(std::strcmp(cut, "Шах") == 0);
+		// The picture shrinks by the mean.
+		u16 small[2 * 1];
+		shrinkPicture(4, 2, [](int x, int, u8* c) { c[0] = x < 2 ? 255 : 0; c[1] = 0; c[2] = x < 2 ? 0 : 255; }, small, 2, 1);
+		CHECK(small[0] == 0xF800 && small[1] == 0x001F);
+	}
+
+	// 2. The game's slots.
+	gfx::init();
+	App app;
+	CHECK(app.init((gDir + "/worlds.pak").c_str(), nullptr));
+	const std::string statePath = gDir + "/saves-quick.bin";
+	app.setStatePath(statePath.c_str());
+	app.setSaveDir((gDir + "/saves").c_str());
+	char path[256];
+	for (int k = 0; k <= SAVE_SLOTS; ++k) {
+		app.slotPath(k, path, sizeof(path));
+		remove(path);
+	}
+	CHECK(std::string(path) == gDir + "/saves/slot10.sav");
+	app.world().preload(app.camera().pos);
+	const float dt = 1.0f / 30.0f;
+	app.player().flying = true;
+	app.teleport({0, 600, 0});
+	app.camera().pitch = -0.4f;
+	app.environment().timeOfDay = 15.0f;
+	for (int i = 0; i < 3; ++i) {
+		app.update(Input {}, dt);
+		app.render();
+	}
+	app.setPlaySeconds(3725.0);
+	// The menu opens: the picture of the moment is taken (the game, not the menu over it).
+	app.menu().open();
+	app.render();
+	CHECK(app.savePicture() != nullptr);
+	{
+		const u16* pic = app.savePicture();
+		int lit = 0;
+		for (int i = 0; i < THUMB_W * THUMB_H; ++i) lit += pic[i] != 0;
+		CHECK(lit > THUMB_W * THUMB_H / 2);
+	}
+	// The main page leads to the save page (item 7); it lists ten empty slots, the cursor on the first.
+	MenuInput down, ok, back;
+	down.down = true;
+	ok.confirm = true;
+	back.back = true;
+	for (int i = 0; i < 7; ++i) app.menu().update(down, app.settings());
+	CHECK(app.menu().update(ok, app.settings()) == MENU_NONE && app.menu().page() == Menu::PAGE_SAVE);
+	app.render();
+	CHECK(app.menu().saveSlot() == 1 && !app.slotInfo(1).used && !app.slotInfo(0).used);
+	writePpm(gDir + "/saves-empty.ppm");
+	app.menu().update(down, app.settings());
+	app.menu().update(down, app.settings());
+	CHECK(app.menu().update(ok, app.settings()) == MENU_SAVE_SLOT && app.menu().saveSlot() == 3);
+	const u32 framesBefore = app.progressFrames();
+	CHECK(app.menuAction(MENU_SAVE_SLOT, nullptr));
+	CHECK(!app.menu().isOpen() && std::strcmp(app.toastText(), "Игра сохранена") == 0);
+	CHECK(app.progressFrames() >= framesBefore + 4); // (the screen with the bar: a frame each step)
+	writePpm(gDir + "/saves-progress.ppm");
+	app.slotPath(3, path, sizeof(path));
+	SaveInfo info;
+	CHECK(readSaveInfo(path, info, nullptr) && info.picture && std::strcmp(info.world, "world") == 0 && info.playSeconds == 3725 &&
+	      std::fabs(info.timeOfDay - 15.0f) < 1e-3f && info.savedAt > 0 && std::strcmp(info.title, "Колония, день 1") == 0);
+	// A named one, into slot 1 (the 3DS asks for the name with its keyboard).
+	app.menu().open();
+	app.render();
+	CHECK(app.saveSlot(1, "У ворот лагеря"));
+	app.slotPath(1, path, sizeof(path));
+	CHECK(readSaveInfo(path, info, nullptr) && std::strcmp(info.title, "У ворот лагеря") == 0);
+	// A quick save (the frame on show is its picture).
+	CHECK(app.saveState(statePath.c_str()) && readSaveInfo(statePath.c_str(), info, nullptr) && info.picture && !info.legacy);
+
+	// Elsewhere, later: the load page brings the game back - the world, the place, the hour, the time played.
+	const Vec3 there = app.camera().pos;
+	CHECK(app.enterWorld(hashName("world/cave"), nullptr, 0));
+	app.environment().timeOfDay = 3.0f;
+	app.setPlaySeconds(9000.0);
+	app.menu().open();
+	app.render();
+	for (int i = 0; i < 8; ++i) app.menu().update(down, app.settings());
+	CHECK(app.menu().update(ok, app.settings()) == MENU_NONE && app.menu().page() == Menu::PAGE_LOAD);
+	app.render();
+	// (The cursor on the newest: the quick save, entry 0.)
+	CHECK(app.menu().saveSlot() == 0 && app.slotInfo(0).used && app.slotInfo(1).used && app.slotInfo(3).used && !app.slotInfo(2).used);
+	app.menu().update(down, app.settings());
+	app.menu().update(down, app.settings());
+	app.menu().update(down, app.settings());
+	app.render();
+	writePpm(gDir + "/saves-load.ppm");
+	CHECK(app.menu().update(ok, app.settings()) == MENU_LOAD_SLOT && app.menu().saveSlot() == 3);
+	CHECK(app.menuAction(MENU_LOAD_SLOT, nullptr));
+	writePpm(gDir + "/saves-loading.ppm");
+	CHECK(!app.menu().isOpen() && std::string(app.worldName()) == "world/world");
+	CHECK(std::fabs(app.camera().pos.x - there.x) < 0.5f && std::fabs(app.camera().pos.z - there.z) < 0.5f);
+	CHECK(std::fabs(app.environment().timeOfDay - 15.0f) < 1e-3f && std::fabs(app.playSeconds() - 3725.0) < 1.0);
+	// An empty slot: nothing happens, the menu says so.
+	app.menu().open();
+	app.render();
+	CHECK(!app.loadSlot(5) && std::string(app.worldName()) == "world/world");
+	// A file of before the header loads, and its slot shows its world.
+	{
+		app.slotPath(3, path, sizeof(path));
+		FILE* f = fopen(path, "rb");
+		SaveHeader h;
+		CHECK(f && fread(&h, sizeof(h), 1, f) == 1);
+		fseek(f, long(h.bytes), SEEK_SET);
+		std::vector<u8> rest;
+		int c;
+		while ((c = fgetc(f)) != EOF) rest.push_back(u8(c));
+		fclose(f);
+		char old[256];
+		app.slotPath(7, old, sizeof(old));
+		f = fopen(old, "wb");
+		fwrite(rest.data(), rest.size(), 1, f);
+		fclose(f);
+		app.refreshSlots();
+		CHECK(app.slotInfo(7).used && app.slotInfo(7).legacy && std::strcmp(app.slotInfo(7).world, "world") == 0);
+		CHECK(app.enterWorld(hashName("world/cave"), nullptr, 0));
+		CHECK(app.loadSlot(7) && std::string(app.worldName()) == "world/world");
+	}
+	// Dead or talking, no save: (no hero in this archive - canSave holds; the rule is the menu's line otherwise).
+	CHECK(app.canSave());
+	app.menu().close();
+	app.render();
+	app.shutdown();
+}
+
+// The start menu (fix189): built from the menu script's MENU_MAIN over the start screen, as OpenGothic builds it - the
+// items the script names with its texts, which of them can be chosen out of a game, what they do; the port's pages
+// for loading and the options over it; continuing from the quick save behind the original's loading screen.
+static void testStartMenu() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/startmenu.pak";
+	const BakeResult baked = bakeLifeWorlds(syntheticScriptSource(), path, worlds, true, false, false, 0, true);
+	CHECK(baked.report.find("start menu: MENU_MAIN of the menu script; 6 pictures baked") != std::string::npos);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	app.world().preload(app.camera().pos);
+	const std::string quick = gDir + "/start-quick.bin";
+	remove(quick.c_str());
+	app.setStatePath(quick.c_str());
+	app.setSaveDir((gDir + "/start-saves").c_str());
+	app.npcs().game().setQuiet(true);
+	app.openStartMenu();
+	const StartMenu& sm = app.startMenu();
+	CHECK(app.startMenuActive() && sm.fromScript() && sm.hasBackground() && sm.hasFrame() && sm.count() == 9);
+	CHECK(sm.selected() >= 0 && std::strcmp(sm.item(sm.selected()).text, "New Game") == 0);
+	// Out of a game, without a quick save: new, load, options and exit; not save, continue, the intro, the credits.
+	std::string can;
+	for (int i = 0; i < sm.count(); ++i)
+		if (sm.enabled(i)) can += std::string(sm.item(i).text) + "|";
+	CHECK(can == "New Game|Load Game|Options|Exit Gothic|");
+	int wx, wy, ww, wh;
+	sm.window(wx, wy, ww, wh);
+	CHECK(wx == 40 && wy == 0 && ww == 320 && wh == 240); // (640 x 480 at half its size, in the middle)
+	int ix, iy, iw, ih;
+	sm.itemRect(1, ix, iy, iw, ih);
+	CHECK(ix == 40 && iw == 320 && std::abs(iy - 84) <= 1 && std::abs(ih - 21) <= 1);
+	app.render();
+	writePpm(gDir + "/start-menu.ppm");
+	{
+		const u8* fb = gfx::softFramebuffer();
+		const u8* side = fb + (120 * gfx::SCREEN_W + 10) * 4;   // the start screen beside the window
+		const u8* edge = fb + (120 * gfx::SCREEN_W + 44) * 4;   // the frame's stone edge
+		CHECK(side[0] > side[2] && edge[0] > 100 && edge[1] > 100);
+	}
+	MenuInput down, up, ok, back, right;
+	down.down = true;
+	up.up = true;
+	ok.confirm = true;
+	back.back = true;
+	right.right = true;
+	const auto selectedText = [&]() { return std::string(sm.selected() >= 0 ? sm.item(sm.selected()).text : ""); };
+	app.startMenuInput(down);
+	CHECK(selectedText() == "Load Game");
+	app.startMenuInput(down);
+	CHECK(selectedText() == "Options"); // (save and continue passed by)
+	app.startMenuInput(down);
+	CHECK(selectedText() == "Exit Gothic");
+	app.startMenuInput(down);
+	CHECK(selectedText() == "New Game");
+	app.startMenuInput(up);
+	CHECK(selectedText() == "Exit Gothic");
+	CHECK(app.startMenuInput(ok).exit);
+	// The options: the settings' pages over the start screen; B comes back to the start menu.
+	app.startMenuInput(up);
+	CHECK(selectedText() == "Options");
+	app.startMenuInput(ok);
+	CHECK(app.menu().isOpen() && app.menu().page() == Menu::PAGE_OPTIONS && app.startMenuActive());
+	app.render();
+	writePpm(gDir + "/start-options.ppm");
+	app.startMenuInput(ok);
+	CHECK(app.menu().page() == Menu::PAGE_GRAPHICS);
+	const u8 drawWas = app.settings().drawMetres;
+	CHECK(app.startMenuInput(right).settingsChanged && app.settings().drawMetres != drawWas);
+	app.settings().drawMetres = drawWas;
+	app.startMenuInput(back);
+	CHECK(app.menu().isOpen() && app.menu().page() == Menu::PAGE_OPTIONS);
+	app.startMenuInput(back);
+	CHECK(!app.menu().isOpen() && app.startMenuActive());
+	// The load page, with nothing saved: B back.
+	app.startMenuInput(up);
+	app.startMenuInput(ok);
+	CHECK(app.menu().isOpen() && app.menu().page() == Menu::PAGE_LOAD);
+	app.startMenuInput(back);
+	CHECK(!app.menu().isOpen() && app.startMenuActive());
+	// A new game: the world as it was made, the menu gone (its pictures with it).
+	app.startMenuInput(up);
+	CHECK(selectedText() == "New Game");
+	app.startMenuInput(ok);
+	CHECK(!app.startMenuActive());
+	const float dt = 1.0f / 30.0f;
+	for (int i = 0; i < 5; ++i) {
+		app.update(Input {}, dt);
+		app.render();
+	}
+	// Continue: from the quick save, behind the original's loading screen.
+	CHECK(app.saveState(quick.c_str()));
+	const Vec3 there = app.player().eye();
+	app.player().flying = true;
+	app.teleport({there.x + 2000.0f, there.y + 500.0f, there.z});
+	app.openStartMenu();
+	can.clear();
+	for (int i = 0; i < sm.count(); ++i)
+		if (sm.enabled(i)) can += std::string(sm.item(i).text) + "|";
+	CHECK(can == "New Game|Load Game|Continue|Options|Exit Gothic|");
+	app.startMenuInput(down);
+	app.startMenuInput(down);
+	CHECK(selectedText() == "Continue");
+	const u32 frames = app.progressFrames();
+	app.startMenuInput(ok);
+	writePpm(gDir + "/start-loading.ppm");
+	CHECK(!app.startMenuActive() && app.progressFrames() > frames);
+	CHECK(std::fabs(app.player().eye().x - there.x) < 1.0f && std::fabs(app.player().eye().z - there.z) < 1.0f);
+	{
+		// (The loading screen's bar: the picture of PROGRESS_BAR, red-orange, three quarters down.)
+		const u8* fb = gfx::softFramebuffer();
+		const u8* bar = fb + ((gfx::SCREEN_H * 3 / 4 + 6) * gfx::SCREEN_W + gfx::SCREEN_W / 2) * 4;
+		CHECK(bar[0] > 150 && bar[2] < 80);
+	}
+	app.shutdown();
+
+	// An archive without a menu script: the engine's own items, in the interface's language.
+	App plain;
+	CHECK(plain.init((gDir + "/worlds.pak").c_str(), nullptr));
+	plain.openStartMenu();
+	CHECK(!plain.startMenu().fromScript() && plain.startMenu().count() == 6 && std::strcmp(plain.startMenu().item(0).text, "Новая игра") == 0);
+	plain.render();
+	writePpm(gDir + "/start-builtin.ppm");
+	plain.shutdown();
+}
 
 // Talks: A at Thorus, the greeting he begins with, the menu of what the scripts
 // offer, a choice inside an info, a quest begun and finished, a routine changed.
@@ -13187,6 +13581,8 @@ int main(int argc, char** argv) {
              {"teach", testTeach},
              {"particles", testParticles},
              {"dialogs", testDialogs},
+             {"saves", testSaves},
+             {"start menu", testStartMenu},
              {"npcai", testNpcAi},
              {"npc items", testNpcItems},
              {"corpses", testCorpses},

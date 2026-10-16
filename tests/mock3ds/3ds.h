@@ -63,9 +63,15 @@ enum { GX_TRANSFER_FMT_RGBA8 = 0, GX_TRANSFER_FMT_RGB8 = 1, GX_TRANSFER_SCALE_NO
 
 enum gfxScreen_t { GFX_TOP = 0, GFX_BOTTOM = 1 };
 enum gfx3dSide_t { GFX_LEFT = 0, GFX_RIGHT = 1 };
+// The top screen's framebuffers (two, BGR8, 240 x 400 on their side): the one the next picture goes into; C3D_FrameEnd
+// turns them as the display transfer's end does on the console.
+enum GSPGPU_FramebufferFormat { GSP_RGBA8_OES = 0, GSP_BGR8_OES = 1, GSP_RGB565_OES = 2, GSP_RGB5_A1_OES = 3, GSP_RGBA4_OES = 4 };
+u8* gfxGetFramebuffer(gfxScreen_t screen, gfx3dSide_t side, u16* width, u16* height);
+GSPGPU_FramebufferFormat gfxGetScreenFormat(gfxScreen_t screen);
+int GSPGPU_InvalidateDataCache(const void* adr, u32 size);
 
 enum GPU_SHADER_TYPE { GPU_VERTEX_SHADER = 0, GPU_GEOMETRY_SHADER = 1 };
-enum GPU_TEXCOLOR { GPU_RGB565 = 0x3, GPU_LA8 = 0x5, GPU_A8 = 0x8, GPU_LA4 = 0x9, GPU_L4 = 0xA, GPU_ETC1 = 0xC, GPU_ETC1A4 = 0xD };
+enum GPU_TEXCOLOR { GPU_RGBA4 = 0x4, GPU_RGB565 = 0x3, GPU_LA8 = 0x5, GPU_A8 = 0x8, GPU_LA4 = 0x9, GPU_L4 = 0xA, GPU_ETC1 = 0xC, GPU_ETC1A4 = 0xD };
 enum GPU_TEXTURE_MODE_PARAM { GPU_TEX_2D = 0 };
 enum GPU_TEXFACE { GPU_TEXFACE_2D = 0 };
 enum GPU_TEXTURE_FILTER_PARAM { GPU_NEAREST = 0, GPU_LINEAR = 1 };

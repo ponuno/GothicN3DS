@@ -4,6 +4,7 @@
 #include "weather_sfx.h"
 #include "stereo.h"
 #include "bytes.h"
+#include "saves.h"
 
 #include "sys.h"
 
@@ -185,6 +186,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	_cam.pitch = 0;
 	setDrawDistance(drawDistance); // the far plane depends on the chunk size
 	_world.preload(_cam.pos);
+	progress(0.4f); // (loading a save into another world: its screen)
 	_npcs.enterWorld(_pak, _world, worldName(), _player.eye(), _env.timeOfDay);
 	if (_npcs.loaded()) {
 		_loot.enterWorld(_pak, worldName(), _world.entryHash(), _npcs.game());
@@ -244,9 +246,12 @@ bool finite(float v) { return v == v && v > -1.0e7f && v < 1.0e7f; }
 } // namespace
 
 bool App::saveState(const char* path) const {
-	if (!_world.isOpen()) return false;
-	// (fix151: a save holds the character as himself; a transformation ends with it.)
-	if (heroTransformed()) const_cast<App*>(this)->heroTransformBack();
+	// (A quick save, and the one on leaving: the name made up, the picture of the menu's opening or of the frame on show.)
+	return const_cast<App*>(this)->writeSave(path, nullptr);
+}
+
+// The position after the header (App::writeSave): as state.bin has always held it.
+bool App::writeState(FILE* f) {
 	SavedState s {};
 	s.magic = STATE_MAGIC;
 	s.version = STATE_VERSION;
@@ -261,26 +266,63 @@ bool App::saveState(const char* path) const {
 	s.timeOfDay = _env.timeOfDay;
 	s.drawDistance = _world.config().drawDistance;
 	s.check = stateCheck(s);
-	FILE* f = fopen(path, "wb");
-	if (!f) return false;
 	const bool ok = fwrite(&s, sizeof(s), 1, f) == 1;
 	saveInventory(f);
 	_loot.saveTaken(f);
 	_chests.saveChanged(f);
+	progress(0.35f);
 	bool game = true;
 	if (_npcs.loaded()) {
 		ByteSink payload;
 		_npcs.game().save(payload);
+		progress(0.65f);
 		const u32 head[3] = {GAME_SECTION, u32(payload.size), byteCheck(payload.data, payload.size)};
 		game = !payload.failed && fwrite(head, sizeof(head), 1, f) == 1 && (payload.size == 0 || fwrite(payload.data, payload.size, 1, f) == 1);
 	}
-	return (fclose(f) == 0) && ok && game;
+	return ok && game;
+}
+
+// What the slots' menu shows of a file of before the header: the world and the hour of its position.
+static bool peekState(const char* path, u32& world, float& timeOfDay) {
+	FILE* f = fopen(path, "rb");
+	if (!f) return false;
+	SavedState s {};
+	const bool ok = fread(&s, sizeof(s), 1, f) == 1 && s.magic == STATE_MAGIC && s.check == stateCheck(s);
+	fclose(f);
+	if (!ok) return false;
+	world = s.world;
+	timeOfDay = s.timeOfDay >= 0.0f && s.timeOfDay < 24.0f ? s.timeOfDay : 0.0f;
+	return true;
+}
+
+void App::refreshSlots() {
+	char path[200];
+	for (int k = 0; k <= SAVE_SLOTS; ++k) {
+		slotPath(k, path, sizeof(path));
+		SaveInfo& info = _slots[k];
+		readSaveInfo(path, info, nullptr);
+		if (!info.legacy) continue;
+		u32 world = 0;
+		if (!peekState(path, world, info.timeOfDay)) {
+			info.readable = false;
+			continue;
+		}
+		const PakEntry* e = _pak.find(world);
+		snprintf(info.world, sizeof(info.world), "%s", e ? worldShortName(_pak.name(*e)) : "");
+	}
 }
 
 bool App::loadState(const char* path) {
 	FILE* f = fopen(path, "rb");
 	if (!f) return false;
+	// The header of a saved game (or none, in a file of before it): what follows is the position.
+	SaveInfo header;
+	if (!readSaveHeader(f, header, nullptr)) {
+		fclose(f);
+		return false;
+	}
 	heroTransformBack(); // (fix151: what is loaded is the character himself)
+	progress(0.05f);
 	SavedState s {};
 	const bool read = fread(&s, sizeof(s), 1, f) == 1;
 	if (!read || s.magic != STATE_MAGIC || (s.version != 1 && s.version != STATE_VERSION) || s.check != stateCheck(s)) {
@@ -296,13 +338,19 @@ bool App::loadState(const char* path) {
 	}
 
 	const Vec3 eye = {s.eye[0], s.eye[1], s.eye[2]};
-	if (s.world != _world.entryHash()) {
+	const bool otherWorld = s.world != _world.entryHash();
+	// (Far off in the same world: the place is read in whole below, behind the progress screen, not chunk by chunk in view.)
+	const Vec3 was = _player.eye();
+	const float far2 = (eye.x - was.x) * (eye.x - was.x) + (eye.z - was.z) * (eye.z - was.z);
+	if (otherWorld) {
+		progress(0.1f);
 		const u32 switches = _switches;
 		if (!enterWorld(s.world, &eye, s.yaw)) {
 			fclose(f);
 			return false;
 		}
 		_switches = switches; // continuing is not travelling
+		progress(0.6f);
 	}
 	_player.flying = s.flying != 0;
 	_hero.getUp();
@@ -322,9 +370,17 @@ bool App::loadState(const char* path) {
 		chestEnd(true);
 		if (_npcs.loaded()) _chests.resetChanges(_pak, worldName(), _world.entryHash(), _npcs.game());
 		_chests.loadChanged(f);
+		progress(0.7f);
 		if (s.version >= 3) loadGameSection(f);
+		progress(0.85f);
 	}
 	fclose(f);
+	if (!header.legacy) _playSeconds = double(header.playSeconds);
+	if (_progress.on && !otherWorld && far2 > _world.config().drawDistance * _world.config().drawDistance * 0.25f) {
+		_world.preload(_cam.pos);
+		progress(0.95f);
+	}
+	progress(1.0f);
 	return true;
 }
 
@@ -420,6 +476,10 @@ void App::updateEnclosed(float dt) {
 
 void App::shutdown() {
 	chapterPictureFree();
+	freeSlotPicture();
+	free(_savePic);
+	_savePic = nullptr;
+	_savePicOk = false;
 	_chatter.shutdown();
 	_speech.shutdown();
 	_music.shutdown();
@@ -466,6 +526,7 @@ void App::checkPortals() {
 }
 
 void App::update(const Input& given, float dt) {
+	_playSeconds += double(dt);
 	collisionStatsReset(); // (what collisionStats() says is one frame's worth)
 	if (_npcs.loaded()) _settings.chapter = u8(clamp<i32>(_npcs.game().chapterNumber(), 0, 6)); // (the menu's chapter slider follows the game)
 	// (fix152) A camera flight that holds the player: the keys do nothing but A, which skips it (the clock goes on).
@@ -486,6 +547,7 @@ void App::update(const Input& given, float dt) {
 	while (_env.timeOfDay >= 24.0f) _env.timeOfDay -= 24.0f;
 	while (_env.timeOfDay < 0.0f) _env.timeOfDay += 24.0f;
 	trace("update: weather");
+	_weather.setClock(_npcs.game().day(), _env.timeOfDay); // fix187: the game's rain schedule
 	_weather.update(dt);
 	_world.config().windWeather = _world.indoor() ? 1.0f : _weather.windScale();
 
@@ -955,6 +1017,19 @@ void App::loadFogZones() {
 }
 
 void App::render() {
+	if (_startActive) {
+		renderStartMenu();
+		return;
+	}
+	// The picture a save will carry: the frame on show as the menu opens (the game, not the menu over it).
+	if (_menu.isOpen() && !_menuShot) {
+		captureSavePicture();
+		_menuShot = true;
+	} else if (!_menu.isOpen()) {
+		_menuShot = false;
+		_slotsPage = -1;
+		if (_slotPic) freeSlotPicture();
+	}
 	const SkyColors sky = skyColors();
 
 	gfx::FrameDesc fd {};
@@ -1182,7 +1257,8 @@ void App::render() {
 		trace("render: ripples");
 		if (!(_renderSkip & SKIP_RAIN)) _ripples.draw(_world, _cam.pos, indoor ? indoorLight : sky.light);
 		trace("render: rain");
-		if (!indoor && (_weather.rain() > 0.03f || _weather.snow() > 0.03f) && !(_renderSkip & SKIP_RAIN)) _rain.draw(_world, _cam.pos, _weather.rain(), _weather.snow(), sky.light, _clock);
+		if (!indoor && (_weather.rain() > 0.03f || _weather.snow() > 0.03f) && !(_renderSkip & SKIP_RAIN)) _rain.draw(_world, _cam.pos, _weather.rain(), _weather.snow(), sky.light, _clock,
+			                                  0.04f + 0.10f * clamp((_weather.windScale() - 0.55f) / 1.35f, 0.0f, 1.0f)); // fix187: slanted by the wind
 		trace("render: particles");
 		if (!(_renderSkip & SKIP_PARTICLES)) _particles.draw(d.view, _cam.pos, indoor ? indoorLight : sky.light);
 		trace("render: overlay");
@@ -1968,6 +2044,8 @@ bool App::menuAction(MenuAction action, const char* statePath) {
 			snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Сохранённой позиции нет"));
 		}
 		return true;
+	case MENU_SAVE_SLOT: saveSlot(_menu.saveSlot(), nullptr); return true;
+	case MENU_LOAD_SLOT: loadSlot(_menu.saveSlot()); return true;
 	case MENU_EXIT: return false;
 	case MENU_NEXT_WORLD: {
 		u32 first = 0, next = 0;

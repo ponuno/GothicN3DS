@@ -62,6 +62,9 @@ public:
 	// A picture in colour (gfx::uiTextureCreateColor) over the whole screen, faded to `alpha`: what was added
 	// before is drawn first, so it lies over that and under what comes after.
 	void picture(gfx::Texture* tex, int texW, int texH, u8 alpha);
+	// The same into a rectangle of the screen: texels (0, 0)..(texW, texH) of `tex` drawn over x0, y0 .. x1, y1, tinted
+	// by `rgba` (white: as it is; its alpha fades it).
+	void picture(gfx::Texture* tex, int texW, int texH, int x0, int y0, int x1, int y1, u32 rgba);
 
 	// Draws what was added and starts over. Call between the 3D passes and
 	// gfx::frameEnd.

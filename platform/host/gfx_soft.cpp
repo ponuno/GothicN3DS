@@ -8,6 +8,7 @@
 // edge never leave a pixel between them - and a pixel of background showing
 // through is a real gap in the geometry, not a rounding accident.
 #include "gfx_soft.h"
+#include "saves.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -674,6 +675,28 @@ Texture* uiTextureCreateColor(u16 w, u16 h, const u16* rgb565) {
 	return t;
 }
 
+Texture* uiTextureCreateRGBA4(u16 w, u16 h, const u16* rgba4) {
+	const auto pot = [](u32 v) { return v >= 8 && v <= 1024 && (v & (v - 1)) == 0; };
+	if (!rgba4 || !pot(w) || !pot(h) || !fits(u32(w) * h)) return nullptr;
+	Texture* t = static_cast<Texture*>(calloc(1, sizeof(Texture)));
+	if (!t) return nullptr;
+	t->width = w;
+	t->height = h;
+	t->mipCount = 1;
+	t->level[0] = static_cast<u8*>(malloc(size_t(w) * h * 4));
+	if (!t->level[0]) {
+		free(t);
+		return nullptr;
+	}
+	for (u32 i = 0; i < u32(w) * h; ++i) {
+		const u16 c = rgba4[i];
+		u8* o = t->level[0] + i * 4;
+		for (int k = 0; k < 4; ++k) o[k] = u8(((c >> (12 - 4 * k)) & 15) * 17);
+	}
+	t->bytes = 0;
+	return t;
+}
+
 void uiDraw(Texture* t, const UiQuad* quads, u32 count) {
 	if (!t || !quads || !t->level[0]) return;
 	for (u32 q = 0; q < count && q < UI_MAX_QUADS; ++q) {
@@ -698,7 +721,14 @@ void uiDraw(Texture* t, const UiQuad* quads, u32 count) {
 	}
 }
 
-void frameEnd() {}
+static bool gFrameDone = false;
+void frameEnd() { gFrameDone = true; }
+
+bool captureFrame(u16* rgb565, int w, int h) {
+	if (!gFrameDone || !rgb565 || w <= 0 || h <= 0) return false;
+	shrinkPicture(SCREEN_W, SCREEN_H, [](int x, int y, u8* c) { memcpy(c, gColor + (y * SCREEN_W + x) * 4, 3); }, rgb565, w, h);
+	return true;
+}
 
 // Stereo: no second picture here, but the calls are counted so the engine's two-eye drawing can be tested.
 static bool gStereo = false;

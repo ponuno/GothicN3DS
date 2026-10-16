@@ -580,6 +580,26 @@ void linearFree(void* mem) {
 
 u32 linearSpaceFree(void) { return 16u << 20; }
 int GSPGPU_FlushDataCache(const void*, u32) { return 0; }
+int GSPGPU_InvalidateDataCache(const void*, u32) { return 0; }
+
+static u8 gTopFb[2][240 * 400 * 3];
+static int gTopBack = 1;
+u8* gfxGetFramebuffer(gfxScreen_t screen, gfx3dSide_t, u16* width, u16* height) {
+	if (width) *width = 240;
+	if (height) *height = 400;
+	return screen == GFX_TOP ? gTopFb[gTopBack] : nullptr;
+}
+GSPGPU_FramebufferFormat gfxGetScreenFormat(gfxScreen_t) { return GSP_BGR8_OES; }
+void mock3ds::paintTopFramebuffers() {
+	for (int b = 0; b < 2; ++b)
+		for (int x = 0; x < 400; ++x)
+			for (int y = 0; y < 240; ++y) {
+				u8* p = gTopFb[b] + (x * 240 + (239 - y)) * 3;
+				p[0] = 64;
+				p[1] = u8(y * 255 / 239);
+				p[2] = u8(x * 255 / 399);
+			}
+}
 
 void osTickCounterStart(TickCounter* c) {
 	c->reference = gNow;
@@ -647,7 +667,7 @@ bool C3D_TexInitWithParams(C3D_Tex* tex, void*, C3D_TexInitParams p) {
 	tex->height = p.height;
 	tex->fmt = p.format;
 	u32 size = 0;
-	for (u32 l = 0; l <= p.maxLevel; ++l) size += (u32(p.width) >> l) * (u32(p.height) >> l) * (p.format == GPU_ETC1 || p.format == GPU_L4 ? 4 : p.format == GPU_RGB565 ? 16 : 8) / 8; // (ETC1A4 and A8: a byte a texel)
+	for (u32 l = 0; l <= p.maxLevel; ++l) size += (u32(p.width) >> l) * (u32(p.height) >> l) * (p.format == GPU_ETC1 || p.format == GPU_L4 ? 4 : p.format == GPU_RGB565 || p.format == GPU_RGBA4 ? 16 : 8) / 8; // (ETC1A4 and A8: a byte a texel)
 	tex->data = linearAlloc(size);
 	tex->size = size;
 	return tex->data != nullptr;
@@ -726,6 +746,7 @@ bool C3D_FrameDrawOn(C3D_RenderTarget* target) {
 
 void C3D_FrameEnd(u8) {
 	if (!gInFrame) return;
+	gTopBack ^= 1;
 	if (gpuCmdBufOffset) {
 		if (gpuBusy()) ++gCount.submittedBusy;
 		if (!gClearedSinceSubmit) ++gCount.submittedUncleared;

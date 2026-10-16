@@ -17,6 +17,7 @@
 // it stops the program (libctru calls svcBreak).
 #include "gfx.h"
 #include "gfx_c3d.h"
+#include "saves.h"
 #include "trace.h"
 
 #include "world_fade_shbin.h"
@@ -1037,7 +1038,61 @@ static void markSync() {
 
 static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target);
 
+// The top screen's two framebuffers, as libctru turns them: gfxGetFramebuffer gives the one the next picture goes into,
+// so the other is the one on show (as reproject_3ds.cpp finds them, from what it has seen).
+static u8* gTopSeen[2] = {nullptr, nullptr};
+static void noteTopBuffer() {
+	u8* b = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, nullptr, nullptr);
+	if (!b || b == gTopSeen[0] || b == gTopSeen[1]) return;
+	if (!gTopSeen[0]) {
+		gTopSeen[0] = b;
+	} else if (!gTopSeen[1]) {
+		gTopSeen[1] = b;
+	} else {
+		gTopSeen[0] = gTopSeen[1];
+		gTopSeen[1] = b;
+	}
+}
+
+bool captureFrame(u16* rgb565, int w, int h) {
+	if (!gReady || gInFrame || !rgb565 || w <= 0 || h <= 0) return false;
+	noteTopBuffer();
+	u16 fbw = 0, fbh = 0;
+	const u8* back = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &fbw, &fbh);
+	const u8* shown = back == gTopSeen[0] ? gTopSeen[1] : back == gTopSeen[1] ? gTopSeen[0] : nullptr;
+	if (!shown || fbw != 240 || (fbh != 400 && fbh != 800)) return false;
+	u32 bpp = 0;
+	switch (gfxGetScreenFormat(GFX_TOP)) {
+	case GSP_RGBA8_OES: bpp = 4; break;
+	case GSP_BGR8_OES: bpp = 3; break;
+	case GSP_RGB565_OES: bpp = 2; break;
+	default: return false;
+	}
+	// (The display-transfer unit wrote it behind the processor's cache.)
+	GSPGPU_InvalidateDataCache(shown, u32(fbw) * fbh * bpp);
+	// The screen lies on its side in memory: a column of the picture after the other, each from the bottom up.
+	shrinkPicture(int(fbh), int(fbw), [&](int x, int y, u8* c) {
+		const u8* p = shown + (size_t(x) * fbw + size_t(fbw - 1 - y)) * bpp;
+		if (bpp == 4) { // A B G R
+			c[0] = p[3];
+			c[1] = p[2];
+			c[2] = p[1];
+		} else if (bpp == 3) { // B G R
+			c[0] = p[2];
+			c[1] = p[1];
+			c[2] = p[0];
+		} else {
+			const u32 v = u32(p[0]) | (u32(p[1]) << 8);
+			c[0] = u8(((v >> 11) & 31u) << 3);
+			c[1] = u8(((v >> 5) & 63u) << 2);
+			c[2] = u8((v & 31u) << 3);
+		}
+	}, rgb565, w, h);
+	return true;
+}
+
 void frameBegin(const FrameDesc& f) {
+	noteTopBuffer();
 	gFrame = f;
 	gClearColor = (u32(f.clearColor[0]) << 24) | (u32(f.clearColor[1]) << 16) | (u32(f.clearColor[2]) << 8) | 0xFFu;
 	if (gClassic) {
@@ -1459,6 +1514,35 @@ Texture* uiTextureCreateColor(u16 w, u16 h, const u16* rgb565) {
 		for (u32 x = 0; x < w; ++x) {
 			const u32 at = (x & 1u) | ((ty & 1u) << 1) | ((x & 2u) << 1) | ((ty & 2u) << 2) | ((x & 4u) << 2) | ((ty & 4u) << 3);
 			texels[((sy >> 3) * (w >> 3) + (x >> 3)) * 64u + at] = rgb565[y * w + x];
+		}
+	}
+	C3D_TexFlush(&t->tex);
+	C3D_TexSetFilter(&t->tex, GPU_LINEAR, GPU_LINEAR);
+	C3D_TexSetWrap(&t->tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+	t->bytes = 0;
+	return t;
+}
+
+// (As uiTextureCreateColor, in the GPU's RGBA4: the same 16-bit texels, the same order.)
+Texture* uiTextureCreateRGBA4(u16 w, u16 h, const u16* rgba4) {
+	const auto pot = [](u32 v) { return v >= 8 && v <= 1024 && (v & (v - 1)) == 0; };
+	if (!rgba4 || !pot(w) || !pot(h)) return nullptr;
+	Texture* t = static_cast<Texture*>(calloc(1, sizeof(Texture)));
+	if (!t) return nullptr;
+	if (!C3D_TexInit(&t->tex, w, h, GPU_RGBA4)) {
+		releaseDestroyed();
+		if (!C3D_TexInit(&t->tex, w, h, GPU_RGBA4)) {
+			free(t);
+			return nullptr;
+		}
+	}
+	u16* texels = static_cast<u16*>(t->tex.data);
+	for (u32 y = 0; y < h; ++y) {
+		// (The same order as uiTextureCreate: rows from the bottom, 8x8 tiles, Morton inside.)
+		const u32 sy = h - 1u - y, ty = sy & 7u;
+		for (u32 x = 0; x < w; ++x) {
+			const u32 at = (x & 1u) | ((ty & 1u) << 1) | ((x & 2u) << 1) | ((ty & 2u) << 2) | ((x & 4u) << 2) | ((ty & 4u) << 3);
+			texels[((sy >> 3) * (w >> 3) + (x >> 3)) * 64u + at] = rgba4[y * w + x];
 		}
 	}
 	C3D_TexFlush(&t->tex);

@@ -268,6 +268,8 @@ Texture* uiTextureCreate(u16 w, u16 h, const u8* coverage, bool smooth = false);
 // A picture in colour for the overlay: `rgb565` is w * h pixels, rows from the top. Drawn through uiDraw
 // like the others (the quads' colour tints it, their alpha fades it). Freed with textureDestroy.
 Texture* uiTextureCreateColor(u16 w, u16 h, const u16* rgb565);
+// The same with transparent parts: `rgba4` is w * h texels of 4 bits each, red in the top nibble, alpha in the bottom one.
+Texture* uiTextureCreateRGBA4(u16 w, u16 h, const u16* rgba4);
 // After the frame's 3D passes, before frameEnd. Quads of one alpha are one
 // draw call: keep them together.
 void uiDraw(Texture* t, const UiQuad* quads, u32 count);
@@ -275,6 +277,10 @@ void uiDraw(Texture* t, const UiQuad* quads, u32 count);
 constexpr u32 UI_MAX_QUADS = 1500;
 
 void frameEnd();
+
+// The picture of the top screen's last finished frame (what is on show; the left eye in 3D), shrunk into w x h RGB565,
+// rows from the top - for the picture of a saved game. Call between frames. False if the backend has no frame yet.
+bool captureFrame(u16* rgb565, int w, int h);
 
 // Destroyed textures and meshes may stay allocated until the GPU has finished
 // the frame that last used them. This waits for that and frees them now. Call

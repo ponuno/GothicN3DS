@@ -27,14 +27,15 @@
 //   D-Pad Left/Right  with a melee weapon in hand: a blow from that side (no A needed; again in the window: the combo)
 //   D-Pad Up      with empty hands: the fists on / off
 //   D-Pad Down    sneak on / off
-//   START         pause menu: continue, graphics, controls, faults, save, leave
+//   START         pause menu: continue, graphics, controls, faults, save and load the game, leave
+//                 (the save page: ten slots; A asks for the save's name with the system's keyboard)
 //   (console: SELECT takes the bow; classic: L+SELECT the bow, SELECT the spell)
 //   SELECT        opens the inventory on the bottom screen (D-Pad choose, L / R
 //                 page, A use, X: into a quick slot, B or SELECT close); the
 //                 character stands while it is open
 //   touch         the bottom screen: the ten quick slots (tap: use), the
 //                 inventory, the diary, the character
-//   R + START     save the position       R + SELECT  load it
+//   R + START     quick save (state.bin)   R + SELECT  quick load
 //   L+R+SELECT    write the last 5 seconds of the character's movement to
 //                 sdmc:/3ds/gothic3ds/slope.txt (added at its end): press it where the
 //                 character is stuck. The "pos" line counts the files written ("sd").
@@ -91,8 +92,10 @@ using g3::WorldStats;
 namespace gfx = g3::gfx;
 
 static const char* kPakPath = "sdmc:/3ds/gothic3ds/data.pak";
-// Where the player was when the program was left; the next start continues there.
+// Where the player was when the program was left; the next start continues there. It is the quick save too.
 static const char* kStatePath = "sdmc:/3ds/gothic3ds/state.bin";
+// The ten slots of the menu's "Сохранить игру" (engine/saves.h).
+static const char* kSaveDir = "sdmc:/3ds/gothic3ds/saves";
 // Where L+R+SELECT writes the movement recorder.
 static const char* kSlopePath = "sdmc:/3ds/gothic3ds/slope.txt";
 // The memory split. libctru's own gives the linear heap (where meshes and textures live, what the GPU reads) at most
@@ -327,6 +330,34 @@ static void onApt(APT_HookType hook, void*) {
 	}
 }
 
+// The name of a save, asked for as the original asks: the system's keyboard with the slot's old name in it (or one made
+// up). False if the player backed out. A keyboard that cannot be had leaves the name made up.
+static bool askSaveName(App& app, int slot, char* out, size_t size) {
+	char initial[48];
+	const g3::SaveInfo& old = app.slotInfo(slot);
+	if (old.used && old.readable && old.title[0]) snprintf(initial, sizeof(initial), "%s", old.title);
+	else g3::defaultSaveTitle(initial, sizeof(initial), g3::worldShortName(app.worldName()), app.npcs().loaded() ? app.npcs().game().day() : 0);
+	SwkbdState kb;
+	swkbdInit(&kb, SWKBD_TYPE_NORMAL, 2, 24);
+	swkbdSetHintText(&kb, g3::tr("Название сохранения"));
+	swkbdSetInitialText(&kb, initial);
+	swkbdSetButton(&kb, SWKBD_BUTTON_LEFT, g3::tr("Отмена"), false);
+	swkbdSetButton(&kb, SWKBD_BUTTON_RIGHT, g3::tr("Сохранить"), true);
+	swkbdSetValidation(&kb, SWKBD_NOTEMPTY_NOTBLANK, 0, 0);
+	out[0] = 0;
+	const SwkbdButton pressed = swkbdInputText(&kb, out, size);
+	if (pressed == SWKBD_BUTTON_CONFIRM) return true;
+	if (pressed == SWKBD_BUTTON_NONE) {
+		// (HOME or POWER pressed over it: not saved. The keyboard could not be had: saved under the name offered.)
+		const SwkbdResult r = swkbdGetResult(&kb);
+		if (r == SWKBD_NONE || r == SWKBD_INVALID_INPUT || r == SWKBD_OUTOFMEM) {
+			snprintf(out, size, "%s", initial);
+			return true;
+		}
+	}
+	return false;
+}
+
 // The application: 13 KB, with the character's poses in it. Not a local of
 // main(): the stack is 32 KB.
 static App gApp;
@@ -505,11 +536,9 @@ int main(int, char**) {
 	app.world().config().memoryBudget = (__ctru_linear_heap_size > (40u << 20) ? 44u : 28u) << 20;
 	app.world().config().memoryReserve = 5u << 20;
 	app.world().config().freeMemory = []() -> g3::u32 { return g3::u32(linearSpaceFree()); };
-	// Continue where the last session ended, unless L is held at start.
-	const bool hadState = !(startKeys & KEY_L) && app.loadState(kStatePath);
-	// The settings: the draw distance of an older state.bin counts once, for
-	// a settings.bin that is not there yet.
-	if (!hadSettings && hadState) settings.drawMetres = g3::u8(g3::clamp(int(app.drawDistance() / 1000.0f + 0.5f) * 10, 40, 200));
+	// (fix189) The game begins at the start menu, as the original's (its "Продолжить" goes on from where the last
+	// session ended: the quick save). L held at start: a new game at once, without the menu.
+	(void)hadSettings;
 	if (steadyKey) settings.objects = g3::OBJECTS_STEADY;
 	if (startKeys & KEY_A) settings.firstPerson = 1;
 	if (blind) settings.perception = 0;
@@ -526,6 +555,7 @@ int main(int, char**) {
 	}
 	if (plainShader) app.setThirdPerson(false); // (no character is drawn; for this run only, the menu keeps its setting)
 	app.setStatePath(kStatePath);
+	app.setSaveDir(kSaveDir);
 	if (nobody || plainShader) app.npcs().config().maxShown = 0;
 	// Characters coming into range: one set going per frame, the models of those on their way read ahead.
 	app.npcs().config().startsPerFrame = 1;
@@ -538,6 +568,7 @@ int main(int, char**) {
 	app.world().preload(app.camera().pos);
 	consoleClear();
 	aptHook(&gAptCookie, onApt, nullptr);
+	if (!(startKeys & KEY_L)) app.openStartMenu();
 	g3::trace("main: the first frame");
 	watchdogStart();
 	// When a refresh has no new picture, the old one is shown turned by the turn of the view (the menu's "Доворот кадра").
@@ -628,7 +659,7 @@ int main(int, char**) {
 		g3::Menu& menu = app.menu();
 		if (gSuspended) {
 			gSuspended = false;
-			if (!menu.isOpen()) menu.open();
+			if (!menu.isOpen() && !app.startMenuActive()) menu.open();
 		}
 		{
 			// The menu stands still anyway: the hitch log goes to the card now, not in the middle of play.
@@ -646,6 +677,37 @@ int main(int, char**) {
 		const gfx::FrameStats timing = gfx::frameStats();
 		const float ms = timing.frameMs > 0.0f ? timing.frameMs : 16.7f * float(interval);
 		const float dt = clamp(ms * 0.001f, 0.001f, 0.1f);
+
+		// ---- the start menu (fix189): nothing of the game runs yet ----
+		if (app.startMenuActive()) {
+			g3::MenuInput mi;
+			mi.up = (repeat & (KEY_DUP | KEY_CPAD_UP)) != 0;
+			mi.down = (repeat & (KEY_DDOWN | KEY_CPAD_DOWN)) != 0;
+			mi.left = (repeat & (KEY_DLEFT | KEY_CPAD_LEFT)) != 0;
+			mi.right = (repeat & (KEY_DRIGHT | KEY_CPAD_RIGHT)) != 0;
+			mi.confirm = (down & KEY_A) != 0;
+			mi.back = (down & KEY_B) != 0;
+			mi.close = (down & KEY_START) != 0;
+			gWatchdogPaused = true; // (a save loaded from here may take a while)
+			const App::StartResult sr = app.startMenuInput(mi);
+			gWatchdogPaused = false;
+			if (sr.exit) break;
+			if (sr.settingsChanged) {
+				app.applySettings();
+				pace();
+				app.settings().save(kSettingsPath);
+			}
+			app.soundIdle(dt);
+			app.render();
+			if (!app.startMenuActive()) {
+				// Into the game: what is held now is not its first press, and the bottom screen gets its inventory.
+				swallowed = held;
+				panelShown = false;
+				consoleClear();
+			}
+			g3::gTrace.frame = g3::gTrace.frame + 1;
+			continue;
+		}
 
 		circlePosition pad, cstick;
 		hidCircleRead(&pad);
@@ -748,6 +810,14 @@ int main(int, char**) {
 				app.settings().save(kSettingsPath);
 			} else if (act == g3::MENU_EXIT) {
 				break;
+			} else if (act == g3::MENU_SAVE_SLOT) {
+				// As the original: the save is given a name (the system's keyboard; B there: not saved).
+				const int slot = menu.saveSlot();
+				char name[128];
+				if (!app.canSave()) app.saveSlot(slot, nullptr); // (its line says why not)
+				else if (askSaveName(app, slot, name, sizeof(name))) app.saveSlot(slot, name);
+				// (The keyboard is an applet: its suspension is not the HOME Menu's, the menu is not to open again after it.)
+				gSuspended = false;
 			} else if (act != g3::MENU_NONE && act != g3::MENU_CLOSED) {
 				app.menuAction(act, kStatePath);
 				if (act == g3::MENU_RESET_GRAPHICS) {
@@ -1367,7 +1437,7 @@ int main(int, char**) {
 	// Leaving. Each step says so on the bottom screen first: should the
 	// console ever hang here, the last line tells where.
 	exitStep("exit 1/4: saving the position");
-	app.saveState(kStatePath);
+	if (!app.startMenuActive()) app.saveState(kStatePath); // (left from the start menu: no game to keep, the quick save stays)
 	g3::display::restore(); // (the screen as the system had it)
 	app.settings().save(kSettingsPath);
 	flushHitches();

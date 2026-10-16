@@ -186,6 +186,9 @@ struct BakeScripts {
 	// game; baked into "script/sfx" and "script/music". Without them the engine looks in `script`.
 	const SrcScript* sfx = nullptr;
 	const SrcScript* music = nullptr;
+	// The menus (MENU.DAT: C_MENU, C_MENU_ITEM): baked into "script/menu", the start menu is built from MENU_MAIN; the
+	// pictures it and the engine's start and loading screens show become "pic/<name>" (g3ds/pic.h).
+	const SrcScript* menu = nullptr;
 	// The particle effects (PARTICLEFX.DAT) and the spells' effects (VISUALFX.DAT), likewise: "script/particlefx", "script/visualfx".
 	const SrcScript* particles = nullptr;
 	const SrcScript* visualfx = nullptr;

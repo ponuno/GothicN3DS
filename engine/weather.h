@@ -1,12 +1,24 @@
 // Weather: clear, cloudy, rain, thunderstorm, snow. A state with smooth transitions (clouds, rain, snow and
 // the wetness of the ground are separate amounts that follow the wanted weather), applied to the sky colours,
-// the fog and the outdoor light; rain and snow are drawn as streaks over the picture. Automatic mode walks
-// through the weather by itself. (Nothing of the original game's weather data is read: it is designed here.)
+// the fog and the outdoor light; rain and snow are drawn as streaks over the picture.
+//
+// Automatic mode (fix187) follows the game's own rain schedule (Inside-Gothic, "Rain"): a rain has a start and a stop
+// time on the game's clock, can come at any hour, day or night, and lasts from 1 to about 2.5 hours; the first one always
+// starts between 16:30 and 17:30 (so that the player sees it); on the first three days it only rains, from the fourth
+// on a rain has lightning with a chance of 40 %. Here: one rain a game day (rainOfDay), the clouds gathering 45 minutes
+// before it and going 45 minutes after. Without the game's clock (setClock never called) it walks through the weather by
+// a timer of its own, as before.
 #pragma once
 #include "sky.h"
 #include "weather_flag.h"
 
 namespace g3 {
+
+// One rain of the schedule: start and stop in hours of its day (stop may be past 24: it goes on into the next day).
+struct RainEvent {
+	float start = 0.0f, stop = 0.0f;
+	bool lightning = false;
+};
 
 // Settings::weather: 0 is automatic, the rest force the weather.
 enum WeatherMode : u8 { WEATHER_AUTO = 0, WEATHER_CLEAR, WEATHER_CLOUDY, WEATHER_RAIN, WEATHER_STORM, WEATHER_SNOW, WEATHER_MODES };
@@ -20,6 +32,17 @@ class Weather {
 public:
 	// `mode`: WeatherMode. `wet`: wet ground darkens the outdoor light.
 	void configure(u8 mode, bool wet);
+	// fix187: the game's clock - the day (Wld_GetDay: 0 the first) and the hour - that the automatic weather follows.
+	// Before update(), every frame.
+	void setClock(i32 day, float hours) {
+		_day = day;
+		_hours = hours;
+		_clockKnown = true;
+	}
+	// The rain of a day of the schedule (the same every time for the same day).
+	static RainEvent rainOfDay(i32 day);
+	// How much of the rain and of its clouds the schedule has at that moment (0..1 each), and whether with lightning.
+	static void scheduleAt(i32 day, float hours, float& rain, float& cloud, bool& lightning);
 	// Outdoors the amounts follow the weather; indoors nothing is shown (they still run on).
 	void update(float dt);
 	// Greys and darkens the colours of a clear sky, shortens the view (see fogScale), flashes in a storm.
@@ -59,6 +82,10 @@ private:
 	float _cloud = 0, _rain = 0, _snow = 0, _wetAmount = 0;
 	float _flash = 0, _echo = 0, _thunderIn = 8.0f, _thunderDelay = 0;
 	u32 _seed = 12345u;
+	i32 _day = 0;
+	float _hours = 12.0f;
+	bool _clockKnown = false;
+	float _scheduleRain = 0.0f, _scheduleCloud = 0.0f; // the schedule's targets now (automatic mode with the clock)
 };
 
 } // namespace g3

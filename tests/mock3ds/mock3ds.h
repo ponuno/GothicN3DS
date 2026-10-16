@@ -51,6 +51,8 @@ double nowMs();
 void setLinearLimit(size_t bytes);
 // A console without the wide mode (the 2DS): gfxSetWide(true) does nothing.
 void setWideSupported(bool on);
+// Paints both top framebuffers so that the screen's pixel (x, y) is red x * 255 / 399, green y * 255 / 239, blue 64.
+void paintTopFramebuffers();
 
 // ---- the vertex shader ----
 //

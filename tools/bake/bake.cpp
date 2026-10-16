@@ -9,6 +9,7 @@
 #include "water_texture.h"
 #include "ground_fx.h"
 
+#include "g3ds/fog.h"
 #include "g3ds/game.h"
 
 #include "g3ds/tex.h"
@@ -278,6 +279,38 @@ void waterTint(u8 brightness, float rgb[3]) {
 	rgb[0] = k * 0.82f;
 	rgb[1] = k * 0.95f;
 	rgb[2] = k;
+}
+
+size_t applyWaterBiome(SrcScene& scene, float strength) {
+	if (strength <= 0.0f || scene.fogZones.empty()) return 0;
+	size_t n = 0;
+	for (SrcTriangle& t : scene.triangles) {
+		if (t.material >= scene.materials.size() || !scene.materials[t.material].water) continue;
+		float mid[3] = {0, 0, 0};
+		for (const SrcVertex& v : t.v)
+			for (int a = 0; a < 3; ++a) mid[a] += v.pos[a] / 3.0f;
+		// The last zone that holds it wins (as the music zones do).
+		const SrcFogZone* zone = nullptr;
+		float w = 0.0f;
+		for (const SrcFogZone& z : scene.fogZones) {
+			FogZone fz {};
+			std::copy_n(z.bbMin, 3, fz.bbMin);
+			std::copy_n(z.bbMax, 3, fz.bbMax);
+			fz.inner = z.inner;
+			const float k = fogZoneWeight(fz, mid[0], mid[1], mid[2]);
+			if (k > 0.0f) zone = &z, w = k;
+		}
+		if (!zone) continue;
+		const float top = float(std::max({zone->color[0], zone->color[1], zone->color[2], u8(1)}));
+		const float k = std::clamp(strength, 0.0f, 1.0f) * w;
+		for (SrcVertex& v : t.v)
+			for (int c = 0; c < 3; ++c) {
+				const float hue = float(zone->color[c]) / top; // 1 at the strongest channel
+				v.rgba[c] = u8(std::clamp(float(v.rgba[c]) * (1.0f + (hue - 1.0f) * k) + 0.5f, 0.0f, 255.0f));
+			}
+		++n;
+	}
+	return n;
 }
 
 size_t applyWaterLight(SrcScene& scene, u8 brightness) {
@@ -669,6 +702,8 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 			for (SrcTriangle& t : bw.scene.triangles)
 				for (SrcVertex& v : t.v) v.rgba[3] = 0;
 		applyWaterLight(bw.scene, opt.waterLight);
+		if (const size_t tinted = applyWaterBiome(bw.scene, opt.waterBiome))
+			line(format("water biome: %zu water triangles tinted by the fog zones (%zu zones in '%s')", tinted, bw.scene.fogZones.size(), bw.name.c_str()));
 		// Colour of the ground: wet at the water's edge, in the shade of plants (before the lamps and the occlusion use it).
 		{
 			GroundFxStats groundFx;
@@ -1565,6 +1600,33 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		if (!scene.musicZones.empty() && opt.soundRate > 0) {
 			pak.add("world/" + bw.name + "/music", ASSET_META, bakeMusicZones(scene.musicZones));
 			line(format("music zones: %zu in world '%s'", scene.musicZones.size(), bw.name.c_str()));
+		}
+
+		// ---- the world's fog zones ----
+		if (opt.fogZones && !scene.fogZones.empty()) {
+			FogZonesHeader fh {};
+			fh.magic = FOG_ZONES_MAGIC;
+			fh.version = FOG_ZONES_VERSION;
+			std::vector<u8> blob(sizeof(fh));
+			for (const SrcFogZone& z : scene.fogZones) {
+				if (fh.count >= 256u) break;
+				FogZone f {};
+				std::copy_n(z.bbMin, 3, f.bbMin);
+				std::copy_n(z.bbMax, 3, f.bbMax);
+				f.range = z.range;
+				f.inner = z.inner;
+				std::copy_n(z.color, 3, f.color);
+				f.flags = u8((z.overrideColor ? FOGZ_OVERRIDE_COLOR : 0) | (z.fadeSky ? FOGZ_FADE_SKY : 0));
+				const size_t at = blob.size();
+				blob.resize(at + sizeof(f));
+				std::memcpy(blob.data() + at, &f, sizeof(f));
+				++fh.count;
+			}
+			std::memcpy(blob.data(), &fh, sizeof(fh));
+			pak.add("world/" + bw.name + "/fog", ASSET_META, blob);
+			line(format("fog zones: %u in world '%s'", fh.count, bw.name.c_str()));
+		} else if (opt.fogZones) {
+			line(format("fog zones: none in world '%s' (no zCZoneZFog): fog and water follow no region", bw.name.c_str()));
 		}
 
 		// ---- report ----

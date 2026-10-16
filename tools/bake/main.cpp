@@ -175,6 +175,9 @@ void usage() {
 	          "  --water-texture S  the water's texture: made here (default: wind ripples; S = made) or the game's (S = original)\n"
 	          "  --water-alpha N    how opaque the made water is, 0..255 (default 140; lower = more see-through)\n"
 	          "  --water-color R,G,B  the deep colour of that texture (default 38,66,70)\n"
+	          "  --no-fog-zones     leave the world's fog zones (swamp, orc city ...) out of data.pak\n"
+	          "  --water-biome S    the water tinted by the fog zone it lies in, 0..1 (default 0.6; 0: one colour all over)\n"
+	          "  --water-clear      clearer water: alpha 75 and colour 52,90,96 unless --water-alpha / --water-color say otherwise\n"
 	          "  --water-shore S    colour by depth and foam in the fine water, 0..1 (default 1; needs --water-grid)\n"
 	          "  --wet-shore S      the ground at the water's edge darker (wet sand), 0..1 (default 1)\n"
 	          "  --canopy S         the ground under trees and bushes darker, 0..1 (default 0.3); --canopy-reach M: how far up\n"
@@ -236,6 +239,7 @@ int main(int argc, char** argv) {
 		std::string extList = "sgt,sty,dls";
 		GrassReportOptions grass;
 		bool grassReport = false;
+		bool waterClear = false, waterAlphaGiven = false, waterColorGiven = false; // --water-clear: a preset under the two explicit options
 		bool scriptCheck = true, follow = true, hero = true, withScripts = true, withFont = true;
 		int fontCodePage = 0;
 		for (int i = 2; i < argc; ++i) {
@@ -357,8 +361,12 @@ int main(int argc, char** argv) {
 			else if (a == "--no-weather-sfx") opt.weatherSfx = false;
 			else if (a == "--water-light") opt.waterLight = u8(std::clamp(std::stoi(value()), 0, 255));
 			else if (a == "--water-texture") opt.waterTexture = value() != "original";
-			else if (a == "--water-alpha") opt.waterAlpha = u8(std::clamp(std::stoi(value()), 0, 255));
+			else if (a == "--water-clear") waterClear = true;
+			else if (a == "--no-fog-zones") opt.fogZones = false;
+			else if (a == "--water-biome") opt.waterBiome = std::clamp(std::stof(value()), 0.0f, 1.0f);
+			else if (a == "--water-alpha") opt.waterAlpha = u8(std::clamp(std::stoi(value()), 0, 255)), waterAlphaGiven = true;
 			else if (a == "--water-color") {
+				waterColorGiven = true;
 				const std::string v = value();
 				int r, g, b;
 				if (std::sscanf(v.c_str(), "%d,%d,%d", &r, &g, &b) != 3) throw std::runtime_error("--water-color wants R,G,B");
@@ -401,6 +409,11 @@ int main(int argc, char** argv) {
 		opt.lod.threads = opt.threads;
 		opt.simplify.threads = opt.threads;
 		opt.tex.threads = opt.threads;
+		// Clearer water: the sea floor and the shore show through the ripples (the made texture is less opaque and a little lighter).
+		if (waterClear) {
+			if (!waterAlphaGiven) opt.waterAlpha = 75;
+			if (!waterColorGiven) opt.waterColor[0] = 52, opt.waterColor[1] = 90, opt.waterColor[2] = 96;
+		}
 		if (opt.debugFile == "?") {
 			const size_t slash = out.find_last_of("/\\");
 			opt.debugFile = (slash == std::string::npos ? std::string() : out.substr(0, slash + 1)) + "bake_debug.txt";

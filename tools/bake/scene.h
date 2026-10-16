@@ -174,6 +174,15 @@ struct SrcMusicZone {
 	float volume = 1.0f;
 };
 
+// A fog zone (zCZoneZFog), g3ds/fog.h FogZone.
+struct SrcFogZone {
+	float bbMin[3], bbMax[3];
+	float range = 0;  // cm
+	float inner = 0;  // 0..1
+	u8 color[3] = {0, 0, 0};
+	bool overrideColor = false, fadeSky = false;
+};
+
 // A particle effect the world carries (a torch, a fire, a smoke): the script
 // instance's name (upper case), where, and the way its carrier faces.
 struct SrcEmitter {
@@ -275,6 +284,7 @@ struct SrcScene {
 	std::vector<SrcMob> mobs;
 	std::vector<SrcAmbient> ambient;
 	std::vector<SrcMusicZone> musicZones;
+	std::vector<SrcFogZone> fogZones; // regions with their own fog and water tint (not the default zone: that is fogColor)
 	std::vector<SrcEmitter> emitters;
 	std::vector<SrcLight> lights;
 	std::vector<SrcWorldItem> items; // the world file's things (the scripts add theirs when baked)

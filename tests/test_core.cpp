@@ -191,6 +191,39 @@ static void testWaterLight() {
 	CHECK(tint[2] == 1.0f && tint[0] < tint[1] && tint[1] < tint[2]);
 }
 
+// Fog zones: the weight fades in from the zone's edge; the water in a swamp zone turns green, outside it stays.
+static void testFogZones() {
+	FogZone z {};
+	z.bbMin[0] = -10000, z.bbMax[0] = 10000, z.bbMin[1] = -1000, z.bbMax[1] = 3000, z.bbMin[2] = -10000, z.bbMax[2] = 10000;
+	z.inner = 0.5f;
+	CHECK(fogZoneWeight(z, 0, 0, 0) == 1.0f && fogZoneWeight(z, 20000, 0, 0) == 0.0f && fogZoneWeight(z, 0, 9000, 0) == 0.0f);
+	const float edge = fogZoneWeight(z, 9900, 0, 0), mid = fogZoneWeight(z, 7500, 0, 0);
+	CHECK(edge > 0.0f && edge < mid && mid < 1.0f);
+	CHECK(sizeof(FogZone) == 36);
+
+	SrcScene scene;
+	scene.materials.resize(1);
+	scene.materials[0].water = true;
+	SrcFogZone sz;
+	std::copy_n(z.bbMin, 3, sz.bbMin);
+	std::copy_n(z.bbMax, 3, sz.bbMax);
+	sz.inner = 1.0f;
+	sz.color[0] = 80, sz.color[1] = 120, sz.color[2] = 40; // green
+	scene.fogZones.push_back(sz);
+	SrcTriangle in {}, out {};
+	in.material = out.material = 0;
+	for (int k = 0; k < 3; ++k) {
+		in.v[k].pos[0] = float(k) * 100.0f;
+		out.v[k].pos[0] = 50000.0f + float(k) * 100.0f;
+		for (int c = 0; c < 3; ++c) in.v[k].rgba[c] = out.v[k].rgba[c] = 200;
+	}
+	scene.triangles = {in, out};
+	CHECK(applyWaterBiome(scene, 0.0f) == 0 && applyWaterBiome(scene, 1.0f) == 1);
+	const u8* g = scene.triangles[0].v[0].rgba;
+	CHECK(g[1] == 200 && g[0] < 200 && g[2] < g[0]); // (green kept, red a little less, blue the least)
+	CHECK(scene.triangles[1].v[0].rgba[0] == 200 && scene.triangles[1].v[0].rgba[2] == 200); // (outside: as it was)
+}
+
 // --water-grid: the water cut finely along the shores only, with the waves' weight fading towards the coarse water.
 static void testWaterGrid() {
 	SrcScene scene;
@@ -12924,6 +12957,7 @@ int main(int argc, char** argv) {
              {"pacer heavy", testPacerHeavy},
              {"stereo", testStereoEyes},
              {"water light", testWaterLight},
+             {"fog zones", testFogZones},
              {"water grid", testWaterGrid},
              {"lamp light", testLampLight},
 	             {"detail fade", testDetailFade},

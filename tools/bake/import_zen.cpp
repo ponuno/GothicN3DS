@@ -1585,6 +1585,25 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 			// A box without height is a file without bounds, not a ladder.
 			if (ladder.bbMax[1] - ladder.bbMin[1] > 50.0f) scene.ladders.push_back(ladder);
 		}
+		if (vob->type == zenkit::VirtualObjectType::zCZoneZFog) {
+			if (const auto* fog = dynamic_cast<const zenkit::VZoneFog*>(vob.get())) {
+				SrcFogZone z;
+				const zenkit::Vec3 mn = vob->bbox.min, mx = vob->bbox.max;
+				const float lo[3] = {mn.x, mn.y, mn.z}, hi[3] = {mx.x, mx.y, mx.z};
+				for (int a = 0; a < 3; ++a) {
+					z.bbMin[a] = std::min(lo[a], hi[a]);
+					z.bbMax[a] = std::max(lo[a], hi[a]);
+				}
+				z.range = std::max(fog->range_center, 0.0f);
+				z.inner = std::clamp(fog->inner_range_percentage > 1.5f ? fog->inner_range_percentage / 100.0f : fog->inner_range_percentage, 0.0f, 1.0f);
+				z.color[0] = fog->color.r;
+				z.color[1] = fog->color.g;
+				z.color[2] = fog->color.b;
+				z.overrideColor = fog->override_color;
+				z.fadeSky = fog->fade_out_sky;
+				if (z.bbMax[0] > z.bbMin[0] && z.bbMax[2] > z.bbMin[2]) scene.fogZones.push_back(z);
+			}
+		}
 		if (vob->type == zenkit::VirtualObjectType::zCZoneZFogDefault) {
 			if (const auto* fog = dynamic_cast<const zenkit::VZoneFog*>(vob.get())) {
 				scene.fogColor[0] = fog->color.r;

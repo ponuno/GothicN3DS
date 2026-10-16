@@ -2,6 +2,7 @@
 // player and the sky. Platforms feed it input and call update()/render().
 #pragma once
 #include "g3ds/pak.h"
+#include "g3ds/fog.h"
 #include "chests.h"
 #include "hero.h"
 #include "inventory.h"
@@ -682,6 +683,11 @@ private:
 	Ripples _ripples; // rings round whoever is in the water (fix141)
 	GodRays _godRays;
 	Grass _grass;
+	// The world's fog zones (swamp, orc city ...): the fog follows the region the camera is in (world/<name>/fog; none: as before).
+	void loadFogZones();
+	enum { FOG_ZONES_MAX = 256 };
+	FogZone* _fogZones = nullptr;
+	u32 _fogZoneCount = 0;
 	Lamps _lamps;
 	double _lampClock = -1.0; // the clock of the lamps' last update (their dt)
 	void updateLamps();

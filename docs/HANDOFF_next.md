@@ -184,3 +184,10 @@ The `frames` waves check was failing since fix119 (calm rivers): fixed in the te
 - альфа следует отражению: отражённое небо непрозрачно, во впадинах немного видно дно.
 Умолчания: `--water-color` 92,140,156 → **38,66,70**, `--water-alpha` 110 → **140**. Средний цвет текстуры (84,121,133) → (49,75,79), альфа 125 → 153. Генератор детерминированный (свой LCG), 128x128, шейдеры/форматы/рантайм не тронуты. Нужен перепёк (и пересборка g3ds-bake.exe). Светлее/прозрачнее — `--water-color 50,84,88 --water-alpha 120` в bake_args.txt; старая текстура игры — галочка «Original water texture».
 Тесты: `streaming` в test_core падает и на fix150b (не связано).
+
+## fix169 - clearer water, fog zones, water by region (16.10)
+- Baker `--water-clear` (launcher box "Clearer water"): the made water texture alpha 140 -> 75, colour 38,66,70 -> 52,90,96; `--water-alpha` / `--water-color` win. No effect with the original texture.
+- Baker reads the ZEN's `zCZoneZFog` zones (box, colour, range, inner share, override flag) into `world/<name>/fog` (`g3ds/fog.h`, 36 bytes a zone; `--no-fog-zones` leaves them out). Log: `fog zones: N in world ...` / `none in world`.
+- `--water-biome S` (default 0.6): water triangles in a zone get its colour, taken as a hue (strongest channel = 1), by S and the zone's weight; applied after `--water-light`. The far layer's water (one colour per material) is not tinted.
+- Runtime (`App::loadFogZones`, `App::render`): the camera in a zone -> fog colour toward the zone's (override flag: replaced by it x day light; else the sky's horizon colour tinted by its hue), fog end toward the zone's range (never beyond the world's). Weight fades in from the box edge (`fogZoneWeight`, x/z, height +-2 m). Not indoors, not underwater. No menu switch yet.
+- Not checked on real data: whether G1's NEWWORLD.ZEN has `zCZoneZFog` at all (the bake.log line says), nor how the colours look. Tests: ctest 6/6 incl. `fog zones`.

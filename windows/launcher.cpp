@@ -20,12 +20,12 @@
 
 namespace {
 
-enum { ID_PATH = 1, ID_BROWSE, ID_MUSIC, ID_GFXPLUS, ID_START, ID_PROGRESS, ID_LOG, ID_STATUS, ID_VOICES, ID_DEBUG, ID_LOD, ID_SIMPLIFY, ID_SIMPLIFY_LARGE, ID_FAR_HQ, ID_TEX256, ID_LIGHTS, ID_NPC_LOD, ID_SUN, ID_OLD_WATER, ID_GRASS_REPORT, ID_GRASS };
+enum { ID_PATH = 1, ID_BROWSE, ID_MUSIC, ID_GFXPLUS, ID_START, ID_PROGRESS, ID_LOG, ID_STATUS, ID_VOICES, ID_DEBUG, ID_LOD, ID_SIMPLIFY, ID_SIMPLIFY_LARGE, ID_FAR_HQ, ID_TEX256, ID_LIGHTS, ID_NPC_LOD, ID_SUN, ID_OLD_WATER, ID_GRASS_REPORT, ID_GRASS, ID_CLEAR_WATER };
 const UINT WM_LOGLINE = WM_APP + 1; // lParam: new std::wstring*
 const UINT WM_STATUS = WM_APP + 2;  // lParam: new std::wstring*
 const UINT WM_FINISHED = WM_APP + 3; // wParam: 1 ok
 
-HWND gWnd, gPath, gBrowse, gMusic, gGfxPlus, gLod, gSimplify, gSimplifyLarge, gFarHq, gTex256, gLights, gNpcLod, gSun, gOldWater, gGrassReport, gGrass, gVoices, gDebug, gStart, gProgress, gLog, gStatus;
+HWND gWnd, gPath, gBrowse, gMusic, gGfxPlus, gLod, gSimplify, gSimplifyLarge, gFarHq, gTex256, gLights, gNpcLod, gSun, gOldWater, gClearWater, gGrassReport, gGrass, gVoices, gDebug, gStart, gProgress, gLog, gStatus;
 std::wstring gExeDir; // with a trailing backslash
 std::atomic<HANDLE> gChild(nullptr);
 std::atomic<bool> gRunning(false), gAbort(false);
@@ -153,7 +153,7 @@ bool run(const std::wstring& cmd) {
 	return code == 0;
 }
 
-void pipeline(std::wstring game, bool music, bool gfxPlus, bool lod, bool simplify, bool simplifyLarge, bool farHq, bool tex256, bool lights, bool npcLod, bool sun, bool oldWater, bool grassReport, bool grass, bool voices, bool debug) {
+void pipeline(std::wstring game, bool music, bool gfxPlus, bool lod, bool simplify, bool simplifyLarge, bool farHq, bool tex256, bool lights, bool npcLod, bool sun, bool oldWater, bool clearWater, bool grassReport, bool grass, bool voices, bool debug) {
 	const std::wstring bake = L"\"" + gExeDir + L"g3ds-bake.exe\"";
 	const std::wstring render = L"\"" + gExeDir + L"dmrender.exe\"";
 	const std::wstring out = gExeDir; // everything lands beside the program
@@ -194,6 +194,8 @@ void pipeline(std::wstring game, bool music, bool gfxPlus, bool lod, bool simpli
 		if (grass) cmd += L" --grass"; // (the new grass: in the game's menu Graphics+ -> Grass, off until chosen)
 		// The game's own water texture instead of the one made by the baker (wind ripples).
 		if (oldWater) cmd += L" --water-texture original";
+		// Clearer water: the bottom and the shore show through the baker's water (no effect on the game's own texture).
+		else if (clearWater) cmd += L" --water-clear";
 		// For the grass tests: where new grass could grow (grass_<world>.txt, grass_<world>.png beside the program).
 		// It only looks; data.pak is the same with or without it.
 		if (grassReport) cmd += L" --grass-report \"" + outShort + L".\""; // (".": a backslash before the quote would escape it)
@@ -296,6 +298,7 @@ void startPressed() {
 	const bool npcLod = SendMessageW(gNpcLod, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	const bool sun = SendMessageW(gSun, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	const bool oldWater = SendMessageW(gOldWater, BM_GETCHECK, 0, 0) == BST_CHECKED;
+	const bool clearWater = SendMessageW(gClearWater, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	const bool grassReport = SendMessageW(gGrassReport, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	const bool grass = SendMessageW(gGrass, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	const bool voices = SendMessageW(gVoices, BM_GETCHECK, 0, 0) == BST_CHECKED;
@@ -320,12 +323,13 @@ void startPressed() {
 	EnableWindow(gNpcLod, FALSE);
 	EnableWindow(gSun, FALSE);
 	EnableWindow(gOldWater, FALSE);
+	EnableWindow(gClearWater, FALSE);
 	EnableWindow(gGrassReport, FALSE);
 	EnableWindow(gGrass, FALSE);
 	EnableWindow(gVoices, FALSE);
 	EnableWindow(gDebug, FALSE);
 	SendMessageW(gProgress, PBM_SETMARQUEE, TRUE, 40);
-	gWorker = std::thread(pipeline, game, music, gfxPlus, lod, simplify, simplifyLarge, farHq, tex256, lights, npcLod, sun, oldWater, grassReport, grass, voices, debug);
+	gWorker = std::thread(pipeline, game, music, gfxPlus, lod, simplify, simplifyLarge, farHq, tex256, lights, npcLod, sun, oldWater, clearWater, grassReport, grass, voices, debug);
 }
 
 LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
@@ -367,6 +371,7 @@ LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
 		EnableWindow(gNpcLod, TRUE);
 		EnableWindow(gSun, TRUE);
 		EnableWindow(gOldWater, TRUE);
+		EnableWindow(gClearWater, TRUE);
 		EnableWindow(gGrassReport, TRUE);
 		EnableWindow(gGrass, TRUE);
 		EnableWindow(gVoices, TRUE);
@@ -405,7 +410,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
 	wc.lpszClassName = L"G3dsBaker";
 	RegisterClassW(&wc);
 	gWnd = CreateWindowExW(0, wc.lpszClassName, L"Gothic 3DS: data baker", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-	                       CW_USEDEFAULT, CW_USEDEFAULT, 720, 722, nullptr, nullptr, inst, nullptr);
+	                       CW_USEDEFAULT, CW_USEDEFAULT, 720, 744, nullptr, nullptr, inst, nullptr);
 	const HFONT font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
 	const auto make = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id, DWORD ex = 0) {
 		HWND c = CreateWindowExW(ex, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h, gWnd, reinterpret_cast<HMENU>(INT_PTR(id)), inst, nullptr);
@@ -434,13 +439,14 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
 	gSun = make(L"BUTTON", L"Sun shadows: trees, houses and hills shade the ground by day (a small mask per area, no extra triangles)", BS_AUTOCHECKBOX, 12, 260, 590, 22, ID_SUN);
 	SendMessageW(gSun, BM_SETCHECK, BST_CHECKED, 0);
 	gOldWater = make(L"BUTTON", L"Original water texture: the game's own instead of the baker's wind ripples", BS_AUTOCHECKBOX, 12, 282, 590, 22, ID_OLD_WATER);
-	gGrass = make(L"BUTTON", L"New grass: tufts on the meadows round the camera (about 2.5 MB; switch on in the game: Graphics+ -> Grass)", BS_AUTOCHECKBOX, 12, 304, 590, 22, ID_GRASS);
+	gClearWater = make(L"BUTTON", L"Clearer water: the bottom and the shore show through the baker's water (ignored with the original texture)", BS_AUTOCHECKBOX, 12, 304, 590, 22, ID_CLEAR_WATER);
+	gGrass = make(L"BUTTON", L"New grass: tufts on the meadows round the camera (about 2.5 MB; switch on in the game: Graphics+ -> Grass)", BS_AUTOCHECKBOX, 12, 326, 590, 22, ID_GRASS);
 	SendMessageW(gGrass, BM_SETCHECK, BST_CHECKED, 0);
-	gGrassReport = make(L"BUTTON", L"Grass report for testing: grass_<world>.txt and .png next to this program (data.pak unchanged)", BS_AUTOCHECKBOX, 12, 326, 590, 22, ID_GRASS_REPORT);
+	gGrassReport = make(L"BUTTON", L"Grass report for testing: grass_<world>.txt and .png next to this program (data.pak unchanged)", BS_AUTOCHECKBOX, 12, 348, 590, 22, ID_GRASS_REPORT);
 	gStart = make(L"BUTTON", L"Bake", BS_DEFPUSHBUTTON, 610, 60, 90, 28, ID_START);
-	gProgress = make(PROGRESS_CLASSW, L"", PBS_MARQUEE, 12, 354, 688, 14, ID_PROGRESS);
-	gStatus = make(L"STATIC", L"Select the folder and press \"Bake\". The files will appear next to this program.", 0, 12, 374, 688, 18, ID_STATUS);
-	gLog = make(L"EDIT", L"", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL, 12, 396, 688, 274, ID_LOG, WS_EX_CLIENTEDGE);
+	gProgress = make(PROGRESS_CLASSW, L"", PBS_MARQUEE, 12, 376, 688, 14, ID_PROGRESS);
+	gStatus = make(L"STATIC", L"Select the folder and press \"Bake\". The files will appear next to this program.", 0, 12, 396, 688, 18, ID_STATUS);
+	gLog = make(L"EDIT", L"", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL, 12, 418, 688, 274, ID_LOG, WS_EX_CLIENTEDGE);
 	SendMessageW(gLog, EM_SETLIMITTEXT, 0x7FFFFFF, 0);
 
 	ShowWindow(gWnd, show);

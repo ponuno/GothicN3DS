@@ -47,6 +47,7 @@ bool App::init(const char* pakPath, const char* worldName) {
 		return false;
 	}
 	_grass.enterWorld(_pak, this->worldName()); // (Graphics+: the new grass, if the world has it)
+	loadFogZones();
 	// Optional: archives without a character stay first-person.
 	_hero.load(_pak);
 	// The game's own camera set-ups, if the archive has them.
@@ -164,10 +165,11 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	gfx::releaseDestroyed();
 	if (!_world.open(&_pak, worldEntryHash)) {
 		// Broken target: go back to where we were rather than to nowhere.
-		if (previous && _world.open(&_pak, previous)) _grass.enterWorld(_pak, worldName());
+		if (previous && _world.open(&_pak, previous)) _grass.enterWorld(_pak, worldName()), loadFogZones();
 		return false;
 	}
 	_grass.enterWorld(_pak, worldName());
+	loadFogZones();
 	const WorldHeader& h = _world.header();
 	if (eye) {
 		_cam.yaw = yaw;
@@ -881,6 +883,29 @@ void App::placeCamera(float dt) {
 	_heroVisible = length(look) > 45.0f;
 }
 
+void App::loadFogZones() {
+	free(_fogZones);
+	_fogZones = nullptr;
+	_fogZoneCount = 0;
+	char name[96];
+	snprintf(name, sizeof(name), "%s/fog", worldName());
+	const PakEntry* e = _pak.find(name);
+	if (!e || e->size < sizeof(FogZonesHeader)) return;
+	u8* blob = static_cast<u8*>(_pak.readAlloc(*e));
+	if (!blob) return;
+	FogZonesHeader h;
+	memcpy(&h, blob, sizeof(h));
+	if (h.magic == FOG_ZONES_MAGIC && h.version == FOG_ZONES_VERSION && h.count > 0 && h.count <= u32(FOG_ZONES_MAX) &&
+	    e->size == sizeof(FogZonesHeader) + h.count * sizeof(FogZone)) {
+		_fogZones = static_cast<FogZone*>(malloc(h.count * sizeof(FogZone)));
+		if (_fogZones) {
+			memcpy(_fogZones, blob + sizeof(FogZonesHeader), h.count * sizeof(FogZone));
+			_fogZoneCount = h.count;
+		}
+	}
+	free(blob);
+}
+
 void App::render() {
 	const SkyColors sky = skyColors();
 
@@ -897,6 +922,30 @@ void App::render() {
 	for (int i = 0; i < 3; ++i) {
 		fd.fogColor[i] = fd.clearColor[i] = indoor ? _world.header().fogColor[i] : sky.horizon[i];
 		fd.dayLight[i] = sky.light[i];
+	}
+
+	// Fog zones: in the swamp, the orc city ... the fog takes the zone's colour (by the light of the hour) and ends nearer; at the
+	// zone's edge it fades into the world's own. (Not indoors: a mine has its one background colour.)
+	if (!indoor && _fogZoneCount > 0) {
+		const float day = clamp((sky.light[0] + sky.light[1] + sky.light[2]) / 3.0f, 0.0f, 1.0f);
+		float col[3] = {float(fd.fogColor[0]), float(fd.fogColor[1]), float(fd.fogColor[2])};
+		float end = fd.fogEnd;
+		for (u32 i = 0; i < _fogZoneCount; ++i) {
+			const FogZone& z = _fogZones[i];
+			const float k = fogZoneWeight(z, _cam.pos.x, _cam.pos.y, _cam.pos.z);
+			if (k <= 0.0f) continue;
+			const float top = float(max(max(z.color[0], z.color[1]), max(z.color[2], u8(1))));
+			for (int c = 0; c < 3; ++c) {
+				const float target = (z.flags & FOGZ_OVERRIDE_COLOR) ? float(z.color[c]) * day : col[c] * (0.4f + 0.6f * float(z.color[c]) / top);
+				col[c] += (target - col[c]) * k;
+			}
+			if (z.range > 500.0f && z.range < end) end += (z.range - end) * k;
+		}
+		if (end < fd.fogEnd) {
+			fd.fogStart *= end / fd.fogEnd;
+			fd.fogEnd = end;
+		}
+		for (int c = 0; c < 3; ++c) fd.fogColor[c] = fd.clearColor[c] = u8(clamp(col[c], 0.0f, 255.0f));
 	}
 
 	// Below a water surface the view drowns in murky green-blue after a few metres.

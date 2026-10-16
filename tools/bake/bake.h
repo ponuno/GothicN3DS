@@ -48,6 +48,10 @@ struct BakeOptions {
 	// brightness (0..255) instead of what the source mesh has (big polygons, lightmapped per corner: patches of very
 	// different brightness). 0 keeps the source's light.
 	u8 waterLight = 200;
+	// Fog zones of the world (zCZoneZFog) into data.pak (--no-fog-zones: not) and the water tinted by the zone it lies in
+	// (--water-biome S, 0..1, default 0.6; 0: one colour all over).
+	bool fogZones = true;
+	float waterBiome = 0.6f;
 	// The water's texture made here (--water-texture, on; "original" keeps the game's) in this colour (--water-color).
 	// Colour by depth and foam in the fine water (--water-shore S, 0..1; needs --water-grid), wet ground at the water's edge
 	// (--wet-shore S) and the shade of plants on the ground (--canopy S, rays up to --canopy-reach M); 0 switches each off.
@@ -195,6 +199,9 @@ std::string texturePakName(const std::string& texture);
 size_t applyWaterLight(SrcScene& scene, u8 brightness);
 // The colour that light has, as a share of the white (the far layer's water is the texture's average in it).
 void waterTint(u8 brightness, float rgb[3]);
+// Tints the water's triangles by the fog zone they lie in (the zone's colour, taken as a hue, by `strength` 0..1 and the zone's
+// weight at the triangle's middle). Returns how many triangles changed. Run after applyWaterLight.
+size_t applyWaterBiome(SrcScene& scene, float strength);
 
 BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const BakeOptions& opt, PakWriter& pak);
 // The same, plus animated characters. The first model is the player's

@@ -485,7 +485,7 @@ void Player::ladderTick(const World& world, const Input& in, float dt) {
 // from above (rayDown finds the highest surface under the point): where the
 // first point with a floor between the two heights follows a point without
 // one (or a much lower one), there is a wall between them, and its edge.
-bool Player::probeLedge(const World& world, float yaw, Ledge& out) const {
+bool Player::probeLedge(const World& world, float yaw, Ledge& out, float reachAhead) const {
 	out = Ledge();
 	const PlayerConfig& cfg = config;
 	LedgeStats& st = _ledgeStats;
@@ -494,7 +494,7 @@ bool Player::probeLedge(const World& world, float yaw, Ledge& out) const {
 	const Vec3 dir = {sinf(yaw), 0, cosf(yaw)};
 	const float top = feet.y + cfg.ledgeReach + 15.0f;
 	const float drop = cfg.ledgeReach + 15.0f + 140.0f;
-	const float from = cfg.radius - 8.0f, to = cfg.radius + cfg.ledgeRange;
+	const float from = cfg.radius - 8.0f, to = cfg.radius + (reachAhead >= 0.0f ? reachAhead : cfg.ledgeRange);
 	// The floor ahead, felt for from above, step by step. The edge is where it
 	// first stands clearly above the feet - a wall or a steep rock face, not
 	// only a sheer one (the original's climb takes hold of a rough slope too).
@@ -547,6 +547,14 @@ bool Player::probeLedge(const World& world, float yaw, Ledge& out) const {
 		}
 		if (!room) {
 			st.why = 4;
+			continue;
+		}
+		// The way there must be free, as the original's (Npc::tryJump: straight up from the feet to the ledge's height,
+		// then over to the place): a floor above a ceiling is not a ledge - the hands cannot go through the ceiling.
+		const float clear = 60.0f;
+		if (!world.lineFree({feet.x, feet.y + cfg.stepHeight, feet.z}, {feet.x, y2 + clear, feet.z}, 12.0f) ||
+		    !world.lineFree({feet.x, y2 + clear, feet.z}, {at.x, y2 + clear, at.z}, 12.0f)) {
+			st.why = 6;
 			continue;
 		}
 		out.found = true;

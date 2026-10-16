@@ -647,7 +647,7 @@ bool C3D_TexInitWithParams(C3D_Tex* tex, void*, C3D_TexInitParams p) {
 	tex->height = p.height;
 	tex->fmt = p.format;
 	u32 size = 0;
-	for (u32 l = 0; l <= p.maxLevel; ++l) size += (u32(p.width) >> l) * (u32(p.height) >> l) * (p.format == GPU_ETC1 || p.format == GPU_L4 ? 4 : 8) / 8; // (ETC1A4 and A8: a byte a texel)
+	for (u32 l = 0; l <= p.maxLevel; ++l) size += (u32(p.width) >> l) * (u32(p.height) >> l) * (p.format == GPU_ETC1 || p.format == GPU_L4 ? 4 : p.format == GPU_RGB565 ? 16 : 8) / 8; // (ETC1A4 and A8: a byte a texel)
 	tex->data = linearAlloc(size);
 	tex->size = size;
 	return tex->data != nullptr;

@@ -401,3 +401,67 @@ void Game::xIntroduceChapter(ScriptVm& vm, void* user) {
 }
 
 } // namespace g3
+
+namespace g3 {
+
+i32 Game::debugLevelUp() {
+	if (_hero == SCRIPT_NONE) return 0;
+	ScriptInstance* o = _npcs[_hero].object;
+	if (!o) return 0;
+	const u32 mExp = _vm.findMember("C_NPC", "EXP"), mNext = _vm.findMember("C_NPC", "EXP_NEXT");
+	const u32 mLevel = _vm.findMember("C_NPC", "LEVEL"), mLp = _vm.findMember("C_NPC", "LP");
+	if (mLevel == SCRIPT_NONE) return 0;
+	const i32 before = _vm.getInt(mLevel, 0, o);
+	const i32 exp = mExp != SCRIPT_NONE ? _vm.getInt(mExp, 0, o) : 0;
+	const i32 next = mNext != SCRIPT_NONE ? _vm.getInt(mNext, 0, o) : 0;
+	const i32 need = next > exp ? next - exp : 1;
+	const u32 fn = _vm.find("B_GiveXP");
+	if (fn != SCRIPT_NONE && _vm.isPlainFunction(fn)) {
+		_vm.pushInt(need);
+		_vm.call(fn);
+	}
+	i32 level = _vm.getInt(mLevel, 0, o);
+	if (level <= before) { // the scripts have no such function (or it did not level): by hand
+		level = before + 1;
+		_vm.setInt(mLevel, 0, o, level);
+		if (mExp != SCRIPT_NONE) _vm.setInt(mExp, 0, o, next > exp ? next : exp);
+		if (mNext != SCRIPT_NONE) _vm.setInt(mNext, 0, o, (next > 0 ? next : 500) + 500 * (level + 1));
+		if (mLp != SCRIPT_NONE) _vm.setInt(mLp, 0, o, _vm.getInt(mLp, 0, o) + 10);
+	}
+	++_itemsVersion;
+	return level;
+}
+
+u32 Game::debugLearnAll() {
+	if (_hero == SCRIPT_NONE) return 0;
+	GameNpc& h = _npcs[_hero];
+	u32 done = 0;
+	const i32 mage = constant("NPC_TALENT_MAGE", 7);
+	for (i32 t = 1; t < 16; ++t) {
+		h.skill[t] = i16(t == mage ? 6 : 2);
+		// (the fighting talents, the lock and the pockets are percentages)
+		h.talent[t] = h.talent[t] < 100 ? 100 : h.talent[t];
+		++done;
+	}
+	static const char* const kVars[] = {
+	    "PLAYER_TALENT_SMITH",          "PLAYER_TALENT_ALCHEMY",   "PLAYER_TALENT_RUNES",      "PLAYER_TALENT_FOREST",
+	    "PLAYER_TALENT_TAKEANIMALTROPHY", "PLAYER_TALENT_FIREMASTER", "PLAYER_TALENT_PICKPOCKET", "PLAYER_TALENT_PICKLOCK",
+	    "PLAYER_TALENT_REGENERATE",     "PLAYER_TALENT_WISPDETECTOR", "PLAYER_TALENT_ACROBAT",   "PLAYER_TALENT_SNEAK",
+	    "PLAYER_TALENT_FOOD",           "KNOWS_GETBLOODFLY",        "KNOWS_GETFUR",             "KNOWS_GETTEETH",
+	    "KNOWS_GETCLAWS",               "KNOWS_GETHIDE",            "KNOWS_GETMANDIBLES",       "KNOWS_GETSTING",
+	    "KNOWS_GETWING",                "KNOWS_GETHEART",           "KNOWS_GETSHADOWHORN",      "KNOWS_GETBFSTING",
+	    "KNOWS_GETBFWING",              "KNOWS_GETDRGSNAPPERHORN",  "KNOWS_GETFIRETONGUE",      "KNOWS_GETREPTILESKIN",
+	    "KNOWS_GETWARANFIRETONGUE",     "KNOWS_GETSTONEGOLEMHEART", "KNOWS_GETFIREGOLEMHEART",  "KNOWS_GETICEGOLEMHEART",
+	    "KNOWS_GETSWAMPGOLEMHEART",     "KNOWS_GETDEMONHEART",      "KNOWS_GETTROPHYFUR"};
+	for (const char* name : kVars) {
+		const u32 sym = _vm.find(name);
+		if (sym == SCRIPT_NONE || _vm.symbol(sym).type != SCRIPT_INT) continue;
+		const u32 count = _vm.symbol(sym).count ? _vm.symbol(sym).count : 1u;
+		for (u32 k = 0; k < count; ++k) _vm.setInt(sym, k, nullptr, 1);
+		++done;
+	}
+	++_itemsVersion;
+	return done;
+}
+
+} // namespace g3

@@ -1178,6 +1178,99 @@ u32 App::giveTestKit() {
 	return kinds;
 }
 
+// The spells' kit for the debug menu: every rune, scrolls (the transformations and the summonings among them), mana to cast.
+u32 App::giveSpellKit() {
+	const int hi = heroIndex();
+	if (hi < 0) return 0;
+	Game& g = _npcs.game();
+	u32 kinds = 0;
+	const auto give = [&](const char* name, i32 n) {
+		const u32 s = g.vm().find(name);
+		if (s == NONE || !g.isItem(s)) return;
+		g.giveItems(u32(hi), s, n);
+		++kinds;
+	};
+	static const char* const kRunes[] = {
+	    "ItArRuneLight", "ItArRuneFirebolt", "ItArRuneFireball", "ItArRuneFirestorm", "ItArRuneFireRain", "ItArRuneThunderbolt",
+	    "ItArRuneThunderball", "ItArRuneChainLightning", "ItArRuneIceCube", "ItArRuneIceWave", "ItArRuneWindfist", "ItArRuneStormfist",
+	    "ItArRuneHeal", "ItArRuneSleep", "ItArRunePyrokinesis", "ItArRuneBreathOfDeath", "ItArRuneDestroyUndead", "ItArRuneTelekinesis",
+	    "ItArRuneCharm", "ItArRuneControl", "ItArRuneTeleport1", "ItArRuneTeleport2", "ItArRuneTeleport3", "ItArRuneTeleport4",
+	    "ItArRuneTeleport5", "ItArRuneTeleport6", "ItArRuneFear", "ItArRuneBerzerk", "ItArRuneShrink", "ItArRuneMassDeath",
+	    "ItArRuneSuckEnergy", "ItArRuneDeathBolt", "ItArRuneDeathBall", "ItArRuneArmyOfDarkness", "ItArRuneWave", "ItArRuneFireStorm",
+	    "ItArRuneTrfBloodfly", "ItArRuneTrfCrawler", "ItArRuneTrfLurker", "ItArRuneTrfMeatbug", "ItArRuneTrfMolerat", "ItArRuneTrfOrcDog",
+	    "ItArRuneTrfScavenger", "ItArRuneTrfShadowbeast", "ItArRuneTrfSnapper", "ItArRuneTrfWaran", "ItArRuneTrfWolf", "ItArRuneTrfSheep",
+	    "ItArRuneSumGol", "ItArRuneSumDemon", "ItArRuneSumSkel", "ItArRuneSumWolf", "ItArRuneSumGobSkel", "ItArRuneSumIceGol",
+	    "ItArRuneSumFireGol", "ItArRuneSumSwampGol", "ItArRuneSumZombie", "ItArRuneSummonGolem", "ItArRuneSummonDemon", "ItArRuneSummonSkeleton",
+	    "ItArRuneSummonWolf", "ItArRuneSummonGoblinSkeleton", "ItArRuneSummonIceGolem", "ItArRuneSummonFireGolem", "ItArRuneSummonSwampGolem"};
+	static const char* const kScrolls[] = {
+	    "ItArScrollLight", "ItArScrollFirebolt", "ItArScrollFireball", "ItArScrollThunderbolt", "ItArScrollIceCube", "ItArScrollWindfist",
+	    "ItArScrollHeal", "ItArScrollSleep", "ItArScrollSumGol", "ItArScrollSumDemon", "ItArScrollSumSkel", "ItArScrollSumWolf",
+	    "ItArScrollTrfBloodfly", "ItArScrollTrfCrawler", "ItArScrollTrfMeatbug", "ItArScrollTrfMolerat", "ItArScrollTrfOrcDog",
+	    "ItArScrollTrfScavenger", "ItArScrollTrfWaran", "ItArScrollTrfWolf", "ItArScrollTrfSheep", "ItArScrollTrfShadowbeast",
+	    "ItArScrollTrfSnapper", "ItArScrollTrfLurker", "ItArScrollTeleport1", "ItArScrollTeleport2", "ItArScrollTeleport3",
+	    "ItArScrollFear", "ItArScrollShrink", "ItArScrollCharm", "ItArScrollTelekinesis", "ItArScrollPyrokinesis",
+	    "ItArScrollSummonGolem", "ItArScrollSummonDemon", "ItArScrollSummonSkeleton", "ItArScrollSummonWolf"};
+	for (const char* n : kRunes) give(n, 1);
+	for (const char* n : kScrolls) give(n, 5);
+	// Mana to spend, and the circles known (the scripts' magic skill).
+	GameNpc& hero = g.npcMut(u32(hi));
+	const i32 manaMax = max(g.attributeOf(hero, 3), i32(1000));
+	g.setAttribute(hero, 3, manaMax);
+	g.setAttribute(hero, 2, manaMax);
+	const i32 mage = g.constant("NPC_TALENT_MAGE", 7);
+	if (mage > 0 && mage < 16) hero.skill[mage] = 6;
+	++_equipVersion;
+	_invStamp = 0;
+	return kinds;
+}
+
+// The crafts' kit: what the things of the worlds ask the user to carry, and the usual stuff to work on.
+u32 App::giveCraftKit() {
+	const int hi = heroIndex();
+	if (hi < 0) return 0;
+	Game& g = _npcs.game();
+	u32 kinds = 0;
+	const auto give = [&](const char* name, i32 n) {
+		const u32 s = g.vm().find(name);
+		if (s == NONE || !g.isItem(s)) return;
+		g.giveItems(u32(hi), s, n);
+		++kinds;
+	};
+	// Every item the things ask for (their useItem), whichever the game.
+	const Mobs& mobs = _npcs.mobs();
+	if (mobs.hasInfo()) {
+		const char* seen[16] = {};
+		u32 seenCount = 0;
+		for (u32 i = 0; i < mobs.count(); ++i) {
+			const WorldMobInfo& mi = mobs.info(i);
+			if (!mi.useItem) continue;
+			const char* name = mobs.infoText(mi.useItem);
+			bool dup = false;
+			for (u32 k = 0; k < seenCount; ++k) dup = dup || strcmp(seen[k], name) == 0;
+			if (dup) continue;
+			if (seenCount < 16) seen[seenCount++] = name;
+			give(name, 3);
+		}
+	}
+	static const char* const kStuff[] = {
+	    "ItMiNugget", "ItMiSwordRaw", "ItMiSwordRawHot", "ItMiSwordBladeHot", "ItMiSwordBlade", "ItMiHammer", "ItMiFlask", "ItMiJoint",
+	    "ItFoMuttonRaw", "ItFoMutton", "ItFoCheese", "ItFoBread", "ItFoApple", "ItFoBooze", "ItFoBeer", "ItFoWine", "ItMiScoop",
+	    "ItMiStomper", "ItMiAlchemy_Alcohol_01", "ItMiAlchemy_Salt_01", "ItMiAlchemy_Sulphur_01", "ItMiAlchemy_Moleratlubric_01",
+	    "ItMiAlchemy_Quicksilver_01", "ItMiAlchemy_Syrianoil_01", "ItMiNugget", "ItMiCoal", "ItMiSteel", "ItMiPan",
+	    "ItFo_Plants_Herb_01", "ItFo_Plants_Herb_02", "ItFo_Plants_Herb_03", "ItFo_Plants_Berrys_01", "ItFo_Plants_Mushroom_01",
+	    "ItFo_Plants_Mushroom_02", "ItFo_Plants_Mana_01", "ItFo_Plants_Mana_02", "ItFo_Plants_Mana_03", "ItFo_Plants_Health_01",
+	    "ItFo_Plants_Health_02", "ItFo_Plants_Health_03", "ItFo_Plants_Strength_01", "ItFo_Plants_Dex_01", "ItFo_Plants_Speed_01",
+	    "ItFo_Plants_Bloodwood_01", "ItFo_Plants_Trollberrys_01", "ItFo_Plants_Seraphis_01", "ItFo_Plants_Velais_01",
+	    "ItPl_Health_Herb_01", "ItPl_Health_Herb_02", "ItPl_Health_Herb_03", "ItPl_Mana_Herb_01", "ItPl_Mana_Herb_02",
+	    "ItPl_Mana_Herb_03", "ItPl_Speed_Herb_01", "ItPl_Strength_Herb_01", "ItPl_Dex_Herb_01", "ItPl_Perm_Herb", "ItPl_Beet",
+	    "ItPl_Mushroom_01", "ItPl_Mushroom_02", "ItPl_Forestberry", "ItPl_Planeberry", "ItPl_Temp_Herb", "ItPl_Swampherb",
+	    "ItAt_Claws_01", "ItAt_Teeth_01", "ItAt_Wolf_01", "ItAt_Sting_01", "ItAt_Wing_01", "ItAt_Mandibles_01"};
+	for (const char* n : kStuff) give(n, 3);
+	++_equipVersion;
+	_invStamp = 0;
+	return kinds;
+}
+
 // ---- state.bin: the inventory after the position ----
 
 namespace {

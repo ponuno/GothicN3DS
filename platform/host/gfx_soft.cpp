@@ -638,6 +638,31 @@ Texture* uiTextureCreate(u16 w, u16 h, const u8* coverage, bool) {
 	return t;
 }
 
+Texture* uiTextureCreateColor(u16 w, u16 h, const u16* rgb565) {
+	const auto pot = [](u32 v) { return v >= 8 && v <= 1024 && (v & (v - 1)) == 0; };
+	if (!rgb565 || !pot(w) || !pot(h) || !fits(u32(w) * h)) return nullptr;
+	Texture* t = static_cast<Texture*>(calloc(1, sizeof(Texture)));
+	if (!t) return nullptr;
+	t->width = w;
+	t->height = h;
+	t->mipCount = 1;
+	t->level[0] = static_cast<u8*>(malloc(size_t(w) * h * 4));
+	if (!t->level[0]) {
+		free(t);
+		return nullptr;
+	}
+	for (u32 i = 0; i < u32(w) * h; ++i) {
+		const u16 c = rgb565[i];
+		u8* o = t->level[0] + i * 4;
+		o[0] = u8(((c >> 11) & 31) * 255 / 31);
+		o[1] = u8(((c >> 5) & 63) * 255 / 63);
+		o[2] = u8((c & 31) * 255 / 31);
+		o[3] = 255;
+	}
+	t->bytes = 0;
+	return t;
+}
+
 void uiDraw(Texture* t, const UiQuad* quads, u32 count) {
 	if (!t || !quads || !t->level[0]) return;
 	for (u32 q = 0; q < count && q < UI_MAX_QUADS; ++q) {

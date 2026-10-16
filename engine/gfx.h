@@ -258,6 +258,9 @@ struct UiQuad {
 // `smooth`: filtered and clamped at the edges (a soft shape drawn in the
 // world, like the shadows under the characters) instead of texel-exact.
 Texture* uiTextureCreate(u16 w, u16 h, const u8* coverage, bool smooth = false);
+// A picture in colour for the overlay: `rgb565` is w * h pixels, rows from the top. Drawn through uiDraw
+// like the others (the quads' colour tints it, their alpha fades it). Freed with textureDestroy.
+Texture* uiTextureCreateColor(u16 w, u16 h, const u16* rgb565);
 // After the frame's 3D passes, before frameEnd. Quads of one alpha are one
 // draw call: keep them together.
 void uiDraw(Texture* t, const UiQuad* quads, u32 count);

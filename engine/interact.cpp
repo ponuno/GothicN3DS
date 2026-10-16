@@ -128,11 +128,20 @@ bool App::mobStart(u32 mob) {
 		_mobJob.slotKind = mobs.slot(mob, u32(slot)).kind;
 		const Vec3 to = {pos[0], _player.feet.y, pos[2]};
 		const float dx = to.x - _player.feet.x, dz = to.z - _player.feet.z;
+		_mobJob.floorY = _player.feet.y;
 		if (dx * dx + dz * dz < 160.0f * 160.0f &&
-		    _world.lineFree({_player.feet.x, _player.feet.y + 90.0f, _player.feet.z}, {to.x, to.y + 90.0f, to.z}, 12.0f))
+		    _world.lineFree({_player.feet.x, _player.feet.y + 90.0f, _player.feet.z}, {to.x, to.y + 90.0f, to.z}, 12.0f)) {
 			_mobJob.to = to;
+			// The floor there, found as the inhabitants find it (Npcs: the ray down from a little above); he stands on it
+			// and not on whatever the bench's own shape offers his feet: that sat him up to a step higher.
+			float y;
+			Vec3 normal;
+			if (_world.rayDown({to.x, _player.feet.y + 60.0f, to.z}, 160.0f, y, normal)) _mobJob.floorY = min(y, _player.feet.y + 15.0f);
+			_mobJob.to.y = _mobJob.floorY;
+		}
 		_mobJob.yawTo = yaw;
 	} else {
+		_mobJob.floorY = _player.feet.y;
 		_mobJob.yawTo = atan2f(m.pos[0] - _player.feet.x, m.pos[2] - _player.feet.z);
 	}
 	return true;
@@ -267,6 +276,7 @@ void App::mobUpdate(Input& in, float dt) {
 		const float e = t * t * (3.0f - 2.0f * t);
 		_player.feet.x = _mobJob.from.x + (_mobJob.to.x - _mobJob.from.x) * e;
 		_player.feet.z = _mobJob.from.z + (_mobJob.to.z - _mobJob.from.z) * e;
+		_player.feet.y = _mobJob.from.y + (_mobJob.floorY - _mobJob.from.y) * e;
 		_hero.setYaw(angleBetween(_mobJob.yawFrom, _mobJob.yawTo, e));
 		if (t >= 1.0f) {
 			if (_hero.openMob(mobs.scheme(_mobJob.mob), mobs.mob(_mobJob.mob).states, _mobJob.slotKind)) {

@@ -1473,6 +1473,35 @@ static void testOverlay(const std::string& pak) {
 		CHECK(gfx::memStats().textureBytes == before.textureBytes); // not world memory
 		gfx::textureDestroy(t);
 	}
+	// 1b. A picture in colour (the chapter card): made, drawn over the whole screen, taken away.
+	{
+		u16 px[16 * 8];
+		for (int i = 0; i < 16 * 8; ++i) px[i] = u16(i * 523);
+		gfx::Texture* t = gfx::uiTextureCreateColor(16, 8, px);
+		CHECK(t != nullptr);
+		CHECK(gfx::uiTextureCreateColor(12, 8, px) == nullptr); // (not a power of two)
+		UiCheck uc;
+		uc.fast = gfx::c3dFastShader();
+		uc.texW = 16;
+		uc.texH = 8;
+		mock3ds::setDrawHook(uiHook, &uc);
+		gfx::FrameDesc fd {};
+		fd.view = viewLH({0, 0, 0}, 0, 0);
+		fd.fovY = 1.0f;
+		fd.zNear = 10.0f;
+		fd.zFar = 1000.0f;
+		fd.fogStart = 900.0f;
+		fd.fogEnd = 1000.0f;
+		fd.dayLight[0] = fd.dayLight[1] = fd.dayLight[2] = 1.0f;
+		gfx::frameBegin(fd);
+		gfx::UiQuad q = {0, 0, 400, 240, 0, 0, 16, 8, {255, 255, 255, 200}};
+		gfx::uiDraw(t, &q, 1);
+		gfx::frameEnd();
+		mock3ds::setDrawHook(nullptr, nullptr);
+		std::printf("  colour picture: %u draws, %u vertices, %u failed, %.4f px\n", uc.draws, uc.vertices, uc.failed, uc.worstPx);
+		CHECK(uc.draws == 1 && uc.vertices == 6 && uc.failed == 0 && uc.worstPx < 0.02);
+		gfx::textureDestroy(t);
+	}
 	// 2. The application's overlay: the HUD, a message, the menu open over a
 	// running world, both frame buffers of quads in turn.
 	{

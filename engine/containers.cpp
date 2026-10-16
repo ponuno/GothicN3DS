@@ -155,8 +155,17 @@ void App::corpseStart(u32 npc) {
 	chestBegin();
 }
 
+// fix157: the lid of the chest turns (a mover the baker made of it, named for the chest's place among the things of the world).
+void App::chestLid(bool open) {
+	if (_chest.corpse >= 0 || _chest.index >= _chests.count()) return;
+	char name[24];
+	snprintf(name, sizeof(name), "G3CHEST%lu", static_cast<unsigned long>(_chests.mob(_chest.index)));
+	_triggers.send(name, !open);
+}
+
 void App::chestEnd(bool hurried) {
 	if (_chest.stage == CH_NONE) return;
+	if (_chest.stage == CH_OPEN) chestLid(false);
 	if (_panel.page() == InventoryPanel::PAGE_CHEST || _panel.page() == InventoryPanel::PAGE_LOCK) _panel.openPage(InventoryPanel::PAGE_PLAY);
 	if (hurried) {
 		_hero.cancelUse();
@@ -361,6 +370,7 @@ void App::chestUpdate(Input& in, float dt) {
 			if (_hero.openMob(scheme)) {
 				_chest.stage = CH_OPEN;
 				_chest.time = 0;
+				chestLid(true);
 				if (_chest.corpse < 0 && mob < mobs.count()) _npcs.heroUsesMob(int(mob)); // (whose chest it is: PERC_ASSESSUSEMOB)
 			} else {
 				itemMessage(tr("Сейчас нельзя"));

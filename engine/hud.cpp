@@ -2,6 +2,8 @@
 // character's health, the target, a line of news - and the pause menu.
 #include "lang.h"
 #include "app.h"
+#include "g3ds/card.h"
+#include "gfx.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -105,9 +107,15 @@ void App::drawOverlay() {
 		const float t = _chapterLength - _chapterTime;
 		const float a = min(min(t / 0.8f, _chapterTime / 1.0f), 1.0f);
 		const u32 alpha = u32(clamp(a, 0.0f, 1.0f) * 255.0f);
-		_ui.rect(0, 0, W, H, (0x000000u << 8) | (alpha * 200u / 255u));
-		_ui.text(W / 2, H / 2 - 26, _chapterCard.title, (ui::GOLD & 0xFFFFFF00u) | alpha, ui::TITLE, ui::CENTER);
-		_ui.text(W / 2, H / 2 + 6, _chapterCard.subtitle, (ui::WHITE & 0xFFFFFF00u) | alpha, ui::TEXT, ui::CENTER);
+		if (_chapterPic) {
+			// The game's picture of the chapter fills the screen; no words over it.
+			_ui.rect(0, 0, W, H, (0x000000u << 8) | alpha);
+			_ui.picture(_chapterPic, CARD_W, CARD_H, u8(alpha));
+		} else {
+			_ui.rect(0, 0, W, H, (0x000000u << 8) | (alpha * 200u / 255u));
+			_ui.text(W / 2, H / 2 - 26, _chapterCard.title, (ui::GOLD & 0xFFFFFF00u) | alpha, ui::TITLE, ui::CENTER);
+			_ui.text(W / 2, H / 2 + 6, _chapterCard.subtitle, (ui::WHITE & 0xFFFFFF00u) | alpha, ui::TEXT, ui::CENTER);
+		}
 	}
 	if (_timeFade > 0.0f) {
 		// The clock was set: black in, black out, the time changes at the dark.

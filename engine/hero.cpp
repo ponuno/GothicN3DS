@@ -1362,7 +1362,9 @@ void Hero::ladderTick(const Player& player) {
 	// A way on or off: its clip, in step with the body's glide (the controller times it by the clip).
 	const auto scrub = [&](const Clip* c, bool backwards, bool subtract) -> bool {
 		if (!c) return false;
-		if (_anim.current() != c || entered) _anim.play(c, 0.1f);
+		// (No fade where the clip's way up is taken out of the pose: a fade would carry the old clip's root height
+		// in part, and the body would jump up and settle back. The clips chain, there is nothing to hide.)
+		if (_anim.current() != c || entered) _anim.play(c, subtract ? 0.0f : 0.1f);
 		_anim.setRate(0.0f);
 		_anim.seek(clamp(backwards ? 1.0f - u : u, 0.0f, 1.0f) * c->duration(), 0.0f);
 		_ladderSubtract = subtract;
@@ -1393,7 +1395,7 @@ void Hero::ladderTick(const Player& player) {
 	if (phase != Player::LADDER_CLIMB) {
 		// A way on or off the model has no clip for: the first rungs' pose meanwhile.
 		const Clip* c = _ladder[0];
-		if (_anim.current() != c) _anim.play(c, 0.12f);
+		if (_anim.current() != c) _anim.play(c, 0.0f);
 		_anim.setRate(0.0f);
 		_anim.seek(0.0f, 0.0f);
 		_ladderSubtract = true;
@@ -1409,7 +1411,7 @@ void Hero::ladderTick(const Player& player) {
 	int at = 0;
 	for (; at + 1 < _ladderCount && h >= _ladderRise[at]; ++at) h -= _ladderRise[at];
 	const Clip* c = _ladder[at];
-	if (_anim.current() != c) _anim.play(c, 0.08f);
+	if (_anim.current() != c) _anim.play(c, 0.0f); // (see scrub: a fade lifts the pose by the old clip's rise)
 	_anim.setRate(0.0f);
 	_anim.seek(clamp(h / _ladderRise[at], 0.0f, 1.0f) * c->duration(), 0.0f);
 }
@@ -1423,7 +1425,8 @@ float Hero::ladderExitRise() const {
 // ---- climbing onto a ledge ----
 
 bool Hero::wantsLedge(const Player& player) const {
-	return loaded() && _body == AIRBORNE && _jumping && _airTime >= 0.08f && _weapon == WEAPON_NONE && !drawing() && !usingItem() &&
+	// (Only the jump up takes hold: a jump forward flies on, as the original's - MoveAlgo::tickJumpup is the only grab.)
+	return loaded() && _body == AIRBORNE && _jumping && _jumpUp && _airTime >= 0.08f && _weapon == WEAPON_NONE && !drawing() && !usingItem() &&
 	       !_down && !_reel && !player.swimming && player.waterDepth <= 0.0f && !player.climbing && !player.flying && player.velocityY < 260.0f;
 }
 

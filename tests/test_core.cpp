@@ -7145,6 +7145,22 @@ static void testMagic() {
 		CHECK(g.attributeOf(g.npc(hero), 3) >= 100 && g.attributeOf(g.npc(hero), 2) == g.attributeOf(g.npc(hero), 3));
 		CHECK(g.npc(hero).armorItem != SCRIPT_NONE && g.npc(hero).melee != SCRIPT_NONE);
 	}
+	// 8. The other debug items: a level up, the kits for spells and crafts, every talent learnt.
+	{
+		const u32 mLevel = g.vm().findMember("C_NPC", "LEVEL");
+		CHECK(mLevel != SCRIPT_NONE);
+		const i32 level = g.vm().getInt(mLevel, 0, g.npc(hero).object);
+		CHECK(app.menuAction(MENU_LEVEL_UP, nullptr));
+		CHECK(g.vm().getInt(mLevel, 0, g.npc(hero).object) == level + 1);
+		CHECK(app.menuAction(MENU_GIVE_SPELLKIT, nullptr));
+		CHECK(g.itemCount(hero, find("ITARRUNEFIREBALL")) >= 1);
+		const i32 mage = g.constant("NPC_TALENT_MAGE", 7);
+		CHECK(g.talentSkill(hero, mage) == 6);
+		CHECK(app.menuAction(MENU_GIVE_CRAFTKIT, nullptr));
+		CHECK(g.itemCount(hero, find("ITMINUGGET")) >= 3);
+		CHECK(app.menuAction(MENU_LEARN_ALL, nullptr));
+		CHECK(g.talentSkill(hero, g.constant("NPC_TALENT_SNEAK", 8)) != 0);
+	}
 	app.shutdown();
 	gfx::shutdown();
 }
@@ -10289,6 +10305,7 @@ static void testSettings() {
 			for (int i = 0; i < d.itemCount(Menu::PAGE_DEBUG_HERO); ++i) {
 				if (i) d.update(dn, s);
 				kit = kit || d.update(ok2, s) == MENU_GIVE_TESTKIT;
+				// (the page is long: it scrolls, up to 12 lines)
 			}
 			CHECK(kit);
 			CHECK(d.update(back2, s) == MENU_NONE && d.page() == Menu::PAGE_DEBUG);
@@ -10540,6 +10557,9 @@ static void testDialogs() {
 		CHECK(until([&] { return npcs.talkView().choosing || !npcs.talkView().active; }, 40.0f));
 		CHECK(g.itemCount(hero, apple) == apples - 1 && g.itemCount(hero, potion) == potions + 1);
 		CHECK(g.vm().getInt(g.vm().find("MIS_DELIVERY")) == g.constant("LOG_SUCCESS", 2));
+		// The chapter card waits for the talk to end (it does not come up in the middle of it).
+		app.update(a, dt);
+		if (npcs.talkView().active) CHECK(app.chapterSeen() != g.chapter().serial || g.chapter().serial == 0);
 	}
 	npcs.talkAbort();
 	run(0.5f);
@@ -11090,6 +11110,17 @@ static void testTrade() {
 	// 3. Selling: paid the whole value; the money itself is not sold; what is worn stays.
 	cmd(1, beer, 3);
 	CHECK(g.itemCount(hero, beer) == beers + 1 && g.itemCount(thorus, beer) == 3 && g.itemCount(hero, nugget) == 3 + 30);
+	// fix158: the trader pays from his own purse - the money he took for the wares is there, and no more than he has.
+	CHECK(g.itemCount(thorus, nugget) >= 60); // (90 paid for the wares, 30 paid out)
+	g.giveItems(thorus, nugget, 15 - g.itemCount(thorus, nugget));
+	{
+		const i32 heroBeer = g.itemCount(hero, beer), heroOre = g.itemCount(hero, nugget);
+		cmd(1, beer, 3); // (ten a piece, fifteen in his purse: one is bought)
+		CHECK(g.itemCount(hero, beer) == heroBeer - 1 && g.itemCount(hero, nugget) == heroOre + 10 && g.itemCount(thorus, nugget) == 5);
+		cmd(1, beer, 1); // (five left: none)
+		CHECK(g.itemCount(hero, beer) == heroBeer - 1 && g.itemCount(hero, nugget) == heroOre + 10 && g.itemCount(thorus, nugget) == 5);
+		g.giveItems(thorus, nugget, 95); // (as before)
+	}
 	const i32 ore = g.itemCount(hero, nugget), traderOre = g.itemCount(thorus, nugget);
 	cmd(1, nugget, ore);
 	CHECK(g.itemCount(hero, nugget) == ore && g.itemCount(thorus, nugget) == traderOre);
@@ -11313,6 +11344,10 @@ static void testChests() {
 	pressA();
 	run(3.0f);
 	CHECK(app.chestStage() == App::CH_OPEN && app.panel().page() == InventoryPanel::PAGE_CHEST);
+	// fix157: the chest's lid is a mover named for the chest's place among the things of the world; opening sends it its event.
+	char lidEvent[40];
+	std::snprintf(lidEvent, sizeof(lidEvent), "G3CHEST%lu", static_cast<unsigned long>(chests.mob(bigC)));
+	CHECK(std::strcmp(app.triggers().stats().last, lidEvent) == 0);
 	{
 		const InventoryView& v = app.inventory();
 		CHECK(v.chest.open && !v.chest.lock && v.chest.count == 4 && std::strcmp(v.chest.name, "Большой сундук") == 0);
@@ -11339,6 +11374,7 @@ static void testChests() {
 	cmd(PANEL_CHEST_CLOSE);
 	run(2.5f);
 	CHECK(app.chestStage() == App::CH_NONE && app.panel().page() == InventoryPanel::PAGE_PLAY);
+	CHECK(std::string(app.triggers().stats().last) == std::string("-") + lidEvent); // (shut again)
 
 	// 3. The locked chest with a key: the key in the pack opens it at once.
 	before(keyC);

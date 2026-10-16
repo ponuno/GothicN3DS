@@ -506,6 +506,7 @@ struct FlatVertex {
 
 struct FlatSub {
 	SrcMaterial material;
+	std::string node; // models: the skeleton node a rigid part hangs on (upper case), "" for others
 	std::vector<FlatVertex> verts; // three per triangle
 };
 
@@ -661,7 +662,9 @@ void appendModel(FlatMesh& out, const zenkit::ModelHierarchy* hierarchy, const z
 					break;
 				}
 		describe("node " + upper(kv.first) + (found || !hierarchy ? "" : " (not in the tree)"), kv.second);
+		const size_t firstSub = out.subs.size();
 		appendMrm(out, kv.second, xf);
+		for (size_t k = firstSub; k < out.subs.size(); ++k) out.subs[k].node = upper(kv.first);
 	}
 	// Skinned parts: each vertex is a weighted sum of bone-local positions.
 	for (const zenkit::SoftSkinMesh& skin : mesh.meshes) {
@@ -937,12 +940,215 @@ struct ObjectInstance {
 	FlatPtr mesh;
 };
 
+// ---- fix157: a chest's lid ----
+//
+// A chest is a model whose lid is a node of its own; the model script has the lid's way up ("T_S0_2_S1"). The lid is
+// cut out of the chest's mesh and made a mover (drawn by the runtime, turned between two keys when the chest is opened
+// and shut), the rest stays where it was. Anything that does not fit - no such animation, no one moving node, no part
+// on it - leaves the chest whole, as before, and says why.
+struct ChestLid {
+	FlatPtr base, lid; // the chest without the lid; the lid in its node's own space
+	M34 closed, open;  // the lid's node in the model's space, shut and open
+	float seconds = 0; // how long the opening takes
+};
+
+static bool chestLidOf(const zenkit::Vfs& vfs, const std::string& visual, const FlatMesh& full, ChestLid& out, std::string& why) {
+	const std::string base = stripExtension(upper(visual));
+	zenkit::ModelScript script;
+	bool have = false;
+	try {
+		have = loadFile(vfs, base + ".MSB", script) || loadFile(vfs, base + ".MDS", script);
+	} catch (const std::exception&) {
+		have = false;
+	}
+	if (!have) {
+		why = "no model script";
+		return false;
+	}
+	std::string file;
+	for (const zenkit::MdsAnimation& a : script.animations)
+		if (upper(a.name) == "T_S0_2_S1") file = "T_S0_2_S1";
+	if (file.empty())
+		for (const zenkit::MdsAnimationAlias& a : script.aliases)
+			if (upper(a.name) == "T_S0_2_S1") file = upper(a.alias);
+	if (file.empty()) {
+		why = "no T_S0_2_S1 in the script";
+		return false;
+	}
+	zenkit::ModelAnimation ani;
+	bool loaded = false;
+	try {
+		loaded = loadFile(vfs, base + "-" + file + ".MAN", ani);
+	} catch (const std::exception&) {
+		loaded = false;
+	}
+	if (!loaded || ani.frame_count < 2 || ani.node_count == 0 || ani.samples.size() != size_t(ani.frame_count) * ani.node_count ||
+	    ani.node_indices.size() != ani.node_count) {
+		why = "its animation file is missing or odd";
+		return false;
+	}
+	zenkit::ModelHierarchy h;
+	bool haveTree = false;
+	const std::string skeleton = script.skeleton.name.empty() ? std::string() : stripExtension(upper(script.skeleton.name));
+	for (const std::string& name : {base, skeleton}) {
+		if (name.empty() || haveTree) continue;
+		try {
+			if (loadFile(vfs, name + ".MDH", h)) {
+				haveTree = true;
+			} else {
+				zenkit::Model model;
+				if (loadFile(vfs, name + ".MDL", model)) {
+					h = model.hierarchy;
+					haveTree = true;
+				}
+			}
+		} catch (const std::exception&) {
+			haveTree = false;
+		}
+	}
+	const size_t n = h.nodes.size();
+	if (!haveTree || n == 0) {
+		why = "no skeleton file";
+		return false;
+	}
+	for (uint32_t idx : ani.node_indices)
+		if (idx >= n) {
+			why = "the animation is made for another skeleton";
+			return false;
+		}
+	float shift[3];
+	const std::vector<M34> rest = restPose(h, shift);
+	const auto quatOf = [](const M34& m, float q[4]) {
+		quatFromColumns(m.m[0][0], m.m[1][0], m.m[2][0], m.m[0][1], m.m[1][1], m.m[2][1], m.m[0][2], m.m[1][2], m.m[2][2], q);
+	};
+	const auto angleOf = [](const float a[4], const float b[4]) {
+		const float d = std::min(std::fabs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]), 1.0f);
+		return 2.0f * std::acos(d);
+	};
+	// Which way the stored rotations turn: the reading that puts the first frame nearer the skeleton's rest pose.
+	double asIs = 0, conjugated = 0;
+	for (uint32_t t = 0; t < ani.node_count; ++t) {
+		const uint32_t i = ani.node_indices[t];
+		if (h.nodes[i].parent_index < 0) continue;
+		float rq[4];
+		quatOf(fromZen(h.nodes[i].transform), rq);
+		const zenkit::AnimationSample& sm = ani.samples[t];
+		const float a[4] = {sm.rotation.x, sm.rotation.y, sm.rotation.z, sm.rotation.w};
+		const float c[4] = {-a[0], -a[1], -a[2], a[3]};
+		asIs += angleOf(a, rq);
+		conjugated += angleOf(c, rq);
+	}
+	const float sign = conjugated <= asIs ? -1.0f : 1.0f;
+	// What moves: the tracks whose last frame is not their first.
+	const size_t last = size_t(ani.frame_count - 1) * ani.node_count;
+	std::vector<char> moves(n, 0);
+	for (uint32_t t = 0; t < ani.node_count; ++t) {
+		const zenkit::AnimationSample &a = ani.samples[t], &b = ani.samples[last + t];
+		const float qa[4] = {a.rotation.x, a.rotation.y, a.rotation.z, a.rotation.w}, qb[4] = {b.rotation.x, b.rotation.y, b.rotation.z, b.rotation.w};
+		const float dx = b.position.x - a.position.x, dy = b.position.y - a.position.y, dz = b.position.z - a.position.z;
+		if (angleOf(qa, qb) > 0.05f || dx * dx + dy * dy + dz * dz > 2.0f * 2.0f) moves[ani.node_indices[t]] = 1;
+	}
+	int lid = -1, tops = 0;
+	for (size_t i = 0; i < n; ++i) {
+		if (!moves[i]) continue;
+		const int parent = h.nodes[i].parent_index;
+		if (parent < 0) {
+			why = "the root moves";
+			return false;
+		}
+		if (!moves[size_t(parent)]) {
+			lid = int(i);
+			++tops;
+		}
+	}
+	if (tops != 1) {
+		why = tops == 0 ? "nothing moves in the animation" : std::to_string(tops) + " nodes move";
+		return false;
+	}
+	// The node and what hangs below it.
+	std::set<std::string> below;
+	for (size_t i = 0; i < n; ++i) {
+		int at = int(i);
+		for (int guard = 0; at >= 0 && guard < 64; ++guard, at = h.nodes[size_t(at)].parent_index)
+			if (at == lid) {
+				below.insert(upper(h.nodes[i].name));
+				break;
+			}
+	}
+	auto lidMesh = std::make_shared<FlatMesh>();
+	auto baseMesh = std::make_shared<FlatMesh>(full);
+	baseMesh->subs.clear();
+	lidMesh->kind = baseMesh->kind = VisualKind::Model;
+	// (A rigid inverse: the node carries no scale.)
+	const M34 closed = rest[size_t(lid)];
+	M34 inverse;
+	for (int r = 0; r < 3; ++r)
+		for (int c = 0; c < 3; ++c) inverse.m[r][c] = closed.m[c][r];
+	for (int r = 0; r < 3; ++r) inverse.m[r][3] = -(inverse.m[r][0] * closed.m[0][3] + inverse.m[r][1] * closed.m[1][3] + inverse.m[r][2] * closed.m[2][3]);
+	for (const FlatSub& sub : full.subs) {
+		if (sub.node.empty() || !below.count(sub.node)) {
+			baseMesh->subs.push_back(sub);
+			continue;
+		}
+		FlatSub moved = sub;
+		for (FlatVertex& v : moved.verts) {
+			float p[3], d[3];
+			inverse.point(v.pos, p);
+			inverse.direction(v.normal, d);
+			std::copy_n(p, 3, v.pos);
+			std::copy_n(d, 3, v.normal);
+		}
+		lidMesh->subs.push_back(std::move(moved));
+	}
+	if (lidMesh->subs.empty() || baseMesh->subs.empty()) {
+		why = lidMesh->subs.empty() ? "no part of the mesh hangs on the moving node" : "the lid is the whole chest";
+		return false;
+	}
+	// The lid's last pose: its own place in the parent, from the animation's last frame.
+	int track = -1;
+	for (uint32_t t = 0; t < ani.node_count; ++t)
+		if (int(ani.node_indices[t]) == lid) track = int(t);
+	if (track < 0) {
+		why = "the moving node has no track";
+		return false;
+	}
+	const zenkit::AnimationSample& end = ani.samples[last + size_t(track)];
+	const float qx = end.rotation.x * sign, qy = end.rotation.y * sign, qz = end.rotation.z * sign, qw = end.rotation.w;
+	M34 local;
+	local.m[0][0] = 1 - 2 * (qy * qy + qz * qz), local.m[0][1] = 2 * (qx * qy - qz * qw), local.m[0][2] = 2 * (qx * qz + qy * qw);
+	local.m[1][0] = 2 * (qx * qy + qz * qw), local.m[1][1] = 1 - 2 * (qx * qx + qz * qz), local.m[1][2] = 2 * (qy * qz - qx * qw);
+	local.m[2][0] = 2 * (qx * qz - qy * qw), local.m[2][1] = 2 * (qy * qz + qx * qw), local.m[2][2] = 1 - 2 * (qx * qx + qy * qy);
+	local.m[0][3] = end.position.x, local.m[1][3] = end.position.y, local.m[2][3] = end.position.z;
+	out.open = mul(rest[size_t(h.nodes[size_t(lid)].parent_index)], local);
+	out.closed = closed;
+	{
+		// (It must really open: a lid that ends where it began is no lid.)
+		float qc[4], qo[4];
+		quatOf(out.closed, qc);
+		quatOf(out.open, qo);
+		const float dx = out.open.m[0][3] - closed.m[0][3], dy = out.open.m[1][3] - closed.m[1][3], dz = out.open.m[2][3] - closed.m[2][3];
+		if (angleOf(qc, qo) < 0.2f && dx * dx + dy * dy + dz * dz < 5.0f * 5.0f) {
+			why = "the lid ends where it began";
+			return false;
+		}
+	}
+	out.seconds = (float(ani.frame_count) - 1.0f) / (ani.fps > 0 ? ani.fps : 25.0f);
+	lidMesh->finish();
+	baseMesh->finish();
+	out.lid = lidMesh;
+	out.base = baseMesh;
+	return true;
+}
+
 struct ObjectStats {
 	u32 placed[size_t(VisualKind::COUNT)] = {};
 	u32 noCollision = 0, particles = 0, sprites = 0, unsupported = 0;
 	u64 triangles = 0;
 	std::set<std::string> missing;
 	std::map<std::string, std::string> unreadable; // name -> reason
+	// fix157: the chests whose lids move (by visual), and why the others' do not.
+	std::map<std::string, ChestLid> lids;
+	std::map<std::string, std::string> lidWhy;
 	// Things that give light, for the report: fire places (oCMobFire) by
 	// visual, and every visual whose name says lamp, torch or fire.
 	struct Fire {
@@ -1607,7 +1813,19 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 		}
 		if (usable) stats.mobs.push_back({vob.get(), usable->state_count, it->second});
 		if (!it->second) continue;
-		out.push_back({vob.get(), it->second});
+		FlatPtr drawn = it->second;
+		if (vob->type == zenkit::VirtualObjectType::oCMobContainer && it->second->kind == VisualKind::Model) {
+			// (fix157) A chest whose lid can move is drawn without it: the lid is a mover (appendObjects).
+			auto lid = stats.lids.find(name);
+			if (lid == stats.lids.end() && !stats.lidWhy.count(name)) {
+				ChestLid cl;
+				std::string why;
+				if (chestLidOf(vfs, name, *it->second, cl, why)) lid = stats.lids.emplace(name, std::move(cl)).first;
+				else stats.lidWhy[name] = why;
+			}
+			if (lid != stats.lids.end()) drawn = lid->second.base;
+		}
+		out.push_back({vob.get(), drawn});
 	}
 }
 
@@ -1667,6 +1885,7 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 
 	// The things people use: what kind each is, and where one stands to use it.
 	std::map<std::string, std::pair<std::string, int>> slotNotes;
+	u32 lidsMade = 0;
 	for (const ObjectStats::Mob& mob : stats.mobs) {
 		const zenkit::VirtualObject& vob = *mob.vob;
 		const zenkit::Vec3* col = vob.rotation.columns;
@@ -1750,7 +1969,68 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 				}
 				out.slots.push_back(slot);
 			}
+		if (out.container && vob.visual) {
+			const auto lid = stats.lids.find(upper(vob.visual->name));
+			if (lid != stats.lids.end()) {
+				// (fix157) The lid: a mover named for the chest's place in the things of the world, turned between
+				// the model's shut and open poses, placed as the chest is.
+				SrcTrigger t;
+				t.kind = TRG_MOVER;
+				t.name = "G3CHEST" + std::to_string(scene.mobs.size());
+				t.visual = stripExtension(vob.visual->name);
+				for (char& ch : t.visual) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+				t.visual += "_g3lid";
+				const float R[3][3] = {{col[0].x, col[1].x, col[2].x}, {col[0].y, col[1].y, col[2].y}, {col[0].z, col[1].z, col[2].z}};
+				const float at[3] = {vob.position.x, vob.position.y, vob.position.z};
+				const auto place = [&](const M34& m, std::array<float, 7>& key) {
+					float W[3][3];
+					for (int r = 0; r < 3; ++r)
+						for (int c = 0; c < 3; ++c) W[r][c] = R[r][0] * m.m[0][c] + R[r][1] * m.m[1][c] + R[r][2] * m.m[2][c];
+					for (int r = 0; r < 3; ++r) key[size_t(r)] = R[r][0] * m.m[0][3] + R[r][1] * m.m[1][3] + R[r][2] * m.m[2][3] + at[r];
+					float q[4];
+					quatFromColumns(W[0][0], W[1][0], W[2][0], W[0][1], W[1][1], W[2][1], W[0][2], W[1][2], W[2][2], q);
+					for (int k = 0; k < 4; ++k) key[size_t(3 + k)] = q[k];
+				};
+				std::array<float, 7> shut, open;
+				place(lid->second.closed, shut);
+				place(lid->second.open, open);
+				float d = 0;
+				for (int k = 0; k < 4; ++k) d += shut[size_t(3 + k)] * open[size_t(3 + k)];
+				if (d < 0)
+					for (int k = 0; k < 4; ++k) open[size_t(3 + k)] = -open[size_t(3 + k)];
+				// (It turns about its own node: the same place both times, unless the animation moves the node.)
+				const float move = std::sqrt((open[0] - shut[0]) * (open[0] - shut[0]) + (open[1] - shut[1]) * (open[1] - shut[1]) +
+				                             (open[2] - shut[2]) * (open[2] - shut[2]));
+				if (move < 2.0f)
+					for (int k = 0; k < 3; ++k) open[size_t(k)] = shut[size_t(k)];
+				const float turn = 2.0f * std::acos(std::min(std::fabs(d), 1.0f)) * 57.29578f; // degrees
+				t.keys.push_back(shut);
+				t.keys.push_back(open);
+				t.behavior = 1; // trigger control: a trigger opens it, an untrigger shuts it
+				t.lerp = 1;
+				t.speed = move >= 2.0f ? move / std::max(lid->second.seconds, 0.3f) : std::max(turn, 1.0f) / (360.0f * std::max(lid->second.seconds, 0.3f));
+				t.reactTrigger = true;
+				t.startEnabled = true;
+				t.sendUntrigger = true;
+				t.maxActivations = -1;
+				const float lo[3] = {vob.bbox.min.x, vob.bbox.min.y, vob.bbox.min.z}, hi[3] = {vob.bbox.max.x, vob.bbox.max.y, vob.bbox.max.z};
+				for (int a = 0; a < 3; ++a) {
+					t.bbMin[a] = std::min(lo[a], hi[a]);
+					t.bbMax[a] = std::max(lo[a], hi[a]);
+				}
+				scene.triggers.push_back(t);
+				++lidsMade;
+			}
+		}
 		scene.mobs.push_back(std::move(out));
+	}
+	if (lidsMade || !stats.lidWhy.empty()) {
+		std::string why;
+		std::map<std::string, u32> reasons;
+		for (const auto& kv : stats.lidWhy) ++reasons[kv.second];
+		for (const auto& kv : reasons) why += (why.empty() ? "" : "; ") + kv.first + " x" + std::to_string(kv.second);
+		scene.notes.push_back("chest lids: " + std::to_string(lidsMade) + " chests have a lid that opens (" + std::to_string(stats.lids.size()) +
+		                      " kinds); " + std::to_string(stats.lidWhy.size()) + " kinds of chest stay whole" + (why.empty() ? "" : " (" + why + ")"));
 	}
 	if (!slotNotes.empty()) {
 		std::string all;
@@ -3502,19 +3782,38 @@ LookSource zenLookSource(std::shared_ptr<const ZenGame> game) {
 	source.item = [game](const std::string& visual, SrcModel& model) {
 		FlatPtr flat;
 		std::string why;
+		// (fix157) "<chest>_g3lid": the lid of a chest, cut from its model, in its node's own space.
+		const bool lidOnly = visual.size() > 6 && visual.compare(visual.size() - 6, 6, "_g3lid") == 0;
+		const std::string look = lidOnly ? visual.substr(0, visual.size() - 6) : visual;
+		std::string found;
 		for (const char* ext : {".3DS", ".MMS", ".ASC", ".MDS"}) {
 			std::string w;
-			flat = loadVisual(game->vfs, upper(visual) + ext, w);
-			if (flat && !flat->subs.empty()) break;
+			flat = loadVisual(game->vfs, upper(look) + ext, w);
+			if (flat && !flat->subs.empty()) {
+				found = upper(look) + ext;
+				break;
+			}
 			if (!w.empty()) why = w;
 			flat = nullptr;
+		}
+		bool lidFlip = false;
+		if (lidOnly && flat) {
+			ChestLid cl;
+			std::string w;
+			flat->finish();
+			lidFlip = outwardScore(*flat) < -0.05; // (the whole chest says which way its faces point)
+			if (!chestLidOf(game->vfs, found, *flat, cl, w)) {
+				model.notes.push_back(upper(look) + ": no lid (" + w + ")");
+				return false;
+			}
+			flat = cl.lid;
 		}
 		if (!flat) {
 			model.notes.push_back(why.empty() ? upper(visual) + ": no mesh" : upper(visual) + ": " + why);
 			return false;
 		}
 		flat->finish();
-		const bool flip = outwardScore(*flat) < -0.05;
+		const bool flip = lidOnly ? lidFlip : outwardScore(*flat) < -0.05;
 		model.nodes.assign(1, SrcNode {});
 		model.nodes[0].name = "ITEM";
 		for (const FlatSub& sub : flat->subs) {
@@ -3970,7 +4269,7 @@ bool importZenDialogue(std::shared_ptr<const ZenGame> game, SrcDialogue& dialogu
 
 // The rooms: the BSP tree's sectors, each the boxes of its leaves. A leaf that two sectors claim is
 // nobody's (OpenGothic's World::roomAt asks for exactly one).
-static void collectRooms(const zenkit::BspTree& bsp, SrcScene& scene) {
+static void collectRooms(const zenkit::BspTree& bsp, const zenkit::Mesh& mesh, SrcScene& scene) {
 	std::map<u64, int> claims; // leaf node -> number of sectors, or -1 once two claim it
 	std::map<u64, u32> owner;
 	std::map<std::string, u32> byName;
@@ -3988,16 +4287,87 @@ static void collectRooms(const zenkit::BspTree& bsp, SrcScene& scene) {
 			else if (it->second != ins.first->second) claims[node] = -1;
 		}
 	}
+	// (fix156) A leaf's box is a box round all its polygons: a hut that stands crooked, a slope, a wall running
+	// out of the leaf - and the street beside the hut was "in the room", the guards drove the player out of
+	// the open. So the room is the leaf's floors and ceilings, each polygon's own footprint (walls add nothing:
+	// they stand on the edge of a floor); the height is the leaf's. A leaf with no polygons to read keeps its box.
+	size_t leafBoxes = 0, polyBoxes = 0;
+	std::vector<SrcScene::RoomBoxSrc> boxes;
+	std::set<std::array<float, 7>> seen; // (the same footprint twice - floor and ceiling of a flat room - is one box)
 	for (const auto& [node, room] : owner) {
 		if (claims.count(node)) continue;
 		const zenkit::BspNode& n = bsp.nodes[size_t(node)];
-		SrcScene::RoomBoxSrc b;
-		b.bbMin[0] = n.bbox.min.x, b.bbMin[1] = n.bbox.min.y, b.bbMin[2] = n.bbox.min.z;
-		b.bbMax[0] = n.bbox.max.x, b.bbMax[1] = n.bbox.max.y, b.bbMax[2] = n.bbox.max.z;
-		if (!(b.bbMax[0] > b.bbMin[0] && b.bbMax[2] > b.bbMin[2])) continue;
-		b.room = room;
-		scene.roomBoxes.push_back(b);
+		const size_t before = boxes.size();
+		for (int pass = 0; pass < 2 && boxes.size() == before; ++pass) {
+			// (Pass 0: the floors and ceilings; pass 1, a leaf that has only walls: whatever polygons it has.)
+			for (u32 i = 0; i < n.polygon_count; ++i) {
+				const size_t at = size_t(n.polygon_index) + i;
+				if (at >= bsp.polygon_indices.size()) break;
+				const u32 pi = bsp.polygon_indices[at];
+				if (pi >= mesh.geometry.size()) continue;
+				const zenkit::Polygon& poly = mesh.geometry[pi];
+				if (poly.index_count < 3 || poly.flags.is_portal) continue;
+				if (pass == 0 && fabsf(poly.plane_normal.y) < 0.35f) continue;
+				float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+				bool ok = true;
+				for (size_t c = 0; c < poly.index_count && ok; ++c) {
+					const size_t k = size_t(poly.index_offset) + c;
+					if (k >= mesh.polygon_vertex_indices.size() || mesh.polygon_vertex_indices[k] >= mesh.vertices.size()) {
+						ok = false;
+						break;
+					}
+					const zenkit::Vec3& v = mesh.vertices[mesh.polygon_vertex_indices[k]];
+					const float p[3] = {v.x, v.y, v.z};
+					for (int a = 0; a < 3; ++a) {
+						lo[a] = std::min(lo[a], p[a]);
+						hi[a] = std::max(hi[a], p[a]);
+					}
+				}
+				if (!ok || !(hi[0] > lo[0] || hi[2] > lo[2])) continue;
+				SrcScene::RoomBoxSrc b;
+				b.bbMin[0] = lo[0], b.bbMax[0] = hi[0];
+				b.bbMin[2] = lo[2], b.bbMax[2] = hi[2];
+				// The height: the leaf's (its floor to its roof), at least the polygon's own.
+				b.bbMin[1] = std::min(n.bbox.min.y, lo[1]);
+				b.bbMax[1] = std::max(n.bbox.max.y, hi[1]);
+				b.room = room;
+				if (!seen.insert({std::floor(b.bbMin[0]), std::floor(b.bbMax[0]), std::floor(b.bbMin[2]), std::floor(b.bbMax[2]),
+				                  std::floor(b.bbMin[1]), std::floor(b.bbMax[1]), float(room)}).second)
+					continue;
+				boxes.push_back(b);
+			}
+		}
+		if (boxes.size() > before) {
+			++polyBoxes;
+		} else {
+			SrcScene::RoomBoxSrc b;
+			b.bbMin[0] = n.bbox.min.x, b.bbMin[1] = n.bbox.min.y, b.bbMin[2] = n.bbox.min.z;
+			b.bbMax[0] = n.bbox.max.x, b.bbMax[1] = n.bbox.max.y, b.bbMax[2] = n.bbox.max.z;
+			if (!(b.bbMax[0] > b.bbMin[0] && b.bbMax[2] > b.bbMin[2])) continue;
+			b.room = room;
+			boxes.push_back(b);
+			++leafBoxes;
+		}
 	}
+	// (A world with very many: the leaves' own boxes, as before - the grid of the engine has a limit.)
+	if (boxes.size() > 600000) {
+		boxes.clear();
+		for (const auto& [node, room] : owner) {
+			if (claims.count(node)) continue;
+			const zenkit::BspNode& n = bsp.nodes[size_t(node)];
+			SrcScene::RoomBoxSrc b;
+			b.bbMin[0] = n.bbox.min.x, b.bbMin[1] = n.bbox.min.y, b.bbMin[2] = n.bbox.min.z;
+			b.bbMax[0] = n.bbox.max.x, b.bbMax[1] = n.bbox.max.y, b.bbMax[2] = n.bbox.max.z;
+			if (!(b.bbMax[0] > b.bbMin[0] && b.bbMax[2] > b.bbMin[2])) continue;
+			b.room = room;
+			boxes.push_back(b);
+		}
+		scene.notes.push_back("rooms: too many polygons, the leaves' boxes are used");
+	} else if (polyBoxes + leafBoxes) {
+		scene.notes.push_back("rooms: " + std::to_string(boxes.size()) + " boxes from the polygons of " + std::to_string(polyBoxes) + " leaves" +
+		                      (leafBoxes ? ", " + std::to_string(leafBoxes) + " leaves with their own box" : std::string()));
+	}
+	for (const auto& b : boxes) scene.roomBoxes.push_back(b);
 }
 
 void importZenWorld(std::shared_ptr<const ZenGame> game, const ZenImportOptions& opt, SrcScene& scene) {
@@ -4011,7 +4381,7 @@ void importZenWorld(std::shared_ptr<const ZenGame> game, const ZenImportOptions&
 	appendMesh(world.world_mesh, opt, scene);
 	scene.worldTriangles = scene.triangles.size();
 	scene.indoor = world.world_bsp_tree.mode == zenkit::BspTreeType::INDOOR;
-	collectRooms(world.world_bsp_tree, scene);
+	collectRooms(world.world_bsp_tree, world.world_mesh, scene);
 
 	// Way points first: named objects of the same name take precedence.
 	if (world.way_net) {

@@ -511,8 +511,8 @@ static void testSyntheticScript() {
 		CHECK(r.ran && r.differ == 0 && r.objected == 0 && r.stateSame);
 		// (The 18 things of the inventory's test items - and the chests' key and pick - are made once each too; the 8 are the
 		// dialogues' conditions and the functions they run that the reference interpreter checks as well; the last 2 the
-		// conditions of the hero's own infos - a bed's sleep.)
-		CHECK(r.runs == 1 + 4 + 4 + 2 + 18 + 8 + 4 + 2 && r.same == r.runs && r.calls > 60);
+		// conditions of the hero's own infos - a bed's sleep, and (fix153) the forge's talk, three more.)
+		CHECK(r.runs == 1 + 4 + 4 + 2 + 18 + 8 + 4 + 2 + 3 && r.same == r.runs && r.calls > 60);
 	}
 #endif
 }

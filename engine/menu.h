@@ -29,6 +29,10 @@ enum MenuAction : u8 {
 	MENU_GIVE_WEAPON,
 	MENU_GIVE_ITEMS,
 	MENU_RESET_GRAPHICS, // the graphics page's values back to the defaults
+	MENU_LEVEL_UP,       // one level more (the scripts' experience rules)
+	MENU_GIVE_SPELLKIT,  // every rune and scroll, mana
+	MENU_GIVE_CRAFTKIT,  // for the crafts: what the things ask for, ingredients
+	MENU_LEARN_ALL,      // every talent and skill learnt
 	MENU_GIVE_TESTKIT,   // the test kit: spells, stat potions, a weapon, a bow, an armour
 };
 

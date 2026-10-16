@@ -283,6 +283,8 @@ public:
 	// try the inventory with. Returns how many kinds were given.
 	u32 giveItemKit();
 	u32 giveTestKit();
+	u32 giveSpellKit(); // every rune and scroll, mana
+	u32 giveCraftKit(); // what the things ask for, and ingredients
 	// ---- magic (app_magic.cpp; the rules are the scripts', see game_magic.cpp) ----
 	// The rune or scroll chosen (an item symbol, SCRIPT_NONE for none): A casts it in the magic stance.
 	u32 spellItem() const { return _spellItem; }
@@ -577,6 +579,10 @@ private:
 	u32 _diarySeen = 0;
 	bool _diaryOpen = false;
 	GameChapter _chapterCard;
+	// Its picture (baked "card/<name>"), made while the card is up; null if the archive lacks it.
+	gfx::Texture* _chapterPic = nullptr;
+	void chapterPictureLoad(const char* texture);
+	void chapterPictureFree();
 	float _chapterTime = 0, _chapterLength = 0;
 	char _menuMessage[48] = "";
 	void drawOverlay();
@@ -679,6 +685,7 @@ private:
 		u32 index = 0;
 		float time = 0;
 		Vec3 from {0, 0, 0}, to {0, 0, 0};
+		float floorY = 0;    // the floor at the place used: the body is held at it (a bench's collision must not lift him)
 		float yawFrom = 0, yawTo = 0;
 		u8 progress = 0, picks = 0;
 		int corpse = -1;     // a dead character's index when it is a body that is searched (then `index` is unused)
@@ -694,6 +701,7 @@ private:
 		u32 mob = 0;
 		float time = 0;
 		Vec3 from {0, 0, 0}, to {0, 0, 0};
+		float floorY = 0; // the floor at the place used: the body is held at it (a bench's own shape must not lift him)
 		float yawFrom = 0, yawTo = 0;
 		bool stay = false;   // held until the player lets go (a bed, a bench)
 		bool ran = false;    // its state function has run
@@ -745,6 +753,7 @@ private:
 	const char* corpseName(u32 npc, char* out, size_t size) const;
 	void chestBegin();         // walks to the chest and opens it
 	void chestEnd(bool hurried);
+	void chestLid(bool open); // the lid of the chest in use turns (a mover of the baker's)
 	void chestMove(u32 symbol, i32 amount, bool toChest);
 	void chestView(const GameNpc& hero);
 	const char* chestName(u32 index) const; // "Большой сундук" ...

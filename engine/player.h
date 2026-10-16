@@ -113,7 +113,9 @@ public:
 	// Looks ahead (along `yaw`) for a ledge to take hold of: a wall that
 	// rises above the feet by between ledgeMin and ledgeReach and has floor
 	// on top of it with room to stand. For a body in a jump.
-	bool probeLedge(const World& world, float yaw, Ledge& out) const;
+	// `reach`: how far beyond the body's edge the wall may be (negative: ledgeRange). On the ground the original
+	// climbs only what stands within 55 cm of the body's middle (MoveAlgo::climbMove).
+	bool probeLedge(const World& world, float yaw, Ledge& out, float reach = -1.0f) const;
 	// What the probes found (the console's report): how many were made and how
 	// many found a ledge, why the last found none (1 nothing ahead, 2 a slope
 	// or already over it, 3 no floor on top, 4 no room to stand, 5 too high,

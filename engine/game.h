@@ -496,6 +496,11 @@ public:
 	// points and 0 for the rest if the scripts lack the member.
 	i32 attributeOf(const GameNpc& n, i32 index) const;
 	void setAttribute(GameNpc& n, i32 index, i32 value);
+	// The debug menu's: a level up (the scripts' B_GiveXP, by hand if it fails); every talent learnt
+	// (skills and values of the character, the scripts' PLAYER_TALENT_*/KNOWS_* variables set).
+	// Both return the new level / the number of things set.
+	i32 debugLevelUp();
+	u32 debugLearnAll();
 	// The talk flag (AIV_INVINCIBLE) off: fighters wait (AI_Wait in ZS_Attack) for as long as the player 'is talking'.
 	void clearTalkFlag(u32 npc, bool clear = true);
 	i32 talkFlag(u32 npc); // its value (for the debug line), -1: unknown

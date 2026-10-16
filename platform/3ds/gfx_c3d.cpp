@@ -1424,6 +1424,34 @@ Texture* uiTextureCreate(u16 w, u16 h, const u8* coverage, bool smooth) {
 	return t;
 }
 
+Texture* uiTextureCreateColor(u16 w, u16 h, const u16* rgb565) {
+	const auto pot = [](u32 v) { return v >= 8 && v <= 1024 && (v & (v - 1)) == 0; };
+	if (!rgb565 || !pot(w) || !pot(h)) return nullptr;
+	Texture* t = static_cast<Texture*>(calloc(1, sizeof(Texture)));
+	if (!t) return nullptr;
+	if (!C3D_TexInit(&t->tex, w, h, GPU_RGB565)) {
+		releaseDestroyed();
+		if (!C3D_TexInit(&t->tex, w, h, GPU_RGB565)) {
+			free(t);
+			return nullptr;
+		}
+	}
+	u16* texels = static_cast<u16*>(t->tex.data);
+	for (u32 y = 0; y < h; ++y) {
+		// (The same order as uiTextureCreate: rows from the bottom, 8x8 tiles, Morton inside.)
+		const u32 sy = h - 1u - y, ty = sy & 7u;
+		for (u32 x = 0; x < w; ++x) {
+			const u32 at = (x & 1u) | ((ty & 1u) << 1) | ((x & 2u) << 1) | ((ty & 2u) << 2) | ((x & 4u) << 2) | ((ty & 4u) << 3);
+			texels[((sy >> 3) * (w >> 3) + (x >> 3)) * 64u + at] = rgb565[y * w + x];
+		}
+	}
+	C3D_TexFlush(&t->tex);
+	C3D_TexSetFilter(&t->tex, GPU_LINEAR, GPU_LINEAR);
+	C3D_TexSetWrap(&t->tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+	t->bytes = 0;
+	return t;
+}
+
 // The overlay goes through the world's own shader: an orthographic projection
 // of the screen in pixels, no view, no chunk offset, no daylight, no fog. The
 // vertex alpha is the shader's daylight weight, so a quad's alpha comes from

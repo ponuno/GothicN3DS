@@ -7,7 +7,8 @@
 //  * Selling pays the value times the scripts' TRADE_VALUE_MULTIPLIER (none in Gothic 1: the whole value),
 //    rounded up. The money (ITMINUGGET in Gothic 1; TRADE_CURRENCY_INSTANCE in Gothic 2) is neither bought nor sold,
 //    nor are the things the trader wears or the player has on.
-//  * The trader's purse is bottomless: he pays what he must and takes the money to nowhere.
+//  * The trader's purse is what he carries (fix158): he pays from his own money and takes what the player pays for his
+//    wares; with too little he buys fewer things, or none (Gothic 1's traders ran out of ore).
 // The page is closed with B (or the page's back arrow); the talk then goes on from its menu.
 #include "lang.h"
 #include "app.h"
@@ -77,7 +78,10 @@ void App::tradeMove(u32 symbol, i32 amount, bool sell) {
 		}
 		g.giveItems(trader, symbol, -n);
 		g.giveItems(hero, symbol, n);
-		if (price > 0) g.giveItems(hero, money, -price * n);
+		if (price > 0) {
+			g.giveItems(hero, money, -price * n);
+			g.giveItems(trader, money, price * n); // (the money goes to the trader)
+		}
 		if (n > 1) snprintf(buf, sizeof(buf), tr("Куплено: %s ×%ld (-%ld)"), name, static_cast<long>(n), static_cast<long>(price) * n);
 		else snprintf(buf, sizeof(buf), tr("Куплено: %s (-%ld)"), name, static_cast<long>(price));
 		itemMessage(buf, false);
@@ -96,11 +100,22 @@ void App::tradeMove(u32 symbol, i32 amount, bool sell) {
 			return;
 		}
 		const i32 price = g.sellPrice(symbol);
+		// He pays from his own purse: no more things than it covers.
+		const i32 purse = g.itemCount(trader, money);
+		if (price > 0 && n > purse / price) n = purse / price;
+		if (n <= 0) {
+			itemMessage(tr("У торговца нет руды"), true);
+			++_itemStats.refused;
+			return;
+		}
 		g.giveItems(hero, symbol, -n);
 		g.giveItems(trader, symbol, n);
 		long long pay = (long long)price * n;
 		if (pay > 1000000000LL) pay = 1000000000LL;
-		if (pay > 0) g.giveItems(hero, money, i32(pay));
+		if (pay > 0) {
+			g.giveItems(trader, money, -i32(pay));
+			g.giveItems(hero, money, i32(pay));
+		}
 		if (n > 1) snprintf(buf, sizeof(buf), tr("Продано: %s ×%ld (+%ld)"), name, static_cast<long>(n), static_cast<long>(pay));
 		else snprintf(buf, sizeof(buf), tr("Продано: %s (+%ld)"), name, static_cast<long>(pay));
 		itemMessage(buf, false);

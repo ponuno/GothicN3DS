@@ -4,13 +4,17 @@
 // the dialogue box at the top of the top one.
 #include "lang.h"
 #include "app.h"
+#include "g3ds/card.h"
+#include "gfx.h"
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "gfx.h"
 #include "ui.h"
+#include "g3ds/card.h"
 
 namespace g3 {
 
@@ -104,13 +108,15 @@ void App::talkUpdate(Input& in, float dt) {
 			++_magic.teleports;
 		}
 	}
-	// A chapter begins (IntroduceChapter): its card comes up.
+	// A chapter begins (IntroduceChapter): its card comes up. Not in the middle of a talk (OpenGothic:
+	// pendingChapter waits for !isInDialog()): the card follows the talk that set it off.
 	{
 		const GameChapter& ch = _npcs.game().chapter();
-		if (ch.serial != _chapterSeen) {
+		if (ch.serial != _chapterSeen && !talking()) {
 			_chapterSeen = ch.serial;
 			_chapterCard = ch;
 			_chapterLength = _chapterTime = clamp(float(ch.delay) / 1000.0f, 3.0f, 10.0f);
+			chapterPictureLoad(ch.texture);
 			if (ch.sound[0] && _sound.ready()) {
 				char name[48];
 				snprintf(name, sizeof(name), "%s", ch.sound);
@@ -120,6 +126,7 @@ void App::talkUpdate(Input& in, float dt) {
 			}
 		}
 		if (_chapterTime > 0.0f) _chapterTime -= dt;
+		if (_chapterTime <= 0.0f && _chapterPic) chapterPictureFree();
 	}
 	// Effects the scripts set off (Wld_PlayEffect): at the character, a couple of seconds.
 	{
@@ -218,6 +225,41 @@ void App::drawSubtitle() {
 	_ui.rect(10, top - 5, W - 10, top + (count + 1) * lh + 3, 0x000000B8u);
 	_ui.text(W / 2, top, v.speaker, v.heroSays ? ui::WHITE : ui::GOLD, ui::TEXT, ui::CENTER);
 	for (int i = 0; i < count; ++i) _ui.text(W / 2, top + (i + 1) * lh, lines[i], ui::WHITE, ui::TEXT, ui::CENTER);
+}
+
+// The picture of a chapter card ("card/<name>", g3ds/card.h): made when the card comes up, dropped when it goes.
+void App::chapterPictureLoad(const char* texture) {
+	chapterPictureFree();
+	if (!texture || !texture[0]) return;
+	char name[64] = "card/";
+	size_t n = strlen(name);
+	for (const char* c = texture; *c && *c != '.' && n < sizeof(name) - 1; ++c) name[n++] = char((*c >= 'A' && *c <= 'Z') ? *c + 32 : *c);
+	name[n] = 0;
+	const PakEntry* e = _pak.find(name);
+	if (!e || e->size != sizeof(CardHeader) + size_t(CARD_W) * CARD_H * 2) return;
+	u8* blob = static_cast<u8*>(malloc(e->size));
+	if (!blob) return;
+	CardHeader h {};
+	if (_pak.read(*e, blob)) {
+		memcpy(&h, blob, sizeof(h));
+		if (h.magic == CARD_MAGIC && h.version == CARD_VERSION && h.width == CARD_W && h.height == CARD_H) {
+			// (The texture is a power of two: the picture lies in its corner.)
+			const int tw = 512, th = 256;
+			u16* px = static_cast<u16*>(calloc(size_t(tw) * th, sizeof(u16)));
+			if (px) {
+				const u16* src = reinterpret_cast<const u16*>(blob + sizeof(h));
+				for (int y = 0; y < CARD_H; ++y) memcpy(px + size_t(y) * tw, src + size_t(y) * CARD_W, size_t(CARD_W) * 2);
+				_chapterPic = gfx::uiTextureCreateColor(u16(tw), u16(th), px);
+				free(px);
+			}
+		}
+	}
+	free(blob);
+}
+
+void App::chapterPictureFree() {
+	if (_chapterPic) gfx::textureDestroy(_chapterPic);
+	_chapterPic = nullptr;
 }
 
 } // namespace g3

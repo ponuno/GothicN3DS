@@ -400,6 +400,23 @@ void Ui::bar(int x0, int y0, int x1, int y1, float share, u32 fill, u32 back) {
 	rect(x0, y0, split, y1, fill);
 }
 
+void Ui::picture(gfx::Texture* tex, int texW, int texH, u8 alpha) {
+	if (!tex) return;
+	flush();
+	gfx::UiQuad q {};
+	q.x0 = 0;
+	q.y0 = 0;
+	q.x1 = i16(gfx::SCREEN_W);
+	q.y1 = i16(gfx::SCREEN_H);
+	q.u0 = 0;
+	q.v0 = 0;
+	q.u1 = u16(texW);
+	q.v1 = u16(texH);
+	q.rgba[0] = q.rgba[1] = q.rgba[2] = 255;
+	q.rgba[3] = alpha;
+	gfx::uiDraw(tex, &q, 1);
+}
+
 void Ui::flush() {
 	if (_font && _count) gfx::uiDraw(_font, _quads, _count);
 	_count = 0;

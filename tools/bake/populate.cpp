@@ -11,6 +11,7 @@
 #include "g3ds/model.h"
 #include "g3ds/math.h"
 #include "g3ds/item_view.h"
+#include "g3ds/card.h"
 #include "item_icon.h"
 #include "model_bake.h"
 #include "texture_bake.h"
@@ -1535,6 +1536,58 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			std::memcpy(itemsBlob.data(), &ih, sizeof(ih));
 			if (!table.empty()) std::memcpy(itemsBlob.data() + sizeof(ih), table.data(), table.size() * sizeof(WorldItem));
 			pak.add("world/" + worlds[w].name + "/items", ASSET_META, itemsBlob);
+		}
+		// The cards of the chapters (IntroduceChapter's texture): every ".tga" the scripts name as a string. Each
+		// is fitted into the top screen (letterboxed on black) and kept as RGB565: "card/<name>".
+		{
+			std::set<std::string> names;
+			ScriptVm& cvm = game.vm();
+			for (u32 sym = 0; sym < cvm.symbolCount(); ++sym) {
+				const ScriptSymbol& sy = cvm.symbol(sym);
+				if (sy.type != SCRIPT_STRING || !(sy.flags & SCRIPTF_CONST) || (sy.flags & SCRIPTF_MEMBER)) continue;
+				std::string text = cvm.getString(sym);
+				std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+				if (text.size() > 4 && text.size() < 40 && text.compare(text.size() - 4, 4, ".tga") == 0 && text.find_first_of("*/\\") == std::string::npos)
+					names.insert(text.substr(0, text.size() - 4));
+			}
+			size_t cards = 0, cardBytes = 0;
+			std::string absent;
+			for (const std::string& name : names) {
+				SrcImage img;
+				if (!scripts.looks.texture || !scripts.looks.texture(name + ".tga", img) || img.width < 2 || img.height < 2) {
+					absent += (absent.empty() ? "" : " ") + name;
+					continue;
+				}
+				// Fit: the whole picture inside CARD_W x CARD_H, its proportions kept.
+				const float scale = std::min(float(CARD_W) / float(img.width), float(CARD_H) / float(img.height));
+				const int dw = std::max(1, int(float(img.width) * scale + 0.5f)), dh = std::max(1, int(float(img.height) * scale + 0.5f));
+				const int ox = (CARD_W - dw) / 2, oy = (CARD_H - dh) / 2;
+				std::vector<u8> blob(sizeof(CardHeader) + size_t(CARD_W) * CARD_H * 2, 0);
+				const CardHeader ch {CARD_MAGIC, CARD_VERSION, u16(CARD_W), u16(CARD_H), 0};
+				std::memcpy(blob.data(), &ch, sizeof(ch));
+				u16* px = reinterpret_cast<u16*>(blob.data() + sizeof(ch));
+				for (int y = 0; y < dh; ++y)
+					for (int x = 0; x < dw; ++x) {
+						// (A box over the source texels this pixel covers.)
+						const int sx0 = x * img.width / dw, sx1 = std::max(sx0 + 1, (x + 1) * img.width / dw);
+						const int sy0 = y * img.height / dh, sy1 = std::max(sy0 + 1, (y + 1) * img.height / dh);
+						u32 sum[3] = {0, 0, 0}, n = 0;
+						for (int sy = sy0; sy < sy1 && sy < img.height; ++sy)
+							for (int sx = sx0; sx < sx1 && sx < img.width; ++sx) {
+								const u8* c = &img.rgba[(size_t(sy) * img.width + size_t(sx)) * 4];
+								for (int k = 0; k < 3; ++k) sum[k] += c[k];
+								++n;
+							}
+						if (!n) continue;
+						const u32 r = sum[0] / n, g = sum[1] / n, b = sum[2] / n;
+						px[size_t(oy + y) * CARD_W + size_t(ox + x)] = u16(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+					}
+				pak.add("card/" + name, ASSET_META, blob);
+				++cards;
+				cardBytes += blob.size();
+			}
+			line(format("chapter cards: %zu pictures named by the scripts, %zu baked (%.2f MB)%s%s", names.size(), cards,
+			            double(cardBytes) / 1048576.0, absent.empty() ? "" : "; not in the game's files: ", absent.c_str()));
 		}
 		const size_t lying = visuals.size();
 		// Every thing of the scripts may end up in the inventory: all their

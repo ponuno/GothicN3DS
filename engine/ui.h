@@ -59,6 +59,10 @@ public:
 	// A bar filled to `share` (0..1) of its width.
 	void bar(int x0, int y0, int x1, int y1, float share, u32 fill, u32 back = 0x000000A0u);
 
+	// A picture in colour (gfx::uiTextureCreateColor) over the whole screen, faded to `alpha`: what was added
+	// before is drawn first, so it lies over that and under what comes after.
+	void picture(gfx::Texture* tex, int texW, int texH, u8 alpha);
+
 	// Draws what was added and starts over. Call between the 3D passes and
 	// gfx::frameEnd.
 	void flush();

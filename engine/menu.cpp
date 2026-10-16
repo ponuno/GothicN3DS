@@ -148,6 +148,10 @@ const Item kDebugHero[] = {
     {"Бессмертие", TOGGLE, &Settings::immortal, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr},
     {"Вылечить", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_HEAL, nullptr, nullptr},
     {"Тест-набор", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_GIVE_TESTKIT, "Магия, зелья роста, оружие, лук, броня", nullptr},
+    {"Повысить уровень", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_LEVEL_UP, "Опыт по правилам скриптов", nullptr},
+    {"Набор: заклинания", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_GIVE_SPELLKIT, "Руны, свитки, превращения, призыв, мана", nullptr},
+    {"Набор: ремёсла", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_GIVE_CRAFTKIT, "Всё для станков, алхимии, добычи", nullptr},
+    {"Изучить все навыки", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_LEARN_ALL, "Таланты, ремёсла, добыча трофеев", nullptr},
     {"Дать лучшее оружие", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_GIVE_WEAPON, "Из оружия, что есть в скриптах", nullptr},
     {"Дать набор предметов", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_GIVE_ITEMS, "Зелья, еда, оружие, броня, кольца", nullptr},
 };

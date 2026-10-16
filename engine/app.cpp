@@ -12,6 +12,10 @@
 
 namespace g3 {
 
+// The original climbs from the ground only what stands within 55 cm of the body's middle (MoveAlgo::climbMove): beyond
+// the body's edge (30 cm) that is this much. Further off, a jump is a jump forward.
+static const float kGroundClimbReach = 25.0f;
+
 // A fire burns where its torch is drawn (Particles::setGate).
 static bool emitterShown(void* world, Vec3 pos, Vec3 eye, int& chunk, bool wasOn) {
 	return static_cast<const World*>(world)->pointShown(pos, eye, chunk, wasOn);
@@ -369,6 +373,7 @@ void App::setDistanceScale(float scale) {
 }
 
 void App::shutdown() {
+	chapterPictureFree();
 	_chatter.shutdown();
 	_speech.shutdown();
 	_music.shutdown();
@@ -575,8 +580,8 @@ void App::update(const Input& given, float dt) {
 		Ledge ground;
 		bool wall = false;
 		if (heroIn.jump && _hero.wantsJumpUp(_player)) {
-			if (!_player.probeLedge(_world, _hero.yaw(), ground)) {
-				const float yaw = _hero.yaw(), reach = _player.config.radius + 45.0f;
+			if (!_player.probeLedge(_world, _hero.yaw(), ground, kGroundClimbReach)) {
+				const float yaw = _hero.yaw(), reach = _player.config.radius + kGroundClimbReach;
 				const Vec3 dir = {sinf(yaw), 0, cosf(yaw)};
 				for (int k = 0; k < 2; ++k) {
 					const Vec3 a = {_player.feet.x, _player.feet.y + (k ? 160.0f : 100.0f), _player.feet.z};
@@ -600,6 +605,9 @@ void App::update(const Input& given, float dt) {
 		_player.ladderExitFootTime = _hero.ladderExitFootTime();
 		_player.ladderExitRise = _hero.ladderExitRise();
 		_player.update(_world, heroIn, _hero.yaw(), 0.0f, dt, &drive);
+		// Using a thing: the body stays at the floor of its place (see MobJob::floorY).
+		if ((_mobJob.stage == MJ_GLIDE || _mobJob.stage == MJ_IN || _mobJob.stage == MJ_HELD) && !_player.climbing && !_player.swimming && _player.grounded)
+			_player.feet.y = _mobJob.floorY;
 		// On a ladder the character faces its rungs (turning to them as it takes hold).
 		if (_player.climbing) _hero.setYaw(_player.ladderYaw());
 		tMove = sys::timeMs();
@@ -1833,6 +1841,32 @@ bool App::menuAction(MenuAction action, const char* statePath) {
 		const u32 n = giveItemKit();
 		if (n) snprintf(_menuMessage, sizeof(_menuMessage), tr("Выдано: %lu видов"), static_cast<unsigned long>(n));
 		else snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Предметов в скриптах нет"));
+		return true;
+	}
+	case MENU_LEVEL_UP: {
+		const i32 level = _npcs.game().debugLevelUp();
+		_invStamp = 0;
+		if (level) snprintf(_menuMessage, sizeof(_menuMessage), tr("Уровень: %ld"), static_cast<long>(level));
+		else snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Нет героя"));
+		return true;
+	}
+	case MENU_GIVE_SPELLKIT: {
+		const u32 n = giveSpellKit();
+		if (n) snprintf(_menuMessage, sizeof(_menuMessage), tr("Заклинания: %lu видов"), static_cast<unsigned long>(n));
+		else snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Предметов в скриптах нет"));
+		return true;
+	}
+	case MENU_GIVE_CRAFTKIT: {
+		const u32 n = giveCraftKit();
+		if (n) snprintf(_menuMessage, sizeof(_menuMessage), tr("Для ремёсел: %lu видов"), static_cast<unsigned long>(n));
+		else snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Предметов в скриптах нет"));
+		return true;
+	}
+	case MENU_LEARN_ALL: {
+		const u32 n = _npcs.game().debugLearnAll();
+		_invStamp = 0;
+		if (n) snprintf(_menuMessage, sizeof(_menuMessage), tr("Изучено: %lu"), static_cast<unsigned long>(n));
+		else snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Нет героя"));
 		return true;
 	}
 	case MENU_GIVE_TESTKIT: {

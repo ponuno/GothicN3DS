@@ -66,6 +66,9 @@ const char* const kGrassNotes[] = {"Новая трава выключена (м
                                    "Все пучки, до 28 м (мир с --grass)"};
 const char* const kBarrier[] = {"Выкл", "Как в игре", "Всегда"};
 const char* const kBarrierNotes[] = {"Купола нет", "25 с примерно раз в 20 минут, с молниями", "Виден всё время, с молниями"};
+const char* const kBarrierThunder[] = {"Как в игре", "Гром рядом", "Раскат", "Магия молний", "Без звука"};
+const char* const kBarrierThunderNotes[] = {"Звук Барьера из игры", "Близкий удар грома", "Долгий далёкий раскат",
+                                            "Звук заклинания-молнии", "Молнии без грома"};
 const char* const kLamps[] = {"Выкл", "Персонажи", "Всё"};
 const char* const kLampsNotes[] = {"Факелы и костры не светят", "Светят на жителей, героя и вещи рядом",
                                    "И на землю и стены вокруг, с мерцанием"};
@@ -127,6 +130,7 @@ const Item kSound[] = {
     {"Громкость", RANGE, &Settings::soundVolume, nullptr, 1, 0, 10, "", 0, "Шаги, бой, звуки мира; 0 — без звука", nullptr},
     {"Музыка", RANGE, &Settings::musicVolume, nullptr, 1, 0, 10, "", 0, "Нужен music.pak рядом с data.pak", nullptr},
     {"Голоса", RANGE, &Settings::voiceVolume, nullptr, 1, 0, 10, "", 0, "Нужен speech.pak рядом с data.pak", nullptr},
+    {"Гром Барьера", CHOICE, &Settings::barrierThunder, kBarrierThunder, 5, 0, 0, nullptr, 0, nullptr, kBarrierThunderNotes},
 };
 const Item kGfxPlus[] = {
     {"Набор", CHOICE, &Settings::gfxPlus, kGfxPresets, 4, 0, 0, nullptr, 0, nullptr, kGfxPresetNotes},

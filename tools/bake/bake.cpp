@@ -329,29 +329,28 @@ size_t applyWaterLight(SrcScene& scene, u8 brightness) {
 	size_t n = 0;
 	for (SrcTriangle& t : scene.triangles) {
 		if (t.material >= scene.materials.size() || !scene.materials[t.material].water) continue;
-		bool swamp = isSwampWaterTexture(scene.materials[t.material].texture);
+		const bool named = isSwampWaterTexture(scene.materials[t.material].texture);
 		// The swamp camp's water has the ordinary water's texture (owodwat): it is the swamp by where it lies - inside the world's
-		// one fog zone (the swamp's) - and gets the murky green by the vertex colour, which the texture is multiplied by.
-		float murk = 0.0f; // (a swamp texture is murky itself)
-		if (!swamp && !scene.fogZones.empty()) {
-			float mid[3] = {0, 0, 0};
-			for (const SrcVertex& v : t.v)
-				for (int a = 0; a < 3; ++a) mid[a] += v.pos[a] / 3.0f;
+		// one fog zone (the swamp's) - and gets the murky green by the vertex colour, which the texture is multiplied by. By
+		// VERTEX, not by the triangle's middle: the colour then runs across a triangle from one water to the other instead of
+		// changing at its edge (the zone's own weight falls off smoothly towards its border).
+		static const float kMurk[3] = {0.62f, 0.80f, 0.40f}; // (red and blue held back: less of the sky's blue)
+		for (SrcVertex& v : t.v) {
+			float murk = 0.0f;
 			for (const SrcFogZone& z : scene.fogZones) {
 				FogZone fz {};
 				std::copy_n(z.bbMin, 3, fz.bbMin);
 				std::copy_n(z.bbMax, 3, fz.bbMax);
 				fz.inner = z.inner;
-				murk = std::max(murk, fogZoneWeight(fz, mid[0], mid[1], mid[2]));
+				murk = std::max(murk, fogZoneWeight(fz, v.pos[0], v.pos[1], v.pos[2]));
 			}
-			swamp = murk > 0.0f;
-		}
-		static const float kMurk[3] = {0.62f, 0.80f, 0.40f}; // (red and blue held back: less of the sky's blue)
-		for (SrcVertex& v : t.v)
+			murk = std::min(murk, 1.0f);
 			for (int c = 0; c < 3; ++c) {
-				const float base = float(swamp ? swampTint[c] : tint[c]);
-				v.rgba[c] = u8(std::clamp(base * (1.0f + (kMurk[c] - 1.0f) * std::min(murk, 1.0f)) + 0.5f, 0.0f, 255.0f));
+				const float plain = float(tint[c]), swampy = float(swampTint[c]);
+				const float base = named ? swampy : plain + (swampy - plain) * murk;
+				v.rgba[c] = u8(std::clamp(base * (named ? 1.0f : 1.0f + (kMurk[c] - 1.0f) * murk) + 0.5f, 0.0f, 255.0f));
 			}
+		}
 		++n;
 	}
 	return n;

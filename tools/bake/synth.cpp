@@ -289,7 +289,7 @@ bool buildSyntheticBarrier(SrcBarrier& out, std::string& why) {
 }
 
 namespace {
-// A web of jagged blue-white lines on black, wrapping on both sides (the look of BARRIERE.TGA).
+// A few blue-white strands on black, wrapping on both sides (a plain stand-in for BARRIERE.TGA).
 void synthBarrierTexture(SrcImage& img) {
 	const int N = 128;
 	img.width = img.height = N;
@@ -309,12 +309,13 @@ void synthBarrierTexture(SrcImage& img) {
 				l = std::max(l, f);
 			}
 	};
-	for (int k = 0; k < 26; ++k) {
+	// fix184: a few long, gently bending strands (it was 26 twisting ones: too branchy).
+	for (int k = 0; k < 8; ++k) {
 		float x = rnd() * N, y = rnd() * N, dir = rnd() * 6.2831853f;
-		const float w = 0.5f + 0.5f * rnd();
-		const int steps = 40 + int(rnd() * 80);
+		const float w = 0.6f + 0.4f * rnd();
+		const int steps = 70 + int(rnd() * 60);
 		for (int i = 0; i < steps; ++i) {
-			dir += (rnd() - 0.5f) * 1.1f;
+			dir += (rnd() - 0.5f) * 0.35f;
 			x += std::cos(dir) * 1.5f;
 			y += std::sin(dir) * 1.5f;
 			plot(x, y, w * (1.0f - 0.5f * float(i) / float(steps)));

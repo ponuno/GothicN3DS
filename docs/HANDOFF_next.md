@@ -232,3 +232,12 @@ The `frames` waves check was failing since fix119 (calm rivers): fixed in the te
 - bake.cpp: land materials whose texture shares the stem of a water animation (OWODWAT_A0 ...) are renamed `*_G3LAND*` (loadTexture maps back), so the water's frames are all made anew and the ground keeps the game's picture. Log: "ground that shares the water's pictures: N materials got a copy of their own". (The fix170 "frame is never kept alone" rule had repainted the swamp camp's ground again.)
 - npc_perc.cpp: the PERC_ASSESSREMOVEWEAPON poll (fix178) re-ran the reaction every look (stutter); now once per putting-away (Npcs::_removeEpisode / NpcActor::removeHeard) and only in a state whose name has WEAPON.
 - Reported, not found yet: humans start attacking the hero "at random" in allowed zones.
+
+## fix181 — ore lamps without a flame; smooth water transitions
+- import_zen.cpp: fire places whose visual contains CRYSTALLIGHT (PC_CRYSTALLIGHT_02: the camps' ore lamps on poles) get no flame emitters (their light stays); note "crystal lights (ore lamps): N without a flame above them".
+- applyWaterLight: the swamp murk is weighed per VERTEX by the fog zone (fogZoneWeight), blended between the plain and swamp tints, instead of one value per triangle (hard line between the swamp's water and the other).
+
+## fix182 — beasts react asleep too
+- npc_perc.cpp: the SLEEP exclusions are gone from faceHero and from the beast's threat/provoke reaction in perceive (user: beasts always reacted to the hero, even asleep, unless he creeps). The "returning after a chase" case is still undiagnosed (needs the `perc` debug line on the way back).
+- fix182 (cont.): faceHero also works for a beast eating a carcass (state with EAT/CARCASS/FEED) or asleep, whatever its animation; the test "npcai" now puts the sleeper out of its senses' reach for the sleep check, then next to the hero for the blow. A wider rule (every ZS_MM_RTN_* state) broke the roaming/asleep tests (roaming==4, asleep==4) and was taken back. Reference: https://ataulien.github.io/Inside-Gothic/monster-ai/ (scheduler: Sleep, Rest, Roam, EatGround, Wusel, Default; says nothing of perceptions of the player).
+- fix183: correction of fix182 - beasts EATING a carcass (state with EAT) do NOT turn to the hero nor threaten (user: they ignore him, like when he creeps); asleep ones do react.

@@ -128,6 +128,7 @@ void Settings::sanitize() {
 	if (sunShadows > 3) sunShadows = 1;
 	if (grass > 2) grass = 0;
 	if (lamps > 2) lamps = 2;
+	if (barrierThunder > 4) barrierThunder = 0;
 	if (barrier > 2) barrier = 1; // (fix150: 0 off, 1 as in the game, 2 always; older files: 0 / 1)
 	gfxPlus = gfxPresetOf();
 	u8* flags[] = {&dissolve, &invertY, &autoCamera, &autoTarget, &firstPerson, &hud, &report, &perception, &life, &fights, &immortal, &weaponBack, &showFps, &visibility, &reproject, &readAhead, &farFill, &wetGround, &godRays};

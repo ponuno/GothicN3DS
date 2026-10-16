@@ -1193,6 +1193,7 @@ struct ObjectStats {
 		std::string visual, slot;
 	};
 	std::vector<PendingFire> pendingFires;
+	u32 flamesLeftOut = 0; // fire places (crystal lights) whose flames are not made
 	u32 emitters = 0, fireEmitters = 0, fireWithoutTree = 0;
 	// fix148: lamps (zCVobLight) - of the world: static (in its compiled light), dynamic, turned off; of the fire places' trees;
 	// made for fire places whose tree has none.
@@ -1728,7 +1729,12 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 				const float yaw = std::atan2(c[2].x, c[2].z);
 				const std::string treeName = fire ? upper(fire->vob_tree) : std::string();
 				const std::vector<ObjectStats::TreeEmitter>& tree = fireTree(vfs, version, stats, treeName);
+				// The crystal lights of the camps (the ore lamps on their poles: PC_CRYSTALLIGHT) glow, they do not burn: their
+				// tree has flames the game hides under the crystal, and here they would stand above it. The light stays.
+				const bool glowsOnly = visual.find("CRYSTALLIGHT") != std::string::npos;
+				if (glowsOnly) ++stats.flamesLeftOut;
 				for (const ObjectStats::TreeEmitter& te : tree) {
+					if (glowsOnly) break;
 					SrcEmitter e;
 					e.effect = te.effect;
 					e.yaw = yaw;
@@ -1896,6 +1902,7 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 		pos[1] = pf.vob->position.y + c[0].y * inNode[0] + c[1].y * inNode[1] + c[2].y * inNode[2];
 		pos[2] = pf.vob->position.z + c[0].z * inNode[0] + c[1].z * inNode[1] + c[2].z * inNode[2];
 	}
+	if (stats.flamesLeftOut) scene.notes.push_back("crystal lights (ore lamps): " + std::to_string(stats.flamesLeftOut) + " without a flame above them");
 	if (onNode || offNode) {
 		std::string list;
 		for (const std::string& k : offKinds) list += (list.empty() ? "" : "; ") + k;

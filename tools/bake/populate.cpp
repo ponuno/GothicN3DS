@@ -340,6 +340,8 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 						std::string up = s.name;
 						for (char& c : up) c = char(std::toupper(static_cast<unsigned char>(c)));
 						if (up.find("BARRI") == std::string::npos) continue;
+						// (fix184: only the magic's own sounds; Gothic 1's ROPEWAY_BARRIER is the rope way, not thunder)
+						if (up.compare(0, 4, "MFX_") != 0) continue;
 						const bool hum = up.find("AMBIENT") != std::string::npos || up.find("LOOP") != std::string::npos ||
 						                 up.find("HUM") != std::string::npos;
 						list += std::string(hum ? "A " : "T ") + s.name + "\n";
@@ -1468,18 +1470,28 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 					if (v.pos[1] > verts[h.top].pos[1]) h.top = u32(i);
 				}
 				// Its texture, as the material names it (BARRIERE.TGA); always repeated, its own alpha not used.
+				// fix184: oCBarrier puts BARRIERE.TGA on the dome itself; the mesh's own material names another (Gothic 1:
+				// MODIALPHA02, 16x16). The material's is taken only when the game has no BARRIERE.TGA.
 				std::string texNote = "no texture named";
+				if (scripts.looks.texture) {
+					SrcImage probe;
+					if (pak.has(texturePakName("BARRIERE.TGA")) || scripts.looks.texture("BARRIERE.TGA", probe)) {
+						if (!src.texture.empty() && src.texture != "BARRIERE.TGA") texNote = "material's " + src.texture + " replaced; ";
+						src.texture = "BARRIERE.TGA";
+					}
+				}
 				if (!src.texture.empty()) {
 					const std::string pakName = texturePakName(src.texture);
 					SrcImage img;
+					const std::string before = texNote.compare(0, 11, "material's ") == 0 ? texNote : std::string();
 					if (pak.has(pakName)) {
 						h.texture = hashName(pakName.c_str());
-						texNote = pakName + " (already baked)";
+						texNote = before + pakName + " (already baked)";
 					} else if (scripts.looks.texture && scripts.looks.texture(src.texture, img)) {
 						for (size_t p = 3; p < img.rgba.size(); p += 4) img.rgba[p] = 255;
 						pak.add(pakName, ASSET_TEXTURE, bakeTexture(img, opt.tex));
 						h.texture = hashName(pakName.c_str());
-						texNote = format("%s %dx%d", pakName.c_str(), img.width, img.height);
+						texNote = before + format("%s %dx%d", pakName.c_str(), img.width, img.height);
 					} else {
 						texNote = src.texture + " not found";
 					}

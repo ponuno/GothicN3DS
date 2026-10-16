@@ -267,9 +267,9 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 		const float close = _game.sensesRange(n) * 0.5f;
 		const float d2 = dx * dx + dy * dy + dz * dz;
 		const char* state = a.state ? stateName(a.state) : "";
-		const bool busy = a.state && (strstr(state, "ASSESS") || strstr(state, "WARN") || strstr(state, "THREAT") || strstr(state, "FLEE"));
+		const bool busy = a.state && (strstr(state, "EAT") || strstr(state, "ASSESS") || strstr(state, "WARN") || strstr(state, "THREAT") || strstr(state, "FLEE"));
 		if (d2 > close * close * 1.44f) a.warned = false; // (the player backed off: the next approach is warned again)
-		if (d2 <= close * close && !busy && !strstr(state, "SLEEP") && sees(a, heroIndex, _heroLink.sneaking)) {
+		if (d2 <= close * close && !busy && sees(a, heroIndex, _heroLink.sneaking)) { // (asleep too: a beast wakes to the player who is near and does not creep)
 			if (!a.warned && threaten(a, int(heroIndex)))
 				a.warned = true;
 			else
@@ -359,7 +359,7 @@ bool Npcs::debugLastHit(char* out, size_t size, int row) const {
 // neck goes; and back again.
 // A creature that has the player in sight and close turns to face him, whatever it was doing in place (a roamer between
 // two spots, one that has just come back from a chase): the body turns on the spot, the way a beast turns to what it
-// has noticed. Not asleep, not fighting, not walking, not in the middle of an animation of its own.
+// has noticed. Not fighting, not walking, not in the middle of an animation of its own.
 void Npcs::faceHero(NpcActor& a, float dt) {
 	if (!a.noticed) return;
 	const GameNpc& n = _game.npc(a.npc);
@@ -374,9 +374,11 @@ void Npcs::faceHero(NpcActor& a, float dt) {
 		a.noticed = false; // (he went away)
 		return;
 	}
+	// One that eats a carcass pays the player no heed (ZS_MM_RTN_EATGROUND): it neither turns nor threatens; one asleep does turn.
+	if (a.state && strstr(stateName(a.state), "EAT")) return;
 	if (a.phase != NpcActor::IDLE && a.phase != NpcActor::WAITING) return;
 	if (a.action.kind != NPC_ACT_NONE && a.action.kind != NPC_ACT_WAIT) return;
-	if (a.state && (inFightState(a) || strstr(stateName(a.state), "SLEEP"))) return;
+	if (a.state && inFightState(a)) return; // (asleep it turns too: the beast has noticed him)
 	if (dx * dx + dz * dz < 1.0f) return;
 	turn(a, atan2f(dx, dz), 3.6f, dt);
 }

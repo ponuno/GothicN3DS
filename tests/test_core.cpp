@@ -4831,6 +4831,32 @@ static void testSound() {
 		CHECK(sound.knows("SFX_TEST_STEP") && sound.knows("sfx_test_hum") && !sound.knows("SFX_NO_SUCH_THING"));
 		CHECK(sound.stats().ambient == 1);
 		CHECK(app.hero().loaded());
+		// fix184: the Barrier's thunder follows the menu's choice (the game's MFX_Barriere_Ambient, else the baker's thunders).
+		if (sound.knows("G3_THUNDER_FAR") && sound.knows("G3_THUNDER_NEAR") && sound.knows("G3_THUNDER_ROLL")) {
+			Barrier bar;
+			const char* const want[] = {"G3_THUNDER_FAR", "G3_THUNDER_NEAR", "G3_THUNDER_ROLL"};
+			for (u8 c = 0; c < 3; ++c) {
+				bar.update(0.016f, Barrier::OFF, c, true, {0, 0, 0}, sound, app.pak());
+				CHECK(bar.thunderName() && std::strcmp(bar.thunderName(), want[c]) == 0);
+			}
+			bar.update(0.016f, Barrier::OFF, Barrier::THUNDER_MAGIC, true, {0, 0, 0}, sound, app.pak());
+			CHECK(bar.thunderName() != nullptr); // (no spell of lightning here: the far thunder)
+			bar.update(0.016f, Barrier::OFF, Barrier::THUNDER_NONE, true, {0, 0, 0}, sound, app.pak());
+			CHECK(!bar.thunderName());
+			// A game that has it: "As in the game" is MFX_Barriere_Ambient (oCBarrier plays it for every strike).
+			static i16 click[256] = {};
+			CHECK(sound.addSynthetic("MFX_BARRIERE_AMBIENT", click, 256, 16000, false));
+			Barrier own;
+			own.update(0.016f, Barrier::OFF, Barrier::THUNDER_FAR, true, {0, 0, 0}, sound, app.pak());
+			CHECK(own.thunderName() && std::strcmp(own.thunderName(), "MFX_BARRIERE_AMBIENT") == 0);
+			CHECK(!own.humName());
+			own.update(0.016f, Barrier::OFF, Barrier::THUNDER_NEAR, true, {0, 0, 0}, sound, app.pak());
+			CHECK(own.thunderName() && std::strcmp(own.thunderName(), "G3_THUNDER_NEAR") == 0);
+			own.update(0.016f, Barrier::OFF, Barrier::THUNDER_FAR, true, {0, 0, 0}, sound, app.pak());
+			CHECK(own.thunderName() && std::strcmp(own.thunderName(), "MFX_BARRIERE_AMBIENT") == 0);
+		} else {
+			CHECK(!"weather thunders baked");
+		}
 
 		// A sound without a place: both ears the same, the scripts' volume and ours (100/127 * 0.8).
 		sound.setListener({0, 0, 0}, 0.0f);
@@ -11852,11 +11878,14 @@ func void Rtn_start_503() {
 	run(14.0f); // (the player is far away: whatever was after him gives up, and they fall asleep)
 	{
 		const u32 b = beasts[0];
-		stand(g.npc(b), 250.0f, 0.0f);
+		// (fix182: a beast asleep within the reach of its senses wakes to the player who does not creep - so the sleeper is put
+		// outside it for this check, then the blow.)
+		stand(g.npc(b), 2500.0f, 0.0f);
 		run(1.0f);
 		dbg("sleeper", b);
 		const NpcActor* a = npcs.actorOf(b);
 		CHECK(a && a->state == g.vm().find("ZS_MM_RTN_SLEEP"));
+		stand(g.npc(b), 250.0f, 0.0f); // (and now the one that is struck is by the player)
 		const u32 before = npcs.stats().provoked;
 		npcs.strike(hero, b, false);
 		run(0.3f);

@@ -744,6 +744,10 @@ int main(int argc, char** argv) {
 		printf("barrier           setting %d, %u corners (%s), seen %.2f, next in %.0f s, %u bolts alive, %u thunders; hum %s, thunder %s\n",
 		       int(app.settings().barrier), b.corners(), !b.hasMesh() ? "none in the data" : b.ownTexture() ? "its texture" : "made web",
 		       double(b.level()), double(b.nextIn()), b.bolts(), b.thunders(), b.humName() ? b.humName() : "-", b.thunderName() ? b.thunderName() : "-");
+		// fix184: the quadrants round the thunder centre (Inside-Gothic): strikes so far and starting corners of each.
+		printf("barrier quadrants centre (%.0f %.0f %.0f) cm; strikes Q1 %u Q2 %u Q3 %u Q4 %u; starts %u %u %u %u\n",
+		       double(b.thunderCentre()[0]), double(b.thunderCentre()[1]), double(b.thunderCentre()[2]), b.strikesIn(0), b.strikesIn(1),
+		       b.strikesIn(2), b.strikesIn(3), b.startsIn(0), b.startsIn(1), b.startsIn(2), b.startsIn(3));
 	}
 	if (lampsSpec >= 0) {
 		const LampStats& ls = app.lamps().stats();

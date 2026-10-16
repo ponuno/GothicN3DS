@@ -130,6 +130,9 @@ struct Settings {
 	// (fix168) The debug page's chapter slider: the game's chapter, kept level with it while the game runs; moved in the menu,
 	// the chapter is changed. 255: not yet known (a freshly read file) - nothing is done then.
 	u8 chapter = 255;
+	// (fix184) The Barrier's thunder (Barrier::Thunder): 0 as in the game (MFX_Barriere_Ambient; else the far thunder), 1 near, 2 the long roll, 3 the game's
+	// lightning spell, 4 none. (At the end: an older file, shorter, keeps the default.)
+	u8 barrierThunder = 0;
 	float waveHeightCm() const { return waves == 1 ? 10.0f : waves == 2 ? 22.0f : waves == 3 ? 40.0f : 0.0f; }
 	float lodFadeMs() const { return lodFade == 0 ? 1.0f : lodFade == 2 ? 900.0f : 350.0f; }
 	float lodDistanceCm() const;

@@ -724,7 +724,7 @@ void App::update(const Input& given, float dt) {
 	trace("update: weather sound");
 	weatherSound(dt);
 	trace("update: barrier");
-	_barrier.update(dt, _settings.barrier, !_world.indoor(), _cam.pos, _sound, _pak);
+	_barrier.update(dt, _settings.barrier, _settings.barrierThunder, !_world.indoor(), _cam.pos, _sound, _pak);
 	trace("update: music");
 	_music.setSystemTheme(nullptr);
 	_music.update(dt, _cam.pos, _env.timeOfDay, musicSituation(dt));

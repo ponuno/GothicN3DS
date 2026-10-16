@@ -227,3 +227,8 @@ The `frames` waves check was failing since fix119 (calm rivers): fixed in the te
 ## fix179 — blood stains on the ground, far distance remembered by place
 - engine/blood_stains.{h,cpp} (BloodStains, 32 patches, 70 s life, dries darker, drawn in PASS_BLEND next to the puddles; added from App::bloodAt at the victim's feet; cleared at loadFogZones = world entry). No stains on clothes/models yet (would need a per-model tint or decal; not done).
 - FramePacer::seedFar + platform/3ds/main.cpp: the far scale found is kept per 40 m cell (48 cells) and seeded when the cell is entered again (main.cpp is 3DS-only: syntax of the snippet checked on the host only).
+
+## fix180 — ground repainted by water frames; NPC weapon poll once
+- bake.cpp: land materials whose texture shares the stem of a water animation (OWODWAT_A0 ...) are renamed `*_G3LAND*` (loadTexture maps back), so the water's frames are all made anew and the ground keeps the game's picture. Log: "ground that shares the water's pictures: N materials got a copy of their own". (The fix170 "frame is never kept alone" rule had repainted the swamp camp's ground again.)
+- npc_perc.cpp: the PERC_ASSESSREMOVEWEAPON poll (fix178) re-ran the reaction every look (stutter); now once per putting-away (Npcs::_removeEpisode / NpcActor::removeHeard) and only in a state whose name has WEAPON.
+- Reported, not found yet: humans start attacking the hero "at random" in allowed zones.

@@ -1274,6 +1274,7 @@ void Npcs::sendPerception(i32 perc, u32 sender, int other, int victim) {
 	static int depth = 0;
 	if (depth > 0) return;
 	++depth;
+	if (perc == _percRemoveWeapon) ++_removeEpisode;
 	for (NpcActor& a : _actors) {
 		if (!a.used || !a.ready || a.npc == sender || !a.perc[perc] || (a.state && !a.started)) continue;
 		const GameNpc& n = _game.npc(a.npc);
@@ -1281,6 +1282,7 @@ void Npcs::sendPerception(i32 perc, u32 sender, int other, int victim) {
 		const float r = range >= 0.0f ? range : _game.sensesRange(n);
 		const float dx = n.pos[0] - s.pos[0], dy = n.pos[1] - s.pos[1], dz = n.pos[2] - s.pos[2];
 		if (dx * dx + dy * dy + dz * dz > r * r) continue;
+		if (perc == _percRemoveWeapon) a.removeHeard = _removeEpisode;
 		react(a, a.perc[perc], other, victim);
 	}
 	--depth;

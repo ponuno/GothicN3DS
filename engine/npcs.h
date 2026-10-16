@@ -324,6 +324,7 @@ struct NpcActor {
 	float percWait = 0;
 	bool heroWasNear = false; // the player was within the reach of its senses a moment ago
 	bool noticed = false;     // a creature has the player in sight and close: it turns to face him (Npcs::faceHero)
+	u32 removeHeard = 0;      // the put-away-the-weapon episode (Npcs::_removeEpisode) this character has had its answer to
 	bool warned = false;      // a creature that had no reaction of its own has already been sent to threaten the player (Npcs::perceive)
 	// Who it looks at (AI_LookAtNpc), -1 for nobody; how far its head is
 	// turned right now, radians (left/right, down/up).
@@ -695,6 +696,7 @@ private:
 	int nextTarget(const NpcActor& a, bool set);
 	// ---- ranged fighting: bows and spells (npc_fight.cpp) ----
 	ShotHook _shotHook;
+	u32 _removeEpisode = 0; // counts the times the player put the weapon away (each is answered once by every character that asks for it)
 	BloodHook _bloodHook;
 	bool rangedWeapon(const GameNpc& n) const { return n.weapon == WEAPON_BOW || n.weapon == WEAPON_CBOW || n.weapon == WEAPON_MAG; }
 	float rangedReach(const GameNpc& n) const;

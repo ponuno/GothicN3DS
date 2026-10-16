@@ -451,6 +451,43 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 		}
 		return name;
 	};
+	// The ground that is painted with a frame of the water's own animation (the swamp camp's pools: land materials that use
+	// OWODWAT_A0): it gets a copy of that picture under a name of its own, so that the water's frames can be made anew without
+	// repainting it (before, a shared frame was kept the game's alone, and the water flickered between old and new).
+	if (opt.waterTexture) {
+		const auto stem = [](const std::string& tex) {
+			std::string s = lower(baseName(tex));
+			const size_t dot = s.rfind('.');
+			if (dot != std::string::npos) s.erase(dot);
+			if (s.size() > 3 && s[s.size() - 3] == '_' && s[s.size() - 2] == 'a' && std::isdigit(static_cast<unsigned char>(s.back()))) s.erase(s.size() - 3);
+			return s;
+		};
+		std::set<std::string> waterStems;
+		for (const BakeWorld& bw : worlds)
+			for (const SrcMaterial& m : bw.scene.materials)
+				if (m.water && !m.texture.empty()) waterStems.insert(stem(m.texture));
+		size_t renamed = 0;
+		for (BakeWorld& bw : worlds) {
+			std::map<std::string, std::string> back; // new logical name -> the game's
+			for (SrcMaterial& m : bw.scene.materials) {
+				if (m.water || m.texture.empty() || !waterStems.count(stem(m.texture))) continue;
+				const std::string orig = m.texture;
+				const size_t dot = orig.rfind('.');
+				const std::string copy = dot == std::string::npos ? orig + "_G3LAND" : orig.substr(0, dot) + "_G3LAND" + orig.substr(dot);
+				back[copy] = orig;
+				m.texture = copy;
+				++renamed;
+			}
+			if (!back.empty()) {
+				auto inner = bw.scene.loadTexture;
+				bw.scene.loadTexture = [inner, back](const std::string& name, SrcImage& out) {
+					const auto it = back.find(name);
+					return inner && inner(it == back.end() ? name : it->second, out);
+				};
+			}
+		}
+		if (renamed) line(format("ground that shares the water's pictures: %zu materials got a copy of their own", renamed));
+	}
 	for (size_t w = 0; w < worlds.size(); ++w) {
 		SrcScene& scene = worlds[w].scene;
 		used[w].assign(scene.materials.size(), 0);

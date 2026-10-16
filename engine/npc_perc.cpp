@@ -15,6 +15,7 @@
 // of Gothic 1 themselves.
 #include "npcs.h"
 
+#include <ctype.h>
 #include <math.h>
 #include <string.h>
 
@@ -199,8 +200,17 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 	// not begun) missed it, and went on asking. So it is also looked at as a state of the player: not in the fighting
 	// stance (nothing in the hands, none being drawn) and a character that waits for it hears it, at its next look.
 	if (_percRemoveWeapon >= 0 && _percRemoveWeapon < Game::PERC_TYPES && a.perc[_percRemoveWeapon] && hero && hero->weapon == WEAPON_NONE &&
-	    heroInReach && still() && within(_percRemoveWeapon, *hero) && sees(a, heroIndex, false))
-		react(a, a.perc[_percRemoveWeapon], int(heroIndex), -1);
+	    heroInReach && still() && a.removeHeard != _removeEpisode && a.state && within(_percRemoveWeapon, *hero) && sees(a, heroIndex, false)) {
+		// (Once for each putting away, and only a state that is about the weapon - not any state that happens to keep the
+		// perception on: its reaction would do what it does at a moment it was not meant for.)
+		char up[64];
+		snprintf(up, sizeof(up), "%s", stateName(a.state));
+		for (char* p = up; *p; ++p) *p = char(toupper(static_cast<unsigned char>(*p)));
+		if (strstr(up, "WEAPON") && _removeEpisode != 0) {
+			a.removeHeard = _removeEpisode;
+			react(a, a.perc[_percRemoveWeapon], int(heroIndex), -1);
+		}
+	}
 	// The nearest enemy: anybody about it is hostile to, the player too.
 	const u32 enemyFn = _percEnemy >= 0 && _percEnemy < Game::PERC_TYPES ? a.perc[_percEnemy] : 0;
 	if (enemyFn && still()) {

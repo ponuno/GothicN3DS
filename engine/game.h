@@ -686,6 +686,7 @@ private:
 	static void xSetGuildAttitude(ScriptVm& vm, void* user);
 	static void xGetGuildAttitude(ScriptVm& vm, void* user);
 	static void xExchangeGuildAttitudes(ScriptVm& vm, void* user);
+	void exchangeGuildAttitudes(u32 table);
 	static void xCreateInvItem(ScriptVm& vm, void* user);
 	static void xCreateInvItems(ScriptVm& vm, void* user);
 	static void xRemoveInvItem(ScriptVm& vm, void* user);

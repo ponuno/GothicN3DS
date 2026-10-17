@@ -221,6 +221,10 @@ bool Game::bindAll() {
 		_guildCount = count > 0 && count <= 256 ? u32(count) : 64u;
 		_guildAtt = static_cast<i32*>(calloc(size_t(_guildCount) * _guildCount, sizeof(i32))); // (ATT_HOSTILE is 0)
 		if (!_guildAtt) _guildCount = 0;
+		// fix196: the engine starts with the scripts' GIL_ATTITUDES (oCGuilds, as OpenGothic has it too); Gothic 1's
+		// scripts set the same table again (B_InitGuildAttitudes), Gothic 2 mods may not (Archolos' does nothing
+		// there: all guilds were hostile to all).
+		exchangeGuildAttitudes(_vm.find("GIL_ATTITUDES"));
 		// Where the people's guilds end and the creatures' begin.
 		const u32 sep = _vm.find("GIL_SEPERATOR_HUM");
 		_humanGuilds = sep != SCRIPT_NONE && _vm.symbol(sep).type == SCRIPT_INT ? _vm.getInt(sep) : 0;
@@ -505,8 +509,13 @@ void Game::xGetGuildAttitude(ScriptVm& vm, void* user) {
 // square of the first guilds.
 void Game::xExchangeGuildAttitudes(ScriptVm& vm, void* user) {
 	Game& g = *static_cast<Game*>(user);
-	const u32 table = vm.find(vm.popString());
-	if (table == SCRIPT_NONE || vm.symbol(table).type != SCRIPT_INT) return;
+	g.exchangeGuildAttitudes(vm.find(vm.popString()));
+}
+
+void Game::exchangeGuildAttitudes(u32 table) {
+	Game& g = *this;
+	ScriptVm& vm = _vm;
+	if (table == SCRIPT_NONE || vm.symbol(table).type != SCRIPT_INT || !g._guildAtt) return;
 	// The table is a square of GIL_MAX guilds a side; its own width is the stride,
 	// whatever part of it fits ours.
 	u32 side = 0;

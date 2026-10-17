@@ -226,6 +226,8 @@ u32 Game::bestMeleeOfAll() {
 		if (sym.type != SCRIPT_INSTANCE || !(sym.flags & SCRIPTF_CONST) || _vm.classOf(s) != _clsItem) continue;
 		const GameItemInfo* it = itemInfo(s);
 		if (!it || !isMelee(*this, *it) || it->visual == 0) continue;
+		// (fix196: not a prop of the scripts' - Archolos' "Barrel for Animation": worth nothing, 9999999 damage)
+		if (it->value <= 0 || it->damageTotal > 100000) continue;
 		const i32 score = meleeScore(*it);
 		if (score > bestScore) {
 			bestScore = score;

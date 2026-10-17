@@ -103,6 +103,12 @@ void Npcs::tickSpeech(float dt) {
 			_speechDone = s.id + 1;
 			continue;
 		}
+		if (s.call >= 0) {
+			// fix196: the player's AI_Function, in its place among the lines.
+			_speechDone = s.id + 1;
+			if (s.speaker >= 0 && u32(s.speaker) < _game.npcCount()) _game.ikarus().callTicket(_game.npc(u32(s.speaker)).object, s.call);
+			continue;
+		}
 		++_stats.lines;
 		const char* raw = _texts.find(s.hash);
 		_sayText[0] = 0;
@@ -156,7 +162,20 @@ void Npcs::queueTalkLine(ScriptInstance* speakerInst, u32 hash) {
 			return;
 		}
 	}
-	_speech[(_speechHead + _speechCount) % SPEECH] = SpeechStep {hash, speaker, id};
+	_speech[(_speechHead + _speechCount) % SPEECH] = SpeechStep {hash, speaker, id, -1};
+	++_speechCount;
+}
+
+// fix196: LeGo's AI_Function on the player's character, who has no queue: a step of the words' queue, run when the
+// lines before it have been said (outside a talk at once).
+void Npcs::queueHeroCall(ScriptInstance* heroInst, i32 ticket) {
+	const int who = npcFor(heroInst);
+	if (who < 0 || !_talk.processing || _speechCount >= SPEECH) {
+		_game.ikarus().callTicket(heroInst, ticket);
+		return;
+	}
+	SpeechStep st {0, who, _speechNext++, ticket};
+	_speech[(_speechHead + _speechCount) % SPEECH] = st;
 	++_speechCount;
 }
 

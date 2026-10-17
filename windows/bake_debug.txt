@@ -1,164 +1,70 @@
 Gothic 3DS: bake_debug.txt (--debug)
-script: GOTHIC.DAT (from an archive)
+script: GOTHIC.DAT
 
-world 'archolos_mainland' (STARTUP_ARCHOLOS_MAINLAND): 1674270 instructions, 0 complaints, 0 calls given up, 16 calls of engine functions nobody carries out, 15 uses of members of no object; 1979 characters
-world 'archolos_sewers' (STARTUP_ARCHOLOS_SEWERS): 184797 instructions, 0 complaints, 0 calls given up, 0 calls of engine functions nobody carries out, 12 uses of members of no object; 65 characters
-world 'archolos_silvermine' (STARTUP_ARCHOLOS_SILVERMINE): 169445 instructions, 0 complaints, 0 calls given up, 0 calls of engine functions nobody carries out, 12 uses of members of no object; 63 characters
-world 'archolos_volfzacke' (STARTUP_ARCHOLOS_VOLFZACKE): 171586 instructions, 0 complaints, 0 calls given up, 0 calls of engine functions nobody carries out, 12 uses of members of no object; 61 characters
+world 'world' (STARTUP_WORLD): 268879 instructions, 0 complaints, 0 calls given up, 810 calls of engine functions nobody carries out, 4 uses of members of no object; 1030 characters
+world 'orctempel' (STARTUP_ORCTEMPEL): 30915 instructions, 0 complaints, 0 calls given up, 8 calls of engine functions nobody carries out, 4 uses of members of no object; 87 characters
+world 'oldmine' (STARTUP_OLDMINE): 36100 instructions, 0 complaints, 0 calls given up, 1 calls of engine functions nobody carries out, 2 uses of members of no object; 95 characters
+world 'orcgraveyard' (STARTUP_ORCGRAVEYARD): 17835 instructions, 0 complaints, 0 calls given up, 1 calls of engine functions nobody carries out, 2 uses of members of no object; 24 characters
+world 'freemine' (STARTUP_FREEMINE): 23068 instructions, 0 complaints, 0 calls given up, 1 calls of engine functions nobody carries out, 2 uses of members of no object; 39 characters
 
-== the start-up scripts, all worlds: 2329738 instructions, 0 complaints, 0 calls given up, 51 uses of members of no object ==
-script image 14.30 MB; objects of the characters and items made by the start-up: 8567, 2.27 MB; strings made 0.16 MB
+== the start-up scripts, all worlds: 406555 instructions, 0 complaints, 0 calls given up, 14 uses of members of no object ==
+script image 2.32 MB; objects of the characters and items made by the start-up: 2814, 0.81 MB; strings made 0.07 MB
 
 -- complaints in the order they FIRST happened (the first is where things began to go wrong; later ones may follow from it) --
-  1. a member was used without an object in ZERROR_SETTEMPLEVEL  (x2, library: Ikarus)
-  2. a member was used without an object in ZERROR_RESTORELEVEL  (x1, library: Ikarus)
-  3. a member was used without an object in INIT_ITEMGROUPS_MEAT  (x16, library: the game / the mod)
-  4. a member was used without an object in RESTORENPCNAMES  (x32, library: the game / the mod)
+  1. a member was used without an object in PRINTDEBUGNPC  (x7, library: the game / the mod)
+  2. a member was used without an object in CONCATSTRINGS  (x7, library: the game / the mod)
 
 -- complaints by how often (all, up to 400 kinds) --
-      32  a member was used without an object in RESTORENPCNAMES
-      16  a member was used without an object in INIT_ITEMGROUPS_MEAT
-       2  a member was used without an object in ZERROR_SETTEMPLEVEL
-       1  a member was used without an object in ZERROR_RESTORELEVEL
+       7  a member was used without an object in PRINTDEBUGNPC
+       7  a member was used without an object in CONCATSTRINGS
 -- complaints by library (by the function's name) --
-       3  Ikarus
-      48  the game / the mod
+      14  the game / the mod
 
 -- engine functions the start-up called that this engine does not carry out (every one: they return 0 / an empty string) --
-      12  WLD_SETOBJECTROUTINE
-       3  WLD_SETMOBROUTINE
+     792  WLD_SETOBJECTROUTINE
+      21  WLD_SETMOBROUTINE
+       6  NPC_PERCENABLE
+       1  SND_PLAY
        1  PLAYVIDEO
 
--- Ikarus: the first errors and warnings (MEM_Error / MEM_Warn), and the function that called --
-  error: STR_SubStr: start and count may not be negative  (in LEGO_FLAGSHR)
-  error: STR_SubStr: start and count may not be negative  (in LEGO_FLAGSHR)
-  error: STR_SubStr: start and count may not be negative  (in LEGO_FLAGSHR)
-  error: STR_SubStr: start and count may not be negative  (in LEGO_FLAGSHR)
-  error: STR_SubStr: start and count may not be negative  (in LEGO_FLAGSHR)
-  error: STR_SubStr: start and count may not be negative  (in LEGO_FLAGSHR)
-  error: STR_SubStr: start and count may not be negative  (in LEGO_FLAGSHR)
-  error: STR_SubStr: start and count may not be negative  (in LEGO_FLAGSHR)
--- LeGo: hooks of the engine's functions the scripts asked for (HookEngineF); not installed: the engine runs the ones it knows (frames, saving, changing worlds) --
-  0x757AB1 OCNPC__EV_PLAYANI                        -> _AI_FUNCTION_EVENT
-  0x6C86A0 OCGAME__RENDER                           -> _FF_HOOK
-  0x6CFDF8 ZCCONSOLEOUTPUTOVERWRITEADDR             -> _CC_HOOK
-  0x6C7290 OCGAME__CHANGELEVEL                      -> _LEGO_CHANGELEVELHOOKBEGIN
-  0x6C7ACB OCGAME__CHANGELEVELEND                   -> _LEGO_CHANGELEVELHOOKEND
-  0x439105 OCSAVEGAMEMANAGER__SETANDWRITESAVEGAME   -> _BW_SAVEGAME
-  0x42A040 CGAMEMANAGER__READ_SAVEGAME              -> _BR_SETSELECTEDSLOT
-  0x64DF20 ZRND_D3D__ENDFRAME                       -> _SPRITE_DORENDER
-  0x6C8800 OCGAME__RENDERX                          -> _RENDER_HOOK
-  0x6C30F0 OCGAME__UPDATESCREENRESOLUTION_END       -> _BAR_UPDATERESOLUTION
-  0x762250 OCNPC__OPENINVENTORY                     -> LOCKINVENTORY
-  0x70C8A8 OCNPCINVENTORY__INSERT_INSERTLISTNODE    -> OCNPCINVENTORY__INSERT_HOOK
-  0x72FF60                                          -> OCNPC__CHANGEATTRIBUTE_HOOK
-  0x751AF0                                          -> EV_FINISHINGMOVE_HOOK
-  0x6660E0                                          -> ONDAMAGE_HOOK
-  0x66E220                                          -> ONDAMAGESCRIPT_HOOK
-  0x47ED60 OCSTATUSSCREEN__SHOW                     -> STATUSSCREENSHOW_HOOK
-  0x47EB50 OCSTATUSSCREEN__CLOSE                    -> STATUSSCREENCLOSE_HOOK
-  0x681DA0                                          -> CREATEFALLDAMAGE_HOOK
-  0x4344A3                                          -> HANDLERESULTSTRING_MARVINMODE_REPLACEHOOK
-  0x7538C0                                          -> OCNPC__EVDROPVOB_HOOK
-  0x660BB0 OCINFORMATIONMANAGER__UPDATE             -> OCINFORMATIONMANAGER__UPDATE_HOOK
-  0x68EBA0 ZCVIEWDIALOGCHOICE__HANDLEEVENT          -> ZCVIEWDIALOGCHOICE__HANDLEEVENT_HOOK
-  0x706E40                                          -> OCITEMCONTAINER__DRAWITEMINFO_HOOK
-  0x699C60                                          -> OCAIHUMAN__PC_DIVING_HOOK
-  0x42A2D0 CGAMEMANAGER__WRITE_SAVEGAME             -> UPDATELOADINGTEXTURE
-  0x68B9D0 OCVIEWDIALOGTRADE__ONTRANSFERLEFTX       -> TELEMETRY_ONTRADELEFTHOOK
-  0x68BBA6 OCVIEWDIALOGTRADE__ONTRANSFERRIGHTX      -> TELEMETRY_ONTRADERIGHTHOOK
-  0x68B840 OCVIEWDIALOGTRADE__ONTRANSFERLEFT        -> ITEMIMPORTANTFLAG_CHECKSELLINGITEMS
-  0x6FD434 OCGAME__HANDLEEVENT_DFLTCASE             -> GAME_KEYEVENT_
-  0x7244F0                                          -> HANDLE_CANOPEN
-  0x723EE2                                          -> HANDLE_SETPROPERPICKLOCKSTRLEN
-  0x745FA6 OCNPC__ENABLE_EQUIPBESTWEAPONS           -> _FIXEQUIPBESTWEAPONS
-  0x7323C0 OCNPC__EQUIPITEM                         -> _EVT_QUIVER_EQUIP
-  0x7326C0 OCNPC__UNEQUIPITEM                       -> _EVT_QUIVER_UNEQUIP
-  0x7086D0 OCITEMCONTAINER__OPENPASSIVE             -> CATINV_OPEN
-  0x708F4D OCITEMCONTAINER__CLOSE                   -> CATINV_CLOSE
-  0x709763 OCITEMCONTAINER__NEXTITEM_CHECK0         -> CATINV_RIGHT
-  0x709B26 OCITEMCONTAINER__PREVITEM_CHECK0         -> CATINV_LEFT
-  0x70AA5F OCITEMCONTAINER__HANDLEEVENT_LAST        -> CATINV_HANDLEEVENTEDI
-  0x70B8AD OCNPCCONTAINER__HANDLEEVENT_LAST         -> CATINV_HANDLEEVENTEDI
-  0x70B228 OCSTEALCONTAINER__HANDLEEVENT_LAST       -> CATINV_HANDLEEVENTEDI
-  0x68B6CE OCVIEWDIALOGTRADE__HANDLEEVENT_LAST      -> CATINV_HANDLEEVENTEBX
-  0x709487 OCITEMCONTAINER__REMOVE_REMOVELISTNODE   -> CATINV_CONTAINERREMOVE
-  0x70CFA8 OCNPCINVENTORY__REMOVE_REMOVELISTNODE    -> CATINV_NPCINVREMOVE
-  0x70CD22 OCNPCINVENTORY__REMOVEBYPTR_REMOVELISTNODE -> CATINV_NPCINVREMOVEBYPTR
-  0x70CC37 OCNPCINVENTORY__REMOVEITEM_REMOVELISTNODE -> CATINV_NPCINVREMOVEITEM
-  0x7093D6 OCITEMCONTAINER__INSERT_INSERTLISTNODE   -> CATINV_CONTAINERINSERT
-  0x70C8A8 OCNPCINVENTORY__INSERT_INSERTLISTNODE    -> CATINV_NPCINVINSERT
-  0x762A18 OCNPC__OPENDEADNPC_SETUPINV              -> CATINV_DEADRESETCATEGORY
-  0x706E03 OCITEMCONTAINER__DRAWCATEGORY_END        -> CATINV_DRAWCATEGORY
-  0x4276B0 CGAMEMANAGER__APPLYSOMESETTINGS          -> APPLYSOMESETTINGS_HOOK
-  0x7096E9 OCITEMCONTAINER__CHECKSELECTEDITEM_ISACTIVE -> CATINV_CLAMPCATEGORY
-  0x70AF44 OCSTEALCONTAINER__CREATELIST_ISARMOR     -> CATINV_MANIPULATECREATELIST
-  0x70B6B5 OCNPCCONTAINER__CREATELIST_ISARMOR       -> CATINV_MANIPULATECREATELIST
-  0x70B9BD OCNPCCONTAINER__HANDLEEVENT_ISEMPTY      -> CATINV_PREVENTCLOSEDEADINV
-  0x70F251 OCNPCINVENTORY__HANDLEEVENT_KEYWEAPON    -> CATINV_HANDLEEVENTNPCINVENTORY
-  0x69D415 OCAIHUMAN__CHANGECAMMODEBYSITUATION_SWITCHMOBCAM -> CATINV_DELAYMOBCAMERA
-  0x735FAB                                          -> OCNPC__DROPUNCONSCIOUS_HOOK
-  0x660BB0 OCINFORMATIONMANAGER__UPDATE             -> CRAFTINGVIEW_UPDATE
-  0x7A6060 ZCVIEW__SETTRANSPARENCY                  -> INVTRANSPARENCYHACK_HOOK
-  0x485FC4 OCSPELL__ISTARGETTYPEVALID               -> SPELL_PICKLOCK_FOCUS
-  0x484930 OCSPELL__SETUP                           -> SPELL_PICKLOCK_PRIO
-  0x734F4D                                          -> OCNPC__GETNEXTENEMY_REPLACEHOOK
-  0x733EB7                                          -> HIDEFOCUSFORPARTYMEMBERS_UPDATESTATUSREPLACEHOOK
-  0x733EA4                                          -> HIDEFOCUSFORPARTYMEMBERS_UPDATESTATUSREPLACEHOOK
-  0x69B947                                          -> HIDEFOCUSFORPARTYMEMBERS_UPDATESTATUSREPLACEHOOK2
-  0x733837                                          -> HIDEFOCUSFORPARTYMEMBERS_UPDATESTATUSREPLACEHOOK3
-  0x6C36DB                                          -> HIDEFOCUSFORPARTYMEMBERS_UPDATESTATUSREPLACEHOOK4
-  0x6C30F0 OCGAME__UPDATESCREENRESOLUTION_END       -> _BOSSUI_UPDATERESOLUTION
-  0x6407C2                                          -> ONZONEMUSICCHANGEDHOOK
-  0x42926A CGAMEMANAGER__APPLYSOMESETTINGSEND       -> APPLYSOMESETTINGSEND_HOOK
-  0x6C5250                                          -> TORCHLOADFIX_CHECKTORCH
-  0x7A9240                                          -> ZCVIEW__DIALOGMESSAGECXY_HOOK
-  0x4C3270                                          -> ZCCSCAMERA__ONTRIGGER_HOOK
-  0x4C3AC0                                          -> ZCCSCAMERA__ONUNTRIGGER_HOOK
-  0x6C31D6                                          -> OCGAME__UPDATEPLAYERSTATUS_REPLACECHECKINGGLOBALCUTSCENE
-  0x42ABE7                                          -> CGAMEMANAGER__MENUENABLED_REPLACECHECKINGGLOBALCUTSCENE
-  0x69B9F1                                          -> OCAIHUMAN__MOVING_REPLACECHECKINGGLOBALCUTSCENE
-  0x437E55                                          -> PATCHSAVEGAMEVERSION_HOOK
-  0x437D9F                                          -> PATCHSAVEGAMEWORLD_HOOK
-
 == the states of the characters (ZS_*): what they call ==
-407 states; 1823 functions are reached from them; 159 engine functions called, 154 carried out
-  functions reached from the states, in Ikarus: 117
-  functions reached from the states, in LeGo: 42
-  functions reached from the states, in the game / the mod: 1664
+180 states; 709 functions are reached from them; 146 engine functions called, 134 carried out
+  functions reached from the states, in the game / the mod: 709
 -- engine functions the states call that this engine does not carry out, by the number of states that call them --
-      32  EXITGAME
-      15  SND_PLAY
-       7  MDL_STARTFACEANI
-       1  SND_PLAY3D
-       1  AI_WAITTILLEND
+       8  NPC_HASNEWS
+       5  NPC_ISWAYBLOCKED
+       4  SND_PLAY
+       2  NPC_GETNEWSVICTIM
+       2  NPC_MEMORYENTRY
+       1  MDL_STARTFACEANI
+       1  AI_SHOOTAT
+       1  AI_AIMAT
+       1  AI_LOOKAT
+       1  NPC_GETGUILDATTITUDE
+       1  NPC_DELETENEWS
+       1  NPC_GETNEWSOFFENDER
 
-== the talks: 6398 infos; the 24231 functions they run call 183 engine functions, 167 carried out ==
-  functions run by the talks, in Ikarus: 150
-  functions run by the talks, in LeGo: 103
-  functions run by the talks, in the game / the mod: 23978
+== the talks: 1538 infos; the 3979 functions they run call 163 engine functions, 148 carried out ==
+  functions run by the talks, in the game / the mod: 3979
 -- engine functions the talks call that this engine does not carry out --
-  EXITGAME
-  EXITSESSION
   PLAYVIDEO
+  NPC_MEMORYENTRY
+  NPC_HASNEWS
+  NPC_GETNEWSOFFENDER
+  NPC_GETNEWSVICTIM
+  NPC_DELETENEWS
   AI_WAITTILLEND
-  AI_DROPITEM
-  AI_AIMAT
-  AI_SHOOTAT
-  AI_SND_PLAY
+  AI_POINTAT
   SND_PLAY
-  SND_PLAY3D
+  SND_ISSOURCENPC
   NPC_CANSEESOURCE
   MDL_STARTFACEANI
-  WLD_STOPEFFECT
-  WLD_REMOVEITEM
-  MOB_CREATEITEMS
-  MOB_HASITEMS
+  WLD_SETOBJECTROUTINE
+  TA_BEGINOVERLAY
+  TA_ENDOVERLAY
 
 == the scripts by library (functions by the name's start) ==
-     291  Ikarus (e.g. MEM_CHECKVERSION)
-     342  LeGo (e.g. PRINT_GETFONTPTR)
-   37204  the game / the mod (e.g. RESERVED_FUNC_INT_01)
-317 engine functions are named by the script (the engine has no code for those it lacks: they return 0 / an empty string)
+    6029  the game / the mod (e.g. PRINTDEBUGS)
+291 engine functions are named by the script (the engine has no code for those it lacks: they return 0 / an empty string)
 Where the Ikarus/LeGo/Union libraries read or write the game's memory (MEM_*, ASM_*, CALL_*), this machine has no such memory:
 the complaints above are that. What depends on them (hooks, FF_* timers, LeGo's screen) does not work; the plain game script does.

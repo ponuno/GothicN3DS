@@ -970,6 +970,10 @@ bool Ikarus::attach(ScriptVm& vm, u32 maxHeap) {
 	bind("HOOKDAEDALUSFUNCI", nHookDaedalus, "v:ii");
 	bind("HOOKDAEDALUSFUNCS", nHookDaedalusS, "v:ss");
 	bind("CONTINUECALL", nContinueCall, "v:", true);
+	_self = vm.selfSymbol();
+	_other = vm.otherSymbol();
+	_item = vm.find("ITEM");
+	if (_item != SCRIPT_NONE && vm.symbol(_item).type != SCRIPT_INSTANCE) _item = SCRIPT_NONE;
 	_sbCurrent = vm.find("_SB_CURRENT");
 	if (_sbCurrent != SCRIPT_NONE && vm.symbol(_sbCurrent).type != SCRIPT_INT) _sbCurrent = SCRIPT_NONE;
 	bind("SB_TOSTRING", nSbToString, "s:");
@@ -1008,6 +1012,12 @@ void Ikarus::detach() {
 	for (u32 i = 0; i < _fileCount; ++i) free(_files[i].data);
 	memset(_files, 0, sizeof(_files));
 	_fileCount = 0;
+	for (char*& c : _calls) {
+		free(c);
+		c = nullptr;
+	}
+	_callNext = 0;
+	_self = _other = _item = SCRIPT_NONE;
 }
 
 void Ikarus::message(const char* kind, const char* text) {
@@ -1173,6 +1183,110 @@ u32 Ikarus::fireAt(u32 address, u32 espOffset, i32 espValue, u32 ebpOffset, i32 
 		++ran;
 	}
 	return ran;
+}
+
+// ---- LeGo's AI_Function ----
+
+namespace {
+
+// LeGo's STR_Escape undone: "\\" a backslash, "\xHH" a byte, "\" + one of its table the character of that number.
+void unescape(const char* in, char* out, u32 size) {
+	static const char table[] = "0123456abtnvfr789ABCDEFGHIJKLMNO_"; // (LeGo's STR_Sequences: the characters 0 .. 32)
+	u32 n = 0;
+	for (const char* p = in; *p && n + 1 < size; ++p) {
+		if (*p != '\\' || !p[1]) {
+			out[n++] = *p;
+			continue;
+		}
+		++p;
+		if (*p == '\\') {
+			out[n++] = '\\';
+		} else if (*p == 'x' && p[1] && p[2]) {
+			const auto hex = [](char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : 0; };
+			out[n++] = char(hex(p[1]) * 16 + hex(p[2]));
+			p += 2;
+		} else if (const char* at = strchr(table, *p)) {
+			out[n++] = char(at - table);
+		}
+	}
+	out[n] = 0;
+}
+
+} // namespace
+
+i32 Ikarus::callLater(const char* ani) {
+	const u32 k = _callNext % CALLS;
+	++_callNext;
+	free(_calls[k]);
+	const size_t n = strlen(ani) + 1;
+	_calls[k] = static_cast<char*>(malloc(n));
+	if (_calls[k]) memcpy(_calls[k], ani, n);
+	return i32(k);
+}
+
+bool Ikarus::callTicket(ScriptInstance* self, i32 ticket) {
+	if (ticket < 0 || ticket >= CALLS || !_calls[ticket]) return false;
+	char* text = _calls[ticket];
+	_calls[ticket] = nullptr;
+	const bool ok = callNow(self, text);
+	free(text);
+	return ok;
+}
+
+bool Ikarus::callNow(ScriptInstance* self, const char* ani) {
+	if (!_vm || !isCall(ani)) return false;
+	ScriptVm& vm = *_vm;
+	// The words: the kinds of the arguments (I a number, N a character's instance, S an escaped string), the
+	// arguments, the function's number last; or the function's number alone.
+	char words[8][128];
+	u32 count = 0;
+	for (const char* p = ani + 5; *p && count < 8;) {
+		while (*p == ' ') ++p;
+		if (!*p) break;
+		u32 n = 0;
+		while (*p && *p != ' ') {
+			if (n + 1 < sizeof(words[0])) words[count][n++] = *p;
+			++p;
+		}
+		words[count++][n] = 0;
+	}
+	if (!count) return false;
+	const char* kinds = words[0];
+	const bool bare = kinds[0] >= '0' && kinds[0] <= '9';
+	const u32 args = bare ? 0u : u32(strlen(kinds));
+	if (args > 2 || count != (bare ? 1u : args + 2u)) return false;
+	const u32 fn = u32(atoi(words[bare ? 0 : count - 1]));
+	if (fn >= vm.symbolCount()) return false;
+	// SELF the character; OTHER and ITEM none (as LeGo has it), given back afterwards.
+	ScriptInstance* const selfBefore = _self != SCRIPT_NONE ? vm.instanceOf(_self) : nullptr;
+	ScriptInstance* const otherBefore = _other != SCRIPT_NONE ? vm.instanceOf(_other) : nullptr;
+	ScriptInstance* const itemBefore = _item != SCRIPT_NONE ? vm.instanceOf(_item) : nullptr;
+	if (_self != SCRIPT_NONE) vm.setInstance(_self, self);
+	if (_other != SCRIPT_NONE) vm.setInstance(_other, nullptr);
+	if (_item != SCRIPT_NONE) vm.setInstance(_item, nullptr);
+	for (u32 k = 0; k < args; ++k) {
+		const char* w = words[1 + k];
+		switch (kinds[k]) {
+		case 'I': vm.pushInt(atoi(w)); break;
+		case 'N': {
+			const i32 sym = atoi(w);
+			vm.pushInstance(sym >= 0 && u32(sym) < vm.symbolCount() ? vm.instanceOf(u32(sym)) : nullptr);
+			break;
+		}
+		case 'S': {
+			char text[128];
+			unescape(w, text, sizeof(text));
+			vm.pushString(text);
+			break;
+		}
+		default: vm.pushInt(0); break;
+		}
+	}
+	vm.call(fn);
+	if (_self != SCRIPT_NONE) vm.setInstance(_self, selfBefore);
+	if (_other != SCRIPT_NONE) vm.setInstance(_other, otherBefore);
+	if (_item != SCRIPT_NONE) vm.setInstance(_item, itemBefore);
+	return true;
 }
 
 Ikarus::File* Ikarus::openFile(const char* name, bool create) {

@@ -1166,6 +1166,10 @@ func int t_goto() {
 	if (n < 3) { MEM_Goto(0); };
 	return n;
 };
+var int aiSum;
+var string aiText;
+func void t_ai(var int a, var int b) { aiSum = a + b; };
+func void t_ais(var string s) { aiText = s; };
 var C_NPC someone;
 func int t_object() {
 	someone.id = 31;
@@ -1196,6 +1200,12 @@ static void testIkarus() {
 	CHECK(std::string(m.vm.getString(m.vm.find("SBOUT"))) == "abc");
 	CHECK(m.callInt("T_GOTO") == 3);
 	CHECK(m.callInt("T_OBJECT") == 62);
+	// fix196: LeGo's AI_Function, as a character's queue hands it over.
+	char call[64];
+	snprintf(call, sizeof(call), "CALL II 3 4 %u", unsigned(m.vm.find("T_AI")));
+	CHECK(Ikarus::isCall(call) && ik.callNow(nullptr, call) && m.global("AISUM") == 7);
+	snprintf(call, sizeof(call), "CALL S a\\_b\\\\c %u", unsigned(m.vm.find("T_AIS")));
+	CHECK(ik.callTicket(nullptr, ik.callLater(call)) && std::string(m.vm.getString(m.vm.find("AITEXT"))) == "a b\\c");
 	CHECK(m.vm.stats().errors == 0 && m.vm.stats().aborted == 0 && m.vm.stats().nullAccess == 0);
 	const ScriptMemory::Stats& ms = ik.memory().stats();
 	CHECK(ms.badReads == 0 && ms.badWrites == 0 && ms.badFrees == 0);

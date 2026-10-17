@@ -817,6 +817,7 @@ private:
 	static void xOutput(ScriptVm& vm, void* user);
 	// A line of the player's talk (shown, spoken in turn) / of the world (said where its speaker stands).
 	void queueTalkLine(ScriptInstance* speakerInst, u32 hash);
+	void queueHeroCall(ScriptInstance* heroInst, i32 ticket); // fix196
 	bool queueWorldLine(ScriptInstance* speakerInst, int target, u32 hash, const char* svm);
 	bool talkLineOf(int speaker) const;
 	// The name of the line behind an SVM phrase for a character's voice ("$WHATDOYOUWANT" -> "SVM_3_WHATDOYOUWANT"),
@@ -842,6 +843,7 @@ private:
 		u32 hash;
 		int speaker; // Game's index
 		u32 id;
+		i32 call = -1; // fix196: LeGo's AI_Function of the player's character (Ikarus::callLater's ticket), not a line
 	};
 	SpeechStep _speech[SPEECH] = {};
 	u8 _speechHead = 0, _speechCount = 0;

@@ -974,6 +974,10 @@ bool Npcs::begin(NpcActor& a, const World& world) {
 		a.phase = NpcActor::TURNING;
 		return false;
 	case NPC_ACT_PLAY_ANI:
+		if (act.text[0] == '\x01') { // (fix196: LeGo's AI_Function, xPlayAni)
+			_game.ikarus().callTicket(n.object, act.i);
+			return true;
+		}
 		if (!playAni(a, act.text, act.i)) return true;
 		a.phase = NpcActor::PLAYING;
 		return false;
@@ -1426,7 +1430,28 @@ void Npcs::xPlayAni(ScriptVm& vm, void* user) {
 	NpcAction act;
 	act.kind = NPC_ACT_PLAY_ANI;
 	act.i = -1;
-	copyText(act.text, sizeof(act.text), vm.popString());
+	const char* ani = vm.popString();
+	Ikarus& ik = self._game.ikarus();
+	if (ik.active() && Ikarus::isCall(ani)) {
+		// fix196: LeGo's AI_Function - a call when the queue gets there; the player's character (no queue here)
+		// at once.
+		ScriptInstance* inst = vm.popInstance();
+		NpcActor* a = self.actorFor(inst);
+		if (!a) {
+			// The player's character (or one out of sight): among the talk's lines, else at once.
+			const int who = self.npcFor(inst);
+			if (who >= 0 && self._game.npc(u32(who)).hero)
+				self.queueHeroCall(inst, ik.callLater(ani));
+			else
+				ik.callNow(inst, ani); // (it copies the words before anything of the scripts runs)
+			return;
+		}
+		act.i = ik.callLater(ani);
+		act.text[0] = '\x01';
+		self.push(a, act);
+		return;
+	}
+	copyText(act.text, sizeof(act.text), ani);
 	self.push(self.actorFor(vm.popInstance()), act);
 }
 

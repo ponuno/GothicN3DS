@@ -1191,12 +1191,26 @@ u32 App::giveTestKit() {
 	    "ItFo_Potion_Dex_03",      "ItFo_Potion_Health_Perma_01", "ItFo_Potion_Health_Perma_02", "ItFo_Potion_Health_Perma_03",
 	    "ItFo_Potion_Mana_Perma_01", "ItFo_Potion_Mana_Perma_02", "ItFo_Potion_Mana_Perma_03", "ItFo_Potion_Master_01",
 	    "ItFo_Potion_Master_02",   "ItFo_Potion_Health_03",   "ItFo_Potion_Mana_03"};
+	// fix196: and Gothic 2's names (a Gothic 2 mod - Archolos - has none of Gothic 1's: the kit then gave only "the best
+	// weapon of all", which there is a prop for animations with 9999999 damage and no model, and the game fell over).
+	static const char* const kRunes2[] = {"ItRu_Light", "ItRu_FireBolt", "ItRu_InstantFireball", "ItRu_Zap", "ItRu_LightHeal",
+	                                      "ItRu_Sleep", "ItRu_IceBolt", "ItRu_Windfist", "ItRu_ChargeFireball", "ItRu_ThunderBall"};
+	static const char* const kScrolls2[] = {"ItSc_Light", "ItSc_Firebolt", "ItSc_LightHeal", "ItSc_Sleep", "ItSc_IceBolt", "ItSc_Zap"};
+	static const char* const kPotions2[] = {"ItPo_Perm_STR", "ItPo_Perm_DEX", "ItPo_Perm_Health", "ItPo_Perm_Mana",
+	                                        "ItPo_Health_03", "ItPo_Mana_03"};
 	for (const char* n : kRunes) give(n, 1);
 	for (const char* n : kScrolls) give(n, 3);
 	for (const char* n : kPotions) give(n, 2);
+	for (const char* n : kRunes2) give(n, 1);
+	for (const char* n : kScrolls2) give(n, 3);
+	for (const char* n : kPotions2) give(n, 2);
+	// Lockpicks (Gothic 1, Gothic 2).
+	give("ItKeLockpick", 10);
+	give("ItKe_Lockpick", 10);
 	GameNpc& h = g.npcMut(u32(hi));
 	// One weapon (put on the belt), the best of the scripts if the usual one is not there.
 	u32 sword = give("ItMw_1H_Sword_Long_01", 1);
+	if (sword == NONE) sword = give("ItMw_1h_Mil_Sword", 1);
 	if (sword == NONE) sword = g.bestMeleeOfAll();
 	if (sword != NONE) {
 		if (g.itemCount(u32(hi), sword) <= 0) g.giveItems(u32(hi), sword, 1);
@@ -1205,11 +1219,14 @@ u32 App::giveTestKit() {
 	// One bow, arrows for it.
 	u32 bow = give("ItRw_Bow_Long_01", 1);
 	if (bow == NONE) bow = give("ItRw_Bow_Small_01", 1);
+	if (bow == NONE) bow = give("ItRw_Bow_L_01", 1);
 	if (bow != NONE && h.ranged == NONE) h.ranged = bow;
 	give("ItAmArrow", 50);
+	give("ItRw_Arrow", 50);
 	// One armour, put on.
 	u32 armor = give("GRD_ARMOR_M", 1);
 	if (armor == NONE) armor = give("VLK_ARMOR_M", 1);
+	if (armor == NONE) armor = give("ITAR_MIL_L", 1);
 	if (armor != NONE) g.setArmor(u32(hi), armor);
 	// Mana to spend on the spells (ATR_MANA_MAX, ATR_MANA).
 	GameNpc& hero = g.npcMut(u32(hi));

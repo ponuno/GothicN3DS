@@ -10,6 +10,8 @@
 #pragma once
 #include "script_mem.h"
 
+#include <string.h>
+
 namespace g3 {
 
 class Ikarus {
@@ -45,6 +47,14 @@ public:
 	u32 fireAt(u32 address, u32 espOffset, i32 espValue, u32 ebpOffset, i32 ebpValue);
 	void levelChangeBegin() { fire("OCGAME__CHANGELEVEL"); }
 	void levelChangeEnd() { fire("OCGAME__CHANGELEVELEND"); }
+	// LeGo's AI_Function: an animation "CALL <kind> <arguments> <function>" in a character's queue is a call of a
+	// script function when the queue gets there, with SELF the character (the original runs it from LeGo's hook of
+	// oCNpc::EV_PlayAni). True if `ani` is one. callLater() keeps the text (an action's own is too short) and
+	// returns its ticket; callNow() runs one.
+	static bool isCall(const char* ani) { return ani && !strncmp(ani, "CALL ", 5); }
+	bool callNow(ScriptInstance* self, const char* ani);
+	i32 callLater(const char* ani);
+	bool callTicket(ScriptInstance* self, i32 ticket);
 	// The save slot being read or written (LeGo's _BR_GetSelectedSlot: its PermMem file goes with it).
 	void setSlot(i32 slot) { _slot = slot; }
 	i32 slot() const { return _slot; }
@@ -112,6 +122,10 @@ private:
 	Hook _hooks[MAX_HOOKS] = {};
 	u32 _hookCount = 0;
 	u32 _replaced[64][2] = {};
+	enum { CALLS = 64 };
+	char* _calls[CALLS] = {};
+	u32 _callNext = 0;
+	u32 _self = SCRIPT_NONE, _other = SCRIPT_NONE, _item = SCRIPT_NONE;
 	u32 _replacedCount = 0;
 };
 

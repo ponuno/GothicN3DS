@@ -28,6 +28,7 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on a custom engine (C++17, it
 - Hero with skeletal animation from the game files: walking, running, swimming, ladders, jumping, climbing ledges, sneaking.
 - Third-person camera using the original settings (`CAMERA.DAT`); two control schemes: console (after Gothic Classic on PS) and classic PC.
 - Inventory, quick slots on the bottom screen, diary, character window, pause menu with settings (distance, object mode, frame rate, sound, language).
+- **Dropping things and using them in the hands** (fix192): Y (or the hold menu's buttons) puts a thing down on the ground, where it stays (in the saves too) until somebody picks it up; a torch is lit in the left hand with its flame and light; things with a scheme (a broom, a lute) are used until let go; maps open on the top screen with their picture (A/L/R zoom, D-Pad and stick move, B closes). Map pictures and the hero's animations for them need a new `data.pak`.
 - Saving and loading of position and story, quick save.
 
 **Combat and magic**

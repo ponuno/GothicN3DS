@@ -163,7 +163,10 @@ public:
 	// The game may be saved now: not dead, not in a talk.
 	bool canSave() const;
 	// What the menu shows of a slot (read anew each time a save or load page is opened, or by this).
-	const SaveInfo& slotInfo(int slot) const { return _slots[slot >= 0 && slot <= SAVE_SLOTS ? slot : 0]; }
+	// fix208: the save made on leaving the game (its own slot, SAVE_AUTO: the quick save is the player's key's only).
+	bool autoSave();
+	int latestQuickSlot() const;
+	const SaveInfo& slotInfo(int slot) const { return _slots[slot >= 0 && slot < SAVE_ALL ? slot : 0]; }
 	void refreshSlots();
 	// The game as it is, as a save describes it (the name left empty).
 	SaveInfo currentSaveInfo() const;
@@ -313,10 +316,12 @@ public:
 	bool heroDead() const { return _hero.down() && _deadTime > 0.0f; }
 	// What fighting has come to so far, for the reports.
 	struct FightStats {
-		u32 blowsLanded = 0, blowsTaken = 0, parried = 0, dodged = 0;
+		u32 blowsLanded = 0, blowsTaken = 0, parried = 0, dodged = 0, finished = 0;
 		i32 lastDamage = -1;
 	};
 	const FightStats& fightStats() const { return _fight; }
+	// fix208: one lying knocked out in reach in front, whom the attack finishes off (-1: none).
+	int finishTarget() const;
 
 	// ---- the inventory (inventory.cpp; the rules are in inventory.h) ----
 	// What the bottom screen shows, brought up to date.
@@ -350,6 +355,8 @@ public:
 	bool torchLit() const { return _torch.lit; }
 	u32 torchItem() const { return _torch.lit ? _torch.symbol : SCRIPT_NONE; }
 	bool torchShown() const { return _torch.lit && _torch.shown; }
+	float torchBurn() const { return _torch.burn; }
+	void setTorchBurn(float seconds) { _torch.burn = seconds; } // (tests)
 	Vec3 torchFlame() const { return _torch.tip; } // where its flame is (the last frame drawn)
 	// A thing used in the hands by its scheme (C_ITEM.SCEMENAME: a broom, a lute ...): the character takes it and goes
 	// on with it ("S_BROOM_S1") until he lets go - A, B, the stick, or the thing's action again.
@@ -487,6 +494,8 @@ private:
 	};
 	// Falling: the highest the feet were since they left the ground, to see how far they dropped when they land.
 	void fallCheck();
+	void drownCheck(float dt);
+	float _drownTime = 0.0f;
 	void heroLanded(float drop);
 	// The clock the scripts set (Wld_SetTime: the sleep until morning): the time jumps under a dip to black.
 	float _timeFade = 0.0f;
@@ -603,6 +612,7 @@ private:
 	void fightInput(const Input& in, float dt);
 	void updateTarget(const Input& in, float dt);
 	void heroBlow();
+	int _finishVictim = -1;
 	u8 meleeMode();
 	bool heroTake(u8 mode);
 	// (fix166) ZL: the next weapon / bow / spell of the quick slots; X: the last one used.
@@ -749,7 +759,7 @@ private:
 	u16* _savePic = nullptr;  // THUMB_W x THUMB_H
 	bool _savePicOk = false;  // _savePic holds the picture of the moment
 	bool _menuShot = false; // taken for this opening of the menu
-	SaveInfo _slots[SAVE_SLOTS + 1];
+	SaveInfo _slots[SAVE_ALL];
 	int _slotsPage = -1;   // the save or load page the slots were read for (-1: read them again)
 	gfx::Texture* _slotPic = nullptr;
 	int _slotPicFor = -100; // the slot _slotPic shows (-2: the game as it is)
@@ -810,6 +820,7 @@ private:
 		u32 look = 0xFFFFFFFFu; // the item whose model is in the hand (a burning torch's look is a world of its own: ItLsTorch's then)
 		u32 flame = 0;      // the particles' handle
 		u32 flameWorld = 0; // the world it was started in
+		float burn = 360.0f; // fix213: seconds it still burns (then it is spent, as in the original)
 		bool tipKnown = false;
 		Vec3 tip {0, 0, 0}; // where the flame is (the far end of the torch), from the last frame drawn
 	};
@@ -906,6 +917,7 @@ private:
 		bool bed = false;    // a bed: lying in it, the sleep talk (the scripts', else the engine's menu of hours)
 		bool talked = false; // a talk came up while in it: he gets up when it is over
 		bool offered = false; // the engine's sleep menu has been put up
+		bool sleepScript = false; // fix208: the scripts' SLEEPABIT_S1 was run for a bed without a function: its talk is awaited
 		u32 hand = 0xFFFFFFFFu; // fix154: the item in his hand at it (the thing's animations put it there), SCRIPT_NONE: none
 	};
 	enum MobStage : u8 { MJ_NONE, MJ_GLIDE, MJ_IN, MJ_HELD, MJ_OUT };

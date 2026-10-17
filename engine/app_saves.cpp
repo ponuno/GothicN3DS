@@ -36,6 +36,13 @@ void App::slotPath(int slot, char* out, u32 size) const {
 		snprintf(out, size, "%s", _statePath ? _statePath : "state.bin");
 		return;
 	}
+	if (slot == SAVE_AUTO) {
+		// fix208: beside the quick save, its own file.
+		const char* slash = _statePath ? strrchr(_statePath, '/') : nullptr;
+		if (slash) snprintf(out, size, "%.*s/autosave.sav", int(slash - _statePath), _statePath);
+		else snprintf(out, size, "autosave.sav");
+		return;
+	}
 	if (_saveDir[0]) {
 		snprintf(out, size, "%s/slot%02d.sav", _saveDir, slot);
 		return;
@@ -44,6 +51,23 @@ void App::slotPath(int slot, char* out, u32 size) const {
 	const char* slash = _statePath ? strrchr(_statePath, '/') : nullptr;
 	if (slash) snprintf(out, size, "%.*s/saves/slot%02d.sav", int(slash - _statePath), _statePath, slot);
 	else snprintf(out, size, "saves/slot%02d.sav", slot);
+}
+
+// fix208: the newer of the quick save and the one made on leaving (what "Continue" and getting up after death load).
+int App::latestQuickSlot() const {
+	char path[200];
+	SaveInfo q, a;
+	slotPath(0, path, sizeof(path));
+	const bool hasQ = readSaveInfo(path, q, nullptr) && q.readable;
+	slotPath(SAVE_AUTO, path, sizeof(path));
+	const bool hasA = readSaveInfo(path, a, nullptr) && a.readable;
+	return hasA && (!hasQ || a.savedAt > q.savedAt) ? SAVE_AUTO : 0;
+}
+
+bool App::autoSave() {
+	char path[200];
+	slotPath(SAVE_AUTO, path, sizeof(path));
+	return writeSave(path, nullptr);
 }
 
 bool App::canSave() const { return _world.isOpen() && !heroDead() && !talking(); }
@@ -147,7 +171,7 @@ bool App::saveSlot(int slot, const char* title) {
 
 bool App::loadSlot(int slot) {
 	_menuMessage[0] = 0;
-	if (slot < 0 || slot > SAVE_SLOTS) return false;
+	if (slot < 0 || slot >= SAVE_ALL) return false;
 	char path[200];
 	slotPath(slot, path, sizeof(path));
 	SaveInfo info;
@@ -165,7 +189,7 @@ bool App::loadSlot(int slot) {
 	}
 	gfx::Texture* pic = info.picture && thumb ? thumbTexture(thumb) : nullptr;
 	free(thumb);
-	progressBegin(tr("Загрузка…"), slot == 0 ? tr("Быстрое сохранение") : info.title[0] ? info.title : tr("Без названия"), pic, true);
+	progressBegin(tr("Загрузка…"), slot == 0 ? tr("Быстрое сохранение") : slot == SAVE_AUTO ? tr("Автосохранение") : info.title[0] ? info.title : tr("Без названия"), pic, true);
 	const bool ok = loadState(path);
 	progressEnd();
 	if (pic) gfx::textureDestroy(pic);
@@ -194,17 +218,17 @@ void App::syncSaveMenu() {
 		// The cursor on the newest save (as the original's list opens).
 		int best = -1;
 		i64 newest = 0;
-		for (int k = page == Menu::PAGE_SAVE ? 1 : 0; k <= SAVE_SLOTS; ++k)
+		for (int k = page == Menu::PAGE_SAVE ? 1 : 0; k < (page == Menu::PAGE_SAVE ? SAVE_SLOTS + 1 : SAVE_ALL); ++k)
 			if (_slots[k].used && _slots[k].readable && _slots[k].savedAt >= newest && (best < 0 || _slots[k].savedAt > newest)) {
 				best = k;
 				newest = _slots[k].savedAt;
 			}
 		if (best < 0) best = page == Menu::PAGE_SAVE ? 1 : 0;
-		_menu.select(page == Menu::PAGE_SAVE ? best - 1 : best);
+		_menu.select(Menu::entryOfSlot(page, best));
 		freeSlotPicture();
 	}
 	const int slot = _menu.saveSlot();
-	const SaveInfo& info = _slots[slot >= 0 && slot <= SAVE_SLOTS ? slot : 0];
+	const SaveInfo& info = _slots[slot >= 0 && slot < SAVE_ALL ? slot : 0];
 	const bool current = page == Menu::PAGE_SAVE && !info.used;
 	const int key = current ? -2 : slot;
 	if (key != _slotPicFor) {
@@ -318,12 +342,12 @@ void App::drawProgressFrame() {
 
 // ---- the start menu ----
 
-const char* App::versionText() { return "Gothic 3DS fix202"; }
+const char* App::versionText() { return "Gothic 3DS fix213"; }
 
 void App::openStartMenu() {
 	if (!_start.loaded()) _start.load(_pak);
 	char path[200];
-	slotPath(0, path, sizeof(path));
+	slotPath(latestQuickSlot(), path, sizeof(path));
 	SaveInfo quick;
 	const bool canContinue = readSaveInfo(path, quick, nullptr) && quick.readable;
 	_start.open(canContinue);
@@ -369,7 +393,7 @@ App::StartResult App::startMenuInput(const MenuInput& in) {
 		closeStartMenu();
 		break;
 	case START_CONTINUE:
-		if (!loadSlot(0)) toast(_menuMessage[0] ? _menuMessage : tr("Не удалось загрузить"));
+		if (!loadSlot(latestQuickSlot())) toast(_menuMessage[0] ? _menuMessage : tr("Не удалось загрузить"));
 		break;
 	case START_LOAD: _menu.open(Menu::PAGE_LOAD); break;
 	case START_OPTIONS: _menu.open(Menu::PAGE_OPTIONS); break;

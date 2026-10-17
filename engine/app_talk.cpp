@@ -222,7 +222,7 @@ void App::drawSubtitle() {
 	const int lh = Ui::lineHeight();
 	// At the top of the picture, as the game's dialogue box: the speaker's name and the words.
 	const int top = 10;
-	_ui.rect(10, top - 5, W - 10, top + (count + 1) * lh + 3, 0x000000B8u);
+	_ui.box(10, top - 5, W - 10, top + (count + 1) * lh + 3, 0x0E0A06C0u);
 	_ui.text(W / 2, top, v.speaker, v.heroSays ? ui::WHITE : ui::GOLD, ui::TEXT, ui::CENTER);
 	for (int i = 0; i < count; ++i) _ui.text(W / 2, top + (i + 1) * lh, lines[i], ui::WHITE, ui::TEXT, ui::CENTER);
 }

@@ -56,6 +56,8 @@ public:
 	void icon(int x, int y, u8 icon, u32 tint, int scale, u8 alpha = 255);
 	// An outline one pixel wide.
 	void frame(int x0, int y0, int x1, int y1, u32 rgba);
+	// fix213: a box in the game's own manner - warm dark ground, a bronze edge with a black line inside it.
+	void box(int x0, int y0, int x1, int y1, u32 fill = 0x120D08CCu);
 	// A bar filled to `share` (0..1) of its width.
 	void bar(int x0, int y0, int x1, int y1, float share, u32 fill, u32 back = 0x000000A0u);
 

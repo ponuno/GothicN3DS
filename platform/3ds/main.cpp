@@ -965,6 +965,11 @@ int main(int, char**) {
 					in.lookX = 0;
 				}
 					in.strafe = (gameHeld & KEY_R ? 1.0f : 0.0f) - (gameHeld & KEY_L ? 1.0f : 0.0f);
+					// fix210: swimming, R comes up and L goes down (there is no stepping aside in the water).
+					if (app.player().swimming) {
+						in.moveY = in.strafe;
+						in.strafe = 0.0f;
+					}
 					// SELECT: the bow (console) / the spell stance (classic; L+SELECT the bow).
 				if (selectTap && !(taken & KEY_SELECT) && !(swallowed & KEY_SELECT) && !rHeld && !inventoryScreen) {
 					if (console) in.rangedSlot = true; // (the inventory is on the bottom screen)
@@ -1509,7 +1514,8 @@ int main(int, char**) {
 	// Leaving. Each step says so on the bottom screen first: should the
 	// console ever hang here, the last line tells where.
 	exitStep("exit 1/4: saving the position");
-	if (!app.startMenuActive()) app.saveState(kStatePath); // (left from the start menu: no game to keep, the quick save stays)
+	// fix208: into its own slot ("Автосохранение"): the quick save is SELECT's (held) only.
+	if (!app.startMenuActive()) app.autoSave(); // (left from the start menu: no game to keep)
 	g3::display::restore(); // (the screen as the system had it)
 	app.settings().save(kSettingsPath);
 	flushHitches();

@@ -54,14 +54,27 @@ bool Player::swim(const World& world, float dt) {
 	// A little hysteresis keeps the body from bobbing between the two states.
 	if (waterDepth <= cfg.swimDepth - (swimming ? 30.0f : 0.0f)) {
 		swimming = false;
+		dive = 0.0f;
+		breath = cfg.airTime;
 		return false;
 	}
 
-	const float target = surface - cfg.swimDepth; // where the feet float
+	// fix210: down and up with the keys; the floor stops the dive.
+	if (swimming) {
+		dive = clamp(dive - _diveWish * cfg.diveSpeed * dt, 0.0f, cfg.maxDive);
+		float fy;
+		Vec3 fn;
+		if (dive > 0.0f && world.rayDown({feet.x, surface - cfg.swimDepth - dive + cfg.stepHeight, feet.z}, cfg.stepHeight + 40.0f, fy, fn)) {
+			const float most = max(surface - cfg.swimDepth - fy, 0.0f);
+			if (dive > most) dive = most;
+		}
+	}
+	const float target = surface - cfg.swimDepth - dive; // where the feet float
 	float y;
 	Vec3 n;
 	// Shore: a floor the player can stand on with the head above the water.
-	if (world.rayDown({feet.x, max(feet.y, target) + cfg.stepHeight, feet.z}, cfg.stepHeight + 40.0f, y, n) &&
+	if (dive <= 0.0f && _diveWish <= 0.0f &&
+	    world.rayDown({feet.x, max(feet.y, target) + cfg.stepHeight, feet.z}, cfg.stepHeight + 40.0f, y, n) &&
 	    y >= target && n.y >= cfg.minFloorNormal) {
 		feet.y = y;
 		grounded = true;
@@ -73,7 +86,12 @@ bool Player::swim(const World& world, float dt) {
 	swimming = true;
 	grounded = false;
 	velocityY = 0;
-	feet.y += clamp(target - feet.y, -cfg.floatSpeed * dt, cfg.floatSpeed * dt);
+	const float rate = dive > 0.0f || _diveWish != 0.0f ? max(cfg.floatSpeed, cfg.diveSpeed * 1.2f) : cfg.floatSpeed;
+	feet.y += clamp(target - feet.y, -rate * dt, rate * dt);
+	// The breath: full above the surface, spent below it (the head is under the water when the feet float
+	// by more than the body's height under it).
+	if (dive > 30.0f) breath = max(breath - dt, 0.0f);
+	else breath = min(breath + dt * 4.0f, cfg.airTime);
 	return true;
 }
 
@@ -644,6 +662,7 @@ void Player::walk(const World& world, const Input& in, float yaw, float dt, cons
 	const float gained = (feet.x - from.x) * delta.x + (feet.z - from.z) * delta.z;
 	_blocked = dist > 0.01f && gained < 0.5f * dist * dist;
 
+	_diveWish = swimming ? in.moveY : 0.0f;
 	if (swim(world, dt)) {
 		climbing = false;
 		_step = 'w';

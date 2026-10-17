@@ -4373,6 +4373,26 @@ static void testHero() {
 	const float zSwim = pl.feet.z;
 	for (int i = 0; i < 30; ++i) step(-1.0f);
 	CHECK(current() == hero.clip("S_SWIMB") && pl.feet.z < zSwim - 80.0f);
+	// fix210: down with L (moveY -1): the body sinks, the breath runs out; R brings it up and the breath back.
+	{
+		CHECK(pl.dive == 0.0f && pl.breath >= pl.config.airTime - 0.01f);
+		const float floatY = pl.feet.y;
+		for (int i = 0; i < 40; ++i) {
+			Input in;
+			in.moveY = -1.0f;
+			app.update(in, dt);
+		}
+		std::printf("  dive: %.0f cm down, breath %.1f s, feet %.0f -> %.0f\n", double(pl.dive), double(pl.breath), double(floatY), double(pl.feet.y));
+		CHECK(pl.swimming && pl.diving() && pl.dive > 60.0f && pl.feet.y < floatY - 60.0f && pl.breath < pl.config.airTime - 0.5f);
+		for (int i = 0; i < 90; ++i) {
+			Input in;
+			in.moveY = 1.0f;
+			app.update(in, dt);
+		}
+		CHECK(pl.dive == 0.0f && std::fabs(pl.feet.y - floatY) < 3.0f);
+		for (int i = 0; i < 90; ++i) app.update(Input {}, dt);
+		CHECK(pl.breath >= pl.config.airTime - 0.5f);
+	}
 
 	app.shutdown();
 	CHECK(gfx::memStats().meshCount == 0 && gfx::memStats().textureCount == 0);
@@ -6991,6 +7011,43 @@ static void testFight() {
 		CHECK(g.npc(u32(guard)).target == scav2 && npcs.actorOf(u32(guard)) && !npcs.isDown(u32(guard)));
 		app.shutdown();
 	}
+	// fix208: knocked out again and finished off by the player's character, sword in hand: dead.
+	{
+		App app;
+		CHECK(app.init(path.c_str(), nullptr));
+		app.settings().immortal = 1;
+		app.applySettings();
+		app.world().preload(app.camera().pos);
+		Npcs& npcs = app.npcs();
+		Game& g = npcs.game();
+		g.setQuiet(true);
+		npcs.config().range = 20000.0f;
+		const u32 hero = u32(g.hero() - &g.npc(0));
+		const int digger = nearest(g, "Digger", {0, 0, 0});
+		CHECK(digger >= 0);
+		if (digger < 0) return;
+		for (int i = 0; i < 30; ++i) app.update(Input {}, 1.0f / 30.0f);
+		CHECK(app.menuAction(MENU_GIVE_WEAPON, nullptr));
+		for (int blow = 0; blow < 40 && !npcs.isDown(u32(digger)); ++blow) npcs.strike(hero, u32(digger), false);
+		CHECK(g.npc(u32(digger)).down == DOWN_UNCONSCIOUS);
+		const GameNpc& d = g.npc(u32(digger));
+		app.teleport({d.pos[0], d.pos[1] + 50.0f, d.pos[2] - 25.0f});
+		for (int i = 0; i < 30; ++i) app.update(Input {}, 1.0f / 30.0f);
+		Input take;
+		take.meleeSlot = true;
+		app.update(take, 1.0f / 30.0f);
+		for (int i = 0; i < 60; ++i) app.update(Input {}, 1.0f / 30.0f);
+		std::printf("  finishing: weapon %d, target %d (digger %d), down %d; hero loaded %d down %d talking %d melee %u\n", int(app.hero().weapon()), app.finishTarget(), digger, int(g.npc(u32(digger)).down),
+		            int(app.hero().loaded()), int(app.hero().down()), int(app.talking()), g.npc(hero).melee);
+		CHECK(app.hero().weapon() == WEAPON_1H);
+		CHECK(app.finishTarget() == digger);
+		Input blow;
+		blow.attack = true;
+		app.update(blow, 1.0f / 30.0f);
+		for (int i = 0; i < 60 && g.npc(u32(digger)).down != DOWN_DEAD; ++i) app.update(Input {}, 1.0f / 30.0f);
+		CHECK(g.npc(u32(digger)).down == DOWN_DEAD && app.fightStats().finished == 1);
+		std::printf("  finished off: %s\n", g.npc(u32(digger)).down == DOWN_DEAD ? "yes" : "no");
+	}
 	// 2. The player's character against a beast, sword in hand, as the
 	// player would: close in, strike again and again. The console's
 	// controls: the weapon drawn, the beast becomes the locked target.
@@ -7297,6 +7354,8 @@ static void testMagic() {
 		for (u32 i = 0; i < v.count; ++i)
 			if (v.items[i].symbol == rune) re = &v.items[i];
 		CHECK(re && (re->flags & ITEMF_ACTION) && (re->flags & ITEMF_QUICK));
+		// fix213: the info box says what the spell does (words, and the damage when it has any).
+		CHECK(re && re->note[0] && std::strstr(re->note, "Огненная стрела"));
 		app.setQuickSlot(2, rune);
 		CHECK(app.quickUse(2) && app.spellItem() == rune);
 	}
@@ -7750,12 +7809,12 @@ static void testInventory() {
 		tap(x, y);
 		CHECK(app.itemBusy());
 		run(4.0f);
-		// The chosen cell is blue (beside its picture).
+		// The chosen cell is gold (beside its picture; fix213: the panel is in bronze, not steel blue).
 		CHECK(panel.draw(app.inventory(), true) && panel.canvas().ready());
 		{
 			const u16 px = panel.canvas().pixel(x - 28, y - 14);
 			const int r = (px >> 11) << 3, b = (px & 31) << 3;
-			CHECK(b > r + 20);
+			CHECK(r > b + 20);
 		}
 		InventoryPanel::pageCentre(InventoryPanel::TAB_PAGES - 1, x, y);
 		CHECK(tap(x, y).type == PANEL_REPORT);
@@ -7943,6 +8002,18 @@ static void testInventory() {
 		            int(app.lamps().carried()), flames);
 		CHECK(app.torchShown() && app.lamps().carried() && app.lamps().stats().active >= 1);
 		CHECK(entry(torch) && std::strcmp(entry(torch)->action, "Потушить") == 0);
+		// fix213: it burns down: a torch with no time left is spent (one less); a new one is lit as before.
+		{
+			CHECK(app.torchBurn() > 100.0f);
+			app.setTorchBurn(0.05f);
+			app.update(Input {}, dt);
+			app.update(Input {}, dt);
+			CHECK(!app.torchLit() && g.itemCount(hero, torch) == 1);
+			g.giveItems(hero, torch, 1);
+			CHECK(app.itemAction(torch) && app.torchLit() && app.torchBurn() > 100.0f);
+			for (int i = 0; i < 10; ++i) app.update(Input {}, dt);
+			CHECK(app.torchShown());
+		}
 		CHECK(app.itemAction(torch) && !app.torchLit() && g.itemCount(hero, torch) == 1);
 		CHECK(app.itemAction(torch) && app.torchLit());
 		CHECK(app.dropItem(torch));
@@ -11103,6 +11174,9 @@ static void testSaves() {
 	app.render();
 	// (The cursor on the newest: the quick save, entry 0.)
 	CHECK(app.menu().saveSlot() == 0 && app.slotInfo(0).used && app.slotInfo(1).used && app.slotInfo(3).used && !app.slotInfo(2).used);
+	// (fix208: the next is the one made on leaving - none yet - then the ten.)
+	app.menu().update(down, app.settings());
+	CHECK(app.menu().saveSlot() == SAVE_AUTO && !app.slotInfo(SAVE_AUTO).used);
 	app.menu().update(down, app.settings());
 	app.menu().update(down, app.settings());
 	app.menu().update(down, app.settings());
@@ -11111,6 +11185,25 @@ static void testSaves() {
 	CHECK(app.menu().update(ok, app.settings()) == MENU_LOAD_SLOT && app.menu().saveSlot() == 3);
 	CHECK(app.menuAction(MENU_LOAD_SLOT, nullptr));
 	writePpm(gDir + "/saves-loading.ppm");
+	// fix208: leaving the game saves into its own file, not over the quick save; "Continue" takes the newer.
+	{
+		char autoPath[200];
+		app.slotPath(SAVE_AUTO, autoPath, sizeof(autoPath));
+		SaveInfo quickBefore;
+		CHECK(readSaveInfo(statePath.c_str(), quickBefore, nullptr));
+		CHECK(std::strstr(autoPath, "autosave.sav") != nullptr);
+		CHECK(app.latestQuickSlot() == 0);
+#ifdef _WIN32
+		Sleep(1100);
+#else
+		sleep(1);
+#endif
+		CHECK(app.autoSave());
+		SaveInfo a, q;
+		CHECK(readSaveInfo(autoPath, a, nullptr) && a.readable && readSaveInfo(statePath.c_str(), q, nullptr) && q.savedAt == quickBefore.savedAt);
+		CHECK(app.latestQuickSlot() == SAVE_AUTO);
+		remove(autoPath);
+	}
 	CHECK(!app.menu().isOpen() && std::string(app.worldName()) == "world/world");
 	CHECK(std::fabs(app.camera().pos.x - there.x) < 0.5f && std::fabs(app.camera().pos.z - there.z) < 0.5f);
 	CHECK(std::fabs(app.environment().timeOfDay - 15.0f) < 1e-3f && std::fabs(app.playSeconds() - 3725.0) < 1.0);
@@ -12800,6 +12893,105 @@ func void ZS_MM_AssessEnemy_end() {
 // fix202: Gothic 1's people calm down (the real scripts, G3_G1_SCRIPT): the player strikes a digger, it fights back;
 // the player runs far off - the fight ends (ZS_Attack_End: B_ResetTempAttitude); back near it, it does not fall on
 // him again. Printed as a timeline. Skipped without the file.
+
+// fix211: a teacher's way taken (G1 Drax: "Remove teeth") is gone from the offer once it is learnt, and was paid once.
+static void testG1Hunter() {
+	const char* file = getenv("G3_G1_SCRIPT");
+	if (!file) {
+		std::printf("  (no G3_G1_SCRIPT: skipped)\n");
+		return;
+	}
+	std::ifstream in(file);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	std::string source = ss.str() + R"(
+func void STARTUP_WORLD() {
+	Kapitel = 1;
+	Wld_InsertNpc(Org_819_Drax, "CAMP_SQUARE");
+	Drax_Lehrer_frei = TRUE;
+	hero.lp = 5;
+	CreateInvItems(hero, itminugget, 300);
+};
+func void INIT_WORLD() {
+	B_InitMonsterAttitudes();
+	B_InitGuildAttitudes();
+};
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/g1hunter.pak";
+	try {
+		bakeLifeWorlds(source, path, worlds);
+	} catch (const std::exception& e) {
+		std::printf("  bake failed: %s\n", e.what());
+		CHECK(false);
+		return;
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.settings().immortal = 1;
+	app.applySettings();
+	npcs.config().range = 20000.0f;
+	const float dt = 1.0f / 30.0f;
+	const u32 sym = g.vm().find("ORG_819_DRAX");
+	u32 d = SCRIPT_NONE;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).symbol == sym) d = i;
+	CHECK(d != SCRIPT_NONE);
+	if (d == SCRIPT_NONE) return;
+	const u32 hero = g.heroIndex();
+	const u32 ore = g.vm().find("ITMINUGGET");
+	const GameNpc& dn = g.npc(d);
+	app.teleport({dn.pos[0], dn.pos[1] + 5.0f, dn.pos[2] + 150.0f});
+	for (int i = 0; i < 60; ++i) app.update(Input {}, dt);
+	CHECK(g.itemCount(hero, ore) == 300);
+	const auto choosing = [&]() {
+		for (int i = 0; i < 3; ++i) app.update(Input {}, dt); // (the view follows the choice)
+		for (int i = 0; i < 30 * 40 && !(npcs.talkView().active && npcs.talkView().choosing); ++i) {
+			npcs.talkSkip();
+			app.update(Input {}, dt);
+		}
+		return npcs.talkView().active && npcs.talkView().choosing;
+	};
+	const auto pick = [&](const char* text) {
+		const TalkView& v = npcs.talkView();
+		for (u32 i = 0; i < v.count; ++i)
+			if (std::strstr(v.items[i], text)) return npcs.talkChoose(i);
+		return false;
+	};
+	const auto has = [&](const char* text) {
+		const TalkView& v = npcs.talkView();
+		for (u32 i = 0; i < v.count; ++i)
+			if (std::strstr(v.items[i], text)) return true;
+		return false;
+	};
+	CHECK(npcs.talkTo(d));
+	CHECK(choosing());
+	CHECK(pick("What else can you tell me about hunting"));
+	CHECK(choosing());
+	CHECK(has("Remove teeth") && has("Remove fur"));
+	CHECK(pick("Remove teeth"));
+	CHECK(choosing());
+	std::printf("  after learning: %u ways:", npcs.talkView().count);
+	for (u32 i = 0; i < npcs.talkView().count; ++i) std::printf(" [%s]", npcs.talkView().items[i]);
+	std::printf("\n");
+	CHECK(g.vm().getInt(g.vm().find("KNOWS_GETTEETH")) == 1);
+	CHECK(g.itemCount(hero, ore) == 250);
+	CHECK(!has("Remove teeth"));
+	// The list of the infos again: the same question is still there, the learnt way is not.
+	CHECK(has("What else can you tell me about hunting"));
+	CHECK(pick("What else can you tell me about hunting"));
+	CHECK(choosing());
+	CHECK(!has("Remove teeth") && has("Remove fur"));
+	CHECK(g.itemCount(hero, ore) == 250);
+}
+
 static void testG1Calm() {
 	const char* file = getenv("G3_G1_SCRIPT");
 	if (!file) {
@@ -12887,6 +13079,20 @@ func void INIT_WORLD() {
 	run(10.0f, "player back");
 	std::printf("  calm: attacking again after coming back: %d\n", int(attacking));
 	CHECK(!attacking);
+	// fix208: his talk is the ambient one he shares with every digger of his voice (ZS_Talk -> B_AssignAmbientInfos).
+	app.teleport({bn.pos[0], bn.pos[1] + 5.0f, bn.pos[2] + 150.0f});
+	run(2.0f, "to talk");
+	CHECK(npcs.talkTo(b));
+	for (int i = 0; i < 30 * 6 && !(npcs.talkView().active && npcs.talkView().count > 0 && npcs.talkView().choosing); ++i) app.update(Input {}, dt);
+	const TalkView& tv = npcs.talkView();
+	std::printf("  ambient talk: active %d, %u ways:", int(tv.active), tv.count);
+	for (u32 i = 0; i < tv.count; ++i) std::printf(" [%s]", tv.items[i]);
+	std::printf("\n");
+	CHECK(tv.active && tv.count >= 3);
+	// B: the "END" way (DIALOG_ENDE), wherever it stands.
+	CHECK(npcs.talkBack());
+	for (int i = 0; i < 30 * 6 && npcs.talkView().active; ++i) app.update(Input {}, dt);
+	CHECK(!npcs.talkView().active);
 }
 
 // The real scripts of Gothic 1, compiled from their sources (G3_G1_SCRIPT: one file, see the handoff), on the synthetic
@@ -14051,8 +14257,16 @@ static void testOverlays() {
 	CHECK(thorus >= 0);
 	if (thorus < 0) return;
 	const GameNpc& t = g.npc(u32(thorus));
-	CHECK(t.overlayCount() == 1 && std::strcmp(g.text(t.overlay[0]), "humans_militia") == 0);
-	const Model* ovl = npcs.overlayModel(t.overlay[0]);
+	// (fix208: and his weapon talent's, humans_1hst1/2, as OpenGothic's invalidateTalentOverlays.)
+	int militia = -1;
+	for (u32 k = 0; k < t.overlayCount(); ++k) {
+		std::printf("  Thorus overlay %u: %s\n", k, g.text(t.overlay[k]));
+		if (std::strcmp(g.text(t.overlay[k]), "humans_militia") == 0) militia = int(k);
+	}
+	CHECK(militia >= 0);
+	if (militia < 0) return;
+	const u32 thorusOverlays = t.overlayCount();
+	const Model* ovl = npcs.overlayModel(t.overlay[militia]);
 	CHECK(ovl && ovl->clip("S_RUN") && ovl->clip("S_WALKL"));
 	if (!ovl) return;
 	app.teleport({t.pos[0], t.pos[1] + 400.0f, t.pos[2] - 300.0f});
@@ -14105,7 +14319,7 @@ static void testOverlays() {
 	g.save(sink);
 	g.removeOverlay(hero, "humans_militia");
 	ByteSource src(sink.data, sink.size);
-	CHECK(g.restore(src) && g.npc(hero).overlayCount() == 1 && g.npc(u32(thorus)).overlayCount() == 1);
+	CHECK(g.restore(src) && g.npc(hero).overlayCount() == 1 && g.npc(u32(thorus)).overlayCount() == thorusOverlays);
 }
 
 // fix207: overlays read on a thread. The first ask only queues it (nothing in the frame), the model comes a moment later
@@ -14467,7 +14681,7 @@ int main(int argc, char** argv) {
              {"start menu", testStartMenu},
              {"npcai", testNpcAi},
 	             {"beast turn", testBeastTurn},
-	             {"g1 beasts", testG1Beasts}, {"g1 calm", testG1Calm},
+	             {"g1 beasts", testG1Beasts}, {"g1 calm", testG1Calm}, {"g1 hunter", testG1Hunter},
              {"npc items", testNpcItems},
              {"corpses", testCorpses},
 	             {"settings", testSettings},

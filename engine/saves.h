@@ -19,6 +19,8 @@ namespace g3 {
 typedef int64_t i64;
 
 constexpr int SAVE_SLOTS = 10;                // the player's own; 0 is the quick one
+constexpr int SAVE_AUTO = SAVE_SLOTS + 1;     // fix208: the one made on leaving the game (autosave.sav beside the quick one)
+constexpr int SAVE_ALL = SAVE_SLOTS + 2;      // all of them: 0, 1..SAVE_SLOTS, SAVE_AUTO
 constexpr int THUMB_W = 160, THUMB_H = 96;    // the picture of a save (the top screen 2.5 times smaller)
 constexpr int THUMB_TEX_W = 256, THUMB_TEX_H = 128; // the texture it is shown with (a power of two; the picture in its corner)
 constexpr u32 SAVE_MAGIC = fourcc('G', '3', 'S', 'V');

@@ -353,6 +353,25 @@ bool Npcs::standUp(NpcActor& a) {
 	return true;
 }
 
+// fix209: afloat, the swimming clips stand in for whatever the walking and standing were: S_SWIMF on the move, S_SWIM
+// still; back on the ground the walking (or standing) comes back.
+void Npcs::swimAnimation(NpcActor& a) {
+	if (a.swimming) {
+		const GameNpc& n = _game.npc(a.npc);
+		if (n.down != DOWN_NONE) return;
+		const bool moving = a.phase == NpcActor::MOVING;
+		const Clip* want = clip(a, moving ? "S_SWIMF" : "S_SWIM");
+		if (want && a.anim.current() != want) a.anim.play(want, 0.25f);
+		a.swimChanged = false;
+	} else if (a.swimChanged) {
+		a.swimChanged = false;
+		const GameNpc& n = _game.npc(a.npc);
+		if (n.down != DOWN_NONE) return;
+		const Clip* c = a.phase == NpcActor::MOVING ? modeClip(a, "S_%sL", true) : a.idle;
+		if (c) a.anim.play(c, 0.25f);
+	}
+}
+
 void Npcs::startWalking(NpcActor& a) {
 	const Clip* c = modeClip(a, "T_%s_2_%sL", false);
 	if (c)
@@ -412,6 +431,7 @@ i32 Npcs::bodyStateOf(const NpcActor& a) const {
 		// those the scripts lay down themselves, with AI_PlayAniBS.)
 		return listed(_mobSit) ? _bsSit : listed(_mobLie) ? _bsMob : listed(_mobClimb) ? _bsClimb : listed(_mobBusy) ? _bsMob : _bsMobInterrupt;
 	}
+	if (a.swimming) return _game.constant("BS_SWIM", 5);
 	if (a.phase == NpcActor::MOVING) return a.walkMode == NpcActor::WALK ? kBsWalk : kBsRun;
 	if (strcmp(a.stance, "SIT") == 0) return kBsSit;
 	if (startsWith(a.stance, "SLEEP")) return _bsLie;
@@ -1394,6 +1414,7 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 	part(_stats.tickBodyMs);
 	if ((walked || a.phase == NpcActor::MOVING || !a.grounded) && !inMob) ground(a, world, 120.0f);
 	part(_stats.tickGroundMs);
+	swimAnimation(a);
 }
 
 // ---- what the scripts call ----

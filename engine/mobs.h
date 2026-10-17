@@ -30,6 +30,9 @@ public:
 	// name is for the inhabitants), and it is not one of the kinds with their own handling (chests, doors).
 	// A bed is always his to sleep in, named or not.
 	bool forPlayer(u32 i) const;
+	// fix208: a bed: one the world file says is (oCMobBed), or one of a bed's scheme (BEDLOW, BEDHIGH, BABEBED - Gothic 1's
+	// beds come as plain oCMobInter).
+	bool isBed(u32 i) const;
 	const WorldMob& mob(u32 i) const { return _mobs[i]; }
 	const char* scheme(u32 i) const { return _names + _mobs[i].scheme; }
 	const MobSlot& slot(u32 mob, u32 k) const { return _slots[_mobs[mob].firstSlot + k]; }

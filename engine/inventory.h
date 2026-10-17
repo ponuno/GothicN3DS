@@ -125,6 +125,8 @@ struct ItemEntry {
 	// item has them, as the original shows them; else made up from its numbers.
 	ItemRow rows[ITEM_ROWS];
 	u8 rowCount;
+	char noteHead[96];         // fix213: a spell's damage line ("Огонь · урон 25 за уровень"), "" for none
+	char note[184];            // what the spell does, in words (the info box wraps it above the rows)
 	char action[32];           // "Выпить", "Надеть" ... ("" if nothing; fix192: room for "Использовать")
 };
 

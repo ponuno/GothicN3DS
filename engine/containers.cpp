@@ -59,7 +59,8 @@ float angleBetween(float from, float to, float t) {
 // ---- the dead ----
 
 // The things a body carries that can be taken, by place in the list: not the
-// armour it wears (its last one), which is on it.
+// armour it wears (its last one), which is on it. (fix208: its weapons are taken, as in the original: they fell
+// out of its hands or hang on its belt.)
 u32 App::corpseStackCount(u32 npc) const {
 	const Game& g = _npcs.game();
 	if (npc >= g.npcCount()) return 0;
@@ -68,7 +69,7 @@ u32 App::corpseStackCount(u32 npc) const {
 	for (u32 i = 0; i < g.itemStackCount(); ++i) {
 		const GameItem& s = g.itemStack(i);
 		if (s.npc != npc || s.count <= 0) continue;
-		if (s.count <= 1 && (s.symbol == armor || s.symbol == g.npc(npc).melee || s.symbol == g.npc(npc).ranged)) continue;
+		if (s.count <= 1 && s.symbol == armor) continue;
 		++n;
 	}
 	return n;
@@ -83,8 +84,8 @@ bool App::corpseStack(u32 npc, u32 k, u32& symbol, i32& count) const {
 		const GameItem& s = g.itemStack(i);
 		if (s.npc != npc || s.count <= 0) continue;
 		i32 c = s.count;
-		// (What it wears or holds stays on it, one of each.)
-		if (s.symbol == armor || s.symbol == g.npc(npc).melee || s.symbol == g.npc(npc).ranged) c -= 1;
+		// (The armour it wears stays on it.)
+		if (s.symbol == armor) c -= 1;
 		if (c <= 0) continue;
 		if (n++ == k) {
 			symbol = s.symbol;

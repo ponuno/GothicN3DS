@@ -278,6 +278,8 @@ struct NpcActor {
 	u32 movedSeen = 0;     // GameNpc::moved it was last put on the ground for
 	// Where it stands.
 	bool grounded = false; // the ground under it has been found
+	bool swimChanged = false; // fix209: swimming started or ended this step: its clip is chosen again
+	bool swimming = false; // fix209: afloat on deep water (S_SWIM / S_SWIMF), not walking the bed of it
 	u8 light[4] = {255, 255, 255, 255};
 	// Its state.
 	u32 state = 0;         // the function that begins it; 0: between states
@@ -667,6 +669,7 @@ private:
 	bool turn(NpcActor& a, float yaw, float rate, float dt);
 	bool taken(const NpcActor& a, const float pos[3]) const;
 	void startWalking(NpcActor& a);
+	void swimAnimation(NpcActor& a);
 	void stopWalking(NpcActor& a);
 	bool standUp(NpcActor& a);
 	bool playAni(NpcActor& a, const char* name, i32 bodyState);

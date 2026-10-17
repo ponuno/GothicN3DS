@@ -162,6 +162,135 @@ void row(ItemEntry& e, const char* label, i32 value, bool hasValue = true, bool 
 	r.warn = warn ? 1 : 0;
 }
 
+
+// fix213: what a spell does, in words - the scripts have only numbers. Keyed by the spell's tag
+// (spellFXInstanceNames, any case); the first entry whose key the tag contains wins.
+struct SpellWords {
+	const char* key;
+	const char* text;
+};
+const SpellWords kSpellWords[] = {
+    {"firerain", "Огненный дождь: обрушивается на всех врагов вокруг. Чем дольше заряд, тем сильнее."},
+    {"firestorm", "Огненный шторм: огонь расходится вокруг героя и поражает всех рядом."},
+    {"pyro", "Пирокинез: подожжённая цель горит и теряет здоровье, пока не погаснет."},
+    {"fireball", "Огненный шар: летит в цель и взрывается. Заряд повышает урон."},
+    {"firebolt", "Огненная стрела: быстрый огненный снаряд в выбранную цель."},
+    {"icelance", "Ледяное копьё: летит в цель и наносит урон холодом."},
+    {"icecube", "Ледяной куб: замораживает цель, пока лёд не растает."},
+    {"icewave", "Ледяная волна: волна холода бьёт всех перед героем и замораживает их."},
+    {"thunderball", "Шаровая молния: летит в цель и бьёт разрядом по ней и соседям."},
+    {"thunderbolt", "Молния: мгновенный удар разряда по цели."},
+    {"lightning", "Молния: мгновенный удар разряда по цели."},
+    {"zap", "Разряд: слабая молния, бьёт током ближнюю цель."},
+    {"waterfist", "Кулак воды: бросает цель водяным ударом, оглушая её."},
+    {"windfist", "Кулак ветра: сбивает цель с ног порывом ветра."},
+    {"stormfist", "Кулак бури: мощный порыв отбрасывает врага и оглушает его."},
+    {"deathbolt", "Стрела смерти: тёмный снаряд, наносящий большой урон."},
+    {"breathofdeath", "Дыхание смерти: убивает всех живых вокруг героя."},
+    {"massdeath", "Массовая смерть: поражает всех врагов в большом радиусе."},
+    {"destroyundead", "Уничтожение нежити: разрушает нежить в радиусе действия."},
+    {"armyofdarkness", "Армия Тьмы: призывает мёртвых воинов, которые сражаются за героя."},
+    {"summonskeleton", "Призыв скелета: на время вызывает скелета-союзника."},
+    {"summongolem", "Призыв голема: на время вызывает каменного голема-союзника."},
+    {"summondemon", "Призыв демона: на время вызывает демона-союзника."},
+    {"summon", "Призыв: на время вызывает существо, которое сражается на стороне героя."},
+    {"lightheal", "Лёгкое исцеление: восстанавливает немного здоровья."},
+    {"mediumheal", "Среднее исцеление: восстанавливает часть здоровья."},
+    {"fullheal", "Полное исцеление: восстанавливает всё здоровье."},
+    {"heal", "Исцеление: восстанавливает здоровье за ману."},
+    {"teleport", "Телепортация: мгновенно переносит героя в указанное место."},
+    {"light", "Свет: освещает всё вокруг героя на некоторое время."},
+    {"charm", "Подчинение: цель на время перестаёт нападать и считает героя другом."},
+    {"sleep", "Сон: усыпляет цель, и она не может сражаться."},
+    {"fear", "Страх: враги вокруг в ужасе бегут от героя."},
+    {"berserk", "Берсерк: ярость на время делает героя сильнее в бою."},
+    {"telekinesis", "Телекинезия: двигает предметы и открывает замки на расстоянии."},
+    {"shrink", "Уменьшение: превращает цель в крошечное существо."},
+    {"whirlwind", "Вихрь: воздушный смерч подбрасывает и оглушает врагов."},
+    {"geyser", "Гейзер: струя воды бьёт из земли под целью."},
+    {"inflate", "Раздувание: цель раздувается и становится беспомощной."},
+    {"swarm", "Рой: стая насекомых жалит цель, пока заклинание действует."},
+    {"concussion", "Сотрясение: ударная волна бьёт по цели."},
+    {"control", "Контроль: герой берёт слабое существо под своё управление."},
+    {"trf", "Превращение: герой на время становится другим существом."},
+    {"transform", "Превращение: герой на время становится другим существом."},
+};
+
+const char* damageWord(int index) {
+	switch (index) {
+	case 0: return "Барьер";
+	case 1: return "Удар";
+	case 2: return "Рубящий";
+	case 3: return "Огонь";
+	case 4: return "Воздух";
+	case 5: return "Магия";
+	case 6: return "Колющий";
+	default: return "";
+	}
+}
+
+// Fills the spell lines of a rune or scroll.
+void spellNote(Game& g, const GameItemInfo& it, ItemEntry& e) {
+	e.noteHead[0] = 0;
+	e.note[0] = 0;
+	const GameSpell* sp = g.spellInfo(it.spell);
+	if (!sp) return;
+	char tag[24];
+	size_t n = 0;
+	for (const char* p = sp->tag; *p && n + 1 < sizeof(tag); ++p) tag[n++] = *p >= 'A' && *p <= 'Z' ? char(*p + 32) : *p;
+	tag[n] = 0;
+	const char* words = nullptr;
+	for (const SpellWords& w : kSpellWords)
+		if (strstr(tag, w.key)) {
+			words = w.text;
+			break;
+		}
+	char kinds[48] = "";
+	size_t k = 0;
+	if (sp->damagePerLevel > 0)
+		for (int i = 0; i < 7; ++i)
+			if ((sp->damageType & (1 << i)) && k + 12 < sizeof(kinds)) k += size_t(snprintf(kinds + k, sizeof(kinds) - k, "%s%s", k ? "+" : "", damageWord(i)));
+	if (sp->damagePerLevel > 1 && kinds[0]) {
+		snprintf(e.noteHead, sizeof(e.noteHead), "%s: урон %ld за уровень заряда", kinds, static_cast<long>(sp->damagePerLevel));
+	} else if (sp->area) {
+		snprintf(e.noteHead, sizeof(e.noteHead), "Действует на всех вокруг");
+	} else if (sp->shoots) {
+		snprintf(e.noteHead, sizeof(e.noteHead), "Летит в цель");
+	}
+	if (words) snprintf(e.note, sizeof(e.note), "%s", words);
+	else snprintf(e.note, sizeof(e.note), "%s", sp->damagePerLevel > 1 ? "Наносит урон цели; чем дольше заряд, тем он сильнее." : "Действует на героя или цель за ману.");
+}
+
+// Wraps text to a width in pixels, into lines of at most `size` bytes. Returns how many.
+int wrapLines(const Ui& ui, const char* text, int width, char (*out)[96], int maxLines) {
+	int count = 0;
+	char line[96] = "";
+	size_t len = 0;
+	const char* p = text;
+	while (*p && count < maxLines) {
+		const char* e = p;
+		while (*e && *e != ' ') ++e;
+		char word[64];
+		size_t wl = size_t(e - p);
+		if (wl >= sizeof(word)) wl = sizeof(word) - 1;
+		memcpy(word, p, wl);
+		word[wl] = 0;
+		char trial[160];
+		snprintf(trial, sizeof(trial), "%s%s%s", line, len ? " " : "", word);
+		if (len && ui.measure(trial) > width) {
+			snprintf(out[count++], 96, "%s", line);
+			snprintf(line, sizeof(line), "%s", word);
+			len = strlen(line);
+		} else {
+			snprintf(line, sizeof(line), "%s", trial);
+			len = strlen(line);
+		}
+		p = *e ? e + 1 : e;
+	}
+	if (len && count < maxLines) snprintf(out[count++], 96, "%s", line);
+	return count;
+}
+
 // Sorting: the pages' order, then what is worn first, then the dearer first.
 int kindOrder(u8 kind) {
 	static const u8 kOrder[ITEM_KINDS] = {0, 1, 2, 3, 4, 5, 7, 8, 6, 9, 10, 12, 11, 13};
@@ -784,6 +913,7 @@ void App::fillEntry(ItemEntry& e, u32 symbol, i32 count, const GameNpc& h, bool 
 		if (e.flags & ITEMF_ACTION) e.flags |= ITEMF_QUICK;
 		if (!carried) e.flags &= u8(~ITEMF_QUICK);
 		e.picture = thumbOf(it->visual);
+		if (e.kind == IK_RUNE || e.kind == IK_SCROLL) spellNote(g, *it, e);
 		// The info box: the scripts' own lines first, as the original shows them.
 		for (int k = 0; k < 6; ++k) {
 			if (!it->text[k]) continue;
@@ -1588,8 +1718,8 @@ void App::drawItemHud() {
 		const int w = _ui.measure(text) + 30;
 		y = clamp(y - 30, 20, H - 60);
 		_ui.rect(x - w / 2, y - 2, x + w / 2, y + Ui::lineHeight() + 1, 0x0A0C10A0u);
-		_ui.rect(x - w / 2 + 3, y + 1, x - w / 2 + 16, y + Ui::lineHeight() - 1, 0xC4C8CCFFu);
-		_ui.text(x - w / 2 + 10, y - 1, "A", 0x1C2024FFu, ui::TEXT, ui::CENTER, false);
+		_ui.rect(x - w / 2 + 3, y + 1, x - w / 2 + 16, y + Ui::lineHeight() - 1, 0xC9B58AFFu);
+		_ui.text(x - w / 2 + 10, y - 1, "A", 0x1E160BFFu, ui::TEXT, ui::CENTER, false);
 		_ui.text(x - w / 2 + 21, y, text, ui::WHITE);
 	};
 	if (_lootTarget >= 0 && u32(_lootTarget) < _loot.count()) {
@@ -1667,15 +1797,29 @@ void App::drawItemHud() {
 		if (list[i].symbol == shown) e = &list[i];
 	const int x0 = INFO_X0, x1 = INFO_X1, y0 = INFO_Y0, y1 = INFO_Y1, xm = INFO_X1 - MODEL_W;
 	if (e) {
-		_ui.rect(x0, y0, xm, y1, 0x0A0C10B4u);
-		_ui.rect(xm, y0, x1, y1, 0x0A0C1040u);
-		_ui.frame(x0, y0, x1, y1, 0x40444AC0u);
+		// fix213: a spell's words go in a band above the box, over its whole width (the box itself is small).
+		char noteLines[4][96];
+		const int noteN = e->note[0] ? wrapLines(_ui, e->note, x1 - x0 - 16, noteLines, 4) : 0;
+		const int band = (noteN + (e->noteHead[0] ? 1 : 0)) * line + (noteN || e->noteHead[0] ? 6 : 0);
+		if (band > 0) {
+			_ui.rect(x0, y0 - band, x1, y0, 0x120D08C4u);
+			_ui.frame(x0, y0 - band, x1, y0, 0x86683BC0u);
+			int by = y0 - band + 3;
+			if (e->noteHead[0]) {
+				_ui.text(x0 + 8, by, e->noteHead, 0xE8D890FFu);
+				by += line;
+			}
+			for (int i = 0; i < noteN; ++i, by += line) _ui.text(x0 + 8, by, noteLines[i], 0xE2D8BEFFu);
+		}
+		_ui.rect(x0, y0, xm, y1, 0x120D08C4u);
+		_ui.rect(xm, y0, x1, y1, 0x120D0848u);
+		_ui.frame(x0, y0, x1, y1, 0x86683BC0u);
 		int y = y0 + 3;
-		_ui.text((x0 + xm) / 2, y, e->name, 0xEAE6DAFFu, ui::TEXT, ui::CENTER);
+		_ui.text((x0 + xm) / 2, y, e->name, 0xF4E8CAFFu, ui::TEXT, ui::CENTER);
 		y += line + 6;
 		for (int r = 0; r < e->rowCount && y + line <= y1 - 2; ++r) {
 			const ItemRow& row = e->rows[r];
-			const u32 c = row.warn ? ui::RED : 0xD8D6D0FFu;
+			const u32 c = row.warn ? ui::RED : 0xE2D8BEFFu;
 			_ui.text(x0 + 10, y, row.label, c);
 			if (row.value[0]) _ui.text(xm - 8, y, row.value, c, ui::TEXT, ui::RIGHT);
 			y += line;
@@ -1687,10 +1831,10 @@ void App::drawItemHud() {
 	const int y = H - 15;
 	const auto hint = [&](const char* key, const char* what, bool on) {
 		const int kw = max(_ui.measure(key) + 6, 13);
-		_ui.rect(x, y + 1, x + kw, y + line, on ? 0xC4C8CCFFu : 0x5C6064FFu);
-		_ui.text(x + kw / 2, y, key, 0x1C2024FFu, ui::TEXT, ui::CENTER, false);
+		_ui.rect(x, y + 1, x + kw, y + line, on ? 0xC9B58AFFu : 0x5C4C34FFu);
+		_ui.text(x + kw / 2, y, key, 0x1E160BFFu, ui::TEXT, ui::CENTER, false);
 		x += kw + 4;
-		x += _ui.text(x, y, what, on ? 0xD8D6D0FFu : ui::DARK) + 10;
+		x += _ui.text(x, y, what, on ? 0xE2D8BEFFu : ui::DARK) + 10;
 	};
 	if (lockPage) {
 		hint("L", tr("Влево"), true);

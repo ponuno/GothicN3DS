@@ -375,8 +375,7 @@ void Menu::drawSaves(Ui& ui, const char* message, const SaveMenuView* v) const {
 	const int x0 = 6, x1 = W - 6, top = 6, bottom = H - 6;
 	const int line = Ui::lineHeight(ui::TEXT) + 2, lh = Ui::lineHeight(ui::TEXT); // (eleven rows fit)
 	ui.rect(0, 0, W, H, 0x00000070u);
-	ui.rect(x0, top, x1, bottom, ui::PANEL);
-	ui.frame(x0, top, x1, bottom, 0x8C7A50FFu);
+	ui.box(x0, top, x1, bottom, 0x14100CD0u);
 	ui.text(W / 2, top + 5, tr(kPages[_page].title), ui::GOLD, ui::TITLE, ui::CENTER);
 	const bool saving = _page == PAGE_SAVE;
 	const int n = slotCount(_page);
@@ -396,7 +395,7 @@ void Menu::drawSaves(Ui& ui, const char* message, const SaveMenuView* v) const {
 		const bool on = i == sel;
 		if (on) ui.rect(lx0, y - 1, lx1, y + line - 2, 0x6E5A2E90u);
 		int tx = lx0 + 6;
-		if (slot > 0) {
+		if (slot > 0 && slot <= SAVE_SLOTS) {
 			snprintf(buf, sizeof(buf), "%d.", slot);
 			ui.text(lx0 + 22, y, buf, on ? ui::GOLD : ui::DARK, ui::TEXT, ui::RIGHT);
 			tx = lx0 + 26;
@@ -404,13 +403,13 @@ void Menu::drawSaves(Ui& ui, const char* message, const SaveMenuView* v) const {
 		const char* name;
 		u32 colour = on ? ui::WHITE : ui::GREY;
 		if (!info || !info->used) {
-			name = slot == 0 ? tr("Быстрое сохранение — нет") : tr("— пусто —");
+			name = slot == 0 ? tr("Быстрое сохранение — нет") : slot == SAVE_AUTO ? tr("Автосохранение — нет") : tr("— пусто —");
 			colour = on ? ui::GREY : ui::DARK;
 		} else if (!info->readable) {
 			name = tr("(повреждено)");
 			colour = ui::RED;
-		} else if (slot == 0) {
-			name = tr("Быстрое сохранение");
+		} else if (slot == 0 || slot == SAVE_AUTO) {
+			name = slot == 0 ? tr("Быстрое сохранение") : tr("Автосохранение");
 			if (!on) colour = 0xC8B48CFFu;
 		} else {
 			name = info->title[0] ? info->title : tr("Без названия");
@@ -436,7 +435,7 @@ void Menu::drawSaves(Ui& ui, const char* message, const SaveMenuView* v) const {
 	ui.frame(px0 - 1, py0 - 1, px1 + 1, py1 + 1, 0x8C7A50FFu);
 	y = py1 + 6;
 	if (shown) {
-		const char* title = current ? tr("Новое сохранение") : slotOfEntry(_page, sel) == 0 ? tr("Быстрое сохранение") : shown->title[0] ? shown->title : tr("Без названия");
+		const char* title = current ? tr("Новое сохранение") : slotOfEntry(_page, sel) == 0 ? tr("Быстрое сохранение") : slotOfEntry(_page, sel) == SAVE_AUTO ? tr("Автосохранение") : shown->title[0] ? shown->title : tr("Без названия");
 		ui.text(rx0, y, fitText(ui, title, rw, cut, sizeof(cut)), ui::GOLD);
 		y += lh;
 		if (shown->world[0]) {
@@ -482,8 +481,7 @@ void Menu::draw(Ui& ui, const Settings& s, const char* status, const char* messa
 	const int w = 320, x0 = (gfx::SCREEN_W - w) / 2, x1 = x0 + w;
 	const int top = 16, bottom = gfx::SCREEN_H - 12;
 	ui.rect(0, 0, gfx::SCREEN_W, gfx::SCREEN_H, 0x00000070u);
-	ui.rect(x0, top, x1, bottom, ui::PANEL);
-	ui.frame(x0, top, x1, bottom, 0x8C7A50FFu);
+	ui.box(x0, top, x1, bottom, 0x14100CD0u);
 	ui.text(gfx::SCREEN_W / 2, top + 6, tr(page.title), ui::GOLD, ui::TITLE, ui::CENTER);
 	int y = top + 6 + Ui::lineHeight(ui::TITLE);
 	if (status && *status) {

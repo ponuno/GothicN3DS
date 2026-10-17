@@ -332,7 +332,7 @@ static bool peekState(const char* path, u32& world, float& timeOfDay) {
 
 void App::refreshSlots() {
 	char path[200];
-	for (int k = 0; k <= SAVE_SLOTS; ++k) {
+	for (int k = 0; k < SAVE_ALL; ++k) {
 		slotPath(k, path, sizeof(path));
 		SaveInfo& info = _slots[k];
 		readSaveInfo(path, info, nullptr);
@@ -753,12 +753,12 @@ void App::update(const Input& given, float dt) {
 		}
 		// What the character wears (Mdl_ApplyOverlayMds: a learnt fight talent, a potion's sprint).
 		if (_npcs.loaded() && heroIndex() >= 0) {
-			const Model* worn[4];
+			const Model* worn[Hero::OVERLAYS];
 			// (fix151: a creature wears none of the human skeleton's.)
-			u32 count = heroTransformed() ? 0u : _npcs.overlayModels(u32(heroIndex()), worn, 4);
+			u32 count = heroTransformed() ? 0u : _npcs.overlayModels(u32(heroIndex()), worn, Hero::OVERLAYS - 1);
 			// fix192: the torch in the hand has the model's own way of carrying it (HUMANS_TORCH.MDS: OpenGothic's
 			// Npc::setTorch puts it on), if the game has it.
-			if (torchShown() && count < 4)
+			if (torchShown() && count < Hero::OVERLAYS)
 				if (const Model* t = _npcs.overlayModelNamed("humans_torch")) worn[count++] = t;
 			_hero.setOverlays(worn, count);
 		}
@@ -791,6 +791,7 @@ void App::update(const Input& given, float dt) {
 			}
 		}
 		fallCheck();
+		drownCheck(dt);
 		tBodies = sys::timeMs();
 		const SkyColors sky = skyColors();
 		const float indoorLight[3] = {1, 1, 1};
@@ -1656,7 +1657,12 @@ void App::fightInput(const Input& in, float dt) {
 	if (_hero.down()) {
 		if (_deadTime > 0.0f) {
 			_deadTime += dt;
-			if (in.confirm && _deadTime > 1.5f) respawn(_statePath);
+			if (in.confirm && _deadTime > 1.5f) {
+				// (fix208: the newer of the quick save and the one made on leaving.)
+				char path[200];
+				slotPath(latestQuickSlot(), path, sizeof(path));
+				respawn(path);
+			}
 		} else if ((_downTime -= dt) <= 0.0f) {
 			// Come to: up again, with the hit points the blow left.
 			_hero.getUp();
@@ -1693,7 +1699,13 @@ void App::fightInput(const Input& in, float dt) {
 	    _hero.weapon() != WEAPON_CBOW) {
 		// The direction of the blow is the D-Pad's, held as A is pressed (left: from the left,
 		// right: from the right, else ahead); the stick only moves.
-		_hero.attack(in.blowDir < 0 ? 1 : in.blowDir > 0 ? 2 : 0);
+		// fix208: one lying knocked out before the blade is finished off, as the original's (not with the fists).
+		const int down = (_hero.weapon() == WEAPON_1H || _hero.weapon() == WEAPON_2H) && !heroTransformed() ? finishTarget() : -1;
+		if (down >= 0 && _hero.finish()) {
+			_finishVictim = down;
+		} else if (_hero.attack(in.blowDir < 0 ? 1 : in.blowDir > 0 ? 2 : 0)) {
+			_finishVictim = -1;
+		}
 	}
 	_hero.setParry(in.parry && _hero.weapon() != WEAPON_NONE && _hero.weapon() != WEAPON_MAG);
 }
@@ -1728,10 +1740,45 @@ bool App::heroTake(u8 mode) {
 
 // A blow of the player's character lands: on the target if it is within
 // reach in front, else on whoever is.
+int App::finishTarget() const {
+	const int hi = heroIndex();
+	if (hi < 0 || !_npcs.loaded()) return -1;
+	const Game& g = _npcs.game();
+	const float yaw = _hero.yaw();
+	const i32 sep = g.constant("GIL_SEPERATOR_HUM", 16);
+	int best = -1;
+	float bestD = 200.0f;
+	for (u32 i = 0; i < g.npcCount(); ++i) {
+		if (int(i) == hi) continue;
+		const GameNpc& n = g.npc(i);
+		if (n.down != DOWN_UNCONSCIOUS || !n.placed || g.guildOf(n) >= sep) continue;
+		const float dx = n.pos[0] - _player.feet.x, dz = n.pos[2] - _player.feet.z;
+		const float d = sqrtf(dx * dx + dz * dz);
+		if (d >= bestD || fabsf(n.pos[1] - _player.feet.y) > 150.0f) continue;
+		if (d > 40.0f && fabsf(wrapYaw(atan2f(dx, dz) - yaw)) > 1.0f) continue;
+		best = int(i);
+		bestD = d;
+	}
+	return best;
+}
+
 void App::heroBlow() {
 	const int hi = heroIndex();
 	if (hi < 0) return;
 	Game& g = _npcs.game();
+	if (_finishVictim >= 0) {
+		// fix208: the finishing blow lands: dead (the others perceive a murder: Npcs::goDown).
+		const u32 v = u32(_finishVictim);
+		_finishVictim = -1;
+		if (v < g.npcCount() && g.npc(v).down == DOWN_UNCONSCIOUS) {
+			bloodAt(v, u32(hi), 1);
+			_npcs.emitHit(u32(hi), v);
+			_npcs.goDown(v, hi, true, false);
+			++_fight.blowsLanded;
+			++_fight.finished;
+		}
+		return;
+	}
 	const float feet[3] = {_player.feet.x, _player.feet.y, _player.feet.z};
 	const float yaw = _hero.yaw();
 	const auto reaches = [&](int t) {
@@ -1829,6 +1876,35 @@ void App::fallCheck() {
 	const float drop = _fallPeak - _player.feet.y;
 	_fallAir = false;
 	if (landed && drop > 0.0f) heroLanded(drop);
+}
+
+// fix210: under the surface the breath runs out (PlayerConfig::airTime seconds); then the water hurts, a twentieth of
+// the hit points a second (at least 3), until he is up for air.
+void App::drownCheck(float dt) {
+	const int hi = heroIndex();
+	if (hi < 0 || _hero.down() || !_npcs.loaded() || _player.breath > 0.0f) {
+		_drownTime = 0.0f;
+		return;
+	}
+	_drownTime += dt;
+	if (_drownTime < 1.0f) return;
+	_drownTime -= 1.0f;
+	Game& g = _npcs.game();
+	GameNpc& h = g.npcMut(u32(hi));
+	const i32 dmg = _settings.immortal ? 0 : max(heroHitPointsMax() / 20, i32(3));
+	if (dmg <= 0) return;
+	const i32 hp = max(g.hitPoints(h) - dmg, i32(0));
+	g.setAttribute(h, 0, hp);
+	_fight.lastDamage = dmg;
+	if (hp > 0) {
+		_npcs.emitSvm(u32(hi), "AARGH");
+	} else {
+		_hero.fall(true, false);
+		_deadTime = 0.001f;
+		_npcs.goDown(u32(hi), -1, true, false);
+		_target = -1;
+		_locked = false;
+	}
 }
 
 void App::heroLanded(float drop) {

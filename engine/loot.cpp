@@ -348,7 +348,14 @@ bool Loot::drawInHand(Pak& pak, Game& game, const Model& host, const Pose& pose,
 	int node = host.findNode(left ? handL : hand);
 	if (node < 0) node = host.findNode(left ? leftHand : rightHand);
 	Mat34 at;
-	if (node < 0 || !host.nodeMatrix(pose, node, yaw, lean, scale, at)) return false;
+	if (node < 0 || !host.nodeMatrix(pose, node, yaw, lean, scale, at)) {
+		// fix213: a skeleton without the hand: the flame still burns where a hand at the side would hold it, not over the head.
+		if (tip) {
+			const float side = left ? -1.0f : 1.0f;
+			*tip = origin + Vec3 {cosf(yaw) * 30.0f * side + sinf(yaw) * 25.0f, 105.0f, -sinf(yaw) * 30.0f * side + cosf(yaw) * 25.0f};
+		}
+		return false;
+	}
 	const Model* m = lookModel(pak, game, symbol);
 	if (!m) {
 		if (tip) *tip = origin + Vec3 {at.m[0][3], at.m[1][3] + 25.0f, at.m[2][3]}; // (no model: above the hand)

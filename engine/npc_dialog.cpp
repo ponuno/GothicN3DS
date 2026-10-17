@@ -504,6 +504,10 @@ bool Npcs::talkChoose(u32 index) {
 	}
 	t.choosing = false;
 	const u32 fn = _game.choice(ref).fn;
+	// fix211: the ways of an info are cleared as one is taken, and whatever the function wants on offer it adds again
+	// (the scripts' teachers all do: "Info_ClearChoices; Info_AddChoice ..." at the end of each way). One that adds
+	// nothing returns to the list of the infos - so a thing learnt (Knows_GetTeeth = TRUE) is no longer on offer.
+	_game.clearChoices(_game.choice(ref).info);
 	const u32 adds = _game.choiceAdds();
 	++_stats.infosTold;
 	_game.callAs(fn, u32(t.npc), int(_game.heroIndex()));
@@ -534,7 +538,39 @@ bool Npcs::talkBack() {
 		tradeClose();
 		return true;
 	}
-	if (_talk.choosing && _talk.count) return talkChoose(_talk.count - 1);
+	if (_talk.choosing && _talk.count && _talk.sleepMenu) return talkChoose(_talk.count - 1);
+	if (_talk.choosing && _talk.count) {
+		// fix202: B takes the way back or out by its words (the scripts' DIALOG_BACK / DIALOG_ENDE: "BACK", "END",
+		// "ЗАКОНЧИТЬ" ...), wherever it stands in the list - a choice's "back" is often the first one added; the last of
+		// the list only when none says so.
+		const auto words = [&](const char* name, char* out, u32 size) {
+			out[0] = 0;
+			const u32 sym = _game.vm().find(name);
+			if (sym != SCRIPT_NONE && _game.vm().symbol(sym).type == SCRIPT_STRING) scriptText(_game.vm().getString(sym), out, size);
+		};
+		char back[64], end[64];
+		words("DIALOG_BACK", back, sizeof(back));
+		words("DIALOG_ENDE", end, sizeof(end));
+		const auto same = [](const char* a, const char* b) {
+			if (!a[0] || !b[0]) return false;
+			for (; *a && *b; ++a, ++b) {
+				char x = *a, y = *b;
+				if (x >= 'a' && x <= 'z') x = char(x - 32);
+				if (y >= 'a' && y <= 'z') y = char(y - 32);
+				if (x != y) return false;
+			}
+			return *a == *b;
+		};
+		const char* wants[2] = {back, end};
+		for (const char* want : wants)
+			for (u32 i = 0; i < _talk.count && i < u32(TALK_ITEMS); ++i) {
+				char item[96];
+				const char* text = _talk.isChoice[i] ? _game.choice(_talk.ref[i]).text : _game.infoDescription(_talk.ref[i]);
+				scriptText(text, item, sizeof(item));
+				if (same(item, want)) return talkChoose(i);
+			}
+		return talkChoose(_talk.count - 1);
+	}
 	talkSkip();
 	return true;
 }

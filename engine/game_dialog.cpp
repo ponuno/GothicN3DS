@@ -145,11 +145,20 @@ bool Game::infoAvailable(u32 info, u32 npc) {
 	return callAs(in.condition, npc, _hero != SCRIPT_NONE ? int(_hero) : -1) != 0;
 }
 
+// fix208: whose it is, as the scripts have it now: Gothic 1's ambient talk is shared by many, and each takes it for
+// himself as the talk begins (ZS_Talk -> B_AssignAmbientInfos: Info_Vlk_1_EXIT.npc = Hlp_GetInstanceID(self)), as
+// OpenGothic reads info->npc when it lists them.
+u32 Game::infoNpc(u32 i) const {
+	if (i >= _infoCount) return SCRIPT_NONE;
+	if (_infos[i].object && _mInfoNpc != SCRIPT_NONE) _infos[i].npc = u32(_vm.getInt(_mInfoNpc, 0, _infos[i].object));
+	return _infos[i].npc;
+}
+
 bool Game::hasInfos(u32 npc) const {
 	if (npc >= _npcCount) return false;
 	const u32 symbol = _npcs[npc].symbol;
 	for (u32 i = 0; i < _infoCount; ++i)
-		if (_infos[i].npc == symbol) return true;
+		if (infoNpc(i) == symbol) return true;
 	return false;
 }
 
@@ -159,7 +168,7 @@ u32 Game::infosFor(u32 npc, bool important, u32* out, u32 max) {
 	u32 n = 0;
 	for (u32 i = 0; i < _infoCount; ++i) {
 		const GameInfo& in = _infos[i];
-		if (in.npc != symbol || in.important != important) continue;
+		if (infoNpc(i) != symbol || in.important != important) continue;
 		// (The menu lists what has words; an important one needs none.)
 		if (!important && !*infoDescription(i)) continue;
 		if (!infoAvailable(i, npc)) continue;
@@ -334,6 +343,53 @@ void Game::xSetTalentSkill(ScriptVm& vm, void* user) {
 	if (npc >= 0 && talent >= 0 && talent < 16) {
 		g._npcs[npc].skill[talent] = i16(value < -32768 ? -32768 : value > 32767 ? 32767 : value);
 		++g._itemsVersion; // (the sheet of the character is made anew)
+		g.talentOverlays(u32(npc)); // fix202
+	}
+}
+
+// fix202: a fighting talent's level is a way of moving (OpenGothic's Npc::invalidateTalentOverlays, as ZenGin's
+// oCNpc::SetTalentSkill): <SKELETON>_1HST1 / _1HST2 for the one-handed weapons at level 1 / 2, _2HST*, _BOWT*, _CBOWT*,
+// and _ACROBATIC. Without them every character fought as one who never learnt.
+void Game::talentOverlays(u32 npc) {
+	if (npc >= _npcCount) return;
+	GameNpc& n = _npcs[npc];
+	const char* scheme = text(n.look.script);
+	if (!scheme || !*scheme) return;
+	char base[48];
+	copyText(base, sizeof(base), scheme);
+	if (char* dot = strrchr(base, '.')) *dot = 0;
+	static const struct {
+		const char* talent;
+		i32 fallback;
+		const char* one;
+		const char* two;
+	} kTalents[] = {{"NPC_TALENT_1H", 1, "_1HST1", "_1HST2"},
+	                {"NPC_TALENT_2H", 2, "_2HST1", "_2HST2"},
+	                {"NPC_TALENT_BOW", 3, "_BOWT1", "_BOWT2"},
+	                {"NPC_TALENT_CROSSBOW", 4, "_CBOWT1", "_CBOWT2"},
+	                {"NPC_TALENT_ACROBAT", 11, "_ACROBATIC", nullptr}};
+	for (const auto& t : kTalents) {
+		const i32 index = constant(t.talent, t.fallback);
+		if (index < 0 || index >= 16) continue;
+		const i32 level = n.skill[index];
+		char one[64], two[64];
+		snprintf(one, sizeof(one), "%s%s", base, t.one);
+		if (t.two) snprintf(two, sizeof(two), "%s%s", base, t.two);
+		if (!t.two) {
+			if (level > 0) applyOverlay(npc, one);
+			else removeOverlay(npc, one);
+			continue;
+		}
+		if (level == 1) {
+			removeOverlay(npc, two);
+			applyOverlay(npc, one);
+		} else if (level >= 2) {
+			removeOverlay(npc, one);
+			applyOverlay(npc, two);
+		} else {
+			removeOverlay(npc, one);
+			removeOverlay(npc, two);
+		}
 	}
 }
 

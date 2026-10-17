@@ -20,12 +20,25 @@
 
 namespace {
 
-enum { ID_PATH = 1, ID_BROWSE, ID_MUSIC, ID_GFXPLUS, ID_START, ID_PROGRESS, ID_LOG, ID_STATUS, ID_VOICES, ID_DEBUG, ID_LOD, ID_SIMPLIFY, ID_SIMPLIFY_LARGE, ID_FAR_HQ, ID_TEX256, ID_LIGHTS, ID_NPC_LOD, ID_SUN, ID_OLD_WATER, ID_GRASS_REPORT, ID_GRASS, ID_CLEAR_WATER };
+enum { ID_PATH = 1, ID_BROWSE, ID_MUSIC, ID_GFXPLUS, ID_START, ID_PROGRESS, ID_LOG, ID_STATUS, ID_VOICES, ID_DEBUG, ID_LOD, ID_SIMPLIFY, ID_SIMPLIFY_LARGE, ID_FAR_HQ, ID_TEX256, ID_LIGHTS, ID_NPC_LOD, ID_SUN, ID_OLD_WATER, ID_GRASS_REPORT, ID_GRASS, ID_CLEAR_WATER,
+       ID_RECOMMENDED, ID_ADVANCED, ID_GAME, ID_HINT, ID_VOICE_IMA, ID_WATER_GRID };
 const UINT WM_LOGLINE = WM_APP + 1; // lParam: new std::wstring*
 const UINT WM_STATUS = WM_APP + 2;  // lParam: new std::wstring*
 const UINT WM_FINISHED = WM_APP + 3; // wParam: 1 ok
 
-HWND gWnd, gPath, gBrowse, gMusic, gGfxPlus, gLod, gSimplify, gSimplifyLarge, gFarHq, gTex256, gLights, gNpcLod, gSun, gOldWater, gClearWater, gGrassReport, gGrass, gVoices, gDebug, gStart, gProgress, gLog, gStatus;
+HWND gWnd, gPath, gBrowse, gMusic, gGfxPlus, gLod, gSimplify, gSimplifyLarge, gFarHq, gTex256, gLights, gNpcLod, gSun, gOldWater, gClearWater, gGrassReport, gGrass, gVoices, gVoiceIma, gWaterGrid, gDebug, gStart, gProgress, gLog, gStatus;
+HWND gGame, gRecommended, gAdvancedButton, gHint, gGameLabel;
+bool gAdvanced = false;
+// Every option box with the value the recommended settings give it (filled in wWinMain).
+struct OptionBox {
+	HWND* box;
+	bool recommended;
+};
+std::vector<OptionBox> gOptions;
+// What the player picked, for the worker thread.
+struct Choices {
+	bool music, gfxPlus, lod, simplify, simplifyLarge, farHq, tex256, lights, npcLod, sun, oldWater, clearWater, grassReport, grass, voices, voiceIma, waterGrid, debug;
+};
 std::wstring gExeDir; // with a trailing backslash
 std::atomic<HANDLE> gChild(nullptr);
 std::atomic<bool> gRunning(false), gAbort(false);
@@ -153,7 +166,9 @@ bool run(const std::wstring& cmd) {
 	return code == 0;
 }
 
-void pipeline(std::wstring game, bool music, bool gfxPlus, bool lod, bool simplify, bool simplifyLarge, bool farHq, bool tex256, bool lights, bool npcLod, bool sun, bool oldWater, bool clearWater, bool grassReport, bool grass, bool voices, bool debug) {
+void pipeline(std::wstring game, Choices c) {
+	const bool music = c.music, gfxPlus = c.gfxPlus, lod = c.lod, simplify = c.simplify, simplifyLarge = c.simplifyLarge, farHq = c.farHq, tex256 = c.tex256, lights = c.lights, npcLod = c.npcLod, sun = c.sun,
+	           oldWater = c.oldWater, clearWater = c.clearWater, grassReport = c.grassReport, grass = c.grass, voices = c.voices, voiceIma = c.voiceIma, waterGrid = c.waterGrid, debug = c.debug;
 	const std::wstring bake = L"\"" + gExeDir + L"g3ds-bake.exe\"";
 	const std::wstring render = L"\"" + gExeDir + L"dmrender.exe\"";
 	const std::wstring out = gExeDir; // everything lands beside the program
@@ -208,6 +223,10 @@ void pipeline(std::wstring game, bool music, bool gfxPlus, bool lod, bool simpli
 		// A second, harder pass over the large objects (the heaviest ones in the busiest scenes).
 		if (simplifyLarge) cmd += L" --simplify-ratio-large 0.4";
 		if (!voices) cmd += L" --no-voices";
+		// The voices as IMA ADPCM: a quarter the size of the recordings' 16-bit samples (the game plays both).
+		else if (voiceIma) cmd += L" --voice-codec ima";
+		// The water cut along the shores into a 2 m grid: waves lift it, the shore is coloured by depth (the recommended setting for Gothic 1).
+		if (waterGrid) cmd += L" --water-grid 2";
 		if (debug) cmd += L" --debug-report \"" + outShort + L"bake_debug.txt\"";
 		const std::wstring extra = extraArgs(gExeDir);
 		if (!extra.empty()) {
@@ -274,6 +293,49 @@ std::wstring editText(HWND h) {
 	return s;
 }
 
+void setAllEnabled(bool on) {
+	EnableWindow(gStart, on);
+	EnableWindow(gBrowse, on);
+	EnableWindow(gPath, on);
+	EnableWindow(gGame, on);
+	EnableWindow(gRecommended, on);
+	for (const OptionBox& o : gOptions) EnableWindow(*o.box, on);
+}
+
+bool checked(HWND h) { return SendMessageW(h, BM_GETCHECK, 0, 0) == BST_CHECKED; }
+
+void setHint(bool recommended) {
+	SetWindowTextW(gHint, recommended ? L"Recommended settings for Gothic are selected. Everything can be changed in Advanced settings."
+	                                  : L"Custom settings. \"Recommended settings\" puts the best ones back.");
+}
+
+// Puts every option to its recommended value and points the baker at the Gothic folder if it can be found.
+void applyRecommended() {
+	for (const OptionBox& o : gOptions) SendMessageW(*o.box, BM_SETCHECK, o.recommended ? BST_CHECKED : BST_UNCHECKED, 0);
+	SendMessageW(gGame, CB_SETCURSEL, 0, 0);
+	std::wstring game = editText(gPath);
+	if (game.empty() || !exists(game + L"\\Data")) {
+		const std::wstring found = guessGame();
+		if (!found.empty()) SetWindowTextW(gPath, found.c_str());
+		else MessageBoxW(gWnd, L"Gothic was not found in the usual places. Press Browse and select the folder where Gothic is installed (it contains Data and _work).", L"Gothic 3DS", MB_OK | MB_ICONINFORMATION);
+	}
+	setHint(true);
+}
+
+// The window's height follows the advanced settings: shown, they push the progress bar and the log down.
+void layout() {
+	const int kPanelTop = 160, kPanelHeight = 9 * 22 + 8;
+	for (const OptionBox& o : gOptions) ShowWindow(*o.box, gAdvanced ? SW_SHOW : SW_HIDE);
+	SetWindowTextW(gAdvancedButton, gAdvanced ? L"Hide advanced settings" : L"Advanced settings...");
+	const int y = kPanelTop + (gAdvanced ? kPanelHeight : 0);
+	SetWindowPos(gProgress, nullptr, 12, y, 688, 14, SWP_NOZORDER);
+	SetWindowPos(gStatus, nullptr, 12, y + 20, 688, 18, SWP_NOZORDER);
+	SetWindowPos(gLog, nullptr, 12, y + 42, 688, 250, SWP_NOZORDER);
+	RECT r = {0, 0, 712, y + 42 + 250 + 12};
+	AdjustWindowRect(&r, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE);
+	SetWindowPos(gWnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);
+}
+
 void startPressed() {
 	if (gRunning) return;
 	std::wstring game = editText(gPath);
@@ -287,61 +349,66 @@ void startPressed() {
 		MessageBoxW(gWnd, L"g3ds-bake.exe is not next to this program. Put all the .exe files in the same folder.", L"Gothic 3DS", MB_OK | MB_ICONERROR);
 		return;
 	}
-	const bool music = SendMessageW(gMusic, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool gfxPlus = SendMessageW(gGfxPlus, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool lod = SendMessageW(gLod, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool simplify = SendMessageW(gSimplify, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool simplifyLarge = SendMessageW(gSimplifyLarge, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool farHq = SendMessageW(gFarHq, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool tex256 = SendMessageW(gTex256, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool lights = SendMessageW(gLights, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool npcLod = SendMessageW(gNpcLod, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool sun = SendMessageW(gSun, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool oldWater = SendMessageW(gOldWater, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool clearWater = SendMessageW(gClearWater, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool grassReport = SendMessageW(gGrassReport, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool grass = SendMessageW(gGrass, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool voices = SendMessageW(gVoices, BM_GETCHECK, 0, 0) == BST_CHECKED;
-	const bool debug = SendMessageW(gDebug, BM_GETCHECK, 0, 0) == BST_CHECKED;
+	Choices c = {};
+	c.music = checked(gMusic);
+	c.gfxPlus = checked(gGfxPlus);
+	c.lod = checked(gLod);
+	c.simplify = checked(gSimplify);
+	c.simplifyLarge = checked(gSimplifyLarge);
+	c.farHq = checked(gFarHq);
+	c.tex256 = checked(gTex256);
+	c.lights = checked(gLights);
+	c.npcLod = checked(gNpcLod);
+	c.sun = checked(gSun);
+	c.oldWater = checked(gOldWater);
+	c.clearWater = checked(gClearWater);
+	c.grassReport = checked(gGrassReport);
+	c.grass = checked(gGrass);
+	c.voices = checked(gVoices);
+	c.voiceIma = checked(gVoiceIma);
+	c.waterGrid = checked(gWaterGrid);
+	c.debug = checked(gDebug);
 	if (gWorker.joinable()) gWorker.join();
 	if (gLogFile != INVALID_HANDLE_VALUE) CloseHandle(gLogFile);
 	gLogFile = CreateFileW((gExeDir + L"bake.log").c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 	SetWindowTextW(gLog, L"");
 	gAbort = false;
 	gRunning = true;
-	EnableWindow(gStart, FALSE);
-	EnableWindow(gBrowse, FALSE);
-	EnableWindow(gPath, FALSE);
-	EnableWindow(gMusic, FALSE);
-	EnableWindow(gGfxPlus, FALSE);
-	EnableWindow(gLod, FALSE);
-	EnableWindow(gSimplify, FALSE);
-	EnableWindow(gSimplifyLarge, FALSE);
-	EnableWindow(gFarHq, FALSE);
-	EnableWindow(gTex256, FALSE);
-	EnableWindow(gLights, FALSE);
-	EnableWindow(gNpcLod, FALSE);
-	EnableWindow(gSun, FALSE);
-	EnableWindow(gOldWater, FALSE);
-	EnableWindow(gClearWater, FALSE);
-	EnableWindow(gGrassReport, FALSE);
-	EnableWindow(gGrass, FALSE);
-	EnableWindow(gVoices, FALSE);
-	EnableWindow(gDebug, FALSE);
+	setAllEnabled(false);
 	SendMessageW(gProgress, PBM_SETMARQUEE, TRUE, 40);
-	gWorker = std::thread(pipeline, game, music, gfxPlus, lod, simplify, simplifyLarge, farHq, tex256, lights, npcLod, sun, oldWater, clearWater, grassReport, grass, voices, debug);
+	gWorker = std::thread(pipeline, game, c);
 }
 
 LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
 	switch (m) {
-	case WM_COMMAND:
-		if (LOWORD(w) == ID_BROWSE) {
+	case WM_COMMAND: {
+		const int id = LOWORD(w), code = HIWORD(w);
+		if (id == ID_BROWSE) {
 			const std::wstring p = browseForFolder();
 			if (!p.empty()) SetWindowTextW(gPath, p.c_str());
-		} else if (LOWORD(w) == ID_START) {
+		} else if (id == ID_START) {
 			startPressed();
+		} else if (id == ID_RECOMMENDED) {
+			applyRecommended();
+		} else if (id == ID_ADVANCED) {
+			gAdvanced = !gAdvanced;
+			layout();
+		} else if (id == ID_GAME && code == CBN_SELCHANGE) {
+			// Only Gothic 1 so far; Gothic II and Archolos come later.
+			if (SendMessageW(gGame, CB_GETCURSEL, 0, 0) != 0) {
+				SendMessageW(gGame, CB_SETCURSEL, 0, 0);
+				MessageBoxW(h, L"Only Gothic (1) can be baked for now. Gothic II and Archolos are coming later.", L"Gothic 3DS", MB_OK | MB_ICONINFORMATION);
+			}
+		} else if (code == BN_CLICKED) {
+			for (const OptionBox& o : gOptions)
+				if (GetDlgCtrlID(*o.box) == id) {
+					bool all = true;
+					for (const OptionBox& p : gOptions) all = all && checked(*p.box) == p.recommended;
+					setHint(all);
+				}
 		}
 		return 0;
+	}
 	case WM_LOGLINE: {
 		std::wstring* s = reinterpret_cast<std::wstring*>(l);
 		appendLog(*s);
@@ -357,25 +424,7 @@ LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
 	case WM_FINISHED:
 		gRunning = false;
 		SendMessageW(gProgress, PBM_SETMARQUEE, FALSE, 0);
-		EnableWindow(gStart, TRUE);
-		EnableWindow(gBrowse, TRUE);
-		EnableWindow(gPath, TRUE);
-		EnableWindow(gMusic, TRUE);
-		EnableWindow(gGfxPlus, TRUE);
-		EnableWindow(gLod, TRUE);
-		EnableWindow(gSimplify, TRUE);
-		EnableWindow(gSimplifyLarge, TRUE);
-		EnableWindow(gFarHq, TRUE);
-		EnableWindow(gTex256, TRUE);
-		EnableWindow(gLights, TRUE);
-		EnableWindow(gNpcLod, TRUE);
-		EnableWindow(gSun, TRUE);
-		EnableWindow(gOldWater, TRUE);
-		EnableWindow(gClearWater, TRUE);
-		EnableWindow(gGrassReport, TRUE);
-		EnableWindow(gGrass, TRUE);
-		EnableWindow(gVoices, TRUE);
-		EnableWindow(gDebug, TRUE);
+		setAllEnabled(true);
 		if (w) MessageBoxW(h, L"Done! data.pak (and music.pak, speech.pak, video.pak) are next to this program.\r\nCopy them to the SD card, folder 3ds\\gothic3ds\\", L"Gothic 3DS", MB_OK | MB_ICONINFORMATION);
 		return 0;
 	case WM_CLOSE:
@@ -410,44 +459,61 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
 	wc.lpszClassName = L"G3dsBaker";
 	RegisterClassW(&wc);
 	gWnd = CreateWindowExW(0, wc.lpszClassName, L"Gothic 3DS: data baker", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-	                       CW_USEDEFAULT, CW_USEDEFAULT, 720, 744, nullptr, nullptr, inst, nullptr);
+	                       CW_USEDEFAULT, CW_USEDEFAULT, 720, 520, nullptr, nullptr, inst, nullptr);
 	const HFONT font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
 	const auto make = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id, DWORD ex = 0) {
 		HWND c = CreateWindowExW(ex, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h, gWnd, reinterpret_cast<HMENU>(INT_PTR(id)), inst, nullptr);
 		SendMessageW(c, WM_SETFONT, WPARAM(font), TRUE);
 		return c;
 	};
-	make(L"STATIC", L"Gothic game folder (the one with Data and _work):", 0, 12, 10, 680, 18, 0);
-	gPath = make(L"EDIT", guessGame().c_str(), ES_AUTOHSCROLL, 12, 30, 590, 24, ID_PATH, WS_EX_CLIENTEDGE);
-	gBrowse = make(L"BUTTON", L"Browse...", BS_PUSHBUTTON, 610, 29, 90, 26, ID_BROWSE);
-	gMusic = make(L"BUTTON", L"Also bake the music (10-30 minutes more)", BS_AUTOCHECKBOX, 12, 62, 290, 22, ID_MUSIC);
-	SendMessageW(gMusic, BM_SETCHECK, BST_CHECKED, 0);
-	gGfxPlus = make(L"BUTTON", L"Graphics+: shading, far layer, visibility", BS_AUTOCHECKBOX, 306, 62, 296, 22, ID_GFXPLUS);
-	gVoices = make(L"BUTTON", L"Bake the voices (speech.pak)", BS_AUTOCHECKBOX, 12, 84, 290, 22, ID_VOICES);
-	SendMessageW(gVoices, BM_SETCHECK, BST_CHECKED, 0);
-	gDebug = make(L"BUTTON", L"Debug report (bake_debug.txt)", BS_AUTOCHECKBOX, 306, 84, 296, 22, ID_DEBUG);
-	gLod = make(L"BUTTON", L"Simplified far geometry (about half the triangles far away, +10% size)", BS_AUTOCHECKBOX, 12, 106, 590, 22, ID_LOD);
-	SendMessageW(gLod, BM_SETCHECK, BST_CHECKED, 0);
-	gSimplify = make(L"BUTTON", L"Simplified all geometry: objects and characters (fewer triangles, faster, less detail)", BS_AUTOCHECKBOX, 12, 128, 590, 22, ID_SIMPLIFY);
-	gSimplifyLarge = make(L"BUTTON", L"Large objects simplified harder (about 40% of their triangles kept; implies the option above)", BS_AUTOCHECKBOX, 12, 150, 590, 22, ID_SIMPLIFY_LARGE);
-	gFarHq = make(L"BUTTON", L"Finer far view (needs Graphics+): 200k triangles, 2 m cells; about 2.5x the memory", BS_AUTOCHECKBOX, 12, 172, 590, 22, ID_FAR_HQ);
-	gTex256 = make(L"BUTTON", L"Sharper textures: 256 px instead of 128 (about 4x the texture memory, bigger data.pak)", BS_AUTOCHECKBOX, 12, 194, 590, 22, ID_TEX256);
-	gLights = make(L"BUTTON", L"Baked light: torches and fire places light their surroundings, with shadows (more triangles near them)", BS_AUTOCHECKBOX, 12, 216, 590, 22, ID_LIGHTS);
-	SendMessageW(gLights, BM_SETCHECK, BST_CHECKED, 0);
-	gNpcLod = make(L"BUTTON", L"Simplified far characters: a coarse body beyond ~18 m, dissolving into the full one (lets them be shown further)", BS_AUTOCHECKBOX, 12, 238, 590, 22, ID_NPC_LOD);
-	SendMessageW(gNpcLod, BM_SETCHECK, BST_CHECKED, 0);
-	gSun = make(L"BUTTON", L"Sun shadows: trees, houses and hills shade the ground by day (a small mask per area, no extra triangles)", BS_AUTOCHECKBOX, 12, 260, 590, 22, ID_SUN);
-	SendMessageW(gSun, BM_SETCHECK, BST_CHECKED, 0);
-	gOldWater = make(L"BUTTON", L"Original water texture: the game's own instead of the baker's wind ripples", BS_AUTOCHECKBOX, 12, 282, 590, 22, ID_OLD_WATER);
-	gClearWater = make(L"BUTTON", L"Clearer water: the bottom and the shore show through the baker's water (ignored with the original texture)", BS_AUTOCHECKBOX, 12, 304, 590, 22, ID_CLEAR_WATER);
-	gGrass = make(L"BUTTON", L"New grass: tufts on the meadows round the camera (about 2.5 MB; switch on in the game: Graphics+ -> Grass)", BS_AUTOCHECKBOX, 12, 326, 590, 22, ID_GRASS);
-	SendMessageW(gGrass, BM_SETCHECK, BST_CHECKED, 0);
-	gGrassReport = make(L"BUTTON", L"Grass report for testing: grass_<world>.txt and .png next to this program (data.pak unchanged)", BS_AUTOCHECKBOX, 12, 348, 590, 22, ID_GRASS_REPORT);
-	gStart = make(L"BUTTON", L"Bake", BS_DEFPUSHBUTTON, 610, 60, 90, 28, ID_START);
-	gProgress = make(PROGRESS_CLASSW, L"", PBS_MARQUEE, 12, 376, 688, 14, ID_PROGRESS);
-	gStatus = make(L"STATIC", L"Select the folder and press \"Bake\". The files will appear next to this program.", 0, 12, 396, 688, 18, ID_STATUS);
-	gLog = make(L"EDIT", L"", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL, 12, 418, 688, 274, ID_LOG, WS_EX_CLIENTEDGE);
+	// The game (only Gothic 1 so far), its folder, the three buttons.
+	gGameLabel = make(L"STATIC", L"Game:", 0, 12, 14, 44, 18, 0);
+	gGame = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 58, 10, 300, 120, ID_GAME);
+	SendMessageW(gGame, CB_ADDSTRING, 0, LPARAM(L"Gothic"));
+	SendMessageW(gGame, CB_ADDSTRING, 0, LPARAM(L"Gothic II (coming later)"));
+	SendMessageW(gGame, CB_ADDSTRING, 0, LPARAM(L"Archolos (coming later)"));
+	SendMessageW(gGame, CB_SETCURSEL, 0, 0);
+	make(L"STATIC", L"Gothic game folder (the one with Data and _work):", 0, 12, 42, 680, 18, 0);
+	gPath = make(L"EDIT", guessGame().c_str(), ES_AUTOHSCROLL, 12, 62, 590, 24, ID_PATH, WS_EX_CLIENTEDGE);
+	gBrowse = make(L"BUTTON", L"Browse...", BS_PUSHBUTTON, 610, 61, 90, 26, ID_BROWSE);
+	gRecommended = make(L"BUTTON", L"Recommended settings", BS_PUSHBUTTON, 12, 98, 190, 28, ID_RECOMMENDED);
+	gAdvancedButton = make(L"BUTTON", L"Advanced settings...", BS_PUSHBUTTON, 210, 98, 190, 28, ID_ADVANCED);
+	gStart = make(L"BUTTON", L"Bake", BS_DEFPUSHBUTTON, 610, 98, 90, 28, ID_START);
+	gHint = make(L"STATIC", L"", 0, 12, 134, 688, 18, ID_HINT);
+
+	// The advanced settings: two columns of nine, hidden until asked for. The values are the recommended ones.
+	const int kLeft = 12, kRight = 362, kWidth = 340, kTop = 160, kRow = 22;
+	int row[2] = {0, 0};
+	const auto option = [&](HWND& box, int column, const wchar_t* text, int id, bool recommended) {
+		box = make(L"BUTTON", text, BS_AUTOCHECKBOX, column ? kRight : kLeft, kTop + kRow * row[column]++, kWidth, kRow, id);
+		SendMessageW(box, BM_SETCHECK, recommended ? BST_CHECKED : BST_UNCHECKED, 0);
+		gOptions.push_back({&box, recommended});
+	};
+	option(gMusic, 0, L"Music (10-30 minutes more)", ID_MUSIC, true);
+	option(gVoices, 0, L"Voices (speech.pak)", ID_VOICES, true);
+	option(gVoiceIma, 0, L"Compact voices: IMA ADPCM, a quarter the size", ID_VOICE_IMA, true);
+	option(gGfxPlus, 0, L"Graphics+: shading, far layer, visibility", ID_GFXPLUS, true);
+	option(gFarHq, 0, L"Finer far view (needs Graphics+; ~2.5x memory)", ID_FAR_HQ, true);
+	option(gTex256, 0, L"Sharper textures: 256 px (bigger data.pak)", ID_TEX256, true);
+	option(gLights, 0, L"Baked light from torches and fires", ID_LIGHTS, true);
+	option(gNpcLod, 0, L"Simplified far characters (coarse body)", ID_NPC_LOD, true);
+	option(gSun, 0, L"Sun shadows on the ground", ID_SUN, true);
+	option(gWaterGrid, 1, L"Finer water: waves, shore colour (water grid 2)", ID_WATER_GRID, true);
+	option(gClearWater, 1, L"Clearer water: see the bottom and the shore", ID_CLEAR_WATER, true);
+	option(gOldWater, 1, L"Original water texture, not the baker's ripples", ID_OLD_WATER, false);
+	option(gGrass, 1, L"New grass on the meadows (about 2.5 MB)", ID_GRASS, true);
+	option(gLod, 1, L"Simplified far geometry (+10% size)", ID_LOD, false);
+	option(gSimplify, 1, L"Simplify all geometry (faster, less detail)", ID_SIMPLIFY, false);
+	option(gSimplifyLarge, 1, L"Large objects simplified harder", ID_SIMPLIFY_LARGE, false);
+	option(gGrassReport, 1, L"Grass report for testing (grass_<world>.txt)", ID_GRASS_REPORT, false);
+	option(gDebug, 1, L"Debug report (bake_debug.txt)", ID_DEBUG, false);
+
+	gProgress = make(PROGRESS_CLASSW, L"", PBS_MARQUEE, 12, 160, 688, 14, ID_PROGRESS);
+	gStatus = make(L"STATIC", L"Select the folder and press \"Bake\". The files will appear next to this program.", 0, 12, 180, 688, 18, ID_STATUS);
+	gLog = make(L"EDIT", L"", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL, 12, 202, 688, 250, ID_LOG, WS_EX_CLIENTEDGE);
 	SendMessageW(gLog, EM_SETLIMITTEXT, 0x7FFFFFF, 0);
+	setHint(true);
+	layout();
 
 	ShowWindow(gWnd, show);
 	MSG msg;

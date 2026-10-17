@@ -27,8 +27,13 @@ void App::drawOverlay() {
 			char buf[32];
 			snprintf(buf, sizeof(buf), "%d / %d", int(hp), int(hpMax));
 			_ui.bar(10, H - 14, 110, H - 8, float(hp) / float(hpMax), ui::RED);
-			_ui.frame(9, H - 15, 111, H - 7, 0x00000090u);
+			_ui.frame(9, H - 15, 111, H - 7, 0x86683BE0u);
 			_ui.text(10, H - 15 - Ui::lineHeight(), buf, ui::GREY);
+		}
+		// fix210: the breath, over the health, while there is less than all of it.
+		if (_player.swimming && _player.breath < _player.config.airTime - 0.5f && !items) {
+			_ui.bar(10, H - 24, 110, H - 18, _player.breath / _player.config.airTime, 0x7DC8E6FFu);
+			_ui.frame(9, H - 25, 111, H - 17, 0x86683BE0u);
 		}
 		// What is in the hands, bottom right.
 		const u8 w = _hero.weapon();
@@ -51,7 +56,7 @@ void App::drawOverlay() {
 			const i32 manaMax = h ? game->attributeOf(*h, game->constant("ATR_MANA_MAX", 3)) : 0;
 			if (manaMax > 0 && !items) {
 				_ui.bar(W - 110, H - 14, W - 10, H - 8, float(mana) / float(manaMax), 0x4678E0FFu);
-				_ui.frame(W - 111, H - 15, W - 9, H - 7, 0x00000090u);
+				_ui.frame(W - 111, H - 15, W - 9, H - 7, 0x86683BE0u);
 				if (_cast.stage == CAST_INVEST) _ui.text(W - 10, H - 15 - 2 * Ui::lineHeight(), tr("Заряд"), ui::GREY, ui::TEXT, ui::RIGHT);
 			}
 		}

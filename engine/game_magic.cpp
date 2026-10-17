@@ -250,7 +250,7 @@ bool Game::transform(u32 npc, u32 symbol) {
 	n.spellLevel = 0;
 	n.spellInfo = 0;
 	n.trueGuild = -1;
-	for (u32 i = 0; i < 4; ++i) {
+	for (u32 i = 0; i < GameNpc::OVERLAYS; ++i) {
 		n.overlay[i] = 0;
 		n.overlayLeft[i] = 0.0f;
 	}
@@ -307,7 +307,7 @@ bool Game::transformBack(u32 npc) {
 	n.ranged = b.ranged;
 	n.armorItem = b.armorItem;
 	n.trueGuild = b.trueGuild;
-	for (u32 i = 0; i < 4; ++i) {
+	for (u32 i = 0; i < GameNpc::OVERLAYS; ++i) {
 		n.overlay[i] = b.overlay[i];
 		n.overlayLeft[i] = b.overlayLeft[i];
 	}

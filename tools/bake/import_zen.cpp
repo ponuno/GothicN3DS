@@ -3267,6 +3267,12 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 				wanted.push_back(name);
 				optional.insert(name);
 			}
+		// fix210: under the water (if the model script has them; without, the swimming ones are used).
+		for (const char* name : {"S_DIVE", "S_DIVEF", "T_SWIM_2_DIVE", "T_DIVE_2_SWIM"})
+			if (std::find(wanted.begin(), wanted.end(), name) == wanted.end()) {
+				wanted.push_back(name);
+				optional.insert(name);
+			}
 		// What the script has for reaching: climbing, hanging, picking up, chests.
 		std::string reachFound;
 		const auto reachFamily = [&](const std::string& rawName) {

@@ -393,11 +393,22 @@ void Ui::frame(int x0, int y0, int x1, int y1, u32 rgba) {
 	rect(x1 - 1, y0 + 1, x1, y1 - 1, rgba);
 }
 
+void Ui::box(int x0, int y0, int x1, int y1, u32 fill) {
+	rect(x0, y0, x1, y1, fill);
+	frame(x0, y0, x1, y1, 0x86683BE0u);
+	frame(x0 + 1, y0 + 1, x1 - 1, y1 - 1, 0x00000090u);
+}
+
 void Ui::bar(int x0, int y0, int x1, int y1, float share, u32 fill, u32 back) {
 	share = clamp(share, 0.0f, 1.0f);
 	const int split = x0 + int(float(x1 - x0) * share + 0.5f);
 	rect(x0, y0, x1, y1, back);
 	rect(x0, y0, split, y1, fill);
+	// (A glint along the top of what is full, a shade along the bottom: a bar of glass rather than a flat strip.)
+	if (split > x0 && y1 - y0 >= 4) {
+		rect(x0, y0, split, y0 + 1, 0xFFFFFF50u);
+		rect(x0, y1 - 1, split, y1, 0x00000050u);
+	}
 }
 
 void Ui::picture(gfx::Texture* tex, int texW, int texH, u8 alpha) {

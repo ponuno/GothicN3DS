@@ -26,7 +26,10 @@
 namespace g3 {
 
 class Hero {
-	enum { OVERLAYS = 4 };
+public:
+	enum { OVERLAYS = 8 }; // fix202
+
+private:
 	const Model* _overlays[OVERLAYS] = {};
 	u32 _overlayCount = 0;
 	void cacheClips();
@@ -128,6 +131,9 @@ public:
 	// within the window of a blow, the combo goes on with its next one.
 	// False if there is no weapon in hand or the body cannot now.
 	bool attack(int kind);
+	// fix208: the finishing blow at one lying knocked out ("T_<W>SFINISH", else the blow ahead): its landing is a
+	// blowLanded() like any other. False if no melee weapon is in hand or the body cannot now.
+	bool finish();
 	// Fending blows off while held (a parry, again and again).
 	void setParry(bool held) { _parryHeld = held; }
 	// True for the frame a blow of the character lands (the frame its
@@ -329,6 +335,7 @@ private:
 	const Clip* _drawClip = nullptr;
 	bool _drawBack = false; // the weapon is being put away: the clip plays backwards
 	BlowTracker _blow;
+	bool _blowMove = false; // the blow in play was struck on the run
 	const Clip* _castClip = nullptr;
 	bool _castHold = false; // a casting animation has the body
 	bool _comboQueued = false; // pressed just before the window of the next blow opened

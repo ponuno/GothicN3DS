@@ -464,7 +464,7 @@ void Game::restoreNpc(u32 index, ByteSource& r) {
 		if (peek.u32v() == OVERLAY_MAGIC) {
 			r.u32v();
 			const u8 count = r.u8v();
-			for (u32 k = 0; k < 4; ++k) {
+			for (u32 k = 0; k < GameNpc::OVERLAYS; ++k) {
 				n.overlay[k] = 0;
 				n.overlayLeft[k] = 0.0f;
 			}
@@ -472,7 +472,7 @@ void Game::restoreNpc(u32 index, ByteSource& r) {
 				char name[80];
 				r.str(name, sizeof(name));
 				const float left = r.f32v();
-				if (k < 4 && name[0]) {
+				if (k < GameNpc::OVERLAYS && name[0]) {
 					n.overlay[k] = intern(name, true);
 					n.overlayLeft[k] = left;
 				}

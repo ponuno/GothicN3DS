@@ -61,6 +61,9 @@ struct PlayerConfig {
 	float wadeFactor = 0.65f;  // speed multiplier while wading
 	float swimDepth = 125.0f;  // water deeper than this carries the player
 	float swimSpeed = 260.0f;  // cm/s
+	float diveSpeed = 200.0f;  // fix210: down / up under the water, cm/s
+	float maxDive = 700.0f;    // how far below the floating height the body goes (the floor stops it sooner)
+	float airTime = 40.0f;     // seconds the breath lasts under the surface
 	float floatSpeed = 220.0f; // cm/s the body rises to the surface with
 	float climbSpeed = 170.0f; // cm/s up or down a ladder
 	float driveGravity = 981.0f; // cm/s^2 for a driven body: the original's
@@ -103,6 +106,9 @@ public:
 	bool grounded = false;
 	bool flying = false;
 	bool swimming = false;
+	float dive = 0.0f;      // fix210: cm below the floating height (0: afloat)
+	float breath = 40.0f;   // fix210: seconds of air left (full above the surface)
+	bool diving() const { return swimming && dive > 30.0f; }
 	bool climbing = false; // on a ladder
 	float waterDepth = 0; // water above the feet, 0 on dry land
 
@@ -182,6 +188,7 @@ private:
 	void walk(const World& world, const Input& in, float yaw, float dt, const Drive* drive);
 	void collideWalls(const World& world);
 	bool swim(const World& world, float dt);
+	float _diveWish = 0.0f; // fix210: -1 down, 1 up (the input's moveY while swimming)
 	// The ladder taken hold of: its line of rungs, the side it is climbed from, where the floor at its top is.
 	struct LadderRun {
 		int index = -1;

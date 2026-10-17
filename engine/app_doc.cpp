@@ -264,7 +264,7 @@ void App::drawDocument() {
 		const char* hint = _doc.zoom > 1.0f ? tr("B — закрыть; L, R — масштаб; крестовина, стик — двигать") : tr("B — закрыть; A, R — крупнее");
 		const int hw = _ui.measure(hint) + 12;
 		_ui.rect(W / 2 - hw / 2, H - lh - 4, W / 2 + hw / 2, H, 0x000000A0u);
-		_ui.text(W / 2, H - lh - 3, hint, 0xD8D6D0FFu, ui::TEXT, ui::CENTER);
+		_ui.text(W / 2, H - lh - 3, hint, 0xE2D8BEFFu, ui::TEXT, ui::CENTER);
 		return;
 	}
 	if (_doc.map) {

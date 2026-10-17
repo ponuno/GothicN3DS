@@ -14,14 +14,14 @@ namespace g3 {
 namespace {
 
 // The colours of Gothic Classic's console inventory.
-constexpr u32 BG_TOP = 0x181B1EFFu, BG_BOTTOM = 0x0E1012FFu;
-constexpr u32 CELL_FILL = 0x0B0D1090u;     // a cell, darker than the ground
-constexpr u32 CELL_LINE = 0x7C8086B0u;     // its thin grey edge
-constexpr u32 SEL_TOP = 0x426E9EFFu, SEL_BOTTOM = 0x1A3354FFu, SEL_EDGE = 0xE8ECF0FFu;
-constexpr u32 TAB_TOP = 0x22385AFFu, TAB_BOTTOM = 0x14223AFFu, TAB_LIGHT = 0x5A7CA6FFu, TAB_DARK = 0x080E18FFu;
-constexpr u32 TAB_ON = 0x37587EFFu;
-constexpr u32 PILL = 0xC4C8CCFFu, PILL_TEXT = 0x1C2024FFu;
-constexpr u32 TEXT = 0xD8D6D0FFu, TEXT_DIM = 0x9C9A92FFu, TITLE = 0xEAE6DAFFu, WARN = 0xE2604EFFu, GOLD = 0xE8C77AFFu;
+constexpr u32 BG_TOP = 0x1E1710FFu, BG_BOTTOM = 0x100B07FFu;
+constexpr u32 CELL_FILL = 0x0D0906A0u;     // a cell, darker than the ground
+constexpr u32 CELL_LINE = 0x94764AB0u;     // its thin grey edge
+constexpr u32 SEL_TOP = 0x93702FFFu, SEL_BOTTOM = 0x3F2D10FFu, SEL_EDGE = 0xF2DC9AFFu;
+constexpr u32 TAB_TOP = 0x4D3B22FFu, TAB_BOTTOM = 0x2B2012FFu, TAB_LIGHT = 0xA48649FFu, TAB_DARK = 0x130D06FFu;
+constexpr u32 TAB_ON = 0x7F5F2FFFu;
+constexpr u32 PILL = 0xC9B58AFFu, PILL_TEXT = 0x1E160BFFu;
+constexpr u32 TEXT = 0xE2D8BEFFu, TEXT_DIM = 0xA39878FFu, TITLE = 0xF4E8CAFFu, WARN = 0xE2604EFFu, GOLD = 0xE8C77AFFu;
 constexpr u32 HP = 0xB0261EFFu, HP_LIGHT = 0xD8584AFFu, MANA = 0x2A4CBCFFu, MANA_LIGHT = 0x5A7CE8FFu;
 
 // The quick slots' keys, as on the PC's keyboard.
@@ -924,9 +924,9 @@ void InventoryPanel::drawBars(const InventoryView& v, bool header) {
 	const auto bar = [&](int x0, int x1, i32 value, i32 most, u32 fill, u32 light) {
 		const int y0 = 5, y1 = 15;
 		_canvas.fill(x0 - 3, y0 - 3, x1 + 3, y1 + 3, 0x2A2C30FFu);
-		_canvas.frame(x0 - 3, y0 - 3, x1 + 3, y1 + 3, 0x8A8E94FFu);
-		_canvas.fill(x0 - 5, y0 - 1, x0 - 3, y1 + 1, 0x8A8E94FFu); // (the end caps of the frame)
-		_canvas.fill(x1 + 3, y0 - 1, x1 + 5, y1 + 1, 0x8A8E94FFu);
+		_canvas.frame(x0 - 3, y0 - 3, x1 + 3, y1 + 3, 0x95866AFFu);
+		_canvas.fill(x0 - 5, y0 - 1, x0 - 3, y1 + 1, 0x95866AFFu); // (the end caps of the frame)
+		_canvas.fill(x1 + 3, y0 - 1, x1 + 5, y1 + 1, 0x95866AFFu);
 		_canvas.fill(x0, y0, x1, y1, 0x101010FFu);
 		if (most > 0) {
 			const int w = int((long long)(x1 - x0) * clamp(value, i32(0), most) / most);
@@ -982,7 +982,7 @@ void InventoryPanel::drawPlay(const InventoryView& v) {
 		_canvas.gradient(x0, y0, x1, y1, pressed ? SEL_TOP : TAB_TOP, pressed ? SEL_BOTTOM : TAB_BOTTOM);
 		_canvas.frame(x0, y0, x1, y1, pressed ? SEL_EDGE : TAB_LIGHT);
 		_canvas.fill(x0 + 1, y1 - 2, x1 - 1, y1 - 1, TAB_DARK);
-		_canvas.icon(cx - 16, y0 + 12, kIcons[k], 0xE8ECF0FFu, 2, Canvas::ICON_MONO);
+		_canvas.icon(cx - 16, y0 + 12, kIcons[k], 0xF2DC9AFFu, 2, Canvas::ICON_MONO);
 		_canvas.text(cx, y0 + 52, tr(kNames[k]), TITLE, ui::TEXT, ui::CENTER, 0, true);
 	}
 	if (v.messageTime > 0.0f && v.message[0])
@@ -1000,14 +1000,14 @@ void InventoryPanel::drawTabs(const InventoryView&) {
 		const bool on = t == _tab;
 		if (on) {
 			_canvas.fill(cx - TAB_W / 2 + 1, y0 + 1, cx + TAB_W / 2 - 1, y1 - 1, TAB_ON);
-			_canvas.fill(cx - TAB_W / 2 + 4, y1 - 3, cx + TAB_W / 2 - 4, y1 - 2, 0xE8ECF0FFu);
+			_canvas.fill(cx - TAB_W / 2 + 4, y1 - 3, cx + TAB_W / 2 - 4, y1 - 2, 0xF2DC9AFFu);
 		}
-		if (t < ITEM_TABS) _canvas.icon(cx - 8, cy - 9, kTabIcons[t], on ? 0xF4F4F4FFu : 0xA8B4C4C0u, 1, Canvas::ICON_MONO);
+		if (t < ITEM_TABS) _canvas.icon(cx - 8, cy - 9, kTabIcons[t], on ? 0xF4F4F4FFu : 0xC8B488C0u, 1, Canvas::ICON_MONO);
 		else {
 			// The report: a little chart.
 			for (int k = 0; k < 4; ++k) {
 				static const int kH[4] = {5, 10, 7, 13};
-				_canvas.fill(cx - 7 + k * 4, cy + 6 - kH[k], cx - 4 + k * 4, cy + 6, 0xA8B4C4C0u);
+				_canvas.fill(cx - 7 + k * 4, cy + 6 - kH[k], cx - 4 + k * 4, cy + 6, 0xC8B488C0u);
 			}
 		}
 	}
@@ -1042,7 +1042,7 @@ void InventoryPanel::drawGrid(const InventoryView& v) {
 			}
 			for (int q = 0; q < QUICK_SLOTS; ++q)
 				if (e->quick & (1u << q)) {
-					_canvas.text(x + CELL_W - 4, y + 1, kKeys[q], 0xD8DCE0C0u, ui::TEXT, ui::RIGHT, 0, true);
+					_canvas.text(x + CELL_W - 4, y + 1, kKeys[q], 0xE6D8B4C0u, ui::TEXT, ui::RIGHT, 0, true);
 					break;
 				}
 			if (_page == PAGE_CHEST && v.chest.trade) {
@@ -1073,7 +1073,7 @@ void InventoryPanel::drawGrid(const InventoryView& v) {
 	if (maxScroll() > 0) {
 		const int h = max(GRID_H * GRID_H / (GRID_H + maxScroll()), 12);
 		const int y = y0 + (GRID_H - h) * _scroll / maxScroll();
-		_canvas.fill(x1 - 3, y + 1, x1 - 1, y + h, 0xE8ECF0A0u);
+		_canvas.fill(x1 - 3, y + 1, x1 - 1, y + h, 0xF2DC9AA0u);
 	}
 	if (_shownCount == 0)
 		_canvas.text((x0 + x1) / 2, y0 + GRID_H / 2 - 7,
@@ -1113,7 +1113,7 @@ void InventoryPanel::drawStrip(const InventoryView& v) {
 		const bool off = k == 2 && (trade ? entryOf(v, _selected) == nullptr : (_side != 0 || v.chest.count == 0));
 		if (on || pressed) {
 			_canvas.fill(cx - 51, y0 + 1, cx + 51, y1 - 1, pressed ? SEL_BOTTOM : TAB_ON);
-			_canvas.fill(cx - 46, y1 - 3, cx + 46, y1 - 2, 0xE8ECF0FFu);
+			_canvas.fill(cx - 46, y1 - 3, cx + 46, y1 - 2, 0xF2DC9AFFu);
 		}
 		if (k > 0) _canvas.fill(cx - 53, y0 + 3, cx - 52, y1 - 3, TAB_LIGHT);
 		char label[40];

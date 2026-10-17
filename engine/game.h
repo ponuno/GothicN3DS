@@ -96,13 +96,14 @@ struct GameNpc {
 	bool late = false;
 	// The overlays it wears (Mdl_ApplyOverlayMds): the overlay's name, lower case without extension, and the
 	// seconds left of a timed one (Mdl_ApplyOverlayMdsTimed; 0: for good). In the order applied.
-	GameText overlay[4] = {};
-	float overlayLeft[4] = {};
+	enum { OVERLAYS = 8 }; // fix202: 8 (the four fighting talents' own, fix202, besides the scripts')
+	GameText overlay[OVERLAYS] = {};
+	float overlayLeft[OVERLAYS] = {};
 	// Npc_SetActiveSpellInfo: what the spell being cast makes him (a transformation: the creature's instance), 0 for nothing.
 	i32 spellInfo = 0;
 	u32 overlayCount() const {
 		u32 n = 0;
-		while (n < 4 && overlay[n]) ++n;
+		while (n < OVERLAYS && overlay[n]) ++n;
 		return n;
 	}
 };
@@ -178,7 +179,7 @@ struct GameLogEntry {
 struct GameInfo {
 	ScriptInstance* object = nullptr;
 	u32 symbol = 0;                 // the instance
-	u32 npc = SCRIPT_NONE;          // C_INFO.NPC: the instance of the character it belongs to
+	mutable u32 npc = SCRIPT_NONE;  // C_INFO.NPC: the instance of the character it belongs to (Game::infoNpc: read anew)
 	i32 nr = 0;
 	u32 condition = SCRIPT_NONE;    // functions; SCRIPT_NONE for none
 	u32 information = SCRIPT_NONE;
@@ -388,6 +389,7 @@ public:
 	}
 	// True if the scripts give the character something to talk about (an info of its own).
 	bool hasInfos(u32 npc) const;
+	u32 infoNpc(u32 info) const;
 	// The infos of a character that can be told now, in the order the menu has
 	// them (by NR, then by the functions' order). `important` selects the ones
 	// that begin a talk by themselves; the others are the menu. `hero` is who
@@ -899,6 +901,7 @@ private:
 	bool loadObjectRoutines(ByteSource& in);
 	static void xSetObjectRoutine(ScriptVm& vm, void* user);
 	static void xSetMobRoutine(ScriptVm& vm, void* user);
+	void talentOverlays(u32 npc); // fix202 (game_dialog.cpp)
 	// fix201: the videos the scripts ask for.
 	enum { MAX_VIDEOS = 4 };
 	char _videos[MAX_VIDEOS][48] = {};

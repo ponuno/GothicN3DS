@@ -535,7 +535,27 @@ bool Hero::attack(int kind) {
 	_anim.play(c, 0.08f);
 	_blow.reset();
 	_blow.clip = c;
+	// A blow struck on the run goes on running (the original's T_*ATTACKMOVE): its own root
+	// motion is nearly nil, so the body is carried at its running pace while the stick is held.
+	_blowMove = running && c == weaponClip("T_%sATTACKMOVE", _weapon);
 	_comboBroken = false;
+	_comboQueued = false;
+	_roleNow = ATTACK;
+	return true;
+}
+
+bool Hero::finish() {
+	if (!loaded() || (_weapon != WEAPON_1H && _weapon != WEAPON_2H) || _down || _body != GROUNDED || drawing() || usingItem()) return false;
+	const Clip* cur = _anim.current();
+	if (_blow.clip && cur == _blow.clip) return false; // (a blow in play ends first)
+	if (cur && !cur->loops() && !_anim.finished() && cur != _reel && !isTurn(cur) && stateOf(cur) < 0) return false;
+	const Clip* c = weaponClip("T_%sSFINISH", _weapon);
+	if (!c) c = weaponClip("S_%sATTACK", _weapon);
+	if (!c) return false;
+	_anim.play(c, 0.08f);
+	_blow.reset();
+	_blow.clip = c;
+	_comboBroken = true; // (no combo goes on from it)
 	_comboQueued = false;
 	_roleNow = ATTACK;
 	return true;
@@ -1063,6 +1083,16 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 	} else {
 		switch (_body) {
 		case SWIMMING:
+			// fix210: below the surface, the diving ones if the model has them (S_DIVEF going, S_DIVE still).
+			if (player.diving()) {
+				const Clip* d = fwd > 0 ? _model.clip("S_DIVEF") : _model.clip("S_DIVE");
+				if (!d) d = _model.clip("S_DIVE");
+				if (d) {
+					if (cur != d || force) _anim.play(d, 0.3f);
+					_roleNow = fwd > 0 ? SWIM : SWIM_IDLE;
+					break;
+				}
+			}
 			if (fwd > 0) {
 				go(ST_SWIMF, force, 0.3f);
 				_roleNow = SWIM;
@@ -1255,6 +1285,16 @@ Drive Hero::control(const Input& in, const Player& player, float dt, const Ledge
 			drive.step = {0, 0, 0};
 		} else {
 			drive.step = {moved.x, 0, moved.z};
+			if (_blowMove && _blow.clip && _anim.current() == _blow.clip && !_reel && !_down && dt > 0.0f &&
+			    (fabsf(in.moveZ) > 0.2f || fabsf(in.strafe) > 0.2f)) {
+				const Clip* run = _state[_weapon][ST_RUNL] ? _state[_weapon][ST_RUNL] : _state[WEAPON_NONE][ST_RUNL];
+				const float own = sqrtf(moved.x * moved.x + moved.z * moved.z) / dt;
+				const float pace = run ? run->header().moveSpeed * 0.85f : 0.0f;
+				if (pace > own) {
+					const Vec3 add = turned({0, 0, (pace - own) * dt}, _yaw);
+					drive.step = {drive.step.x + add.x, 0, drive.step.z + add.z};
+				}
+			}
 		}
 		break;
 	}

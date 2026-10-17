@@ -28,7 +28,7 @@ void App::mobName(u32 mob, char* out, size_t size) const {
 	const Mobs& mobs = _npcs.mobs();
 	if (mob >= mobs.count() || !mobs.hasInfo()) return;
 	const char* key = mobs.infoText(mobs.info(mob).focus);
-	if (!*key && mobs.info(mob).kind == MOBKIND_BED) {
+	if (!*key && mobs.isBed(mob)) {
 		// A bed nobody named: the scripts' word for a bed, else ours.
 		key = "MOBNAME_BED";
 		if (_npcs.game().vm().find(key) == SCRIPT_NONE) {
@@ -114,7 +114,7 @@ bool App::mobStart(u32 mob) {
 	_mobJob.stage = MJ_GLIDE;
 	// A thing with nothing to run is a place to be at (a bed, a bench): the character stays until he lets go.
 	// A bed always is: he lies in it while its sleep talk is up (SLEEPABIT_S1 -> AI_ProcessInfos(hero)).
-	_mobJob.bed = mi.kind == MOBKIND_BED;
+	_mobJob.bed = mobs.isBed(mob);
 	_mobJob.stay = mi.onState == 0 || _mobJob.bed;
 	_mobJob.from = _player.feet;
 	_mobJob.to = _player.feet;
@@ -343,6 +343,23 @@ void App::mobUpdate(Input& in, float dt) {
 			}
 			if (!_mobJob.offered && _mobJob.time > 0.6f) {
 				_mobJob.offered = true;
+				// fix208: a bed the world gives no function (Gothic 1's are so) gets the scripts' own sleep talk.
+				Game& g = _npcs.game();
+				const u32 fn = mobs.info(_mobJob.mob).onState == 0 ? g.function("SLEEPABIT_S1") : SCRIPT_NONE;
+				if (fn != SCRIPT_NONE && heroIndex() >= 0) {
+					g.callAs(fn, u32(heroIndex()), -1);
+					_mobJob.sleepScript = true;
+					break;
+				}
+				if (_npcs.openSleepMenu()) {
+					_mobJob.talked = true;
+					in.confirm = in.jump = false;
+					break;
+				}
+			}
+			if (_mobJob.sleepScript && _mobJob.time > 2.0f) {
+				// (Its talk never came up: the engine's menu of hours.)
+				_mobJob.sleepScript = false;
 				if (_npcs.openSleepMenu()) {
 					_mobJob.talked = true;
 					in.confirm = in.jump = false;

@@ -392,7 +392,7 @@ void App::torchOut(bool burnt, const char* why) {
 	_invStamp = 0;
 }
 
-void App::torchUpdate(float) {
+void App::torchUpdate(float dt) {
 	if (!_torch.lit) return;
 	const int hi = heroIndex();
 	if (hi < 0 || !_npcs.loaded() || _npcs.game().itemCount(u32(hi), _torch.symbol) <= 0) {
@@ -406,6 +406,16 @@ void App::torchUpdate(float) {
 	if (_hero.down() && _deadTime > 0.0f) {
 		torchOut(false, nullptr);
 		return;
+	}
+	// fix213: a torch burns down (it does not burn for ever); a warning when little is left.
+	{
+		const float before = _torch.burn;
+		_torch.burn -= dt;
+		if (_torch.burn <= 0.0f) {
+			torchOut(true, tr("Факел догорел"));
+			return;
+		}
+		if (before > 30.0f && _torch.burn <= 30.0f) itemMessage(tr("Факел скоро догорит"), false);
 	}
 	// (What is in the hands, or being taken into them: a two-hander, a bow, a spell take both.)
 	const u8 w = _hero.weapon(), to = _hero.weaponIntent();

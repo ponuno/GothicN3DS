@@ -63,11 +63,15 @@ public:
 	void select(int item) { _sel[_page] = item; }
 	// The save and load pages: a list of slots (not of items) and a picture.
 	static bool savePage(Page page) { return page == PAGE_SAVE || page == PAGE_LOAD; }
-	// Their entries: the save page the ten slots, the load page the quick save first.
-	static int slotCount(Page page) { return page == PAGE_SAVE ? SAVE_SLOTS : page == PAGE_LOAD ? SAVE_SLOTS + 1 : 0; }
-	// The slot of the entry selected (0 the quick save), -1 off those pages.
-	int saveSlot() const { return _page == PAGE_SAVE ? _sel[_page] + 1 : _page == PAGE_LOAD ? _sel[_page] : -1; }
-	static int slotOfEntry(Page page, int entry) { return page == PAGE_SAVE ? entry + 1 : entry; }
+	// Their entries: the save page the ten slots, the load page the quick save first, then the one made on leaving
+	// (fix208), then the ten.
+	static int slotCount(Page page) { return page == PAGE_SAVE ? SAVE_SLOTS : page == PAGE_LOAD ? SAVE_SLOTS + 2 : 0; }
+	// The slot of the entry selected (0 the quick save, SAVE_AUTO the one on leaving), -1 off those pages.
+	int saveSlot() const { return _page == PAGE_SAVE || _page == PAGE_LOAD ? slotOfEntry(_page, _sel[_page]) : -1; }
+	static int slotOfEntry(Page page, int entry) {
+		return page == PAGE_SAVE ? entry + 1 : entry == 0 ? 0 : entry == 1 ? SAVE_AUTO : entry - 1;
+	}
+	static int entryOfSlot(Page page, int slot) { return page == PAGE_SAVE ? slot - 1 : slot == 0 ? 0 : slot == SAVE_AUTO ? 1 : slot + 1; }
 	// The page B goes back to (the main one for most; the debug pages' parent is the debug page, Graphics+'s the graphics page).
 	static Page parentOf(Page page);
 

@@ -81,13 +81,30 @@ void Mobs::loadInfo(Pak& pak, const char* worldAsset) {
 	_infoNames = names;
 }
 
+bool Mobs::isBed(u32 i) const {
+	if (!_infos || i >= _h.mobCount) return false;
+	if (_infos[i].kind == MOBKIND_BED) return true;
+	if (_infos[i].kind == MOBKIND_CONTAINER || _infos[i].kind == MOBKIND_DOOR) return false;
+	// (By its scheme only when it has no function of its own, or a sleeping one: a thing that runs something else is that.)
+	const auto has = [](const char* s, const char* w) {
+		for (; *s; ++s) {
+			u32 k = 0;
+			while (w[k] && (s[k] == w[k] || s[k] == char(w[k] + 32))) ++k;
+			if (!w[k]) return true;
+		}
+		return false;
+	};
+	const char* on = infoText(_infos[i].onState);
+	return has(scheme(i), "BED") && (!*on || has(on, "SLEEP"));
+}
+
 bool Mobs::forPlayer(u32 i) const {
 	if (!_infos || i >= _h.mobCount) return false;
 	const WorldMob& w = _mobs[i];
 	const WorldMobInfo& m = _infos[i];
 	// A bed is to sleep in whether the world's maker named it or not (OpenGothic offers every bed; Gothic's
 	// own beds go without a focus name often enough) - one with a place to lie down at.
-	if (m.kind == MOBKIND_BED) return w.slotCount > 0 || m.focus != 0;
+	if (isBed(i)) return w.slotCount > 0 || m.focus != 0;
 	return m.focus != 0 && m.kind != MOBKIND_CONTAINER && m.kind != MOBKIND_DOOR && m.kind != MOBKIND_OTHER;
 }
 

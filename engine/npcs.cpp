@@ -329,6 +329,21 @@ void Npcs::ground(NpcActor& a, const World& world, float above) {
 	u8 light[4];
 	if (!world.rayDown({n.pos[0], n.pos[1] + above, n.pos[2]}, above + 500.0f, y, normal, light)) return;
 	n.pos[1] = y;
+	// fix209: water deeper than a body floats it (as the player's character: PlayerConfig::swimDepth, with the same
+	// hysteresis), where the feet float on its surface; shallower, it wades. Only humans swim (a model without the
+	// swimming clips walks the bed, as before).
+	{
+		float surface;
+		const float depth = world.waterBelow({n.pos[0], y + 400.0f, n.pos[2]}, 420.0f, surface) ? surface - y : 0.0f;
+		const bool wasSwimming = a.swimming;
+		const float limit = 125.0f - (a.swimming ? 30.0f : 0.0f);
+		a.swimming = depth > limit && n.down == DOWN_NONE && a.rig && a.rig->model.clip("S_SWIM") && a.rig->model.clip("S_SWIMF");
+		if (a.swimming) {
+			n.pos[1] = surface - 125.0f;
+			// (fix209: no light of the ground below; the sky's)
+		}
+		if (wasSwimming != a.swimming) a.swimChanged = true;
+	}
 	memcpy(a.light, light, sizeof(a.light));
 	a.grounded = true;
 	if (_rooms.count()) _game.setRoom(a.npc, _rooms.hash(roomOf(n.pos)));

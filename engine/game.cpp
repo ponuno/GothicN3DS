@@ -1086,7 +1086,10 @@ void Game::xInsertItem(ScriptVm& vm, void* user) {
 void Game::xSetVisual(ScriptVm& vm, void* user) {
 	Game& g = *static_cast<Game*>(user);
 	const GameText script = g.intern(vm.popString(), true);
-	if (GameNpc* n = g.npcOf(vm.popInstance())) n->look.script = script;
+	if (GameNpc* n = g.npcOf(vm.popInstance())) {
+		n->look.script = script;
+		g.talentOverlays(u32(n - g._npcs)); // fix202 (talents set before the visual)
+	}
 }
 
 void Game::xSetVisualBody(ScriptVm& vm, void* user) {
@@ -1184,17 +1187,17 @@ void Game::applyOverlay(u32 npc, const char* name, float seconds) {
 			n.overlayLeft[k] = seconds > 0.0f ? (n.overlayLeft[k] > 0.0f ? max(n.overlayLeft[k], seconds) : 0.0f) : 0.0f;
 			return;
 		}
-	if (count == 4) {
+	if (count == GameNpc::OVERLAYS) {
 		// (Full: the oldest goes.)
-		for (u32 k = 1; k < 4; ++k) {
+		for (u32 k = 1; k < GameNpc::OVERLAYS; ++k) {
 			n.overlay[k - 1] = n.overlay[k];
 			n.overlayLeft[k - 1] = n.overlayLeft[k];
 		}
-		count = 3;
+		count = GameNpc::OVERLAYS - 1;
 	}
 	n.overlay[count] = t;
 	n.overlayLeft[count] = seconds > 0.0f ? seconds : 0.0f;
-	if (count + 1 < 4) n.overlay[count + 1] = 0;
+	if (count + 1 < GameNpc::OVERLAYS) n.overlay[count + 1] = 0;
 }
 
 void Game::removeOverlay(u32 npc, const char* name) {
@@ -1209,12 +1212,12 @@ void Game::removeOverlay(u32 npc, const char* name) {
 	const u32 count = n.overlayCount();
 	for (u32 k = 0; k < count; ++k) {
 		if (strcmp(text(n.overlay[k]), buf) != 0) continue;
-		for (u32 j = k + 1; j < 4; ++j) {
+		for (u32 j = k + 1; j < GameNpc::OVERLAYS; ++j) {
 			n.overlay[j - 1] = n.overlay[j];
 			n.overlayLeft[j - 1] = n.overlayLeft[j];
 		}
-		n.overlay[3] = 0;
-		n.overlayLeft[3] = 0.0f;
+		n.overlay[GameNpc::OVERLAYS - 1] = 0;
+		n.overlayLeft[GameNpc::OVERLAYS - 1] = 0.0f;
 		return;
 	}
 }
@@ -1223,7 +1226,7 @@ void Game::tickOverlays(float dt) {
 	for (u32 i = 0; i < _npcCount; ++i) {
 		GameNpc& n = _npcs[i];
 		if (!n.overlay[0]) continue;
-		for (u32 k = 0; k < 4 && n.overlay[k]; ++k) {
+		for (u32 k = 0; k < GameNpc::OVERLAYS && n.overlay[k]; ++k) {
 			if (n.overlayLeft[k] <= 0.0f) continue;
 			n.overlayLeft[k] -= dt;
 			if (n.overlayLeft[k] > 0.0f) continue;

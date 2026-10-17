@@ -19,7 +19,7 @@
 2. Double-click **`Gothic3DS-Baker.exe`**.
    - Windows SmartScreen may say "Windows protected your PC" because the program is new and unsigned. Click **More info**, then **Run anyway**.
 3. Press **Browse...** and select your Gothic folder: the one that contains the `Data` and `_work` folders (Steam: `...\steamapps\common\Gothic`). It is filled in for you if the game is in a usual place.
-4. Leave **Also bake the music** ticked (music adds 10-30 minutes; untick it to skip music).
+4. Press **Recommended settings**: it selects the settings that suit Gothic best (music, voices as compact IMA ADPCM, Graphics+, finer far view, 256 px textures, baked light, sun shadows, finer and clearer water, new grass) and fills in the Gothic folder if it is in a usual place. They are already selected when the window opens. Every single option is under **Advanced settings...**; the line under the buttons says whether they are the recommended ones or custom. (The **Game** list has only Gothic for now; Gothic II and Archolos come later.)
 5. Press **Bake** and wait. The log shows what is happening; the window may look idle for minutes during the long steps. Do not close it.
 6. When it says **Done**, these files are in the **same folder as the `.exe` files**:
    - `data.pak` - worlds, characters, sounds
@@ -30,7 +30,7 @@
    - `bake.log` - the full log (send it if something goes wrong)
    - `bake_debug.txt` - only with the "Debug report" box ticked: what the game's scripts did while the worlds were populated, which engine functions and Ikarus/LeGo/Union code are missing (send it with `bake.log` for a modded game)
 
-The window has two more boxes: **Bake the voices** (untick to skip `speech.pak`: faster, smaller; the game then shows subtitles only) and **Debug report**.
+In Advanced settings: **Voices** (untick to skip `speech.pak`: faster, smaller; the game then shows subtitles only), **Compact voices** (IMA ADPCM, a quarter the size of 16-bit samples: about 2 GB less; untick for full quality), **Finer water** (`--water-grid 2`, the recommended value for Gothic) and **Debug report**.
 
 **New grass** (on by default) bakes the new grass into `data.pak` (about 2.5 MB more); in the game it is switched on in Graphics+ → Grass. Three more: **Clearer water** (`--water-clear`: the baker's water is less opaque and a little lighter, so the bottom and the shore show through; `--water-alpha` / `--water-color` in `bake_args.txt` still win), **Original water texture** (the game's own water instead of the baker's wind ripples) and **Grass report for testing** (writes `grass_<world>.txt` and `.png` pictures next to the program: where new grass could grow and what it would cost; `data.pak` is the same with or without it).
 

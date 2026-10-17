@@ -1012,13 +1012,16 @@ i32 Npcs::strike(u32 attacker, u32 victim, bool fromBehind) {
 		// no weapon to parry), or a hop back.
 		const Clip* c = a->anim.current();
 		const bool beast = att.weapon == WEAPON_FIST && _game.guildOf(att) >= _game.constant("GIL_SEPERATOR_HUM", 16);
-		if (c && !beast && inParry(c->fight(), c->header().fps, a->anim.time()) && inFocus(*a, attacker, 1.05f)) {
+		// fix218: an arrow or a spell is no blow to parry or hop back from: the victim in his readied stance used to "fend it off"
+		// before he heard it, and stood where he was while the others ran at the shooter.
+		const bool ranged = _game.spellStriking();
+		if (c && !beast && !ranged && inParry(c->fight(), c->header().fps, a->anim.time()) && inFocus(*a, attacker, 1.05f)) {
 			++_stats.parried;
 			emitParry(victim);
 			sendPerception(_percFightSound, victim, int(attacker), int(victim));
 			return -1;
 		}
-		if (c && a->stateTime >= 0.0f && (strstr(animationName(*a), "JUMPB") != nullptr) && a->anim.time() < c->duration() * 0.7f &&
+		if (c && !ranged && a->stateTime >= 0.0f && (strstr(animationName(*a), "JUMPB") != nullptr) && a->anim.time() < c->duration() * 0.7f &&
 		    !fromBehind) {
 			++_stats.parried;
 			return -1;

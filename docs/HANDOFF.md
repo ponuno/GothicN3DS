@@ -2071,3 +2071,11 @@ Bink на консоли не декодируется: пекарь запус�
 - **Hang on several loads.** NOT reproduced here (test `g1 reload`: 25 loads, RSS flat, ~1 ms each in the small test world). `loadState` now sets `trace()` stages ("load: begin / inventory / leave world / script state restore / after restore / preload / done"), so `sdmc:/3ds/gothic3ds/hang.txt` shows where it stops. Please send hang.txt after the next hang.
 - **NPC stuck after being struck while threatened.** Test `g1 threat` (sword drawn -> ZS_AssessFighter -> struck at 0.3-3.5 s) does NOT reproduce it: he fights back / heals. Needs the concrete NPC, place and what hit him (melee, bow, spell), plus the debug line "hit ..." (`_lastHitNote`).
 - ctest 6/6; ARM check not run (no ARM libstdc++ headers).
+
+## fix218 — arrow at a guard in his readied stance
+
+- User video: the bow is drawn, the guards are alerted (ZS_AssessFighter), the hero shoots one; all the others run at him, the one that was shot stands still.
+- Not reproduced in `g1 threat` (env: `THREAT_BOW=1 THREAT_NPC=GRD_214_TORWACHE THREAT_DIST=<cm> THREAT_WAIT=<s>`): the shot guard answers (ProclaimAndPunish -> Attack) at every moment and distance up to the actor range.
+- One real hole found and closed: `Npcs::strike` let a victim whose current clip has parry frames (the readied stance of a guard) "fend off" an ARROW or a SPELL (and a hop-back clip too) before he heard the hit: no damage, no reaction, no perception, return -1. Ranged strikes (`Game::spellStriking()`) are no longer parried. Unverified as THE cause of the video; if it still happens, send the debug line "hit <name> L<listens> <state>><state> q a u" (`_lastHitNote`) right after the shot, and say how far the guard is.
+- Other suspects not testable here: the victim farther than the actor range / not `ready` (then `listens` is false and nothing reacts), a walkTo that finds no path from the gate to the hero.
+- ctest 6/6; ARM check not run (no ARM libstdc++ headers).

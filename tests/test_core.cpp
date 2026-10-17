@@ -13121,6 +13121,7 @@ static void testG1Threat() {
 func void STARTUP_WORLD() {
 	Kapitel = 1;
 	Wld_InsertNpc(VLK_501_Buddler, "CAMP_SQUARE");
+	Wld_InsertNpc(GRD_214_Torwache, "CAMP_SQUARE");
 };
 func void INIT_WORLD() {
 	B_InitMonsterAttitudes();
@@ -13150,7 +13151,7 @@ func void INIT_WORLD() {
 	npcs.config().range = 20000.0f;
 	app.environment().timeOfDay = 12.0f;
 	const float dt = 1.0f / 30.0f;
-	const u32 sym = g.vm().find("VLK_501_BUDDLER");
+	const u32 sym = g.vm().find(getenv("THREAT_NPC") ? getenv("THREAT_NPC") : "VLK_501_BUDDLER");
 	u32 b = SCRIPT_NONE;
 	for (u32 i = 0; i < g.npcCount(); ++i)
 		if (g.npc(i).symbol == sym) b = i;
@@ -13183,16 +13184,19 @@ func void INIT_WORLD() {
 		}
 	};
 	const GameNpc& bn = g.npc(b);
-	app.teleport({bn.pos[0], bn.pos[1] + 5.0f, bn.pos[2] + 220.0f});
+	app.teleport({bn.pos[0], bn.pos[1] + 5.0f, bn.pos[2] + (getenv("THREAT_BOW") ? float(atof(getenv("THREAT_DIST") ? getenv("THREAT_DIST") : "1100")) : 220.0f)});
 	run(2.0f, "met");
 	// fix217: the weapon drawn in front of him: he warns the hero (ZS_ReactToWeapon) - and is struck first in that state.
 	{
-		const u32 sword = g.vm().find("ITMW_1H_SWORD_01");
+		const bool bowMode = getenv("THREAT_BOW") != nullptr;
+		const u32 sword = g.vm().find(bowMode ? "ITRW_BOW_SMALL_01" : "ITMW_1H_SWORD_01");
 		g.giveItems(hero, sword, 1);
+		if (bowMode) g.giveItems(hero, g.vm().find("ITAMARROW"), 20);
 		g.setAttribute(g.npcMut(hero), 4, 100);
 		g.equip(hero, sword);
 		Input draw;
-		draw.drawWeapon = true;
+		draw.drawWeapon = !bowMode;
+		draw.rangedSlot = bowMode;
 		app.update(draw, dt);
 	}
 	for (int q = 0; q < 40; ++q) app.update(Input {}, dt);
@@ -13203,7 +13207,13 @@ func void INIT_WORLD() {
 	const float x0 = g.npc(b).pos[0], z0 = g.npc(b).pos[2];
 	g.setAttribute(g.npcMut(b), 0, 900);
 	g.setAttribute(g.npcMut(b), 1, 900);
-	npcs.strike(hero, b, false);
+	{
+		i32 dmg[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+		dmg[6] = 25;
+		if (getenv("THREAT_BOW")) g.setArrowStrike(dmg);
+		npcs.strike(hero, b, false);
+		if (getenv("THREAT_BOW")) g.endArrowStrike();
+	}
 	run(1.0f, "struck");
 	run(8.0f, "after");
 	const NpcActor* a = actorOf(b);

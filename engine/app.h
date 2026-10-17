@@ -186,6 +186,8 @@ public:
 	const VideoPlayer& video() const { return _video; }
 	// Plays a video of video.pak now (the debug menu, the tests); false if there is none such.
 	bool playVideo(const char* name);
+	// fix202: the player's character is drawn in the armour he wears (its baked look was found).
+	bool heroArmorDrawn() const { return _armorReady; }
 	const StartMenu& startMenu() const { return _start; }
 	struct StartResult {
 		bool exit = false;            // "Выход": the platform leaves
@@ -625,6 +627,12 @@ private:
 	Sound _sound;
 	Music _music;
 	VideoPlayer _video; // fix201
+	// fix202: the player's character in his armour: the body and head the baker made for that look, drawn on his skeleton.
+	Model _armorBody, _armorHead;
+	u32 _armorShown = 0xFFFFFFFFu; // the armour item they were made for (none: 0xFFFFFFFF)
+	bool _armorReady = false;
+	void updateHeroArmor();
+	void drawHero();
 	void startVideo();
 	bool videoUpdate(const Input& in, float dt); // true while a video is on
 	void renderVideo();

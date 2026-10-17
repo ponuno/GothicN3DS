@@ -11209,6 +11209,34 @@ static void testStartMenu() {
 
 // Talks: A at Thorus, the greeting he begins with, the menu of what the scripts
 // offer, a choice inside an info, a quest begun and finished, a routine changed.
+// fix202: the player's character wears his armour: the baker makes a look "the hero in <armour>" for each armour, and
+// the App draws it on his skeleton when he puts one on (and the naked one again when he takes it off).
+static void testHeroArmor() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/heroarmor.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	Game& g = app.npcs().game();
+	const u32 hero = g.heroIndex(), armor = g.vm().find("GRD_ARMOR_M");
+	CHECK(armor != SCRIPT_NONE);
+	app.update(Input {}, 1.0f / 30.0f);
+	app.render();
+	CHECK(!app.heroArmorDrawn());
+	g.giveItems(hero, armor, 1);
+	g.setArmor(hero, armor);
+	app.update(Input {}, 1.0f / 30.0f);
+	app.render();
+	std::printf("  hero in armour drawn: %d\n", int(app.heroArmorDrawn()));
+	CHECK(app.heroArmorDrawn());
+	g.setArmor(hero, SCRIPT_NONE);
+	app.update(Input {}, 1.0f / 30.0f);
+	app.render();
+	CHECK(!app.heroArmorDrawn());
+}
+
 // fix201: a video baked by ffmpeg (a second of red, a second of blue, a tone), played: the pictures in their time, the
 // sound in the stream, the colours where they should be. Skipped without ffmpeg.
 static void testVideo() {
@@ -12702,6 +12730,98 @@ func void ZS_MM_AssessEnemy_end() {
 	}
 	std::printf("  the growl asks for: %s\n", asked.c_str());
 	CHECK(asked.find("SCAVENGER_WARN") != std::string::npos && asked.find(".MDS") == std::string::npos);
+}
+
+// fix202: Gothic 1's people calm down (the real scripts, G3_G1_SCRIPT): the player strikes a digger, it fights back;
+// the player runs far off - the fight ends (ZS_Attack_End: B_ResetTempAttitude); back near it, it does not fall on
+// him again. Printed as a timeline. Skipped without the file.
+static void testG1Calm() {
+	const char* file = getenv("G3_G1_SCRIPT");
+	if (!file) {
+		std::printf("  (no G3_G1_SCRIPT: skipped)\n");
+		return;
+	}
+	std::ifstream in(file);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	std::string source = ss.str() + R"(
+func void STARTUP_WORLD() {
+	Kapitel = 1;
+	Wld_InsertNpc(VLK_501_Buddler, "CAMP_SQUARE");
+};
+func void INIT_WORLD() {
+	B_InitMonsterAttitudes();
+	B_InitGuildAttitudes();
+};
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/g1calm.pak";
+	try {
+		bakeLifeWorlds(source, path, worlds);
+	} catch (const std::exception& e) {
+		std::printf("  bake failed: %s\n", e.what());
+		CHECK(false);
+		return;
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 1;
+	app.settings().perception = 1;
+	app.settings().immortal = 1;
+	app.applySettings();
+	npcs.config().range = 20000.0f;
+	app.environment().timeOfDay = 12.0f;
+	const float dt = 1.0f / 30.0f;
+	const u32 sym = g.vm().find("VLK_501_BUDDLER");
+	u32 b = SCRIPT_NONE;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).symbol == sym) b = i;
+	CHECK(b != SCRIPT_NONE);
+	if (b == SCRIPT_NONE) return;
+	const u32 hero = g.heroIndex();
+	const auto actorOf = [&](u32 npc) -> const NpcActor* {
+		for (u32 k = 0; k < npcs.actorCount(); ++k)
+			if (npcs.actor(k).used && npcs.actor(k).npc == npc) return &npcs.actor(k);
+		return nullptr;
+	};
+	const auto status = [&](const char* when) {
+		const NpcActor* a = actorOf(b);
+		const GameNpc& n = g.npc(b);
+		std::printf("    %-22s %s weapon %d temp %d perm %d att %d news %u\n", when, a ? npcs.doing(*a) : "(no actor)", int(n.weapon),
+		            int(n.tempAttitude), int(n.attitude), g.attitude(b, hero), g.newsCount(b));
+	};
+	bool attacking = false;
+	const auto run = [&](float seconds, const char* label) {
+		attacking = false;
+		for (int i = 0; i < int(seconds / dt); ++i) {
+			app.update(Input {}, dt);
+			if (g.npc(b).weapon != 0 && g.attitude(b, hero) == 0) attacking = true; // (weapon out, hostile to him)
+			if (i % 30 == 29) status(label);
+		}
+	};
+	const GameNpc& bn = g.npc(b);
+	app.teleport({bn.pos[0], bn.pos[1] + 5.0f, bn.pos[2] + 180.0f});
+	run(3.0f, "met");
+	for (int k = 0; k < 2; ++k) {
+		npcs.strike(hero, b, false);
+		run(1.0f, "struck");
+	}
+	run(3.0f, "fighting");
+	CHECK(attacking);
+	// Far off: the fight must end.
+	app.teleport({bn.pos[0] + 4000.0f, bn.pos[1] + 5.0f, bn.pos[2] + 4000.0f});
+	run(20.0f, "player far off");
+	CHECK(g.attitude(b, hero) != 0 && g.npc(b).weapon == 0); // (calm: not hostile, the weapon away)
+	// Back: no new fight.
+	app.teleport({bn.pos[0], bn.pos[1] + 5.0f, bn.pos[2] + 300.0f});
+	run(10.0f, "player back");
+	std::printf("  calm: attacking again after coming back: %d\n", int(attacking));
+	CHECK(!attacking);
 }
 
 // The real scripts of Gothic 1, compiled from their sources (G3_G1_SCRIPT: one file, see the handoff), on the synthetic
@@ -14214,11 +14334,12 @@ int main(int argc, char** argv) {
              {"dialogs", testDialogs},
              {"wait till end", testWaitTillEnd},
              {"video", testVideo},
+             {"hero armor", testHeroArmor},
              {"saves", testSaves},
              {"start menu", testStartMenu},
              {"npcai", testNpcAi},
 	             {"beast turn", testBeastTurn},
-	             {"g1 beasts", testG1Beasts},
+	             {"g1 beasts", testG1Beasts}, {"g1 calm", testG1Calm},
              {"npc items", testNpcItems},
              {"corpses", testCorpses},
 	             {"settings", testSettings},

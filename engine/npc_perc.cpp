@@ -192,7 +192,16 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 		const float dx = o.pos[0] - n.pos[0], dy = o.pos[1] - n.pos[1], dz = o.pos[2] - n.pos[2];
 		return dx * dx + dy * dy + dz * dz <= r * r;
 	};
-	if (_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer] && hero && within(_percPlayer, *hero) &&
+	// fix202: a person (not a creature) notices the player as one to speak to or to watch only when he is in front of it
+	// or right by it. Noticed all round, one with something important to say began the talk with its back to him, and
+	// Gothic 1's ZS_Talk then has the player call "Hey you!" first (Npc_CanSeeNpc false: $SC_HEYTURNAROUND).
+	const auto facesHero = [&]() {
+		if (!hero || _game.isMonster(n)) return true;
+		const float dx = hero->pos[0] - n.pos[0], dz = hero->pos[2] - n.pos[2];
+		if (dx * dx + dz * dz < 250.0f * 250.0f) return true;
+		return fabsf(wrap(atan2f(dx, dz) - n.yaw)) < 1.75f;
+	};
+	if (_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer] && hero && within(_percPlayer, *hero) && facesHero() &&
 	    sees(a, heroIndex, _heroLink.sneaking))
 		react(a, a.perc[_percPlayer], int(heroIndex), -1);
 	// "Put the weapon away": a state that asks for it (ZS_ReactToWeapon ...) waits for PERC_ASSESSREMOVEWEAPON, which the

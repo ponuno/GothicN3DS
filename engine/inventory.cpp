@@ -1830,7 +1830,10 @@ void App::heroCycleWeapon() {
 		if (it && armsKind(kindOf(g, *it))) list[n++] = q;
 	}
 	if (!n) {
-		itemMessage(tr("В быстрых слотах нет оружия"));
+		// fix202: nothing to fight with in the slots: the weapon worn (its fists only without one), in hand or away.
+		const u8 want = meleeMode();
+		if (_hero.weapon() == WEAPON_NONE) heroTake(want);
+		else itemMessage(tr("В быстрых слотах нет оружия"));
 		return;
 	}
 	// Where the cycle stands: what is in hand, else what was last.
@@ -1869,7 +1872,9 @@ bool App::heroTakeLast() {
 		const u8 r = rangedMode();
 		if (r != WEAPON_NONE && heroTake(r)) return true;
 	}
-	return heroTake(_lastWeapon == WEAPON_1H || _lastWeapon == WEAPON_2H ? meleeMode() : _lastWeapon == WEAPON_FIST ? u8(WEAPON_FIST) : meleeMode());
+	// fix202: the fists only when there is no melee weapon on the belt (put away in the inventory): the weapon worn
+	// comes first, as in the original - also before anything has been taken in hand (the "last" starts as the fists).
+	return heroTake(meleeMode());
 }
 
 

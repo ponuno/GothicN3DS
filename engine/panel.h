@@ -254,6 +254,8 @@ private:
 	u8 _filteredPage = 0xFF, _filteredSide = 0xFF;
 	u32 _drawnVersion = 0xFFFFFFFFu;
 	bool _dirty = true;
+	float _talkScroll = 0.0f; // fix202: seconds the chosen dialogue line has been running along
+	int _talkShift = 0;       // ... and how far it has run (pixels)
 	bool _assigning = false; // the ten slots are up: the next tap (or the D-Pad and A) picks one
 	int _pickerSlot = 0;
 	int _choiceSlot = -1; // (fix166) ZL held: the quick slot the D-Pad points at on the play page

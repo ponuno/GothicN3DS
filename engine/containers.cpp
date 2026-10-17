@@ -358,7 +358,7 @@ void App::chestUpdate(Input& in, float dt) {
 		}
 		break;
 	case CH_GLIDE: {
-		const float t = clamp(_chest.time / 0.35f, 0.0f, 1.0f);
+		const float t = clamp(_chest.time / (_chest.corpse >= 0 ? 0.2f : 0.35f), 0.0f, 1.0f);
 		const float e = t * t * (3.0f - 2.0f * t);
 		_player.feet.x = _chest.from.x + (_chest.to.x - _chest.from.x) * e;
 		_player.feet.z = _chest.from.z + (_chest.to.z - _chest.from.z) * e;
@@ -383,7 +383,8 @@ void App::chestUpdate(Input& in, float dt) {
 		if (!_hero.atMob()) {
 			// A blow, a fall: the chest is left.
 			chestEnd(true);
-		} else if (_hero.mobOpen() && _panel.page() != InventoryPanel::PAGE_CHEST) {
+		} else if ((_hero.mobOpen() || (_chest.corpse >= 0 && _chest.time > 0.25f)) && _panel.page() != InventoryPanel::PAGE_CHEST) {
+			// (fix202: a body's things come up at once - its bending down still plays - not after the whole animation.)
 			if (_chest.time > 0.5f && _panel.page() != InventoryPanel::PAGE_PLAY) {
 				chestEnd(false); // (another page was opened over it)
 			} else if (_panel.page() == InventoryPanel::PAGE_PLAY && !_chest.shown) {

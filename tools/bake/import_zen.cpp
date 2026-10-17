@@ -3762,15 +3762,50 @@ std::vector<std::string> zenOverlaysOf(const ZenGame& game, const std::string& r
 		const std::string ext = extensionOf(name);
 		if ((ext != "MSB" && ext != "MDS") || name.compare(0, base.size(), base) != 0) continue;
 		const std::string stem = stripExtension(name);
-		// (A script with a skeleton of its own is a model, not an overlay: "HUMANS_SPEAR".)
-		if (game.vfs.find(stem + ".MDH") || game.vfs.find(stem + ".MDL")) continue;
+		// (A script with a mesh of its own is a model, not an overlay. fix202: a hierarchy (.MDH) alone does not make one:
+		// Gothic 1's overlays have theirs - their scripts name the body's tree - and were all left out.)
+		if (game.vfs.find(stem + ".MDL") || game.vfs.find(stem + ".MDM")) continue;
 		found.insert(stem);
 	}
 	return std::vector<std::string>(found.begin(), found.end());
 }
 
+// fix202: "HUMANS_*: 41 files (MSB 20, MDH 20, MAN 1); e.g. HUMANS_1HST1.MSB, ..." - what the game has under a base's name.
+static std::string zenFilesUnder(const ZenGame& game, const std::string& rawBase) {
+	const std::string base = stripExtension(upper(rawBase)) + "_";
+	std::map<std::string, size_t> exts;
+	std::vector<std::string> some;
+	size_t all = 0;
+	std::vector<const zenkit::VfsNode*> todo {&game.vfs.root()};
+	while (!todo.empty()) {
+		const zenkit::VfsNode* node = todo.back();
+		todo.pop_back();
+		if (node->type() == zenkit::VfsNodeType::DIRECTORY) {
+			for (const zenkit::VfsNode& c : node->children()) todo.push_back(&c);
+			continue;
+		}
+		const std::string name = upper(std::string(node->name()));
+		if (name.compare(0, base.size(), base) != 0) continue;
+		const std::string ext = extensionOf(name);
+		if (ext == "MAN") continue; // (the animations themselves: thousands)
+		++all;
+		++exts[ext];
+		if (some.size() < 6) some.push_back(name);
+	}
+	std::string out = base + "*: " + std::to_string(all) + " files (";
+	bool first = true;
+	for (const auto& e : exts) {
+		out += (first ? "" : ", ") + e.first + " " + std::to_string(e.second);
+		first = false;
+	}
+	out += ")";
+	for (size_t i = 0; i < some.size(); ++i) out += (i ? ", " : "; e.g. ") + some[i];
+	return out;
+}
+
 LookSource zenLookSource(std::shared_ptr<const ZenGame> game) {
 	LookSource source;
+	source.overlayFiles = [game](const std::string& base) { return zenFilesUnder(*game, base); };
 	source.texture = textureLoader(game);
 	// fix150: the Barrier (oCBarrier::Init loads "MAGICFRONTIER_OUT.3DS": the static mesh compiled to .MSH; a
 	// multi-resolution .MRM is taken too). In world coordinates, as the game draws it.

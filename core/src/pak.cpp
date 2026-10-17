@@ -24,12 +24,34 @@ bool seekTo(FILE* f, u64 offset) {
 	return fseek(f, long(offset), SEEK_SET) == 0;
 }
 
+// fix203: the archive is read unbuffered (see Pak::open), so each fread is one request to the card. A big entry is
+// read in pieces of this size: the system's FS serves one request at a time for all threads, and a piece this big
+// keeps the per-request overhead small while a read on the frame's thread never waits behind more than one piece of
+// a worker's multi-megabyte read.
+constexpr u32 kReadPiece = 256 * 1024;
+
+bool readFully(FILE* f, void* dst, u32 size) {
+	u8* p = static_cast<u8*>(dst);
+	while (size) {
+		const u32 n = size < kReadPiece ? size : kReadPiece;
+		if (fread(p, 1, n, f) != n) return false;
+		p += n;
+		size -= n;
+	}
+	return true;
+}
+
 } // namespace
 
 bool Pak::open(const char* path) {
 	close();
 	_file = fopen(path, "rb");
 	if (!_file) return false;
+	// fix203: no stdio buffer. devkitARM's newlib gives a FILE a BUFSIZ = 1024-byte buffer (libctru's fstat reports no
+	// st_blksize), and a buffered fread refills that buffer over and over: every kilobyte of every entry was a request
+	// of its own to the FS service (IPC to fs, then Process9). Unbuffered, newlib reads straight into the caller's
+	// memory with one request per fread. Every read here is a seek plus one large block, so the buffer never helped.
+	setvbuf(_file, nullptr, _IONBF, 0);
 
 	bool ok = fread(&_hdr, sizeof(_hdr), 1, _file) == 1 && _hdr.magic == PAK_MAGIC && _hdr.version == PAK_VERSION;
 	if (ok) {
@@ -39,11 +61,11 @@ bool Pak::open(const char* path) {
 	}
 	if (ok) {
 		ok = seekTo(_file, _hdr.tableOffset) &&
-		     fread(_table, sizeof(PakEntry), _hdr.entryCount, _file) == _hdr.entryCount;
+		     readFully(_file, _table, _hdr.entryCount * u32(sizeof(PakEntry)));
 	}
 	if (ok && _hdr.namesSize) {
 		ok = seekTo(_file, _hdr.namesOffset) &&
-		     fread(_names, 1, _hdr.namesSize, _file) == _hdr.namesSize;
+		     readFully(_file, _names, _hdr.namesSize);
 	}
 	if (ok) {
 		_names[_hdr.namesSize] = 0;
@@ -106,7 +128,7 @@ bool Pak::readCard(const PakEntry& e, void* dst) {
 	if (e.codec == PAK_RAW) {
 		if (e.packedSize != e.size) return false;
 		_bytesRead += e.size;
-		return fread(dst, 1, e.size, _file) == e.size;
+		return readFully(_file, dst, e.size);
 	}
 	if (e.codec != PAK_LZ4) return false;
 
@@ -117,7 +139,7 @@ bool Pak::readCard(const PakEntry& e, void* dst) {
 		_scratch = p;
 		_scratchCap = cap;
 	}
-	if (fread(_scratch, 1, e.packedSize, _file) != e.packedSize) return false;
+	if (!readFully(_file, _scratch, e.packedSize)) return false;
 	_bytesRead += e.packedSize;
 	int n = LZ4_decompress_safe(reinterpret_cast<const char*>(_scratch), static_cast<char*>(dst), int(e.packedSize),
 	                            int(e.size));
@@ -128,7 +150,7 @@ bool Pak::readRange(const PakEntry& e, u32 offset, void* dst, u32 size) {
 	if (!_file || e.codec != PAK_RAW || e.packedSize != e.size || u64(offset) + size > e.size) return false;
 	if (!seekTo(_file, u64(e.offset) + offset)) return false;
 	_bytesRead += size;
-	return fread(dst, 1, size, _file) == size;
+	return readFully(_file, dst, size);
 }
 
 void* Pak::readAlloc(const PakEntry& e) {

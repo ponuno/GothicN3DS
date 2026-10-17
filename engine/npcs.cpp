@@ -128,6 +128,16 @@ const LookEntry* Npcs::lookOf(const GameLook& look) const {
 	return lo < _lookCount && _looks[lo].key == key ? &_looks[lo] : nullptr;
 }
 
+bool Npcs::loadLook(Pak& pak, const GameLook& look, Model& body, Model& head) {
+	body.release();
+	head.release();
+	const LookEntry* e = lookOf(look);
+	if (!e || !e->body || !pak.find(e->body)) return false;
+	if (!body.loadEntry(pak, e->body, &_pool, true, &_meshes)) return false;
+	if (e->head && pak.find(e->head) && !head.loadEntry(pak, e->head, &_pool, true, &_meshes)) head.release();
+	return true;
+}
+
 const NpcActor* Npcs::actorOf(u32 npcIndex) const {
 	for (const NpcActor& a : _actors)
 		if (a.used && a.npc == npcIndex) return &a;

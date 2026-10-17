@@ -53,7 +53,10 @@ bool Game::setRoom(u32 npc, u32 roomHash) {
 }
 
 i32 Game::roomGuild(u32 roomHash) const {
-	if (!roomHash) return -1;
+	// fix202: outside is GIL_NONE, as for a room nobody owns - the scripts take "== GIL_NONE" for "he has left the
+	// room" (Gothic 1's ZS_ClearRoom, B_CombatAssessEnterRoom, B_AssessEnterRoom). -1 here kept the owners angry for
+	// ever: "get out" - the player went - and 8 s later "you asked for it".
+	if (!roomHash) return constant("GIL_NONE", 0);
 	for (u32 i = 0; i < _roomGuildCount; ++i)
 		if (_roomGuilds[i].world == _world && _roomGuilds[i].hash == roomHash) return _roomGuilds[i].guild;
 	return constant("GIL_NONE", 0);

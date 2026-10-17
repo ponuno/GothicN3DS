@@ -447,3 +447,43 @@ void App::drawHeldItems() {
 }
 
 } // namespace g3
+
+namespace g3 {
+
+// fix202: what the player's character wears is what is drawn (the baked look "the hero in <armour>"); the naked hero
+// when there is none, or that look was not baked (an older data.pak).
+void App::updateHeroArmor() {
+	const GameNpc* hn = heroNpc();
+	const u32 armor = hn && !heroTransformed() ? hn->armorItem : 0xFFFFFFFFu;
+	if (armor == _armorShown) return;
+	_armorShown = armor;
+	_armorReady = false;
+	_armorBody.release();
+	_armorHead.release();
+	if (armor == 0xFFFFFFFFu || !_npcs.loaded() || !_hero.loaded()) return;
+	Game& g = _npcs.game();
+	GameLook look;
+	if (!g.lookInArmor(g.heroIndex(), armor, look)) return;
+	if (!_npcs.loadLook(_pak, look, _armorBody, _armorHead)) return;
+	// (Only on the very skeleton the hero has: its matrices are given to them as they are.)
+	_armorReady = _armorBody.nodeCount() == _hero.model().nodeCount() &&
+	              (!_armorHead.loaded() || _armorHead.nodeCount() == _hero.model().nodeCount());
+	if (!_armorReady) {
+		_armorBody.release();
+		_armorHead.release();
+	}
+}
+
+void App::drawHero() {
+	updateHeroArmor();
+	if (!_armorReady) {
+		_hero.draw();
+		return;
+	}
+	static Mat34 skin[MODEL_MAX_NODES];
+	_hero.model().skinMatrices(_hero.pose(), _hero.yaw(), _hero.lean(), nullptr, skin);
+	_armorBody.drawSkinned(skin, _hero.feet(), _hero.light());
+	if (_armorHead.loaded()) _armorHead.drawSkinned(skin, _hero.feet(), _hero.light());
+}
+
+} // namespace g3

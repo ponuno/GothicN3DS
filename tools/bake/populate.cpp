@@ -65,6 +65,7 @@ struct Look {
 	int bodyTex = 0, skin = 0, headTex = 0, teethTex = 0;
 	u32 users = 0;
 	std::string example; // somebody who looks like this
+	bool heroArmor = false; // fix202: the player's character in an armour (not one of the inhabitants)
 };
 
 // What a model is made of, to tell two requests for the same thing apart
@@ -975,7 +976,35 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			l.example = n.symbol < script.symbols.size() ? script.symbols[n.symbol].name : std::string("?");
 		}
 	}
-	result.looks = looks.size();
+	// fix202: the player's character in each armour the game has: the body (the armour's mesh in his skin) and his head,
+	// as a look of its own (Game::lookInArmor); the console draws those on his skeleton when he wears one.
+	size_t heroArmors = 0;
+	if (game.heroIndex() != SCRIPT_NONE) {
+		const u32 hi = game.heroIndex();
+		for (u32 sym = 0; sym < game.vm().symbolCount(); ++sym) {
+			if (!game.isItem(sym)) continue;
+			GameLook gl;
+			if (!game.lookInArmor(hi, sym, gl) || gl.script == 0) continue;
+			const u32 key = game.lookKey(gl);
+			if (looks.count(key)) continue; // (somebody of the world looks just so: that look serves)
+			Look& l = looks[key];
+			{
+				l.key = key;
+				l.script = game.text(gl.script);
+				l.body = game.text(gl.body);
+				l.head = game.text(gl.head);
+				l.armor = game.text(gl.armor);
+				l.bodyTex = gl.bodyTex;
+				l.skin = gl.skin;
+				l.headTex = gl.headTex;
+				l.teethTex = gl.teethTex;
+				l.example = "the player in " + (sym < script.symbols.size() ? script.symbols[sym].name : std::string("?"));
+				l.heroArmor = true; // (users stays 0: nobody of the world wears it)
+				++heroArmors;
+			}
+		}
+	}
+	result.looks = looks.size() - heroArmors;
 	if (looks.empty() || !scripts.looks.rig || !scripts.looks.body) {
 		if (!looks.empty()) line(format("%zu looks; no models for them in this bake: nobody is drawn", looks.size()));
 		return;
@@ -1097,6 +1126,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	std::map<u32, size_t> meshSize;      // mesh entry -> bytes
 	size_t meshModels = 0;               // models that use a shared mesh
 	std::vector<LookEntry> entries;
+	size_t heroBodies = 0, heroHeads = 0; // fix202: of `bodies` / `heads`, the player's armour looks'
 	size_t bodies = 0, heads = 0, triangles = 0, fullBodyTriangles = 0, textures = 0, clipCount = 0;
 	std::set<std::string> missingTextures;
 	const u64 modelsBefore = pak.rawBytes(ASSET_MODEL), clipsBefore = pak.rawBytes(ASSET_CLIP), texBefore = pak.rawBytes(ASSET_TEXTURE);
@@ -1210,6 +1240,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		}
 		const Rig& rig = rigIt->second;
 		u32 body = 0, head = 0;
+		const size_t bodiesBefore = bodies, headsBefore = heads;
 		if (!rig.hash) {
 			if (why.empty()) why = rig.model.notes.empty() ? "no skeleton" : rig.model.notes.back();
 		} else {
@@ -1233,8 +1264,12 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			continue;
 		}
 		u32 low = 0;
-		if (opt.npcLod) {
+		if (opt.npcLod && !l.heroArmor) {
 			low = lowBody(body);
+		}
+		if (l.heroArmor) {
+			heroBodies += bodies - bodiesBefore;
+			heroHeads += heads - headsBefore;
 		}
 		entries.push_back(LookEntry {key, rig.hash, body, head, low});
 	}
@@ -1352,6 +1387,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		            "%zu of them named%s",
 		            named.size(), fromStrings, fromCalls, candidates, bases.size(), candidatesNamed,
 		            named.empty() ? " - the scripts' names could not be read" : candidates == 0 ? " - no files <SKELETON>_*.MSB/.MDS found" : ""));
+		if (overlays == 0 && scripts.looks.overlayFiles) line("overlays: the game's files " + scripts.looks.overlayFiles("HUMANS"));
 	}
 
 	// ---- transformations (fix151) ----
@@ -1412,8 +1448,17 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 
 	size_t rigCount = 0;
 	for (const auto& r : rigs) rigCount += r.second.hash != 0;
-	result.looksBaked = entries.size();
-	result.npcModels = rigCount + bodies + heads + lowBodies;
+	// fix202: the player's armour looks apart from the inhabitants'.
+	size_t heroLooks = 0, heroBaked = 0;
+	for (const auto& [key, l] : looks) {
+		if (!l.heroArmor) continue;
+		++heroLooks;
+		for (const LookEntry& e : entries)
+			if (e.key == key) ++heroBaked;
+	}
+	if (heroLooks) line(format("the player's character in armour: %zu armours, %zu of them baked as looks of their own", heroLooks, heroBaked));
+	result.looksBaked = entries.size() - heroBaked;
+	result.npcModels = rigCount + (bodies - heroBodies) + (heads - heroHeads) + lowBodies;
 	if (lowBodies) line(format("coarse bodies (--npc-lod): %zu, %zu triangles (the full bodies they stand in for: %zu)", lowBodies, lowTriangles, fullBodyTriangles));
 	u32 drawn = 0;
 	for (const auto& [key, l] : looks)
@@ -1422,7 +1467,8 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 	line(format("inhabitants: %zu characters with %zu different looks; models for %zu of them (%u characters): %zu skeletons "
 	            "with %zu animations, %zu bodies, %zu heads; %zu triangles, %zu textures, %.2f MB of models, %.2f MB of "
 	            "animations and %.2f MB of textures",
-	            result.characters, looks.size(), entries.size(), drawn, rigCount, clipCount, bodies, heads, triangles, textures,
+	            result.characters, looks.size() - heroLooks, entries.size() - heroBaked, drawn, rigCount, clipCount, bodies - heroBodies,
+	            heads - heroHeads, triangles, textures,
 	            double(pak.rawBytes(ASSET_MODEL) - modelsBefore) / 1048576.0, double(pak.rawBytes(ASSET_CLIP) - clipsBefore) / 1048576.0,
 	            double(pak.rawBytes(ASSET_TEXTURE) - texBefore) / 1048576.0));
 	{

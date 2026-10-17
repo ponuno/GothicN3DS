@@ -611,7 +611,29 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 			const int before = _talkCursor;
 			if (in.down) _talkCursor = min(_talkCursor + 1, int(t.count) - 1);
 			if (in.up) _talkCursor = max(_talkCursor - 1, 0);
-			if (before != _talkCursor) _dirty = true;
+			if (before != _talkCursor) {
+				_dirty = true;
+				_talkScroll = 0.0f; // (fix202: the chosen line starts from its beginning)
+			}
+			// fix202: a chosen line wider than its box runs along (wait, run to its end, wait, back to the start).
+			if (_talkCursor < int(t.count) && _talkCursor < int(TALK_ITEMS)) {
+				const int room = Canvas::W - 6 - 6 - 12;
+				const int over = Canvas::measure(t.items[_talkCursor], ui::TEXT) - room;
+				if (over > 0) {
+					const float runFor = float(over) / 40.0f; // (40 pixels a second)
+					const float cycle = 1.2f + runFor + 1.2f;
+					_talkScroll += dt;
+					if (_talkScroll >= cycle) _talkScroll = 0.0f;
+					const int shift = _talkScroll < 1.2f ? 0 : _talkScroll < 1.2f + runFor ? int((_talkScroll - 1.2f) * 40.0f) : over;
+					if (shift != _talkShift) {
+						_talkShift = shift;
+						_dirty = true;
+					}
+				} else if (_talkShift) {
+					_talkShift = 0;
+					_dirty = true;
+				}
+			}
 			if (in.confirm) {
 				cmd.type = PANEL_TALK_CHOOSE;
 				cmd.slot = u8(_talkCursor);
@@ -1188,7 +1210,14 @@ void InventoryPanel::drawDialog(const InventoryView& v) {
 				_canvas.fill(x0, y, x1, y + TALK_ROW - 2, CELL_FILL);
 				_canvas.frame(x0, y, x1, y + TALK_ROW - 2, CELL_LINE);
 			}
-			_canvas.text(x0 + 6, y + 1, t.items[k], chosen ? TITLE : TEXT, ui::TEXT, ui::LEFT, x1 - x0 - 12, true);
+			if (chosen && _talkShift > 0) {
+				// (fix202: running along, inside its box)
+				_canvas.clip(x0 + 3, y, x1 - 3, y + TALK_ROW - 2);
+				_canvas.text(x0 + 6 - _talkShift, y + 1, t.items[k], TITLE, ui::TEXT, ui::LEFT, 0, true);
+				_canvas.unclip();
+			} else {
+				_canvas.text(x0 + 6, y + 1, t.items[k], chosen ? TITLE : TEXT, ui::TEXT, ui::LEFT, x1 - x0 - 12, true);
+			}
 		}
 		return;
 	}

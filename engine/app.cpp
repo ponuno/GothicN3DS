@@ -1272,7 +1272,7 @@ void App::render() {
 		}
 		trace("render: hero");
 		if (_heroVisible && !(_renderSkip & SKIP_HERO)) {
-			_hero.draw();
+			drawHero(); // fix202: in his armour
 			drawArrows(_hero.light());
 			const GameNpc* hn = heroNpc();
 			if (hn && _hero.loaded())
@@ -1492,10 +1492,9 @@ void App::bloodAt(u32 victim, u32 attacker, i32 damage) {
 void App::drawLowHealth() {
 	const i32 hp = heroHitPoints(), mx = heroHitPointsMax();
 	if (mx <= 0) return;
-	float low = 0.0f;
-	if (hp > 0) low = clamp((0.35f - float(hp) / float(mx)) / 0.35f, 0.0f, 1.0f);
+	// fix202: no pulsing red when the health is low (it was asked away): only the short flash of a blow, and death.
 	const float flash = clamp(_bloodPain / 0.45f, 0.0f, 1.0f);
-	float a = low * (0.45f + 0.25f * sinf(float(_clock) * (4.0f + 3.0f * low))) + flash * 0.5f;
+	float a = flash * 0.5f;
 	if (_hero.down() && hp <= 0) a = max(a, 0.6f);
 	if (a <= 0.01f) return;
 	const int W = gfx::SCREEN_W, H = gfx::SCREEN_H;

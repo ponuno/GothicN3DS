@@ -646,6 +646,11 @@ int main(int, char**) {
 	int zlSlot = 0;
 	u32 swallowed = 0;                     // buttons a page or the menu used: the game ignores them until let go
 	float yHeld = -1.0f;                   // (fix192) Y on the inventory: seconds held (-1: not held); let go - one, held - the stack
+	// (fix202) SELECT alone: a tap does what it did (the inventory's cursor, the bow / the spell) - when it is let go;
+	// held 0.8 s it is the quick save. -1: not held (or held with another button: neither).
+	float selectHeld = -1.0f;
+	bool selectSaved = false;
+	u64 selectLast = 0;
 
 	while (aptMainLoop()) {
 		g3::trace("main: input");
@@ -657,6 +662,33 @@ int main(int, char**) {
 			app.setStereo(gfx::stereoActive() ? slider : 0.0f);
 		}
 		const u32 down = hidKeysDown(), held = hidKeysHeld(), repeat = hidKeysDownRepeat();
+		// fix202: SELECT's tap (on release, short) and hold (the quick save).
+		bool selectTap = false, selectSave = false;
+		{
+			const u32 others = KEY_R | KEY_L | KEY_START | KEY_A | KEY_B | KEY_X | KEY_Y | KEY_ZL | KEY_ZR;
+			const u64 nowMs = osGetTime();
+			const float step = selectLast ? float(nowMs - selectLast) * 0.001f : 0.0f;
+			selectLast = nowMs;
+			if (down & KEY_SELECT) {
+				// (A SELECT that closes the inventory's cursor is that, not a tap that opens it again.)
+				selectHeld = (held & others) || app.panel().cursor() || app.menu().isOpen() ? -1.0f : 0.0f;
+				selectSaved = false;
+			}
+			if (selectHeld >= 0.0f) {
+				if (held & others) {
+					selectHeld = -1.0f; // (a combination: R+SELECT, L+SELECT ...)
+				} else if (held & KEY_SELECT) {
+					selectHeld += step;
+					if (selectHeld >= 0.8f && !selectSaved) {
+						selectSave = true;
+						selectSaved = true;
+					}
+				} else {
+					selectTap = !selectSaved && selectHeld < 0.45f;
+					selectHeld = -1.0f;
+				}
+			}
+		}
 		g3::Menu& menu = app.menu();
 		if (gSuspended) {
 			gSuspended = false;
@@ -761,7 +793,7 @@ int main(int, char**) {
 						yHeld = -1.0f;
 					}
 				}
-			} else if ((down & KEY_SELECT) && !(held & (KEY_R | KEY_L | KEY_START)) && app.steersHero()) {
+			} else if (selectTap && app.steersHero()) {
 				panel.setCursor(true);
 				taken = KEY_SELECT;
 			}
@@ -926,7 +958,7 @@ int main(int, char**) {
 				}
 					in.strafe = (gameHeld & KEY_R ? 1.0f : 0.0f) - (gameHeld & KEY_L ? 1.0f : 0.0f);
 					// SELECT: the bow (console) / the spell stance (classic; L+SELECT the bow).
-				if ((gameDown & KEY_SELECT) && !rHeld && !(held & KEY_START) && !inventoryScreen) {
+				if (selectTap && !(taken & KEY_SELECT) && !(swallowed & KEY_SELECT) && !rHeld && !inventoryScreen) {
 					if (console) in.rangedSlot = true; // (the inventory is on the bottom screen)
 					else if (gameHeld & KEY_L) in.rangedSlot = true;
 					else in.magic = true;
@@ -941,7 +973,9 @@ int main(int, char**) {
 				in.jump = (held & KEY_R) != 0;
 				in.fast = (held & (KEY_ZL | KEY_ZR)) != 0;
 			}
-			if (quickSave) {
+			if (selectSave && app.steersHero()) { // fix202: SELECT held
+				app.toast(app.saveState(kStatePath) ? g3::tr("Позиция сохранена") : g3::tr("Не удалось сохранить"));
+			} else if (quickSave) {
 				app.toast(app.saveState(kStatePath) ? g3::tr("Позиция сохранена") : g3::tr("Не удалось сохранить"));
 			} else if (quickLoad) {
 				app.toast(app.loadState(kStatePath) ? g3::tr("Позиция загружена") : g3::tr("Сохранённой позиции нет"));

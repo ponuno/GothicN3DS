@@ -424,6 +424,9 @@ public:
 	// The actor a character is right now, or null.
 	const NpcActor* actorOf(u32 npcIndex) const;
 	u32 actorCount() const { return ACTORS; }
+	// fix202: the body and the head the baker made for `look` (meta/looks), loaded into models of the caller's (with the
+	// people's own pools of meshes and textures). False if the look was not baked (then nothing is loaded).
+	bool loadLook(Pak& pak, const GameLook& look, Model& body, Model& head);
 	// The characters drawn in the last frame that stand on their feet (for
 	// their shadows, Graphics+): where they stand and how wide they are, cm.
 	u32 drawnCount() const { return _drawnCount; }

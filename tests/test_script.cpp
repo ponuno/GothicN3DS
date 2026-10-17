@@ -639,7 +639,7 @@ static void testLateAndRooms() {
 	game.setTime(9.0f, find, &world);
 	CHECK(game.npc(first).placed && std::fabs(game.npc(first).pos[2] - 300.0f) < 1.0f);
 	// Rooms: the guild given to a room, -1 outside, GIL_NONE for a room nobody was given.
-	CHECK(game.roomGuild(0) == -1 && game.roomGuild(hashName("HUT")) == 0);
+	CHECK(game.roomGuild(0) == 0 && game.roomGuild(hashName("HUT")) == 0); // (fix202: outside is GIL_NONE)
 	CHECK(!game.setRoom(hero, 0) && game.setRoom(hero, hashName("HUT")) && game.heroRoom() == hashName("HUT") && game.heroFormerRoom() == 0);
 	// A save keeps them; the loading game makes them again.
 	ByteSink sink;

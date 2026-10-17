@@ -467,8 +467,8 @@ public:
 	// The room a character stands in now (hashName of its name, 0: outside). For the player's character this is
 	// also where it was before (Wld_GetFormerPlayerPortalGuild); true if the player's room changed.
 	bool setRoom(u32 npc, u32 roomHash);
-	// The guild a room of the current world belongs to (Wld_AssignRoomToGuild): GIL_NONE (0) if none was given;
-	// -1 for outside (as OpenGothic answers for a place in no sector).
+	// The guild a room of the current world belongs to (Wld_AssignRoomToGuild): GIL_NONE (0) if none was given (and,
+	// fix202, outside: roomHash 0; OpenGothic answers -1 there, which the scripts never take for "outside").
 	i32 roomGuild(u32 roomHash) const;
 	u32 heroRoom() const { return _heroRoom; }
 	void clearHeroRoom() {
@@ -655,6 +655,21 @@ public:
 	u32 countLooks() const;
 	// No "script: ..." lines in the log (the tests break things on purpose).
 	void setQuiet(bool quiet) { _vm.setQuiet(quiet); }
+
+	// fix202: the look of character `npc` in armour item `armorSymbol` (its own look with the armour's mesh; SCRIPT_NONE:
+	// without one). False if the item is no armour one wears.
+	bool lookInArmor(u32 npc, u32 armorSymbol, GameLook& out) {
+		if (npc >= _npcCount) return false;
+		out = _npcs[npc].look;
+		if (armorSymbol == SCRIPT_NONE) {
+			out.armor = 0;
+			return true;
+		}
+		const Armor* a = armorOf(armorSymbol);
+		if (!a || !a->wearable || !a->mesh) return false;
+		out.armor = a->mesh;
+		return true;
+	}
 
 	const GameStats& stats() const { return _stats; }
 	ScriptVm& vm() { return _vm; }

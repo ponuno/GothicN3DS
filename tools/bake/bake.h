@@ -170,6 +170,8 @@ struct LookSource {
 	// whole creature - skeleton, body and every animation the hero's own movement and fists ask for - as one model,
 	// the way the hero is baked. May be empty: no transformations then.
 	std::function<bool(const std::string& script, const std::string& mesh, int tex, int skin, SrcModel& model)> form;
+	// fix202: what the game's files have under "<BASE>_" (for the report when no overlay is found).
+	std::function<std::string(const std::string& base)> overlayFiles;
 };
 
 // The game's scripts: baked into the archive, run to see who lives in the

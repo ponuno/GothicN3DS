@@ -318,7 +318,7 @@ void App::drawProgressFrame() {
 
 // ---- the start menu ----
 
-const char* App::versionText() { return "Gothic 3DS fix201"; }
+const char* App::versionText() { return "Gothic 3DS fix202"; }
 
 void App::openStartMenu() {
 	if (!_start.loaded()) _start.load(_pak);

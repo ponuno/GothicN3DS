@@ -28,6 +28,7 @@ struct LootItem {
 	u8 wait;          // frames its model's bytes have been waited for (fix89: read ahead, not on the frame's thread)
 	float light[3];   // the baked light of the floor under it (before the time of day)
 	float sky;        // how much of the sky that floor sees (the time of day's share)
+	u32 drop;         // fix192: 0 for a thing of the world file (or its scripts); else the id of a thing the player dropped
 };
 static_assert(sizeof(LootItem) % sizeof(float) == 0, "LootItem: a whole number of floats (PointGrid's stride)");
 
@@ -76,6 +77,8 @@ public:
 	// as its place (model space of the character standing at `origin`); reads
 	// its model the first time. In PASS_WORLD.
 	void drawHeld(Pak& pak, Game& game, u32 symbol, const Mat34& attach, Vec3 origin, const float light[3]);
+	// fix192: the model of an item's look (read the first time), null if it has none.
+	const Model* lookModel(Pak& pak, Game& game, u32 symbol);
 	// A character's melee weapon `melee` (item instance, SCRIPT_NONE for none):
 	// in the hand while a weapon of the hands is drawn (`weapon`: a WeaponMode),
 	// else on the belt (one hand) or the back (two).
@@ -85,13 +88,21 @@ public:
 	void drawRanged(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, float lean, const float* scale,
 	                u8 weapon, u32 ranged, Vec3 origin, const float light[3]);
 	// A thing held in the right hand (an apple, a bottle: AI_UseItemToState).
-	void drawInHand(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, const float* scale, u32 symbol, Vec3 origin,
-	                const float light[3]);
+	// fix192: `left` - in the left hand ("ZS_LEFTHAND": a torch); `tip` (may be null) gets where the far end of the thing is
+	// in the world (the flame of a torch: the end of its longest side away from the hand), false if it could not be drawn.
+	bool drawInHand(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, const float* scale, u32 symbol, Vec3 origin,
+	                const float light[3], bool left = false, float lean = 0.0f, Vec3* tip = nullptr);
 	int nearest(Vec3 feet, float yaw, float reach, float halfAngle) const;
 	// Takes it away (picked up); false if it is gone already.
 	bool take(u32 index);
+	// fix192: a thing the player dropped: `amount` of `symbol` lying at `pos` (on the floor already), turned by `rot`.
+	// It lies there across the worlds and in the saves until somebody picks it up. Returns its index, -1 on failure.
+	int drop(Game& game, u32 symbol, i32 amount, Vec3 pos, Quat rot);
+	// How many dropped things lie about, all worlds (for the tests and the report).
+	u32 droppedCount() const { return _droppedCount; }
 
 	// What has been taken, all worlds: a block of state.bin.
+	// (fix192: with what the player dropped, all worlds; a block of before it - no dropped things - is still read.)
 	void saveTaken(FILE* f) const;
 	bool loadTaken(FILE* f);
 	const LootStats& stats() const { return _stats; }
@@ -109,6 +120,22 @@ private:
 	};
 	bool wasTaken(u32 world, u32 index) const;
 	void markTaken(u32 world, u32 index);
+	// fix192: what the player dropped, all worlds (the item by its name's hash, so a save outlives a new data.pak).
+	struct Dropped {
+		u32 world;
+		u32 id;
+		u32 item;  // ScriptSymbol::nameHash
+		i32 amount;
+		float pos[3];
+		float rot[4];
+	};
+	Dropped* _dropped = nullptr;
+	u32 _droppedCount = 0, _droppedCap = 0, _nextDrop = 1;
+	u32 _base = 0, _cap = 0; // things of the world file in _items, and room for more
+	Game* _game = nullptr;
+	bool grow(u32 count);
+	// The dropped things of this world after those of its file (anew: the ones there before are cut off).
+	void placeDropped();
 
 	LootItem* _items = nullptr;
 	u32 _count = 0;

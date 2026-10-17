@@ -276,12 +276,18 @@ bool App::itemAction(u32 symbol) {
 		if (_hero.weapon() == WEAPON_MAG && _spellItem == symbol && !_hero.drawing()) return heroTake(WEAPON_NONE);
 		return selectSpell(symbol);
 	case IK_DOC: return readItem(symbol);
-	case IK_LIGHT: itemMessage(tr("Факелов пока нет")); return false;
+	case IK_LIGHT: return toggleTorch(symbol); // (fix192)
 	case IK_AMMO: itemMessage(tr("Стрелы берутся с луком")); return false;
-	default:
+	default: {
+		// (fix192) A thing used in the hands by its scheme: kept at (a broom, a lute) or used once (a joint); else its
+		// function, if it has one.
+		bool keeps = false;
+		if (canUseScheme(symbol, &keeps)) return keeps ? startStateItem(symbol) : startUse(symbol);
+		if (it->onUse != NONE) return startUse(symbol);
 		snprintf(buf, sizeof(buf), "%s", name);
 		itemMessage(buf, false);
 		return false;
+	}
 	}
 }
 
@@ -307,10 +313,15 @@ bool App::startUse(u32 symbol) {
 	_job.symbol = symbol;
 	_job.stage = _hero.weapon() != WEAPON_NONE ? JOB_PUTAWAY : JOB_START;
 	_job.redraw = _settings.weaponBack ? _hero.weapon() : u8(WEAPON_NONE);
+	{
+		// (fix192: a thing with nothing to do - played on, not used up.)
+		const GameItemInfo* it = g.itemInfo(symbol);
+		_job.keep = it && it->onUse == NONE;
+	}
 	if (!_hero.loaded()) {
 		// No character to animate (an archive without one): it works at once.
 		const GameItemInfo* it = g.itemInfo(symbol);
-		if (it && hi >= 0) {
+		if (it && hi >= 0 && it->onUse != NONE) {
 			g.giveItems(u32(hi), symbol, -1);
 			g.callItemFunction(u32(hi), symbol, it->onUse);
 			++_itemStats.used;
@@ -496,6 +507,7 @@ void App::setQuickSlot(int slot, u32 symbol) {
 void App::panelCommand(const PanelCommand& c) {
 	switch (c.type) {
 	case PANEL_USE: itemAction(c.symbol); break;
+	case PANEL_DROP: dropItem(c.symbol, c.amount); break; // (fix192)
 	case PANEL_USE_SLOT: quickUse(c.slot); break;
 	case PANEL_ASSIGN: setQuickSlot(c.slot, c.symbol); break;
 	case PANEL_CLEAR_SLOT: setQuickSlot(c.slot, NONE); break;
@@ -504,6 +516,7 @@ void App::panelCommand(const PanelCommand& c) {
 	case PANEL_TALK_SKIP: _npcs.talkSkip(); break;
 	case PANEL_TALK_LEAVE: _npcs.talkBack(); break;
 	case PANEL_DOC_PAGE:
+	case PANEL_MAP:
 	case PANEL_DOC_CLOSE: docCommand(c); break;
 	default: break; // (the report and the cursor are the platform's)
 	}
@@ -573,6 +586,11 @@ void App::itemsUpdate(Input& in, float dt) {
 		return;
 	}
 	Game& g = _npcs.game();
+	// (fix192) A thing used in the hands by its scheme has frames of its own.
+	if (_job.state) {
+		stateItemFrame(in, dt);
+		return;
+	}
 	const GameItemInfo* it = g.itemInfo(_job.symbol);
 	char name[48], buf[96];
 	scriptText(it ? g.text(it->description ? it->description : it->name) : "", name, sizeof(name));
@@ -610,7 +628,8 @@ void App::itemsUpdate(Input& in, float dt) {
 		// Without the animations: a potion takes a second, food two (the item works 60% in);
 		// picking up, a second (in hand at 0.45: the bend shows).
 		const float seconds = _job.pickup ? 1.0f : drink ? 1.2f : 2.0f;
-		if (_job.pickup ? _hero.pickUp(seconds, 0.45f) : _hero.useItem(scheme, seconds, seconds * 0.6f)) {
+		const bool began = _job.pickup ? _hero.pickUp(seconds, 0.45f) : _job.drop ? _hero.putDown(1.0f, 0.45f) : _hero.useItem(scheme, seconds, seconds * 0.6f);
+		if (began) {
 			_job.stage = JOB_USING;
 			_job.wait = 0;
 			const GameNpc& h = g.npc(u32(hi));
@@ -633,6 +652,14 @@ void App::itemsUpdate(Input& in, float dt) {
 				else snprintf(buf, sizeof(buf), tr("Взято: %s"), name);
 				itemMessage(buf, false);
 			}
+		} else if (_hero.useMoment() && !_job.applied && _job.drop) {
+			_job.applied = true;
+			dropFrame(); // (fix192)
+		} else if (_hero.useMoment() && !_job.applied && _job.keep) {
+			// (fix192) Played with, not used up: a lute's tune, a joint without a function.
+			_job.applied = true;
+			++_itemStats.used;
+			itemMessage(name, false);
 		} else if (_hero.useMoment() && !_job.applied) {
 			_job.applied = true;
 			if (!it || g.itemCount(u32(hi), _job.symbol) <= 0) {
@@ -736,7 +763,17 @@ void App::fillEntry(ItemEntry& e, u32 symbol, i32 count, const GameNpc& h, bool 
 		case IK_ARMOR:
 		case IK_AMULET:
 		case IK_RING: action = worn ? tr("Снять") : tr("Надеть"); break;
-		default: break;
+		case IK_DOC: action = it->onUse == NONE ? "" : e.icon == ICON_MAP ? tr("Открыть") : tr("Читать"); break; // (fix192: there was none)
+		case IK_LIGHT: // (fix192)
+			action = _torch.lit && _torch.symbol == symbol ? tr("Потушить") : tr("Зажечь");
+			if (carried && _torch.lit && _torch.symbol == symbol) e.flags |= ITEMF_IN_HAND | ITEMF_EQUIPPED;
+			break;
+		case IK_AMMO: break;
+		default:
+			// (fix192) Used in the hands by its scheme, or by its function.
+			if (carried && canUseScheme(symbol)) action = _job.state && _job.symbol == symbol ? tr("Отпустить") : tr("Использовать");
+			else if (it->onUse != NONE) action = tr("Использовать");
+			break;
 		}
 		snprintf(e.action, sizeof(e.action), "%s", action);
 		if (action[0]) e.flags |= ITEMF_ACTION;
@@ -813,6 +850,8 @@ const InventoryView& App::inventory() {
 	stamp = mix(stamp, combat);
 	stamp = mix(stamp, _job.stage);
 	stamp = mix(stamp, _job.symbol);
+	stamp = mix(stamp, u32(_job.state) | u32(_job.leaving) << 1 | u32(_job.drop) << 2 | u32(_torch.lit) << 3);
+	stamp = mix(stamp, _torch.symbol);
 	stamp = mix(stamp, _queued);
 	stamp = mix(stamp, g.logVersion());
 	stamp = mix(stamp, _diarySeen);
@@ -821,7 +860,7 @@ const InventoryView& App::inventory() {
 	stamp = mix(stamp, _chests.version());
 	stamp = mix(stamp, u32(_npcs.trading()));
 	stamp = mix(stamp, u32(_chest.stage));
-	stamp = mix(stamp, _doc.active ? 1u + _doc.page * 64u + _doc.pages : 0u);
+	stamp = mix(stamp, _doc.active ? 1u + _doc.page * 64u + _doc.pages + (_doc.map ? 1u << 20 : 0u) : 0u);
 	stamp = mix(stamp, u32(_chest.corpse + 1));
 	stamp = mix(stamp, u32(_corpseTarget + 1));
 	if (_chest.corpse >= 0) {
@@ -858,7 +897,8 @@ const InventoryView& App::inventory() {
 		case JOB_PUTAWAY: snprintf(v.busyText, sizeof(v.busyText), "%s", tr("Убирает оружие…")); break;
 		case JOB_START:
 		case JOB_USING:
-			snprintf(v.busyText, sizeof(v.busyText), "%s %s", _job.pickup ? tr("Поднимает:") : drink ? tr("Пьёт:") : tr("Ест:"), name);
+			snprintf(v.busyText, sizeof(v.busyText), "%s %s",
+			         _job.pickup ? tr("Поднимает:") : _job.drop ? tr("Кладёт:") : _job.state || _job.keep ? tr("Использует:") : drink ? tr("Пьёт:") : tr("Ест:"), name);
 			break;
 		case JOB_REDRAW: snprintf(v.busyText, sizeof(v.busyText), "%s", tr("Снова берёт оружие…")); break;
 		default: snprintf(v.busyText, sizeof(v.busyText), tr("Меняет оружие: %s"), name); break;
@@ -1378,6 +1418,7 @@ bool App::loadInventory(FILE* f) {
 		return s != NONE && g.isItem(s) ? s : NONE;
 	};
 	// Everything off, everything out; then what was carried, worn, kept in slots.
+	torchOut(false, nullptr); // (fix192: the torch is put out, not burnt)
 	_job = ItemJob();
 	_queued = NONE;
 	unequipAll();
@@ -1647,11 +1688,13 @@ void App::drawItemHud() {
 	const bool can = e && (e->flags & ITEMF_ACTION) && !((e->flags & ITEMF_BLOCKED) && !(e->flags & ITEMF_EQUIPPED));
 	const char* action = !e ? "—" : e->action[0] ? e->action : "—";
 	if (_panel.assigning()) {
-		hint("A", tr("В слот"), true);
+		hint("A", tr("В слот"), e && (e->flags & ITEMF_QUICK));
+		hint("Y", tr("Выбросить"), e != nullptr);
 		hint("B", tr("Отмена"), true);
 	} else {
 		hint("A", action, can);
 		if (e && (e->flags & ITEMF_QUICK)) hint("X", tr("В слот"), true);
+		hint("Y", tr("Выбросить"), e != nullptr); // (fix192; held: the whole stack)
 		hint("B", tr("Закрыть"), true);
 	}
 }

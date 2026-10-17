@@ -656,8 +656,12 @@ void App::update(const Input& given, float dt) {
 		chestUpdate(fightIn, dt);
 		mobUpdate(fightIn, dt);
 		itemsUpdate(fightIn, dt); // (a job holds the hands: its frames take the fight keys)
+		torchUpdate(dt);          // (fix192)
 		talkUpdate(fightIn, dt);
 		docUpdate();
+		// fix192: a map on the top screen moves with the stick (the character stands while it is up).
+		if (_doc.active && _doc.map && _doc.pic.loaded() && (fabsf(in.moveX) > 0.2f || fabsf(in.moveZ) > 0.2f))
+			docMapPan(in.moveX * 320.0f * dt, -in.moveZ * 320.0f * dt);
 		fightInput(fightIn, dt);
 		Input heroIn = steerInput(in, dt);
 		// Sneaking is learnt (a teacher sets the talent's skill), as OpenGothic's Npc::canSneak has it.
@@ -705,7 +709,11 @@ void App::update(const Input& given, float dt) {
 		if (_npcs.loaded() && heroIndex() >= 0) {
 			const Model* worn[4];
 			// (fix151: a creature wears none of the human skeleton's.)
-			const u32 count = heroTransformed() ? 0u : _npcs.overlayModels(u32(heroIndex()), worn, 4);
+			u32 count = heroTransformed() ? 0u : _npcs.overlayModels(u32(heroIndex()), worn, 4);
+			// fix192: the torch in the hand has the model's own way of carrying it (HUMANS_TORCH.MDS: OpenGothic's
+			// Npc::setTorch puts it on), if the game has it.
+			if (torchShown() && count < 4)
+				if (const Model* t = _npcs.overlayModelNamed("humans_torch")) worn[count++] = t;
 			_hero.setOverlays(worn, count);
 		}
 		const Drive drive = _hero.control(heroIn, _player, dt, grab ? &ledge : nullptr, ground.found ? &ground : nullptr, wall);
@@ -1223,6 +1231,7 @@ void App::render() {
 			if (hn && _hero.loaded())
 				_loot.drawRanged(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
 				                 hn->ranged, _hero.feet(), _hero.light());
+			if (hn) drawHeldItems(); // (fix192: the torch, the thing in use)
 		}
 		const double r5 = sys::timeMs();
 		gfx::setPass(gfx::PASS_BLEND);
@@ -1508,6 +1517,11 @@ void App::updateLamps() {
 	for (int i = 0; i < 3; ++i) lf.dayLight[i] = sky.light[i];
 	lf.characters = _settings.lamps >= 1 && !(_renderSkip & SKIP_LAMPS);
 	lf.world = _settings.lamps >= 2 && !_gfxRelief && !_underwater;
+	// fix192: the torch in the hand is a lamp of its own (a little above its flame).
+	{
+		static const float kTorch[3] = {255.0f, 176.0f, 96.0f};
+		_lamps.setCarried(_torch.lit && _torch.shown && _torch.tipKnown, _torch.tip + Vec3 {0.0f, 12.0f, 0.0f}, 950.0f, kTorch);
+	}
 	_lamps.update(lf, &_world);
 	float add[3] = {0.0f, 0.0f, 0.0f};
 	if (_hero.loaded()) _lamps.lightAt({_hero.feet().x, _hero.feet().y + 90.0f, _hero.feet().z}, _hero.sky(), add, &_world);

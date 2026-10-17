@@ -749,6 +749,15 @@ bool Hero::pickUp(float seconds, float moment) {
 	return beginUse(in, hold, out, seconds, moment, true);
 }
 
+bool Hero::putDown(float seconds, float moment) {
+	if (!loaded()) return false;
+	const Clip* in = lookup("T_STAND_2_IDROP");
+	const Clip* hold = lookup("S_IDROP");
+	const Clip* out = lookup("T_IDROP_2_STAND");
+	if (!in) return pickUp(seconds, moment);
+	return beginUse(in, hold, out, seconds, moment, true);
+}
+
 // ---- a chest ----
 
 bool Hero::openMob(const char* scheme, int states, int slotKind) {

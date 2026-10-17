@@ -167,7 +167,53 @@ u32 Particles::bloodSplash() {
 	return h;
 }
 
+u32 Particles::torchFlame() {
+	static const u32 h = hashName("G3_TORCH_FLAME");
+	return h;
+}
+
 void Particles::loadDef(Def& d, u32 effect) {
+	if (effect == torchFlame()) {
+		d.pps = 60;
+		d.ppsKeys[0] = 1;
+		d.ppsKeyCount = 1;
+		d.ppsLooping = true;
+		d.shape = SHAPE_SPHERE;
+		d.volume = true;
+		d.dim[0] = d.dim[1] = d.dim[2] = 2.5f;
+		d.objectFrame = false;
+		d.headVar = 3.14159f;
+		d.elevAngle = 1.5708f; // (up)
+		d.elevVar = 0.35f;
+		d.velAvg = 0.045f;
+		d.velVar = 0.015f;
+		d.lifeAvg = 320;
+		d.lifeVar = 90;
+		d.gravity[1] = 0.00008f;
+		d.additive = true;
+		d.colorStart[0] = 1.0f;
+		d.colorStart[1] = 0.72f;
+		d.colorStart[2] = 0.32f;
+		d.colorEnd[0] = 0.75f;
+		d.colorEnd[1] = 0.22f;
+		d.colorEnd[2] = 0.04f;
+		d.sizeStart[0] = d.sizeStart[1] = 9;
+		d.sizeEndScale = 0.35f;
+		d.alphaStart = 0.9f;
+		d.alphaEnd = 0.0f;
+		static const char* const pics[] = {"tex/fireflare", "tex/firesmoke", "tex/synth_spark", "tex/synth_smoke", "tex/smoke"};
+		for (const char* pic : pics) {
+			const u32 hash = hashName(pic);
+			if (gfx::Texture* t = _textures.acquire(*_pak, hash)) {
+				d.frames[0] = t;
+				d.frameHash[0] = hash;
+				d.frameCount = 1;
+				break;
+			}
+		}
+		d.ok = d.frameCount > 0;
+		return;
+	}
 	if (effect == bloodSplash()) {
 		d.pps = 420;
 		d.ppsKeys[0] = 1;
@@ -451,6 +497,13 @@ void Particles::move(u32 handle, Vec3 pos) {
 			_dynamic[i].pos[1] = pos.y;
 			_dynamic[i].pos[2] = pos.z;
 		}
+}
+
+bool Particles::alive(u32 handle) const {
+	if (!handle) return false;
+	for (u32 i = 0; i < _dynamicCount; ++i)
+		if (_dynamic[i].id == handle && _dynamic[i].ttl > 0.0f) return true;
+	return false;
 }
 
 void Particles::stop(u32 handle) {

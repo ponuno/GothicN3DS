@@ -58,6 +58,10 @@ public:
 		bool characters = true;    // the menu: lamps light the people (and the things)
 		bool world = true;         // ... and the world (off under load, or where the backend has no lamps)
 	};
+	// fix192: a lamp carried about (the hero's torch): at `pos` this frame, flickering as a flame; off with `on` false.
+	// It is the first of the frame's lamps (nearest of all), whether the world has a table of lamps or not.
+	void setCarried(bool on, Vec3 pos, float range = 900.0f, const float* rgb = nullptr);
+	bool carried() const { return _carriedOn; }
 	// Once a frame before drawing. `world` (may be null) says whether a lamp's place is drawn just now.
 	void update(const Frame& f, const World* world);
 
@@ -91,6 +95,12 @@ private:
 	void sample(const WorldLamp& l, u32 index, double seconds, float& rangeScale, float rgb[3]) const;
 	bool sees(u32 lamp, Vec3 lampPos, Vec3 p, const World* world);
 
+	static constexpr u32 CARRIED = 0xFFFFFF00u; // Active::lamp of the carried one
+	bool _carriedOn = false;
+	Vec3 _carriedPos {0, 0, 0};
+	float _carriedRange = 900.0f;
+	float _carriedRgb[3] = {255.0f, 170.0f, 90.0f};
+	u8 _carriedGate = 0;
 	WorldLamp* _lamps = nullptr;
 	float* _phase = nullptr; // a lamp's own start in its flicker, seconds
 	int* _chunk = nullptr;   // World::pointShown's cache

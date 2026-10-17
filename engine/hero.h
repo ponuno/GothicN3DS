@@ -178,6 +178,9 @@ public:
 	// "T_IGET_2_STAND" as the model has them; the same rules as useItem (the
 	// moment is when the hand is at the ground).
 	bool pickUp(float seconds, float moment);
+	// fix192: putting a thing down on the ground: "T_STAND_2_IDROP", "S_IDROP", "T_IDROP_2_STAND" as the model has
+	// them, else the picking up's (the hand goes to the ground all the same); the moment is when it lets go.
+	bool putDown(float seconds, float moment);
 	// A chest: the character bends to it (the model script's "T_<SCHEME>_STAND_2_S0"
 	// and the lid's "T_<SCHEME>_S0_2_S1"; bent over without them) and stays
 	// at it, `mobOpen()` from the moment the lid is up, until closeMob() lets

@@ -3296,6 +3296,28 @@ bool importZenActor(std::shared_ptr<const ZenGame> game, const ZenActorOptions& 
 			for (const zenkit::MdsAnimationAlias& a : script.aliases) family(a.name);
 		}
 		model.notes.push_back("character: " + std::to_string(byThing) + " animations at the things of the worlds (ladders, benches, forges, levers)");
+		// (fix192) ... and with the things in his hands: every scheme of the scripts' words the model script has a way
+		// into ("T_BROOM_STAND_2_S0"), with all its animations.
+		if (!opt.stateSchemes.empty()) {
+			std::set<std::string> names;
+			for (const zenkit::MdsAnimation& a : script.animations) names.insert(upper(a.name));
+			for (const zenkit::MdsAnimationAlias& a : script.aliases) names.insert(upper(a.name));
+			size_t byHand = 0;
+			std::string found;
+			for (const std::string& w : opt.stateSchemes) {
+				if (!names.count("T_" + w + "_STAND_2_S0")) continue;
+				found += " " + w;
+				const std::string t = "T_" + w + "_", st = "S_" + w + "_";
+				for (const std::string& n : names)
+					if ((n.compare(0, t.size(), t) == 0 || n.compare(0, st.size(), st) == 0) && std::find(wanted.begin(), wanted.end(), n) == wanted.end()) {
+						wanted.push_back(n);
+						optional.insert(n);
+						++byHand;
+					}
+			}
+			model.notes.push_back("character: " + std::to_string(byHand) + " more animations of things used in the hands (schemes:" +
+			                      (found.empty() ? std::string(" none") : found) + ")");
+		}
 		model.notes.push_back("character: animations of reaching in the model script (ledges, picking up, chests):" +
 		                      (reachFound.empty() ? std::string(" none") : reachFound));
 		for (const zenkit::MdsAnimation& a : script.animations)

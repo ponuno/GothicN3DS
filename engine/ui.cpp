@@ -434,6 +434,25 @@ void Ui::picture(gfx::Texture* tex, int texW, int texH, int x0, int y0, int x1, 
 	gfx::uiDraw(tex, &q, 1);
 }
 
+void Ui::pictureRegion(gfx::Texture* tex, int u0, int v0, int u1, int v1, int x0, int y0, int x1, int y1, u32 rgba) {
+	if (!tex || x1 <= x0 || y1 <= y0 || u1 <= u0 || v1 <= v0) return;
+	flush();
+	gfx::UiQuad q {};
+	q.x0 = i16(x0);
+	q.y0 = i16(y0);
+	q.x1 = i16(x1);
+	q.y1 = i16(y1);
+	q.u0 = u16(u0);
+	q.v0 = u16(v0);
+	q.u1 = u16(u1);
+	q.v1 = u16(v1);
+	q.rgba[0] = u8(rgba >> 24);
+	q.rgba[1] = u8(rgba >> 16);
+	q.rgba[2] = u8(rgba >> 8);
+	q.rgba[3] = u8(rgba);
+	gfx::uiDraw(tex, &q, 1);
+}
+
 void Ui::flush() {
 	if (_font && _count) gfx::uiDraw(_font, _quads, _count);
 	_count = 0;

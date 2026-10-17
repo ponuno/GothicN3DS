@@ -131,6 +131,9 @@ struct ZenActorOptions {
 	// Every animation the model script declares whose name begins with one
 	// of these is wanted too ("T_BENCH_": all there is to using a bench).
 	std::vector<std::string> clipPrefixes;
+	// fix192: words that may be schemes of the things used in the hands: for each the model script has
+	// "T_<WORD>_STAND_2_S0" for, all its "T_<WORD>_" and "S_<WORD>_" animations are brought along (optional).
+	std::vector<std::string> stateSchemes;
 	// `body` and `head` may be empty: a head alone, a body alone, or - with
 	// neither - just the skeleton and its animations.
 	// An overlay (Mdl_ApplyOverlayMds: "HUMANS_MILITIA.MDS"): its skeleton is `tree`'s (the base script's), and

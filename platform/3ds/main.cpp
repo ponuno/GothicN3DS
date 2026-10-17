@@ -645,6 +645,7 @@ int main(int, char**) {
 	float zlTime = 0;
 	int zlSlot = 0;
 	u32 swallowed = 0;                     // buttons a page or the menu used: the game ignores them until let go
+	float yHeld = -1.0f;                   // (fix192) Y on the inventory: seconds held (-1: not held); let go - one, held - the stack
 
 	while (aptMainLoop()) {
 		g3::trace("main: input");
@@ -736,6 +737,20 @@ int main(int, char**) {
 				pin.assign = (down & KEY_X) != 0;
 				pin.prevTab = (down & KEY_L) != 0;
 				pin.nextTab = (down & KEY_R) != 0;
+				// (fix192) Y: a press puts one of the chosen thing down; held half a second, the whole stack.
+				if (down & KEY_Y) yHeld = 0.0f;
+				if (yHeld >= 0.0f) {
+					if (held & KEY_Y) {
+						yHeld += dt;
+						if (yHeld >= 0.5f) {
+							pin.dropAll = true;
+							yHeld = -1.0f;
+						}
+					} else {
+						pin.drop = true;
+						yHeld = -1.0f;
+					}
+				}
 			} else if ((down & KEY_SELECT) && !(held & (KEY_R | KEY_L | KEY_START)) && app.steersHero()) {
 				panel.setCursor(true);
 				taken = KEY_SELECT;
@@ -752,6 +767,7 @@ int main(int, char**) {
 			app.settings().save(kSettingsPath);
 		}
 		if (!inventoryScreen || menu.isOpen()) panel.setCursor(false);
+		if (!panel.cursor()) yHeld = -1.0f;
 		bool zlCycle = false;
 		{
 			const bool zlNow = (held & KEY_ZL) != 0 && !menu.isOpen() && !panel.cursor() && app.steersHero();

@@ -20,12 +20,16 @@ void Loot::release() {
 	free(_taken);
 	_taken = nullptr;
 	_takenCount = _takenCap = 0;
+	free(_dropped);
+	_dropped = nullptr;
+	_droppedCount = _droppedCap = 0;
+	_nextDrop = 1;
 }
 
 void Loot::leaveWorld() {
 	free(_items);
 	_items = nullptr;
-	_count = 0;
+	_count = _base = _cap = 0;
 	_grid.release();
 	_world = 0;
 	_stats = LootStats();
@@ -50,28 +54,35 @@ void Loot::markTaken(u32 world, u32 index) {
 	_taken[_takenCount++] = Taken {world, index};
 }
 
+bool Loot::grow(u32 count) {
+	if (count <= _cap) return true;
+	const u32 cap = max(count, _cap + _cap / 4 + 16);
+	LootItem* grown = static_cast<LootItem*>(realloc(static_cast<void*>(_items), sizeof(LootItem) * cap));
+	if (!grown) return false;
+	memset(static_cast<void*>(grown + _cap), 0, sizeof(LootItem) * (cap - _cap));
+	_items = grown;
+	_cap = cap;
+	return true;
+}
+
 void Loot::enterWorld(Pak& pak, const char* worldName, u32 worldHash, Game& game) {
 	leaveWorld();
 	_world = worldHash;
+	_game = &game;
 	char name[96];
 	snprintf(name, sizeof(name), "%s/items", worldName ? worldName : "");
 	const PakEntry* e = pak.find(name);
-	if (!e || e->size < sizeof(ItemsHeader)) return;
-	u8* blob = static_cast<u8*>(malloc(e->size));
-	if (!blob) return;
+	u8* blob = e && e->size >= sizeof(ItemsHeader) ? static_cast<u8*>(malloc(e->size)) : nullptr;
 	ItemsHeader h {};
-	if (pak.read(*e, blob)) memcpy(&h, blob, sizeof(h));
-	if (h.magic != ITEMS_MAGIC || h.version != ITEMS_VERSION || e->size != sizeof(ItemsHeader) + size_t(h.count) * sizeof(WorldItem) ||
-	    h.count == 0) {
+	if (blob && pak.read(*e, blob)) memcpy(&h, blob, sizeof(h));
+	if (!blob || h.magic != ITEMS_MAGIC || h.version != ITEMS_VERSION || e->size != sizeof(ItemsHeader) + size_t(h.count) * sizeof(WorldItem) ||
+	    h.count == 0 || !grow(h.count)) {
+		// (No things of its own: those the player dropped here all the same.)
 		free(blob);
+		placeDropped();
 		return;
 	}
-	_items = static_cast<LootItem*>(calloc(h.count, sizeof(LootItem)));
-	if (!_items) {
-		free(blob);
-		return;
-	}
-	_count = h.count;
+	_count = _base = h.count;
 	for (u32 i = 0; i < _count; ++i) {
 		WorldItem wi;
 		memcpy(&wi, blob + sizeof(ItemsHeader) + size_t(i) * sizeof(WorldItem), sizeof(wi));
@@ -86,11 +97,78 @@ void Loot::enterWorld(Pak& pak, const char* worldName, u32 worldHash, Game& game
 		it.taken = it.symbol == SCRIPT_NONE || wasTaken(_world, i);
 		it.lit = false;
 		it.wait = 0;
+		it.drop = 0;
 		_stats.taken += it.taken;
 	}
-	_stats.count = _count;
 	free(blob);
+	placeDropped();
+}
+
+void Loot::placeDropped() {
+	_count = _base;
+	_stats.taken = 0;
+	for (u32 i = 0; i < _base; ++i) _stats.taken += _items[i].taken;
+	u32 here = 0;
+	for (u32 k = 0; k < _droppedCount; ++k) here += _dropped[k].world == _world;
+	if (here && _game && grow(_base + here))
+		for (u32 k = 0; k < _droppedCount; ++k) {
+			const Dropped& d = _dropped[k];
+			if (d.world != _world) continue;
+			const u32 s = _game->vm().findHash(d.item);
+			if (s == SCRIPT_NONE || !_game->isItem(s)) continue; // (a data.pak whose scripts lack it)
+			LootItem& it = _items[_count++];
+			memset(static_cast<void*>(&it), 0, sizeof(it));
+			it.symbol = s;
+			it.pos = {d.pos[0], d.pos[1], d.pos[2]};
+			it.rot = quatNormalize({d.rot[0], d.rot[1], d.rot[2], d.rot[3]});
+			it.amount = d.amount > 0 ? d.amount : 1;
+			it.model = NOT_TRIED;
+			it.drop = d.id;
+		}
+	_stats.count = _count;
+	_grid.release();
+	if (_count) _grid.build(&_items[0].pos.x, &_items[0].pos.z, _count, u32(sizeof(LootItem) / sizeof(float)));
+}
+
+int Loot::drop(Game& game, u32 symbol, i32 amount, Vec3 pos, Quat rot) {
+	if (!_world || symbol == SCRIPT_NONE || symbol >= game.vm().symbolCount() || amount <= 0) return -1;
+	_game = &game;
+	if (_droppedCount >= _droppedCap) {
+		const u32 cap = _droppedCap ? _droppedCap * 2 : 32;
+		Dropped* grown = static_cast<Dropped*>(realloc(static_cast<void*>(_dropped), sizeof(Dropped) * cap));
+		if (!grown) return -1;
+		_dropped = grown;
+		_droppedCap = cap;
+	}
+	if (!grow(_count + 1)) return -1;
+	const Quat q = quatNormalize(rot);
+	Dropped& d = _dropped[_droppedCount++];
+	d.world = _world;
+	d.id = _nextDrop++;
+	if (!_nextDrop) _nextDrop = 1;
+	d.item = game.vm().symbol(symbol).nameHash;
+	d.amount = amount;
+	d.pos[0] = pos.x;
+	d.pos[1] = pos.y;
+	d.pos[2] = pos.z;
+	d.rot[0] = q.x;
+	d.rot[1] = q.y;
+	d.rot[2] = q.z;
+	d.rot[3] = q.w;
+	LootItem& it = _items[_count];
+	memset(static_cast<void*>(&it), 0, sizeof(it));
+	it.symbol = symbol;
+	it.pos = pos;
+	it.rot = q;
+	it.amount = amount;
+	it.model = NOT_TRIED;
+	it.drop = d.id;
+	++_count;
+	_stats.count = _count;
+	// (Where it lies: the squares again - a drop is rare, a few thousand points sort in no time.)
+	_grid.release();
 	_grid.build(&_items[0].pos.x, &_items[0].pos.z, _count, u32(sizeof(LootItem) / sizeof(float)));
+	return int(_count - 1);
 }
 
 void Loot::update(Pak& pak, const World& world, Game& game, Vec3 eye) {
@@ -207,14 +285,14 @@ void Loot::draw(Vec3 eye, const float dayLight[3], float range, const Frustum* v
 	_grid.forNear(eye.x, eye.z, range, _count, each);
 }
 
-void Loot::drawHeld(Pak& pak, Game& game, u32 symbol, const Mat34& attach, Vec3 origin, const float light[3]) {
+const Model* Loot::lookModel(Pak& pak, Game& game, u32 symbol) {
 	const GameItemInfo* info = game.itemInfo(symbol);
-	if (!info || !info->visual) return;
+	if (!info || !info->visual) return nullptr;
 	int found = -1;
 	for (u32 k = 0; k < _lookCount; ++k)
 		if (_looks[k].visual == info->visual) found = int(k);
 	if (found < 0) {
-		if (_lookCount >= LOOKS) return;
+		if (_lookCount >= LOOKS) return nullptr;
 		char name[96];
 		snprintf(name, sizeof(name), "model/item.%s", game.text(info->visual));
 		Look& look = _looks[_lookCount];
@@ -224,8 +302,11 @@ void Loot::drawHeld(Pak& pak, Game& game, u32 symbol, const Mat34& attach, Vec3 
 		found = int(_lookCount++);
 	}
 	const Model& m = _looks[found].model;
-	if (!m.loaded()) return;
-	m.drawSkinned(&attach, origin, light);
+	return m.loaded() ? &m : nullptr;
+}
+
+void Loot::drawHeld(Pak& pak, Game& game, u32 symbol, const Mat34& attach, Vec3 origin, const float light[3]) {
+	if (const Model* m = lookModel(pak, game, symbol)) m->drawSkinned(&attach, origin, light);
 }
 
 void Loot::drawCarried(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, float lean, const float* scale,
@@ -259,15 +340,33 @@ void Loot::drawRanged(Pak& pak, Game& game, const Model& host, const Pose& pose,
 	drawHeld(pak, game, ranged, at, origin, light);
 }
 
-void Loot::drawInHand(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, const float* scale, u32 symbol, Vec3 origin,
-                      const float light[3]) {
-	if (symbol == 0xFFFFFFFFu) return;
+bool Loot::drawInHand(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, const float* scale, u32 symbol, Vec3 origin,
+                      const float light[3], bool left, float lean, Vec3* tip) {
+	if (symbol == 0xFFFFFFFFu) return false;
 	static const u32 hand = hashName("ZS_RIGHTHAND"), rightHand = hashName("BIP01 R HAND");
-	int node = host.findNode(hand);
-	if (node < 0) node = host.findNode(rightHand);
+	static const u32 handL = hashName("ZS_LEFTHAND"), leftHand = hashName("BIP01 L HAND");
+	int node = host.findNode(left ? handL : hand);
+	if (node < 0) node = host.findNode(left ? leftHand : rightHand);
 	Mat34 at;
-	if (node < 0 || !host.nodeMatrix(pose, node, yaw, 0.0f, scale, at)) return;
-	drawHeld(pak, game, symbol, at, origin, light);
+	if (node < 0 || !host.nodeMatrix(pose, node, yaw, lean, scale, at)) return false;
+	const Model* m = lookModel(pak, game, symbol);
+	if (!m) {
+		if (tip) *tip = origin + Vec3 {at.m[0][3], at.m[1][3] + 25.0f, at.m[2][3]}; // (no model: above the hand)
+		return false;
+	}
+	m->drawSkinned(&at, origin, light);
+	if (tip) {
+		// The far end of its longest side (the hand holds the other).
+		const ModelHeader& mh = m->header();
+		int a = 0;
+		for (int k = 1; k < 3; ++k)
+			if (mh.bbMax[k] - mh.bbMin[k] > mh.bbMax[a] - mh.bbMin[a]) a = k;
+		float p[3];
+		for (int k = 0; k < 3; ++k) p[k] = (mh.bbMin[k] + mh.bbMax[k]) * 0.5f;
+		p[a] = fabsf(mh.bbMax[a]) >= fabsf(mh.bbMin[a]) ? mh.bbMax[a] : mh.bbMin[a];
+		*tip = origin + transformPoint(at, {p[0], p[1], p[2]});
+	}
+	return true;
 }
 
 int Loot::nearest(Vec3 feet, float yaw, float reach, float halfAngle) const {
@@ -299,6 +398,15 @@ bool Loot::take(u32 index) {
 	if (index >= _count || _items[index].taken) return false;
 	_items[index].taken = true;
 	++_stats.taken;
+	if (const u32 id = _items[index].drop) {
+		// (A dropped thing is gone from the list; its place in _items stays, taken, so the indices hold.)
+		for (u32 k = 0; k < _droppedCount; ++k)
+			if (_dropped[k].id == id && _dropped[k].world == _world) {
+				_dropped[k] = _dropped[--_droppedCount];
+				break;
+			}
+		return true;
+	}
 	markTaken(_world, index);
 	return true;
 }
@@ -306,12 +414,13 @@ bool Loot::take(u32 index) {
 // ---- state.bin ----
 
 namespace {
-constexpr u32 TAKEN_MAGIC = fourcc('G', '3', 'L', 'T');
+// 'G3L2' (fix192): the taken list, then the dropped things. ('G3LT', before: the taken list alone.)
+constexpr u32 TAKEN_MAGIC = fourcc('G', '3', 'L', '2'), TAKEN_MAGIC_1 = fourcc('G', '3', 'L', 'T');
 }
 
 void Loot::saveTaken(FILE* f) const {
 	if (!f) return;
-	const u32 head[2] = {TAKEN_MAGIC, _takenCount};
+	const u32 head[3] = {TAKEN_MAGIC, _takenCount, _droppedCount};
 	u32 check = 0x9E3779B9u;
 	const auto add = [&](const void* p, size_t n) {
 		const u8* b = static_cast<const u8*>(p);
@@ -320,25 +429,35 @@ void Loot::saveTaken(FILE* f) const {
 	};
 	add(head, sizeof(head));
 	if (_takenCount) add(_taken, sizeof(Taken) * _takenCount);
+	if (_droppedCount) add(_dropped, sizeof(Dropped) * _droppedCount);
 	fwrite(&check, sizeof(check), 1, f);
 }
 
 bool Loot::loadTaken(FILE* f) {
-	u32 head[2] = {};
-	if (!f || fread(head, sizeof(head), 1, f) != 1 || head[0] != TAKEN_MAGIC || head[1] > (1u << 20)) return false;
+	u32 head[3] = {};
+	if (!f || fread(head, sizeof(u32) * 2, 1, f) != 1 || (head[0] != TAKEN_MAGIC && head[0] != TAKEN_MAGIC_1) || head[1] > (1u << 20)) return false;
+	const bool withDropped = head[0] == TAKEN_MAGIC;
+	if (withDropped && (fread(&head[2], sizeof(u32), 1, f) != 1 || head[2] > (1u << 16))) return false;
 	Taken* list = static_cast<Taken*>(malloc(sizeof(Taken) * (head[1] ? head[1] : 1u)));
-	if (!list) return false;
+	Dropped* dropped = static_cast<Dropped*>(malloc(sizeof(Dropped) * (head[2] ? head[2] : 1u)));
+	if (!list || !dropped) {
+		free(list);
+		free(dropped);
+		return false;
+	}
 	u32 check = 0x9E3779B9u;
 	const auto sum = [&](const void* p, size_t n) {
 		const u8* b = static_cast<const u8*>(p);
 		for (size_t k = 0; k < n; ++k) check = (check ^ b[k]) * 16777619u;
 	};
-	sum(head, sizeof(head));
+	sum(head, sizeof(u32) * (withDropped ? 3 : 2));
 	u32 stored = 0;
 	const bool ok = (head[1] == 0 || fread(list, sizeof(Taken) * head[1], 1, f) == 1) && (sum(list, sizeof(Taken) * head[1]), true) &&
+	                (head[2] == 0 || fread(dropped, sizeof(Dropped) * head[2], 1, f) == 1) && (sum(dropped, sizeof(Dropped) * head[2]), true) &&
 	                fread(&stored, sizeof(stored), 1, f) == 1 && stored == check;
 	if (!ok) {
 		free(list);
+		free(dropped);
 		return false;
 	}
 	free(_taken);
@@ -348,12 +467,18 @@ bool Loot::loadTaken(FILE* f) {
 		free(_taken);
 		_taken = nullptr;
 	}
-	// This world as the list says: what is taken is away, the rest is back.
-	_stats.taken = 0;
-	for (u32 i = 0; i < _count; ++i) {
-		_items[i].taken = _items[i].symbol == SCRIPT_NONE || wasTaken(_world, i);
-		_stats.taken += _items[i].taken;
+	free(_dropped);
+	_dropped = dropped;
+	_droppedCount = _droppedCap = head[2];
+	_nextDrop = 1;
+	for (u32 k = 0; k < _droppedCount; ++k) _nextDrop = max(_nextDrop, _dropped[k].id + 1);
+	if (!_droppedCap) {
+		free(_dropped);
+		_dropped = nullptr;
 	}
+	// This world as the list says: what is taken is away, the rest is back; and what was dropped here lies here.
+	for (u32 i = 0; i < _base; ++i) _items[i].taken = _items[i].symbol == SCRIPT_NONE || wasTaken(_world, i);
+	placeDropped();
 	return true;
 }
 

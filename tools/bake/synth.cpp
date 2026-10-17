@@ -338,6 +338,21 @@ bool buildSyntheticParticleTexture(const std::string& name, SrcImage& img) {
 		synthBarrierTexture(img);
 		return true;
 	}
+	// fix192: a map: parchment with a grid of paths on it.
+	if (base == "map_camp") {
+		img.width = 160;
+		img.height = 120;
+		img.rgba.assign(size_t(img.width) * img.height * 4, 255);
+		for (int y = 0; y < img.height; ++y)
+			for (int x = 0; x < img.width; ++x) {
+				u8* px = &img.rgba[(size_t(y) * img.width + x) * 4];
+				const bool path = x % 40 == 20 || y % 30 == 15;
+				px[0] = path ? 120 : 214;
+				px[1] = path ? 80 : 196;
+				px[2] = path ? 50 : 150;
+			}
+		return true;
+	}
 	// The interface's pictures (the start menu and the loading screen), as plain stand-ins of the game's.
 	if (base == "startscreen" || base == "loading" || base == "menu_ingame" || base == "menu_gothic" || base == "progress" || base == "progress_bar") {
 		const bool frame = base == "menu_ingame", logo = base == "menu_gothic", box = base == "progress", bar = base == "progress_bar";

@@ -1267,6 +1267,8 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				if (named.insert(u).second) ++fromCalls;
 			}
 		}
+		// (fix192) The way the hero carries a torch: OpenGothic puts <SKELETON>_TORCH.MDS on with it, named by no script.
+		named.insert("HUMANS_TORCH");
 		std::set<std::string> bases {"HUMANS"};
 		for (const auto& r : rigs)
 			if (r.second.hash) bases.insert(upper(r.first));
@@ -1753,6 +1755,39 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			}
 			line(format("start menu: %s; %zu pictures baked (%.2f MB): %s%s%s", haveMenu ? "MENU_MAIN of the menu script" : "no menu script (the engine's own menu)",
 			            pics, double(picBytes) / 1048576.0, baked.c_str(), absent.empty() ? "" : "; not in the game's files: ", absent.c_str()));
+		}
+		// fix192: the maps' pictures (Doc_SetPage(map, 0, "MAP_WORLD.TGA", 1) in the maps' use functions): every texture
+		// name with "MAP" in it among the scripts' strings, as "pic/<name>" up to 512 on a side (the top screen shows it
+		// whole, and twice as large for the details).
+		if (scripts.looks.texture) {
+			std::set<std::string> maps;
+			const ScriptVm& vm = game.vm();
+			for (u32 sym = 0; sym < vm.symbolCount(); ++sym) {
+				const ScriptSymbol& ss = vm.symbol(sym);
+				if (ss.type != SCRIPT_STRING || (ss.flags & SCRIPTF_MEMBER)) continue;
+				for (u32 k = 0; k < ss.count && k < 64; ++k) {
+					const char* v = vm.getString(sym, k, nullptr);
+					if (!v || !*v) continue;
+					const std::string u = upper(v);
+					if (u.size() > 4 && u.size() < 48 && u.compare(u.size() - 4, 4, ".TGA") == 0 && u.find("MAP") != std::string::npos) maps.insert(pictureName(v));
+				}
+			}
+			size_t count = 0, bytes = 0;
+			std::string baked, absent;
+			for (const std::string& m : maps) {
+				SrcImage img;
+				if (!scripts.looks.texture(m + ".tga", img) || img.width < 2 || img.height < 2 || img.rgba.size() != size_t(img.width) * img.height * 4) {
+					absent += " " + m;
+					continue;
+				}
+				const std::vector<u8> blob = bakePicture(img, 512, 512, false);
+				pak.add("pic/" + m, ASSET_META, blob);
+				baked += " " + m + format("(%dx%d)", img.width, img.height);
+				++count;
+				bytes += blob.size();
+			}
+			line(format("maps: %zu pictures baked (%.2f MB):%s%s%s", count, double(bytes) / 1048576.0, baked.empty() ? " none" : baked.c_str(),
+			            absent.empty() ? "" : "; not in the game's files:", absent.c_str()));
 		}
 		const size_t lying = visuals.size();
 		// Every thing of the scripts may end up in the inventory: all their

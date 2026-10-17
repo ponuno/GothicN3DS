@@ -509,10 +509,10 @@ static void testSyntheticScript() {
 		const ScriptCheckResult r = checkScript(dat, src, image, opt);
 		std::printf("       %s", r.report.c_str());
 		CHECK(r.ran && r.differ == 0 && r.objected == 0 && r.stateSame);
-		// (The 18 things of the inventory's test items - and the chests' key and pick - are made once each too; the 8 are the
+		// (The 21 things of the inventory's test items (fix192: a torch, a broom, a map) - and the chests' key and pick - are made once each too; the 8 are the
 		// dialogues' conditions and the functions they run that the reference interpreter checks as well; the last 2 the
 		// conditions of the hero's own infos - a bed's sleep, and (fix153) the forge's talk, three more.)
-		CHECK(r.runs == 1 + 4 + 4 + 2 + 18 + 8 + 4 + 2 + 3 && r.same == r.runs && r.calls > 60);
+		CHECK(r.runs == 1 + 4 + 4 + 2 + 21 + 8 + 4 + 2 + 3 && r.same == r.runs && r.calls > 60);
 	}
 #endif
 }
@@ -522,10 +522,7 @@ static void testDocsAndClock() {
 	SrcScript src;
 	compileDaedalus(std::string(syntheticScriptSource()) + R"(
 extern func int  Doc_Create();
-extern func int  Doc_CreateMap();
-extern func void Doc_SetPages(var int handle, var int count);
 extern func void Doc_PrintLine(var int handle, var int page, var string text);
-extern func void Doc_Show(var int handle);
 extern func int  Wld_GetDay();
 extern func int  Npc_GetHeightToNpc(var C_NPC a, var C_NPC b);
 var int probe_day;

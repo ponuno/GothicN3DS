@@ -154,13 +154,46 @@ void Lamps::sample(const WorldLamp& l, u32 index, double seconds, float& rangeSc
 	}
 }
 
+void Lamps::setCarried(bool on, Vec3 pos, float range, const float* rgb) {
+	_carriedOn = on;
+	if (!on) return;
+	_carriedPos = pos;
+	_carriedRange = max(range, 50.0f);
+	if (rgb)
+		for (int c = 0; c < 3; ++c) _carriedRgb[c] = rgb[c];
+}
+
 void Lamps::update(const Frame& f, const World* world) {
 	++_frame;
 	_activeCount = 0;
 	_stats.active = _stats.shining = _stats.boxes = _stats.crowded = _stats.sightTests = 0;
 	_stats.world = f.world && f.characters && gfx::lampsSupported();
+	// fix192: the torch in the hand, first of all (it comes in and goes out as a lamp of the world does).
+	{
+		const int step = max(1, int(f.dt * 4.0f * 255.0f + 0.5f));
+		const int target = _carriedOn ? 255 : 0, g = _carriedGate;
+		_carriedGate = u8(f.dt < 0.0f || f.dt > 0.5f ? target : g < target ? min(g + step, 255) : max(g - step, 0));
+	}
+	if (_carriedGate && f.characters) {
+		const float day = (f.dayLight[0] + f.dayLight[1] + f.dayLight[2]) * (1.0f / 3.0f);
+		_dayKeep = 1.0f - 0.7f * clamp((day - 0.35f) / 0.6f, 0.0f, 1.0f);
+		Active& x = _active[_activeCount++];
+		const float flicker = flameFlicker(f.seconds, 3.7f);
+		const float gate = float(_carriedGate) * (1.0f / 255.0f);
+		x.lamp = CARRIED;
+		x.pos = _carriedPos;
+		x.range = max(_carriedRange * (1.0f + (flicker - 1.0f) * 0.3f), 10.0f);
+		for (int c = 0; c < 3; ++c) {
+			const float now = _carriedRgb[c] * flicker;
+			x.world[c] = now * (1.0f / 255.0f) * WORLD_GAIN * gate;
+			x.people[c] = now * (1.0f / 255.0f) * CHARACTER_GAIN * gate;
+		}
+		_stats.shining += 1;
+	}
+	const u32 carried = _activeCount;
 	if (!_count || !f.characters) {
-		_stats.world = false;
+		_stats.active = _activeCount;
+		if (!_activeCount) _stats.world = false;
 		return;
 	}
 	// By day the lamps count for less where the sky is seen (the baker's --lights does the same through the daylight weight).
@@ -168,6 +201,7 @@ void Lamps::update(const Frame& f, const World* world) {
 	_dayKeep = 1.0f - 0.7f * clamp((day - 0.35f) / 0.6f, 0.0f, 1.0f);
 	// The nearest, by how far their light is from the camera.
 	float nearness[MAX_ACTIVE];
+	if (carried) nearness[0] = -1e30f;
 	const int step = max(1, int(f.dt * 4.0f * 255.0f + 0.5f)); // in or out in a quarter of a second
 	for (u32 i = 0; i < _count; ++i) {
 		const WorldLamp& l = _lamps[i];
@@ -190,7 +224,7 @@ void Lamps::update(const Frame& f, const World* world) {
 		} else {
 			++_activeCount;
 		}
-		while (k > 0 && nearness[k - 1] > key) {
+		while (k > carried && nearness[k - 1] > key) {
 			_active[k] = _active[k - 1];
 			nearness[k] = nearness[k - 1];
 			--k;
@@ -198,7 +232,7 @@ void Lamps::update(const Frame& f, const World* world) {
 		nearness[k] = key;
 		_active[k].lamp = i;
 	}
-	for (u32 a = 0; a < _activeCount; ++a) {
+	for (u32 a = carried; a < _activeCount; ++a) {
 		Active& x = _active[a];
 		const WorldLamp& l = _lamps[x.lamp];
 		float scale, rgb[3];

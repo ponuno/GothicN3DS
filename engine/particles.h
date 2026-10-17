@@ -65,11 +65,14 @@ public:
 	u32 start(u32 effect, Vec3 pos, float yaw, float seconds);
 	void move(u32 handle, Vec3 pos);
 	void stop(u32 handle);
+	bool alive(u32 handle) const; // (fix192) the effect of that handle still runs
 
 	// The engine's own effect for the tail of an arrow (no script has one): a thin glowing streak. Start it with start().
 	static u32 arrowTrail();
 	// The engine's own spray of blood (a short burst; use play()): for when the scripts' blood emitter is missing.
 	static u32 bloodSplash();
+	// fix192: the engine's own flame of a torch in the hand (a small warm fire going up; start() it and move() it with the hand).
+	static u32 torchFlame();
 
 	const ParticleStats& stats() const { return _stats; }
 

@@ -48,6 +48,7 @@ const int ITEM_KAT_FOOD    = 1 << 5;
 const int ITEM_KAT_DOCS    = 1 << 6;
 const int ITEM_KAT_POTIONS = 1 << 7;
 const int ITEM_KAT_RUNE    = 1 << 9;
+const int ITEM_KAT_LIGHT   = 1 << 8;
 const int ITEM_KAT_MAGIC   = 1 << 31;
 const int ITEM_RING   = 1 << 11;
 const int ITEM_BOW    = 1 << 19;
@@ -408,6 +409,12 @@ extern func void   Snd_Play(var string s0);
 extern func void   Snd_Play3D(var C_NPC n, var string s1);
 extern func void   Wld_InsertNpc(var int npcInstance, var string spawnPoint);
 extern func void   Wld_InsertItem(var int itemInstance, var string spawnPoint);
+extern func int    Doc_CreateMap();
+extern func void   Doc_SetPages(var int handle, var int pages);
+extern func void   Doc_SetPage(var int handle, var int page, var string texture, var int scale);
+extern func void   Doc_SetLevel(var int handle, var string level);
+extern func void   Doc_SetLevelCoords(var int handle, var int left, var int top, var int right, var int bottom);
+extern func void   Doc_Show(var int handle);
 extern func void   Wld_SetTime(var int hour, var int minute);
 extern func int    Wld_IsTime(var int hour1, var int min1, var int hour2, var int min2);
 extern func void   Mdl_SetVisual(var C_NPC n, var string s);
@@ -1191,12 +1198,51 @@ instance ItWr_Letter (C_ITEM) {
 	description = "A letter to the mages";
 };
 
+// fix192: a map of the camp (its picture is MAP_CAMP.TGA; held as the scheme MAP has it while it is looked at).
+instance ItWrWorldmap (C_ITEM) {
+	name = "Map";
+	mainflag = ITEM_KAT_DOCS;
+	value = 15;
+	visual = "ItWr_Map_01.3ds";
+	scemename = "MAP";
+	on_state[0] = UseWorldmap;
+	description = "Map of the camp";
+};
+func void UseWorldmap() {
+	var int nDocID;
+	nDocID = Doc_CreateMap();
+	Doc_SetPages(nDocID, 1);
+	Doc_SetPage(nDocID, 0, "MAP_CAMP.TGA", 1);
+	Doc_SetLevel(nDocID, "WORLD.ZEN");
+	Doc_SetLevelCoords(nDocID, -20000, 20000, 20000, -20000);
+	Doc_Show(nDocID);
+};
+
 instance ItMiNugget (C_ITEM) {
 	name = "Ore";
 	mainflag = ITEM_KAT_NONE;
 	flags = ITEM_MULTI;
 	value = 1;
 	visual = "ItMi_Nugget_01.3ds";
+	description = name;
+};
+
+// fix192: a torch (lit in the left hand) and a broom (swept with until let go: the scheme BROOM's states).
+instance ItLsTorch (C_ITEM) {
+	name = "Torch";
+	mainflag = ITEM_KAT_LIGHT;
+	flags = ITEM_MULTI;
+	value = 1;
+	visual = "ItLs_Torch_01.3ds";
+	description = name;
+};
+
+instance ItMiBroom (C_ITEM) {
+	name = "Broom";
+	mainflag = ITEM_KAT_NONE;
+	value = 5;
+	visual = "ItMi_Broom_01.3ds";
+	scemename = "BROOM";
 	description = name;
 };
 

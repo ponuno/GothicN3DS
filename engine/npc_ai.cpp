@@ -1554,12 +1554,17 @@ void Npcs::xClearQueue(ScriptVm& vm, void* user) {
 		// never turned to him. (Not an action that runs scripts itself - a state being begun, a talk - nor a fight
 		// move or a thing in hand: those end their own way.)
 		const u8 k = a->action.kind;
-		const bool interruptible = k == NPC_ACT_GOTO_NODE || k == NPC_ACT_GOTO_POS || k == NPC_ACT_GOTO_NEXT_FP || k == NPC_ACT_GOTO_NPC ||
+		// fix193: not one in a fight state (ZS_Attack, ZS_MM_Attack ...): the scripts clear its queue there all the time
+		// (a change of weapon, a warning of the pack, a blow taken), and what it is doing - closing in, getting up,
+		// waiting for its turn - is the fight; that kept the old way (the queue only) as before fix190.
+		const bool fighting = a->state && self.inFightState(*a);
+		const bool interruptible = !fighting && k == NPC_ACT_GOTO_NODE || k == NPC_ACT_GOTO_POS || k == NPC_ACT_GOTO_NEXT_FP || k == NPC_ACT_GOTO_NPC ||
 		                           k == NPC_ACT_ALIGN || k == NPC_ACT_TURN_NPC || k == NPC_ACT_PLAY_ANI || k == NPC_ACT_WAIT ||
 		                           k == NPC_ACT_STAND_UP || k == NPC_ACT_USE_MOB || k == NPC_ACT_LOOK;
 		if (interruptible) {
 			self.abortActions(*a);
 			++self._stats.queueAborts;
+			if (a->aborts < 255) ++a->aborts;
 		} else {
 			a->queueHead = a->queueCount = 0;
 		}

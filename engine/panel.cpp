@@ -405,6 +405,17 @@ void InventoryPanel::slotCentre(int slot, int& x, int& y) {
 	y = SLOT_Y + (slot / 5) * (SLOT_H + 2) + SLOT_H / 2;
 }
 
+bool InventoryPanel::dropButton(int k, u32 count, int& x0, int& x1) {
+	if (count > 1) {
+		x0 = k ? 162 : 8;
+		x1 = k ? Canvas::W - 8 : 158;
+		return k == 0 || k == 1;
+	}
+	x0 = 8;
+	x1 = Canvas::W - 8;
+	return k == 0;
+}
+
 void InventoryPanel::buttonCentre(int k, int& x, int& y) {
 	x = 6 + k * (BUTTON_W + 7) + BUTTON_W / 2;
 	y = BUTTON_Y + BUTTON_H / 2;
@@ -443,10 +454,11 @@ InventoryPanel::Hit InventoryPanel::hitTest(int x, int y) const {
 	}
 	if (_page == PAGE_DOC) {
 		// The left half turns back, the right half on; the arrow at the top puts the book down.
+		// (fix192: a map's thirds: smaller, larger, put away.)
 		if (y < BARS_H) h.region = x < BACK_W ? R_BACK : R_BARS;
 		else {
 			h.region = R_DOC;
-			h.index = x < Canvas::W / 3 ? 0 : 1;
+			h.index = _view && _view->doc.map ? min(x * 3 / Canvas::W, 2) : x < Canvas::W / 3 ? 0 : 1;
 		}
 		return h;
 	}
@@ -464,7 +476,15 @@ InventoryPanel::Hit InventoryPanel::hitTest(int x, int y) const {
 	}
 	if (_assigning) {
 		h.region = R_PICKER;
-		inSlot(h.index);
+		if (!inSlot(h.index) && y >= DROP_Y && y < DROP_Y + DROP_H) {
+			// (fix192) The drop buttons: 100 one, 101 all.
+			const ItemEntry* sel = _view ? entryOf(*_view, _selected) : nullptr;
+			const u32 count = sel ? u32(max(sel->count, i32(1))) : 1u;
+			for (int k = 0; k < 2; ++k) {
+				int x0, x1;
+				if (dropButton(k, count, x0, x1) && x >= x0 && x < x1) h.index = 100 + k;
+			}
+		}
 		return h;
 	}
 	if (_page == PAGE_LOCK) {
@@ -506,11 +526,12 @@ InventoryPanel::Hit InventoryPanel::hitTest(int x, int y) const {
 
 PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v, float dt) {
 	PanelCommand cmd;
+	_view = &v;
 	refilter(v);
 	if (_flash > 0.0f && (_flash -= dt) <= 0.0f) _dirty = true;
 	if (_inspect > 0.0f && !_assigning && !gridPage()) _inspect = 0.0f;
 	const ItemEntry* sel = entryOf(v, _selected);
-	if (_assigning && !(sel && (sel->flags & ITEMF_QUICK))) {
+	if (_assigning && !sel) {
 		_assigning = false; // (used up meanwhile)
 		_dirty = true;
 	}
@@ -539,6 +560,18 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 		sel = entryOf(v, symbol);
 		_inspect = kInspectTime;
 		_dirty = true;
+	};
+	const auto drop = [&](bool all) {
+		// (fix192) Down on the ground: one of the chosen thing, or all of it.
+		_assigning = false;
+		_dirty = true;
+		if (!sel || _page != PAGE_INVENTORY) return;
+		cmd.type = PANEL_DROP;
+		cmd.symbol = sel->symbol;
+		cmd.amount = all ? max(sel->count, i32(1)) : 1;
+		_flash = 0.25f;
+		_flashSymbol = sel->symbol;
+		_inspect = kInspectTime;
 	};
 	const auto assign = [&](int slot) {
 		_assigning = false;
@@ -587,6 +620,12 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 			cmd.type = PANEL_TALK_SKIP;
 		}
 		if (in.back) cmd.type = PANEL_TALK_LEAVE;
+	} else if (_page == PAGE_DOC && v.doc.map) {
+		// fix192: a map: A larger (round to the whole again), L / R smaller and larger, the D-Pad moves it; B puts it away.
+		cmd.type = PANEL_MAP;
+		cmd.slot = in.confirm ? 6 : in.prevTab ? 0 : in.nextTab ? 1 : in.left ? 2 : in.right ? 3 : in.up ? 4 : in.down ? 5 : 255;
+		if (cmd.slot == 255) cmd = PanelCommand();
+		if (in.back) close();
 	} else if (_page == PAGE_DOC) {
 		// A book: the pages turn with L / R, the D-Pad and A; B puts it down.
 		if (in.left || in.prevTab || in.up) {
@@ -658,6 +697,7 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 					_assigning = !_assigning;
 					_dirty = true;
 				}
+				if ((in.drop || in.dropAll) && sel) drop(in.dropAll); // (fix192: Y)
 			}
 		} else {
 			if (in.prevTab) nextPage(-1);
@@ -718,13 +758,14 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 			// Held on a thing: chosen, and the ten slots come up.
 			_longDone = true;
 			choose(items(v)[_shown[_start.index]].symbol);
-			if (sel && (sel->flags & ITEMF_QUICK)) _assigning = true;
+			if (sel) _assigning = true; // (fix192: any thing - the slots for those that may go there, the drop buttons for all)
 		}
 	} else if (_touching) {
 		_touching = false;
 		const Hit end = hitTest(_x, _y);
 		if (_start.region == R_PICKER) {
-			if (end.region == R_PICKER && end.index >= 0 && end.index == _start.index) assign(end.index);
+			if (end.region == R_PICKER && end.index >= 100 && end.index == _start.index) drop(end.index == 101);
+			else if (end.region == R_PICKER && end.index >= 0 && end.index < 100 && end.index == _start.index) assign(end.index);
 			else if (end.index < 0 && _start.index < 0) _assigning = false; // (a tap beside the slots: never mind)
 		} else if (_moved) {
 			if (gridPage()) _scroll = clamp((_scroll + CELL_H / 2) / CELL_H * CELL_H, 0, maxScroll()); // (on a whole row)
@@ -759,6 +800,15 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 				}
 				break;
 			case R_DOC:
+				if (v.doc.map) {
+					// (fix192) A map: smaller, larger, put away.
+					if (end.index == 2) close();
+					else {
+						cmd.type = PANEL_MAP;
+						cmd.slot = u8(end.index);
+					}
+					break;
+				}
 				cmd.type = PANEL_DOC_PAGE;
 				cmd.slot = u8(end.index);
 				break;
@@ -1085,6 +1135,21 @@ void InventoryPanel::drawLock(const InventoryView& v) {
 void InventoryPanel::drawDoc(const InventoryView& v) {
 	// The words are on the top screen; here the pages turn.
 	const InventoryView::Doc& d = v.doc;
+	if (d.map) {
+		// fix192: the map is on the top screen; here it is made smaller or larger, or put away.
+		_canvas.text(Canvas::W / 2, BARS_H + 12, tr("Карта"), TITLE, ui::TITLE, ui::CENTER, 0, true);
+		static const char* const kLabels[3] = {"-", "+", "Закрыть"};
+		for (int k = 0; k < 3; ++k) {
+			const int bx0 = 6 + k * (Canvas::W / 3), bx1 = (k + 1) * (Canvas::W / 3) - 6, by0 = 70, by1 = 190;
+			const bool pressed = _touching && !_moved && _start.region == R_DOC && _start.index == k;
+			_canvas.gradient(bx0, by0, bx1, by1, pressed ? SEL_TOP : TAB_TOP, pressed ? SEL_BOTTOM : TAB_BOTTOM);
+			_canvas.frame(bx0, by0, bx1, by1, pressed ? SEL_EDGE : TAB_LIGHT);
+			_canvas.text((bx0 + bx1) / 2, (by0 + by1) / 2 - 8, k == 2 ? tr(kLabels[k]) : kLabels[k], TITLE, ui::TITLE, ui::CENTER, bx1 - bx0 - 8, true);
+		}
+		_canvas.text(Canvas::W / 2, 206, tr("A, L, R — масштаб; крестовина, стик — двигать"), TEXT_DIM, ui::TEXT, ui::CENTER, Canvas::W - 8, true);
+		_canvas.text(Canvas::W / 2, 222, tr("B — закрыть"), TEXT_DIM, ui::TEXT, ui::CENTER, Canvas::W - 8, true);
+		return;
+	}
 	char buf[48];
 	snprintf(buf, sizeof(buf), tr("Страница %u из %u"), unsigned(d.page + 1), unsigned(d.pages ? d.pages : 1));
 	_canvas.text(Canvas::W / 2, BARS_H + 12, buf, TITLE, ui::TITLE, ui::CENTER, 0, true);
@@ -1131,16 +1196,33 @@ void InventoryPanel::drawDialog(const InventoryView& v) {
 }
 
 void InventoryPanel::drawPicker(const InventoryView& v) {
-	// Over the page, darkened: the ten slots to choose from, the thing to put there.
+	// Over the page, darkened: the ten slots to choose from, the thing to put there; under them (fix192) the buttons
+	// that put it down on the ground - one, or the whole stack.
 	_canvas.fill(0, BARS_H, Canvas::W, Canvas::H, 0x000000C0u);
-	for (int k = 0; k < QUICK_SLOTS; ++k) slotTile(k, v, true);
 	const ItemEntry* sel = entryOf(v, _selected);
+	const bool quick = sel && (sel->flags & ITEMF_QUICK);
+	for (int k = 0; k < QUICK_SLOTS; ++k) slotTile(k, v, quick);
+	if (!quick) _canvas.fill(0, SLOT_Y - 2, Canvas::W, SLOT_Y + 2 * SLOT_H + 4, 0x000000A0u); // (no slot for this one)
+	const int y0 = SLOT_Y + 2 * SLOT_H + 6;
 	if (sel) {
-		drawThing(Canvas::W / 2 - 50, SLOT_Y + 2 * SLOT_H + 12, 40, 40, sel->picture, sel->icon, sel->tint, false);
-		_canvas.text(Canvas::W / 2 - 4, SLOT_Y + 2 * SLOT_H + 16, sel->name, TITLE, ui::TEXT, ui::LEFT, 150, true);
+		drawThing(8, y0, 34, 34, sel->picture, sel->icon, sel->tint, false);
+		_canvas.text(48, y0 + 1, sel->name, TITLE, ui::TEXT, ui::LEFT, Canvas::W - 56, true);
 	}
-	_canvas.text(Canvas::W / 2, SLOT_Y + 2 * SLOT_H + 60, tr("В какой слот? Та же вещь в своём слоте — убрать"), TEXT, ui::TEXT, ui::CENTER,
-	             Canvas::W - 8, true);
+	_canvas.text(48, y0 + 19, quick ? tr("В какой слот? Та же вещь в своём слоте — убрать") : tr("Эту вещь в слот не положить"), TEXT_DIM, ui::TEXT,
+	             ui::LEFT, Canvas::W - 56, true);
+	const u32 count = sel ? u32(max(sel->count, i32(1))) : 1u;
+	for (int k = 0; k < 2; ++k) {
+		int x0, x1;
+		if (!sel || !dropButton(k, count, x0, x1)) continue;
+		const bool pressed = _touching && !_moved && _start.region == R_PICKER && _start.index == 100 + k;
+		const int y1 = DROP_Y + DROP_H;
+		_canvas.gradient(x0, DROP_Y, x1, y1, pressed ? SEL_TOP : TAB_TOP, pressed ? SEL_BOTTOM : TAB_BOTTOM);
+		_canvas.frame(x0, DROP_Y, x1, y1, pressed ? SEL_EDGE : TAB_LIGHT);
+		char label[48];
+		if (k == 1) snprintf(label, sizeof(label), tr("Выбросить все (%lu)"), static_cast<unsigned long>(count));
+		else snprintf(label, sizeof(label), "%s", tr("Выбросить"));
+		_canvas.text((x0 + x1) / 2, DROP_Y + DROP_H / 2 - 7, label, TITLE, ui::TEXT, ui::CENTER, x1 - x0 - 6, true);
+	}
 }
 
 void InventoryPanel::drawDiary(const InventoryView& v) {

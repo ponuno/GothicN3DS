@@ -591,6 +591,9 @@ int main(int argc, char** argv) {
 					}
 				worlds.push_back(std::move(bw));
 			}
+			// The game's scripts (read before the character: fix192 - his animations of the things he uses in his hands
+			// are those of the schemes the scripts' items name).
+			const bool haveScript = withScripts && !worlds.empty() && importZenScript(game, script, scriptDat, worlds[0].scene.notes);
 			// The player's character, if the game's files have it.
 			if (hero && !worlds.empty()) {
 				// Whatever is wrong with it must not cost the worlds their bake.
@@ -605,6 +608,20 @@ int main(int argc, char** argv) {
 							if (!m.scheme.empty() && (!m.focus.empty() || m.kind == 1)) schemes.insert(m.scheme);
 					for (const std::string& s : schemes)
 						for (const char* head : {"T_", "S_"}) actor.clipPrefixes.push_back(head + s + "_");
+				}
+				// (fix192) ... and what he does with the things in his hands (a broom, a lute, a map, a torch): the
+				// families of the words the scripts have that the model script uses as a scheme ("T_<WORD>_STAND_2_S0").
+				if (haveScript) {
+					std::set<std::string> words;
+					for (const SrcSymbol& sym : script.symbols)
+						if (sym.type == SCRIPT_STRING)
+							for (const std::string& v : sym.strings) {
+								std::string w;
+								for (char c : v) w += char(std::toupper(static_cast<unsigned char>(c)));
+								if (w.size() >= 2 && w.size() < 16 && w.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") == std::string::npos)
+									words.insert(w);
+							}
+					actor.stateSchemes.assign(words.begin(), words.end());
 				}
 				try {
 					have = importZenActor(game, actor, model);
@@ -621,7 +638,7 @@ int main(int argc, char** argv) {
 				haveCamera = true;
 			}
 			// The game's scripts, and through them the people of its worlds.
-			if (withScripts && !worlds.empty() && importZenScript(game, script, scriptDat, worlds[0].scene.notes)) {
+			if (haveScript) {
 				scripts.script = &script;
 				if (scriptCheck) scripts.dat = &scriptDat; // (the check against the reference interpreter takes minutes on a big game)
 				scripts.looks = zenLookSource(game);

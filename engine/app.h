@@ -332,6 +332,22 @@ public:
 	u32 quickSlot(int slot) const { return slot >= 0 && slot < QUICK_SLOTS ? _quick[slot] : SCRIPT_NONE; }
 	// Something is being used or waits for the character's hands.
 	bool itemBusy() const { return _job.stage != 0; }
+	// ---- fix192 (app_items.cpp): dropping things, the torch, things used in the hands ----
+	// Puts `amount` of `symbol` down on the ground in front of the character (the animation of putting a thing down;
+	// a worn thing is taken off first, a weapon in the hands refuses). It lies there - in this world, across the
+	// worlds and in the saves - until somebody picks it up. False (with a toast) if it cannot now.
+	bool dropItem(u32 symbol, i32 amount = 1);
+	// The torch (ITEM_KAT_LIGHT): lit in the left hand, or put out (a torch put out is burnt: one less).
+	bool toggleTorch(u32 symbol);
+	bool torchLit() const { return _torch.lit; }
+	u32 torchItem() const { return _torch.lit ? _torch.symbol : SCRIPT_NONE; }
+	bool torchShown() const { return _torch.lit && _torch.shown; }
+	Vec3 torchFlame() const { return _torch.tip; } // where its flame is (the last frame drawn)
+	// A thing used in the hands by its scheme (C_ITEM.SCEMENAME: a broom, a lute ...): the character takes it and goes
+	// on with it ("S_BROOM_S1") until he lets go - A, B, the stick, or the thing's action again.
+	bool stateItemActive() const { return _job.stage != 0 && _job.state; }
+	// Whether the character's model can use the thing by its scheme, and whether it keeps at it (a state "S1" to stay in).
+	bool canUseScheme(u32 symbol, bool* keeps = nullptr);
 	// In a fight: a weapon in hand, a blow less than 5 s ago, or an enemy
 	// close by that is after the character.
 	bool heroInCombat() const;
@@ -401,6 +417,10 @@ public:
 	bool reading() const { return _doc.active; }
 	u32 readingPage() const { return _doc.page; }
 	u32 readingPages() const { return _doc.pages; }
+	// fix192: a map is up, with its picture (and how large: 1 the whole of it on the top screen).
+	bool readingMap() const { return _doc.active && _doc.map; }
+	bool mapPicture() const { return _doc.active && _doc.map && _doc.pic.loaded(); }
+	float mapZoom() const { return _doc.zoom; }
 	// Reads an item of the documents' kind (its use function builds the document); false if it gave none.
 	bool readItem(u32 symbol);
 	// ---- the chests (containers.cpp) ----
@@ -432,6 +452,9 @@ public:
 		u32 interrupted = 0; // spoilt by a blow
 		u32 changed = 0;     // weapons, armour and rings put on or taken off
 		u32 pickedUp = 0;    // things picked up from the ground
+		u32 dropped = 0;     // fix192: things put down on the ground
+		u32 torches = 0;     // ... torches lit
+		u32 stateUses = 0;   // ... things used in the hands by their scheme (a broom, a lute)
 	};
 	const ItemStats& itemStats() const { return _itemStats; }
 
@@ -445,6 +468,11 @@ private:
 		u32 serial = 0; // of the document last taken from the scripts
 		char level[40] = "";
 		i32 coords[4] = {};
+		// fix192: a map's picture ("pic/<name>", baked from the texture its Doc_SetPage names), how large it is shown
+		// (1: the whole on the top screen) and the texel in the middle of the screen; the item that is held while it is read.
+		UiPicture pic;
+		float zoom = 1.0f, cx = 0.0f, cy = 0.0f;
+		u32 held = 0xFFFFFFFFu;
 		u8 lineCount[MAX_SCREENS] = {};
 		char lines[MAX_SCREENS][LINES][LINE] = {};
 	};
@@ -460,6 +488,8 @@ private:
 	void docLayout(const GameDocument& d);
 	void docClose();
 	void docCommand(const PanelCommand& c);
+	void docMapPan(float dx, float dy); // fix192: the map moved by screen pixels (clamped to its edges)
+	float docMapFit() const;           // ... screen pixels per texel of the whole map on the top screen
 	void drawDocument();
 	int docWidth(const char* text) const;
 	DocReader _doc;
@@ -743,9 +773,33 @@ private:
 		bool applied = false;
 		bool pickup = false; // picking a thing up from the ground (Loot index `loot`)
 		u32 loot = 0;
+		bool drop = false;   // fix192: putting `amount` of it down on the ground
+		i32 amount = 0;
+		bool state = false;  // fix192: used in the hands by its scheme until let go (openMob's way through its states)
+		bool keep = false;   // fix192: not used up (nothing to do: a lute, a broom)
+		bool leaving = false; // fix192: let go, on the way back to standing
 		i32 before[6] = {}; // the attributes before the use (to say what it did)
 	};
 	ItemJob _job;
+	// fix192: the torch.
+	struct Torch {
+		bool lit = false;
+		bool shown = false; // in the hand this frame (not while a two-hander, a bow, a spell, a ladder has the hands)
+		u32 symbol = 0xFFFFFFFFu;
+		u32 look = 0xFFFFFFFFu; // the item whose model is in the hand (a burning torch's look is a world of its own: ItLsTorch's then)
+		u32 flame = 0;      // the particles' handle
+		u32 flameWorld = 0; // the world it was started in
+		bool tipKnown = false;
+		Vec3 tip {0, 0, 0}; // where the flame is (the far end of the torch), from the last frame drawn
+	};
+	Torch _torch;
+	void torchUpdate(float dt);
+	void torchOut(bool burnt, const char* why);
+	void drawHeldItems(); // the torch in the left hand, the thing being used in the right
+	bool startStateItem(u32 symbol);
+	void stateItemFrame(Input& in, float dt); // a frame of a job with `state`
+	bool dropFrame();                          // the moment of a drop: where it lands; false if nowhere
+	void dropRelease(u32 symbol, i32 left);    // takes off what is dropped and worn
 	u32 _queued = 0xFFFFFFFFu; // the next request, waiting for this one
 	u32 _rings[2] = {0xFFFFFFFFu, 0xFFFFFFFFu};
 	u32 _amulet = 0xFFFFFFFFu;

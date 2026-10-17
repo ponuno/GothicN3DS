@@ -663,6 +663,21 @@ void buildSyntheticActor(SrcModel& model) {
 	model.clips.push_back(makeClip("T_POTIONFAST_STAND_2_S0", "S_POTIONFAST_S0", 15, false, [drink](float phase, float, Pose& p) { drink(phase, p); }));
 	model.clips.push_back(makeClip("S_POTIONFAST_S0", "S_POTIONFAST_S0", 10, false, [drink](float, float, Pose& p) { drink(1.0f, p); }));
 	model.clips.push_back(makeClip("T_POTIONFAST_S0_2_STAND", "S_RUN", 12, false, [drink](float phase, float, Pose& p) { drink(1.0f - phase, p); }));
+	// fix192: sweeping with a broom, as the scheme BROOM goes: taken (S0), swept with (S1, over and over) until let go.
+	const auto sweep = [](float a, float phase, Pose& p) {
+		p.rot[R_ARM] = aboutX(-0.9f * a + 0.25f * a * std::sin(phase * 6.2831853f));
+		p.rot[R_FOREARM] = aboutX(-0.6f * a);
+	};
+	model.clips.push_back(makeClip("T_BROOM_STAND_2_S0", "S_BROOM_S0", 10, false, [sweep](float phase, float, Pose& p) { sweep(phase, 0.0f, p); }));
+	model.clips.push_back(makeClip("S_BROOM_S0", "S_BROOM_S0", 6, false, [sweep](float, float, Pose& p) { sweep(1.0f, 0.0f, p); }));
+	model.clips.push_back(makeClip("T_BROOM_S0_2_S1", "S_BROOM_S1", 6, false, [sweep](float, float, Pose& p) { sweep(1.0f, 0.0f, p); }));
+	model.clips.push_back(makeClip("S_BROOM_S1", "S_BROOM_S1", 20, false, [sweep](float phase, float, Pose& p) { sweep(1.0f, phase, p); }));
+	model.clips.push_back(makeClip("T_BROOM_S1_2_S0", "S_BROOM_S0", 6, false, [sweep](float, float, Pose& p) { sweep(1.0f, 0.0f, p); }));
+	model.clips.push_back(makeClip("T_BROOM_S0_2_STAND", "S_RUN", 10, false, [sweep](float phase, float, Pose& p) { sweep(1.0f - phase, 0.0f, p); }));
+	// ... and a map held up before the eyes (the scheme MAP: up, held, down).
+	model.clips.push_back(makeClip("T_MAP_STAND_2_S0", "S_MAP_S0", 8, false, [](float phase, float, Pose& p) { p.rot[R_ARM] = aboutX(-1.3f * phase); }));
+	model.clips.push_back(makeClip("S_MAP_S0", "S_MAP_S0", 10, false, [](float, float, Pose& p) { p.rot[R_ARM] = aboutX(-1.3f); }));
+	model.clips.push_back(makeClip("T_MAP_S0_2_STAND", "S_RUN", 8, false, [](float phase, float, Pose& p) { p.rot[R_ARM] = aboutX(-1.3f * (1.0f - phase)); }));
 	// A forge (fix154): the way the game's own do it - the tags of the model script change the item in his hand. He
 	// takes the nugget in (INSERT), the first step turns it into a sword (EXCHANGE), letting go leaves it with him.
 	model.clips.push_back(withItem(makeClip("T_BSFIRE_STAND_2_S0", "S_BSFIRE_S0", 8, false, [](float phase, float, Pose& p) {

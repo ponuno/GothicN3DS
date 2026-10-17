@@ -3341,7 +3341,7 @@ static void testModel() {
 		CHECK(r.triangles == 59 * 4 && r.parts >= 3 && r.largestPalette == MODEL_PALETTE && r.clips == 2 && r.textures == 1);
 		CHECK(r.report.find("skeleton: 60 nodes") != std::string::npos);
 		const ModelBakeResult a = bakeModel(actor, bo, writer);
-		CHECK(a.parts == 2 && a.clips == 82 && a.largestPalette <= MODEL_PALETTE);
+		CHECK(a.parts == 2 && a.clips == 91 && a.largestPalette <= MODEL_PALETTE);
 		CHECK(a.report.find("S_1HATTACK 1.88s 3 blows") != std::string::npos && a.report.find("T_FISTPARADE_O 0.52s parry") != std::string::npos);
 		CHECK(a.report.find("blends: 5: T_RUNL_2_WALKL 0.20s") != std::string::npos);
 		CHECK(a.report.find("T_STAND_2_JUMP 0.48s 239cm/s up 74cm") != std::string::npos);
@@ -3655,7 +3655,7 @@ static void testModel() {
 	{
 		// The test character: loops wrap, moving clips know their speed.
 		Model m;
-		CHECK(m.load(pak, "hero") && m.nodeCount() == 16 && m.clipCount() == 82 && m.blendCount() == 5);
+		CHECK(m.load(pak, "hero") && m.nodeCount() == 16 && m.clipCount() == 91 && m.blendCount() == 5);
 		// The frames of a fight come through: three blows of a combo, each
 		// with its window and its end; a parry's frames; where a draw changes hands.
 		{
@@ -6168,9 +6168,9 @@ func void Rtn_start_502() {
 		if (getenv("G3_TRACE")) std::puts(r.report.c_str());
 		// Of the animations the scripts name each skeleton got the ones it has.
 		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 16 families more; fighting 346 "
-		           "more; baked per skeleton: humans 78, scavenger 13, molerat 13"));
+		           "more; baked per skeleton: humans 87, scavenger 13, molerat 13"));
 		// ... and those of the things in the hands (drinking a potion; picking up: 3 + 3 of the 67).
-		CHECK(said("things in the hands: the scripts' items are used in 4 ways (FOOD, MEAT, POTION, POTIONFAST)"));
+		CHECK(said("things in the hands: the scripts' items are used in 6 ways (BROOM, FOOD, MAP, MEAT, POTION, POTIONFAST)"));
 		// The things of the camp, and which of them the scripts know.
 		CHECK(said("things to use: 9 of 7 kinds, with 11 places to stand at (0 have none: nobody can use those): CHESTSMALL x2, BEDHIGH x2"));
 		CHECK(said("things to use: the worlds have 7 kinds; the scripts name 4 of them: BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: BSFIRE, CHESTBIG, CHESTSMALL"));
@@ -7429,6 +7429,21 @@ static void testTransformHero() {
 	for (int i = 0; i < 10; ++i) app.update(Input {}, dt);
 }
 
+// fix192: with G3_DUMP set, the top screen's last frame as a PPM (to look at by hand).
+static void dumpTop(const char* name) {
+	if (!std::getenv("G3_DUMP")) return;
+	std::vector<u16> px(400 * 240);
+	if (!gfx::captureFrame(px.data(), 400, 240)) return;
+	FILE* f = std::fopen((gDir + "/" + name + ".ppm").c_str(), "wb");
+	if (!f) return;
+	std::fprintf(f, "P6 400 240 255\n");
+	for (u16 c : px) {
+		const unsigned char rgb[3] = {u8((c >> 11) << 3), u8(((c >> 5) & 63) << 2), u8((c & 31) << 3)};
+		std::fwrite(rgb, 3, 1, f);
+	}
+	std::fclose(f);
+}
+
 static void testInventory() {
 	// Text of the scripts in their code page.
 	{
@@ -7756,6 +7771,167 @@ static void testInventory() {
 		CHECK(app.enterWorld(hashName("world/cave"), nullptr, 0) && app.loot().count() == 0);
 		CHECK(app.loadState(after.c_str()) && app.loot().count() == 5 && app.loot().item(u32(appleAt)).taken);
 		CHECK(app.loadState(statePath.c_str()) && !app.loot().item(u32(appleAt)).taken);
+	}
+	// 8. (fix192) Dropping: two apples put down in front of the character are one thing lying there, of two; it is
+	// there after a save and a load, in another world and back; picked up, they are carried again. What is worn and
+	// dropped is taken off; the weapon in the hands is not let go of.
+	{
+		run(1.0f);
+		Loot& loot = app.loot();
+		const u32 before = loot.count();
+		g.giveItems(hero, apple, 3);
+		const i32 apples = g.itemCount(hero, apple);
+		const Vec3 feet = app.player().feet;
+		CHECK(app.dropItem(apple, 2) && app.itemBusy());
+		int frames = 0;
+		for (; frames < 30 * 4 && app.itemBusy(); ++frames) app.update(Input {}, dt);
+		CHECK(!app.itemBusy() && g.itemCount(hero, apple) == apples - 2 && loot.count() == before + 1 && loot.droppedCount() == 1);
+		if (loot.count() == before + 1) {
+			const LootItem& d = loot.item(before);
+			const float off = std::sqrt((d.pos.x - feet.x) * (d.pos.x - feet.x) + (d.pos.z - feet.z) * (d.pos.z - feet.z));
+			std::printf("  dropped two apples in %d frames: %.0f cm ahead, %.0f cm over the feet\n", frames, double(off), double(d.pos.y - feet.y));
+			CHECK(d.symbol == apple && d.amount == 2 && !d.taken && d.drop != 0 && off > 20.0f && off < 80.0f && std::fabs(d.pos.y - feet.y) < 40.0f);
+		}
+		CHECK(app.itemStats().dropped == 1);
+		const std::string dropState = gDir + "/drop-state.bin";
+		CHECK(app.saveState(dropState.c_str()));
+		run(0.5f);
+		CHECK(app.lootTarget() == int(before));
+		Input a;
+		a.confirm = true;
+		app.update(a, dt);
+		for (int i = 0; i < 30 * 4 && app.itemBusy(); ++i) app.update(Input {}, dt);
+		CHECK(g.itemCount(hero, apple) == apples && loot.droppedCount() == 0 && loot.item(before).taken);
+		CHECK(app.loadState(dropState.c_str()) && app.loot().droppedCount() == 1 && app.loot().count() == before + 1 &&
+		      !app.loot().item(before).taken && g.itemCount(hero, apple) == apples - 2);
+		CHECK(app.enterWorld(hashName("world/cave"), nullptr, 0) && app.loot().count() == 0 && app.loot().droppedCount() == 1);
+		CHECK(app.loadState(dropState.c_str()) && app.loot().count() == before + 1 && app.loot().item(before).symbol == apple);
+		// Worn armour, dropped: off first.
+		run(1.0f);
+		if (g.npc(hero).armorItem != armor) app.itemAction(armor);
+		CHECK(g.npc(hero).armorItem == armor && g.itemCount(hero, armor) == 1);
+		CHECK(app.dropItem(armor));
+		for (int i = 0; i < 30 * 4 && app.itemBusy(); ++i) app.update(Input {}, dt);
+		CHECK(g.npc(hero).armorItem == SCRIPT_NONE && g.itemCount(hero, armor) == 0 && app.loot().droppedCount() == 2);
+		// The sword in the hands: refused.
+		Input draw;
+		draw.meleeSlot = true;
+		app.update(draw, dt);
+		run(1.5f);
+		const u32 sword = g.npc(hero).melee;
+		CHECK(app.hero().weapon() == WEAPON_1H && sword != SCRIPT_NONE && !app.dropItem(sword, 99) && g.itemCount(hero, sword) >= 1);
+		app.update(draw, dt);
+		run(1.5f);
+		CHECK(app.hero().weapon() == WEAPON_NONE);
+		// The panel: Y on the chosen thing puts one down.
+		InventoryPanel& panel = app.panel();
+		panel.setCursor(true);
+		panel.select(apple);
+		PanelInput y;
+		y.drop = true;
+		const PanelCommand c = app.panelInput(y, dt);
+		CHECK(c.type == PANEL_DROP && c.symbol == apple && c.amount == 1 && app.itemBusy());
+		for (int i = 0; i < 30 * 4 && app.itemBusy(); ++i) app.update(Input {}, dt);
+		CHECK(g.itemCount(hero, apple) == apples - 3 && app.loot().droppedCount() == 3);
+		// ... and the hold menu's buttons: X brings it up, a tap on "all" puts the whole stack down.
+		{
+			PanelInput xBtn, none, touch;
+			xBtn.assign = true;
+			panel.select(apple);
+			app.panelInput(xBtn, dt);
+			CHECK(panel.assigning() && panel.draw(app.inventory(), true));
+			int x0, x1;
+			const i32 left = g.itemCount(hero, apple);
+			CHECK(left > 1 && InventoryPanel::dropButton(1, u32(left), x0, x1));
+			touch.touching = true;
+			touch.x = (x0 + x1) / 2;
+			touch.y = InventoryPanel::DROP_Y + InventoryPanel::DROP_H / 2;
+			app.panelInput(touch, dt);
+			const PanelCommand all = app.panelInput(none, dt);
+			CHECK(all.type == PANEL_DROP && all.amount == left && !panel.assigning());
+			for (int i = 0; i < 30 * 4 && app.itemBusy(); ++i) app.update(Input {}, dt);
+			CHECK(g.itemCount(hero, apple) == 0 && app.loot().droppedCount() == 4);
+		}
+		panel.setCursor(false);
+	}
+	// 9. (fix192) The torch: lit, in the left hand with a flame and a light of its own; put out, it is burnt (one less);
+	// the last one dropped while it burns goes out.
+	{
+		const u32 torch = find("ITLSTORCH");
+		g.giveItems(hero, torch, 2 - g.itemCount(hero, torch));
+		CHECK(entry(torch) && entry(torch)->kind == IK_LIGHT && std::strcmp(entry(torch)->action, "Зажечь") == 0);
+		CHECK(app.itemAction(torch) && app.torchLit() && app.itemStats().torches == 1);
+		for (int i = 0; i < 20; ++i) {
+			app.update(Input {}, dt);
+			app.render();
+		}
+		for (int i = 0; i < 75; ++i) {
+			app.update(Input {}, dt);
+			app.render();
+		}
+		const u32 flames = app.particles().stats().particles;
+		dumpTop("torch");
+		{
+			const Vec3 t = app.torchFlame(), f = app.hero().feet();
+			std::printf("  torch flame at %.0f %.0f %.0f from the feet (yaw %.2f)\n", double(t.x - f.x), double(t.y - f.y), double(t.z - f.z), double(app.hero().yaw()));
+			CHECK(t.y - f.y > 60.0f && t.y - f.y < 220.0f && std::fabs(t.x - f.x) < 100.0f && std::fabs(t.z - f.z) < 100.0f);
+		}
+		std::printf("  a torch in the hand: shown %d, lamps %u (carried %d), %u particles\n", int(app.torchShown()), app.lamps().stats().active,
+		            int(app.lamps().carried()), flames);
+		CHECK(app.torchShown() && app.lamps().carried() && app.lamps().stats().active >= 1);
+		CHECK(entry(torch) && std::strcmp(entry(torch)->action, "Потушить") == 0);
+		CHECK(app.itemAction(torch) && !app.torchLit() && g.itemCount(hero, torch) == 1);
+		CHECK(app.itemAction(torch) && app.torchLit());
+		CHECK(app.dropItem(torch));
+		for (int i = 0; i < 30 * 4 && app.itemBusy(); ++i) app.update(Input {}, dt);
+		CHECK(!app.torchLit() && g.itemCount(hero, torch) == 0);
+	}
+	// 10. (fix192) A broom: taken as the scheme BROOM goes, swept with (S_BROOM_S1) until the stick is pushed, kept.
+	{
+		const u32 broom = find("ITMIBROOM");
+		g.giveItems(hero, broom, 1 - g.itemCount(hero, broom));
+		bool keeps = false;
+		CHECK(app.canUseScheme(broom, &keeps) && keeps && entry(broom) && std::strcmp(entry(broom)->action, "Использовать") == 0);
+		CHECK(app.itemAction(broom) && app.stateItemActive());
+		run(1.5f);
+		const Clip* sweep = app.hero().clip("S_BROOM_S1");
+		CHECK(sweep && app.hero().animator().current() == sweep && app.itemStats().stateUses == 1);
+		run(2.0f);
+		CHECK(app.stateItemActive() && app.hero().animator().current() == sweep);
+		Input push;
+		push.moveZ = 1.0f;
+		app.update(push, dt);
+		run(1.5f);
+		CHECK(!app.stateItemActive() && !app.hero().atMob() && g.itemCount(hero, broom) == 1);
+	}
+	// 11. (fix192) A map: opened from the inventory (it had no action before), its picture on the top screen and the
+	// hero held up to it (the scheme MAP); R larger, the D-Pad moves it, B puts it away.
+	{
+		const u32 map = find("ITWRWORLDMAP");
+		g.giveItems(hero, map, 1 - g.itemCount(hero, map));
+		CHECK(entry(map) && std::strcmp(entry(map)->action, "Открыть") == 0 && entry(map)->icon == ICON_MAP);
+		InventoryPanel& panel = app.panel();
+		panel.setCursor(true);
+		panel.select(map);
+		PanelInput aBtn, rBtn, right, bBtn;
+		aBtn.confirm = true;
+		rBtn.nextTab = true;
+		right.right = true;
+		bBtn.back = true;
+		app.panelInput(aBtn, dt);
+		CHECK(app.readingMap() && app.mapPicture() && panel.page() == InventoryPanel::PAGE_DOC);
+		run(1.0f);
+		CHECK(app.hero().atMob() && app.hero().animator().current() == app.hero().clip("S_MAP_S0"));
+		app.render();
+		dumpTop("map1");
+		CHECK(app.panelInput(rBtn, dt).type == PANEL_MAP && app.mapZoom() == 2.0f);
+		CHECK(app.panelInput(right, dt).type == PANEL_MAP);
+		app.render();
+		dumpTop("map2");
+		CHECK(panel.draw(app.inventory(), true));
+		CHECK(app.panelInput(bBtn, dt).type == PANEL_DOC_CLOSE && !app.reading() && !panel.open());
+		run(1.0f);
+		CHECK(!app.hero().atMob() && g.itemCount(hero, map) == 1);
 	}
 	app.shutdown();
 	gfx::shutdown();
@@ -12353,12 +12529,20 @@ static void testG1Beasts() {
 	std::ifstream in(file);
 	std::stringstream ss;
 	ss << in.rdbuf();
-	std::string source = ss.str() + R"(
+	// (G3_G1_HUMAN: a guard of the camp, hostile to the player, instead of the beasts.)
+	const bool human = getenv("G3_G1_HUMAN") != nullptr;
+	std::string packNpcs;
+	for (int k = 0, n = getenv("G3_G1_PACK") ? atoi(getenv("G3_G1_PACK")) : 0; k < n; ++k) packNpcs += "\tWld_InsertNpc(Scavenger, \"FOREST_SCAVENGER_1\");\n";
+	std::string source = ss.str() + (human ? R"(
+func void STARTUP_WORLD() {
+	Kapitel = 1;
+	Wld_InsertNpc(GRD_204_Gardist, "FOREST_SCAVENGER_1");
+)" : R"(
 func void STARTUP_WORLD() {
 	Kapitel = 1;
 	Wld_InsertNpc(Scavenger, "FOREST_SCAVENGER_1");
 	Wld_InsertNpc(Molerat, "FOREST_MOLERAT_1");
-};
+)") + packNpcs + "};" + R"(
 func void INIT_WORLD() {
 	B_InitMonsterAttitudes();
 	B_InitGuildAttitudes();
@@ -12386,27 +12570,29 @@ func void INIT_WORLD() {
 	app.settings().immortal = 1;
 	app.applySettings();
 	npcs.config().range = 20000.0f;
-	app.environment().timeOfDay = 12.0f;
-	const float dt = 1.0f / 30.0f;
+	app.environment().timeOfDay = getenv("G3_TOD") ? float(atof(getenv("G3_TOD"))) : 12.0f;
+	const float dt = getenv("G3_DT") ? float(atof(getenv("G3_DT"))) : 1.0f / 30.0f;
 	const auto run = [&](float seconds) {
 		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
 	};
 	app.teleport({-7000.0f, 900.0f, -7000.0f});
 	run(4.0f);
 	const GameNpc& hn = *g.hero();
-	for (const char* who : {"Scavenger", "Molerat"}) {
+	const std::vector<const char*> whoList = human ? std::vector<const char*> {"Guard"} : std::vector<const char*> {"Scavenger", "Molerat"};
+	for (const char* who : whoList) {
 		int b = -1;
 		for (u32 i = 0; i < g.npcCount() && b < 0; ++i)
-			if (g.isMonster(g.npc(i)) && std::strcmp(g.nameOf(g.npc(i)), who) == 0 && g.npc(i).placed && g.npc(i).world == g.currentWorld()) b = int(i);
+			if ((g.isMonster(g.npc(i)) || human) && g.nameOf(g.npc(i)) && std::strcmp(g.nameOf(g.npc(i)), who) == 0 && g.npc(i).placed && g.npc(i).world == g.currentWorld()) b = int(i);
 		std::printf("  %s: %s\n", who, b >= 0 ? "placed" : "missing");
 		CHECK(b >= 0);
 		if (b < 0) continue;
 		const GameNpc& bn = g.npc(u32(b));
+		if (human) g.npcMut(u32(b)).attitude = i8(g.constant("ATT_HOSTILE", 0));
 		{
 			const NpcActor* a = npcs.actorOf(u32(b));
 			std::printf("   before: actor %d ready %d rig %d, state %s, att to hero %d, guild %d\n", a ? 1 : 0, a ? int(a->ready) : -1, a ? int(a->rig != nullptr) : -1, a ? npcs.stateName(a->state) : "-", int(g.attitude(u32(b), u32(&hn - &g.npc(0)))), int(g.guildOf(bn)));
 		}
-		const float behind = 900.0f;
+		const float behind = getenv("G3_BEHIND") ? float(atof(getenv("G3_BEHIND"))) : 900.0f;
 		app.teleport({bn.pos[0] - std::sin(bn.yaw) * behind, bn.pos[1] + 10.0f, bn.pos[2] - std::cos(bn.yaw) * behind});
 		float err = 9.0f, tm = 0;
 		for (; tm < 6.0f; tm += dt) {
@@ -12424,8 +12610,67 @@ func void INIT_WORLD() {
 		std::printf("   noModel %u waiting %u actors %u pos %.0f %.0f %.0f hero %.0f %.0f %.0f\n", npcs.stats().noModel, npcs.stats().waiting, npcs.stats().actors, double(bn.pos[0]), double(bn.pos[1]), double(bn.pos[2]), double(hn.pos[0]), double(hn.pos[1]), double(hn.pos[2]));
 		std::printf("  G1 %s, player 9 m behind: error %.2f rad after %.1f s, state %s\n", who, double(err), double(tm), a ? npcs.stateName(a->state) : "-");
 		CHECK(err < 0.3f);
+		// The beast, left with the player next to it, goes on to fight him: it must reach its attack state.
+		bool attacked = false;
+		float firstAttack = -1.0f;
+		const u32 blows0 = app.fightStats().blowsTaken;
+		for (float t2 = 0; t2 < 25.0f; t2 += dt) {
+			app.update(Input {}, dt);
+			const NpcActor* a2 = npcs.actorOf(u32(b));
+			const char* sn = a2 ? npcs.stateName(a2->state) : "";
+			if (getenv("G3_TRACE") && int(t2 / dt) % 15 == 0)
+				std::printf("   [%s +%.1f] %s act %d dist %.0f\n", who, double(t2), sn, a2 ? int(a2->action.kind) : -1, double(std::hypot(hn.pos[0] - bn.pos[0], hn.pos[2] - bn.pos[2])));
+			if (!attacked && (std::strstr(sn, "MM_ATTACK") || std::strstr(sn, "ATTACK"))) {
+				attacked = true;
+				firstAttack = t2;
+			}
+		}
+		std::printf("  G1 %s: %s (%.1f s), blows taken by the player %u\n", who, attacked ? "attacks" : "never attacks", double(firstAttack), app.fightStats().blowsTaken - blows0);
+		CHECK(attacked);
 		app.teleport({-7000.0f, 900.0f, -7000.0f});
 		run(8.0f);
+		// The player in return: sword in hand, closing in and striking. The enemy must fight back, not stand and take it.
+		if (getenv("G3_G1_FIGHT") && bn.down == DOWN_NONE) {
+			app.settings().scheme = CONTROLS_CONSOLE;
+			app.settings().immortal = 1;
+			app.applySettings();
+			const u32 hero = u32(&hn - &g.npc(0));
+			g.setAttribute(g.npcMut(hero), 0, g.attributeOf(hn, 1));
+			app.teleport({bn.pos[0], bn.pos[1] + 100.0f, bn.pos[2] - 800.0f});
+			app.menuAction(MENU_GIVE_WEAPON, nullptr);
+			int pressed = 0;
+			const u32 taken0 = app.fightStats().blowsTaken;
+			bool everAttack = false;
+			for (int frames = 0; frames < 30 * 25 && bn.down == DOWN_NONE; ++frames) {
+				Input in;
+				const Vec3 feet = app.player().feet;
+				const float dx = bn.pos[0] - feet.x, dz = bn.pos[2] - feet.z;
+				const float d = std::hypot(dx, dz);
+				if (frames == 5) in.meleeSlot = true;
+				if (app.hero().weapon() != WEAPON_NONE) {
+					const float want = std::atan2(dx, dz) - app.camera().yaw;
+					const float range = g.meleeRange(hero, u32(b));
+					if (d > range - 30.0f) {
+						in.steer = true;
+						in.steerYaw = want;
+						in.moveX = std::sin(want);
+						in.moveZ = std::cos(want);
+					}
+					in.attack = d < range + 20.0f && frames % 8 == 0;
+					pressed += in.attack;
+				}
+				app.update(in, 1.0f / 30.0f);
+				const NpcActor* a3 = npcs.actorOf(u32(b));
+				if (a3 && std::strstr(npcs.stateName(a3->state), "ATTACK")) everAttack = true;
+				if (getenv("G3_TRACE") && frames % 15 == 0)
+					std::printf("   [fight %d] %s act %d d %.0f taken %u landed %u\n", frames, a3 ? npcs.stateName(a3->state) : "-", a3 ? int(a3->action.kind) : -1, double(d), app.fightStats().blowsTaken - taken0, app.fightStats().blowsLanded);
+			}
+			std::printf("  G1 %s fights back: %d attacks pressed, %u landed, %u taken, attack state %s, beast %s\n", who, pressed, app.fightStats().blowsLanded,
+			            app.fightStats().blowsTaken - taken0, everAttack ? "yes" : "no", bn.down == DOWN_DEAD ? "dead" : "alive");
+			CHECK(everAttack);
+			app.teleport({-7000.0f, 900.0f, -7000.0f});
+			run(8.0f);
+		}
 	}
 }
 

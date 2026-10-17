@@ -125,7 +125,7 @@ struct ItemEntry {
 	// item has them, as the original shows them; else made up from its numbers.
 	ItemRow rows[ITEM_ROWS];
 	u8 rowCount;
-	char action[16];           // "Выпить", "Надеть" ... ("" if nothing)
+	char action[32];           // "Выпить", "Надеть" ... ("" if nothing; fix192: room for "Использовать")
 };
 
 // The equipment, as the left of the panel shows it.
@@ -219,6 +219,8 @@ struct PanelInput {
 	bool up = false, down = false, left = false, right = false;
 	bool confirm = false, back = false, assign = false; // A, B, X
 	bool prevTab = false, nextTab = false;              // L, R
+	// fix192: Y let go (one of the chosen thing put down) or held (the whole stack).
+	bool drop = false, dropAll = false;
 };
 
 // What the panel asks the application to do.
@@ -241,6 +243,8 @@ enum PanelCommandType : u8 {
 	PANEL_TALK_LEAVE,   // B: the way that leaves (the last one), or the line skipped
 	PANEL_DOC_PAGE,     // reading: `slot` 0 the page before, 1 the next (past the last: closed)
 	PANEL_DOC_CLOSE,    // reading: put it down
+	PANEL_DROP,         // fix192: `amount` of `symbol` put down on the ground
+	PANEL_MAP,          // fix192: a map: `slot` 0 smaller, 1 larger, 2..5 moved left, right, up, down
 	// (The trade page uses PANEL_CHEST_MOVE: `slot` 0 buys, 1 sells, `amount` of `symbol`; PANEL_CHEST_CLOSE ends it.)
 };
 struct PanelCommand {

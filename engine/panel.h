@@ -193,6 +193,10 @@ public:
 	void tileCentre(u32 n, int& x, int& y) const;
 	// The middle of quick slot `slot` (on the play page, and in the picker).
 	static void slotCentre(int slot, int& x, int& y);
+	// fix192: the hold menu's drop buttons (under the ten slots): `k` 0 one of the thing, 1 all of them (a stack);
+	// false if that button is not there (one thing: a single wide button, k 0).
+	static constexpr int DROP_Y = 196, DROP_H = 38;
+	static bool dropButton(int k, u32 count, int& x0, int& x1);
 	// The middle of the play page's button `k` (0 inventory, 1 diary, 2 character).
 	static void buttonCentre(int k, int& x, int& y);
 	// The middle of kind page `page` (TAB_PAGES - 1: the report) in the strip.
@@ -231,6 +235,7 @@ private:
 
 	Canvas _canvas;
 	const ItemPictures* _pictures = nullptr;
+	const InventoryView* _view = nullptr; // (fix192) the view of the last update, for hit tests that need the chosen thing
 	u8 _page = PAGE_PLAY;
 	u8 _tab = TAB_ALL;
 	u8 _side = 0;

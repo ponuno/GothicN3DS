@@ -337,9 +337,14 @@ bool Npcs::pushHero(Vec3& feet, float radius) const {
 // ---- overlays ----
 
 const Model* Npcs::overlayModel(GameText name) {
-	if (!name || !_pak) return nullptr;
+	if (!name) return nullptr;
+	return overlayModelNamed(_game.text(name));
+}
+
+const Model* Npcs::overlayModelNamed(const char* name) {
+	if (!name || !*name || !_pak) return nullptr;
 	char path[96];
-	snprintf(path, sizeof(path), "model/ovl.%s", _game.text(name));
+	snprintf(path, sizeof(path), "model/ovl.%s", name);
 	const u32 hash = hashName(path);
 	for (u32 k = 0; k < _overlayCount; ++k)
 		if (_overlayModels[k].hash == hash) return _overlayModels[k].failed ? nullptr : &_overlayModels[k].model;

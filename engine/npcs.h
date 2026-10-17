@@ -326,6 +326,7 @@ struct NpcActor {
 	bool heroWasNear = false; // the player was within the reach of its senses a moment ago
 	bool noticed = false;     // a creature has the player in sight and close: it turns to face him (Npcs::faceHero)
 	u32 removeHeard = 0;      // the put-away-the-weapon episode (Npcs::_removeEpisode) this character has had its answer to
+	u8 aborts = 0;            // fix193: how often the scripts' Npc_ClearAIQueue ended an action in hand (shown on the debug line)
 	bool warned = false;      // a creature that had no reaction of its own has already been sent to threaten the player (Npcs::perceive)
 	// Who it looks at (AI_LookAtNpc), -1 for nobody; how far its head is
 	// turned right now, radians (left/right, down/up).
@@ -572,6 +573,8 @@ public:
 	// The model of an overlay ("humans_militia": "model/ovl.humans_militia"), read the first time it is asked for;
 	// null if the archive has none. Kept for the session (clips of it may be playing anywhere).
 	const Model* overlayModel(GameText name);
+	// fix192: an overlay by its name (lower case, "humans_torch"), null if the archive lacks it.
+	const Model* overlayModelNamed(const char* name);
 	// Those of a character, in the order applied (for the player's character: Hero::setOverlays).
 	u32 overlayModels(u32 npc, const Model** out, u32 max);
 	u32 overlaysLoaded() const { return _overlayCount; }

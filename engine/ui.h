@@ -65,6 +65,8 @@ public:
 	// The same into a rectangle of the screen: texels (0, 0)..(texW, texH) of `tex` drawn over x0, y0 .. x1, y1, tinted
 	// by `rgba` (white: as it is; its alpha fades it).
 	void picture(gfx::Texture* tex, int texW, int texH, int x0, int y0, int x1, int y1, u32 rgba);
+	// fix192: texels (u0, v0)..(u1, v1) of `tex` over x0, y0 .. x1, y1 (a part of a picture, made larger: the map).
+	void pictureRegion(gfx::Texture* tex, int u0, int v0, int u1, int v1, int x0, int y0, int x1, int y1, u32 rgba);
 
 	// Draws what was added and starts over. Call between the 3D passes and
 	// gfx::frameEnd.

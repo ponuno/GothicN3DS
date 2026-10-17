@@ -63,10 +63,14 @@ bool Npcs::sees(const NpcActor& a, u32 other, bool inFront) const {
 	if (o.hero && !_heroLink.sneaking && d2 <= range * range * _cfg.hearShare * _cfg.hearShare) return true;
 	if (!_world) return true;
 	++_sightTests;
-	// (A sphere of 12 cm stepped along: nothing a person could be hidden by slips through.
-	// Two heights: a creature's eyes are not a person's, and a bush at the knee is no wall.)
-	return _world->lineFree({n.pos[0], n.pos[1] + 160.0f, n.pos[2]}, {o.pos[0], o.pos[1] + 160.0f, o.pos[2]}, 12.0f) ||
-	       _world->lineFree({n.pos[0], n.pos[1] + 80.0f, n.pos[2]}, {o.pos[0], o.pos[1] + 100.0f, o.pos[2]}, 12.0f);
+	// fix206: a line through the collision grid (World::sightFree), as the original's Npc_CanSeeNpc traces a ray - the
+	// sphere of 12 cm pushed along every 18 cm (lineFree) made the senses the heaviest part of a frame.
+	// Two heights: a creature's eyes are not a person's, and a bush at the knee is no wall.
+	const double t0 = sys::timeMs();
+	const bool free = _world->sightFree({n.pos[0], n.pos[1] + 160.0f, n.pos[2]}, {o.pos[0], o.pos[1] + 160.0f, o.pos[2]}) ||
+	                  _world->sightFree({n.pos[0], n.pos[1] + 80.0f, n.pos[2]}, {o.pos[0], o.pos[1] + 100.0f, o.pos[2]});
+	_sightTestMs += float(sys::timeMs() - t0);
+	return free;
 }
 
 // Whether `n` sees `o` whichever way it faces: everybody does the player's

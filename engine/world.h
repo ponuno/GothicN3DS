@@ -246,6 +246,11 @@ public:
 	// walls, roofs, the ground and big objects of the loaded chunks of the world itself (not those of medium and
 	// small objects, nor leaves, fences or glass), and shut doors and gates. For telling who is hidden from the eye.
 	bool sightBlocked(Vec3 a, Vec3 b) const;
+	// fix206: the same line for the characters' senses: everything that collides stops it - objects of every size,
+	// fences and grates too (what the old stepped sphere of lineFree stopped), and shut doors and gates. One walk
+	// along the line through the collision grid, where lineFree pushed a sphere a hundred times and more over every
+	// loaded chunk (the senses cost 20-50 ms a frame on the console).
+	bool sightFree(Vec3 a, Vec3 b) const;
 	// Where leaves hang (the light shafts stand under them): the boxes of the batches of swaying materials (MATF_WIND;
 	// in a world baked without --wind, cut-out ones) of the loaded chunks within `radius` cm of `around` on x/z, at
 	// least `minHeight` cm tall - crowns of trees, not grass. At most `max`; returns how many.

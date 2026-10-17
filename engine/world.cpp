@@ -1638,6 +1638,20 @@ bool World::lineFree(Vec3 a, Vec3 b, float radius) const {
 	return true;
 }
 
+bool World::sightFree(Vec3 a, Vec3 b) const {
+	const float mn[3] = {min(a.x, b.x), min(a.y, b.y), min(a.z, b.z)};
+	const float mx[3] = {max(a.x, b.x), max(a.y, b.y), max(a.z, b.z)};
+	for (u32 k = 0; k < _stats.chunksLoaded; ++k) {
+		const u32 i = _resident[k];
+		const ChunkInfo& ci = _chunks[i];
+		if (mx[0] < ci.bbMin[0] || mn[0] > ci.bbMax[0] || mx[1] < ci.bbMin[1] || mn[1] > ci.bbMax[1] || mx[2] < ci.bbMin[2] ||
+		    mn[2] > ci.bbMax[2])
+			continue;
+		if (_loaded[i].collider.segmentBlocked(a, b, false)) return false;
+	}
+	return !_dynamic || !_dynamic->segmentHits(a, b);
+}
+
 bool World::sightBlocked(Vec3 a, Vec3 b) const {
 	const float mn[3] = {min(a.x, b.x), min(a.y, b.y), min(a.z, b.z)};
 	const float mx[3] = {max(a.x, b.x), max(a.y, b.y), max(a.z, b.z)};

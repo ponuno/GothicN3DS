@@ -165,10 +165,10 @@ static void flushHitches() {
 
 static void startHitchLog(const char* what) {
 	if (FILE* f = fopen(kHitchPath, "w")) {
-		fprintf(f, "# gothic3ds fix205 hitches: %s\n", what);
+		fprintf(f, "# gothic3ds fix206 hitches: %s\n", what);
 		// fix205: the last group is the actors' step (tick) in parts, ms: a actions and states (scripts included),
 		// p senses, f fighting, b bodies, g ground; then actors stepped / left for the next frame, lines of sight.
-		fprintf(f, "# ... | ta tp tf tb tg ms | n<stepped> sk<skipped> ry<sight rays>\n");
+		fprintf(f, "# ... | ta tp tf tb tg ms | n<stepped> sk<skipped> ry<sight tests> rm<their ms>\n");
 		fclose(f);
 	}
 	gHitchCount = 0;
@@ -1183,7 +1183,7 @@ int main(int, char**) {
 				++gHitchTotal;
 				const struct mallinfo heap = mallinfo(); // (fix205: once - it walks the whole heap)
 				snprintf(gHitchLines[gHitchCount++], sizeof(gHitchLines[0]),
-				         "f%lu %.1fms cpu%.1f gpu%.1f upd%.1f | w%.1f n%.1f s%.1f p%.1f c%.1f l%.1f | clk%.1f sel%.1f tick%.1f | mdl%lu clip%lu chunk%+ld ev%lu pend%lu | tr%lu %.0f %.0f %.0f | nu%.1f t%.1f x%.1f hc%.1f m%.1f b%.1f f%.1f o%.1f | msh%lu rd%lu hit%lu | ld%.0f wk%.0f gr%.0f ra%lu/%lu iv%d hz%.0f k2:%d | lr%.0f ll%.0f | fl%lu nm%lu nj%lu bad%lu rj%lu hu%.0f fo%.0f la%lu | rc%lu/%lu ce%lu cr%lu | cw%lu cl%lu cd%lu | ta%.1f tp%.1f tf%.1f tb%.1f tg%.1f | n%lu sk%lu ry%lu\n",
+				         "f%lu %.1fms cpu%.1f gpu%.1f upd%.1f | w%.1f n%.1f s%.1f p%.1f c%.1f l%.1f | clk%.1f sel%.1f tick%.1f | mdl%lu clip%lu chunk%+ld ev%lu pend%lu | tr%lu %.0f %.0f %.0f | nu%.1f t%.1f x%.1f hc%.1f m%.1f b%.1f f%.1f o%.1f | msh%lu rd%lu hit%lu | ld%.0f wk%.0f gr%.0f ra%lu/%lu iv%d hz%.0f k2:%d | lr%.0f ll%.0f | fl%lu nm%lu nj%lu bad%lu rj%lu hu%.0f fo%.0f la%lu | rc%lu/%lu ce%lu cr%lu | cw%lu cl%lu cd%lu | ta%.1f tp%.1f tf%.1f tb%.1f tg%.1f | n%lu sk%lu ry%lu rm%.1f\n",
 				         static_cast<unsigned long>(frame), double(fs.frameMs), double(fs.cpuMs), double(fs.gpuMs), double(updateMs), double(ut.stream),
 				         double(ut.npcs), double(ut.script), double(ut.player), double(ut.camera), double(ut.loot), double(nst.clockMs),
 				         double(nst.selectMs), double(nst.tickMs), static_cast<unsigned long>(dModels), static_cast<unsigned long>(dClips),
@@ -1198,7 +1198,7 @@ int main(int, char**) {
 				         static_cast<unsigned long>(wst.budgetRejects), double(heap.uordblks) / 1048576.0, double(heap.fordblks) / 1048576.0, static_cast<unsigned long>(wst.lastFailKB),
 				         static_cast<unsigned long>(raStats.clipHits), static_cast<unsigned long>(raStats.clipMisses), static_cast<unsigned long>(nst.clipsEvicted), static_cast<unsigned long>(nst.clipsRefused), static_cast<unsigned long>(raStats.clipWished), static_cast<unsigned long>(raStats.clipRead), static_cast<unsigned long>(raStats.dropped),
 				         double(nst.tickActMs), double(nst.tickPercMs), double(nst.tickFightMs), double(nst.tickBodyMs), double(nst.tickGroundMs),
-				         static_cast<unsigned long>(nst.ticked), static_cast<unsigned long>(nst.tickSkipped), static_cast<unsigned long>(nst.sightTests));
+				         static_cast<unsigned long>(nst.ticked), static_cast<unsigned long>(nst.tickSkipped), static_cast<unsigned long>(nst.sightTests), double(nst.sightTestMs));
 				if (gHitchCount >= kHitchBatch) flushHitches();
 			}
 		}

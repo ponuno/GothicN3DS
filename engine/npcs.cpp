@@ -691,6 +691,7 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	_stats.tickActMs = _stats.tickPercMs = _stats.tickFightMs = _stats.tickBodyMs = _stats.tickGroundMs = 0;
 	_stats.ticked = _stats.tickSkipped = 0;
 	_sightTests = 0;
+	_sightTestMs = 0;
 	const int partner = talking() ? talkPartner() : -1;
 	for (NpcActor& a : _actors) {
 		if (!a.used || !a.ready) continue;
@@ -722,6 +723,7 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	_stats.selectMs = float(tSelect - tClock);
 	_stats.tickMs = float(sys::timeMs() - tSelect);
 	_stats.sightTests = _sightTests;
+	_stats.sightTestMs = _sightTestMs;
 	_stats.looking = looking;
 	_stats.fighting = fighting;
 	u32 inUse = 0;

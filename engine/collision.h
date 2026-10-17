@@ -49,7 +49,7 @@ struct ChunkCollider {
 	bool pushSphere(Vec3& center, float radius) const;
 	// True if a triangle one cannot see through (not a cut-out, not blended) crosses the segment between its ends:
 	// what stands at `from` does not see `to` along it.
-	bool segmentBlocked(Vec3 from, Vec3 to) const;
+	bool segmentBlocked(Vec3 from, Vec3 to, bool seeThrough = true) const;
 	// True if no triangle's bounds reach into the box (so nothing in it can
 	// be hit; the reverse does not hold).
 	bool boxFree(const float mn[3], const float mx[3]) const;

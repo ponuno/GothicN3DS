@@ -3065,6 +3065,32 @@ static void testCollision() {
 	CHECK(w.lineFree({300, 150, 0}, {580, 150, 0}) && w.lineFree({-300, 150, 0}, {-900, 150, 0}));
 	CHECK(w.lineFree({0, 100, 400}, {0, 100, 1200}) && !w.lineFree({0, 15, 400}, {0, 15, 1200}));
 	CHECK(w.lineFree({300, 150, 0}, {300, 150, 0})); // (no length at all)
+	// fix206: the senses' line (one walk through the grid) answers as the stepped sphere does.
+	CHECK(!w.sightFree({300, 150, 0}, {900, 150, 0}) && !w.sightFree({900, 150, 20}, {300, 100, -20}));
+	CHECK(w.sightFree({300, 150, 0}, {580, 150, 0}) && w.sightFree({-300, 150, 0}, {-900, 150, 0}));
+	CHECK(w.sightFree({0, 100, 400}, {0, 100, 1200}) && !w.sightFree({0, 15, 400}, {0, 15, 1200}));
+	CHECK(w.sightFree({300, 150, 0}, {300, 150, 0}));
+	{
+		// Random lines at eye heights: the same answer but where the sphere's 12 cm graze an edge, and much cheaper.
+		std::mt19937 rng(206);
+		std::uniform_real_distribution<float> ux(-1500.0f, 1500.0f), uy(60.0f, 260.0f);
+		int same = 0, total = 0;
+		double sphereMs = 0, lineMs = 0;
+		for (int i = 0; i < 3000; ++i) {
+			const Vec3 a2 = {ux(rng), uy(rng), ux(rng)}, b2 = {ux(rng), uy(rng), ux(rng)};
+			double t0 = sys::timeMs();
+			const bool f1 = w.lineFree(a2, b2, 12.0f);
+			double t1 = sys::timeMs();
+			const bool f2 = w.sightFree(a2, b2);
+			double t2 = sys::timeMs();
+			sphereMs += t1 - t0;
+			lineMs += t2 - t1;
+			same += f1 == f2;
+			++total;
+		}
+		std::printf("       sight: %d of %d the same as the stepped sphere; sphere %.2f ms, line %.2f ms for all\n", same, total, sphereMs, lineMs);
+		CHECK(same >= total * 95 / 100);
+	}
 
 	// The character controller. One step is 480 cm/s at 30 fps = 16 cm.
 	const float dt = 1.0f / 30.0f;
@@ -6558,6 +6584,8 @@ func void Rtn_start_502() {
 				npcs.mobs().place(u32(low), j.pos, at, yaw);
 				CHECK(!app.world().lineFree({j.pos[0], j.pos[1] + 130.0f, j.pos[2]}, {at[0], at[1] + 80.0f, at[2]}));
 				CHECK(app.world().lineFree({j.pos[0], j.pos[1] + 130.0f, j.pos[2]}, {j.pos[0] - 300.0f, j.pos[1] + 130.0f, j.pos[2]}));
+				CHECK(!app.world().sightFree({j.pos[0], j.pos[1] + 130.0f, j.pos[2]}, {at[0], at[1] + 80.0f, at[2]})); // (fix206)
+				CHECK(app.world().sightFree({j.pos[0], j.pos[1] + 130.0f, j.pos[2]}, {j.pos[0] - 300.0f, j.pos[1] + 130.0f, j.pos[2]}));
 			}
 		}
 
@@ -8120,6 +8148,10 @@ static void testSight() {
 	CHECK(col.segmentBlocked({-3000, 150, -2500}, {2500, 150, 2900})); // across many cells, through it
 	CHECK(col.segmentBlocked({0, 100, -300}, {0, -100, -100}));    // into the ground
 	CHECK(!col.segmentBlocked({0, 100, 700}, {0, 100, 1300}));     // through the fence: one sees through it
+	// fix206: for the senses (World::sightFree) the fence stops the eye, as the stepped sphere did; the wall still does.
+	CHECK(col.segmentBlocked({0, 100, 700}, {0, 100, 1300}, false));
+	CHECK(col.segmentBlocked({0, 100, -300}, {0, 100, 300}, false));
+	CHECK(!col.segmentBlocked({800, 100, -300}, {800, 100, 300}, false));
 	{
 		// rayDown still tells the ground's group (bit 7 is the see-through mark, not part of it).
 		float y = 0;

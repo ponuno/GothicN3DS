@@ -334,7 +334,8 @@ bool ChunkCollider::pushSphere(Vec3& center, float radius) const {
 	return moved;
 }
 
-bool ChunkCollider::segmentBlocked(Vec3 from, Vec3 to) const {
+// `seeThrough` false (fix206: the senses): cut-out and blended surfaces stop the eye too, as solid ones.
+bool ChunkCollider::segmentBlocked(Vec3 from, Vec3 to, bool seeThrough) const {
 	if (!triangleCount) return false;
 	const float inv = 1.0f / scale;
 	// In grid units across (x, z); y in local units.
@@ -387,7 +388,7 @@ bool ChunkCollider::segmentBlocked(Vec3 from, Vec3 to) const {
 				const u32 item = cellItems[i];
 				if (((item >> ITEM_TRI_BITS) & levelMask) > qHi || (item >> (ITEM_TRI_BITS + LEVEL_BITS)) < qLo) continue;
 				const u32 tri = item & triMask;
-				if (group && (group[tri] & 0x80u)) continue; // one sees through it
+				if (seeThrough && group && (group[tri] & 0x80u)) continue; // one sees through it
 				++gStats.tests;
 				const u16* tv = triangles + tri * 3;
 				const Vec3 a = localVertex(positions, tv[0]), b = localVertex(positions, tv[1]), c = localVertex(positions, tv[2]);

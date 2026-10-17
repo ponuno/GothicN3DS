@@ -152,6 +152,7 @@ struct NpcStats {
 	// frame (far ones, every other frame), lines of sight cast by the senses.
 	float tickActMs = 0, tickPercMs = 0, tickFightMs = 0, tickBodyMs = 0, tickGroundMs = 0;
 	u32 ticked = 0, tickSkipped = 0, sightTests = 0;
+	float sightTestMs = 0; // fix206
 	// Perception.
 	u32 perceived = 0;    // reactions called since the start (the player seen, an enemy, a passive perception)
 	u32 fightsRefused = 0; // states of fighting the scripts asked for and did not get (fights switched off)
@@ -909,6 +910,7 @@ private:
 	void react(NpcActor& a, u32 fn, int other, int victim);
 	bool sees(const NpcActor& a, u32 other, bool inFront) const;
 	mutable u32 _sightTests = 0; // fix205: lines of sight cast this update (sees() is const)
+	mutable float _sightTestMs = 0; // fix206: ... and the time they took
 	bool seenAllRound(const GameNpc& n, const GameNpc& o) const;
 	bool heroNear(const GameNpc& n) const;
 	bool refusesState(u32 fn) const;

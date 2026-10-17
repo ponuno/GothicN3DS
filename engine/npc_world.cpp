@@ -346,14 +346,129 @@ const Model* Npcs::overlayModelNamed(const char* name) {
 	char path[96];
 	snprintf(path, sizeof(path), "model/ovl.%s", name);
 	const u32 hash = hashName(path);
-	for (u32 k = 0; k < _overlayCount; ++k)
-		if (_overlayModels[k].hash == hash) return _overlayModels[k].failed ? nullptr : &_overlayModels[k].model;
+	for (u32 k = 0; k < _overlayCount; ++k) {
+		OverlayModel& o = _overlayModels[k];
+		if (o.hash != hash) continue;
+		if (_ovlLock) sys::mutexLock(_ovlLock);
+		const u8 state = o.state;
+		if (_ovlLock) sys::mutexUnlock(_ovlLock);
+		if (state == OVL_READY) return o.failed ? nullptr : &o.model;
+		if (state == OVL_FAILED) return nullptr;
+		if (state != OVL_ON_MAIN) return nullptr; // (being read: the plain way of moving meanwhile)
+		// Not for the thread (it has a mesh): here, as before fix207.
+		o.failed = !o.model.loadEntry(*_pak, hash, &_pool, false);
+		if (o.failed) o.model.release();
+		if (_ovlLock) sys::mutexLock(_ovlLock);
+		o.state = OVL_READY;
+		if (_ovlLock) sys::mutexUnlock(_ovlLock);
+		return o.failed ? nullptr : &o.model;
+	}
 	if (_overlayCount >= OVERLAY_MODELS) return nullptr;
-	OverlayModel& o = _overlayModels[_overlayCount++];
+	if (!_pak->find(hash)) {
+		if (_ovlLock) sys::mutexLock(_ovlLock);
+		OverlayModel& o = _overlayModels[_overlayCount++];
+		o.hash = hash;
+		o.failed = true;
+		o.state = OVL_READY;
+		if (_ovlLock) sys::mutexUnlock(_ovlLock);
+		return nullptr;
+	}
+	// fix207: on the thread, if there is one.
+	if (startOverlayThread()) {
+		sys::mutexLock(_ovlLock);
+		OverlayModel& o = _overlayModels[_overlayCount++];
+		o.hash = hash;
+		o.failed = false;
+		o.state = OVL_QUEUED;
+		sys::mutexUnlock(_ovlLock);
+		sys::signalWake(_ovlWake);
+		return nullptr;
+	}
+	OverlayModel& o = _overlayModels[_overlayCount++]; // (no thread here: nobody else looks at the slots)
 	o.hash = hash;
-	o.failed = !_pak->find(hash) || !o.model.loadEntry(*_pak, hash, &_pool, false);
+	o.state = OVL_READY;
+	o.failed = !o.model.loadEntry(*_pak, hash, &_pool, false);
 	if (o.failed) o.model.release();
 	return o.failed ? nullptr : &o.model;
+}
+
+bool Npcs::startOverlayThread() {
+	if (_ovlThread) return true;
+	if (_ovlTried || !_cfg.overlayThread || !_pak || !_pak->path()[0]) return false;
+	_ovlTried = true; // (once: no thread to be had, overlays are read here as before)
+	if (!_ovlPak.open(_pak->path())) return false;
+	_ovlLock = sys::mutexCreate();
+	_ovlWake = sys::signalCreate();
+	_ovlDone = sys::signalCreate();
+	_ovlQuit = false;
+	if (_ovlLock && _ovlWake && _ovlDone) _ovlThread = sys::threadStart(&Npcs::overlayThreadMain, this);
+	if (!_ovlThread) {
+		_ovlPak.close();
+		if (_ovlLock) sys::mutexDestroy(_ovlLock);
+		if (_ovlWake) sys::signalDestroy(_ovlWake);
+		if (_ovlDone) sys::signalDestroy(_ovlDone);
+		_ovlLock = nullptr;
+		_ovlWake = _ovlDone = nullptr;
+		return false;
+	}
+	return true;
+}
+
+void Npcs::overlayThreadMain(void* self) { static_cast<Npcs*>(self)->overlayWork(); }
+
+// Reads the queued overlays one after the other through its own handle of the archive. Only the clips' memory is
+// touched (no textures, no mesh: cpuOnly), and nobody looks at a slot until it says READY.
+void Npcs::overlayWork() {
+	for (;;) {
+		sys::mutexLock(_ovlLock);
+		OverlayModel* job = nullptr;
+		while (!_ovlQuit) {
+			for (u32 k = 0; k < _overlayCount && !job; ++k)
+				if (_overlayModels[k].state == OVL_QUEUED) job = &_overlayModels[k];
+			if (job) break;
+			sys::mutexUnlock(_ovlLock);
+			sys::signalWait(_ovlWake);
+			sys::mutexLock(_ovlLock);
+		}
+		if (_ovlQuit) {
+			sys::mutexUnlock(_ovlLock);
+			sys::signalWake(_ovlDone);
+			return;
+		}
+		job->state = OVL_LOADING;
+		const u32 hash = job->hash;
+		sys::mutexUnlock(_ovlLock);
+
+		const bool ok = job->model.loadEntry(_ovlPak, hash, nullptr, false, nullptr, true);
+		if (!ok) job->model.release();
+
+		sys::mutexLock(_ovlLock);
+		// (Refused for its mesh: the frame's thread loads it when it is next asked for.)
+		const PakEntry* e = _ovlPak.find(hash);
+		job->failed = !ok;
+		job->state = ok ? OVL_READY : (e ? OVL_ON_MAIN : OVL_FAILED);
+		if (ok) ++_stats.overlaysThreaded;
+		sys::mutexUnlock(_ovlLock);
+		sys::signalWake(_ovlDone);
+	}
+}
+
+void Npcs::stopOverlayThread() {
+	if (_ovlThread) {
+		sys::mutexLock(_ovlLock);
+		_ovlQuit = true;
+		sys::mutexUnlock(_ovlLock);
+		sys::signalWake(_ovlWake);
+		sys::threadJoin(_ovlThread); // (it finishes the overlay it is reading first)
+		_ovlThread = nullptr;
+	}
+	_ovlPak.close();
+	if (_ovlLock) sys::mutexDestroy(_ovlLock);
+	if (_ovlWake) sys::signalDestroy(_ovlWake);
+	if (_ovlDone) sys::signalDestroy(_ovlDone);
+	_ovlLock = nullptr;
+	_ovlWake = _ovlDone = nullptr;
+	_ovlTried = false;
 }
 
 u32 Npcs::overlayModels(u32 npc, const Model** out, u32 max) {

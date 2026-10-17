@@ -423,7 +423,7 @@ u32 Model::dropClip(int i) {
 	return bytes;
 }
 
-bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool, bool lazyClips, MeshPool* meshes) {
+bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool, bool lazyClips, MeshPool* meshes, bool cpuOnly) {
 	release();
 	const PakEntry* e = pak.find(entryHash);
 	if (!e || e->type != ASSET_MODEL || e->size < sizeof(ModelHeader)) return false;
@@ -437,7 +437,8 @@ bool Model::loadEntry(Pak& pak, u32 entryHash, TexturePool* pool, bool lazyClips
 	          // Without a mesh there are no parts either, but then there are clips.
 	          (_h.vertexCount > 0 ? _h.indexCount > 0 : (_h.partCount == 0 && _h.indexCount == 0 && _h.clipCount > 0)) &&
 	          // (a shared mesh needs its entry named, and the model has no mesh of its own)
-	          (!(_h.flags & MODELF_SHARED_MESH) || (_h.reserved != 0 && _h.vertexCount > 0));
+	          (!(_h.flags & MODELF_SHARED_MESH) || (_h.reserved != 0 && _h.vertexCount > 0)) &&
+	          (!cpuOnly || (_h.vertexCount == 0 && _h.partCount == 0));
 	const bool shared = ok && (_h.flags & MODELF_SHARED_MESH) != 0;
 	const u8* p = blob + sizeof(ModelHeader);
 	if (ok) {

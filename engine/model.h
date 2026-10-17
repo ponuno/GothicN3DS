@@ -161,7 +161,10 @@ public:
 	// asks for it (a model of a world's people has hundreds, of which a
 	// place needs a few).
 	// A model with a shared mesh gets it through `meshes` (which must outlive the model), else reads it for itself.
-	bool loadEntry(Pak& pak, u32 entryHash, TexturePool* pool = nullptr, bool lazyClips = false, MeshPool* meshes = nullptr);
+	// `cpuOnly` (fix207: a thread that is not the frame's): a model with a mesh or parts is refused (false), since its
+	// mesh and textures would have to be made for the GPU; one of clips alone (an overlay) loads as ever.
+	bool loadEntry(Pak& pak, u32 entryHash, TexturePool* pool = nullptr, bool lazyClips = false, MeshPool* meshes = nullptr,
+	               bool cpuOnly = false);
 	void release();
 	bool loaded() const { return _nodes != nullptr; }
 	bool hasMesh() const { return _mesh != nullptr; }

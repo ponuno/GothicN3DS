@@ -70,10 +70,12 @@ void Npcs::release() {
 		p.used = 0;
 		p.failed = false;
 	}
+	stopOverlayThread(); // (fix207: before the slots it may be filling go)
 	for (u32 k = 0; k < _overlayCount; ++k) {
 		_overlayModels[k].model.release();
 		_overlayModels[k].hash = 0;
 		_overlayModels[k].failed = false;
+		_overlayModels[k].state = OVL_READY;
 	}
 	_overlayCount = 0;
 	_pool.release();
@@ -626,6 +628,11 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 	// into a model - never reads from the card itself here.
 	const bool reading = _ahead && _ahead->running() && _ahead->enabled();
 	for (u32 k = 0; k < aheadCount; ++k) {
+		// fix207: what they wear is read on its thread before they are here (asking queues it).
+		if (_ovlThread || _cfg.overlayThread) {
+			const GameNpc& an = _game.npc(ahead[k]);
+			for (u32 o = 0; o < an.overlayCount(); ++o) overlayModel(an.overlay[o]);
+		}
 		const LookEntry* look = lookOf(_game.npc(ahead[k]).look);
 		if (!look) continue;
 		const bool coarse = look->bodyLow && _cfg.lodDistance > 0.0f;

@@ -29,6 +29,7 @@
 #include "talk.h"
 #include "waynet.h"
 #include "frame_budget.h"
+#include "sys.h"
 #include "world.h"
 
 #include <string.h>
@@ -51,6 +52,7 @@ struct NpcConfig {
 	// Null: no limit.
 	const FrameBudget* budget = nullptr;
 	u32 loadsPerFrame = 1; // models read from the archive per frame (each is a hitch)
+	bool overlayThread = false; // fix207: overlays (ways of walking, fight talents) read on a thread of their own (console: on)
 	u32 startsPerFrame = 0; // characters set going per frame (0: all at once): their first steps run scripts, and a crowd at once was a hitch (the console takes one)
 	float prefetchRange = 0.0f; // cm beyond the range: the models of those who will come into it are read in the frames with nothing else to load (0: not; the console 1500)
 	u32 clipBudget = 3072u * 1024u; // bytes of animations in memory at most
@@ -153,6 +155,7 @@ struct NpcStats {
 	float tickActMs = 0, tickPercMs = 0, tickFightMs = 0, tickBodyMs = 0, tickGroundMs = 0;
 	u32 ticked = 0, tickSkipped = 0, sightTests = 0;
 	float sightTestMs = 0; // fix206
+	u32 overlaysThreaded = 0; // fix207: overlays read on their thread (not in a frame)
 	// Perception.
 	u32 perceived = 0;    // reactions called since the start (the player seen, an enemy, a passive perception)
 	u32 fightsRefused = 0; // states of fighting the scripts asked for and did not get (fights switched off)
@@ -795,13 +798,28 @@ private:
 	int _heroMob = -1;
 	void collide(NpcActor& a, const World& world, const float before[3]);
 	enum { OVERLAY_MODELS = 8 };
+	// fix207: an overlay (a way of walking, a fight talent) is a model of clips alone, and its first use read all of them
+	// from the card in the frame (one overlay: 66-200 ms). Now a thread of its own reads it (`_ovlPak`); until it is
+	// there the character moves as without it. A model with a mesh after all is loaded on the frame's thread as before.
+	enum OverlayState : u8 { OVL_QUEUED, OVL_LOADING, OVL_READY, OVL_FAILED, OVL_ON_MAIN };
 	struct OverlayModel {
 		u32 hash = 0;
 		bool failed = false;
 		Model model;
+		u8 state = OVL_READY; // (guarded by _ovlLock while a thread runs)
 	};
 	OverlayModel _overlayModels[OVERLAY_MODELS];
 	u32 _overlayCount = 0;
+	Pak _ovlPak;
+	sys::Thread* _ovlThread = nullptr;
+	sys::Mutex* _ovlLock = nullptr;
+	sys::Signal* _ovlWake = nullptr;
+	sys::Signal* _ovlDone = nullptr;
+	bool _ovlQuit = false, _ovlTried = false;
+	static void overlayThreadMain(void* self);
+	void overlayWork();
+	bool startOverlayThread();
+	void stopOverlayThread();
 	u32 _bodyPushes = 0;
 	float _heroTeleport[4] = {0, 0, 0, 0};
 	bool _heroTeleportPending = false;

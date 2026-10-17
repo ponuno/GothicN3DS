@@ -14108,6 +14108,69 @@ static void testOverlays() {
 	CHECK(g.restore(src) && g.npc(hero).overlayCount() == 1 && g.npc(u32(thorus)).overlayCount() == 1);
 }
 
+// fix207: overlays read on a thread. The first ask only queues it (nothing in the frame), the model comes a moment later
+// with its clips, and Thorus then goes in the militia's way as with the old reading in the frame.
+static void testOverlaysThreaded() {
+	const std::string path = gDir + "/overlays.pak"; // (baked by testOverlays)
+	gfx::init();
+	App app;
+	app.npcs().config().overlayThread = true;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded()) return;
+	app.settings().immortal = 1;
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.applySettings();
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	int thorus = -1;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (std::strcmp(g.nameOf(g.npc(i)), "Thorus") == 0) thorus = int(i);
+	CHECK(thorus >= 0);
+	if (thorus < 0) return;
+	const GameNpc& t = g.npc(u32(thorus));
+	const Model* ovl = npcs.overlayModel(t.overlay[0]); // (queued - unless the start has already asked for it)
+	for (int i = 0; i < 400 && !ovl; ++i) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		ovl = npcs.overlayModel(t.overlay[0]);
+	}
+	CHECK(ovl && ovl->clip("S_RUN") && ovl->clip("S_WALKL"));
+	if (!ovl) return;
+	CHECK(npcs.overlayModel(t.overlay[0]) == ovl); // (once, kept)
+	CHECK(npcs.stats().overlaysThreaded >= 1); // read on the thread, not in a frame
+	const float dt = 1.0f / 30.0f;
+	app.teleport({t.pos[0], t.pos[1] + 400.0f, t.pos[2] - 300.0f});
+	app.world().preload(app.camera().pos);
+	int plain = 0, worn = 0;
+	for (int i = 0; i < 30 * 6; ++i) {
+		if (i == 60) {
+			ScriptVm& vm = g.vm();
+			const u32 ext = vm.find("AI_PLAYANI");
+			if (ext != SCRIPT_NONE) {
+				vm.pushInstance(t.object);
+				vm.pushString("S_RUN");
+				vm.call(ext);
+			}
+		}
+		app.update(Input {}, dt);
+		const NpcActor* a = npcs.actorOf(u32(thorus));
+		if (!a || !a->rig || !a->anim.current()) continue;
+		const Clip* c = a->anim.current();
+		for (const char* name : {"S_RUN", "S_WALKL", "S_RUNL"}) {
+			if (c == a->rig->model.clip(name)) ++plain;
+			if (c == ovl->clip(name)) ++worn;
+		}
+	}
+	std::printf("  Thorus (overlay from its thread): %d frames in the militia's clips, %d in the plain ones\n", worn, plain);
+	CHECK(worn > 0 && plain == 0);
+	// The player's character takes it on too (the same model, already there).
+	const u32 hero = g.heroIndex();
+	g.applyOverlay(hero, "Humans_Militia.MDS");
+	for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
+	CHECK(app.hero().animator().current() == ovl->clip("S_RUN"));
+}
+
 // The sun's shadow, baked (sun_bake.h): a floor and a roof on posts' height above it; under the roof's shadow on the floor
 // the mask is dark, under the roof itself (the roof takes the sun) and far from it light; the masks round-trip.
 static void testSunShadow() {
@@ -14388,7 +14451,7 @@ int main(int argc, char** argv) {
              {"transform", testTransformHero},
              {"ranged", testRanged},
              {"bodies", testBodies},
-             {"overlays", testOverlays},
+             {"overlays", testOverlays}, {"overlays threaded", testOverlaysThreaded},
 	             {"inventory", testInventory},
              {"chests", testChests},
              {"mob use", testMobUse},

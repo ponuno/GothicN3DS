@@ -484,6 +484,13 @@ void App::updateHeroArmor() {
 	}
 }
 
+void App::dropHeroArmor() {
+	_armorBody.release();
+	_armorHead.release();
+	_armorReady = false;
+	_armorShown = 0xFFFFFFFFu;
+}
+
 void App::drawHero() {
 	updateHeroArmor();
 	if (!_armorReady) {

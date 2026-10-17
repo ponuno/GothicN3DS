@@ -73,6 +73,8 @@ public:
 	static u32 bloodSplash();
 	// fix192: the engine's own flame of a torch in the hand (a small warm fire going up; start() it and move() it with the hand).
 	static u32 torchFlame();
+	// fix216: the white trail of a blade in a blow (start() it at the blade's end, move() it each frame).
+	static u32 swooshTrail();
 
 	const ParticleStats& stats() const { return _stats; }
 

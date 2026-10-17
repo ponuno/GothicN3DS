@@ -162,6 +162,11 @@ u32 Particles::arrowTrail() {
 	return h;
 }
 
+u32 Particles::swooshTrail() {
+	static const u32 h = hashName("G3_SWOOSH_TRAIL");
+	return h;
+}
+
 u32 Particles::bloodSplash() {
 	static const u32 h = hashName("G3_BLOOD_SPLASH");
 	return h;
@@ -174,13 +179,13 @@ u32 Particles::torchFlame() {
 
 void Particles::loadDef(Def& d, u32 effect) {
 	if (effect == torchFlame()) {
-		d.pps = 60;
+		d.pps = 70;
 		d.ppsKeys[0] = 1;
 		d.ppsKeyCount = 1;
 		d.ppsLooping = true;
 		d.shape = SHAPE_SPHERE;
 		d.volume = true;
-		d.dim[0] = d.dim[1] = d.dim[2] = 2.5f;
+		d.dim[0] = d.dim[1] = d.dim[2] = 3.5f;
 		d.objectFrame = false;
 		d.headVar = 3.14159f;
 		d.elevAngle = 1.5708f; // (up)
@@ -197,7 +202,7 @@ void Particles::loadDef(Def& d, u32 effect) {
 		d.colorEnd[0] = 0.75f;
 		d.colorEnd[1] = 0.22f;
 		d.colorEnd[2] = 0.04f;
-		d.sizeStart[0] = d.sizeStart[1] = 9;
+		d.sizeStart[0] = d.sizeStart[1] = 14;
 		d.sizeEndScale = 0.35f;
 		d.alphaStart = 0.9f;
 		d.alphaEnd = 0.0f;
@@ -254,21 +259,22 @@ void Particles::loadDef(Def& d, u32 effect) {
 		d.ok = d.frameCount > 0;
 		return;
 	}
-	if (effect == arrowTrail()) {
-		d.pps = 220;
+	if (effect == arrowTrail() || effect == swooshTrail()) {
+		const bool swoosh = effect == swooshTrail();
+		d.pps = swoosh ? 420 : 220;
 		d.ppsKeys[0] = 1;
 		d.ppsKeyCount = 1;
 		d.ppsLooping = true;
 		d.shape = SHAPE_POINT;
 		d.objectFrame = true;
-		d.lifeAvg = 380;
-		d.lifeVar = 60;
+		d.lifeAvg = swoosh ? 230 : 380;
+		d.lifeVar = swoosh ? 40 : 60;
 		d.additive = true;
 		d.colorStart[0] = d.colorStart[1] = d.colorStart[2] = 1.0f; // (white, as in the original)
 		d.colorEnd[0] = d.colorEnd[1] = d.colorEnd[2] = 0.85f;
-		d.sizeStart[0] = d.sizeStart[1] = 5;
-		d.sizeEndScale = 1.5f;
-		d.alphaStart = 1.0f;
+		d.sizeStart[0] = d.sizeStart[1] = swoosh ? 9 : 5;
+		d.sizeEndScale = swoosh ? 0.6f : 1.5f;
+		d.alphaStart = swoosh ? 0.8f : 1.0f;
 		d.alphaEnd = 0.0f;
 		// (A soft dot: any picture of the effects will do.)
 		static const char* const pics[] = {"tex/fireflare", "tex/synth_smoke", "tex/synth_spark", "tex/firesmoke", "tex/smoke"};

@@ -7993,6 +7993,15 @@ static void testInventory() {
 		}
 		const u32 flames = app.particles().stats().particles;
 		dumpTop("torch");
+		// fix216: at night the torch lights the ground and the body round it (the picture says: torch_night.ppm).
+		{
+			app.environment().timeOfDay = 0.5f;
+			for (int i = 0; i < 40; ++i) {
+				app.update(Input {}, dt);
+				app.render();
+			}
+			dumpTop("torch_night");
+		}
 		{
 			const Vec3 t = app.torchFlame(), f = app.hero().feet();
 			std::printf("  torch flame at %.0f %.0f %.0f from the feet (yaw %.2f)\n", double(t.x - f.x), double(t.y - f.y), double(t.z - f.z), double(app.hero().yaw()));
@@ -12995,6 +13004,217 @@ func void INIT_WORLD() {
 // fix215: the people after the player's beating (the real scripts, G3_G1_SCRIPT): a digger beats the player down; what he
 // does when the player is down, and after the player gets up. Printed as a timeline; checks that he does not stand
 // frozen with the weapon out and is not put somewhere else.
+static void testG1Reload() {
+	const char* file = getenv("G3_G1_SCRIPT");
+	if (!file) {
+		std::printf("  (no G3_G1_SCRIPT: skipped)\n");
+		return;
+	}
+	std::ifstream in(file);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	std::string source = ss.str() + R"(
+func void STARTUP_WORLD() {
+	Kapitel = 1;
+	Wld_InsertNpc(VLK_501_Buddler, "CAMP_SQUARE");
+};
+func void INIT_WORLD() {
+	B_InitMonsterAttitudes();
+	B_InitGuildAttitudes();
+};
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/g1reload.pak";
+	try {
+		bakeLifeWorlds(source, path, worlds);
+	} catch (const std::exception& e) {
+		std::printf("  bake failed: %s\n", e.what());
+		CHECK(false);
+		return;
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 1;
+	app.settings().perception = 1;
+	app.settings().immortal = 0;
+	app.applySettings();
+	npcs.config().range = 20000.0f;
+	app.environment().timeOfDay = 12.0f;
+	const float dt = 1.0f / 30.0f;
+	const u32 sym = g.vm().find("VLK_501_BUDDLER");
+	u32 b = SCRIPT_NONE;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).symbol == sym) b = i;
+	CHECK(b != SCRIPT_NONE);
+	if (b == SCRIPT_NONE) return;
+	const u32 hero = g.heroIndex();
+	const auto actorOf = [&](u32 npc) -> const NpcActor* {
+		for (u32 k = 0; k < npcs.actorCount(); ++k)
+			if (npcs.actor(k).used && npcs.actor(k).npc == npc) return &npcs.actor(k);
+		return nullptr;
+	};
+	float maxJump = 0.0f;
+	float last[3] = {g.npc(b).pos[0], g.npc(b).pos[1], g.npc(b).pos[2]};
+	const auto run = [&](float seconds, const char* label) {
+		for (int i = 0; i < int(seconds / dt); ++i) {
+			app.update(Input {}, dt);
+			const GameNpc& n = g.npc(b);
+			const float dx = n.pos[0] - last[0], dz = n.pos[2] - last[2];
+			maxJump = std::max(maxJump, std::sqrt(dx * dx + dz * dz));
+			last[0] = n.pos[0];
+			last[1] = n.pos[1];
+			last[2] = n.pos[2];
+			if (i % 30 == 29) {
+				const NpcActor* a = actorOf(b);
+				const GameNpc& h = g.npc(hero);
+				const float hx = h.pos[0] - n.pos[0], hz = h.pos[2] - n.pos[2];
+				std::printf("    %-14s %-28s weapon %d att %d dist %5.0f hero down %d hp %d state %s\n", label, a ? npcs.doing(*a) : "(no actor)", int(n.weapon),
+				            g.attitude(b, hero), double(std::sqrt(hx * hx + hz * hz)), int(h.down), int(g.hitPoints(h)), a ? npcs.stateName(a->state) : "-");
+			}
+		}
+	};
+	app.teleport({g.npc(b).pos[0], g.npc(b).pos[1] + 5.0f, g.npc(b).pos[2] + 400.0f});
+	run(3.0f, "settle");
+	const std::string state = gDir + "/g1reload.sav";
+	CHECK(app.saveState(state.c_str()));
+	const auto rss = []() -> long {
+		long kb = 0;
+		if (FILE* f = fopen("/proc/self/statm", "r")) {
+			long pages = 0, res = 0;
+			if (fscanf(f, "%ld %ld", &pages, &res) == 2) kb = res * 4;
+			fclose(f);
+		}
+		return kb;
+	};
+	const long first = rss();
+	long afterFirst = 0;
+	double slowest = 0.0;
+	for (int k = 0; k < 25; ++k) {
+		const double t0 = sys::timeMs();
+		CHECK(app.loadState(state.c_str()));
+		run(2.0f, "reloaded");
+		const double ms = sys::timeMs() - t0;
+		slowest = std::max(slowest, ms);
+		if (k == 2) afterFirst = rss();
+		std::printf("  load %2d: %.0f ms, rss %ld KB, hero visible %d armor %d\n", k, ms, rss(), int(app.heroVisible()), int(app.heroArmorDrawn()));
+	}
+	std::printf("  rss: start %ld KB, after 3 loads %ld KB, after 25 %ld KB; slowest %.0f ms\n", first, afterFirst, rss(), slowest);
+	CHECK(rss() < afterFirst + 40 * 1024);
+}
+
+static void testG1Threat() {
+	const float THREAT_WAIT = getenv("THREAT_WAIT") ? float(atof(getenv("THREAT_WAIT"))) : 1.0f;
+	const char* file = getenv("G3_G1_SCRIPT");
+	if (!file) {
+		std::printf("  (no G3_G1_SCRIPT: skipped)\n");
+		return;
+	}
+	std::ifstream in(file);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	std::string source = ss.str() + R"(
+func void STARTUP_WORLD() {
+	Kapitel = 1;
+	Wld_InsertNpc(VLK_501_Buddler, "CAMP_SQUARE");
+};
+func void INIT_WORLD() {
+	B_InitMonsterAttitudes();
+	B_InitGuildAttitudes();
+};
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/g1threat.pak";
+	try {
+		bakeLifeWorlds(source, path, worlds);
+	} catch (const std::exception& e) {
+		std::printf("  bake failed: %s\n", e.what());
+		CHECK(false);
+		return;
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 1;
+	app.settings().perception = 1;
+	app.settings().immortal = 0;
+	app.applySettings();
+	npcs.config().range = 20000.0f;
+	app.environment().timeOfDay = 12.0f;
+	const float dt = 1.0f / 30.0f;
+	const u32 sym = g.vm().find("VLK_501_BUDDLER");
+	u32 b = SCRIPT_NONE;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).symbol == sym) b = i;
+	CHECK(b != SCRIPT_NONE);
+	if (b == SCRIPT_NONE) return;
+	const u32 hero = g.heroIndex();
+	const auto actorOf = [&](u32 npc) -> const NpcActor* {
+		for (u32 k = 0; k < npcs.actorCount(); ++k)
+			if (npcs.actor(k).used && npcs.actor(k).npc == npc) return &npcs.actor(k);
+		return nullptr;
+	};
+	float maxJump = 0.0f;
+	float last[3] = {g.npc(b).pos[0], g.npc(b).pos[1], g.npc(b).pos[2]};
+	const auto run = [&](float seconds, const char* label) {
+		for (int i = 0; i < int(seconds / dt); ++i) {
+			app.update(Input {}, dt);
+			const GameNpc& n = g.npc(b);
+			const float dx = n.pos[0] - last[0], dz = n.pos[2] - last[2];
+			maxJump = std::max(maxJump, std::sqrt(dx * dx + dz * dz));
+			last[0] = n.pos[0];
+			last[1] = n.pos[1];
+			last[2] = n.pos[2];
+			if (i % 30 == 29) {
+				const NpcActor* a = actorOf(b);
+				const GameNpc& h = g.npc(hero);
+				const float hx = h.pos[0] - n.pos[0], hz = h.pos[2] - n.pos[2];
+				std::printf("    %-14s %-28s weapon %d att %d dist %5.0f hero down %d hp %d state %s\n", label, a ? npcs.doing(*a) : "(no actor)", int(n.weapon),
+				            g.attitude(b, hero), double(std::sqrt(hx * hx + hz * hz)), int(h.down), int(g.hitPoints(h)), a ? npcs.stateName(a->state) : "-");
+			}
+		}
+	};
+	const GameNpc& bn = g.npc(b);
+	app.teleport({bn.pos[0], bn.pos[1] + 5.0f, bn.pos[2] + 220.0f});
+	run(2.0f, "met");
+	// fix217: the weapon drawn in front of him: he warns the hero (ZS_ReactToWeapon) - and is struck first in that state.
+	{
+		const u32 sword = g.vm().find("ITMW_1H_SWORD_01");
+		g.giveItems(hero, sword, 1);
+		g.setAttribute(g.npcMut(hero), 4, 100);
+		g.equip(hero, sword);
+		Input draw;
+		draw.drawWeapon = true;
+		app.update(draw, dt);
+	}
+	for (int q = 0; q < 40; ++q) app.update(Input {}, dt);
+	std::printf("  hero weapon %d\n", int(app.hero().weapon()));
+	run(THREAT_WAIT, "weapon out");
+	const NpcActor* a0 = actorOf(b);
+	std::printf("  warned: state %s\n", a0 ? npcs.stateName(a0->state) : "-");
+	const float x0 = g.npc(b).pos[0], z0 = g.npc(b).pos[2];
+	g.setAttribute(g.npcMut(b), 0, 900);
+	g.setAttribute(g.npcMut(b), 1, 900);
+	npcs.strike(hero, b, false);
+	run(1.0f, "struck");
+	run(8.0f, "after");
+	const NpcActor* a = actorOf(b);
+	const GameNpc& n = g.npc(b);
+	const float dx = n.pos[0] - x0, dz = n.pos[2] - z0;
+	std::printf("  threatened then struck: state %s doing %s moved %.0f cm\n", a ? npcs.stateName(a->state) : "-", a ? npcs.doing(*a) : "-",
+	            double(std::sqrt(dx * dx + dz * dz)));
+	// He must answer the blow (fight, flee, or at least not stand in the warning for ever).
+	CHECK(a && (std::strstr(npcs.stateName(a->state), "REACTTOWEAPON") == nullptr && std::strstr(npcs.stateName(a->state), "ReactToWeapon") == nullptr));
+}
+
 static void testG1Beaten() {
 	const char* file = getenv("G3_G1_SCRIPT");
 	if (!file) {
@@ -14783,6 +15003,8 @@ int main(int argc, char** argv) {
 	             {"beast turn", testBeastTurn},
 	             {"g1 beasts", testG1Beasts}, {"g1 calm", testG1Calm}, {"g1 hunter", testG1Hunter},
     {"g1 beaten", testG1Beaten},
+    {"g1 threat", testG1Threat},
+    {"g1 reload", testG1Reload},
              {"npc items", testNpcItems},
              {"corpses", testCorpses},
 	             {"settings", testSettings},

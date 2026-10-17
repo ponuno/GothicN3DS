@@ -185,12 +185,18 @@ void Lamps::update(const Frame& f, const World* world) {
 		x.range = max(_carriedRange * (1.0f + (flicker - 1.0f) * 0.3f), 10.0f);
 		for (int c = 0; c < 3; ++c) {
 			const float now = _carriedRgb[c] * flicker;
-			x.world[c] = now * (1.0f / 255.0f) * WORLD_GAIN * gate;
+			x.world[c] = now * (1.0f / 255.0f) * WORLD_GAIN * 1.3f * gate;
 			x.people[c] = now * (1.0f / 255.0f) * CHARACTER_GAIN * gate;
 		}
 		_stats.shining += 1;
 	}
 	const u32 carried = _activeCount;
+	if (f.carriedOnly && carried && f.characters && gfx::lampsSupported()) {
+		// (The world's lamps are off under load, the torch in the hand is not: it is what lights the way.)
+		_stats.world = true;
+		_stats.active = _activeCount;
+		return;
+	}
 	if (!_count || !f.characters) {
 		_stats.active = _activeCount;
 		if (!_activeCount) _stats.world = false;

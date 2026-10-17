@@ -153,6 +153,8 @@ public:
 	void getUp();
 	// The blow in play, for the HUD and the tests: which of the combo, and how many landed.
 	u8 combo() const { return _blow.combo; }
+	// fix216: a blow of the weapon is in play (the white trail follows the blade)
+	bool swinging() const { return _blow.clip && _anim.current() == _blow.clip; }
 
 	// ---- casting (WEAPON_MAG in hand) ----
 	// Plays a spell's casting animation, `letters` being the spell's ("FBT", the scripts'

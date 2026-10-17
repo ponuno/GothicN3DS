@@ -2057,3 +2057,17 @@ Bink на консоли не декодируется: пекарь запус�
 - **Телепорт врагов (`Npcs::walkTo`):** застрявший (3–5 с без приближения) раньше сразу ставился в цель — на глазах у игрока. Теперь, если игрок в 35 м, он до трёх раз пробует обойти препятствие (поворот на ~57° на 1,2 с, стороны по очереди) и лишь потом ставится в цель (`NpcActor::nudge/nudgeSide/nudges`).
 - **После избиения / конец боя:** воспроизвести не удалось. Новый тест `g1 beaten` (`G3_G1_SCRIPT`, настоящие скрипты G1: копатель бьёт героя до нокаута, печатается 30 с хроники) — враг не замирает с оружием и не прыгает (проверка: шаг < 4 м), но в тесте герой гибнет, а не теряет сознание, и у копателя нет маршрута. Нужен пример из игры: кто (имя/место), что было до избиения, что делал после (стоит с оружием? идёт? где оказался). Связь с остановившимся сопровождающим вероятна, общего «сторожа» для застывших очередей действий пока нет.
 - Версия в меню: «Gothic 3DS fix215».
+
+## fix216 — torch light, ore lamps, white blade trail
+
+- **Torch light.** The carried lamp (`Lamps::Frame::carriedOnly`) now survives the pacer relief (`_gfxRelief` used to switch all world lamps off, torch included); range 950 -> 1250, world gain x1.3, bigger flame (pps 70, size 14). Verified only on PC (`torch_night.ppm` from the torch test); NOT verified on the console. If it is still dark: send a screenshot.
+- **Ore lamps.** Baker `glowsOnly` now matches CRYSTAL/KRISTALL/ERZ/LAMP in the fire's visual: ore/crystal lamps keep their glow but the camp-fire tree flame above is the thing the user asked for ("огонь над лампой") — if flames are still missing, send the visual names from bake.log. **Needs a world re-bake.**
+- **White trail.** `Particles::swooshTrail()` (additive white, 230 ms, follows the blade end); `Loot::drawCarried(..., Vec3* blade)` returns the blade end; `Hero::swinging()`; `App::_swooshFx` started/moved/stopped in the hero render. 1H/2H weapons only, hero only (NPCs not yet).
+- ARM check not run here (no ARM libstdc++ headers). ctest 6/6 pass.
+
+## fix217 — invisible hero after a load, load trace, threat repro
+
+- **Invisible hero after loading.** Cause found: `Npcs::leaveWorld()` frees the shared mesh cache, but `App::_armorBody/_armorHead` (the hero's armour models) kept their pointers into it and `_armorShown` still matched, so the stale armour was drawn (= nothing). New `App::dropHeroArmor()` is called before every `_npcs.leaveWorld()` / `_npcs.release()` (world change, `loadGameSection`, shutdown); the armour is made again on the next draw.
+- **Hang on several loads.** NOT reproduced here (test `g1 reload`: 25 loads, RSS flat, ~1 ms each in the small test world). `loadState` now sets `trace()` stages ("load: begin / inventory / leave world / script state restore / after restore / preload / done"), so `sdmc:/3ds/gothic3ds/hang.txt` shows where it stops. Please send hang.txt after the next hang.
+- **NPC stuck after being struck while threatened.** Test `g1 threat` (sword drawn -> ZS_AssessFighter -> struck at 0.3-3.5 s) does NOT reproduce it: he fights back / heals. Needs the concrete NPC, place and what hit him (melee, bow, spell), plus the debug line "hit ..." (`_lastHitNote`).
+- ctest 6/6; ARM check not run (no ARM libstdc++ headers).

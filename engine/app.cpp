@@ -149,6 +149,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	if (!e || e->type != ASSET_WORLD || worldEntryHash == previous) return false;
 	const float drawDistance = _world.config().drawDistance;
 	// Give the old world's memory back before the new one asks for its own.
+	dropHeroArmor(); // (fix217: its meshes go with the people's cache)
 	_npcs.leaveWorld();
 	chestEnd(true);
 	_loot.leaveWorld();
@@ -351,6 +352,7 @@ bool App::loadState(const char* path) {
 		return false;
 	}
 	heroTransformBack(); // (fix151: what is loaded is the character himself)
+	trace("load: begin");
 	progress(0.05f);
 	SavedState s {};
 	const bool read = fread(&s, sizeof(s), 1, f) == 1;
@@ -393,6 +395,7 @@ bool App::loadState(const char* path) {
 	// Standing in a portal's box when the game was left must not send the
 	// player through it on arrival.
 	_portalLock = true;
+	trace("load: inventory");
 	// What was carried and worn (version 2).
 	if (s.version >= 2 && loadInventory(f) && _loot.loadTaken(f)) {
 		// (The containers as they were made, then the changes the state names.)
@@ -404,12 +407,14 @@ bool App::loadState(const char* path) {
 		progress(0.85f);
 	}
 	fclose(f);
+	trace("load: preload");
 	if (!header.legacy) _playSeconds = double(header.playSeconds);
 	if (_progress.on && !otherWorld && far2 > _world.config().drawDistance * _world.config().drawDistance * 0.25f) {
 		_world.preload(_cam.pos);
 		progress(0.95f);
 	}
 	progress(1.0f);
+	trace("load: done");
 	return true;
 }
 
@@ -421,9 +426,13 @@ bool App::loadGameSection(FILE* f) {
 	if (!bytes) return false;
 	bool ok = (head[1] == 0 || fread(bytes, head[1], 1, f) == 1) && byteCheck(bytes, head[1]) == head[2];
 	if (ok) {
+		trace("load: leave world (npcs)");
+		dropHeroArmor();
 		_npcs.leaveWorld(); // (the actors are made again from the state restored)
 		ByteSource in(bytes, head[1]);
+		trace("load: script state restore");
 		ok = _npcs.game().restore(in);
+		trace("load: after restore (LeGo, init)");
 		if (ok) _npcs.game().afterRestore(); // (fix195: LeGo reads its PermMem back, INIT_GLOBAL as the original runs it)
 		_chapterSeen = _npcs.game().chapter().serial;
 		_diarySeen = _npcs.game().logVersion();
@@ -532,6 +541,7 @@ void App::shutdown() {
 	_chests.release();
 	_pictures.release();
 	_showModel.release();
+	dropHeroArmor();
 	_npcs.release();
 	_hero.release();
 	_sky.release();
@@ -1279,9 +1289,20 @@ void App::render() {
 			drawHero(); // fix202: in his armour
 			drawArrows(_hero.light());
 			const GameNpc* hn = heroNpc();
-			if (hn && _hero.loaded())
+			if (hn && _hero.loaded()) {
+				Vec3 blade {};
 				_loot.drawCarried(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
-				                  hn->melee, _hero.feet(), _hero.light());
+				                  hn->melee, _hero.feet(), _hero.light(), &blade);
+				// fix216: the white trail of the blade while a blow is in play
+				const bool swing = _hero.swinging() && (_hero.weapon() == 2 || _hero.weapon() == 3) && (blade.x != 0.0f || blade.y != 0.0f || blade.z != 0.0f);
+				if (swing) {
+					if (_swooshFx && _particles.alive(_swooshFx)) _particles.move(_swooshFx, blade);
+					else _swooshFx = _particles.start(Particles::swooshTrail(), blade, _hero.yaw(), 2.0f);
+				} else if (_swooshFx) {
+					_particles.stop(_swooshFx);
+					_swooshFx = 0;
+				}
+			}
 			if (hn && _hero.loaded())
 				_loot.drawRanged(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
 				                 hn->ranged, _hero.feet(), _hero.light());
@@ -1570,10 +1591,11 @@ void App::updateLamps() {
 	for (int i = 0; i < 3; ++i) lf.dayLight[i] = sky.light[i];
 	lf.characters = _settings.lamps >= 1 && !(_renderSkip & SKIP_LAMPS);
 	lf.world = _settings.lamps >= 2 && !_gfxRelief && !_underwater;
+	lf.carriedOnly = _settings.lamps >= 2 && _gfxRelief && !_underwater; // (fix216)
 	// fix192: the torch in the hand is a lamp of its own (a little above its flame).
 	{
 		static const float kTorch[3] = {255.0f, 176.0f, 96.0f};
-		_lamps.setCarried(_torch.lit && _torch.shown && _torch.tipKnown, _torch.tip + Vec3 {0.0f, 12.0f, 0.0f}, 950.0f, kTorch);
+		_lamps.setCarried(_torch.lit && _torch.shown && _torch.tipKnown, _torch.tip + Vec3 {0.0f, 12.0f, 0.0f}, 1250.0f, kTorch);
 	}
 	_lamps.update(lf, &_world);
 	float add[3] = {0.0f, 0.0f, 0.0f};

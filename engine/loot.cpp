@@ -310,7 +310,7 @@ void Loot::drawHeld(Pak& pak, Game& game, u32 symbol, const Mat34& attach, Vec3 
 }
 
 void Loot::drawCarried(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, float lean, const float* scale,
-                       u8 weapon, u32 melee, Vec3 origin, const float light[3]) {
+                       u8 weapon, u32 melee, Vec3 origin, const float light[3], Vec3* blade) {
 	if (melee == 0xFFFFFFFFu) return;
 	const GameItemInfo* info = game.itemInfo(melee);
 	if (!info) return;
@@ -325,6 +325,18 @@ void Loot::drawCarried(Pak& pak, Game& game, const Model& host, const Pose& pose
 	Mat34 at;
 	if (!host.nodeMatrix(pose, node, yaw, lean, scale, at)) return;
 	drawHeld(pak, game, melee, at, origin, light);
+	if (blade && inHand) { // fix216: the far end of the blade, in the world
+		if (const Model* m = lookModel(pak, game, melee)) {
+			const ModelHeader& mh = m->header();
+			int a = 0;
+			for (int k = 1; k < 3; ++k)
+				if (mh.bbMax[k] - mh.bbMin[k] > mh.bbMax[a] - mh.bbMin[a]) a = k;
+			float p[3];
+			for (int k = 0; k < 3; ++k) p[k] = (mh.bbMin[k] + mh.bbMax[k]) * 0.5f;
+			p[a] = fabsf(mh.bbMax[a]) >= fabsf(mh.bbMin[a]) ? mh.bbMax[a] : mh.bbMin[a];
+			*blade = origin + transformPoint(at, {p[0], p[1], p[2]});
+		}
+	}
 }
 
 void Loot::drawRanged(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, float lean, const float* scale,

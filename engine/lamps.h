@@ -57,6 +57,7 @@ public:
 		float dayLight[3] = {1, 1, 1}; // the time of day's colour (as FrameDesc::dayLight)
 		bool characters = true;    // the menu: lamps light the people (and the things)
 		bool world = true;         // ... and the world (off under load, or where the backend has no lamps)
+		bool carriedOnly = false;  // fix216: the world takes only the carried lamp (the torch in the hand), the rest are off (under load)
 	};
 	// fix192: a lamp carried about (the hero's torch): at `pos` this frame, flickering as a flame; off with `on` false.
 	// It is the first of the frame's lamps (nearest of all), whether the world has a table of lamps or not.

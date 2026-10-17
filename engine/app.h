@@ -643,6 +643,7 @@ private:
 	u32 _armorShown = 0xFFFFFFFFu; // the armour item they were made for (none: 0xFFFFFFFF)
 	bool _armorReady = false;
 	void updateHeroArmor();
+	void dropHeroArmor(); // fix217: forget the armour models (their meshes are about to be freed); they are made again on the next draw
 	void drawHero();
 	void startVideo();
 	bool videoUpdate(const Input& in, float dt); // true while a video is on
@@ -825,6 +826,7 @@ private:
 		Vec3 tip {0, 0, 0}; // where the flame is (the far end of the torch), from the last frame drawn
 	};
 	Torch _torch;
+	u32 _swooshFx = 0; // fix216: the white trail of the blade in a blow
 	void torchUpdate(float dt);
 	void torchOut(bool burnt, const char* why);
 	void drawHeldItems(); // the torch in the left hand, the thing being used in the right

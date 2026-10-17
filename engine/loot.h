@@ -83,7 +83,7 @@ public:
 	// in the hand while a weapon of the hands is drawn (`weapon`: a WeaponMode),
 	// else on the belt (one hand) or the back (two).
 	void drawCarried(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, float lean, const float* scale,
-	                 u8 weapon, u32 melee, Vec3 origin, const float light[3]);
+	                 u8 weapon, u32 melee, Vec3 origin, const float light[3], Vec3* blade = nullptr);
 	// A character's bow or crossbow `ranged`: in the left hand while one is drawn, else on the back.
 	void drawRanged(Pak& pak, Game& game, const Model& host, const Pose& pose, float yaw, float lean, const float* scale,
 	                u8 weapon, u32 ranged, Vec3 origin, const float light[3]);

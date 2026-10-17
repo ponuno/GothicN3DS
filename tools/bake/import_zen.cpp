@@ -1731,7 +1731,10 @@ void collectObjects(const std::vector<std::shared_ptr<zenkit::VirtualObject>>& v
 				const std::vector<ObjectStats::TreeEmitter>& tree = fireTree(vfs, version, stats, treeName);
 				// The crystal lights of the camps (the ore lamps on their poles: PC_CRYSTALLIGHT) glow, they do not burn: their
 				// tree has flames the game hides under the crystal, and here they would stand above it. The light stays.
-				const bool glowsOnly = visual.find("CRYSTALLIGHT") != std::string::npos;
+				// (fix216: every crystal, ore and lamp visual, not only PC_CRYSTALLIGHT: the user still saw a flame above ore lamps.)
+				bool glowsOnly = false;
+				for (const char* word : {"CRYSTAL", "KRISTALL", "ERZ", "LAMP"})
+					glowsOnly = glowsOnly || visual.find(word) != std::string::npos;
 				if (glowsOnly) ++stats.flamesLeftOut;
 				for (const ObjectStats::TreeEmitter& te : tree) {
 					if (glowsOnly) break;

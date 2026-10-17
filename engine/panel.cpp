@@ -725,7 +725,7 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 			if (in.prevTab) nextPage(-1);
 			if (in.nextTab) nextPage(1);
 			if (_page == PAGE_CHARACTER && in.assign) {
-				_talentsShown = !_talentsShown;
+				turnTalents(v.sheet.talentCount);
 				_dirty = true;
 			}
 			if (_page == PAGE_DIARY && v.topicCount) {
@@ -856,7 +856,7 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 			}
 			case R_LIST:
 				if (_page == PAGE_CHARACTER) {
-					_talentsShown = !_talentsShown;
+					turnTalents(v.sheet.talentCount);
 					_dirty = true;
 				}
 				if (_page == PAGE_DIARY)
@@ -1083,8 +1083,9 @@ void InventoryPanel::drawGrid(const InventoryView& v) {
 	_canvas.unclip();
 	if (_page == PAGE_CHEST && v.chest.trade && !(v.messageTime > 0.0f && v.message[0])) {
 		// The purse, where the last news would be.
-		char purse[48];
-		snprintf(purse, sizeof(purse), "%s: %ld", v.chest.currency[0] ? v.chest.currency : tr("Руда"), static_cast<long>(v.chest.gold));
+		char purse[96];
+		snprintf(purse, sizeof(purse), tr("%s: у вас %ld, у торговца %ld"), v.chest.currency[0] ? v.chest.currency : tr("Руда"), static_cast<long>(v.chest.gold),
+		         static_cast<long>(v.chest.traderGold));
 		const int w = Canvas::measure(purse) + 12;
 		_canvas.fill(Canvas::W / 2 - w / 2, y1 - 17, Canvas::W / 2 + w / 2, y1 - 1, 0x000000C0u);
 		_canvas.text(Canvas::W / 2, y1 - 16, purse, GOLD, ui::TEXT, ui::CENTER, Canvas::W - 8);
@@ -1314,14 +1315,30 @@ void InventoryPanel::drawDiary(const InventoryView& v) {
 	_canvas.unclip();
 }
 
+// X on the character page: the numbers, then the talents (page after page when they do not fit), then the numbers.
+void InventoryPanel::turnTalents(u32 count) {
+	if (!_talentsShown) {
+		_talentsShown = true;
+		_talentPage = 0;
+	} else if ((u32(_talentPage) + 1) * u32(talentsPerPage()) < count) {
+		++_talentPage;
+	} else {
+		_talentsShown = false;
+		_talentPage = 0;
+	}
+}
+
 void InventoryPanel::drawCharacter(const InventoryView& v) {
 	const InventoryView::Sheet& s = v.sheet;
 	if (_talentsShown) {
 		// The talents the scripts name, with the level taught; the numbers again with X or a tap.
 		_canvas.text(Canvas::W / 2, BARS_H + 6, tr("Умения"), TITLE, ui::TITLE, ui::CENTER, 0, true);
-		int ty = BARS_H + 28;
+		int ty = TALENT_TOP;
 		bool any = false;
-		for (u32 k = 0; k < s.talentCount; ++k) {
+		const u32 per = u32(talentsPerPage());
+		if (u32(_talentPage) * per >= s.talentCount) _talentPage = 0;
+		const u32 first = u32(_talentPage) * per, last = min(first + per, s.talentCount);
+		for (u32 k = first; k < last; ++k) {
 			const InventoryView::Sheet::Talent& t = s.talents[k];
 			char buf[48];
 			using T = InventoryView::Sheet::Talent;
@@ -1335,12 +1352,18 @@ void InventoryPanel::drawCharacter(const InventoryView& v) {
 			const bool learnt = t.skill != 0 || (t.meaning == T::PERCENT && t.value > 0);
 			_canvas.text(12, ty, t.name, learnt ? TEXT : TEXT_DIM, ui::TEXT, ui::LEFT, 150, true);
 			_canvas.text(Canvas::W - 12, ty, buf, learnt ? GOLD : TEXT_DIM, ui::TEXT, ui::RIGHT, 150, true);
-			_canvas.fill(12, ty + 13, Canvas::W - 12, ty + 14, 0xFFFFFF14u);
-			ty += 15;
+			_canvas.fill(12, ty + 12, Canvas::W - 12, ty + 13, 0xFFFFFF14u);
+			ty += TALENT_ROW;
 			any = true;
 		}
 		if (!any) _canvas.text(Canvas::W / 2, ty + 10, tr("Умений пока нет"), TEXT_DIM, ui::TEXT, ui::CENTER, 0, true);
-		_canvas.text(Canvas::W / 2, Canvas::H - 16, tr("X или касание — характеристики"), TEXT_DIM, ui::TEXT, ui::CENTER, Canvas::W - 8, true);
+		const bool more = (u32(_talentPage) + 1) * per < s.talentCount;
+		if (s.talentCount > per) {
+			char pg[16];
+			snprintf(pg, sizeof(pg), "%u/%u", unsigned(_talentPage + 1), unsigned((s.talentCount + per - 1) / per));
+			_canvas.text(Canvas::W - 8, BARS_H + 6, pg, TEXT_DIM, ui::TEXT, ui::RIGHT, 0, true);
+		}
+		_canvas.text(Canvas::W / 2, Canvas::H - 16, more ? tr("X или касание — дальше") : tr("X или касание — характеристики"), TEXT_DIM, ui::TEXT, ui::CENTER, Canvas::W - 8, true);
 		return;
 	}
 	int y = BARS_H + 6;

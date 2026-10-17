@@ -218,13 +218,13 @@ const SpellWords kSpellWords[] = {
 
 const char* damageWord(int index) {
 	switch (index) {
-	case 0: return "Барьер";
-	case 1: return "Удар";
-	case 2: return "Рубящий";
-	case 3: return "Огонь";
-	case 4: return "Воздух";
-	case 5: return "Магия";
-	case 6: return "Колющий";
+	case 0: return tr("Барьер");
+	case 1: return tr("Удар");
+	case 2: return tr("Рубящий");
+	case 3: return tr("Огонь");
+	case 4: return tr("Воздух");
+	case 5: return tr("Магия");
+	case 6: return tr("Колющий");
 	default: return "";
 	}
 }
@@ -251,14 +251,14 @@ void spellNote(Game& g, const GameItemInfo& it, ItemEntry& e) {
 		for (int i = 0; i < 7; ++i)
 			if ((sp->damageType & (1 << i)) && k + 12 < sizeof(kinds)) k += size_t(snprintf(kinds + k, sizeof(kinds) - k, "%s%s", k ? "+" : "", damageWord(i)));
 	if (sp->damagePerLevel > 1 && kinds[0]) {
-		snprintf(e.noteHead, sizeof(e.noteHead), "%s: урон %ld за уровень заряда", kinds, static_cast<long>(sp->damagePerLevel));
+		snprintf(e.noteHead, sizeof(e.noteHead), tr("%s: урон %ld за уровень заряда"), kinds, static_cast<long>(sp->damagePerLevel));
 	} else if (sp->area) {
-		snprintf(e.noteHead, sizeof(e.noteHead), "Действует на всех вокруг");
+		snprintf(e.noteHead, sizeof(e.noteHead), "%s", tr("Действует на всех вокруг"));
 	} else if (sp->shoots) {
-		snprintf(e.noteHead, sizeof(e.noteHead), "Летит в цель");
+		snprintf(e.noteHead, sizeof(e.noteHead), "%s", tr("Летит в цель"));
 	}
-	if (words) snprintf(e.note, sizeof(e.note), "%s", words);
-	else snprintf(e.note, sizeof(e.note), "%s", sp->damagePerLevel > 1 ? "Наносит урон цели; чем дольше заряд, тем он сильнее." : "Действует на героя или цель за ману.");
+	if (words) snprintf(e.note, sizeof(e.note), "%s", tr(words));
+	else snprintf(e.note, sizeof(e.note), "%s", sp->damagePerLevel > 1 ? tr("Наносит урон цели; чем дольше заряд, тем он сильнее.") : tr("Действует на героя или цель за ману."));
 }
 
 // Wraps text to a width in pixels, into lines of at most `size` bytes. Returns how many.
@@ -1848,8 +1848,9 @@ void App::drawItemHud() {
 		hint("X", tr("Всю стопку"), e != nullptr);
 		hint("L R", chestSide ? tr("Рюкзак") : tr("Товар"), true);
 		hint("B", tr("Закрыть"), true);
-		char purse[64];
-		snprintf(purse, sizeof(purse), "%s: %ld", v.chest.currency[0] ? v.chest.currency : tr("Руда"), static_cast<long>(v.chest.gold));
+		char purse[96];
+		snprintf(purse, sizeof(purse), tr("%s: у вас %ld, у торговца %ld"), v.chest.currency[0] ? v.chest.currency : tr("Руда"), static_cast<long>(v.chest.gold),
+		         static_cast<long>(v.chest.traderGold));
 		if (e && e->price > 0) {
 			// (Under the thing that turns.)
 			char price[24];
@@ -1964,14 +1965,22 @@ void App::heroCycleWeapon() {
 	const int hi = heroIndex();
 	if (hi < 0) return;
 	Game& g = _npcs.game();
-	// The quick slots that hold something to fight with (food, potions and the rest are passed by).
-	int list[QUICK_SLOTS];
+	// The quick slots that hold something to fight with (food, potions and the rest are passed by) - and, fix214, the
+	// melee weapon and the bow worn even when they are not in a slot (ZL reached no bow that was not on a slot).
+	u32 list[QUICK_SLOTS + 2];
 	int n = 0;
-	for (int q = 0; q < QUICK_SLOTS; ++q) {
-		const u32 s = _quick[q];
-		if (s == NONE || g.itemCount(u32(hi), s) <= 0) continue;
+	const auto add = [&](u32 s) {
+		if (s == NONE || g.itemCount(u32(hi), s) <= 0) return;
+		for (int k = 0; k < n; ++k)
+			if (list[k] == s) return;
 		const GameItemInfo* it = g.itemInfo(s);
-		if (it && armsKind(kindOf(g, *it))) list[n++] = q;
+		if (it && armsKind(kindOf(g, *it))) list[n++] = s;
+	};
+	for (int q = 0; q < QUICK_SLOTS; ++q) add(_quick[q]);
+	{
+		const GameNpc& w0 = g.npc(u32(hi));
+		add(w0.melee);
+		add(w0.ranged);
 	}
 	if (!n) {
 		// fix202: nothing to fight with in the slots: the weapon worn (its fists only without one), in hand or away.
@@ -1988,11 +1997,11 @@ void App::heroCycleWeapon() {
 	if (cur == NONE) cur = w == WEAPON_MAG ? _spellItem : (w == WEAPON_BOW || w == WEAPON_CBOW) ? h.ranged : (w == WEAPON_1H || w == WEAPON_2H) ? h.melee : NONE;
 	int at = -1;
 	for (int k = 0; k < n; ++k)
-		if (_quick[list[k]] == cur) at = k;
+		if (list[k] == cur) at = k;
 	const bool empty = _hero.weapon() == WEAPON_NONE || _hero.weapon() == WEAPON_FIST;
 	for (int step = 1; step <= n; ++step) {
 		const int k = (at + step) % n;
-		const u32 s = _quick[list[k]];
+		const u32 s = list[k];
 		if (s == cur && !empty) continue; // (the one in hand)
 		if (_switchTo != NONE && s != _switchTo) {
 			_switchTo = s; // (pressed again while the hands empty: the next one waits instead)

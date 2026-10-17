@@ -817,6 +817,8 @@ void Npcs::planWay(NpcActor& a, int node) {
 	a.pathCount = a.pathAt = 0;
 	a.bestDist = 1e30f;
 	a.stuck = 0;
+	a.nudge = 0;
+	a.nudges = 0;
 	if (node < 0 || u32(node) >= _net.nodeCount()) return;
 	int start = a.atNode;
 	if (start < 0 || u32(start) >= _net.nodeCount() || distance(n.pos, _net.node(u32(start)).pos) > 150.0f)
@@ -883,7 +885,13 @@ bool Npcs::walkTo(NpcActor& a, const float target[3], float radius, float dt, bo
 	const float dx = target[0] - n.pos[0], dz = target[2] - n.pos[2];
 	const float d = sqrtf(dx * dx + dz * dz);
 	if (d < radius) return true;
-	const float want = atan2f(dx, dz), err = wrapAngle(want - n.yaw);
+	// fix215: round an obstacle: a few seconds off the straight line, one side and then the other.
+	float want = atan2f(dx, dz);
+	if (a.nudge > 0.0f) {
+		a.nudge -= dt;
+		want = wrapAngle(want + 1.0f * float(a.nudgeSide));
+	}
+	const float err = wrapAngle(want - n.yaw);
 	const bool run = a.walkMode != NpcActor::WALK;
 	if (a.phase != NpcActor::MOVING) {
 		// Facing away from where it is to go: turn on the spot first.
@@ -913,7 +921,18 @@ bool Npcs::walkTo(NpcActor& a, const float target[3], float radius, float dt, bo
 		a.stuck = 0;
 	} else {
 		a.stuck += dt;
-		if (a.stuck > (last ? 3.0f : 5.0f)) {
+		// (fix215: with the player looking on, a character stuck on something first tries a way round - up to three
+		// times, each side in turn - before it is put at its goal: that was a teleport in plain sight.)
+		const GameNpc& hero = _game.npc(_game.heroIndex());
+		const float hx = hero.pos[0] - n.pos[0], hz = hero.pos[2] - n.pos[2];
+		const bool seen = hero.world == n.world && hx * hx + hz * hz < 3500.0f * 3500.0f;
+		if (a.stuck > (last ? 3.0f : 5.0f) && seen && a.nudges < 3 && n.down == DOWN_NONE) {
+			++a.nudges;
+			a.nudge = 1.2f;
+			a.nudgeSide = i8(-a.nudgeSide);
+			a.stuck = 0;
+			a.bestDist = d;
+		} else if (a.stuck > (last ? 3.0f : 5.0f)) {
 			++_stats.snapped;
 			n.pos[0] = target[0];
 			n.pos[1] = target[1];

@@ -853,6 +853,9 @@ private:
 	u32 _showSymbol = 0xFFFFFFFFu;
 	void drawShowcase();
 	u32 _logStamp = 0;	float _hostileScan = 0;
+	bool _respawnPending = false; // fix214: A on the death screen: loaded at the start of the next frame
+	u8 _fontApplied = 255;     // fix214: the interface font the overlay was made with (Settings::interfaceFont)
+	void loadInterfaceFont();
 	u32 _invStamp = 0;         // what the view was made from (a hash)
 	u32 _equipVersion = 0;     // counts changes of what is worn
 	ItemStats _itemStats;

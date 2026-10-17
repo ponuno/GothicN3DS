@@ -149,6 +149,7 @@ void App::tradeView(const GameNpc& hero) {
 	v.currency[0] = 0;
 	const u32 money = g.tradeCurrency();
 	v.gold = money != NONE ? g.itemCount(u32(heroIndex()), money) : 0;
+	v.traderGold = money != NONE && partner >= 0 ? g.itemCount(u32(partner), money) : 0;
 	if (const GameItemInfo* mi = money != NONE ? g.itemInfo(money) : nullptr)
 		scriptText(g.text(mi->name ? mi->name : mi->description), v.currency, sizeof(v.currency));
 	if (partner < 0) return;

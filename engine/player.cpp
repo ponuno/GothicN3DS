@@ -73,7 +73,8 @@ bool Player::swim(const World& world, float dt) {
 	float y;
 	Vec3 n;
 	// Shore: a floor the player can stand on with the head above the water.
-	if (dive <= 0.0f && _diveWish <= 0.0f &&
+	// (fix214: not while the dive key is held - that stood the body up on the floor of shallow water: wish < 0 is down.)
+	if (dive <= 0.0f && _diveWish >= 0.0f &&
 	    world.rayDown({feet.x, max(feet.y, target) + cfg.stepHeight, feet.z}, cfg.stepHeight + 40.0f, y, n) &&
 	    y >= target && n.y >= cfg.minFloorNormal) {
 		feet.y = y;

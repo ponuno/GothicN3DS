@@ -69,7 +69,8 @@ bool extGlyph(u32 code, int size, G& out) {
 	if (lo >= int(gGame.h.glyphCount)) return false;
 	const FontGlyphRec& g = gGame.glyphs[lo];
 	if (g.size != size || g.code != code) return false;
-	out = {g.x, g.y + EXT_Y, g.w, g.h, g.left, g.top, g.advance};
+	// (fix214: a cell wider than the step to the next letter holds the neighbour's edge: only what the step covers is drawn.)
+	out = {g.x, g.y + EXT_Y, g.advance > 0 && g.w > g.advance ? int(g.advance) : int(g.w), g.h, g.left, g.top, g.advance};
 	return true;
 }
 

@@ -29,7 +29,9 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 23: the sun's shadow.
 // 24: the new grass.
 // 25: the light of torches and fires.
-constexpr u32 SETTINGS_VERSION = 25;
+// 26: English is the base language (a file of an older version that had Russian - the old default - gets English once).
+// 27: the font of the interface (the game's own or the built-in one).
+constexpr u32 SETTINGS_VERSION = 27;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -205,6 +207,7 @@ bool Settings::load(const char* path) {
 	if (h.version < 2) s.scheme = CONTROLS_CLASSIC;
 	if (h.version < 3) s.report = 0;
 	if (h.version < 18 && s.antialias == 1) s.antialias = 2; // (the old "on" is the full smoothing)
+	if (h.version < 26 && s.language == 0) s.language = 1; // (Lang: 0 Russian, 1 English)
 	s.sanitize();
 	s.chapter = 255; // (never kept: it follows the game)
 	*this = s;

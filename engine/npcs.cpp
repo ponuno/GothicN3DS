@@ -341,6 +341,11 @@ void Npcs::ground(NpcActor& a, const World& world, float above) {
 		if (a.swimming) {
 			n.pos[1] = surface - 125.0f;
 			// (fix209: no light of the ground below; the sky's)
+		} else if (depth > limit && n.down == DOWN_NONE && a.rig && a.rig->model.loaded()) {
+			// fix215: a body of a model without swimming clips (a beast in pursuit) is not left running along the bottom: it is
+			// borne on the water, as high as its legs would reach, if it is not too big to be (a troll wades).
+			const ModelHeader& mh = a.rig->model.header();
+			if (mh.bbMax[1] - mh.bbMin[1] < 220.0f) n.pos[1] = max(y, surface - 0.6f * (mh.bbMax[1] - mh.bbMin[1]));
 		}
 		if (wasSwimming != a.swimming) a.swimChanged = true;
 	}

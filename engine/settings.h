@@ -130,6 +130,8 @@ struct Settings {
 	// (fix168) The debug page's chapter slider: the game's chapter, kept level with it while the game runs; moved in the menu,
 	// the chapter is changed. 255: not yet known (a freshly read file) - nothing is done then.
 	u8 chapter = 255;
+	// Version 27 (fix214): the interface's font: 0 the built-in one, 1 the game's own (when the data has it).
+	u8 interfaceFont = 1;
 	// (fix184) The Barrier's thunder (Barrier::Thunder): 0 as in the game (MFX_Barriere_Ambient; else the far thunder), 1 near, 2 the long roll, 3 the game's
 	// lightning spell, 4 none. (At the end: an older file, shorter, keeps the default.)
 	u8 barrierThunder = 0;

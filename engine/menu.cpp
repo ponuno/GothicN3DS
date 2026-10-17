@@ -42,6 +42,7 @@ const char* const kAntialiasNotes[] = {"Без сглаживания", "Вдв�
 const char* const kSchemes[] = {"Консольная", "Классическая"};
 const char* const kSchemeNotes[] = {"Стик ведёт туда, куда указывает на экране", "Как в оригинале: камера всегда за спиной"};
 const char* const kBottom[] = {"Инвентарь", "Отчёт"};
+const char* const kFonts[] = {"Встроенный", "Игры"};
 const char* const kTimeFlow[] = {"Стоит", "Сутки за 24 мин", "Сутки за 1 ч", "Сутки за 2 ч"};
 const char* const kLanguages[] = {"Русский", "English", "Polski", "Deutsch"};
 const char* const kGfxPresets[] = {"Выкл", "Баланс", "Максимум", "Свой"};
@@ -124,6 +125,7 @@ const Item kControls[] = {
 };
 const Item kInterface[] = {
     {"Язык / Language", CHOICE, &Settings::language, kLanguages, 4, 0, 0, nullptr, 0, "Тексты игры берутся из её данных", nullptr},
+    {"Шрифт", CHOICE, &Settings::interfaceFont, kFonts, 2, 0, 0, nullptr, 0, "Буквы слиплись — выберите «Встроенный»", nullptr},
     {"Интерфейс в игре", TOGGLE, &Settings::hud, nullptr, 0, 0, 0, nullptr, 0, "Здоровье, цель, подсказки", nullptr},
     {"Показывать FPS", TOGGLE, &Settings::showFps, nullptr, 0, 0, 0, nullptr, 0, "Счётчик кадров сверху справа", nullptr},
     {"Нижний экран", CHOICE, &Settings::report, kBottom, 2, 0, 0, nullptr, 0, "Отчёт: цифры для проверки", nullptr},

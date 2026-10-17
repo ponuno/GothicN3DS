@@ -68,7 +68,10 @@ bool App::videoUpdate(const Input& in, float dt) {
 void App::renderVideo() {
 	const gfx::FrameDesc fd = blankFrame();
 	const int W = gfx::SCREEN_W, H = gfx::SCREEN_H;
-	const auto drawScreen = [&]() {
+	// fix214: depth for the films. The picture is a window into the screen: behind the glass in the middle (the
+	// left eye's copy a little to the left, the right eye's to the right), at the glass at its edges, which a dark
+	// frame holds at the screen's own depth. The slider sets how deep (0: flat, as before).
+	const auto drawScreen = [&](int eye) {
 		gfx::setPass(gfx::PASS_SKY);
 		if (!_ui.ready()) return;
 		_ui.rect(0, 0, W, H, 0x000000FFu);
@@ -78,15 +81,31 @@ void App::renderVideo() {
 			const float s = (float(W) / float(vw) < float(H) / float(vh)) ? float(W) / float(vw) : float(H) / float(vh);
 			const int dw = int(float(vw) * s), dh = int(float(vh) * s);
 			const int x0 = (W - dw) / 2, y0 = (H - dh) / 2;
-			_ui.picture(t, vw, vh, x0, y0, x0 + dw, y0 + dh, 0xFFFFFFFFu);
+			const float depth = eye == 0 ? 0.0f : float(eye) * clamp(_stereo, 0.0f, 1.0f) * 6.0f; // pixels, at the middle
+			if (depth == 0.0f || vw < 16) {
+				_ui.picture(t, vw, vh, x0, y0, x0 + dw, y0 + dh, 0xFFFFFFFFu);
+			} else {
+				const int strips = 16;
+				for (int k = 0; k < strips; ++k) {
+					const int u0 = vw * k / strips, u1 = vw * (k + 1) / strips;
+					const float mid = (float(k) + 0.5f) / float(strips) * 2.0f - 1.0f; // -1 .. 1 across
+					const float shift = depth * (1.0f - mid * mid);
+					const int sx0 = x0 + dw * k / strips + int(shift), sx1 = x0 + dw * (k + 1) / strips + int(shift) + 1;
+					_ui.pictureRegion(t, u0, 0, u1, vh, sx0, y0, sx1, y0 + dh, 0xFFFFFFFFu);
+				}
+				// The frame at the glass: the picture's shifted edges are covered.
+				const int m = int(fabsf(depth)) + 2;
+				_ui.rect(0, 0, x0 + m, H, 0x000000FFu);
+				_ui.rect(x0 + dw - m, 0, W, H, 0x000000FFu);
+			}
 		}
 		_ui.flush();
 	};
 	gfx::frameBegin(fd);
-	drawScreen();
+	drawScreen(gfx::stereoActive() ? -1 : 0);
 	if (gfx::stereoActive()) {
 		gfx::eyeBegin(fd);
-		drawScreen();
+		drawScreen(1);
 	}
 	gfx::frameEnd();
 }

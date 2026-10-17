@@ -12992,6 +12992,106 @@ func void INIT_WORLD() {
 	CHECK(g.itemCount(hero, ore) == 250);
 }
 
+// fix215: the people after the player's beating (the real scripts, G3_G1_SCRIPT): a digger beats the player down; what he
+// does when the player is down, and after the player gets up. Printed as a timeline; checks that he does not stand
+// frozen with the weapon out and is not put somewhere else.
+static void testG1Beaten() {
+	const char* file = getenv("G3_G1_SCRIPT");
+	if (!file) {
+		std::printf("  (no G3_G1_SCRIPT: skipped)\n");
+		return;
+	}
+	std::ifstream in(file);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	std::string source = ss.str() + R"(
+func void STARTUP_WORLD() {
+	Kapitel = 1;
+	Wld_InsertNpc(VLK_501_Buddler, "CAMP_SQUARE");
+};
+func void INIT_WORLD() {
+	B_InitMonsterAttitudes();
+	B_InitGuildAttitudes();
+};
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/g1beaten.pak";
+	try {
+		bakeLifeWorlds(source, path, worlds);
+	} catch (const std::exception& e) {
+		std::printf("  bake failed: %s\n", e.what());
+		CHECK(false);
+		return;
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 1;
+	app.settings().perception = 1;
+	app.settings().immortal = 0;
+	app.applySettings();
+	npcs.config().range = 20000.0f;
+	app.environment().timeOfDay = 12.0f;
+	const float dt = 1.0f / 30.0f;
+	const u32 sym = g.vm().find("VLK_501_BUDDLER");
+	u32 b = SCRIPT_NONE;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).symbol == sym) b = i;
+	CHECK(b != SCRIPT_NONE);
+	if (b == SCRIPT_NONE) return;
+	const u32 hero = g.heroIndex();
+	const auto actorOf = [&](u32 npc) -> const NpcActor* {
+		for (u32 k = 0; k < npcs.actorCount(); ++k)
+			if (npcs.actor(k).used && npcs.actor(k).npc == npc) return &npcs.actor(k);
+		return nullptr;
+	};
+	float maxJump = 0.0f;
+	float last[3] = {g.npc(b).pos[0], g.npc(b).pos[1], g.npc(b).pos[2]};
+	const auto run = [&](float seconds, const char* label) {
+		for (int i = 0; i < int(seconds / dt); ++i) {
+			app.update(Input {}, dt);
+			const GameNpc& n = g.npc(b);
+			const float dx = n.pos[0] - last[0], dz = n.pos[2] - last[2];
+			maxJump = std::max(maxJump, std::sqrt(dx * dx + dz * dz));
+			last[0] = n.pos[0];
+			last[1] = n.pos[1];
+			last[2] = n.pos[2];
+			if (i % 30 == 29) {
+				const NpcActor* a = actorOf(b);
+				const GameNpc& h = g.npc(hero);
+				const float hx = h.pos[0] - n.pos[0], hz = h.pos[2] - n.pos[2];
+				std::printf("    %-14s %-28s weapon %d att %d dist %5.0f hero down %d hp %d state %s\n", label, a ? npcs.doing(*a) : "(no actor)", int(n.weapon),
+				            g.attitude(b, hero), double(std::sqrt(hx * hx + hz * hz)), int(h.down), int(g.hitPoints(h)), a ? npcs.stateName(a->state) : "-");
+			}
+		}
+	};
+	const GameNpc& bn = g.npc(b);
+	app.teleport({bn.pos[0], bn.pos[1] + 5.0f, bn.pos[2] + 180.0f});
+	run(3.0f, "met");
+	for (int k = 0; k < 2; ++k) {
+		npcs.strike(hero, b, false);
+		run(1.0f, "struck");
+	}
+	run(2.0f, "fighting");
+	// The beating: the hero is brought low.
+	{
+		GameNpc& h = g.npcMut(hero);
+		g.setAttribute(h, 0, 12);
+	}
+	for (int k = 0; k < 40 && !app.hero().down(); ++k) run(1.0f, "beating");
+	std::printf("  hero down after the beating: %d\n", int(app.hero().down()));
+	run(10.0f, "hero down");
+	maxJump = 0.0f;
+	run(30.0f, "after");
+	const NpcActor* a = actorOf(b);
+	std::printf("  longest step in 20 s after: %.0f cm; weapon %d; doing %s\n", double(maxJump), int(g.npc(b).weapon), a ? npcs.doing(*a) : "-");
+	CHECK(maxJump < 400.0f);
+}
+
 static void testG1Calm() {
 	const char* file = getenv("G3_G1_SCRIPT");
 	if (!file) {
@@ -14682,6 +14782,7 @@ int main(int argc, char** argv) {
              {"npcai", testNpcAi},
 	             {"beast turn", testBeastTurn},
 	             {"g1 beasts", testG1Beasts}, {"g1 calm", testG1Calm}, {"g1 hunter", testG1Hunter},
+    {"g1 beaten", testG1Beaten},
              {"npc items", testNpcItems},
              {"corpses", testCorpses},
 	             {"settings", testSettings},

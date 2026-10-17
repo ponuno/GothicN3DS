@@ -246,6 +246,10 @@ private:
 	u32 _talkVersion = 0xFFFFFFFFu;
 	int _topicY[InventoryView::DIARY_TOPICS] = {}; // where each topic was drawn (for taps)
 	u32 _selected = 0xFFFFFFFFu;
+	u8 _talentPage = 0;         // fix214: which page of the talents (more than a page of them: X turns the page)
+	static constexpr int TALENT_ROW = 14, TALENT_TOP = BARS_H + 26;
+	static int talentsPerPage() { return (Canvas::H - 22 - TALENT_TOP) / TALENT_ROW; }
+	void turnTalents(u32 count);
 	bool _talentsShown = false; // the character page shows the talents instead of the numbers (X, or a tap)
 	u32 _shown[INVENTORY_MAX] = {};
 	u32 _shownCount = 0;

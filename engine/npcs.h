@@ -308,6 +308,9 @@ struct NpcActor {
 	float target[3] = {0, 0, 0};
 	float stuck = 0;       // seconds without getting closer
 	float bestDist = 0;
+	float nudge = 0;       // fix215: seconds a way round an obstacle is still tried (a turn off the straight line)
+	i8 nudgeSide = 1;
+	u8 nudges = 0;         // ... and how many such tries this walk has had
 	bool carried = false;  // animations move it (a walk, and the steps that end one)
 	float settle = 0;      // seconds the steps that end a walk still take
 	// How it holds itself.

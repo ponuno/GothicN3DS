@@ -163,6 +163,7 @@ struct InventoryView {
 		bool lock = false;       // its lock is being picked
 		bool trade = false;      // it is a trader's wares (the trade page), not a chest
 		i32 gold = 0;            // trade: the money the character has
+		i32 traderGold = 0;      // fix214: ... and what the trader has (what he can pay for what is sold to him)
 		char currency[24] = "";   // ... and what it is called (the item's name in the scripts)
 		char name[40] = "";
 		u32 count = 0;

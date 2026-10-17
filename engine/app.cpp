@@ -114,13 +114,7 @@ bool App::init(const char* pakPath, const char* worldName) {
 	startVideo(); // fix201
 	// The overlay (menus, the HUD): without it the game still runs.
 	// The game's own font, if the archive has it (and Ui::init() puts it in the texture).
-	ui::clearGameFont();
-	if (const PakEntry* fe = _pak.find("font/ui")) {
-		if (void* fd = _pak.readAlloc(*fe)) {
-			ui::setGameFont(fd, fe->size);
-			free(fd);
-		}
-	}
+	loadInterfaceFont();
 	_ui.init();
 	// The bottom screen's inventory (a picture of its own, drawn by the processor).
 	_panel.init();
@@ -564,6 +558,13 @@ void App::checkPortals() {
 
 void App::update(const Input& given, float dt) {
 	if (videoUpdate(given, dt)) return; // fix201: the game stands still while a video plays
+	if (_respawnPending) {
+		_respawnPending = false;
+		char path[200];
+		slotPath(latestQuickSlot(), path, sizeof(path));
+		respawn(path);
+		return;
+	}
 	_playSeconds += double(dt);
 	collisionStatsReset(); // (what collisionStats() says is one frame's worth)
 	if (_npcs.loaded()) _settings.chapter = u8(clamp<i32>(_npcs.game().chapterNumber(), 0, 6)); // (the menu's chapter slider follows the game)
@@ -1659,9 +1660,9 @@ void App::fightInput(const Input& in, float dt) {
 			_deadTime += dt;
 			if (in.confirm && _deadTime > 1.5f) {
 				// (fix208: the newer of the quick save and the one made on leaving.)
-				char path[200];
-				slotPath(latestQuickSlot(), path, sizeof(path));
-				respawn(path);
+				// (fix214: not here, in the middle of the frame - the world may be loaded anew, and the rest of the frame
+				// would go on with the old one's hero, ledges and target: the next frame begins with it.)
+				_respawnPending = true;
 			}
 		} else if ((_downTime -= dt) <= 0.0f) {
 			// Come to: up again, with the hit points the blow left.
@@ -1941,7 +1942,13 @@ void App::respawn(const char* statePath) {
 		h.down = DOWN_NONE;
 		_npcs.game().setAttribute(h, 0, max(heroHitPointsMax(), i32(1)));
 	}
-	if (!(statePath && loadState(statePath))) {
+	bool loaded = false;
+	if (statePath) {
+		progressBegin(tr("Загрузка…"), tr("Быстрое сохранение"), nullptr, true);
+		loaded = loadState(statePath);
+		progressEnd();
+	}
+	if (!loaded) {
 		const WorldHeader& wh = _world.header();
 		_cam.yaw = wh.spawnYaw;
 		teleport({wh.spawnPos[0], wh.spawnPos[1], wh.spawnPos[2]});
@@ -1951,7 +1958,27 @@ void App::respawn(const char* statePath) {
 
 // ---- settings and the menu ----
 
+// The interface's font: the game's own if the data has it and the settings want it, else the built-in one.
+void App::loadInterfaceFont() {
+	ui::clearGameFont();
+	_fontApplied = _settings.interfaceFont;
+	if (!_settings.interfaceFont) return;
+	if (const PakEntry* fe = _pak.find("font/ui")) {
+		if (void* fd = _pak.readAlloc(*fe)) {
+			ui::setGameFont(fd, fe->size);
+			free(fd);
+		}
+	}
+}
+
 void App::applySettings() {
+	if (_fontApplied != 255 && _fontApplied != _settings.interfaceFont && _ui.ready()) {
+		_ui.release();
+		loadInterfaceFont();
+		_ui.init();
+		_panel.invalidate();
+		_invStamp = 0;
+	}
 	_settings.sanitize();
 	// (fix168) The chapter slider moved: the chapter is changed (the scripts' own change if they have it).
 	if (_settings.chapter != 255 && _npcs.loaded()) {

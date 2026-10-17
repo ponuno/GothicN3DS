@@ -46,6 +46,9 @@ u8 kindOf(const Game& g, const GameItemInfo& it) {
 	if (kat("ITEM_KAT_LIGHT", 1u << 8)) return IK_LIGHT;
 	if (kat("ITEM_KAT_RUNE", 1u << 9)) return (fl & g.constant("ITEM_MULTI", 1 << 21)) ? IK_SCROLL : IK_RUNE;
 	if (kat("ITEM_KAT_MAGIC", 0x80000000u)) return (fl & g.constant("ITEM_AMULET", 1 << 22)) ? IK_AMULET : IK_RING;
+	// (fix193) The real scripts do not mark a torch ITEM_KAT_LIGHT (ItLsTorch is a plain "none" multi thing): it is a torch
+	// by its look, "itlstorch" and "itlstorchburning", then.
+	if (has(g.text(it.visual), "torch")) return IK_LIGHT;
 	return IK_MISC;
 }
 

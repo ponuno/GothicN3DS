@@ -12,6 +12,7 @@
 #include "g3ds/game.h"
 #include "g3ds/pak.h"
 #include "script.h"
+#include "ikarus.h"
 
 namespace g3 {
 struct ByteSink;
@@ -264,6 +265,16 @@ public:
 	bool adopt(u8* image, u32 size);
 	void release();
 	bool loaded() const { return _vm.loaded(); }
+	// fix195: Ikarus / LeGo for scripts that have them (inactive for the original game's).
+	Ikarus& ikarus() { return _ikarus; }
+	const Ikarus& ikarus() const { return _ikarus; }
+	// fix195: before save(): the scripts' own saving (LeGo's hook of the original's save: its PermMem into a file that
+	// save() carries). After restore(): what the original does after loading - LeGo's hook of reading a save, then
+	// INIT_GLOBAL (only for scripts with Ikarus: the original game's need neither).
+	void prepareSave();
+	void afterRestore();
+	// The scripts' heap at most (Ikarus' MEM_Alloc).
+	static constexpr u32 IKARUS_HEAP = 6u << 20;
 
 	// Entering the world the scripts call `script` ("WORLD"): its start-up
 	// runs the first time, its INIT every time, and everybody is put where
@@ -738,6 +749,9 @@ private:
 	u32 _tradeCurrency = SCRIPT_NONE;
 	float _tradeMultiplier = 1.0f;
 	ScriptVm _vm;
+	// fix195: Ikarus / LeGo, for the scripts that have them (ikarus.h): after _vm, so that it goes first.
+	Ikarus _ikarus;
+	bool _worldEntered = false; // a world has been entered (the next one is a change of worlds)
 	GameNpc* _npcs = nullptr;
 	u32 _npcCount = 0, _npcCap = 0;
 	GameRoutine* _routines = nullptr;

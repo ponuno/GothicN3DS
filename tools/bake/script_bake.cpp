@@ -5,11 +5,14 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <iterator>
 #include <stdexcept>
 
 namespace g3 {
 
 namespace {
+
+using i64 = long long;
 
 template <class T> void append(std::vector<u8>& out, const T& v) {
 	const u8* p = reinterpret_cast<const u8*>(&v);
@@ -22,7 +25,221 @@ void pad4(std::vector<u8>& out) {
 
 u32 elementCount(const SrcSymbol& s) { return s.count ? s.count : 1u; }
 
+std::string upperName(const std::string& n) {
+	std::string up = n;
+	for (char& c : up) c = char(toupper((unsigned char)c));
+	return up;
+}
+
+// fix195: Ikarus' loops, rewritten into the code as Ikarus rewrites them itself the first time they run
+// (MEMINT_PrepareLoopsAndJumps): the call of `while` becomes a conditional jump to the loop's end, `end` a jump back
+// to the condition, `break` / `continue` jumps; `repeat(var, limit)` and its `end` become the port's OP_XREPEAT /
+// OP_XNEXT (g3ds/script.h); MEM_Label(x) disappears and MEM_Goto(x) jumps to it. Every rewritten instruction keeps
+// its length, so no address in the code moves. Returns a line for the report.
 } // namespace
+
+IkarusLoops rewriteIkarusLoops(const SrcScript& script, std::vector<u8>& code, std::vector<ScriptLoop>& loops) {
+	IkarusLoops r;
+	const u32 n = u32(script.symbols.size());
+	std::map<std::string, u32> byName;
+	for (u32 i = 0; i < n; ++i)
+		if (!script.symbols[i].name.empty()) byName.emplace(script.symbols[i].name, i);
+	const auto sym = [&](const char* name) -> i64 {
+		const auto it = byName.find(name);
+		return it == byName.end() ? -1 : i64(it->second);
+	};
+	const auto funcAddr = [&](const char* name) -> i64 {
+		const i64 k = sym(name);
+		if (k < 0) return -1;
+		const SrcSymbol& f = script.symbols[size_t(k)];
+		return f.type == SCRIPT_FUNC && f.isConst && !f.external && f.address < code.size() ? i64(f.address) : -1;
+	};
+	const i64 aWhile = funcAddr("WHILE"), aRepeat = funcAddr("REPEAT"), aLabel = funcAddr("MEM_LABEL"), aGoto = funcAddr("MEM_GOTO");
+	const i64 sEnd = sym("END"), sBreak = sym("BREAK"), sContinue = sym("CONTINUE");
+	if (aWhile < 0 && aRepeat < 0 && aGoto < 0) return r;
+	// The code of each function: from its address to the next one's.
+	std::map<u32, u32> starts; // address -> symbol
+	for (u32 i = 0; i < n; ++i) {
+		const SrcSymbol& f = script.symbols[i];
+		const bool hasCode = (f.type == SCRIPT_FUNC && f.isConst && !f.external && !f.member) || f.type == SCRIPT_PROTOTYPE ||
+		                     (f.type == SCRIPT_INSTANCE && f.isConst);
+		if (hasCode && f.address < code.size()) starts.emplace(f.address, i);
+	}
+	const auto problem = [&](const std::string& what) {
+		if (!r.problems++) r.firstProblem = what;
+	};
+	struct Ins {
+		u32 pos;
+		u8 op;
+		u32 operand;
+	};
+	const auto u32at = [&](u32 at) {
+		u32 v;
+		std::memcpy(&v, code.data() + at, 4);
+		return v;
+	};
+	const auto put = [&](u32 at, u8 op, u32 operand) {
+		code[at] = op;
+		std::memcpy(code.data() + at + 1, &operand, 4);
+	};
+	// What an instruction does to the height of the stack (for finding where a loop's condition begins).
+	const auto delta = [&](const Ins& in) -> int {
+		switch (in.op) {
+		case OP_PUSHI:
+		case OP_PUSHV:
+		case OP_PUSHVI:
+		case OP_PUSHVV: return 1;
+		case OP_MOVI:
+		case OP_MOVS:
+		case OP_MOVSS:
+		case OP_MOVVF:
+		case OP_MOVF:
+		case OP_MOVVI:
+		case OP_ADDMOVI:
+		case OP_SUBMOVI:
+		case OP_MULMOVI:
+		case OP_DIVMOVI: return -2;
+		case OP_PLUS:
+		case OP_NEGATE:
+		case OP_NOT:
+		case OP_CMPL:
+		case OP_NOP:
+		case OP_GMOVI:
+		case OP_B: return 0;
+		case OP_BZ: return -1;
+		case OP_BL:
+		case OP_BE: {
+			u32 f = SCRIPT_NONE;
+			if (in.op == OP_BE)
+				f = in.operand;
+			else {
+				const auto it = starts.find(in.operand);
+				if (it != starts.end()) f = it->second;
+			}
+			if (f >= n) return 0;
+			const SrcSymbol& fs = script.symbols[f];
+			return (fs.hasReturn ? 1 : 0) - int(fs.count);
+		}
+		default: return in.op <= OP_GTE ? -1 : 0; // the binary operators
+		}
+	};
+	for (auto it = starts.begin(); it != starts.end(); ++it) {
+		const auto next = std::next(it);
+		const u32 begin = it->first, end = next == starts.end() ? u32(code.size()) : next->first;
+		std::vector<Ins> ins;
+		for (u32 at = begin; at < end;) {
+			const u8 op = code[at];
+			const u32 size = scriptOpSize(op);
+			if (at + size > end) break;
+			ins.push_back({at, op, size >= 5 ? u32at(at + 1) : 0u});
+			at += size;
+		}
+		const std::string fname = script.symbols[it->second].name;
+		struct Loop {
+			bool repeat;
+			u32 id;          // repeat: its ScriptLoop
+			u32 cont;        // while: the condition's first instruction
+			std::vector<u32> toEnd;   // operand positions to set to the end
+			std::vector<u32> toCont;  // repeat: operand positions to set to the `end` instruction
+		};
+		std::vector<Loop> stack;
+		std::map<u64, u32> labels;                     // (op, operand) of the label's push -> where it is
+		std::vector<std::pair<u32, u64>> gotos;        // operand position of the jump, label key
+		for (size_t i = 0; i < ins.size(); ++i) {
+			const Ins& in = ins[i];
+			// `end` / `break` / `continue` as values, not statements (LeGo's foreach callbacks: return continue;):
+			// what comes next takes them.
+			const u8 nextOp = i + 1 < ins.size() ? ins[i + 1].op : u8(OP_RSR);
+			const bool returns = script.symbols[it->second].type == SCRIPT_FUNC && script.symbols[it->second].hasReturn;
+			const bool asValue = (nextOp == OP_RSR && returns) || nextOp <= OP_GTE || (nextOp >= OP_MOVS && nextOp <= OP_MOVVI);
+			if (in.op == OP_BL && aWhile >= 0 && in.operand == u32(aWhile)) {
+				// The condition: the instructions before the call that push its one argument (and the
+				// setting of the current object a member of it needs).
+				int balance = 0;
+				i64 start = -1;
+				for (i64 j = i64(i) - 1; j >= 0; --j) {
+					balance += delta(ins[size_t(j)]);
+					if (balance == 1) {
+						start = j;
+						break;
+					}
+				}
+				while (start > 0 && ins[size_t(start - 1)].op == OP_GMOVI) --start;
+				if (start < 0) {
+					problem("a while in " + fname + " whose condition was not found");
+					continue;
+				}
+				put(in.pos, OP_BZ, 0);
+				stack.push_back({false, 0, ins[size_t(start)].pos, {in.pos + 1}, {}});
+				++r.whiles;
+			} else if (in.op == OP_BL && aRepeat >= 0 && in.operand == u32(aRepeat)) {
+				const u32 id = u32(loops.size());
+				loops.push_back({in.pos + 5, 0});
+				put(in.pos, OP_XREPEAT, id);
+				stack.push_back({true, id, 0, {}, {}});
+				++r.repeats;
+			} else if (in.op == OP_PUSHV && sEnd >= 0 && in.operand == u32(sEnd) && !asValue) {
+				if (stack.empty()) {
+					problem("an end outside of a loop in " + fname);
+					continue;
+				}
+				Loop l = stack.back();
+				stack.pop_back();
+				const u32 after = in.pos + 5;
+				if (l.repeat) {
+					put(in.pos, OP_XNEXT, l.id);
+					loops[l.id].end = after;
+					for (u32 at : l.toCont) std::memcpy(code.data() + at, &in.pos, 4);
+				} else {
+					put(in.pos, OP_B, l.cont);
+				}
+				for (u32 at : l.toEnd) std::memcpy(code.data() + at, &after, 4);
+				++r.ends;
+			} else if (in.op == OP_PUSHV && sBreak >= 0 && in.operand == u32(sBreak) && !asValue) {
+				if (stack.empty()) {
+					problem("a break outside of a loop in " + fname);
+					continue;
+				}
+				put(in.pos, OP_B, 0);
+				stack.back().toEnd.push_back(in.pos + 1);
+				++r.breaks;
+			} else if (in.op == OP_PUSHV && sContinue >= 0 && in.operand == u32(sContinue) && !asValue) {
+				if (stack.empty()) {
+					problem("a continue outside of a loop in " + fname);
+					continue;
+				}
+				Loop& l = stack.back();
+				put(in.pos, OP_B, l.repeat ? 0u : l.cont);
+				if (l.repeat) l.toCont.push_back(in.pos + 1);
+				++r.continues;
+			} else if (in.op == OP_BL && (aLabel >= 0 || aGoto >= 0) &&
+			           (in.operand == u32(aLabel) || in.operand == u32(aGoto)) && i > 0 &&
+			           (ins[i - 1].op == OP_PUSHV || ins[i - 1].op == OP_PUSHI)) {
+				const Ins& arg = ins[i - 1];
+				const u64 key = (u64(arg.op) << 32) | arg.operand;
+				if (in.operand == u32(aLabel)) {
+					put(arg.pos, OP_B, in.pos + 5); // (over the call: the label is no code)
+					labels[key] = in.pos + 5;
+					++r.labels;
+				} else {
+					put(arg.pos, OP_B, 0);
+					gotos.push_back({arg.pos + 1, key});
+					++r.gotos;
+				}
+			}
+		}
+		if (!stack.empty()) problem("a loop without its end in " + fname);
+		for (const auto& [at, key] : gotos) {
+			const auto l = labels.find(key);
+			if (l == labels.end()) {
+				problem("a MEM_Goto to no label in " + fname);
+				continue;
+			}
+			std::memcpy(code.data() + at, &l->second, 4);
+		}
+	}
+	return r;
+}
 
 int SrcScript::find(const std::string& name) const {
 	const u32 h = hashName(name.c_str());
@@ -71,10 +288,14 @@ std::vector<u8> bakeScript(const SrcScript& script, ScriptBakeResult& result) {
 
 	bool ikarus = false;
 	for (const auto& sy : script.symbols) {
-		std::string up = sy.name;
-		for (char& c : up) c = char(toupper((unsigned char)c));
+		const std::string up = upperName(sy.name);
 		if (up == "IKARUS_VERSION" || up == "MEM_INITALL") ikarus = true;
 	}
+	// fix195: Ikarus' loops become jumps (and the port's two loop instructions).
+	std::vector<u8> code = script.code;
+	std::vector<ScriptLoop> loops;
+	IkarusLoops ikLoops;
+	if (ikarus) ikLoops = rewriteIkarusLoops(script, code, loops);
 	for (u32 i = 0; i < n; ++i) {
 		SrcSymbol s = script.symbols[i];
 		s.member = isMember[i] != 0;
@@ -101,13 +322,15 @@ std::vector<u8> bakeScript(const SrcScript& script, ScriptBakeResult& result) {
 			}
 		}
 		o.type = u8(s.type);
+		// fix195: only what runs machine code of the original (ASM_*, CALL_*) is skipped; the engine stands in for
+		// Ikarus' memory functions (engine/ikarus.cpp), and the rest of Ikarus runs as it is.
 		bool nulled = false;
 		if (ikarus && s.type == SCRIPT_FUNC && !s.external && !s.member && s.isConst) {
-			std::string up = s.name;
-			for (char& c : up) c = char(toupper((unsigned char)c));
-			static const char* const pre[] = {"MEM_", "MEMINT_", "ASM_", "ASMINT_", "CALL_", "CALLINT_"};
+			const std::string up = upperName(s.name);
+			static const char* const pre[] = {"ASM_", "ASMINT_", "CALL_", "CALLINT_"};
 			for (const char* p : pre)
 				if (up.compare(0, strlen(p), p) == 0) nulled = true;
+			if (up == "ASM") nulled = true;
 		}
 		o.flags = u8((nulled ? SCRIPTF_NULLED : 0) | (s.isConst ? SCRIPTF_CONST : 0) | (s.hasReturn ? SCRIPTF_RETURN : 0) | (s.member ? SCRIPTF_MEMBER : 0) |
 		             (s.external ? SCRIPTF_EXTERNAL : 0));
@@ -268,6 +491,7 @@ std::vector<u8> bakeScript(const SrcScript& script, ScriptBakeResult& result) {
 	h.instanceSlots = instanceSlots;
 	h.externalCount = externals;
 	h.stateCount = u32(states.size());
+	h.loopCount = u32(loops.size());
 	if (externals >= (1u << 16)) throw std::runtime_error("the script has too many externals");
 
 	std::vector<u8> out;
@@ -275,11 +499,12 @@ std::vector<u8> bakeScript(const SrcScript& script, ScriptBakeResult& result) {
 	for (const ScriptSymbol& s : symbols) append(out, s);
 	for (const ScriptFunction& f : functions) append(out, f);
 	for (const ScriptState& st : states) append(out, st);
+	for (const ScriptLoop& l : loops) append(out, l);
 	for (i32 v : data) append(out, v);
 	for (u32 v : stringOffsets) append(out, v);
 	out.insert(out.end(), stringPool.begin(), stringPool.end());
 	pad4(out);
-	out.insert(out.end(), script.code.begin(), script.code.end());
+	out.insert(out.end(), code.begin(), code.end());
 	pad4(out);
 
 	result.symbols = n;
@@ -312,6 +537,14 @@ std::vector<u8> bakeScript(const SrcScript& script, ScriptBakeResult& result) {
 	if (relaid) {
 		std::snprintf(buf, sizeof(buf), "scripts: %u of %u class members are laid out differently than the file says (harmless)\n",
 		              relaid, members);
+		result.report += buf;
+	}
+	if (ikarus) {
+		std::snprintf(buf, sizeof(buf),
+		              "scripts: Ikarus: loops rewritten into jumps: %u while, %u repeat, %u end, %u break, %u continue, %u labels, %u "
+		              "gotos%s%s\n",
+		              ikLoops.whiles, ikLoops.repeats, ikLoops.ends, ikLoops.breaks, ikLoops.continues, ikLoops.labels, ikLoops.gotos,
+		              ikLoops.problems ? "; trouble: " : "", ikLoops.problems ? ikLoops.firstProblem.c_str() : "");
 		result.report += buf;
 	}
 	for (const std::string& note : script.notes) result.report += "scripts: " + note + "\n";

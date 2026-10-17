@@ -18,6 +18,7 @@ constexpr u32 SAVE_VERSION = 1;
 constexpr u32 MAX_STRING_MEMBERS = 96;
 constexpr u32 LATE_MAGIC = 0x4554414Cu; // "LATE"
 constexpr u32 OVERLAY_MAGIC = 0x534C564Fu; // "OVLS"
+constexpr u32 IKARUS_FILES = 0x52414B49u; // "IKAR" (fix195)
 
 // The flags at the end of a character's record (0 for a record of an older save).
 u8 lateFlags(const ByteSource& r) {
@@ -176,6 +177,28 @@ void Game::save(ByteSink& out) const {
 		out.u32v(_triggerKept[i].index);
 		out.u32v(_triggerKept[i].value);
 	}
+	// fix195: the files of Ikarus / LeGo (its PermMem, written by prepareSave()); after the triggers.
+	if (_ikarus.active()) {
+		out.u32v(IKARUS_FILES);
+		_ikarus.saveFiles(out);
+	}
+}
+
+void Game::prepareSave() {
+	if (!_ikarus.active()) return;
+	// LeGo reads the slot at EBP + oCSavegameManager__SetAndWriteSavegame_bp_offset; the slot is 1 here (the file goes
+	// into this save, whichever slot that is).
+	const u32 off = _vm.find("OCSAVEGAMEMANAGER__SETANDWRITESAVEGAME_BP_OFFSET");
+	const u32 bp = off != SCRIPT_NONE && _vm.symbol(off).type == SCRIPT_INT ? u32(_vm.getInt(off)) : 60u;
+	_ikarus.setSlot(1);
+	_ikarus.fire("OCSAVEGAMEMANAGER__SETANDWRITESAVEGAME", 0, 0, bp, 1);
+}
+
+void Game::afterRestore() {
+	if (!_ikarus.active()) return;
+	_ikarus.setSlot(1);
+	_ikarus.fire("CGAMEMANAGER__READ_SAVEGAME", 4, 1);
+	runIfPresent("INIT_", "GLOBAL");
 }
 
 bool Game::restore(ByteSource& in) {
@@ -299,6 +322,14 @@ bool Game::restore(ByteSource& in) {
 				const u32 index = in.u32v(), value = in.u32v();
 				setTriggerState(world, index, value);
 			}
+		}
+	}
+	// fix195: Ikarus / LeGo's files (older saves end before).
+	if (in.pos + 4 <= in.size && _ikarus.active()) {
+		ByteSource at = in;
+		if (at.u32v() == IKARUS_FILES) {
+			in = at;
+			if (!_ikarus.loadFiles(in)) in.bad = true;
 		}
 	}
 	++_itemsVersion;

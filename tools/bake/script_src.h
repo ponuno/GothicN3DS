@@ -64,6 +64,15 @@ struct ScriptBakeResult {
 // script that cannot be baked.
 std::vector<u8> bakeScript(const SrcScript& script, ScriptBakeResult& result);
 
+// fix195: Ikarus' loops (while / repeat / end / break / continue, MEM_Label / MEM_Goto) rewritten into `code` (the
+// script's, the same length) as jumps and the port's loop instructions, whose table goes into `loops`. bakeScript
+// does it for a script that has Ikarus; for the tests and tools.
+struct IkarusLoops {
+	u32 whiles = 0, repeats = 0, ends = 0, breaks = 0, continues = 0, labels = 0, gotos = 0, problems = 0;
+	std::string firstProblem;
+};
+IkarusLoops rewriteIkarusLoops(const SrcScript& script, std::vector<u8>& code, std::vector<ScriptLoop>& loops);
+
 // The same script as a compiled Daedalus file, as the game's own compiler
 // writes them. For the tests: it is what the importer and the reference
 // interpreter read.

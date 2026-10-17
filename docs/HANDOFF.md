@@ -1801,5 +1801,76 @@ fix164 (Y лук, ZL магия) и fix165 (парирование на D-Pad в
 - **Проверить на консоли:** рык при развороте на 9–11 м. Если тихо или нет: (1) прислать новый `bake.log` (строки `threat sounds` у scavenger/wolf/molerat), (2) отчёт звуков с консоли (раздел «нет в архиве»). Тогда имя настоящего звука видно и подставляется точно.
 - Тест `beast turn`: запасные имена не содержат `.MDS` и начинаются с `SCAVENGER_WARN`.
 
-## fix193 — враги не атакуют героя
-См. docs/HANDOFF_enemies_fix193.md: не воспроизведено на настоящих скриптах G1; в бою действие в руках не обрывается (как до fix190); счётчик обрывов в строке отладки.
+## fix194 — «New Game» в меню Archolos; классификация жалоб в отчёте (17.10.2026)
+
+- **Меню.** В Archolos пункт `MENUITEM_MAIN_NEWGAME` не закрывает меню, а открывает подменю `MENU_GAMESTART_CONFIRM` («Are you sure? Yes / No»); «Yes» — `CLOSE NEW_GAME`. Стартовое меню (fix189) не узнавало такое действие и показывало пункт недоступным. Теперь `engine/start_menu.cpp` (`subMenuStartsGame`) ищет `NEW_GAME` на одно-два подменю вглубь, в крайнем случае по имени пункта (`…NEW_GAME`/`…NEWGAME`). Проверено на `MENU.DAT` Archolos из `data.pak` пользователя. Подменю подтверждения не показывается — сразу новая игра.
+- В `bake.log` строка `start menu items (action:argument): …` — что делает каждый пункт по скрипту.
+- `libraryOf` (`populate.cpp`): SB*, `_HT_*`, `_PM_*`, `VIEWPTR_*`, `TIMER`, `CC_*` — LeGo; `STR_*`, `ZERROR_*`, `_^`, `_@` — Ikarus. Раньше 27 тыс. жалоб Archolos числились за «игрой/модом».
+- Обход до обновления: держать L при запуске — новая игра без меню.
+
+## fix195 — Ikarus и LeGo на движке (этапы 1–2 плана Archolos; 17.10.2026; на консоли не проверялось)
+
+План и исследование — в проекте: `claude/ARCHOLOS_PLAN.md`, `claude/IKARUS_LEGO_UNION_RESEARCH.md`.
+
+**Итог на скриптах Archolos** (запечённый образ из `data.pak` пользователя, старт всех четырёх миров на ПК стендом `ikbench`, см. ниже): обращений к членам без объекта **27 234 → 63**, жалоб 150 → **0**, прерванных вызовов 0. 146 функций Ikarus/LeGo выполняет движок. Куча Ikarus на старте — 1,15 МБ. LeGo-кадр (`_FF_Hook`) — ≈ 8 тыс. инструкций и ≈ 560 вызовов движка за кадр. Сохранение и загрузка проходят: LeGo пишет PermMem в свой «файл», файл едет в сохранении, после загрузки LeGo его читает.
+
+**`data.pak` нужно перепечь** (образ скриптов версии 3: циклы Ikarus переписаны). Старый образ (версия 2) движок принимает, но без переписанных циклов `while`/`repeat` Ikarus в нём работают неправильно.
+
+### Как устроено
+
+- **Циклы — в пекаре** (`tools/bake/script_bake.cpp`, `rewriteIkarusLoops`). Как сам Ikarus при первом выполнении (`MEMINT_PrepareLoopsAndJumps`), только заранее:
+  - вызов `while` → условный переход на конец, `end` → переход к условию (начало условия находится обратным проходом по высоте стека, вместе с `GMOVI` члена);
+  - `break`/`continue` → переходы;
+  - `repeat(var, limit)` и его `end` → собственные инструкции `OP_XREPEAT`/`OP_XNEXT` (5 байт, как вызов) и таблица `ScriptLoop` в образе;
+  - `MEM_Label`/`MEM_Goto` → переходы.
+
+  Длины инструкций не меняются, адреса не съезжают. `end`/`break`/`continue` как значение (`return continue;` в колбэках LeGo) не трогаются. Отчёт: `scripts: Ikarus: loops rewritten into jumps: …` (Archolos: 51 while, 45 repeat, 95 end, 10 break, 3 continue, 4 label, 4 goto).
+- **Обнуление (`SCRIPTF_NULLED`)** — теперь только `ASM_*`, `ASMINT_*`, `CALL_*`, `CALLINT_*`: машинный код оригинала. Остальной Ikarus исполняется, низ — подменами.
+- **ВМ** (`engine/script.{h,cpp}`):
+  - `override(name, fn, user, naked)` — функция скрипта, которую выполняет движок. Проверка битом в `OP_BL` и в `call()`, приоритет над `NULLED`. `naked` — без кадра, для функций, которые оставляют на стеке больше или меньше, чем обещают (`MEM_PushIntParam`, `MEM_CallByID`, `MEM_Pop*Result`);
+  - `popValue/pushValue` — значение как его положил скрипт (переменная остаётся переменной — для `_@`);
+  - объекты-«виды» `wrap()` с внешними байтами (`ScriptInstance::ext`, флаг `SCRIPTI_VIEW`) и `purge()` для умерших;
+  - `setPcObject` — `MEM_StackPos.position`: чтение = следующая инструкция, запись = переход (старые циклы Ikarus);
+  - `callOriginal`, `frameFunction`, `onAbandon`, `onNulled`;
+  - константы при загрузке сохранения не восстанавливаются у Ikarus-скриптов: оригинал сохраняет только переменные, а Ikarus пишет в константы кэши и указатели.
+- **Память** (`engine/script_mem.{h,cpp}`, `ScriptMemory`) — своё 32-битное адресное пространство:
+
+  | Адрес | Что там |
+  |---|---|
+  | `0x01…` | глобальные слова ВМ |
+  | `0x10…` | куча `MEM_Alloc`: блоки степеней двойки с заголовком 8 байт, списки свободных по размеру, растёт до `Game::IKARUS_HEAP` = 6 МБ |
+  | `0x20…` / `0x21…` | `zString` строковой переменной для `_@s` и её символы; запись `ptr`/`len` переписывает переменную — так работает `SB_ToString` |
+  | `0x32…` / `0x36…` | таблица символов парсера и `zCPar_Symbol` (`content`, `offset`, `bitfield`, `parent`; имени нет); запись `offset` у экземпляра = `MEM_AssignInst` |
+  | `0x38…` | код |
+  | `0x40…` | объекты ВМ (`MEM_InstToPtr`) |
+
+  Всё остальное читается нулём и считается (`badReads`/`badWrites`). Движок скрипт не трогает.
+- **Ikarus** (`engine/ikarus.{h,cpp}`, член `Game::_ikarus`, подключается в `Game::bindAll`, если в скрипте есть `IKARUS_VERSION`/`MEM_INITALL`/`MEM_READINT`/`MEM_WRITEINT`). Сигнатура каждой подмены проверяется по объявлению в скрипте; несовпавшие — в `refusedList()`. Подмены:
+  - память, адреса, `_^`;
+  - вызовы по ID/указателю/строке, стек;
+  - `MEM_ReplaceFunc`, `HookDaedalusFunc*`, `ContinueCall`;
+  - строки `STR_*`;
+  - сообщения `MEM_Error`/`Warn`/`Info` (учёт и первые 8 с вызывающим);
+  - `MEM_GetSymbol*`;
+  - файлы LeGo (`WIN_CreateFile`/`WriteFile`/`ReadFile`… в памяти; `_BIN_GetSavefilePath`, `_BR_GetSelectedSlot`);
+  - `SB_ToString`;
+  - пустышки инициализации (`MEM_ReinitParser`, `MEM_InitGlobalInst`… → свои объекты `MEM_Game`/`MEM_Timer`/…, `MEM_StackPos`).
+- **`HookEngineF/I/S` не ставятся, а записываются** (адрес → функция). Движок вызывает их сам в известных точках: `Ikarus::fire("OCGAME__RENDER")` каждый кадр — так работают FrameFunctions/таймеры LeGo; `OCGAME__CHANGELEVEL`/`…END` при смене мира (`Game::enterWorld`); `OCSAVEGAMEMANAGER__SETANDWRITESAVEGAME` перед сохранением (`Game::prepareSave`, EBP+60 = слот 1); `CGAMEMANAGER__READ_SAVEGAME` после загрузки, затем `INIT_GLOBAL` (`Game::afterRestore`). ESP/EBP — блок в куче с нужными значениями.
+- **Кадр**: `App::update` → `ikarus().frame(мс)` (время `MEM_Timer`, `oCGame.timeStep`, хуки рендера); время входит в `s` строки `upd` на нижнем экране.
+- **Отчёт пекаря**: строка `Ikarus: …` в `bake.log`; в `bake_debug.txt` — первые ошибки Ikarus с вызывающей функцией и полный список хуков LeGo с именами констант адресов.
+
+### Что осталось (по Archolos, из стенда)
+
+- 70 из 81 хука — на адреса без имени констант (свои хуки Archolos): нужны имена из `GOTHIC.DAT` (команда `g3ds-bake extract --ext dat`, запускать из командной строки, не через окно) и разбор по одному — этап 4 плана.
+- `badReads` ≈ 34 тыс. — чтения полей объектов движка (oCNpc, oCGame, меню…) — этап 4 («виртуальные структуры»).
+- Имена символов (`zCPar_Symbol.name`) пусты: `LeGo_FlagsHR` пишет ошибки `STR_SubStr` (безвредно, только текст в лог).
+- `Locals()` LeGo — пустышка (рекурсия с локальными, как и раньше); `final()` не тронут.
+- Интерфейс LeGo (View/Bars/Print) — этап 6: сейчас читает/пишет нули.
+
+### Стенд `ikbench` (не в архиве проекта)
+
+`ikbench data.pak names.txt [функции]`: берёт `script/gothic` из пака, переписывает циклы, запускает старт всех миров Archolos, 60 кадров, сохранение/загрузку; печатает жалобы, вызовы обнулённых, внешние без реализации, статистику памяти, хуки; с третьим аргументом — дизассемблер функций по номерам. Имена — из словаря по исходникам Ikarus/LeGo/G1 (хеши в образе).
+
+### Тесты
+
+`test_script ikarus` — мини-Ikarus своим компилятором: куча, `_@`, `_^`, `while`/`repeat`/`break`/`continue`, `MEM_StackPos`, `MEM_CallByID`, `HookDaedalusFunc` + `ContinueCall`, `_@s` + запись `zString`, `MEM_Goto`, `MEM_InstToPtr`. Компилятор: `@` в именах, оператор «имя;» (кладёт значение). ctest 6/6. ARM-проверка clang (`check_3ds.sh`-флаги, оба прохода) чистая для `script*.cpp`, `ikarus.cpp`, `game*.cpp`, `start_menu.cpp`. `app.cpp` этой проверкой не проходит из-за `<algorithm>` в `fog.h` — это было и до fix195.

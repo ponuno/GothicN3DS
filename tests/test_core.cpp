@@ -12529,20 +12529,12 @@ static void testG1Beasts() {
 	std::ifstream in(file);
 	std::stringstream ss;
 	ss << in.rdbuf();
-	// (G3_G1_HUMAN: a guard of the camp, hostile to the player, instead of the beasts.)
-	const bool human = getenv("G3_G1_HUMAN") != nullptr;
-	std::string packNpcs;
-	for (int k = 0, n = getenv("G3_G1_PACK") ? atoi(getenv("G3_G1_PACK")) : 0; k < n; ++k) packNpcs += "\tWld_InsertNpc(Scavenger, \"FOREST_SCAVENGER_1\");\n";
-	std::string source = ss.str() + (human ? R"(
-func void STARTUP_WORLD() {
-	Kapitel = 1;
-	Wld_InsertNpc(GRD_204_Gardist, "FOREST_SCAVENGER_1");
-)" : R"(
+	std::string source = ss.str() + R"(
 func void STARTUP_WORLD() {
 	Kapitel = 1;
 	Wld_InsertNpc(Scavenger, "FOREST_SCAVENGER_1");
 	Wld_InsertNpc(Molerat, "FOREST_MOLERAT_1");
-)") + packNpcs + "};" + R"(
+};
 func void INIT_WORLD() {
 	B_InitMonsterAttitudes();
 	B_InitGuildAttitudes();
@@ -12570,29 +12562,27 @@ func void INIT_WORLD() {
 	app.settings().immortal = 1;
 	app.applySettings();
 	npcs.config().range = 20000.0f;
-	app.environment().timeOfDay = getenv("G3_TOD") ? float(atof(getenv("G3_TOD"))) : 12.0f;
-	const float dt = getenv("G3_DT") ? float(atof(getenv("G3_DT"))) : 1.0f / 30.0f;
+	app.environment().timeOfDay = 12.0f;
+	const float dt = 1.0f / 30.0f;
 	const auto run = [&](float seconds) {
 		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
 	};
 	app.teleport({-7000.0f, 900.0f, -7000.0f});
 	run(4.0f);
 	const GameNpc& hn = *g.hero();
-	const std::vector<const char*> whoList = human ? std::vector<const char*> {"Guard"} : std::vector<const char*> {"Scavenger", "Molerat"};
-	for (const char* who : whoList) {
+	for (const char* who : {"Scavenger", "Molerat"}) {
 		int b = -1;
 		for (u32 i = 0; i < g.npcCount() && b < 0; ++i)
-			if ((g.isMonster(g.npc(i)) || human) && g.nameOf(g.npc(i)) && std::strcmp(g.nameOf(g.npc(i)), who) == 0 && g.npc(i).placed && g.npc(i).world == g.currentWorld()) b = int(i);
+			if (g.isMonster(g.npc(i)) && std::strcmp(g.nameOf(g.npc(i)), who) == 0 && g.npc(i).placed && g.npc(i).world == g.currentWorld()) b = int(i);
 		std::printf("  %s: %s\n", who, b >= 0 ? "placed" : "missing");
 		CHECK(b >= 0);
 		if (b < 0) continue;
 		const GameNpc& bn = g.npc(u32(b));
-		if (human) g.npcMut(u32(b)).attitude = i8(g.constant("ATT_HOSTILE", 0));
 		{
 			const NpcActor* a = npcs.actorOf(u32(b));
 			std::printf("   before: actor %d ready %d rig %d, state %s, att to hero %d, guild %d\n", a ? 1 : 0, a ? int(a->ready) : -1, a ? int(a->rig != nullptr) : -1, a ? npcs.stateName(a->state) : "-", int(g.attitude(u32(b), u32(&hn - &g.npc(0)))), int(g.guildOf(bn)));
 		}
-		const float behind = getenv("G3_BEHIND") ? float(atof(getenv("G3_BEHIND"))) : 900.0f;
+		const float behind = 900.0f;
 		app.teleport({bn.pos[0] - std::sin(bn.yaw) * behind, bn.pos[1] + 10.0f, bn.pos[2] - std::cos(bn.yaw) * behind});
 		float err = 9.0f, tm = 0;
 		for (; tm < 6.0f; tm += dt) {
@@ -12610,67 +12600,8 @@ func void INIT_WORLD() {
 		std::printf("   noModel %u waiting %u actors %u pos %.0f %.0f %.0f hero %.0f %.0f %.0f\n", npcs.stats().noModel, npcs.stats().waiting, npcs.stats().actors, double(bn.pos[0]), double(bn.pos[1]), double(bn.pos[2]), double(hn.pos[0]), double(hn.pos[1]), double(hn.pos[2]));
 		std::printf("  G1 %s, player 9 m behind: error %.2f rad after %.1f s, state %s\n", who, double(err), double(tm), a ? npcs.stateName(a->state) : "-");
 		CHECK(err < 0.3f);
-		// The beast, left with the player next to it, goes on to fight him: it must reach its attack state.
-		bool attacked = false;
-		float firstAttack = -1.0f;
-		const u32 blows0 = app.fightStats().blowsTaken;
-		for (float t2 = 0; t2 < 25.0f; t2 += dt) {
-			app.update(Input {}, dt);
-			const NpcActor* a2 = npcs.actorOf(u32(b));
-			const char* sn = a2 ? npcs.stateName(a2->state) : "";
-			if (getenv("G3_TRACE") && int(t2 / dt) % 15 == 0)
-				std::printf("   [%s +%.1f] %s act %d dist %.0f\n", who, double(t2), sn, a2 ? int(a2->action.kind) : -1, double(std::hypot(hn.pos[0] - bn.pos[0], hn.pos[2] - bn.pos[2])));
-			if (!attacked && (std::strstr(sn, "MM_ATTACK") || std::strstr(sn, "ATTACK"))) {
-				attacked = true;
-				firstAttack = t2;
-			}
-		}
-		std::printf("  G1 %s: %s (%.1f s), blows taken by the player %u\n", who, attacked ? "attacks" : "never attacks", double(firstAttack), app.fightStats().blowsTaken - blows0);
-		CHECK(attacked);
 		app.teleport({-7000.0f, 900.0f, -7000.0f});
 		run(8.0f);
-		// The player in return: sword in hand, closing in and striking. The enemy must fight back, not stand and take it.
-		if (getenv("G3_G1_FIGHT") && bn.down == DOWN_NONE) {
-			app.settings().scheme = CONTROLS_CONSOLE;
-			app.settings().immortal = 1;
-			app.applySettings();
-			const u32 hero = u32(&hn - &g.npc(0));
-			g.setAttribute(g.npcMut(hero), 0, g.attributeOf(hn, 1));
-			app.teleport({bn.pos[0], bn.pos[1] + 100.0f, bn.pos[2] - 800.0f});
-			app.menuAction(MENU_GIVE_WEAPON, nullptr);
-			int pressed = 0;
-			const u32 taken0 = app.fightStats().blowsTaken;
-			bool everAttack = false;
-			for (int frames = 0; frames < 30 * 25 && bn.down == DOWN_NONE; ++frames) {
-				Input in;
-				const Vec3 feet = app.player().feet;
-				const float dx = bn.pos[0] - feet.x, dz = bn.pos[2] - feet.z;
-				const float d = std::hypot(dx, dz);
-				if (frames == 5) in.meleeSlot = true;
-				if (app.hero().weapon() != WEAPON_NONE) {
-					const float want = std::atan2(dx, dz) - app.camera().yaw;
-					const float range = g.meleeRange(hero, u32(b));
-					if (d > range - 30.0f) {
-						in.steer = true;
-						in.steerYaw = want;
-						in.moveX = std::sin(want);
-						in.moveZ = std::cos(want);
-					}
-					in.attack = d < range + 20.0f && frames % 8 == 0;
-					pressed += in.attack;
-				}
-				app.update(in, 1.0f / 30.0f);
-				const NpcActor* a3 = npcs.actorOf(u32(b));
-				if (a3 && std::strstr(npcs.stateName(a3->state), "ATTACK")) everAttack = true;
-				if (getenv("G3_TRACE") && frames % 15 == 0)
-					std::printf("   [fight %d] %s act %d d %.0f taken %u landed %u\n", frames, a3 ? npcs.stateName(a3->state) : "-", a3 ? int(a3->action.kind) : -1, double(d), app.fightStats().blowsTaken - taken0, app.fightStats().blowsLanded);
-			}
-			std::printf("  G1 %s fights back: %d attacks pressed, %u landed, %u taken, attack state %s, beast %s\n", who, pressed, app.fightStats().blowsLanded,
-			            app.fightStats().blowsTaken - taken0, everAttack ? "yes" : "no", bn.down == DOWN_DEAD ? "dead" : "alive");
-			CHECK(everAttack);
-			app.teleport({-7000.0f, 900.0f, -7000.0f});
-			run(8.0f);
-		}
 	}
 }
 

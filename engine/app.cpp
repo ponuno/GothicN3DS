@@ -273,6 +273,7 @@ bool App::writeState(FILE* f) {
 	progress(0.35f);
 	bool game = true;
 	if (_npcs.loaded()) {
+		_npcs.game().prepareSave(); // (fix195: LeGo writes its PermMem, as on the original's save)
 		ByteSink payload;
 		_npcs.game().save(payload);
 		progress(0.65f);
@@ -395,6 +396,7 @@ bool App::loadGameSection(FILE* f) {
 		_npcs.leaveWorld(); // (the actors are made again from the state restored)
 		ByteSource in(bytes, head[1]);
 		ok = _npcs.game().restore(in);
+		if (ok) _npcs.game().afterRestore(); // (fix195: LeGo reads its PermMem back, INIT_GLOBAL as the original runs it)
 		_chapterSeen = _npcs.game().chapter().serial;
 		_diarySeen = _npcs.game().logVersion();
 		_lootTarget = -1;
@@ -604,6 +606,14 @@ void App::update(const Input& given, float dt) {
 	const double t1 = sys::timeMs();
 	trace("update: npcs");
 	_npcs.update(_pak, _world, _player.eye(), _env.timeOfDay, dt);
+	// fix195: a mod's Ikarus / LeGo: the time it reads, its frame functions (LeGo's FF_*, timers).
+	_ikarusMs = 0.0f;
+	if (_npcs.loaded() && _npcs.game().ikarus().active()) {
+		trace("update: ikarus");
+		const double ti = sys::timeMs();
+		_npcs.game().ikarus().frame(dt * 1000.0f, false);
+		_ikarusMs = float(sys::timeMs() - ti);
+	}
 	trace("update: loot");
 	const double tLoot0 = sys::timeMs();
 	_times.npcUpdate = float(tLoot0 - t1);
@@ -800,7 +810,7 @@ void App::update(const Input& given, float dt) {
 	_music.update(dt, _cam.pos, _env.timeOfDay, musicSituation(dt));
 	_times.stream = float(t1 - t0);
 	_times.npcs = float(t2 - t1);
-	_times.script = _npcs.stats().scriptMs;
+	_times.script = _npcs.stats().scriptMs + _ikarusMs; // (fix195: with Ikarus' frame functions)
 	_times.loot = float(tLoot1 - tLoot0);
 	_times.player = float(t3 - t2);
 	_times.heroControl = float(tCtl - t2);

@@ -459,6 +459,7 @@ public:
 	const ItemStats& itemStats() const { return _itemStats; }
 
 private:
+	float _ikarusMs = 0.0f; // fix195: Ikarus' frame functions this frame, ms
 	// Reading.
 	struct DocReader {
 		enum { MAX_SCREENS = 32, LINES = 14, LINE = 100 };

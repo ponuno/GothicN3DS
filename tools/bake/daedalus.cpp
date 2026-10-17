@@ -50,7 +50,8 @@ std::vector<Token> lex(const std::string& src) {
 			Token t;
 			t.kind = T_ID;
 			t.line = line;
-			while (i < n && (std::isalnum(static_cast<unsigned char>(src[i])) || src[i] == '_' || src[i] == '^'))
+			// (fix195: and '@', as Ikarus' _@ / _@s have it)
+			while (i < n && (std::isalnum(static_cast<unsigned char>(src[i])) || src[i] == '_' || src[i] == '^' || src[i] == '@'))
 				t.text.push_back(char(std::toupper(static_cast<unsigned char>(src[i++]))));
 			out.push_back(t);
 		} else if (std::isdigit(static_cast<unsigned char>(c))) {
@@ -734,6 +735,17 @@ private:
 			return;
 		}
 		if (target->kind != Expr::NAME) fail(line, "a statement expected");
+		if (acceptOp(";")) {
+			// A name on its own (fix195): its value is pushed and left there, as the game's compiler does - Ikarus'
+			// `end;`, `break;`, `continue;` and its "push a value for the next call" are this.
+			const int sym = variableOf(*target);
+			const SrcSymbol& s = _s.symbols[sym];
+			if (s.type == SCRIPT_FUNC || s.type == SCRIPT_PROTOTYPE || (s.type == SCRIPT_INSTANCE && s.isConst && target->object.empty()))
+				emit(OP_PUSHI, u32(sym));
+			else
+				pushVariable(*target, sym);
+			return;
+		}
 		const Token op = next();
 		if (op.kind != T_OP) fail(line, "an assignment expected");
 		const int sym = variableOf(*target);

@@ -41,17 +41,21 @@ bool ScriptVm::adopt(u8* blob, u32 size) {
 	bool ok = size >= sizeof(h);
 	if (ok) {
 		memcpy(&h, blob, sizeof(h));
-		ok = h.magic == SCRIPT_MAGIC && h.version == SCRIPT_VERSION && h.symbolCount > 0 && h.symbolCount < (1u << 24) &&
+		ok = h.magic == SCRIPT_MAGIC && (h.version == SCRIPT_VERSION || h.version == 2) && h.symbolCount > 0 && h.symbolCount < (1u << 24) &&
 		     h.functionCount < (1u << 24) && h.dataCount < (1u << 26) && h.stringCount < (1u << 24) &&
 		     h.stringBytes < (1u << 28) && h.codeSize < (1u << 28) && h.instanceSlots < (1u << 24) &&
 		     h.externalCount < (1u << 16) && h.stateCount < (1u << 20);
 	}
-	u32 atSymbols = 0, atFunctions = 0, atStates = 0, atData = 0, atOffsets = 0, atStrings = 0, atCode = 0;
+	u32 atSymbols = 0, atFunctions = 0, atStates = 0, atLoops = 0, atData = 0, atOffsets = 0, atStrings = 0, atCode = 0;
+	// (Version 2 - before fix195 - is the same with no loops: its word was reserved, 0.)
+	if (ok && h.version == 2) h.loopCount = 0;
+	if (ok) ok = h.loopCount < (1u << 20);
 	if (ok) {
 		atSymbols = sizeof(ScriptHeader);
 		atFunctions = atSymbols + h.symbolCount * u32(sizeof(ScriptSymbol));
 		atStates = atFunctions + h.functionCount * u32(sizeof(ScriptFunction));
-		atData = atStates + h.stateCount * u32(sizeof(ScriptState));
+		atLoops = atStates + h.stateCount * u32(sizeof(ScriptState));
+		atData = atLoops + h.loopCount * u32(sizeof(ScriptLoop));
 		atOffsets = atData + h.dataCount * 4u;
 		atStrings = atOffsets + h.stringCount * 4u;
 		atCode = atStrings + align4(h.stringBytes);
@@ -60,6 +64,7 @@ bool ScriptVm::adopt(u8* blob, u32 size) {
 	const ScriptSymbol* symbols = reinterpret_cast<const ScriptSymbol*>(blob + atSymbols);
 	const ScriptFunction* functions = reinterpret_cast<const ScriptFunction*>(blob + atFunctions);
 	const ScriptState* states = reinterpret_cast<const ScriptState*>(blob + atStates);
+	const ScriptLoop* loops = reinterpret_cast<const ScriptLoop*>(blob + atLoops);
 	const u32* offsets = reinterpret_cast<const u32*>(blob + atOffsets);
 	const char* strings = reinterpret_cast<const char*>(blob + atStrings);
 	// Nothing in the tables may point outside them: the interpreter trusts
@@ -118,6 +123,7 @@ bool ScriptVm::adopt(u8* blob, u32 size) {
 		}
 		ok = ok && (i == 0 || states[i - 1].start < states[i].start);
 	}
+	for (u32 i = 0; ok && i < h.loopCount; ++i) ok = loops[i].body < h.codeSize && loops[i].end <= h.codeSize;
 	for (u32 i = 0; ok && i < h.stringCount; ++i) ok = offsets[i] == SCRIPT_NONE || offsets[i] < h.stringBytes;
 	if (ok && h.stringBytes) ok = strings[h.stringBytes - 1] == 0;
 	if (ok) {
@@ -127,7 +133,8 @@ bool ScriptVm::adopt(u8* blob, u32 size) {
 		_externals = static_cast<Bound*>(calloc(h.externalCount + 1, sizeof(Bound)));
 		_stack = static_cast<Slot*>(calloc(STACK, sizeof(Slot)));
 		_frames = static_cast<Frame*>(calloc(FRAMES, sizeof(Frame)));
-		ok = _strings && _stringOwned && _slots && _externals && _stack && _frames;
+		_loopState = static_cast<LoopState*>(calloc(h.loopCount + 1, sizeof(LoopState)));
+		ok = _strings && _stringOwned && _slots && _externals && _stack && _frames && _loopState;
 	}
 	if (!ok) {
 		free(blob);
@@ -140,6 +147,7 @@ bool ScriptVm::adopt(u8* blob, u32 size) {
 	_symbols = symbols;
 	_functions = functions;
 	_states = states;
+	_loops = loops;
 	_data = reinterpret_cast<i32*>(blob + atData);
 	_code = blob + atCode;
 	for (u32 i = 0; i < h.stringCount; ++i) _strings[i] = offsets[i] == SCRIPT_NONE ? "" : strings + offsets[i];
@@ -174,7 +182,18 @@ void ScriptVm::release() {
 	free(_externals);
 	free(_stack);
 	free(_frames);
+	free(_overrides);
+	free(_overBits);
+	free(_loopState);
 	free(_blob);
+	_overrides = nullptr;
+	_overBits = nullptr;
+	_overrideCount = _overrideCap = 0;
+	_loopState = nullptr;
+	_loops = nullptr;
+	_pcObject = nullptr;
+	_watchStrings = false;
+	_deadCount = 0;
 	_instances = nullptr;
 	_dynamic = nullptr;
 	_strings = nullptr;
@@ -244,6 +263,155 @@ bool ScriptVm::bindSymbol(u32 s, External fn, void* user) {
 	return true;
 }
 
+// ---- functions the engine carries out instead (fix195) ----
+
+bool ScriptVm::override(const char* name, External fn, void* user, bool naked) { return overrideSymbol(find(name), fn, user, naked); }
+
+bool ScriptVm::overrideSymbol(u32 s, External fn, void* user, bool naked) {
+	if (s >= _h.symbolCount || !fn) return false;
+	const ScriptSymbol& sym = _symbols[s];
+	if (sym.type != SCRIPT_FUNC || !(sym.flags & SCRIPTF_CONST) || (sym.flags & (SCRIPTF_EXTERNAL | SCRIPTF_MEMBER))) return false;
+	if (!_overBits) {
+		_overBits = static_cast<u8*>(calloc((_h.symbolCount + 7) / 8, 1));
+		if (!_overBits) return false;
+	}
+	u32 at = 0;
+	while (at < _overrideCount && _overrides[at].symbol < s) ++at;
+	if (at < _overrideCount && _overrides[at].symbol == s) {
+		_overrides[at] = {s, fn, user, naked};
+		return true;
+	}
+	if (_overrideCount == _overrideCap) {
+		const u32 cap = _overrideCap ? _overrideCap * 2 : 64;
+		Override* grown = static_cast<Override*>(realloc(_overrides, size_t(cap) * sizeof(Override)));
+		if (!grown) return false;
+		_overrides = grown;
+		_overrideCap = cap;
+	}
+	memmove(_overrides + at + 1, _overrides + at, size_t(_overrideCount - at) * sizeof(Override));
+	_overrides[at] = {s, fn, user, naked};
+	++_overrideCount;
+	_overBits[s >> 3] = u8(_overBits[s >> 3] | (1u << (s & 7)));
+	return true;
+}
+
+bool ScriptVm::isOverridden(u32 s) const { return _overBits && s < _h.symbolCount && (_overBits[s >> 3] & (1u << (s & 7))); }
+
+void ScriptVm::callOverride(u32 symbol) {
+	u32 lo = 0, hi = _overrideCount;
+	while (lo < hi) {
+		const u32 mid = (lo + hi) / 2;
+		if (_overrides[mid].symbol < symbol)
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	if (lo >= _overrideCount || _overrides[lo].symbol != symbol) return;
+	const Override o = _overrides[lo];
+	++_stats.overrideCalls;
+	if (o.naked) {
+		o.fn(*this, o.user);
+		return;
+	}
+	// Framed like an external (callExternal): the caller is left with what the declaration promises.
+	if (_fp >= FRAMES) {
+		abandon("calls nested too deep");
+		return;
+	}
+	const ScriptSymbol& s = _symbols[symbol];
+	Frame& f = _frames[_fp++];
+	f.returnPc = _pc;
+	f.base = _sp > s.count ? _sp - s.count : 0;
+	f.function = symbol;
+	f.context = _current;
+	o.fn(*this, o.user);
+	leave();
+}
+
+bool ScriptVm::popValue(ScriptValue& out) {
+	out = ScriptValue();
+	if (_sp == 0) return false;
+	const Slot s = _stack[--_sp];
+	switch (s.kind) {
+	case K_INT: out.kind = ScriptValue::INT; out.i = s.i; break;
+	case K_FLOAT: out.kind = ScriptValue::FLOAT; memcpy(&out.i, &s.f, 4); break;
+	case K_REF:
+		out.kind = ScriptValue::VARIABLE;
+		out.symbol = s.sym;
+		out.index = s.index;
+		out.ctx = s.ctx;
+		break;
+	default: out.kind = ScriptValue::OBJECT; out.ctx = s.ctx; break;
+	}
+	return true;
+}
+
+void ScriptVm::pushValue(const ScriptValue& v) {
+	Slot s {};
+	switch (v.kind) {
+	case ScriptValue::INT: s.kind = K_INT; s.i = v.i; break;
+	case ScriptValue::FLOAT: s.kind = K_FLOAT; memcpy(&s.f, &v.i, 4); break;
+	case ScriptValue::VARIABLE:
+		s.kind = K_REF;
+		s.sym = v.symbol;
+		s.index = v.index;
+		s.ctx = v.ctx;
+		break;
+	default: s.kind = K_INST; s.ctx = v.ctx; break;
+	}
+	push(s);
+}
+
+ScriptInstance* ScriptVm::wrap(u8* bytes, u32 size) {
+	if (!_blob) return nullptr;
+	if (_instanceCount == _instanceCap) {
+		const u32 cap = _instanceCap ? _instanceCap * 2 : 256;
+		ScriptInstance** grown = static_cast<ScriptInstance**>(realloc(_instances, size_t(cap) * sizeof(ScriptInstance*)));
+		if (!grown) return nullptr;
+		_instances = grown;
+		_instanceCap = cap;
+	}
+	ScriptInstance* inst = static_cast<ScriptInstance*>(calloc(1, sizeof(ScriptInstance)));
+	if (!inst) return nullptr;
+	inst->classSymbol = SCRIPT_NONE;
+	inst->symbol = SCRIPT_NONE;
+	inst->size = size;
+	inst->serial = _serial++;
+	inst->ext = bytes;
+	inst->flags = SCRIPTI_VIEW;
+	_instances[_instanceCount++] = inst;
+	return inst;
+}
+
+void ScriptVm::purge() {
+	bool any = false;
+	for (u32 i = 0; i < _instanceCount && !any; ++i) any = (_instances[i]->flags & SCRIPTI_DEAD) != 0;
+	if (!any) return;
+	const auto dead = [](const ScriptInstance* p) { return p && (p->flags & SCRIPTI_DEAD); };
+	for (u32 i = 0; i < _h.instanceSlots; ++i)
+		if (dead(_slots[i])) _slots[i] = nullptr;
+	if (dead(_current)) _current = nullptr;
+	if (dead(_pcObject)) _pcObject = nullptr;
+	for (u32 i = 0; i < _fp; ++i)
+		if (dead(_frames[i].context)) _frames[i].context = nullptr;
+	for (u32 i = 0; i < _sp; ++i)
+		if (dead(_stack[i].ctx)) _stack[i].ctx = nullptr;
+	for (u32 i = 0; i < _h.loopCount; ++i)
+		if (dead(_loopState[i].ctx)) _loopState[i].ctx = nullptr;
+	u32 kept = 0;
+	for (u32 i = 0; i < _instanceCount; ++i) {
+		ScriptInstance* p = _instances[i];
+		if (!dead(p)) {
+			_instances[kept++] = p;
+			continue;
+		}
+		if (_memHooks && _memHooks->destroyed) _memHooks->destroyed(p, _memHooks->user);
+		free(p);
+	}
+	_instanceCount = kept;
+	_deadCount = 0;
+}
+
 const ScriptState* ScriptVm::stateOf(u32 start) const {
 	u32 lo = 0, hi = _h.stateCount;
 	while (lo < hi) {
@@ -302,6 +470,7 @@ void ScriptVm::complain(const char* what, u32 symbol) const {
 }
 
 void ScriptVm::abandon(const char* what) {
+	if (!_abandon && _onAbandon) _onAbandon(what, _onAbandonUser);
 	if (!_abandon) {
 		++_stats.aborted;
 		snprintf(_stats.lastError, sizeof(_stats.lastError), "%s (at %u)", what, unsigned(_pc));
@@ -471,6 +640,7 @@ i32 ScriptVm::getInt(u32 symbol, u32 index, const ScriptInstance* ctx) const {
 	}
 	i32 v = 0;
 	if (s.flags & SCRIPTF_MEMBER) {
+		if (ctx && ctx == _pcObject) return pcRead(); // (fix195: Ikarus' MEM_StackPos.position)
 		if (const u8* p = memberPtr(s, index, ctx, 4)) memcpy(&v, p, 4);
 		return v;
 	}
@@ -505,10 +675,12 @@ const char* ScriptVm::stringAt(u32 symbol, u32 index, const ScriptInstance* ctx)
 	if (s.flags & SCRIPTF_MEMBER) {
 		const u8* p = memberPtr(s, index, ctx, SCRIPT_STRING_SIZE);
 		if (!p) return "";
+		if ((ctx->flags & SCRIPTI_VIEW) && _memHooks && _memHooks->readZString) return _memHooks->readZString(p, _memHooks->user);
 		u32 handle;
 		memcpy(&handle, p, 4);
 		return handle && handle <= _dynamicCount && _dynamic[handle - 1] ? _dynamic[handle - 1] : "";
 	}
+	if (_watchStrings && _memHooks && _memHooks->syncStrings) _memHooks->syncStrings(_memHooks->user);
 	return _strings[s.value + index];
 }
 
@@ -528,6 +700,10 @@ void ScriptVm::setInt(u32 symbol, u32 index, ScriptInstance* ctx, i32 v) {
 		return;
 	}
 	if (s.flags & SCRIPTF_MEMBER) {
+		if (ctx && ctx == _pcObject) { // (fix195: Ikarus' MEM_StackPos.position = ...: a jump)
+			if (u32(v) < _h.codeSize) _pc = u32(v);
+			return;
+		}
 		if (u8* p = memberPtr(s, index, ctx, 4)) memcpy(p, &v, 4);
 		return;
 	}
@@ -603,6 +779,10 @@ void ScriptVm::setString(u32 symbol, u32 index, ScriptInstance* ctx, const char*
 	if (s.flags & SCRIPTF_MEMBER) {
 		u8* p = memberPtr(s, index, ctx, SCRIPT_STRING_SIZE);
 		if (!p) return;
+		if (ctx->flags & SCRIPTI_VIEW) {
+			if (_memHooks && _memHooks->writeZString) _memHooks->writeZString(p, v, _memHooks->user);
+			return;
+		}
 		u32 old;
 		memcpy(&old, p, 4);
 		// (The new text may be the old one: copy before freeing.)
@@ -682,8 +862,10 @@ ScriptInstance* ScriptVm::create(u32 instanceSymbol) {
 
 void ScriptVm::destroy(ScriptInstance* inst) {
 	if (!inst) return;
-	// Its strings.
-	for (u32 i = 0; i < _h.symbolCount; ++i) {
+	if (_memHooks && _memHooks->destroyed) _memHooks->destroyed(inst, _memHooks->user);
+	if (_pcObject == inst) _pcObject = nullptr;
+	// Its strings (a view's are not the machine's).
+	for (u32 i = 0; i < _h.symbolCount && !(inst->flags & SCRIPTI_VIEW); ++i) {
 		const ScriptSymbol& s = _symbols[i];
 		if (s.type != SCRIPT_STRING || !(s.flags & SCRIPTF_MEMBER) || s.parent != i32(inst->classSymbol)) continue;
 		for (u32 k = 0; k < (s.count ? s.count : 1u); ++k) {
@@ -706,8 +888,10 @@ void ScriptVm::destroy(ScriptInstance* inst) {
 			_instances[i] = _instances[--_instanceCount];
 			break;
 		}
-	--_stats.instances;
-	_stats.instanceBytes -= u32(sizeof(ScriptInstance)) + inst->size;
+	if (!(inst->flags & SCRIPTI_VIEW)) {
+		--_stats.instances;
+		_stats.instanceBytes -= u32(sizeof(ScriptInstance)) + inst->size;
+	}
 	free(inst);
 }
 
@@ -721,7 +905,18 @@ bool ScriptVm::call(u32 function) {
 		callExternal(function);
 		return true;
 	}
+	if (isOverridden(function)) {
+		callOverride(function);
+		return !_abandon;
+	}
 	if (!(s.flags & SCRIPTF_CONST) || s.value == SCRIPT_NONE) return false;
+	return run(function, s.value);
+}
+
+bool ScriptVm::callOriginal(u32 function) {
+	if (!_blob || function >= _h.symbolCount) return false;
+	const ScriptSymbol& s = _symbols[function];
+	if (s.type != SCRIPT_FUNC || !(s.flags & SCRIPTF_CONST) || (s.flags & SCRIPTF_EXTERNAL) || s.value == SCRIPT_NONE) return false;
 	return run(function, s.value);
 }
 
@@ -855,24 +1050,7 @@ bool ScriptVm::step() {
 	}
 	const u8 op = _code[pc];
 	u32 operand = 0;
-	u32 size = 1;
-	switch (op) {
-	case OP_BL:
-	case OP_BE:
-	case OP_PUSHI:
-	case OP_PUSHV:
-	case OP_PUSHVI:
-	case OP_B:
-	case OP_BZ:
-	case OP_GMOVI:
-		size = 5;
-		break;
-	case OP_PUSHVV:
-		size = 6;
-		break;
-	default:
-		break;
-	}
+	const u32 size = scriptOpSize(op);
 	if (pc + size > _h.codeSize) {
 		abandon("an instruction is cut off by the end of the code");
 		return false;
@@ -994,11 +1172,45 @@ bool ScriptVm::step() {
 			fail("a call to an address where no function starts");
 			break;
 		}
+		if (_overBits && (_overBits[target >> 3] & (1u << (target & 7)))) {
+			callOverride(target);
+			break;
+		}
 		enter(target, operand, _pc);
 		if (_symbols[target].flags & SCRIPTF_NULLED) {
 			_sp = _frames[_fp - 1].base; // drop the arguments; leave() answers 0
 			leave();
+			++_stats.nulledCalls;
+			if (_nulled) _nulled(target, _nulledUser);
 		}
+		break;
+	}
+	case OP_XREPEAT: {
+		// fix195: Ikarus' repeat(var, limit), as the baker rewrote it.
+		if (operand >= _h.loopCount) {
+			abandon("a loop the image does not have");
+			return false;
+		}
+		const i32 limit = popInt();
+		LoopState& l = _loopState[operand];
+		if (!popRef(ref)) {
+			_pc = _loops[operand].end;
+			break;
+		}
+		l = {ref.sym, ref.index, ref.ctx, limit};
+		setInt(ref.sym, ref.index, ref.ctx, 0);
+		if (!(0 < limit)) _pc = _loops[operand].end;
+		break;
+	}
+	case OP_XNEXT: {
+		if (operand >= _h.loopCount) {
+			abandon("a loop the image does not have");
+			return false;
+		}
+		const LoopState& l = _loopState[operand];
+		const i32 v = i32(u32(getInt(l.symbol, l.index, l.ctx)) + 1u);
+		setInt(l.symbol, l.index, l.ctx, v);
+		if (v < l.limit) _pc = _loops[operand].body;
 		break;
 	}
 	case OP_BE:
@@ -1137,7 +1349,24 @@ bool ScriptVm::loadGlobals(ByteSource& in) {
 	if (in.u32v() != _h.symbolCount || in.u32v() != _h.dataCount || in.u32v() != _h.stringCount || in.u32v() != _h.codeSize || in.bad)
 		return false;
 	if (in.left() < size_t(_h.dataCount) * 4) return false;
+	// fix195: an Ikarus script writes to its constants (caches, pointers into its memory); the original saves only the
+	// variables, so a loaded game keeps the constants as they are now.
+	i32* keep = nullptr;
+	if (_ignoreConst) {
+		keep = static_cast<i32*>(malloc(size_t(_h.dataCount) * 4 + 4));
+		if (keep) memcpy(keep, _data, size_t(_h.dataCount) * 4);
+	}
 	in.get(_data, size_t(_h.dataCount) * 4);
+	if (keep) {
+		for (u32 i = 0; i < _h.symbolCount; ++i) {
+			const ScriptSymbol& s = _symbols[i];
+			if (!(s.flags & SCRIPTF_CONST) || (s.flags & (SCRIPTF_MEMBER | SCRIPTF_EXTERNAL))) continue;
+			if (s.type != SCRIPT_INT && s.type != SCRIPT_FLOAT) continue;
+			const u32 n = s.count ? s.count : 1u;
+			if (s.value + n <= _h.dataCount) memcpy(_data + s.value, keep + s.value, size_t(n) * 4);
+		}
+		free(keep);
+	}
 	const u32 owned = in.u32v();
 	for (u32 k = 0; k < owned && !in.bad; ++k) {
 		const u32 slot = in.u32v();
@@ -1153,11 +1382,25 @@ bool ScriptVm::loadGlobals(ByteSource& in) {
 		}
 		in.get(copy, n);
 		copy[n] = 0;
+		if (_ignoreConst && stringSlotConst(slot)) { // (fix195: see above)
+			free(copy);
+			continue;
+		}
 		if (_stringOwned[slot]) free(const_cast<char*>(_strings[slot]));
 		_strings[slot] = copy;
 		_stringOwned[slot] = 1;
 	}
 	return !in.bad;
+}
+
+bool ScriptVm::stringSlotConst(u32 slot) const {
+	for (u32 i = 0; i < _h.symbolCount; ++i) {
+		const ScriptSymbol& s = _symbols[i];
+		if (s.type != SCRIPT_STRING || (s.flags & SCRIPTF_MEMBER)) continue;
+		const u32 n = s.count ? s.count : 1u;
+		if (slot >= s.value && slot < s.value + n) return (s.flags & SCRIPTF_CONST) != 0;
+	}
+	return false;
 }
 
 u32 ScriptVm::stringMembers(u32 cls, u32* offsets, u32 max) const {
@@ -1242,19 +1485,7 @@ u32 ScriptVm::callSites(u32 callee, u32 args, u32* out, u32 maxSites) const {
 	u32 pc = 0;
 	while (pc < _h.codeSize) {
 		const u8 op = _code[pc];
-		u32 size = 1;
-		switch (op) {
-		case OP_BL:
-		case OP_BE:
-		case OP_PUSHI:
-		case OP_PUSHV:
-		case OP_PUSHVI:
-		case OP_B:
-		case OP_BZ:
-		case OP_GMOVI: size = 5; break;
-		case OP_PUSHVV: size = 6; break;
-		default: break;
-		}
+		const u32 size = scriptOpSize(op);
 		if (pc + size > _h.codeSize) break;
 		u32 operand = 0;
 		if (size >= 5) memcpy(&operand, _code + pc + 1, 4);

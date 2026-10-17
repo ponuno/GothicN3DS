@@ -186,9 +186,15 @@ namespace {
 // that reads and writes the game's memory: this VM has no such memory, so what they do is not the original's).
 const char* libraryOf(const std::string& name) {
 	static const char* const ikarus[] = {"MEM_", "MEMINT_", "ASM_", "ASMINT_", "CALL_", "CALLINT_", "IKARUS"};
-	static const char* const lego[] = {"FF_", "_FF_", "HOOK", "LEGO", "BUFFER_", "LOCALS", "CURSOR_", "VIEW_", "BAR_", "PERM_", "HT_", "LIST_",
-	                                    "TIMER_", "TEXT_", "GAMESTATE_", "EVENTHANDLER", "BIN_", "ANIMATION_", "TRIGGERFIX", "DIALOGGESTURES",
-	                                    "CONSOLE_", "SAVEGAME_"};
+	// fix194: also LeGo's StringBuilder (SB*), _HT_*, _PM_*, VIEWPTR_*, STR_* (Ikarus' strings), TIMER, CC_* (console commands),
+	// ZERROR_* (Ikarus' zERROR helpers): before, Archolos' 27 000 complaints of these counted as "the game / the mod".
+	static const char* const lego[] = {"FF_", "_FF_", "HOOK", "LEGO", "BUFFER_", "LOCALS", "CURSOR_", "VIEW_", "BAR_", "PERM_", "HT_", "_HT_",
+	                                    "LIST_", "TIMER", "TEXT_", "GAMESTATE_", "EVENTHANDLER", "BIN_", "ANIMATION_", "TRIGGERFIX",
+	                                    "DIALOGGESTURES", "CONSOLE_", "SAVEGAME_", "SB_", "SBC", "SBW", "SBRAW", "_PM_", "VIEWPTR_", "_VIEWPTR_",
+	                                    "CC_", "PRINT_", "BUFF_"};
+	static const char* const ikarusExtra[] = {"STR_", "ZERROR_", "_^", "_@", "CONCATSTRINGS"};
+	for (const char* p : ikarusExtra)
+		if (name.compare(0, std::strlen(p), p) == 0) return "Ikarus";
 	static const char* const unionLib[] = {"UNION_", "SP_", "SYSTEMPACK", "NINJA", "ZUNION"};
 	for (const char* p : ikarus)
 		if (name.compare(0, std::strlen(p), p) == 0) return "Ikarus";
@@ -612,6 +618,40 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			line(format("engine functions the start-up called that do nothing yet: %zu, called %llu times: ", byCount.size(),
 			            static_cast<unsigned long long>(stubbed)) +
 			     list);
+		// fix195: Ikarus / LeGo, carried out by the engine (engine/ikarus.cpp).
+		const Ikarus& ik = game.ikarus();
+		if (ik.active()) {
+			const Ikarus::Stats& is = ik.stats();
+			const ScriptMemory::Stats& ms = const_cast<Ikarus&>(ik).memory().stats();
+			line(format("Ikarus: %u of its functions carried out by the engine%s%s; %u calls of the original's machine code skipped; "
+			            "heap %.2f MB at most (%u blocks now); %u reads and %u writes of memory this engine does not have; "
+			            "%u errors, %u warnings (MEM_Error / MEM_Warn); LeGo hooks of the engine's functions: %u (%u kinds)",
+			            is.bound, is.refused ? ", refused (their declaration differs): " : "", ik.refusedList(), vs.nulledCalls,
+			            double(ms.heapPeak) / 1048576.0, ms.blocks, ms.badReads, ms.badWrites, is.errors, is.warnings, is.hooks,
+			            ik.hookCount()));
+			if (debugging) {
+				dbgLine("");
+				dbgLine("-- Ikarus: the first errors and warnings (MEM_Error / MEM_Warn), and the function that called --");
+				for (u32 i = 0; i < ik.noteCount(); ++i) {
+					const u32 c = ik.noteCaller(i);
+					dbgLine(format("  %s  (in %s)", ik.note(i), c < script.symbols.size() ? script.symbols[c].name.c_str() : "?"));
+				}
+				// The hooks: by the name of the constant that holds the address, where the scripts have one.
+				std::map<u32, std::string> addressName;
+				for (const SrcSymbol& sy : script.symbols)
+					if (sy.type == SCRIPT_INT && sy.isConst && !sy.member && sy.ints.size() == 1 && sy.ints[0] > 0x400000 &&
+					    sy.ints[0] < 0x1000000)
+						addressName.emplace(u32(sy.ints[0]), sy.name);
+				dbgLine("-- LeGo: hooks of the engine's functions the scripts asked for (HookEngineF); not installed: the engine runs "
+				        "the ones it knows (frames, saving, changing worlds) --");
+				for (u32 i = 0; i < ik.hookCount(); ++i) {
+					const Ikarus::Hook& h = ik.hook(i);
+					const auto it = addressName.find(h.address);
+					dbgLine(format("  0x%06X %-40s -> %s", h.address, it != addressName.end() ? it->second.c_str() : "",
+					               h.function < script.symbols.size() ? script.symbols[h.function].name.c_str() : "?"));
+				}
+			}
+		}
 	}
 
 	// ---- what they do all day ----
@@ -636,11 +676,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			const u32 end = next == byAddress.end() ? u32(script.code.size()) : next->first;
 			for (u32 at = sym.address; at < end;) {
 				const u8 op = script.code[at];
-				const u32 size = op == OP_PUSHVV ? 6u
-				                 : (op == OP_BL || op == OP_BE || op == OP_PUSHI || op == OP_PUSHV || op == OP_PUSHVI || op == OP_B ||
-				                    op == OP_BZ || op == OP_GMOVI)
-				                       ? 5u
-				                       : 1u;
+				const u32 size = scriptOpSize(op);
 				if (at + size > end) break;
 				u32 operand = 0;
 				if (size >= 5) std::memcpy(&operand, &script.code[at + 1], 4);
@@ -774,11 +810,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				const u32 end = next == byAddress.end() ? u32(script.code.size()) : next->first;
 				for (u32 at = sym.address; at < end;) {
 					const u8 op = script.code[at];
-					const u32 size = op == OP_PUSHVV ? 6u
-					                 : (op == OP_BL || op == OP_BE || op == OP_PUSHI || op == OP_PUSHV || op == OP_PUSHVI || op == OP_B ||
-					                    op == OP_BZ || op == OP_GMOVI)
-					                       ? 5u
-					                       : 1u;
+					const u32 size = scriptOpSize(op);
 					if (at + size > end) break;
 					if (op == OP_PUSHI) {
 						u32 operand = 0;
@@ -867,11 +899,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		u32 recentCount = 0;
 		for (u32 at = 0; at < script.code.size();) {
 			const u8 op = script.code[at];
-			const u32 size = op == OP_PUSHVV ? 6u
-			                 : (op == OP_BL || op == OP_BE || op == OP_PUSHI || op == OP_PUSHV || op == OP_PUSHVI || op == OP_B ||
-			                    op == OP_BZ || op == OP_GMOVI)
-			                       ? 5u
-			                       : 1u;
+			const u32 size = scriptOpSize(op);
 			if (at + size > script.code.size()) break;
 			u32 operand = 0;
 			if (size >= 5) std::memcpy(&operand, &script.code[at + 1], 4);
@@ -1703,6 +1731,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 		{
 			ScriptVm menuVm;
 			const bool haveMenu = sideScript(scripts.menu, "script/menu", menuVm);
+			std::string menuItems;
 			std::vector<std::pair<std::string, bool>> wanted = {{"startscreen", true}, {"loading", true}, {"progress", false}, {"progress_bar", false}};
 			if (haveMenu) {
 				const u32 cls = menuVm.find("C_MENU");
@@ -1729,6 +1758,19 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 							if (sym == SCRIPT_NONE) continue;
 							if (ScriptInstance* it = menuVm.create(sym)) {
 								add(menuVm.getString(itemBack, 0, it));
+								// fix194: what each item does, as the script says (onSelAction / onSelAction_S), for the report.
+								const u32 iAct = menuVm.findMember("C_MENU_ITEM", "ONSELACTION");
+								const u32 iActS = menuVm.findMember("C_MENU_ITEM", "ONSELACTION_S");
+								const u32 iFlags = menuVm.findMember("C_MENU_ITEM", "FLAGS");
+								std::string acts;
+								for (u32 q = 0; iAct != SCRIPT_NONE && iActS != SCRIPT_NONE && q < 5; ++q) {
+									const i32 a = menuVm.getInt(iAct, q, it);
+									const char* s = menuVm.getString(iActS, q, it);
+									if (a == 0 && (!s || !*s)) continue;
+									acts += format(" %d:%s", a, s ? s : "");
+								}
+								menuItems += format("%s%s [flags %d%s]", menuItems.empty() ? "" : ", ", up.c_str(),
+								                    iFlags != SCRIPT_NONE ? menuVm.getInt(iFlags, 0, it) : 0, acts.c_str());
 								menuVm.destroy(it);
 							}
 						}
@@ -1755,6 +1797,7 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 			}
 			line(format("start menu: %s; %zu pictures baked (%.2f MB): %s%s%s", haveMenu ? "MENU_MAIN of the menu script" : "no menu script (the engine's own menu)",
 			            pics, double(picBytes) / 1048576.0, baked.c_str(), absent.empty() ? "" : "; not in the game's files: ", absent.c_str()));
+			if (!menuItems.empty()) line("start menu items (action:argument): " + menuItems);
 		}
 		// fix192: the maps' pictures (Doc_SetPage(map, 0, "MAP_WORLD.TGA", 1) in the maps' use functions): every texture
 		// name with "MAP" in it among the scripts' strings, as "pic/<name>" up to 512 on a side (the top screen shows it

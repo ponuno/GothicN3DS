@@ -1043,6 +1043,165 @@ static void testAgainstReference() {
 }
 #endif
 
+// fix195: Ikarus on this engine (engine/ikarus.h). A small Ikarus of the script's own - the primitives' bodies do
+// nothing, the engine carries them out - with its loops (rewritten by the baker), memory, addresses and objects
+// at addresses, calls by number, a hooked function, a string changed through its address, an old-style loop over
+// MEM_StackPos and MEM_Goto.
+static const char* const kIkarus = R"(
+const int IKARUS_VERSION = 10202;
+class C_NPC { var int id; var string name; };
+class MEMINT_HELPERCLASS { };
+class ZSTRING { var int _vtbl; var int _allocater; var int ptr; var int len; var int res; };
+class MEMINT_STACKPOS { var int position; };
+class SBC { var int ptr; var int cln; var int cal; };
+var MEMINT_STACKPOS MEM_STACKPOS;
+func void MEM_INITALL() {};
+func int MEM_READINT(var int a) { return 0; };
+func void MEM_WRITEINT(var int a, var int v) {};
+func int MEM_ALLOC(var int n) { return 0; };
+func void MEM_FREE(var int p) {};
+func int MEM_REALLOC(var int p, var int o, var int n) { return 0; };
+func int MEM_READBYTE(var int a) { return 0; };
+func void MEM_COPYBYTES(var int s, var int d, var int n) {};
+func int _@(var int i) { return 0; };
+func int _@S(var string s) { return 0; };
+func MEMINT_HELPERCLASS _^(var int p) {};
+func int MEM_INSTTOPTR(var int inst) { return 0; };
+func int MEM_GETFUNCID(var func f) { return 0; };
+func void MEM_CALLBYID(var int id) {};
+func void MEM_PUSHINTPARAM(var int i) {};
+func int MEM_POPINTRESULT() {};
+func void HOOKDAEDALUSFUNC(var func a, var func b) {};
+func void CONTINUECALL() {};
+func int STR_LEN(var string s) { return 0; };
+const int BREAK = -42;
+const int CONTINUE = -23;
+const int END = -72;
+func void WHILE(var int b) {};
+func void REPEAT(var int v, var int n) {};
+func void MEM_LABEL(var int l) {};
+func void MEM_GOTO(var int l) {};
+
+func int t_heap() {
+	var int p; p = MEM_Alloc(16);
+	MEM_WriteInt(p + 4, 77);
+	var int r; r = MEM_ReadInt(p + 4);
+	MEM_Free(p);
+	return r;
+};
+func int t_addr() {
+	var int x; x = 5;
+	MEM_WriteInt(_@(x), 9);
+	return x;
+};
+func int t_view() {
+	var int p; p = MEM_Alloc(12);
+	var SBC c; c = _^(p);
+	c.cln = 3;
+	return MEM_ReadInt(p + 4);
+};
+func int t_while() {
+	var int i; var int s; i = 0; s = 0;
+	while (i < 5);
+		i += 1;
+		if (i == 2) { continue; };
+		if (i == 4) { break; };
+		s += i;
+	end;
+	return s * 10 + i;
+};
+func int t_repeat() {
+	var int k; var int s; var int j; s = 0;
+	repeat(k, 4);
+		s += k;
+		j = 0;
+		while (j < 2);
+			j += 1;
+			s += 100;
+		end;
+	end;
+	return s * 10 + k;
+};
+func int t_stackpos() {
+	var int n; n = 0;
+	var int pos; pos = MEM_StackPos.position;
+	if (n < 3) { n += 1; MEM_StackPos.position = pos; };
+	return n;
+};
+func int add2(var int a, var int b) { return a + b; };
+func int t_call() {
+	MEM_PushIntParam(20);
+	MEM_PushIntParam(22);
+	MEM_CallByID(MEM_GetFuncID(add2));
+	return MEM_PopIntResult();
+};
+func int orig(var int x) { return x * 10; };
+func int hooker(var int a) {
+	MEM_PushIntParam(a + 1);
+	ContinueCall();
+};
+func int t_hook() {
+	HookDaedalusFunc(orig, hooker);
+	return orig(5);
+};
+func int t_strings() {
+	var string s; s = "hello";
+	var zString z; z = _^(_@s(s));
+	return z.len * 1000 + MEM_ReadByte(z.ptr + 1);
+};
+var string sbOut;
+func int t_sbstring() {
+	sbOut = "";
+	var zString z; z = _^(_@s(sbOut));
+	var int p; p = MEM_Alloc(5) + 1;
+	MEM_WriteInt(p, 6513249);
+	z.ptr = p;
+	z.len = 3;
+	return STR_Len(sbOut);
+};
+func int t_goto() {
+	var int n; n = 0;
+	MEM_Label(0);
+	n += 1;
+	if (n < 3) { MEM_Goto(0); };
+	return n;
+};
+var C_NPC someone;
+func int t_object() {
+	someone.id = 31;
+	var C_NPC v; v = _^(MEM_InstToPtr(someone));
+	return v.id + MEM_ReadInt(MEM_InstToPtr(someone));
+};
+)";
+
+static void testIkarus() {
+	Machine m(kIkarus);
+	CHECK(m.baked.report.find("Ikarus: loops rewritten into jumps: 2 while, 1 repeat, 3 end, 1 break, 1 continue, 1 labels, 1 gotos\n") !=
+	      std::string::npos);
+	Ikarus ik;
+	CHECK(ik.attach(m.vm, 1u << 20));
+	CHECK(ik.stats().refused == 0);
+	ScriptInstance* npc = m.vm.allocate(m.vm.find("SOMEONE"));
+	(void)npc;
+	CHECK(m.callInt("T_HEAP") == 77);
+	CHECK(m.callInt("T_ADDR") == 9);
+	CHECK(m.callInt("T_VIEW") == 3);
+	CHECK(m.callInt("T_WHILE") == 44);
+	CHECK(m.callInt("T_REPEAT") == (6 + 800) * 10 + 4);
+	CHECK(m.callInt("T_STACKPOS") == 3);
+	CHECK(m.callInt("T_CALL") == 42);
+	CHECK(m.callInt("T_HOOK") == 60);
+	CHECK(m.callInt("T_STRINGS") == 5 * 1000 + 'e');
+	CHECK(m.callInt("T_SBSTRING") == 3);
+	CHECK(std::string(m.vm.getString(m.vm.find("SBOUT"))) == "abc");
+	CHECK(m.callInt("T_GOTO") == 3);
+	CHECK(m.callInt("T_OBJECT") == 62);
+	CHECK(m.vm.stats().errors == 0 && m.vm.stats().aborted == 0 && m.vm.stats().nullAccess == 0);
+	const ScriptMemory::Stats& ms = ik.memory().stats();
+	CHECK(ms.badReads == 0 && ms.badWrites == 0 && ms.badFrees == 0);
+	std::printf("       Ikarus: %u stand-ins, heap %u blocks, %u views\n", ik.stats().bound, ms.blocks, ms.views);
+}
+
 int main(int argc, char** argv) {
 	const char* only = argc > 2 ? argv[2] : nullptr;
 	struct {
@@ -1050,7 +1209,7 @@ int main(int argc, char** argv) {
 		void (*fn)();
 	} tests[] = {{"basics", testBasics}, {"compiler errors", testCompilerErrors}, {"objects", testObjects}, {"broken images", testBrokenImages}, {"synthetic script", testSyntheticScript},
 	             {"game", testGame}, {"docs and clock", testDocsAndClock}, {"late and rooms", testLateAndRooms},
-	             {"transform", testTransform},
+	             {"transform", testTransform}, {"ikarus", testIkarus},
 #ifdef G3DS_WITH_ZENKIT
 	             {"against the reference", testAgainstReference},
 #endif

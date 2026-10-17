@@ -25,8 +25,42 @@ struct ScriptInstance {
 	u32 size;
 	u32 serial;    // unique among the machine's instances, in order of creation
 	void* user;    // for the host: the game object this belongs to
-	u8* data() { return reinterpret_cast<u8*>(this + 1); }
-	const u8* data() const { return reinterpret_cast<const u8*>(this + 1); }
+	// fix195 (Ikarus): a "view" of memory the scripts allocated (ScriptVm::wrap) has its bytes there, not after
+	// this header; `memId` is the object's number in Ikarus' address space (script_mem.h; 0 until it is asked for).
+	u8* ext;
+	u32 memId;
+	u32 flags; // SCRIPTI_*
+	u8* data() { return ext ? ext : reinterpret_cast<u8*>(this + 1); }
+	const u8* data() const { return ext ? ext : reinterpret_cast<const u8*>(this + 1); }
+};
+
+enum : u32 {
+	SCRIPTI_VIEW = 1u << 0, // made by wrap(): its bytes belong to someone else; its string members are the engine's
+	                        // string objects (zString), as Ikarus memory has them
+	SCRIPTI_DEAD = 1u << 1, // its memory was freed; destroyed at the next purge()
+};
+
+// fix195: a value as the scripts pushed it: a number, or the variable itself (Ikarus' _@ wants its address).
+struct ScriptValue {
+	enum : u8 { INT, FLOAT, VARIABLE, OBJECT };
+	u8 kind = INT;
+	u8 index = 0;              // VARIABLE: the element
+	u32 symbol = 0xFFFFFFFFu;  // VARIABLE
+	i32 i = 0;                 // INT (FLOAT: the bits)
+	ScriptInstance* ctx = nullptr; // VARIABLE: the object of a member; OBJECT: the object
+};
+
+// fix195: what Ikarus' memory (script_mem.h) has to be told by the machine, and does for it.
+struct ScriptMemoryHooks {
+	void* user = nullptr;
+	// An object is going away.
+	void (*destroyed)(ScriptInstance* inst, void* user) = nullptr;
+	// A string member of a view (SCRIPTI_VIEW): an engine string object (zString) in Ikarus memory.
+	const char* (*readZString)(const u8* at, void* user) = nullptr;
+	void (*writeZString)(u8* at, const char* text, void* user) = nullptr;
+	// Before a string variable is read while watchStrings() is on: the scripts may have changed it through its
+	// address (Ikarus' _@s).
+	void (*syncStrings)(void* user) = nullptr;
 };
 
 struct ScriptStats {
@@ -35,6 +69,8 @@ struct ScriptStats {
 	                          // The game's own scripts do it; the original shrugs it off too.
 	u32 aborted = 0;          // calls given up (runaway loop, broken code)
 	u32 stubCalls = 0;        // calls of externals nobody has bound
+	u32 nulledCalls = 0;      // fix195: calls of Ikarus functions skipped (SCRIPTF_NULLED, no stand-in)
+	u32 overrideCalls = 0;    // fix195: calls of script functions the engine carries out itself (override())
 	u64 instructions = 0;
 	u32 instances = 0;        // alive
 	u32 instanceBytes = 0;
@@ -101,6 +137,62 @@ public:
 		_unbound = fn;
 		_unboundUser = user;
 	}
+
+	// ---- functions the engine carries out instead of the scripts (fix195: Ikarus) ----
+	// The script function `name` is not run: `fn` is called instead, like an external (it takes the arguments
+	// from the stack, last one first, and pushes its result). A `naked` one is not framed: it may leave more or
+	// less on the stack than the function's declaration says (Ikarus' MEM_PushIntParam, MEM_CallByID). False if
+	// the scripts have no such function.
+	bool override(const char* name, External fn, void* user, bool naked = false);
+	bool overrideSymbol(u32 symbol, External fn, void* user, bool naked = false);
+	bool isOverridden(u32 symbol) const;
+	// Called for a call of a function skipped as an Ikarus primitive (SCRIPTF_NULLED, no override). For reports.
+	void onNulled(void (*fn)(u32 symbol, void* user), void* user) {
+		_nulled = fn;
+		_nulledUser = user;
+	}
+
+	// ---- for Ikarus (fix195) ----
+	// What the scripts pushed, taken off the stack as it is (a variable stays a variable).
+	bool popValue(ScriptValue& out);
+	void pushValue(const ScriptValue& v);
+	u32 stackDepth() const { return _sp; }
+	// The globals' words (ints, floats, function variables) and the code, for Ikarus' addresses.
+	i32* dataWords() { return _data; }
+	u32 dataCount() const { return _h.dataCount; }
+	const u8* code() const { return _code; }
+	u32 codeSize() const { return _h.codeSize; }
+	// The address of the next instruction; setting it jumps there (Ikarus' MEM_StackPos.position).
+	u32 pc() const { return _pc; }
+	void setPc(u32 pc) {
+		if (pc < _h.codeSize) _pc = pc;
+	}
+	// The object whose member is the position of the code (any member: read, the next instruction; written, a
+	// jump). Ikarus' MEM_StackPos.
+	void setPcObject(ScriptInstance* inst) { _pcObject = inst; }
+	// An object whose bytes are `bytes` (`size` of them), owned by the caller: Ikarus' _^(pointer). Its string
+	// members are the engine's string objects (hooks). Freed by purge() once marked SCRIPTI_DEAD, or with the
+	// machine.
+	ScriptInstance* wrap(u8* bytes, u32 size);
+	// Destroys every object marked SCRIPTI_DEAD at once; whatever referred to them refers to none.
+	void purge();
+	void setMemoryHooks(const ScriptMemoryHooks* hooks) { _memHooks = hooks; }
+	void watchStrings(bool on) { _watchStrings = on; }
+	// The loops the baker rewrote (OP_XREPEAT).
+	u32 loopCount() const { return _h.loopCount; }
+	// The calls under way, innermost first (depth 0): for reports and Ikarus' ContinueCall.
+	u32 frameCount() const { return _fp; }
+	u32 frameFunction(u32 depth) const { return depth < _fp ? _frames[_fp - 1 - depth].function : SCRIPT_NONE; }
+	// Called when a call is given up (before the machine unwinds it): what happened. For reports.
+	void onAbandon(void (*fn)(const char* what, void* user), void* user) {
+		_onAbandon = fn;
+		_onAbandonUser = user;
+	}
+	// The function, prototype or instance whose code begins at `address` (SCRIPT_NONE: none).
+	u32 functionAtAddress(u32 address) const { return functionAt(address); }
+	// Runs a script function's own code even if the engine carries it out instead (override()): for Ikarus'
+	// MEM_ReplaceFunc and LeGo's hooks of script functions, whose stand-ins call the original.
+	bool callOriginal(u32 function);
 
 	// ---- running ----
 	// Calls a script function; its arguments must have been pushed, first one
@@ -199,6 +291,8 @@ private:
 	enum { STACK = 1024, FRAMES = 96, TEMPS = 32 };
 
 	bool run(u32 symbol, u32 address);
+	void callOverride(u32 symbol);
+	i32 pcRead() const { return i32(_pc); }
 	bool step();
 	void enter(u32 symbol, u32 address, u32 returnPc);
 	void leave();
@@ -213,6 +307,7 @@ private:
 	u8* memberPtr(const ScriptSymbol& s, u32 index, const ScriptInstance* ctx, u32 bytes) const;
 	const char* stringAt(u32 symbol, u32 index, const ScriptInstance* ctx) const;
 	u32 newDynamic(const char* text);
+	bool stringSlotConst(u32 slot) const;
 	void freeDynamic(u32 handle);
 
 	u8* _blob = nullptr;
@@ -233,6 +328,33 @@ private:
 	Bound* _externals = nullptr;
 	void (*_unbound)(u32, void*) = nullptr;
 	void* _unboundUser = nullptr;
+	void (*_nulled)(u32, void*) = nullptr;
+	void (*_onAbandon)(const char*, void*) = nullptr;
+	void* _onAbandonUser = nullptr;
+	void* _nulledUser = nullptr;
+	// fix195: functions carried out by the engine (sorted by symbol), and a bit per symbol for the quick test.
+	struct Override {
+		u32 symbol;
+		External fn;
+		void* user;
+		bool naked;
+	};
+	Override* _overrides = nullptr;
+	u32 _overrideCount = 0, _overrideCap = 0;
+	u8* _overBits = nullptr;
+	// fix195: the rewritten loops and, per loop, its variable and limit while it runs.
+	const ScriptLoop* _loops = nullptr;
+	struct LoopState {
+		u32 symbol;
+		u32 index;
+		ScriptInstance* ctx;
+		i32 limit;
+	};
+	LoopState* _loopState = nullptr;
+	const ScriptMemoryHooks* _memHooks = nullptr;
+	bool _watchStrings = false;
+	ScriptInstance* _pcObject = nullptr;
+	u32 _deadCount = 0;
 	ErrorHook _onError = nullptr;
 	void* _onErrorUser = nullptr;
 

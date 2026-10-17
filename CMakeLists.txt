@@ -53,7 +53,7 @@ endif ()
 
 # The script machine and the game's rules. The baker runs them too: it has to
 # know what the scripts put into the world to bake what that needs.
-add_library(g3script STATIC engine/script.cpp engine/game.cpp engine/game_dialog.cpp engine/game_doc.cpp engine/game_extra.cpp engine/game_save.cpp engine/game_items.cpp engine/fight.cpp engine/game_magic.cpp)
+add_library(g3script STATIC engine/script.cpp engine/script_mem.cpp engine/ikarus.cpp engine/game.cpp engine/game_dialog.cpp engine/game_doc.cpp engine/game_extra.cpp engine/game_save.cpp engine/game_items.cpp engine/fight.cpp engine/game_magic.cpp)
 target_include_directories(g3script PUBLIC engine)
 target_link_libraries(g3script PUBLIC g3core)
 target_compile_options(g3script PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)

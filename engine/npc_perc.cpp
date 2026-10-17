@@ -333,9 +333,9 @@ bool Npcs::debugNearest(char* out, size_t size) const {
 	if (strncmp(state, "ZS_", 3) == 0) state += 3;
 	const i32 hb = heroBodyState() & 0x7F;
 	const char* body = hb == 3 ? "RUN" : hb == 8 ? "JMP" : hb == 5 ? "SWM" : "STD";
-	snprintf(out, size, "%.10s %.14s t%d d%d a%d E%d rdy%d st%d w%d s%d x%d k%d %s %s", _game.nameOf(n), state, int(best->stateTime), int(sqrtf(bestD) / 100.0f),
+	snprintf(out, size, "%.10s %.14s t%d d%d a%d E%d rdy%d st%d w%d s%d %s %s", _game.nameOf(n), state, int(best->stateTime), int(sqrtf(bestD) / 100.0f),
 	         int(_game.attitude(best->npc, heroIndex)), enemy ? 1 : 0, best->ready ? 1 : 0, best->started ? 1 : 0,
-	         int(best->percWait * 10.0f), int(_game.sensesRange(n) / 100.0f), int(best->aborts), int(best->action.kind), _cfg.perceive ? "P" : "noP", body);
+	         int(best->percWait * 10.0f), int(_game.sensesRange(n) / 100.0f), _cfg.perceive ? "P" : "noP", body);
 	return true;
 }
 

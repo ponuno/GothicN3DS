@@ -9,15 +9,19 @@
 // addresses are the original's too.
 //
 //   ScriptHeader | ScriptSymbol[symbolCount] | ScriptFunction[functionCount] |
-//   ScriptState[stateCount] | i32 data[dataCount] | u32 stringOffset[stringCount] | char strings[stringBytes] |
-//   u8 code[codeSize]                                  (every table padded to 4 bytes)
+//   ScriptState[stateCount] | ScriptLoop[loopCount] | i32 data[dataCount] | u32 stringOffset[stringCount] |
+//   char strings[stringBytes] | u8 code[codeSize]      (every table padded to 4 bytes)
+//
+// Version 3 (fix195): the loops of Ikarus (while / repeat / end / break / continue, MEM_Label / MEM_Goto) are
+// rewritten by the baker into jumps of the code, as Ikarus itself rewrites them the first time they run: the
+// bytecode is the original's except at those places.
 #pragma once
 #include "g3ds/base.h"
 
 namespace g3 {
 
 constexpr u32 SCRIPT_MAGIC = fourcc('G', '3', 'S', 'C');
-constexpr u32 SCRIPT_VERSION = 2;
+constexpr u32 SCRIPT_VERSION = 3;
 constexpr u32 SCRIPT_NONE = 0xFFFFFFFFu;
 
 enum ScriptType : u8 {
@@ -36,7 +40,8 @@ enum ScriptFlags : u8 {
 	SCRIPTF_RETURN = 1 << 1,   // a function with a return value
 	SCRIPTF_MEMBER = 1 << 2,   // a member of a class: lives in an instance
 	SCRIPTF_EXTERNAL = 1 << 3, // a function the engine provides
-	SCRIPTF_NULLED = 1 << 4,   // an Ikarus primitive: calls are skipped (answer 0)
+	SCRIPTF_NULLED = 1 << 4,   // an Ikarus primitive with no stand-in: calls are skipped (answer 0), unless the
+	                           // engine gives the function an implementation of its own (ScriptVm::override)
 };
 
 struct ScriptHeader {
@@ -51,7 +56,8 @@ struct ScriptHeader {
 	u32 instanceSlots; // one per symbol that can refer to an instance
 	u32 externalCount; // externals are numbered 0 .. externalCount - 1
 	u32 stateCount;
-	u32 reserved[5];
+	u32 loopCount; // Ikarus' repeat loops (ScriptLoop)
+	u32 reserved[4];
 };
 static_assert(sizeof(ScriptHeader) == 64, "ScriptHeader layout");
 
@@ -95,6 +101,15 @@ struct ScriptState {
 };
 static_assert(sizeof(ScriptState) == 12, "ScriptState layout");
 
+// An Ikarus `repeat(var, limit); ... end;`, as the baker rewrote it: the call of `repeat` became OP_XREPEAT, the
+// `end` OP_XNEXT, both with this entry's number. `body` is the first instruction of the loop's body, `end` the
+// first after the loop.
+struct ScriptLoop {
+	u32 body;
+	u32 end;
+};
+static_assert(sizeof(ScriptLoop) == 8, "ScriptLoop layout");
+
 // The original's opcodes.
 enum ScriptOp : u8 {
 	OP_ADD = 0, OP_SUB = 1, OP_MUL = 2, OP_DIV = 3, OP_MOD = 4, OP_OR = 5, OP_ANDB = 6, OP_LT = 7, OP_GT = 8,
@@ -104,7 +119,32 @@ enum ScriptOp : u8 {
 	OP_RSR = 60, OP_BL = 61, OP_BE = 62, OP_PUSHI = 64, OP_PUSHV = 65, OP_PUSHVI = 67,
 	OP_MOVS = 70, OP_MOVSS = 71, OP_MOVVF = 72, OP_MOVF = 73, OP_MOVVI = 74, OP_B = 75, OP_BZ = 76,
 	OP_GMOVI = 80, OP_PUSHVV = 245,
+	// The port's own (fix195), written by the baker in place of Ikarus' loops (ScriptLoop). Five bytes each, like
+	// the call they replace: the opcode and the loop's number.
+	OP_XREPEAT = 240, // takes the limit and the variable; the variable = 0; to `end` if 0 >= limit
+	OP_XNEXT = 241,   // the variable += 1; back to `body` while it is below the limit
 };
+
+// The length of an instruction, in bytes (the opcode and its operand).
+inline u32 scriptOpSize(u8 op) {
+	switch (op) {
+	case OP_BL:
+	case OP_BE:
+	case OP_PUSHI:
+	case OP_PUSHV:
+	case OP_PUSHVI:
+	case OP_B:
+	case OP_BZ:
+	case OP_GMOVI:
+	case OP_XREPEAT:
+	case OP_XNEXT:
+		return 5;
+	case OP_PUSHVV:
+		return 6;
+	default:
+		return 1;
+	}
+}
 
 // A string member of a class takes this much room in an instance (the
 // original engine's string object); the image's offsets count with it.

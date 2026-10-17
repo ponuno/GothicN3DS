@@ -54,6 +54,51 @@ u8 actionOf(const i32* act, const char* const* what) {
 	return START_NONE;
 }
 
+// fix194: does START_MENU <menu> lead (within `depth` menus) to an item that starts a new game?
+bool subMenuStartsGame(ScriptVm& vm, const i32* act, const char* const* what, int depth) {
+	if (depth <= 0) return false;
+	const u32 mItems = vm.findMember("C_MENU", "ITEMS");
+	const u32 iAct = vm.findMember("C_MENU_ITEM", "ONSELACTION"), iActS = vm.findMember("C_MENU_ITEM", "ONSELACTION_S");
+	if (mItems == SCRIPT_NONE || iAct == SCRIPT_NONE || iActS == SCRIPT_NONE) return false;
+	for (int k = 0; k < 5; ++k) {
+		if (act[k] != SEL_START_MENU || !what[k] || !*what[k]) continue;
+		char up[64];
+		u32 n = 0;
+		for (const char* p = what[k]; *p && n + 1 < sizeof(up); ++p) up[n++] = char(toupper(u8(*p)));
+		up[n] = 0;
+		const u32 sym = vm.find(up);
+		if (sym == SCRIPT_NONE || vm.symbol(sym).type != SCRIPT_INSTANCE) continue;
+		ScriptInstance* menu = vm.create(sym);
+		if (!menu) continue;
+		bool found = false;
+		for (u32 j = 0; j < 150 && !found; ++j) {
+			const char* itemName = vm.getString(mItems, j, menu);
+			if (!itemName || !*itemName) continue;
+			char iu[96];
+			u32 m = 0;
+			for (const char* p = itemName; *p && m + 1 < sizeof(iu); ++p) iu[m++] = char(toupper(u8(*p)));
+			iu[m] = 0;
+			const u32 isym = vm.find(iu);
+			ScriptInstance* in = isym != SCRIPT_NONE ? vm.create(isym) : nullptr;
+			if (!in) continue;
+			i32 a[5];
+			char buf[5][48];
+			const char* w[5];
+			for (u32 q = 0; q < 5; ++q) {
+				a[q] = vm.getInt(iAct, q, in);
+				const char* s = vm.getString(iActS, q, in);
+				snprintf(buf[q], sizeof(buf[q]), "%s", s ? s : "");
+				w[q] = buf[q];
+			}
+			vm.destroy(in);
+			found = actionOf(a, w) == START_NEW_GAME || subMenuStartsGame(vm, a, w, depth - 1);
+		}
+		vm.destroy(menu);
+		if (found) return true;
+	}
+	return false;
+}
+
 } // namespace
 
 bool loadUiPicture(Pak& pak, const char* name, UiPicture& out) {
@@ -164,6 +209,13 @@ void StartMenu::load(Pak& pak) {
 			what[a] = whatBuf[a];
 		}
 		it.action = actionOf(act, what);
+		// fix194: a mod's "New Game" may open a menu of its own first (START_MENU MENU_XXX whose item is CLOSE NEW_GAME, as
+		// OpenGothic follows any START_MENU) or run a script function: look one or two menus deep for NEW_GAME, and at last
+		// go by the item's own name (MENU_ITEM_NEW_GAME). Without this Archolos' New Game came out disabled.
+		if (it.action == START_NONE) {
+			if (subMenuStartsGame(vm, act, what, 2)) it.action = START_NEW_GAME;
+			else if (strstr(name, "NEW_GAME") || strstr(name, "NEWGAME")) it.action = START_NEW_GAME;
+		}
 		loadUiPicture(pak, text(iBack, in), it.picture);
 		vm.destroy(in);
 	}

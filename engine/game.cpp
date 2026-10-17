@@ -71,6 +71,8 @@ void Game::release() {
 	docFree(_docShown);
 	_chapter = GameChapter();
 	_kapitel = SCRIPT_NONE;
+	_ikarus.detach();
+	_worldEntered = false;
 	_vm.release();
 	_particleVm.release();
 	_visualVm.release();
@@ -317,6 +319,8 @@ bool Game::bindAll() {
 	bindDialogues();
 	bindItems();
 	bindExtra();
+	// fix195: a mod's Ikarus and LeGo get the engine's stand-ins (before anything of the scripts runs).
+	_ikarus.attach(_vm, IKARUS_HEAP);
 
 	// The player's character exists before any world's start-up runs.
 	const u32 hero = _vm.find("PC_HERO");
@@ -894,6 +898,10 @@ void Game::enterWorld(const char* script, float hours, PointFinder find, void* u
 		if (_worldCount >= 0xFFFF || !grow(_worlds, _worldCap, _worldCount + 1, 8)) return;
 		_worlds[_worldCount++] = World {h, false};
 	}
+	// fix195: a change of worlds after the first, as LeGo's hooks of oCGame::changeLevel see it.
+	const bool change = _worldEntered;
+	if (change) _ikarus.levelChangeBegin();
+	_worldEntered = true;
 	_world = u16(index);
 	_hours = hours;
 	if (find) {
@@ -913,6 +921,7 @@ void Game::enterWorld(const char* script, float hours, PointFinder find, void* u
 	}
 	runIfPresent("INIT_", "GLOBAL");
 	runIfPresent("INIT_", script);
+	if (change) _ikarus.levelChangeEnd();
 	setTime(hours, find, user);
 }
 

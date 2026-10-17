@@ -688,21 +688,30 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	select(pak, world, eye, _cfg.loadsPerFrame);
 	const double tSelect = sys::timeMs();
 	u32 actors = 0, walking = 0, looking = 0, fighting = 0;
+	_stats.tickActMs = _stats.tickPercMs = _stats.tickFightMs = _stats.tickBodyMs = _stats.tickGroundMs = 0;
+	_stats.ticked = _stats.tickSkipped = 0;
+	_sightTests = 0;
+	const int partner = talking() ? talkPartner() : -1;
 	for (NpcActor& a : _actors) {
 		if (!a.used || !a.ready) continue;
 		float stepDt = dt;
+		// fix205: only the one the player talks to, and whoever is saying a line, is stepped every frame during a talk.
+		// (It used to be everybody: a talk switched the halving of the far ones off for the whole town - the frames of a
+		// talk were the heaviest of the game.)
 		if (_cfg.farTickEvery > 1 && hoursPassed == 0.0f && a.dist2 > _cfg.farTickDistance * _cfg.farTickDistance &&
-		    _game.npc(a.npc).weapon == WEAPON_NONE && !talking()) {
+		    _game.npc(a.npc).weapon == WEAPON_NONE && int(a.npc) != partner && a.action.kind != NPC_ACT_OUTPUT) {
 			a.tickDebt += dt;
 			// (Not all on the same frame.)
 			if ((_frame + a.npc) % _cfg.farTickEvery != 0) {
 				++actors;
+				++_stats.tickSkipped;
 				continue;
 			}
 			stepDt = a.tickDebt;
 		}
 		a.tickDebt = 0.0f;
 		tick(a, world, stepDt, hoursPassed);
+		++_stats.ticked;
 		++actors;
 		walking += a.phase == NpcActor::MOVING;
 		looking += a.lookAt >= 0;
@@ -712,6 +721,7 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	_stats.clockMs = float(tClock - tStart);
 	_stats.selectMs = float(tSelect - tClock);
 	_stats.tickMs = float(sys::timeMs() - tSelect);
+	_stats.sightTests = _sightTests;
 	_stats.looking = looking;
 	_stats.fighting = fighting;
 	u32 inUse = 0;

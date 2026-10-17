@@ -837,6 +837,8 @@ void App::update(const Input& given, float dt) {
 	trace("update: sound");
 	_sound.setListener(_cam.pos, _cam.yaw);
 	_sound.update(dt, _env.timeOfDay);
+	_speech.update(); // fix204: a line that waited for its recording starts
+	_chatter.update();
 	trace("update: weather sound");
 	weatherSound(dt);
 	trace("update: barrier");
@@ -2366,14 +2368,16 @@ void App::startSpeech() {
 	char* bslash = strrchr(path, '\\');
 	if (bslash > slash) slash = bslash;
 	snprintf(slash ? slash + 1 : path, sizeof(path) - (slash ? u32(slash + 1 - path) : 0), "speech.pak");
-	if (!_speech.init(path, _audio)) return;
+	// fix204: with a thread each: recordings are read and decoded ahead, off the frame.
+	if (!_speech.init(path, _audio, true)) return;
 	_speech.setVolume(float(_settings.voiceVolume) / 10.0f);
 	// (A second reader of the same archives for what the world says: it has a channel of its own.)
-	if (_chatter.init(path, _audio)) _chatter.setVolume(float(_settings.voiceVolume) / 10.0f);
+	if (_chatter.init(path, _audio, true)) _chatter.setVolume(float(_settings.voiceVolume) / 10.0f);
 	Npcs::SpeechHook hook;
 	hook.play = &App::speechPlayThunk;
 	hook.stop = &App::speechStopThunk;
 	hook.say = &App::chatterThunk;
+	hook.prefetch = &App::speechPrefetchThunk;
 	hook.user = this;
 	_npcs.setSpeechHook(hook);
 }
@@ -2383,6 +2387,11 @@ float App::speechPlayThunk(void* user, u32 lineHash, int speaker, bool hero) {
 }
 
 void App::speechStopThunk(void* user) { static_cast<App*>(user)->_speech.stop(); }
+
+void App::speechPrefetchThunk(void* user, u32 lineHash, bool world) {
+	App* app = static_cast<App*>(user);
+	(world ? app->_chatter : app->_speech).prefetch(lineHash);
+}
 
 // A line begins. The player's character is heard in full; another by its distance
 // (a talk is close, a shout across the camp is not).

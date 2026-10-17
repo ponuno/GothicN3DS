@@ -62,6 +62,7 @@ bool Npcs::sees(const NpcActor& a, u32 other, bool inFront) const {
 	// Close by it is noticed through a wall.
 	if (o.hero && !_heroLink.sneaking && d2 <= range * range * _cfg.hearShare * _cfg.hearShare) return true;
 	if (!_world) return true;
+	++_sightTests;
 	// (A sphere of 12 cm stepped along: nothing a person could be hidden by slips through.
 	// Two heights: a creature's eyes are not a person's, and a bush at the knee is no wall.)
 	return _world->lineFree({n.pos[0], n.pos[1] + 160.0f, n.pos[2]}, {o.pos[0], o.pos[1] + 160.0f, o.pos[2]}, 12.0f) ||

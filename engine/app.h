@@ -584,6 +584,7 @@ private:
 	float speechBegin(u32 lineHash, int speaker, bool hero);
 	static float speechPlayThunk(void* user, u32 lineHash, int speaker, bool hero);
 	static void speechStopThunk(void* user);
+	static void speechPrefetchThunk(void* user, u32 lineHash, bool world);
 	float chatterBegin(u32 lineHash, int speaker, bool overlay);
 	static float chatterThunk(void* user, u32 lineHash, int speaker, bool overlay);
 	static void soundEventThunk(void* user, const ClipSfxEvent& event, int npc);

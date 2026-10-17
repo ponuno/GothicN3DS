@@ -72,9 +72,14 @@ bool Sound::init(Pak& pak, ScriptVm* vm, AudioOut* out, u32 cacheBytes, bool thr
 	_queueCount = 0;
 	_threaded = false;
 	if (threaded && _lock && _wake && _loaderPak.open(pak.path())) {
+		// fix204: set before the thread starts. work() reads it at once (on the New 3DS on the other core): seeing
+		// false it either quit at once (no sample was ever loaded again) or read through the main thread's archive.
+		_threaded = true;
 		_thread = sys::threadStart(&Sound::threadMain, this);
-		_threaded = _thread != nullptr;
-		if (!_threaded) _loaderPak.close();
+		if (!_thread) {
+			_threaded = false;
+			_loaderPak.close();
+		}
 	}
 	return true;
 }

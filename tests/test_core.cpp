@@ -36,6 +36,9 @@
 #include "pacer.h"
 #include "stereo.h"
 #include "readahead.h"
+#include "speech.h"
+#include <chrono>
+#include <thread>
 #include "rooms.h"
 #include "bytes.h"
 #include "triggers.h"
@@ -4671,6 +4674,36 @@ static void testSpeech() {
 		CHECK(wa.rightOf(Speech::WORLD_CHANNEL) > 0.7f && wa.leftOf(Speech::WORLD_CHANNEL) < 0.05f);
 		world.shutdown();
 		CHECK(wa.liveBlocks() == 0);
+	}
+	// fix204: with a thread the recording is read and decoded ahead; play() only hands it over. A line nobody asked
+	// for in time is measured at once and starts in update() when it has arrived.
+	{
+		HostAudio ta;
+		Speech ts;
+		CHECK(ts.init((dir + "/speech.pak").c_str(), &ta, true) && ts.threaded());
+		const u32 hello = hashName("DIA_Thorus_Hello_09_00"), job = hashName("DIA_Thorus_Job_15_00");
+		ts.prefetch(hello);
+		std::this_thread::sleep_for(std::chrono::milliseconds(300)); // (the thread reads and decodes it meanwhile)
+		const float len = ts.play(hello, 1.0f);
+		CHECK(len > 1.95f && len < 2.05f && ta.startedCount() == 1 && ts.prefetchHits() == 1 && ts.prefetchLate() == 0);
+		CHECK(ta.last().rate == 11025 && ta.last().frames > 21900 && ta.last().frames < 22200);
+		int pk = 0;
+		for (u32 i = 0; i < ta.last().frames; ++i) pk = std::max(pk, std::abs(int(ta.last().samples[i])));
+		CHECK(pk > 6000);
+		// Not read ahead: its length now, the sound a moment later.
+		const float late = ts.play(job, 1.0f);
+		CHECK(late > 0.55f && late < 0.65f && ts.prefetchLate() == 1);
+		for (int i = 0; i < 400 && ta.startedCount() < 2; ++i) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			ts.update();
+		}
+		CHECK(ta.startedCount() == 2 && ta.last().frames > 0 && ts.played() == 2);
+		// Missing lines are nothing; stop() forgets a line that still waits.
+		CHECK(ts.play(hashName("DIA_Jackal_Hello_15_00"), 1.0f) == 0.0f && ts.missing() == 1);
+		ts.prefetch(job);
+		ts.prefetch(hello);
+		ts.shutdown();
+		CHECK(ta.liveBlocks() == 0 && !ts.ready());
 	}
 }
 

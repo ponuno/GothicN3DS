@@ -6,6 +6,10 @@
 #include "g3ds/pak.h"
 
 namespace g3 {
+class ReadAhead;
+}
+
+namespace g3 {
 
 class DialogTexts {
 public:
@@ -26,17 +30,21 @@ public:
 	// page, or null if there is none. Valid until the next call.
 	const char* find(const char* name) { return find(hashName(name)); }
 	const char* find(u32 hash);
+	// fix204: the line will be wanted soon: its block, if not held, is wished for from the read-ahead (it is
+	// then taken from memory, not the card, when find() reads it).
+	void prefetch(u32 hash, ReadAhead& ahead);
 	// Blocks read from the archive since load (for reports).
 	u32 reads() const { return _reads; }
 
 private:
-	enum { CACHED = 2 };
+	enum { CACHED = 4 }; // (fix204: 2 -> 4; a block is ~24 KB)
 	struct Cached {
 		u32 block = 0xFFFFFFFFu;
 		u32 used = 0;
 		u8* data = nullptr;
 	};
 	const Cached* fetch(u32 block);
+	bool blockOf(u32 hash, u32& block) const;
 
 	Pak* _pak = nullptr;
 	u32* _firsts = nullptr;

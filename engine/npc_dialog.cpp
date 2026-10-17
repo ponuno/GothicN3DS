@@ -18,6 +18,7 @@
 // first); the queue goes on from there.
 #include "npcs.h"
 #include "lang.h"
+#include "readahead.h"
 #include "ui.h"
 
 #include <math.h>
@@ -188,6 +189,15 @@ void Npcs::queueTalkLine(ScriptInstance* speakerInst, u32 hash) {
 	}
 	_speech[(_speechHead + _speechCount) % SPEECH] = SpeechStep {hash, speaker, id, -1};
 	++_speechCount;
+	prefetchLine(hash, false);
+}
+
+// fix204: the lines of an info are queued all at once, seconds before each is said: their words and recordings are
+// read from the card now, off the frame (the words through the read-ahead, the recording by the voices' thread).
+void Npcs::prefetchLine(u32 hash, bool world) {
+	if (!hash) return;
+	if (_ahead && _ahead->running() && _ahead->enabled()) _texts.prefetch(hash, *_ahead);
+	if (_speechHook.prefetch) _speechHook.prefetch(_speechHook.user, hash, world);
 }
 
 // fix196: LeGo's AI_Function on the player's character, who has no queue: a step of the words' queue, run when the
@@ -229,7 +239,9 @@ bool Npcs::queueWorldLine(ScriptInstance* speakerInst, int target, u32 hash, con
 	act.hash = hash;
 	act.order = _sayOrder++;
 	if (svm) copyText(act.text, sizeof(act.text), svm);
-	return push(a, act);
+	if (!push(a, act)) return false;
+	if (!svm) prefetchLine(hash, true); // (an SVM phrase is named only when said)
+	return true;
 }
 
 void Npcs::xOutput(ScriptVm& vm, void* user) {

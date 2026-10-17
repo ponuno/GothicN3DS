@@ -1306,6 +1306,12 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 		a.settle -= dt;
 		if (a.settle <= 0.0f && a.phase != NpcActor::MOVING) a.carried = false;
 	}
+	double tPart = sys::timeMs(); // fix205: the parts of the step, for hitches.txt
+	const auto part = [&](float& into) {
+		const double now = sys::timeMs();
+		into += float(now - tPart);
+		tPart = now;
+	};
 	if (_cfg.alive) {
 		a.stateTime += dt;
 		a.stateHours += hoursPassed;
@@ -1353,6 +1359,7 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 			tickState(a);
 			if (a.action.kind == NPC_ACT_NONE && !a.queueCount) break;
 		}
+		part(_stats.tickActMs);
 		a.percWait -= dt;
 		// The player has just come within the reach of its senses: it looks at once.
 		const bool near = heroNear(n);
@@ -1361,6 +1368,7 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 		if (_cfg.perceive && a.percWait <= 0.0f && n.down == DOWN_NONE) perceive(a, world);
 		turnHead(a, dt);
 		faceHero(a, dt);
+		part(_stats.tickPercMs);
 	}
 	tickFight(a, dt);
 	// A thing in hand goes when the weapon comes out or the character goes down, or when
@@ -1381,8 +1389,11 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 		fallBack(a, 0.25f);
 	// (In a bed the ground is no concern: the animation knows where the body is.)
 	const bool inMob = a.mob >= 0 && a.mobStage >= NpcActor::MOB_ENTERING;
+	part(_stats.tickFightMs);
 	if (!inMob && _cfg.bodies) collide(a, world, before);
+	part(_stats.tickBodyMs);
 	if ((walked || a.phase == NpcActor::MOVING || !a.grounded) && !inMob) ground(a, world, 120.0f);
+	part(_stats.tickGroundMs);
 }
 
 // ---- what the scripts call ----

@@ -11,6 +11,9 @@ namespace {
 
 // What is worth reading ahead: what the game reads in the middle of a frame.
 bool worthIt(u16 type) { return type == ASSET_MODEL || type == ASSET_TEXTURE || type == ASSET_CLIP || type == ASSET_CHUNK; }
+// fix204: a plain blob is read only when somebody wished for it by name (the talk's blocks of words); it does not
+// count in the hits and misses, which are about what the game reads in the middle of a frame.
+bool readable(u16 type) { return worthIt(type) || type == ASSET_BLOB; }
 
 constexpr u32 kMaxClipsPerModel = 24;
 
@@ -219,7 +222,7 @@ bool ReadAhead::readOne() {
 		return true;
 	}
 	const PakEntry* e = _pak.find(hash);
-	if (!e || !worthIt(e->type) || e->size == 0 || e->size > _budget / 2) {
+	if (!e || !readable(e->type) || e->size == 0 || e->size > _budget / 2) {
 		lock();
 		_reading = false;
 		unlock();
@@ -323,7 +326,8 @@ float ReadAhead::takeWorstMs() {
 
 void* ReadAhead::takeHook(void* self, const PakEntry& e) {
 	ReadAhead* r = static_cast<ReadAhead*>(self);
-	if (!r->_running || !r->_enabled || !worthIt(e.type)) return nullptr;
+	if (!r->_running || !r->_enabled || !readable(e.type)) return nullptr;
+	const bool counted = worthIt(e.type);
 	void* out = nullptr;
 	r->lock();
 	if (Slot* s = r->findLocked(e.hash)) {
@@ -331,11 +335,11 @@ void* ReadAhead::takeHook(void* self, const PakEntry& e) {
 			out = s->blob;
 			r->_bytes -= s->size;
 			*s = Slot();
-			++r->_stats.hits;
+			if (counted) ++r->_stats.hits;
 			if (e.type == ASSET_CLIP) ++r->_stats.clipHits;
 		}
 	}
-	if (!out) {
+	if (!out && counted) {
 		++r->_stats.misses;
 		if (e.type == ASSET_CLIP) ++r->_stats.clipMisses;
 	}

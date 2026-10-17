@@ -1,4 +1,5 @@
 #include "dialog_text.h"
+#include "readahead.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -81,9 +82,9 @@ const DialogTexts::Cached* DialogTexts::fetch(u32 block) {
 	return free_;
 }
 
-const char* DialogTexts::find(u32 hash) {
-	if (!_firsts) return nullptr;
-	// The last block that begins at or before the hash.
+// The last block that begins at or before the hash.
+bool DialogTexts::blockOf(u32 hash, u32& block) const {
+	if (!_firsts) return false;
 	u32 lo = 0, hi = _blocks;
 	while (hi - lo > 1) {
 		const u32 mid = (lo + hi) / 2;
@@ -92,7 +93,24 @@ const char* DialogTexts::find(u32 hash) {
 		else
 			hi = mid;
 	}
-	if (_firsts[lo] > hash) return nullptr;
+	if (_firsts[lo] > hash) return false;
+	block = lo;
+	return true;
+}
+
+void DialogTexts::prefetch(u32 hash, ReadAhead& ahead) {
+	u32 block;
+	if (!blockOf(hash, block)) return;
+	for (const Cached& c : _cache)
+		if (c.data && c.block == block) return;
+	char name[24];
+	snprintf(name, sizeof(name), "dialog/%lu", static_cast<unsigned long>(block));
+	ahead.request(hashName(name));
+}
+
+const char* DialogTexts::find(u32 hash) {
+	u32 lo;
+	if (!blockOf(hash, lo)) return nullptr;
 	const Cached* c = fetch(lo);
 	if (!c) return nullptr;
 	DialogBlockHeader h;

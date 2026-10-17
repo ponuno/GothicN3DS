@@ -147,6 +147,11 @@ struct NpcStats {
 	float wakeMs = 0;     // ... of it: new characters' first steps (scripts)
 	float groundMs = 0;   // ... of it: characters put on the ground
 	float tickMs = 0;     // ... in the actors' own steps
+	// fix205: what tickMs is made of (the last update(); for hitches.txt). Actions and states (scripts included), the
+	// senses, fighting, bodies pushing each other, standing on the ground; actors stepped, actors left for the next
+	// frame (far ones, every other frame), lines of sight cast by the senses.
+	float tickActMs = 0, tickPercMs = 0, tickFightMs = 0, tickBodyMs = 0, tickGroundMs = 0;
+	u32 ticked = 0, tickSkipped = 0, sightTests = 0;
 	// Perception.
 	u32 perceived = 0;    // reactions called since the start (the player seen, an enemy, a passive perception)
 	u32 fightsRefused = 0; // states of fighting the scripts asked for and did not get (fights switched off)
@@ -473,6 +478,9 @@ public:
 		float (*play)(void* user, u32 lineHash, int speaker, bool hero) = nullptr;
 		void (*stop)(void* user) = nullptr;
 		float (*say)(void* user, u32 lineHash, int speaker, bool overlay) = nullptr;
+		// fix204: a line has been queued and will be said soon (`world`: outside the player's talk): its recording can
+		// be read ahead.
+		void (*prefetch)(void* user, u32 lineHash, bool world) = nullptr;
 		void* user = nullptr;
 	};
 	void setSpeechHook(const SpeechHook& hook) { _speechHook = hook; }
@@ -826,6 +834,7 @@ private:
 	static void xOutput(ScriptVm& vm, void* user);
 	// A line of the player's talk (shown, spoken in turn) / of the world (said where its speaker stands).
 	void queueTalkLine(ScriptInstance* speakerInst, u32 hash);
+	void prefetchLine(u32 hash, bool world); // fix204: its words and recording, read ahead
 	void queueHeroCall(ScriptInstance* heroInst, i32 ticket); // fix196
 	void queueHeroWait(int other);                            // fix199
 	bool queueWorldLine(ScriptInstance* speakerInst, int target, u32 hash, const char* svm);
@@ -899,6 +908,7 @@ private:
 	void perceive(NpcActor& a, const World& world);
 	void react(NpcActor& a, u32 fn, int other, int victim);
 	bool sees(const NpcActor& a, u32 other, bool inFront) const;
+	mutable u32 _sightTests = 0; // fix205: lines of sight cast this update (sees() is const)
 	bool seenAllRound(const GameNpc& n, const GameNpc& o) const;
 	bool heroNear(const GameNpc& n) const;
 	bool refusesState(u32 fn) const;

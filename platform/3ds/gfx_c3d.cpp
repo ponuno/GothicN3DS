@@ -930,6 +930,12 @@ void textureUpdateMask(Texture* t, const u8* texels) {
 	C3D_TexFlush(&t->tex);
 }
 
+void textureUpdateEtc1(Texture* t, const u8* data) {
+	if (!t || !data || !t->tex.data || t->tex.fmt != GPU_ETC1) return;
+	memcpy(t->tex.data, data, (u32(t->tex.width) * t->tex.height) / 2u);
+	C3D_TexFlush(&t->tex);
+}
+
 void textureDestroy(Texture* t) {
 	if (!t) return;
 	// citro3d keeps the pointer of the bound texture and reads it again

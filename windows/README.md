@@ -1,20 +1,21 @@
 # Baking the game data on Windows (no WSL, no installs)
 
-> **The game's data is not distributed.** You need your own legal copy of Gothic. The files you bake (`data.pak`, `music.pak`, `speech.pak`) contain the game's content: keep them for yourself and never publish them.
+> **The game's data is not distributed.** You need your own legal copy of Gothic. The files you bake (`data.pak`, `music.pak`, `speech.pak`, `video.pak`) contain the game's content: keep them for yourself and never publish them.
 
 ## What you need
 
 - Windows 10 or 11 (64-bit).
 - Your own copy of **Gothic** (Steam, GOG or disc), installed.
-- From the project's **Releases** page, three files:
+- From the project's **Releases** page (or the `g3ds-bake-windows` build), four files:
   - `Gothic3DS-Baker.exe` - the window you use
   - `g3ds-bake.exe` - the converter it calls
   - `dmrender.exe` - renders the game's music to sound files
+  - `ffmpeg.exe` - reads the game's videos (Bink); without it there are no videos, the rest works
 - `gothic3ds.3dsx` from the same release (the game itself, it contains no game data).
 
 ## Steps
 
-1. Create a new folder anywhere (for example `C:\Gothic3DS`) and put **all three `.exe` files in the same folder**.
+1. Create a new folder anywhere (for example `C:\Gothic3DS`) and put **all the `.exe` files in the same folder**.
 2. Double-click **`Gothic3DS-Baker.exe`**.
    - Windows SmartScreen may say "Windows protected your PC" because the program is new and unsigned. Click **More info**, then **Run anyway**.
 3. Press **Browse...** and select your Gothic folder: the one that contains the `Data` and `_work` folders (Steam: `...\steamapps\common\Gothic`). It is filled in for you if the game is in a usual place.
@@ -24,6 +25,8 @@
    - `data.pak` - worlds, characters, sounds
    - `music.pak` - music (only if the music box was ticked)
    - `speech.pak` - voices
+   - `video.pak` - the game's videos (the intro, the chapters, the end), if `ffmpeg.exe` was beside the baker; a few minutes
+     and 100-250 MB more. To skip them put `--no-video` into `bake_args.txt`; `--video-fps 10` makes them smaller.
    - `bake.log` - the full log (send it if something goes wrong)
    - `bake_debug.txt` - only with the "Debug report" box ticked: what the game's scripts did while the worlds were populated, which engine functions and Ikarus/LeGo/Union code are missing (send it with `bake.log` for a modded game)
 
@@ -40,6 +43,7 @@ SD:/3ds/gothic3ds/gothic3ds.3dsx
 SD:/3ds/gothic3ds/data.pak
 SD:/3ds/gothic3ds/music.pak
 SD:/3ds/gothic3ds/speech.pak
+SD:/3ds/gothic3ds/video.pak    <- if it was made (A, B or START skip a video in the game)
 SD:/3ds/dspfirm.cdc          <- once, dumped from your console with DSP1 (needed for any sound)
 ```
 

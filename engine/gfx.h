@@ -73,6 +73,9 @@ void textureDestroy(Texture* t);
 // the PICA's order (g3ds/tex.h texL4Nibble: texel n is nibble n of the TEX_L4 level). In place: a frame the GPU is still
 // drawing may see part of the new values (they change little from one write to the next).
 void textureUpdateMask(Texture* t, const u8* texels);
+// fix201: level 0 of an ETC1 texture made by textureCreate (one level) anew: `data` as the TexHeader's (PICA order).
+// The videos' pictures.
+void textureUpdateEtc1(Texture* t, const u8* data);
 
 Mesh* meshCreate(const WorldVertex* vertices, u32 vertexCount, const u16* indices, u32 indexCount);
 void meshDestroy(Mesh* m);

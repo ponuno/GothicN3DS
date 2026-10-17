@@ -370,8 +370,20 @@ void Music::work() {
 
 // ---- every frame ----
 
+void Music::suspend(bool on) {
+	if (on == _suspended) return;
+	_suspended = on;
+	if (on) {
+		stopTrack();
+		_current = 0;
+		_gain = 0;
+	}
+	_key = 0xFFFFFFFFu; // (chosen again at once when let go)
+	_sinceChoice = CHOICE_EVERY;
+}
+
 void Music::update(float dt, Vec3 listener, float hours, MusicSituation situation) {
-	if (!_ready) return;
+	if (!_ready || _suspended) return;
 	_sinceChoice += dt;
 	const bool day = hours >= DAY_BEGINS && hours <= DAY_ENDS;
 	// Which theme.

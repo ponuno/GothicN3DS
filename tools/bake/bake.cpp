@@ -1374,7 +1374,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				return where;
 			};
 			size_t infoNamed = 0, infoHidden = 0, mobOwned = 0;
-			size_t chestItems = 0, chestLocked = 0;
+			size_t chestItems = 0, chestLocked = 0, chestNamed = 0;
 			std::map<std::string, u32> byScheme;
 			std::map<std::string, u32> byFunction; // (fix153) onStateFunc (scheme, item) -> how many
 			std::map<std::string, u32> byFields; // (fix154) every field the player's things carry, per kind
@@ -1425,6 +1425,8 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 					};
 					c.pick = intern(src.pick);
 					c.contents = intern(src.contents);
+					c.name = src.vobName.empty() ? 0u : hashName(src.vobName.c_str());
+					chestNamed += c.name != 0;
 					chests.push_back(c);
 					chestItems += std::count(src.contents.begin(), src.contents.end(), ',') + (src.contents.empty() ? 0 : 1);
 					chestLocked += src.locked;
@@ -1483,7 +1485,7 @@ BakeResult bakeWorlds(std::vector<BakeWorld>& worlds, const std::vector<SrcModel
 				append(cblob, chests);
 				cblob.insert(cblob.end(), names.begin(), names.end());
 				pak.add("world/" + bw.name + "/chests", ASSET_META, cblob);
-				chestNote = format("containers: %zu (%zu locked), with %zu stacks of things inside", chests.size(), chestLocked, chestItems);
+				chestNote = format("containers: %zu (%zu locked, %zu named for the scripts), with %zu stacks of things inside", chests.size(), chestLocked, chestNamed, chestItems);
 			}
 			if (!mobInfos.empty()) {
 				while (infoNames.size() % 4) infoNames.push_back('\0');

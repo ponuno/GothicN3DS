@@ -137,6 +137,7 @@ struct SrcMob {
 	std::string key;      // upper case item instance, "" for none
 	std::string pick;     // "LRRL"
 	std::string contents; // "ITMI_GOLD:75, ITFO_FISH:2"
+	std::string vobName;  // fix199: the vob's own name (the scripts' Mob_CreateItems name it), upper case
 	// What the player may do with it (WorldMobInfo).
 	std::string focus, onState, condition, useItem, target; // names as the world has them (script names upper case)
 	std::string owner, ownerGuild;                          // whose it is (upper case), "" for nobody's

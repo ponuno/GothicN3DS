@@ -20,12 +20,18 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
+            unzip
       - name: Build g3ds-bake.exe
         run: |
           cmake -S . -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release -DG3DS_BAKER_ONLY=ON
           cmake --build build-win --target g3ds-bake Gothic3DS-Baker dmrender
           cp build-win/g3ds-bake.exe build-win/Gothic3DS-Baker.exe windows/
           cp "$(find build-win -name dmrender.exe | head -1)" windows/
+      - name: ffmpeg.exe for the videos (fix201; the baker runs it to read Bink)
+        run: |
+          curl -L --fail -o ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip
+          unzip -q ffmpeg.zip
+          cp "$(find . -path '*/bin/ffmpeg.exe' | head -1)" windows/ffmpeg.exe
       - uses: actions/upload-artifact@v4
         with:
           name: g3ds-bake-windows
@@ -33,5 +39,6 @@ jobs:
             windows/Gothic3DS-Baker.exe
             windows/g3ds-bake.exe
             windows/dmrender.exe
+            windows/ffmpeg.exe
             windows/bake.bat
             windows/README.md

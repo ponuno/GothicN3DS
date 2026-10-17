@@ -679,6 +679,16 @@ int main(int, char**) {
 		const float ms = timing.frameMs > 0.0f ? timing.frameMs : 16.7f * float(interval);
 		const float dt = clamp(ms * 0.001f, 0.001f, 0.1f);
 
+		// ---- a video (fix201): nothing else runs; A, B or START skip it ----
+		if (app.videoActive()) {
+			g3::Input vi;
+			vi.confirm = (down & (KEY_A | KEY_B | KEY_START)) != 0;
+			app.update(vi, dt);
+			app.render();
+			if (!app.videoActive()) swallowed = held; // (the button that skipped it is not the game's)
+			g3::gTrace.frame = g3::gTrace.frame + 1;
+			continue;
+		}
 		// ---- the start menu (fix189): nothing of the game runs yet ----
 		if (app.startMenuActive()) {
 			g3::MenuInput mi;

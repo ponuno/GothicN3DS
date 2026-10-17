@@ -183,6 +183,10 @@ struct InventoryView {
 			char name[32] = "";
 			char level[32] = "";
 			i32 skill = 0, value = 0;
+			// What the value means: Gothic 2 shows it as a plain percentage; Gothic 1's status screen as the
+			// fighting talents' chance of a critical hit and the thieves' chance of failure (Menu_Status.d).
+			enum Meaning : u8 { PERCENT, CRITICAL, FAILURE, NONE_SHOWN };
+			u8 meaning = PERCENT;
 		} talents[TALENTS];
 		u32 talentCount = 0;
 	} sheet;

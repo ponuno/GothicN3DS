@@ -455,8 +455,14 @@ u32 Game::debugLearnAll() {
 	const i32 mage = constant("NPC_TALENT_MAGE", 7);
 	for (i32 t = 1; t < 16; ++t) {
 		h.skill[t] = i16(t == mage ? 6 : 2);
-		// (the fighting talents, the lock and the pockets are percentages)
-		h.talent[t] = h.talent[t] < 100 ? 100 : h.talent[t];
+		if (isGothic2()) {
+			// (Gothic 2: the fighting talents, the lock and the pockets are percentages of success)
+			h.talent[t] = h.talent[t] < 100 ? 100 : h.talent[t];
+		} else if (t == constant("NPC_TALENT_PICKLOCK", 5) || t == constant("NPC_TALENT_PICKPOCKET", 6)) {
+			// (Gothic 1: the value is the chance of failure, so a master never fails; the weapons' critical
+			// hit is left as the scripts have it)
+			h.talent[t] = 0;
+		}
 		++done;
 	}
 	static const char* const kVars[] = {

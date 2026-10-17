@@ -76,11 +76,13 @@ bool App::init(const char* pakPath, const char* worldName) {
 	// people of this world.
 	_npcs.setHeldSource(&_loot, &_pak);
 	if (_npcs.load(_pak)) {
+		scriptChests(false);
 		_npcs.enterWorld(_pak, _world, this->worldName(), _player.eye(), _env.timeOfDay);
 		_loot.enterWorld(_pak, this->worldName(), _world.entryHash(), _npcs.game());
 		_particles.enterWorld(_pak, this->worldName(), _npcs.game());
 		_particles.setGate(emitterShown, &_world);
 		_chests.enterWorld(_pak, this->worldName(), _world.entryHash(), _npcs.game());
+		scriptChests(true);
 		_triggers.enterWorld(_pak, this->worldName(), _npcs.game());
 	}
 	{
@@ -109,6 +111,7 @@ bool App::init(const char* pakPath, const char* worldName) {
 	_npcs.setBloodHook(blood);
 	startSound();
 	startSpeech();
+	startVideo(); // fix201
 	// The overlay (menus, the HUD): without it the game still runs.
 	// The game's own font, if the archive has it (and Ui::init() puts it in the texture).
 	ui::clearGameFont();
@@ -187,12 +190,14 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	setDrawDistance(drawDistance); // the far plane depends on the chunk size
 	_world.preload(_cam.pos);
 	progress(0.4f); // (loading a save into another world: its screen)
+	if (_npcs.loaded()) scriptChests(false);
 	_npcs.enterWorld(_pak, _world, worldName(), _player.eye(), _env.timeOfDay);
 	if (_npcs.loaded()) {
 		_loot.enterWorld(_pak, worldName(), _world.entryHash(), _npcs.game());
 		_particles.enterWorld(_pak, worldName(), _npcs.game());
 		_particles.setGate(emitterShown, &_world);
 		_chests.enterWorld(_pak, worldName(), _world.entryHash(), _npcs.game());
+		scriptChests(true);
 		_triggers.enterWorld(_pak, worldName(), _npcs.game());
 	}
 	_lamps.enterWorld(_pak, worldName(), _npcs.loaded() ? &_particles : nullptr);
@@ -208,6 +213,35 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	_godRays.release();
 	_music.enterWorld(_pak, worldName());
 	return true;
+}
+
+// fix199: the containers of the world shown are the scripts' (Mob_CreateItems / Mob_HasItems): `on` once they are
+// in, and what the start-up put in meanwhile goes in now; off while a world's start-up runs (the old world's would
+// answer for the new one's names).
+void App::scriptChests(bool on) {
+	Game& g = _npcs.game();
+	Game::ContainerHooks h;
+	if (on) {
+		h.user = this;
+		h.count = [](void* user, u32 name, u32 item) -> i32 {
+			App& app = *static_cast<App*>(user);
+			const int c = app._chests.byName(name);
+			return c >= 0 ? app._chests.countOf(u32(c), item) : 0;
+		};
+		h.add = [](void* user, u32 name, u32 item, i32 count) -> bool {
+			App& app = *static_cast<App*>(user);
+			const int c = app._chests.byName(name);
+			return c >= 0 && app._chests.add(u32(c), item, count);
+		};
+	}
+	g.setContainerHooks(h);
+	if (!on) return;
+	Game::ChestGift gift;
+	while (g.takeContainerItem(gift)) {
+		const int c = _chests.byName(gift.name);
+		if (c >= 0) _chests.add(u32(c), gift.item, gift.count);
+		else ++_scriptChestMisses; // (another world's container, or a pak baked before fix199: no names)
+	}
 }
 
 namespace {
@@ -484,6 +518,7 @@ void App::shutdown() {
 	_savePicOk = false;
 	_chatter.shutdown();
 	_speech.shutdown();
+	_video.shutdown();
 	_music.shutdown();
 	_sound.shutdown();
 	_sfxVm.release();
@@ -528,6 +563,7 @@ void App::checkPortals() {
 }
 
 void App::update(const Input& given, float dt) {
+	if (videoUpdate(given, dt)) return; // fix201: the game stands still while a video plays
 	_playSeconds += double(dt);
 	collisionStatsReset(); // (what collisionStats() says is one frame's worth)
 	if (_npcs.loaded()) _settings.chapter = u8(clamp<i32>(_npcs.game().chapterNumber(), 0, 6)); // (the menu's chapter slider follows the game)
@@ -1035,6 +1071,10 @@ void App::loadFogZones() {
 }
 
 void App::render() {
+	if (_video.active()) { // fix201
+		renderVideo();
+		return;
+	}
 	if (_startActive) {
 		renderStartMenu();
 		return;
@@ -2386,6 +2426,7 @@ float App::chatterBegin(u32 lineHash, int speaker, bool overlay) {
 // The menu (and the screens between worlds) have a theme of their own, as in the original (the scripts'
 // SYS_MENU / SYS_LOADING); without it in the scripts the world's goes on.
 void App::soundIdle(float dt) {
+	if (videoUpdate(Input {}, dt)) return; // fix201: (the start menu's "show the intro")
 	_sound.update(dt, _env.timeOfDay);
 	_music.setSystemTheme("SYS_MENU");
 	_music.update(dt, _cam.pos, _env.timeOfDay, MUSIC_CALM);

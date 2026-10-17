@@ -53,7 +53,7 @@ endif ()
 
 # The script machine and the game's rules. The baker runs them too: it has to
 # know what the scripts put into the world to bake what that needs.
-add_library(g3script STATIC engine/script.cpp engine/script_mem.cpp engine/ikarus.cpp engine/game.cpp engine/game_dialog.cpp engine/game_doc.cpp engine/game_extra.cpp engine/game_save.cpp engine/game_items.cpp engine/fight.cpp engine/game_magic.cpp)
+add_library(g3script STATIC engine/script.cpp engine/script_mem.cpp engine/ikarus.cpp engine/game.cpp engine/game_dialog.cpp engine/game_doc.cpp engine/game_extra.cpp engine/game_memory.cpp engine/game_save.cpp engine/game_items.cpp engine/fight.cpp engine/game_magic.cpp)
 target_include_directories(g3script PUBLIC engine)
 target_link_libraries(g3script PUBLIC g3core)
 target_compile_options(g3script PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
@@ -61,7 +61,7 @@ target_compile_options(g3script PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rt
 if (NOT G3DS_BAKER_ONLY)
 add_library(g3engine STATIC engine/world.cpp engine/point_grid.cpp engine/app.cpp engine/collision.cpp engine/player.cpp engine/sky.cpp engine/barrier.cpp engine/weather.cpp
             engine/loader.cpp engine/readahead.cpp engine/pacer.cpp engine/model.cpp engine/hero.cpp engine/npcs.cpp engine/waynet.cpp engine/mobs.cpp engine/rooms.cpp engine/npc_world.cpp engine/triggers.cpp engine/npc_ai.cpp engine/npc_perc.cpp engine/npc_dialog.cpp engine/dialog_text.cpp engine/app_talk.cpp engine/app_saves.cpp engine/app_doc.cpp engine/app_items.cpp engine/app_magic.cpp engine/app_ranged.cpp engine/recorder.cpp
-            engine/npc_fight.cpp engine/npc_items.cpp engine/ui.cpp engine/menu.cpp engine/start_menu.cpp engine/saves.cpp engine/settings.cpp engine/hud.cpp engine/inventory.cpp engine/panel.cpp engine/loot.cpp engine/particles.cpp engine/shadows.cpp engine/puddles.cpp engine/blood_stains.cpp engine/rain.cpp engine/ripples.cpp engine/weather_sfx.cpp engine/godrays.cpp engine/clouds.cpp engine/grass.cpp engine/lamps.cpp engine/chests.cpp engine/containers.cpp engine/interact.cpp engine/trade.cpp engine/lang.cpp engine/trace.cpp engine/sound.cpp engine/music.cpp engine/speech.cpp)
+            engine/npc_fight.cpp engine/npc_items.cpp engine/ui.cpp engine/menu.cpp engine/start_menu.cpp engine/saves.cpp engine/settings.cpp engine/hud.cpp engine/inventory.cpp engine/panel.cpp engine/loot.cpp engine/particles.cpp engine/shadows.cpp engine/puddles.cpp engine/blood_stains.cpp engine/rain.cpp engine/ripples.cpp engine/weather_sfx.cpp engine/godrays.cpp engine/clouds.cpp engine/grass.cpp engine/lamps.cpp engine/chests.cpp engine/containers.cpp engine/interact.cpp engine/trade.cpp engine/lang.cpp engine/trace.cpp engine/sound.cpp engine/music.cpp engine/speech.cpp engine/video.cpp engine/app_video.cpp)
 target_include_directories(g3engine PUBLIC engine)
 target_link_libraries(g3engine PUBLIC g3core g3sys g3script)
 target_compile_options(g3engine PRIVATE ${G3DS_WARNINGS} -fno-exceptions -fno-rtti)
@@ -86,6 +86,7 @@ set(G3DS_BAKE_SOURCES
     tools/bake/script_bake.cpp
     tools/bake/populate.cpp
     tools/bake/sound_bake.cpp
+    tools/bake/video_bake.cpp
     tools/bake/item_icon.cpp
     tools/bake/fight_ai.cpp
     tools/bake/dialogue_bake.cpp

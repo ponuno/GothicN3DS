@@ -225,7 +225,7 @@ void pipeline(std::wstring game, bool music, bool gfxPlus, bool lod, bool simpli
 	}
 	if (ok) {
 		std::wstring made;
-		for (const wchar_t* f : {L"data.pak", L"music.pak", L"speech.pak", L"bake_debug.txt"})
+		for (const wchar_t* f : {L"data.pak", L"music.pak", L"speech.pak", L"video.pak", L"bake_debug.txt"})
 			if (exists(out + f)) made += std::wstring(L"\r\n  ") + f;
 		if (grassReport && anyFile(out, L"grass_*.png")) made += L"\r\n  grass_<world>.txt, grass_<world>.png, grass_<world>_mask.png";
 		say(L"Done. Created:" + made);
@@ -284,7 +284,7 @@ void startPressed() {
 		return;
 	}
 	if (!exists(gExeDir + L"g3ds-bake.exe")) {
-		MessageBoxW(gWnd, L"g3ds-bake.exe is not next to this program. Put all three .exe files in the same folder.", L"Gothic 3DS", MB_OK | MB_ICONERROR);
+		MessageBoxW(gWnd, L"g3ds-bake.exe is not next to this program. Put all the .exe files in the same folder.", L"Gothic 3DS", MB_OK | MB_ICONERROR);
 		return;
 	}
 	const bool music = SendMessageW(gMusic, BM_GETCHECK, 0, 0) == BST_CHECKED;
@@ -376,7 +376,7 @@ LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
 		EnableWindow(gGrass, TRUE);
 		EnableWindow(gVoices, TRUE);
 		EnableWindow(gDebug, TRUE);
-		if (w) MessageBoxW(h, L"Done! data.pak (and music.pak, speech.pak) are next to this program.\r\nCopy them to the SD card, folder 3ds\\gothic3ds\\", L"Gothic 3DS", MB_OK | MB_ICONINFORMATION);
+		if (w) MessageBoxW(h, L"Done! data.pak (and music.pak, speech.pak, video.pak) are next to this program.\r\nCopy them to the SD card, folder 3ds\\gothic3ds\\", L"Gothic 3DS", MB_OK | MB_ICONINFORMATION);
 		return 0;
 	case WM_CLOSE:
 		if (gRunning && MessageBoxW(h, L"Baking is still running. Cancel it?", L"Gothic 3DS", MB_YESNO | MB_ICONQUESTION) != IDYES) return 0;

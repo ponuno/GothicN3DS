@@ -8,6 +8,7 @@
 #include "grass_report.h"
 #include "importers.h"
 #include "model_bake.h"
+#include "video_bake.h"
 
 #include <algorithm>
 #include <cctype>
@@ -116,6 +117,10 @@ void usage() {
 	          "  --debug-report F   the same into the file F\n"
 	          "  --music-dir DIR    folder of WAV renders of the music themes; makes music.pak beside the output\n"
 	          "  --music-rate HZ    highest sample rate of the music (default: 44100)\n"
+	          "  --ffmpeg PATH      the ffmpeg program for the videos (default: ffmpeg.exe beside this one, else the PATH)\n"
+	          "  --no-video         bake no videos (else the game's _work/Data/Video/*.bik go into video.pak)\n"
+	          "  --video-fps N      frames a second of the videos (default: 15; more is smoother and bigger)\n"
+	          "  --video-size WxH   the videos fit into this (default: 400x240, the top screen)\n"
 	          "  --hero-script NAME world: the character's model script (default: HUMANS.MDS)\n"
 	          "  --hero-body NAME   world: its body mesh (default: HUM_BODY_NAKED0)\n"
 	          "  --hero-head NAME   world: its head mesh (default: HUM_HEAD_PONY; \"\" for none)\n"
@@ -240,6 +245,9 @@ int main(int argc, char** argv) {
 		ZenActorOptions actor;
 		SynthOptions synth;
 		std::string out = "data.pak", firstName, gameDir;
+		VideoBakeOptions videoOpt;
+		std::string ffmpegGiven;
+		bool withVideo = true;
 		std::vector<std::string> levels;
 		ZenModOptions modOpt;
 		std::string extList = "sgt,sty,dls";
@@ -283,6 +291,16 @@ int main(int argc, char** argv) {
 			else if (a == "--no-sound") opt.soundRate = 0;
 			else if (a == "--music-dir") opt.musicDir = value();
 			else if (a == "--music-rate") opt.musicRate = u32(std::stoul(value()));
+			else if (a == "--ffmpeg") ffmpegGiven = value();
+			else if (a == "--no-video") withVideo = false;
+			else if (a == "--video-fps") videoOpt.fps = u32(std::clamp(std::stoi(value()), 1, 30));
+			else if (a == "--video-size") {
+				const std::string v = value();
+				const size_t x = v.find_first_of("xX");
+				if (x == std::string::npos) throw std::runtime_error("--video-size wants WxH, e.g. 320x240");
+				videoOpt.maxW = u32(std::clamp(std::stoi(v.substr(0, x)), 64, 400));
+				videoOpt.maxH = u32(std::clamp(std::stoi(v.substr(x + 1)), 64, 240));
+			}
 			else if (a == "--voice-rate") opt.voiceRate = u32(std::stoul(value()));
 			else if (a == "--no-voices") opt.voiceRate = 0;
 			else if (a == "--debug") opt.debugFile = "?";
@@ -747,6 +765,52 @@ int main(int argc, char** argv) {
 			std::printf("WARNING: no music.pak written: no WAV in '%s' has the name of a theme file in the game's scripts "
 			            "(OC_DAY_STD.sgt wants OC_DAY_STD.wav). See the 'music:' line above.\n",
 			            opt.musicDir.c_str());
+		}
+		// fix201: the videos, into video.pak beside it (ffmpeg decodes the Bink).
+		if (withVideo && !gameDir.empty()) {
+			const std::vector<std::string> files = findGameVideos(gameDir);
+			const std::string self = argv[0];
+			const size_t cut = self.find_last_of("/\\");
+			videoOpt.ffmpeg = files.empty() ? std::string() : findFfmpeg(ffmpegGiven, cut == std::string::npos ? std::string() : self.substr(0, cut));
+			videoOpt.threads = opt.threads;
+			if (files.empty()) {
+				std::printf("videos: none in the game's _work/Data/Video\n");
+			} else if (videoOpt.ffmpeg.empty()) {
+				std::printf("WARNING: videos: %zu in the game, but no ffmpeg to read them (put ffmpeg.exe beside g3ds-bake.exe, or "
+				            "--ffmpeg PATH); no video.pak written\n",
+				            files.size());
+			} else {
+				std::printf("videos: %zu to bake with %s at %u frames a second (a few minutes; --no-video skips) ...\n", files.size(),
+				            videoOpt.ffmpeg.c_str(), videoOpt.fps);
+				std::fflush(stdout);
+				PakWriter videoPak;
+				u64 bytes = 0;
+				for (const std::string& f : files) {
+					std::vector<u8> blob;
+					const VideoBakeResult vr = bakeVideo(f, videoOpt, blob);
+					const std::string entry = videoEntryName(f);
+					if (!vr.ok) {
+						std::printf("videos: %s not baked: %s\n", entry.c_str(), vr.why.c_str());
+						continue;
+					}
+					if (bytes + blob.size() > (u64(1900) << 20)) {
+						std::printf("videos: %s left out: video.pak would pass 1.9 GB\n", entry.c_str());
+						continue;
+					}
+					bytes += blob.size();
+					std::printf("videos: %s %ux%u, %u frames (%.0f s), sound %s, %.1f MB, %.0f%% of the blocks sent\n", entry.c_str(),
+					            vr.width, vr.height, vr.frames, double(vr.frames) / double(videoOpt.fps),
+					            vr.audioFrames ? "yes" : "none", double(blob.size()) / 1048576.0,
+					            vr.blocksAll ? 100.0 * double(vr.blocksSent) / double(vr.blocksAll) : 0.0);
+					std::fflush(stdout);
+					videoPak.add(entry, ASSET_BLOB, blob, false);
+				}
+				const std::string videoPath = outDir + "video.pak";
+				if (!videoPak.items().empty()) {
+					videoPak.write(videoPath);
+					std::printf("wrote %s: %zu videos, %.1f MB\n", videoPath.c_str(), videoPak.items().size(), double(bytes) / 1048576.0);
+				}
+			}
 		}
 		const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 		std::printf("wrote %s: %zu worlds, %zu entries in %.1f s\n", out.c_str(), worlds.size(), pak.items().size(), secs);

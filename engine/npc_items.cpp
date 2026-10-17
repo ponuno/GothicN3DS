@@ -345,7 +345,7 @@ void Npcs::bindItems() {
 		ScriptVm::External fn;
 	} table[] = {{"AI_USEITEM", xUseItem},           {"AI_USEITEMTOSTATE", xUseItemToState}, {"AI_TAKEITEM", xTakeItem},
 	             {"AI_GOTOITEM", xGotoItem},         {"WLD_DETECTITEM", xDetectItem},        {"NPC_CANSEEITEM", xCanSeeItem},
-	             {"NPC_GETDISTTOITEM", xDistToItem}};
+	             {"NPC_GETDISTTOITEM", xDistToItem}, {"WLD_REMOVEITEM", xRemoveWorldItem}};
 	for (const auto& e : table) vm.bind(e.name, e.fn, this);
 }
 
@@ -432,6 +432,13 @@ void Npcs::xDetectItem(ScriptVm& vm, void* user) {
 	ScriptInstance* obj = self._game.itemObject(it.symbol, best, it.amount > 0 ? it.amount : 1);
 	if (obj) self._game.setItemVar(obj);
 	vm.pushInt(obj != nullptr);
+}
+
+// fix199: Wld_RemoveItem(item): the thing lying in the world is gone (a beast has eaten it). 1 if it was there.
+void Npcs::xRemoveWorldItem(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const int index = self.lootOf(vm.popInstance());
+	vm.pushInt(index >= 0 && self._heldLoot->take(u32(index)));
 }
 
 void Npcs::xCanSeeItem(ScriptVm& vm, void* user) {

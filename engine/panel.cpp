@@ -1295,9 +1295,15 @@ void InventoryPanel::drawCharacter(const InventoryView& v) {
 		for (u32 k = 0; k < s.talentCount; ++k) {
 			const InventoryView::Sheet::Talent& t = s.talents[k];
 			char buf[48];
-			if (t.value > 0) snprintf(buf, sizeof(buf), "%s  %ld%%", t.level, static_cast<long>(t.value));
+			using T = InventoryView::Sheet::Talent;
+			if (t.meaning == T::CRITICAL && t.value > 0)
+				snprintf(buf, sizeof(buf), tr("%s  крит. %ld%%"), t.level, static_cast<long>(t.value));
+			else if (t.meaning == T::FAILURE)
+				snprintf(buf, sizeof(buf), tr("%s  провал %ld%%"), t.level, static_cast<long>(t.value));
+			else if (t.meaning == T::PERCENT && t.value > 0)
+				snprintf(buf, sizeof(buf), "%s  %ld%%", t.level, static_cast<long>(t.value));
 			else snprintf(buf, sizeof(buf), "%s", t.level);
-			const bool learnt = t.skill != 0 || t.value > 0;
+			const bool learnt = t.skill != 0 || (t.meaning == T::PERCENT && t.value > 0);
 			_canvas.text(12, ty, t.name, learnt ? TEXT : TEXT_DIM, ui::TEXT, ui::LEFT, 150, true);
 			_canvas.text(Canvas::W - 12, ty, buf, learnt ? GOLD : TEXT_DIM, ui::TEXT, ui::RIGHT, 150, true);
 			_canvas.fill(12, ty + 13, Canvas::W - 12, ty + 14, 0xFFFFFF14u);

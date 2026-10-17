@@ -79,6 +79,23 @@ void Npcs::tickSpeech(float dt) {
 	while (!_say.active && _speechCount) {
 		const SpeechStep s = _speech[_speechHead];
 		enum { PLAY, WAIT, DROP } what = PLAY;
+		float patience = 8.0f;
+		if (s.call == WAIT_FOR_ACTOR) {
+			// fix199: the player's AI_WaitTillEnd: his next lines wait for what `speaker` was given before it.
+			const NpcActor* a = s.speaker >= 0 ? actorByNpc(u32(s.speaker)) : nullptr;
+			const bool done = !a || a->actionSerial > s.hash || (a->actionSerial == s.hash && a->action.kind == NPC_ACT_NONE) ||
+			                  // (not for its own line further on, nor for something that waits for the player)
+			                  a->action.kind == NPC_ACT_OUTPUT || a->action.kind == NPC_ACT_WAIT_END;
+			if (!done) {
+				_speechWait += dt;
+				if (_speechWait < 30.0f) break;
+			}
+			_speechHead = u8((_speechHead + 1) % SPEECH);
+			--_speechCount;
+			_speechWait = 0;
+			_speechDone = s.id + 1;
+			continue;
+		}
 		if (s.speaker >= 0 && u32(s.speaker) < _game.npcCount() && !_game.npc(u32(s.speaker)).hero) {
 			// The character says it when its queue has got to the line.
 			const NpcActor* a = actorByNpc(u32(s.speaker));
@@ -88,12 +105,19 @@ void Npcs::tickSpeech(float dt) {
 				what = PLAY;
 			else if (a->action.kind == NPC_ACT_NONE && !a->queueCount)
 				what = DROP; // (its queue was emptied: nobody will say it)
-			else
+			else {
 				what = WAIT;
+				// fix199: while the line is still in its queue it is waited for longer (it walks somewhere first,
+				// plays an animation); 8 s dropped lines of long talks.
+				for (u32 k = 0; k < a->queueCount; ++k) {
+					const NpcAction& q = a->queue[(a->queueHead + k) % NpcActor::QUEUE];
+					if (q.kind == NPC_ACT_OUTPUT && q.i == i32(s.id)) patience = 30.0f;
+				}
+			}
 		}
 		if (what == WAIT) {
 			_speechWait += dt;
-			if (_speechWait < 8.0f) break;
+			if (_speechWait < patience) break;
 			what = DROP;
 		}
 		_speechHead = u8((_speechHead + 1) % SPEECH);
@@ -175,6 +199,19 @@ void Npcs::queueHeroCall(ScriptInstance* heroInst, i32 ticket) {
 		return;
 	}
 	SpeechStep st {0, who, _speechNext++, ticket};
+	_speech[(_speechHead + _speechCount) % SPEECH] = st;
+	++_speechCount;
+}
+
+// fix199: AI_WaitTillEnd(player, other) in a talk: the player's next lines wait until `other` has done what it was
+// given so far (a step of the words' queue).
+void Npcs::queueHeroWait(int other) {
+	const NpcActor* a = other >= 0 ? actorByNpc(u32(other)) : nullptr;
+	if (!a || !_talk.processing || _speechCount >= SPEECH) return;
+	// The action that ends what it has now: the last of its queue (the serial it will get) or the current one.
+	const u32 last = a->actionSerial + a->queueCount;
+	if (last == a->actionSerial && a->action.kind == NPC_ACT_NONE) return;
+	SpeechStep st {last, other, _speechNext++, WAIT_FOR_ACTOR};
 	_speech[(_speechHead + _speechCount) % SPEECH] = st;
 	++_speechCount;
 }

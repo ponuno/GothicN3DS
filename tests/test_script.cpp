@@ -1212,6 +1212,158 @@ static void testIkarus() {
 	std::printf("       Ikarus: %u stand-ins, heap %u blocks, %u views\n", ik.stats().bound, ms.blocks, ms.views);
 }
 
+// fix199: the characters' memory (Npc_MemoryEntry ...), the containers by name (Mob_CreateItems / Mob_HasItems) and
+// small ones; the memory goes into a save.
+static void testMemoryAndChests() {
+	SrcScript src;
+	compileDaedalus(std::string(syntheticScriptSource()) + R"(
+extern func void  Npc_MemoryEntry(var C_NPC self, var int source, var C_NPC offender, var int newsid, var C_NPC victim);
+extern func int   Npc_HasNews(var C_NPC self, var int newsID, var C_NPC offender, var C_NPC victim);
+extern func int   Npc_IsNewsGossip(var C_NPC self, var int newsNumber);
+extern func C_NPC Npc_GetNewsOffender(var C_NPC self, var int newsNumber);
+extern func C_NPC Npc_GetNewsWitness(var C_NPC self, var int newsNumber);
+extern func void  Npc_DeleteNews(var C_NPC self, var int newsNumber);
+extern func void  Mob_CreateItems(var string mobName, var int itemInstance, var int amount);
+extern func int   Mob_HasItems(var string mobName, var int itemInstance);
+extern func void  Npc_GiveItem(var C_NPC n0, var C_ITEM n1, var C_NPC n2);
+extern func int   Npc_GetGuildAttitude(var C_NPC a, var C_NPC b);
+extern func void  Wld_SetObjectRoutine(var int hour1, var int min1, var string objName, var int state);
+func void ProbeRoutines() {
+	Wld_SetObjectRoutine(20, 00, "ARENA_GATE", 1);
+	Wld_SetObjectRoutine(08, 00, "ARENA_GATE", 0);
+	Wld_SetObjectRoutine(00, 00, "ARENA_GATE", 1);
+};
+var C_NPC nobody;
+var int pr_murder; var int pr_theft; var int pr_any; var int pr_gossip; var int pr_offender_is_hero; var int pr_witness_self;
+var int pr_after; var int pr_mob; var int pr_mob2;
+func void ProbeRemember() {
+	var C_NPC t; t = Hlp_GetNpc(GRD_200_Thorus);
+	var C_NPC j; j = Hlp_GetNpc(GRD_201_Jackal);
+	Npc_MemoryEntry(t, 0, hero, 200, j);
+	Npc_MemoryEntry(t, 1, hero, 190, t);
+	Npc_MemoryEntry(t, 0, hero, 200, j);
+	pr_murder = Npc_HasNews(t, 200, hero, j);
+	pr_theft = Npc_HasNews(t, 190, j, nobody);
+	pr_any = Npc_HasNews(t, 190, nobody, nobody);
+	pr_gossip = Npc_IsNewsGossip(t, pr_any) * 10 + Npc_IsNewsGossip(t, pr_murder);
+	var C_NPC o; o = Npc_GetNewsOffender(t, pr_murder);
+	pr_offender_is_hero = Hlp_GetInstanceID(o) == Hlp_GetInstanceID(hero);
+	var C_NPC w; w = Npc_GetNewsWitness(t, pr_murder);
+	pr_witness_self = Hlp_GetInstanceID(w) == Hlp_GetInstanceID(t);
+};
+func void ProbeForget() {
+	var C_NPC t; t = Hlp_GetNpc(GRD_200_Thorus);
+	Npc_DeleteNews(t, pr_murder);
+	pr_after = Npc_HasNews(t, 200, nobody, nobody) * 10 + (Npc_HasNews(t, 190, nobody, nobody) > 0);
+};
+func void ProbeChest() {
+	Mob_CreateItems("CHEST_OF_THORUS", ItFoBeer, 3);
+	Mob_CreateItems("CHEST_OF_THORUS", ItFoBeer, 2);
+	pr_mob = Mob_HasItems("CHEST_OF_THORUS", ItFoBeer);
+	pr_mob2 = Mob_HasItems("SOMEWHERE_ELSE", ItFoBeer);
+};
+)", src);
+	ScriptBakeResult baked;
+	const std::vector<u8> image = bakeScript(src, baked);
+	SynthOptions so;
+	so.cells = 48;
+	SrcScene world;
+	buildSyntheticScene(so, world);
+	const Game::PointFinder find = [](void* user, const char* name, float pos[3], float& yaw) {
+		const SrcScene& scene = *static_cast<const SrcScene*>(user);
+		std::string up = name;
+		for (char& c : up) c = char(std::toupper(static_cast<unsigned char>(c)));
+		const auto it = scene.points.find(up);
+		if (it == scene.points.end()) return false;
+		std::copy_n(it->second.pos, 3, pos);
+		yaw = it->second.yaw;
+		return true;
+	};
+	Game game;
+	game.setQuiet(true);
+	u8* blob = static_cast<u8*>(std::malloc(image.size()));
+	std::memcpy(blob, image.data(), image.size());
+	CHECK(game.adopt(blob, u32(image.size())));
+	game.enterWorld("WORLD", 8.0f, find, &world);
+	const u32 hero = game.heroIndex();
+	const auto call = [&](const char* name) { return game.callAs(game.function(name), hero, -1); };
+	const auto number = [&](const char* name) { return game.vm().getInt(game.vm().find(name)); };
+
+	call("PROBEREMEMBER");
+	std::printf("  news: murder %d theft %d any %d gossip %d offender %d witness %d total %u\n", number("PR_MURDER"), number("PR_THEFT"),
+	            number("PR_ANY"), number("PR_GOSSIP"), number("PR_OFFENDER_IS_HERO"), number("PR_WITNESS_SELF"), game.newsTotal());
+	CHECK(number("PR_MURDER") > 0);
+	CHECK(number("PR_THEFT") == 0);              // (the thief was the hero, not Jackal)
+	CHECK(number("PR_ANY") > 0 && number("PR_ANY") != number("PR_MURDER"));
+	CHECK(number("PR_GOSSIP") == 10);            // the theft was gossip, the murder seen
+	CHECK(number("PR_OFFENDER_IS_HERO") == 1 && number("PR_WITNESS_SELF") == 1);
+	CHECK(game.newsTotal() == 2);                // (the same murder is kept once)
+
+	// It goes into a save and comes back.
+	ByteSink sink;
+	game.save(sink);
+	Game other;
+	other.setQuiet(true);
+	u8* blob2 = static_cast<u8*>(std::malloc(image.size()));
+	std::memcpy(blob2, image.data(), image.size());
+	CHECK(other.adopt(blob2, u32(image.size())));
+	other.enterWorld("WORLD", 8.0f, find, &world);
+	ByteSource source(sink.data, sink.size);
+	CHECK(other.restore(source) && other.newsTotal() == 2);
+
+	call("PROBEFORGET");
+	CHECK(number("PR_AFTER") == 1);
+
+	// The containers: without the App's they wait (and count); then the App takes them.
+	call("PROBECHEST");
+	CHECK(number("PR_MOB") == 5 && number("PR_MOB2") == 0);
+	Game::ChestGift gift;
+	i32 got = 0;
+	while (game.takeContainerItem(gift)) got += gift.name == hashName("CHEST_OF_THORUS") ? gift.count : 0;
+	CHECK(got == 5);
+	// With the App's: straight in.
+	static i32 inChest = 0;
+	Game::ContainerHooks h;
+	h.count = [](void*, u32 name, u32) -> i32 { return name == hashName("CHEST_OF_THORUS") ? inChest : 0; };
+	h.add = [](void*, u32 name, u32, i32 n) -> bool {
+		if (name != hashName("CHEST_OF_THORUS")) return false;
+		inChest += n;
+		return true;
+	};
+	game.setContainerHooks(h);
+	call("PROBECHEST");
+	CHECK(inChest == 5 && number("PR_MOB") == 5 && !game.takeContainerItem(gift));
+
+	// Object routines: the state for the time of day is sent once, then at each switch.
+	char name[48];
+	bool untrigger = false;
+	while (game.takeTrigger(name, sizeof(name), untrigger)) {
+	}
+	call("PROBEROUTINES");
+	game.setTime(12.0f, find, &world); // (08:00 said "untriggered")
+	CHECK(game.takeTrigger(name, sizeof(name), untrigger) && std::strcmp(name, "ARENA_GATE") == 0 && untrigger);
+	game.setTime(13.0f, find, &world);
+	CHECK(!game.takeTrigger(name, sizeof(name), untrigger));
+	game.setTime(21.0f, find, &world);
+	CHECK(game.takeTrigger(name, sizeof(name), untrigger) && !untrigger);
+	game.setTime(1.0f, find, &world); // (00:00 says the same: nothing sent)
+	CHECK(!game.takeTrigger(name, sizeof(name), untrigger));
+	ByteSink sink2;
+	game.save(sink2);
+	Game third;
+	third.setQuiet(true);
+	u8* blob3 = static_cast<u8*>(std::malloc(image.size()));
+	std::memcpy(blob3, image.data(), image.size());
+	CHECK(third.adopt(blob3, u32(image.size())));
+	third.enterWorld("WORLD", 1.0f, find, &world);
+	ByteSource source2(sink2.data, sink2.size);
+	CHECK(third.restore(source2));
+	while (third.takeTrigger(name, sizeof(name), untrigger)) {
+	}
+	third.setTime(9.0f, find, &world);
+	CHECK(third.takeTrigger(name, sizeof(name), untrigger) && untrigger);
+}
+
 int main(int argc, char** argv) {
 	const char* only = argc > 2 ? argv[2] : nullptr;
 	struct {
@@ -1219,7 +1371,7 @@ int main(int argc, char** argv) {
 		void (*fn)();
 	} tests[] = {{"basics", testBasics}, {"compiler errors", testCompilerErrors}, {"objects", testObjects}, {"broken images", testBrokenImages}, {"synthetic script", testSyntheticScript},
 	             {"game", testGame}, {"docs and clock", testDocsAndClock}, {"late and rooms", testLateAndRooms},
-	             {"transform", testTransform}, {"ikarus", testIkarus},
+	             {"transform", testTransform}, {"ikarus", testIkarus}, {"memory and chests", testMemoryAndChests},
 #ifdef G3DS_WITH_ZENKIT
 	             {"against the reference", testAgainstReference},
 #endif

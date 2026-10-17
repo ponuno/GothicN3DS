@@ -50,6 +50,9 @@ public:
 	// A theme that belongs to no zone (SYS_MENU while the menu is up, SYS_LOADING): played instead of the world's
 	// until it is taken off (null or ""), then the world's comes back.
 	void setSystemTheme(const char* name);
+	// fix201: a video has the stream: the track stops and nothing plays until let go (then the theme is chosen anew).
+	void suspend(bool on);
+	bool suspended() const { return _suspended; }
 	// The zones of a world ("world/oldmine" -> "world/oldmine/music").
 	void enterWorld(Pak& pak, const char* worldAsset);
 	// Every frame. `hours`: the time of day.
@@ -129,6 +132,7 @@ private:
 	sys::Signal* _wake = nullptr;
 	bool _quit = false;
 	bool _threaded = false;
+	bool _suspended = false;
 };
 
 } // namespace g3

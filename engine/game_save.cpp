@@ -19,6 +19,7 @@ constexpr u32 MAX_STRING_MEMBERS = 96;
 constexpr u32 LATE_MAGIC = 0x4554414Cu; // "LATE"
 constexpr u32 OVERLAY_MAGIC = 0x534C564Fu; // "OVLS"
 constexpr u32 IKARUS_FILES = 0x52414B49u; // "IKAR" (fix195)
+constexpr u32 NEWS_BLOCK = 0x5357454Eu;   // "NEWS" (fix199)
 
 // The flags at the end of a character's record (0 for a record of an older save).
 u8 lateFlags(const ByteSource& r) {
@@ -182,6 +183,10 @@ void Game::save(ByteSink& out) const {
 		out.u32v(IKARUS_FILES);
 		_ikarus.saveFiles(out);
 	}
+	// fix199: the characters' memory and the object routines; last.
+	out.u32v(NEWS_BLOCK);
+	saveNews(out);
+	saveObjectRoutines(out);
 }
 
 void Game::prepareSave() {
@@ -330,6 +335,18 @@ bool Game::restore(ByteSource& in) {
 		if (at.u32v() == IKARUS_FILES) {
 			in = at;
 			if (!_ikarus.loadFiles(in)) in.bad = true;
+		}
+	}
+	// fix199: the characters' memory (older saves have none: nobody remembers anything). What the start-up put into
+	// containers is in the saved containers already.
+	_newsCount = 0;
+	_chestGiftCount = 0;
+	_videoCount = 0; // (fix201: the start-up's intro is not for a loaded game)
+	if (in.pos + 4 <= in.size && !in.bad) {
+		ByteSource at = in;
+		if (at.u32v() == NEWS_BLOCK) {
+			in = at;
+			if (!loadNews(in) || !loadObjectRoutines(in)) in.bad = true;
 		}
 	}
 	++_itemsVersion;

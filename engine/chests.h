@@ -41,6 +41,10 @@ public:
 	bool locked(u32 i) const { return _chests[i].locked; }
 	// The item that opens it (a script symbol), SCRIPT_NONE for none.
 	u32 key(u32 i) const { return _chests[i].key; }
+	// fix199: the container the world names so (hashName of its vob's name), -1 if none.
+	int byName(u32 nameHash) const;
+	// How many of `symbol` it holds.
+	i32 countOf(u32 i, u32 symbol) const;
 	// The combination of the lock ("LRRL"); "" if it cannot be picked.
 	const char* pick(u32 i) const { return _chests[i].pick; }
 	void unlock(u32 i);
@@ -71,6 +75,7 @@ private:
 	struct Chest {
 		u32 mob;
 		u32 key;
+		u32 name; // fix199: hashName of the vob's name, 0: none
 		bool locked;
 		bool changed;
 		char pick[24];

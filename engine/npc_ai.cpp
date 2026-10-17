@@ -907,8 +907,9 @@ bool Npcs::walkTo(NpcActor& a, const float target[3], float radius, float dt, bo
 // Starts the action that has just come off the queue. True if that is all
 // there is to it.
 bool Npcs::begin(NpcActor& a, const World& world) {
-	if (a.action.kind >= NPC_ACT_USE_ITEM) return beginItem(a, world);
-	if (a.action.kind >= NPC_ACT_ATTACK) return beginFight(a, world);
+	// (The fight's and the things' actions are in their ranges of the list; fix199's come after them.)
+	if (a.action.kind >= NPC_ACT_USE_ITEM && a.action.kind <= NPC_ACT_TAKE_ITEM) return beginItem(a, world);
+	if (a.action.kind >= NPC_ACT_ATTACK && a.action.kind <= NPC_ACT_EQUIP_BEST) return beginFight(a, world);
 	GameNpc& n = _game.npcMut(a.npc);
 	NpcAction& act = a.action;
 	switch (act.kind) {
@@ -1080,6 +1081,30 @@ bool Npcs::begin(NpcActor& a, const World& world) {
 		if (u32(act.i) < _speechDone) return true;
 		a.phase = NpcActor::WAITING;
 		return false;
+	case NPC_ACT_WAIT_END: {
+		// fix199: AI_WaitTillEnd. The player's character has no queue: its lines given earlier are waited out. Anybody
+		// else: the action it is busy with now (as ZenGin's EV_WAITTILLEND: that one message, not all it has queued).
+		if (act.i < 0 || u32(act.i) >= _game.npcCount() || u32(act.i) == a.npc) return true;
+		if (_game.npc(u32(act.i)).hero) {
+			if (_speechDone >= act.order) return true;
+		} else {
+			const NpcActor* o = actorByNpc(u32(act.i));
+			if (!o || o->action.kind == NPC_ACT_NONE) return true;
+			act.hash = o->actionSerial;
+		}
+		a.wait = act.f > 0.0f ? act.f : 30.0f;
+		a.phase = NpcActor::WAITING;
+		return false;
+	}
+	case NPC_ACT_SHOOT: {
+		// fix199: AI_ShootAt (an archery lesson, a guard on a tower): one shot at the target with the bow or the spell
+		// in hand; nothing in hand, nothing happens (the scripts ready it first).
+		if (act.i < 0 || u32(act.i) >= _game.npcCount() || !rangedWeapon(n) || n.down != DOWN_NONE) return true;
+		_game.npcMut(a.npc).target = act.i;
+		startShot(a);
+		a.wait = a.faiWait > 0.0f ? a.faiWait : 0.6f;
+		return false;
+	}
 	case NPC_ACT_PROCESS_INFOS:
 		openTalk(a);
 		return true;
@@ -1143,8 +1168,8 @@ float Npcs::saySpeak(NpcActor& a, NpcAction& act) {
 
 // Goes on with the action in hand. True once it is done.
 bool Npcs::carryOn(NpcActor& a, const World& world, float dt) {
-	if (a.action.kind >= NPC_ACT_USE_ITEM) return carryOnItem(a, world, dt);
-	if (a.action.kind >= NPC_ACT_ATTACK) return carryOnFight(a, world, dt);
+	if (a.action.kind >= NPC_ACT_USE_ITEM && a.action.kind <= NPC_ACT_TAKE_ITEM) return carryOnItem(a, world, dt);
+	if (a.action.kind >= NPC_ACT_ATTACK && a.action.kind <= NPC_ACT_EQUIP_BEST) return carryOnFight(a, world, dt);
 	GameNpc& n = _game.npcMut(a.npc);
 	NpcAction& act = a.action;
 	switch (act.kind) {
@@ -1224,6 +1249,24 @@ bool Npcs::carryOn(NpcActor& a, const World& world, float dt) {
 		if (a.wait > 0.0f) return false;
 		a.phase = NpcActor::IDLE;
 		return true;
+	case NPC_ACT_SHOOT:
+		a.wait -= dt;
+		if (a.wait > 0.0f) return false;
+		a.phase = NpcActor::IDLE;
+		return true;
+	case NPC_ACT_WAIT_END: {
+		a.wait -= dt;
+		bool over = a.wait <= 0.0f; // (never for ever: the other may be stuck)
+		if (!over && _game.npc(u32(act.i)).hero) {
+			over = _speechDone >= act.order;
+		} else if (!over) {
+			const NpcActor* o = actorByNpc(u32(act.i));
+			over = !o || o->action.kind == NPC_ACT_NONE || o->actionSerial != act.hash;
+		}
+		if (!over) return false;
+		a.phase = NpcActor::IDLE;
+		return true;
+	}
 	case NPC_ACT_PLAY_ANI:
 	case NPC_ACT_STAND_UP:
 	case NPC_ACT_WAIT:
@@ -1297,6 +1340,7 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 					--a.queueCount;
 				}
 				a.action = next;
+				++a.actionSerial;
 				if (begin(a, world)) {
 					a.action = NpcAction();
 					++_stats.actions;
@@ -1472,6 +1516,53 @@ void Npcs::xWait(ScriptVm& vm, void* user) {
 	act.f = vm.popFloat();
 	NpcActor* a = self.actorFor(vm.popInstance());
 	if (act.f > 0.0f && act.f < 3600.0f) self.push(a, act);
+}
+
+// fix199: AI_AimAt(self, target): turned to it, it is the target; AI_ShootAt(self, target): and a shot.
+void Npcs::xAimAt(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const int target = self.npcFor(vm.popInstance());
+	NpcActor* a = self.actorFor(vm.popInstance());
+	if (!a || target < 0) return;
+	self._game.npcMut(a->npc).target = target;
+	NpcAction act;
+	act.kind = NPC_ACT_TURN_NPC;
+	act.i = target;
+	self.push(a, act);
+}
+
+void Npcs::xShootAt(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const int target = self.npcFor(vm.popInstance());
+	NpcActor* a = self.actorFor(vm.popInstance());
+	if (!a || target < 0) return;
+	NpcAction act;
+	act.kind = NPC_ACT_TURN_NPC;
+	act.i = target;
+	self.push(a, act);
+	act.kind = NPC_ACT_SHOOT;
+	self.push(a, act);
+}
+
+// fix199: AI_WaitTillEnd(self, other): self's queue goes on when other has done what it is doing.
+void Npcs::xWaitTillEnd(ScriptVm& vm, void* user) {
+	Npcs& self = *static_cast<Npcs*>(user);
+	const int other = self.npcFor(vm.popInstance());
+	ScriptInstance* selfInst = vm.popInstance();
+	const int me = self.npcFor(selfInst);
+	if (other < 0 || me < 0 || me == other) return;
+	if (self._game.npc(u32(me)).hero) {
+		self.queueHeroWait(other);
+		return;
+	}
+	NpcActor* a = self.actorFor(selfInst);
+	if (!a) return;
+	NpcAction act;
+	act.kind = NPC_ACT_WAIT_END;
+	act.i = other;
+	act.order = self._speechNext;
+	act.f = 30.0f;
+	self.push(a, act);
 }
 
 // AI_WaitMS(self, ms): AI_Wait in milliseconds.
@@ -1898,6 +1989,9 @@ void Npcs::bindAi() {
 	static_assert(sizeof(table) / sizeof(table[0]) == 37, "one function per name");
 	for (u32 i = 0; i < count && i < sizeof(table) / sizeof(table[0]); ++i) vm.bind(names[i], table[i], this);
 	vm.bind("AI_WAITMS", xWaitMs, this);
+	vm.bind("AI_WAITTILLEND", xWaitTillEnd, this);
+	vm.bind("AI_AIMAT", xAimAt, this);
+	vm.bind("AI_SHOOTAT", xShootAt, this);
 	vm.bind("NPC_SETREFUSETALK", xSetRefuseTalk, this);
 	vm.bind("NPC_REFUSETALK", xRefuseTalk, this);
 	bindPerception();

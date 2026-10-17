@@ -462,6 +462,8 @@ const Entry kEntries[] = {
     {{"Вы не умеете красться", "You cannot sneak yet", "Jeszcze nie umiesz się skradać", "Du kannst noch nicht schleichen"}},
     {{"Нужен круг магии: %ld", "Circle of magic needed: %ld", "Wymagany krąg magii: %ld", "Magiekreis nötig: %ld"}},
     {{"Очки обучения: %ld", "Learning points: %ld", "Punkty nauki: %ld", "Lernpunkte: %ld"}},
+    {{"%s  крит. %ld%%", "%s  crit. %ld%%", "%s  kryt. %ld%%", "%s  krit. %ld%%"}},
+    {{"%s  провал %ld%%", "%s  failure %ld%%", "%s  porażka %ld%%", "%s  Fehlschlag %ld%%"}},
     {{"Заперто: взламывать замки вы не умеете", "Locked: you cannot pick locks", "Zamknięte: nie umiesz otwierać zamków", "Verschlossen: Ihr könnt keine Schlösser knacken"}},
     {{"Мимо — отмычка цела, начните сначала", "Wrong — the pick holds, start over", "Pudło — wytrych cały, zacznij od nowa", "Falsch — der Dietrich hält, von vorn"}},
     {{"Страница %u из %u", "Page %u of %u", "Strona %u z %u", "Seite %u von %u"}},

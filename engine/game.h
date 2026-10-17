@@ -245,6 +245,10 @@ struct GameStats {
 	u32 unplaced = 0;    // characters whose place the current world does not have
 	u32 notNpc = 0;      // Wld_InsertNpc with something that is no character
 	u32 worlds = 0;      // start-ups run
+	u32 chestGiftsLost = 0; // fix199: Mob_CreateItems that found no room to wait in
+	u32 routinesLost = 0;   // fix199: Wld_Set*Routine beyond the table
+	u32 objectRoutineSwitches = 0, mobRoutineSwitches = 0; // fix199: times an object routine switched something
+	u32 videosAsked = 0; // fix201: PlayVideo calls
 	u32 moves = 0;       // changes of place since the start (routines moving on)
 };
 
@@ -316,6 +320,26 @@ public:
 	// Members of the characters' class the engine reads.
 	i32 guildOf(const GameNpc& n) const { return _mGuild != SCRIPT_NONE && n.object ? _vm.getInt(_mGuild, 0, n.object) : 0; }
 	float sensesRange(const GameNpc& n) const;
+	// fix199 (game_memory.cpp): the containers of the world shown, for Mob_CreateItems / Mob_HasItems (by the hash of
+	// the world's name for them). `add` false: no such container here.
+	struct ContainerHooks {
+		i32 (*count)(void* user, u32 nameHash, u32 item) = nullptr;
+		bool (*add)(void* user, u32 nameHash, u32 item, i32 count) = nullptr;
+		void* user = nullptr;
+	};
+	void setContainerHooks(const ContainerHooks& h) { _containers = h; }
+	// What the scripts put into containers before the App had them (the start-up runs first): taken one at a time.
+	struct ChestGift {
+		u32 name, item;
+		i32 count;
+	};
+	bool takeContainerItem(ChestGift& out);
+	// The characters' memory (Npc_MemoryEntry ...): how many pieces of news `holder` keeps (tests, report).
+	u32 newsCount(u32 holder) const;
+	u32 newsTotal() const { return _newsCount; }
+	// fix201: a video the scripts asked for (PlayVideo), oldest first; the App plays it.
+	void queueVideo(const char* name);
+	bool takeVideo(char* out, u32 size);
 	// An animal or a beast, not a person (the guilds past GIL_SEPERATOR_HUM).
 	bool isMonster(const GameNpc& n) const { return _humanGuilds > 0 && guildOf(n) > _humanGuilds; }
 	const GameNpc* hero() const { return _hero != SCRIPT_NONE ? &_npcs[_hero] : nullptr; }
@@ -597,6 +621,11 @@ public:
 	// OpenGothic asks its version for the few rules that differ (who may pick a lock, what a wrong turn costs).
 	bool isGothic2() const { return _vm.find("ATR_REGENERATEHP") != SCRIPT_NONE; }
 	// The skill (learnt level) and the value (per cent) of a talent of a character, 0 for none.
+	// fix197: the scripts' lock pick: Gothic 1's ITKELOCKPICK or Gothic 2's ITKE_LOCKPICK (SCRIPT_NONE: none).
+	u32 lockpickItem() const {
+		const u32 g1 = _vm.findHash(hashName("ITKELOCKPICK"));
+		return g1 != SCRIPT_NONE ? g1 : _vm.findHash(hashName("ITKE_LOCKPICK"));
+	}
 	i32 talentSkill(u32 npc, i32 talent) const { return npc < _npcCount && talent >= 0 && talent < 16 ? _npcs[npc].skill[talent] : 0; }
 	i32 talentValue(u32 npc, i32 talent) const { return npc < _npcCount && talent >= 0 && talent < 16 ? _npcs[npc].talent[talent] : 0; }
 	// The scripts' say in a lock being picked (OpenGothic's GameScript::invokePickLock): G_PickLock(success, broken) with
@@ -795,6 +824,72 @@ private:
 	i32 _day = 0;
 	static void xGetDay(ScriptVm& vm, void* user);
 	void bindExtra();
+	// fix199 (game_memory.cpp).
+	void bindMemory();
+	struct News {
+		u32 number = 0;    // what Npc_HasNews gives the scripts
+		u32 holder = 0;    // whose memory (Game's index)
+		int offender = -1, victim = -1, witness = -1;
+		i32 id = 0;        // NEWS_MURDER ...
+		i32 victimGuild = -1;
+		bool gossip = false;
+	};
+	enum { MAX_NEWS = 512, MAX_CHEST_GIFTS = 512 };
+	News _news[MAX_NEWS];
+	u32 _newsCount = 0, _newsNext = 0;
+	ContainerHooks _containers;
+	ChestGift _chestGifts[MAX_CHEST_GIFTS] = {};
+	u32 _chestGiftCount = 0;
+	int newsAt(int holder, i32 number) const;
+	void addNews(u32 holder, bool gossip, int offender, i32 newsId, int victim, i32 victimGuild);
+	void pushNewsPerson(ScriptVm& vm, int who);
+	float distance(u32 a, u32 b) const;
+	void saveNews(ByteSink& out) const;
+	bool loadNews(ByteSource& in);
+	static void xMemoryEntry(ScriptVm& vm, void* user);
+	static void xMemoryEntryGuild(ScriptVm& vm, void* user);
+	static void xHasNews(ScriptVm& vm, void* user);
+	static void xIsNewsGossip(ScriptVm& vm, void* user);
+	static void xGetNewsWitness(ScriptVm& vm, void* user);
+	static void xGetNewsVictim(ScriptVm& vm, void* user);
+	static void xGetNewsOffender(ScriptVm& vm, void* user);
+	static void xDeleteNews(ScriptVm& vm, void* user);
+	static void xMobCreateItems(ScriptVm& vm, void* user);
+	static void xMobHasItems(ScriptVm& vm, void* user);
+	static void xGiveItem(ScriptVm& vm, void* user);
+	static void xGetGuildAttitudeNpc(ScriptVm& vm, void* user);
+	static void xIsNear(ScriptVm& vm, void* user);
+	static void xDetectPlayer(ScriptVm& vm, void* user);
+	static void xStopEffect(ScriptVm& vm, void* user);
+	// The object routines (Wld_SetObjectRoutine / Wld_SetMobRoutine).
+	struct ObjName {
+		char name[48];
+		u32 hash;
+		u16 world;
+		bool mob;
+		i8 applied; // the state last sent, -1: none yet
+	};
+	struct ObjRoutine {
+		u16 name;   // into _objNames
+		u16 minute; // of the day
+		u8 state;
+	};
+	enum { MAX_OBJ_NAMES = 512, MAX_OBJ_ROUTINES = 2048 };
+	ObjName _objNames[MAX_OBJ_NAMES];
+	ObjRoutine _objRoutines[MAX_OBJ_ROUTINES];
+	u32 _objNameCount = 0, _objRoutineCount = 0;
+	void addObjectRoutine(i32 hour, i32 minute, const char* name, i32 state, bool mob);
+	void applyObjectRoutines();
+	void saveObjectRoutines(ByteSink& out) const;
+	bool loadObjectRoutines(ByteSource& in);
+	static void xSetObjectRoutine(ScriptVm& vm, void* user);
+	static void xSetMobRoutine(ScriptVm& vm, void* user);
+	// fix201: the videos the scripts ask for.
+	enum { MAX_VIDEOS = 4 };
+	char _videos[MAX_VIDEOS][48] = {};
+	u32 _videoCount = 0;
+	static void xPlayVideo(ScriptVm& vm, void* user);
+	static void xPlayVideoEx(ScriptVm& vm, void* user);
 	struct RoomGuild {
 		u16 world;
 		u32 hash;
@@ -823,7 +918,9 @@ private:
 		char name[48];
 		bool untrigger;
 	};
-	TriggerEvent _triggerEvents[16] = {};
+	enum { TRIGGER_EVENTS = 128 }; // fix199: 128 (the object routines switch dozens of lights at one hour)
+	TriggerEvent _triggerEvents[TRIGGER_EVENTS] = {};
+	void queueTrigger(const char* name, bool untrigger);
 	u32 _triggerFirst = 0, _triggerCount = 0;
 	struct TriggerKept {
 		u16 world;

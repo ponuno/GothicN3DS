@@ -255,22 +255,25 @@ bool Game::takeEffect(Effect& out) {
 // Wld_SendTrigger(name) / Wld_SendUntrigger(name): to the world's triggers of that name (a gate, a lift).
 void Game::xSendTrigger(ScriptVm& vm, void* user) {
 	Game& g = *static_cast<Game*>(user);
+	g.queueTrigger(vm.popString(), false);
+}
+
+void Game::queueTrigger(const char* text, bool untrigger) {
 	char name[48];
-	copyText(name, sizeof(name), vm.popString());
+	copyText(name, sizeof(name), text);
 	if (!name[0]) return;
-	if (g._triggerCount == 16) {
-		g._triggerFirst = (g._triggerFirst + 1) % 16;
-		--g._triggerCount;
+	if (_triggerCount == TRIGGER_EVENTS) {
+		_triggerFirst = (_triggerFirst + 1) % TRIGGER_EVENTS;
+		--_triggerCount;
 	}
-	TriggerEvent& e = g._triggerEvents[(g._triggerFirst + g._triggerCount++) % 16];
+	TriggerEvent& e = _triggerEvents[(_triggerFirst + _triggerCount++) % TRIGGER_EVENTS];
 	memcpy(e.name, name, sizeof(name));
-	e.untrigger = false;
+	e.untrigger = untrigger;
 }
 
 void Game::xSendUntrigger(ScriptVm& vm, void* user) {
 	Game& g = *static_cast<Game*>(user);
-	xSendTrigger(vm, user);
-	if (g._triggerCount) g._triggerEvents[(g._triggerFirst + g._triggerCount - 1) % 16].untrigger = true;
+	g.queueTrigger(vm.popString(), true);
 }
 
 bool Game::takeTrigger(char* name, u32 size, bool& untrigger) {
@@ -280,7 +283,7 @@ bool Game::takeTrigger(char* name, u32 size, bool& untrigger) {
 	for (char* c = name; *c; ++c)
 		if (*c >= 'a' && *c <= 'z') *c = char(*c - 32);
 	untrigger = e.untrigger;
-	_triggerFirst = (_triggerFirst + 1) % 16;
+	_triggerFirst = (_triggerFirst + 1) % TRIGGER_EVENTS;
 	--_triggerCount;
 	return true;
 }

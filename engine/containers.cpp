@@ -201,7 +201,7 @@ void App::doorUse(u32 door) {
 		itemMessage(buf, false);
 		return;
 	}
-	const u32 pick = g.vm().findHash(hashName("ITKELOCKPICK"));
+	const u32 pick = g.lockpickItem();
 	const i32 picks = pick != NONE ? g.itemCount(u32(hi), pick) : 0;
 	const char* combo = _triggers.doorPick(door);
 	const bool skilled = !g.isGothic2() || g.talentSkill(u32(hi), g.constant("NPC_TALENT_PICKLOCK", 5)) != 0;
@@ -239,7 +239,7 @@ void App::chestStart(u32 index) {
 			snprintf(buf, sizeof(buf), tr("Открыто ключом: %s"), name);
 			itemMessage(buf, false);
 		} else {
-			const u32 pick = g.vm().findHash(hashName("ITKELOCKPICK"));
+			const u32 pick = g.lockpickItem();
 			const i32 picks = pick != NONE ? g.itemCount(u32(hi), pick) : 0;
 			const char* combo = _chests.pick(index);
 			// OpenGothic's Interactive::checkUseConditions: in Gothic 1 anybody with a pick may try; in Gothic 2 only one who
@@ -523,7 +523,7 @@ void App::chestCommand(const PanelCommand& c) {
 			                               : 100 - g.talentValue(u32(hi), g.constant("NPC_TALENT_PICKLOCK", 5));
 			if (keep <= i32(g.dice(100))) {
 				g.pickLockSays(u32(hi), 0, 1);
-				const u32 pick = g.vm().findHash(hashName("ITKELOCKPICK"));
+				const u32 pick = g.lockpickItem();
 				if (pick != NONE) g.giveItems(u32(hi), pick, -1);
 				if (_chest.picks > 0) --_chest.picks;
 				if (_chest.picks == 0) {

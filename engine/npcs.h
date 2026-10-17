@@ -215,6 +215,10 @@ enum NpcActionKind : u8 {
 	// Things (npc_items.cpp).
 	NPC_ACT_USE_ITEM,   // i: the item; f: the state to take it to (-1: put it away, -2: use it up, AI_UseItem)
 	NPC_ACT_TAKE_ITEM,  // i: the thing in the world (Loot's index); fn: its item
+	// fix199: AI_WaitTillEnd(self, other): i: other (Game's index); order: the talk's lines given before it (other the
+	// player: those said first); hash: other's action it waits out (actionSerial); f: seconds it may wait at most
+	NPC_ACT_WAIT_END,
+	NPC_ACT_SHOOT,      // fix199: AI_ShootAt: i: the target (Game's index): one shot with what is in hand
 };
 
 struct NpcAction {
@@ -243,7 +247,7 @@ struct NpcPiece {
 
 // A character near the player.
 struct NpcActor {
-	enum { QUEUE = 24, PATH = 40 };
+	enum { QUEUE = 48, PATH = 40 }; // fix199: 48 (Archolos' longest talks give one character 25+ lines at once)
 	enum Mode : u8 { WALK = 1, RUN = 0 }; // as the scripts count them (NPC_RUN, NPC_WALK)
 	enum Phase : u8 { IDLE, TURNING, MOVING, PLAYING, WAITING };
 
@@ -283,6 +287,7 @@ struct NpcActor {
 	NpcAction queue[QUEUE];
 	u8 queueHead = 0, queueCount = 0;
 	NpcAction action; // the one being carried out (NPC_ACT_NONE: none)
+	u32 actionSerial = 0; // fix199: counts the actions begun (AI_WaitTillEnd waits for another's to change)
 	Phase phase = IDLE;
 	float wait = 0;        // seconds left of a wait or an animation
 	float turnTo = 0;      // yaw to turn to
@@ -763,6 +768,7 @@ private:
 	static void xTakeItem(ScriptVm& vm, void* user);
 	static void xGotoItem(ScriptVm& vm, void* user);
 	static void xDetectItem(ScriptVm& vm, void* user);
+	static void xRemoveWorldItem(ScriptVm& vm, void* user); // fix199
 	static void xCanSeeItem(ScriptVm& vm, void* user);
 	static void xDistToItem(ScriptVm& vm, void* user);
 	i32 _bsItem = 14 | (1 << 15); // BS_ITEMINTERACT
@@ -818,6 +824,7 @@ private:
 	// A line of the player's talk (shown, spoken in turn) / of the world (said where its speaker stands).
 	void queueTalkLine(ScriptInstance* speakerInst, u32 hash);
 	void queueHeroCall(ScriptInstance* heroInst, i32 ticket); // fix196
+	void queueHeroWait(int other);                            // fix199
 	bool queueWorldLine(ScriptInstance* speakerInst, int target, u32 hash, const char* svm);
 	bool talkLineOf(int speaker) const;
 	// The name of the line behind an SVM phrase for a character's voice ("$WHATDOYOUWANT" -> "SVM_3_WHATDOYOUWANT"),
@@ -838,13 +845,15 @@ private:
 	static void xProcessInfos(ScriptVm& vm, void* user);
 	static void xStopProcessInfos(ScriptVm& vm, void* user);
 	static void xInfoManagerHasFinished(ScriptVm& vm, void* user);
-	enum { SPEECH = 24 };
+	enum { SPEECH = 64 }; // fix199: 64 (one info of Archolos says up to 52 lines; 24 lost the rest)
 	struct SpeechStep {
 		u32 hash;
 		int speaker; // Game's index
 		u32 id;
-		i32 call = -1; // fix196: LeGo's AI_Function of the player's character (Ikarus::callLater's ticket), not a line
+		i32 call = -1; // fix196: LeGo's AI_Function of the player's character (Ikarus::callLater's ticket), not a line;
+		               // fix199: WAIT_FOR_ACTOR: the player's AI_WaitTillEnd (speaker: the other; hash: its last action)
 	};
+	enum : i32 { WAIT_FOR_ACTOR = -2 };
 	SpeechStep _speech[SPEECH] = {};
 	u8 _speechHead = 0, _speechCount = 0;
 	u32 _speechNext = 1, _speechDone = 1; // numbers below _speechDone have been said
@@ -931,6 +940,9 @@ private:
 	static void xPlayAniBs(ScriptVm& vm, void* user);
 	static void xWait(ScriptVm& vm, void* user);
 	static void xWaitMs(ScriptVm& vm, void* user);
+	static void xWaitTillEnd(ScriptVm& vm, void* user); // fix199
+	static void xAimAt(ScriptVm& vm, void* user);       // fix199
+	static void xShootAt(ScriptVm& vm, void* user);     // fix199
 	static void xSetRefuseTalk(ScriptVm& vm, void* user);
 	static void xRefuseTalk(ScriptVm& vm, void* user);
 	static void xStandUp(ScriptVm& vm, void* user);

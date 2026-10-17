@@ -62,6 +62,10 @@ bool Game::adopt(u8* image, u32 size) {
 
 void Game::release() {
 	freePending();
+	_newsCount = 0;
+	_chestGiftCount = 0;
+	_objNameCount = _objRoutineCount = 0;
+	_videoCount = 0;
 	dropTransform();
 	_timeSet = 0.0f;
 	_timeSetSerial = _timeSetTaken = 0;
@@ -323,6 +327,7 @@ bool Game::bindAll() {
 	bindDialogues();
 	bindItems();
 	bindExtra();
+	bindMemory(); // fix199
 	// fix195: a mod's Ikarus and LeGo get the engine's stand-ins (before anything of the scripts runs).
 	_ikarus.attach(_vm, IKARUS_HEAP);
 
@@ -930,6 +935,7 @@ void Game::enterWorld(const char* script, float hours, PointFinder find, void* u
 	}
 	runIfPresent("INIT_", "GLOBAL");
 	runIfPresent("INIT_", script);
+	applyObjectRoutines(); // fix199: what the objects of this world are at this hour
 	if (change) _ikarus.levelChangeEnd();
 	setTime(hours, find, user);
 }
@@ -1037,6 +1043,7 @@ u32 Game::setTime(float hours, PointFinder find, void* user) {
 		_find = find;
 		_findUser = user;
 	}
+	applyObjectRoutines(); // fix199
 	const u32 before = _stats.moves;
 	_stats.unplaced = 0;
 	for (u32 i = 0; i < _npcCount; ++i) {

@@ -102,6 +102,7 @@ void Chests::enterWorld(Pak& pak, const char* worldName, u32 worldHash, Game& ga
 		memcpy(&wc, blob + sizeof(ChestsHeader) + size_t(i) * sizeof(WorldChest), sizeof(wc));
 		Chest& c = _chests[i];
 		c.mob = wc.mob;
+		c.name = wc.name;
 		c.locked = (wc.flags & CHEST_LOCKED) != 0;
 		c.key = SCRIPT_NONE;
 		if (wc.key) {
@@ -164,6 +165,21 @@ void Chests::unlock(u32 i) {
 	_chests[i].locked = false;
 	_chests[i].changed = true;
 	++_version;
+}
+
+int Chests::byName(u32 nameHash) const {
+	if (!nameHash) return -1;
+	for (u32 i = 0; i < _count; ++i)
+		if (_chests[i].name == nameHash) return int(i);
+	return -1;
+}
+
+i32 Chests::countOf(u32 i, u32 symbol) const {
+	if (i >= _count) return 0;
+	i32 n = 0;
+	for (u32 k = 0; k < _chests[i].n; ++k)
+		if (_chests[i].stacks[k].symbol == symbol) n += _chests[i].stacks[k].count;
+	return n;
 }
 
 bool Chests::add(u32 i, u32 symbol, i32 count) {

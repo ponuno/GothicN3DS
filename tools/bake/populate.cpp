@@ -840,6 +840,24 @@ void bakePopulation(std::vector<BakeWorld>& worlds, const BakeScripts& scripts, 
 				for (const auto& [lib, n] : runsBy) dbgLine(format("  functions run by the talks, in %s: %u", lib.c_str(), n));
 				dbgLine("-- engine functions the talks call that this engine does not carry out --");
 				for (u32 external : pending) dbgLine("  " + script.symbols[external].name);
+				// fix197: what of theirs needs the original's machine code (Ikarus' CALL_* / ASM_*, skipped here): the
+				// functions that call it, with how many of the talks' functions reach them - where talks lose a step.
+				dbgLine("-- functions the talks run that call the original's machine code (CALL_*, ASM_*: skipped here) --");
+				const auto machine = [&](u32 f) {
+					const std::string& n = script.symbols[f].name;
+					return n.compare(0, 5, "CALL_") == 0 || n.compare(0, 8, "CALLINT_") == 0 || n.compare(0, 4, "ASM_") == 0 ||
+					       n.compare(0, 7, "ASMINT_") == 0 || n == "ASM";
+				};
+				for (u32 fn : runs) {
+					if (machine(fn) || script.symbols[fn].external || script.symbols[fn].address >= script.code.size()) continue;
+					std::set<u32> callees, ext;
+					scan(fn, callees, ext);
+					std::string which;
+					for (u32 c : callees)
+						if (machine(c) && which.find(script.symbols[c].name) == std::string::npos)
+							which += (which.empty() ? "" : " ") + script.symbols[c].name;
+					if (!which.empty()) dbgLine("  " + script.symbols[fn].name + "  <- " + which);
+				}
 			}
 			std::string names;
 			for (size_t i = 0; i < pending.size() && i < 40; ++i)

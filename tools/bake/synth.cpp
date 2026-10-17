@@ -766,6 +766,7 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 			m.key = key;
 			m.pick = pick;
 			m.contents = contents;
+			m.vobName = std::string("SYNTH_") + kind + "_" + std::to_string(c); // (fix199: Mob_CreateItems' name)
 		};
 		chest("CHESTBIG", -500.0f, 500.0f - 260.0f, 55.0f, 60.0f, "ITMINUGGET:75, ITFOAPPLE:2, ITKELOCKPICK:3, ITKE_CAMPCHEST:1", false, "", "");
 		chest("CHESTSMALL", -330.0f, 500.0f - 260.0f, 38.0f, 40.0f, "ITFO_POTION_HEALTH_01:2", true, "ITKE_CAMPCHEST", "");

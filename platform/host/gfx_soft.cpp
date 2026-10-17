@@ -354,6 +354,18 @@ Texture* textureCreate(const TexHeader& h, const u8* data) {
 	return t;
 }
 
+void textureUpdateEtc1(Texture* t, const u8* data) {
+	if (!t || !data || !t->level[0]) return;
+	TexHeader h {};
+	h.magic = TEX_MAGIC;
+	h.width = t->width;
+	h.height = t->height;
+	h.format = TEX_ETC1;
+	h.mipCount = 1;
+	h.dataSize = u32(t->width) * t->height / 2u;
+	texDecodeLevel(h, data, 0, t->level[0]);
+}
+
 void textureUpdateMask(Texture* t, const u8* texels) {
 	if (!t || !texels || !t->level[0]) return;
 	for (u32 y = 0; y < t->height; ++y)

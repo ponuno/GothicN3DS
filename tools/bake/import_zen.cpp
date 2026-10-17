@@ -1971,6 +1971,7 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 			out.key = upper(box->key);
 			out.pick = upper(box->pick_string);
 			out.contents = upper(box->contents);
+			out.vobName = upper(vob.vob_name);
 		}
 		if (mob.mesh)
 			for (const auto& [name, node] : mob.mesh->slots) {

@@ -46,6 +46,8 @@
 #include "test_models.h"
 #include "texture_bake.h"
 #include "vertex_fx.h"
+#include "video_bake.h"
+#include "lz4.h"
 
 #include <algorithm>
 #include <array>
@@ -6725,7 +6727,7 @@ func void Rtn_start_502() {
 			inserts += std::string("\n\tWld_InsertNpc(VLK_600_Chaos, \"") + at + "\");";
 		chaos.replace(chaos.find(hook), hook.size(), inserts);
 		std::string flood;
-		for (int i = 0; i < 40; ++i) flood += "AI_Wait(self, 0.02); ";
+		for (int i = 0; i < 80; ++i) flood += "AI_Wait(self, 0.02); ";
 		chaos += R"(
 var int chaos_starts; var int chaos_loops; var int chaos_ends;
 extern func void AI_Teleport(var C_NPC n, var string wp);
@@ -11207,6 +11209,191 @@ static void testStartMenu() {
 
 // Talks: A at Thorus, the greeting he begins with, the menu of what the scripts
 // offer, a choice inside an info, a quest begun and finished, a routine changed.
+// fix201: a video baked by ffmpeg (a second of red, a second of blue, a tone), played: the pictures in their time, the
+// sound in the stream, the colours where they should be. Skipped without ffmpeg.
+static void testVideo() {
+	VideoBakeOptions vo;
+	vo.ffmpeg = findFfmpeg("", "");
+	if (vo.ffmpeg.empty()) {
+		std::printf("  (no ffmpeg on this machine: skipped)\n");
+		return;
+	}
+	vo.threads = 2;
+	const std::string clip = gDir + "/clip_video.avi";
+	const std::string cmd = "\"" + vo.ffmpeg + "\" -v error -y -f lavfi -i \"color=c=red:s=640x480:d=1:r=25 [r]; color=c=blue:s=640x480:d=1:r=25 [b]; [r][b] concat=n=2 [out0]\" "
+	                        "-f lavfi -i \"sine=frequency=440:duration=2\" -c:v mpeg4 -q:v 2 -c:a pcm_s16le \"" + clip + "\"";
+	CHECK(std::system(cmd.c_str()) == 0);
+	std::vector<u8> blob;
+	const VideoBakeResult r = bakeVideo(clip, vo, blob);
+	std::printf("  video: ok %d (%s) %ux%u, %u frames, %u samples, %zu bytes, %llu of %llu blocks sent\n", int(r.ok), r.why.c_str(), r.width,
+	            r.height, r.frames, r.audioFrames, blob.size(), (unsigned long long)r.blocksSent, (unsigned long long)r.blocksAll);
+	CHECK(r.ok && r.width == 320 && r.height == 240 && r.frames >= 29 && r.frames <= 31);
+	CHECK(r.audioFrames > 43000 && r.audioFrames < 45200);
+	CHECK(r.blocksSent < r.blocksAll / 10); // (two pictures of one colour: little more than two frames' worth)
+	CHECK(videoEntryName("C:\\Games\\Gothic\\_work\\Data\\Video\\CLIP.BIK") == "video/clip");
+	if (!r.ok) return;
+
+	// The format: the frames put together (as the player does), decoded: red early, blue at the end.
+	{
+		VideoHeader h;
+		std::memcpy(&h, blob.data(), sizeof(h));
+		const VideoChunk* table = reinterpret_cast<const VideoChunk*>(blob.data() + sizeof(h));
+		std::vector<u8> image(VIDEO_TEX_W * VIDEO_TEX_H / 2, 0), raw;
+		const u32 blocks = videoBlocks(h), bw = h.width / 4;
+		const auto centre = [&](u8 rgb[3]) {
+			TexHeader th {};
+			th.magic = TEX_MAGIC;
+			th.width = VIDEO_TEX_W;
+			th.height = VIDEO_TEX_H;
+			th.format = TEX_ETC1;
+			th.mipCount = 1;
+			th.dataSize = u32(image.size());
+			std::vector<u8> rgba(size_t(VIDEO_TEX_W) * VIDEO_TEX_H * 4);
+			texDecodeLevel(th, image.data(), 0, rgba.data());
+			const u8* px = &rgba[(size_t(h.height / 2) * VIDEO_TEX_W + h.width / 2) * 4];
+			std::memcpy(rgb, px, 3);
+		};
+		u8 early[3] = {}, late[3] = {};
+		for (u32 f = 0; f < h.frameCount; ++f) {
+			raw.resize(table[f].raw);
+			CHECK(LZ4_decompress_safe(reinterpret_cast<const char*>(blob.data() + table[f].offset), reinterpret_cast<char*>(raw.data()),
+			                          int(table[f].size), int(table[f].raw)) == int(table[f].raw));
+			const u8* data = raw.data() + (blocks + 7) / 8;
+			for (u32 b = 0; b < blocks; ++b)
+				if (raw[b >> 3] & (1u << (b & 7))) {
+					std::memcpy(&image[videoBlockOffset(b % bw, b / bw)], data, 8);
+					data += 8;
+				}
+			if (f == 5) centre(early);
+		}
+		centre(late);
+		std::printf("  video colours: early %u %u %u, late %u %u %u\n", early[0], early[1], early[2], late[0], late[1], late[2]);
+		CHECK(early[0] > 200 && early[2] < 60);
+		CHECK(late[2] > 200 && late[0] < 60);
+	}
+
+	// The player.
+	PakWriter pw;
+	pw.add("video/clip", ASSET_BLOB, blob, false);
+	const std::string pakPath = gDir + "/video.pak";
+	pw.write(pakPath);
+	gfx::init();
+	HostAudio audio;
+	VideoPlayer player;
+	CHECK(player.init(pakPath.c_str(), &audio));
+	CHECK(player.has("CLIP.BIK") && player.has("clip") && !player.has("INTRO.BIK"));
+	CHECK(player.start("_work\\Data\\Video\\Clip.bik") && player.active() && player.texture());
+	CHECK(audio.streamIsOpen() && audio.streamRate() == 22050);
+	float t = 0;
+	const float dt = 1.0f / 30.0f;
+	while (player.active() && t < 6.0f) {
+		player.update(dt);
+		audio.advance(dt);
+		t += dt;
+	}
+	const VideoPlayer::Stats& st = player.stats();
+	std::printf("  video played: %.2f s, %u pictures shown, %u passed over, %u sound chunks, %u broken\n", double(t), st.frames, st.skipped,
+	            st.audioChunks, st.broken);
+	CHECK(!player.active() && !audio.streamIsOpen());
+	CHECK(t > 1.9f && t < 2.6f);
+	CHECK(st.broken == 0 && st.audioChunks == 2 && st.frames + st.skipped + 1 >= r.frames - 1);
+	player.shutdown();
+
+	// In the game: the scripts ask (PlayVideo), the App plays it over everything and the world stands still; A skips it.
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/videoapp.pak"; // (video.pak is beside it)
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	std::printf("  video app: npcs %d, video.pak %d\n", int(app.npcs().loaded()), int(app.video().ready()));
+	if (!app.npcs().loaded()) return;
+	app.update(Input {}, dt);
+	const double clock = app.clock();
+	app.npcs().game().queueVideo("CLIP.BIK");
+	app.update(Input {}, dt);
+	CHECK(app.videoActive());
+	for (int i = 0; i < 10; ++i) {
+		app.update(Input {}, dt);
+		app.render();
+	}
+	CHECK(app.videoActive() && app.clock() == clock); // (the game's own clock has not moved)
+	for (int i = 0; i < 20; ++i) app.update(Input {}, dt);
+	Input skip;
+	skip.confirm = true;
+	app.update(skip, dt);
+	CHECK(!app.videoActive());
+	app.update(Input {}, dt);
+	CHECK(app.clock() > clock);
+	app.npcs().game().queueVideo("NO_SUCH.BIK");
+	app.update(Input {}, dt);
+	CHECK(!app.videoActive());
+}
+
+// fix199: AI_WaitTillEnd (Thorus waits until Jackal is done), AI_ShootAt without a bow (nothing, no hang), and the
+// actions after the fight's and the things' ranges are carried out as themselves.
+static void testWaitTillEnd() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/waittillend.pak";
+	bakeLifeWorlds(std::string(syntheticScriptSource()) + R"(
+extern func void AI_WaitTillEnd(var C_NPC self, var C_NPC other);
+extern func void AI_ShootAt(var C_NPC attacker, var C_NPC target);
+var int probe_after;
+func void ProbeAfter() { probe_after = 1; };
+func void ProbeWaitTillEnd() {
+	AI_Wait(other, 2.0);
+	AI_WaitTillEnd(self, other);
+	AI_ShootAt(self, other);
+	AI_Wait(self, 0.05);
+};
+)", path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded()) return;
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 0;
+	app.settings().perception = 0;
+	app.applySettings();
+	const float dt = 1.0f / 30.0f;
+	const auto find = [&](const char* name) {
+		const u32 sym = g.vm().find(name);
+		for (u32 i = 0; i < g.npcCount(); ++i)
+			if (g.npc(i).symbol == sym) return i;
+		return u32(SCRIPT_NONE);
+	};
+	const u32 thorus = find("GRD_200_THORUS"), jackal = find("GRD_201_JACKAL");
+	CHECK(thorus != SCRIPT_NONE && jackal != SCRIPT_NONE);
+	if (thorus == SCRIPT_NONE || jackal == SCRIPT_NONE) return;
+	app.teleport({g.npc(thorus).pos[0], g.npc(thorus).pos[1] + 5.0f, g.npc(thorus).pos[2] + 300.0f});
+	for (int i = 0; i < 45; ++i) app.update(Input {}, dt);
+	const auto actorOf = [&](u32 npc) -> const NpcActor* {
+		for (u32 k = 0; k < npcs.actorCount(); ++k)
+			if (npcs.actor(k).used && npcs.actor(k).npc == npc) return &npcs.actor(k);
+		return nullptr;
+	};
+	CHECK(actorOf(thorus) && actorOf(jackal));
+	if (!actorOf(thorus) || !actorOf(jackal)) return;
+	g.callAs(g.function("PROBEWAITTILLEND"), thorus, int(jackal));
+	bool waited = false;
+	float t = 0, began = -1.0f, ended = -1.0f, jackalBusyTill = -1.0f;
+	for (; t < 8.0f && ended < 0.0f; t += dt) {
+		app.update(Input {}, dt);
+		const NpcActor& a = *actorOf(thorus);
+		const NpcActor& j = *actorOf(jackal);
+		if (a.action.kind == NPC_ACT_WAIT_END && !waited) {
+			waited = true;
+			began = t;
+		}
+		if (waited && began >= 0.0f && jackalBusyTill < 0.0f && j.action.kind != NPC_ACT_WAIT) jackalBusyTill = t;
+		if (waited && a.action.kind != NPC_ACT_WAIT_END) ended = t;
+	}
+	std::printf("  wait till end: began %.2f, Jackal's action over %.2f, Thorus went on %.2f\n", double(began), double(jackalBusyTill), double(ended));
+	CHECK(waited && ended > began);
+	CHECK(ended - began < 4.0f); // (the other's action, not the 30 s at most)
+}
+
 static void testDialogs() {
 	std::vector<BakeWorld> worlds;
 	const std::string path = gDir + "/dialogs.pak";
@@ -14025,6 +14212,8 @@ int main(int argc, char** argv) {
              {"teach", testTeach},
              {"particles", testParticles},
              {"dialogs", testDialogs},
+             {"wait till end", testWaitTillEnd},
+             {"video", testVideo},
              {"saves", testSaves},
              {"start menu", testStartMenu},
              {"npcai", testNpcAi},

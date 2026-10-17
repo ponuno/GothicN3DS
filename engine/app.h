@@ -31,6 +31,7 @@
 #include "weather.h"
 #include "sound.h"
 #include "music.h"
+#include "video.h"
 #include "speech.h"
 #include "ui.h"
 #include "world.h"
@@ -180,6 +181,11 @@ public:
 	// instead of the world, and the platform gives startMenuInput() the buttons instead of update().
 	void openStartMenu();
 	bool startMenuActive() const { return _startActive; }
+	// fix201: a video the scripts asked for is playing (the game stands still, A/B/START skip it).
+	bool videoActive() const { return _video.active(); }
+	const VideoPlayer& video() const { return _video; }
+	// Plays a video of video.pak now (the debug menu, the tests); false if there is none such.
+	bool playVideo(const char* name);
 	const StartMenu& startMenu() const { return _start; }
 	struct StartResult {
 		bool exit = false;            // "Выход": the platform leaves
@@ -618,6 +624,11 @@ private:
 	ScriptVm _sfxVm, _musicVm; // the sounds (SFX.DAT) and music themes (MUSIC.DAT) of the game: scripts of their own
 	Sound _sound;
 	Music _music;
+	VideoPlayer _video; // fix201
+	void startVideo();
+	bool videoUpdate(const Input& in, float dt); // true while a video is on
+	void renderVideo();
+	float _videoHold = 0; // seconds the skip button has to wait after the start (a press that began it does not end it)
 	Speech _speech;
 	float _musicScan = 0, _musicHold = 0; // (musicSituation)
 	bool _musicAttack = false;
@@ -853,6 +864,8 @@ private:
 	int _lootTarget = -1;
 	// The chests.
 	Chests _chests;
+	void scriptChests(bool on); // fix199
+	u32 _scriptChestMisses = 0;
 	int _chestTarget = -1;
 	int _corpseTarget = -1;
 	struct ChestJob {

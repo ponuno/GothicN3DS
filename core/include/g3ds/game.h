@@ -186,7 +186,8 @@ struct WorldChest {
 	u32 key;      // hashName of the item instance that opens it, 0 for none
 	u32 pick;     // offset into names: the combination of the lock ("LRRL"), "" if it cannot be picked
 	u32 contents; // offset into names: "ITMI_GOLD:75, ITFO_FISH:2, ITMI_QUARTZ"
-	u32 reserved[3];
+	u32 name;     // fix199: hashName of the vob's name (Mob_CreateItems / Mob_HasItems find it by that), 0: none
+	u32 reserved[2];
 };
 static_assert(sizeof(WorldChest) == 32, "WorldChest layout");
 

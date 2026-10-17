@@ -993,9 +993,22 @@ const InventoryView& App::inventory() {
 				const char* title = g.vm().getString(tNames, t);
 				if (!title || !*title) continue;
 				InventoryView::Sheet::Talent& tl = sh.talents[sh.talentCount++];
-				tl = InventoryView::Sheet::Talent();
+				tl.name[0] = tl.level[0] = 0;
+				tl.meaning = InventoryView::Sheet::Talent::PERCENT;
 				tl.skill = h.skill[t];
 				tl.value = h.talent[t];
+				if (!g.isGothic2()) {
+					// Gothic 1: two levels per weapon; the number beside is the critical hit (weapons) or the
+					// failure (lock, pockets); the other talents have none.
+					const i32 ti = i32(t);
+					if (ti == g.constant("NPC_TALENT_1H", 1) || ti == g.constant("NPC_TALENT_2H", 2) ||
+					    ti == g.constant("NPC_TALENT_BOW", 3) || ti == g.constant("NPC_TALENT_CROSSBOW", 4))
+						tl.meaning = InventoryView::Sheet::Talent::CRITICAL;
+					else if (ti == g.constant("NPC_TALENT_PICKLOCK", 5) || ti == g.constant("NPC_TALENT_PICKPOCKET", 6))
+						tl.meaning = tl.skill ? InventoryView::Sheet::Talent::FAILURE : InventoryView::Sheet::Talent::NONE_SHOWN;
+					else
+						tl.meaning = InventoryView::Sheet::Talent::NONE_SHOWN;
+				}
 				scriptText(title, tl.name, sizeof(tl.name));
 				if (tLevels != NONE && g.vm().symbol(tLevels).type == SCRIPT_STRING && t < g.vm().symbol(tLevels).count) {
 					// (The level's word: the text after '#', the tl.skill-th of those split by '|'.)
@@ -1204,9 +1217,14 @@ u32 App::giveTestKit() {
 	for (const char* n : kRunes2) give(n, 1);
 	for (const char* n : kScrolls2) give(n, 3);
 	for (const char* n : kPotions2) give(n, 2);
-	// Lockpicks (Gothic 1, Gothic 2).
+	// Lockpicks (Gothic 1, Gothic 2), and in Gothic 2 the talent to use them (fix197).
 	give("ItKeLockpick", 10);
 	give("ItKe_Lockpick", 10);
+	{
+		const i32 t = g.constant("NPC_TALENT_PICKLOCK", 5);
+		GameNpc& me = g.npcMut(u32(hi));
+		if (g.isGothic2() && t >= 0 && t < 16 && !me.skill[t]) me.skill[t] = 1;
+	}
 	GameNpc& h = g.npcMut(u32(hi));
 	// One weapon (put on the belt), the best of the scripts if the usual one is not there.
 	u32 sword = give("ItMw_1H_Sword_Long_01", 1);

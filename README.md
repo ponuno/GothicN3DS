@@ -17,6 +17,38 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on its own engine: C++17, a r
 
 **Not there yet:** ZenGin `.CS` cutscenes, gossip between townsfolk, Ikarus/LeGo (needed by Archolos).
 
+**Known problems(Reporting them is still useful):**
+-Diving is broken(MC just starts walking when too deep)
+-Barrier does not exists as an object in the world yet, so it can't damage the player
+-Torches are useless
+-Translation accuracy for PL and DE not verified
+-Some graphic+ features need fixing
+-Some animations are wanky or do not exist
+-Sun and moon black outline in the clouds
+-Follower NPC's do not follow NH(Mud and Shrat)
+-Some weird npc behaviour(Please report what exactly is wrong)
+-Minor fps drop during dialogues
+-Not all objects shown on players and NPC hands
+-Magic is not properly tested(Probably a lot of missing effects)
+-Blood stains are not reseted after reload
+-Weapon swing effects 
+
+
+**Further plans:**
+-Control and interface improvements based on feedback
+-Bug fixes
+-Gothic 2 and Gothic 2 NOTR support
+-UI redesign with drawn icons(?)
+-Refining graphic+ options
+-LeGo and Ikarus adaptation(?)
+-CoM:Archolos support(?)
+-Features exclusive to this version(?)
+-More optimization and graphic fixes if needed
+-1st person mode(?)
+-Hardcore mode(?)
+-Non target ranged attacks(?)
+-Trailer for the final release(?)
+
 ## What you need
 
 - A **New Nintendo 3DS / New 2DS XL** with custom firmware (Luma3DS) and the Homebrew Launcher.

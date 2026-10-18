@@ -326,6 +326,7 @@ void InventoryPanel::openPage(PanelPage p) {
 	_listScroll = 0;
 	if (p == PAGE_DIALOG) {
 		_talkCursor = 0;
+		_talkTop = 0;
 		_talkVersion = 0xFFFFFFFFu;
 	}
 	_dirty = true;
@@ -466,7 +467,7 @@ InventoryPanel::Hit InventoryPanel::hitTest(int x, int y) const {
 		// (The talk is left by the talk's own ways, not by the back arrow.)
 		if (y >= TALK_Y) {
 			h.region = R_TALK;
-			h.index = (y - TALK_Y) / TALK_ROW;
+			h.index = (y - TALK_Y) / TALK_ROW + _talkTop;
 		}
 		return h;
 	}
@@ -605,12 +606,15 @@ PanelCommand InventoryPanel::update(const PanelInput& in, const InventoryView& v
 		if (_talkVersion != t.version) {
 			_talkVersion = t.version;
 			_talkCursor = 0;
+			_talkTop = 0;
 			_dirty = true;
 		}
 		if (t.choosing && t.count) {
 			const int before = _talkCursor;
 			if (in.down) _talkCursor = min(_talkCursor + 1, int(t.count) - 1);
 			if (in.up) _talkCursor = max(_talkCursor - 1, 0);
+			if (_talkCursor < _talkTop) _talkTop = _talkCursor;
+			if (_talkCursor >= _talkTop + TALK_ROWS) _talkTop = _talkCursor - TALK_ROWS + 1;
 			if (before != _talkCursor) {
 				_dirty = true;
 				_talkScroll = 0.0f; // (fix202: the chosen line starts from its beginning)
@@ -1201,8 +1205,8 @@ void InventoryPanel::drawDialog(const InventoryView& v) {
 		_canvas.text(Canvas::W - 6, Canvas::H - 16, lp, GOLD, ui::TEXT, ui::RIGHT, 0, true);
 	}
 	if (t.choosing && t.count) {
-		for (u32 k = 0; k < t.count && k < u32(TALK_ITEMS); ++k) {
-			const int y = TALK_Y + int(k) * TALK_ROW;
+		for (u32 k = u32(_talkTop); k < t.count && k < u32(TALK_ITEMS) && k < u32(_talkTop + TALK_ROWS); ++k) {
+			const int y = TALK_Y + int(k - u32(_talkTop)) * TALK_ROW;
 			const bool chosen = int(k) == _talkCursor;
 			if (chosen) {
 				_canvas.gradient(x0, y, x1, y + TALK_ROW - 2, SEL_TOP, SEL_BOTTOM);
@@ -1219,6 +1223,13 @@ void InventoryPanel::drawDialog(const InventoryView& v) {
 			} else {
 				_canvas.text(x0 + 6, y + 1, t.items[k], chosen ? TITLE : TEXT, ui::TEXT, ui::LEFT, x1 - x0 - 12, true);
 			}
+		}
+		// (fix222: more ways above or below than the rows show)
+		if (_talkTop > 0 || t.count > u32(_talkTop + TALK_ROWS)) {
+			char more[24];
+			snprintf(more, sizeof(more), "%s%d/%d%s", _talkTop > 0 ? "^ " : "", _talkCursor + 1, int(t.count),
+			         t.count > u32(_talkTop + TALK_ROWS) ? " v" : "");
+			_canvas.text(Canvas::W - 6, TALK_Y - 14, more, TEXT_DIM, ui::TEXT, ui::RIGHT, 0, true);
 		}
 		return;
 	}

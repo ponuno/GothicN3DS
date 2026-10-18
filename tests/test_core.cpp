@@ -1,6 +1,9 @@
 // Unit and integration tests for the data path: archive, texture layout,
 // chunker, streaming. Usage: test_core <scratch dir>
 #include <set>
+#include <regex>
+#include <fstream>
+#include <sstream>
 #include "app.h"
 #include "saves.h"
 #include "audio_host.h"
@@ -56,6 +59,7 @@
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <regex>
 #include <sstream>
 #include <cmath>
 #include <set>
@@ -12993,7 +12997,10 @@ func void INIT_WORLD() {
 	CHECK(g.vm().getInt(g.vm().find("KNOWS_GETTEETH")) == 1);
 	CHECK(g.itemCount(hero, ore) == 250);
 	CHECK(!has("Remove teeth"));
-	// The list of the infos again: the same question is still there, the learnt way is not.
+	// fix222: the list goes on without the learnt way (the others stay); BACK ends it, the infos' list is there again.
+	CHECK(has("Remove fur"));
+	CHECK(pick("BACK"));
+	CHECK(choosing());
 	CHECK(has("What else can you tell me about hunting"));
 	CHECK(pick("What else can you tell me about hunting"));
 	CHECK(choosing());
@@ -13275,6 +13282,468 @@ func void INIT_WORLD() {
 	            double(std::sqrt(dx * dx + dz * dz)));
 	// He must answer the blow (fight, flee, or at least not stand in the warning for ever).
 	CHECK(a && (std::strstr(npcs.stateName(a->state), "REACTTOWEAPON") == nullptr && std::strstr(npcs.stateName(a->state), "ReactToWeapon") == nullptr));
+}
+
+static void testG1KillNpc() {
+	// fix222: a character the scripts leave with no hit points (B_KillNpc: Npc_ChangeAttribute) is dead, not standing at 1 HP;
+	// and the hero beaten in a duel marks the victor (Scatty's arena quest).
+	const char* file = getenv("G3_G1_SCRIPT");
+	if (!file) {
+		std::printf("  (no G3_G1_SCRIPT: skipped)\n");
+		return;
+	}
+	std::ifstream in(file);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	std::string source = ss.str() + R"(
+func void STARTUP_WORLD() {
+	Kapitel = 1;
+	Wld_InsertNpc(VLK_501_Buddler, "CAMP_SQUARE");
+};
+func void INIT_WORLD() {
+	B_InitMonsterAttitudes();
+	B_InitGuildAttitudes();
+	B_KillNpc(VLK_501_Buddler);
+};
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/g1kill.pak";
+	try {
+		bakeLifeWorlds(source, path, worlds);
+	} catch (const std::exception& e) {
+		std::printf("  bake failed: %s\n", e.what());
+		CHECK(false);
+		return;
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.applySettings();
+	npcs.config().range = 20000.0f;
+	const u32 sym = g.vm().find("VLK_501_BUDDLER");
+	u32 b = SCRIPT_NONE;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).symbol == sym) b = i;
+	CHECK(b != SCRIPT_NONE);
+	if (b == SCRIPT_NONE) return;
+	for (int i = 0; i < 90; ++i) app.update(Input {}, 1.0f / 30.0f);
+	std::printf("  buddler hp %d down %d\n", int(g.hitPoints(g.npc(b))), int(g.npc(b).down));
+	CHECK(g.npc(b).down == DOWN_DEAD);
+	CHECK(g.hitPoints(g.npc(b)) == 0);
+}
+
+static void testG1Diego() {
+	// fix222: Diego offers the test of faith once the rules are told (Info_Diego_BringList_Offer).
+	const char* file = getenv("G3_G1_SCRIPT");
+	if (!file) {
+		std::printf("  (no G3_G1_SCRIPT: skipped)\n");
+		return;
+	}
+	std::ifstream in(file);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	std::string source = ss.str() + R"(
+func void STARTUP_WORLD() {
+	Kapitel = 1;
+	Wld_InsertNpc(PC_Thief, "CAMP_SQUARE");
+};
+func void INIT_WORLD() {
+	B_InitMonsterAttitudes();
+	B_InitGuildAttitudes();
+};
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/g1diego.pak";
+	try {
+		bakeLifeWorlds(source, path, worlds);
+	} catch (const std::exception& e) {
+		std::printf("  bake failed: %s\n", e.what());
+		CHECK(false);
+		return;
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.applySettings();
+	const u32 sym = g.vm().find("PC_THIEF");
+	u32 d = SCRIPT_NONE;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).symbol == sym) d = i;
+	CHECK(d != SCRIPT_NONE);
+	if (d == SCRIPT_NONE) return;
+	const char* told[] = {"INFO_DIEGO_THORUSSAYS", "INFO_DIEGO_RULES"};
+	for (const char* nm : told) {
+		const int k = g.infoIndex(g.vm().find(nm));
+		CHECK(k >= 0);
+		if (k >= 0) g.setInfoTold(u32(k), true);
+	}
+	// (Info_Thorus_DiegoSentMe is what ThorusSays asks for; the flag above stands in for it.)
+	u32 list[32];
+	const u32 n = g.infosFor(d, false, list, 32);
+	bool offered = false;
+	for (u32 i = 0; i < n; ++i) {
+		std::printf("  menu: %s\n", g.infoDescription(list[i]));
+		offered = offered || strstr(g.infoDescription(list[i]), "test of faith") != nullptr;
+	}
+	CHECK(offered);
+}
+
+static void testG1Mordrag() {
+	// fix222: Mordrag knocked out by the hero -> "Just get out of here" (Org_826_Mordrag_HauAb, an important info) ->
+	// MordragKO_HauAb -> Fisk's important talk (the new fence).
+	const char* file = getenv("G3_G1_SCRIPT");
+	if (!file) {
+		std::printf("  (no G3_G1_SCRIPT: skipped)\n");
+		return;
+	}
+	std::ifstream in(file);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	std::string source = ss.str() + R"(
+func void STARTUP_WORLD() {
+	Kapitel = 1;
+	Wld_InsertNpc(Org_826_Mordrag, "CAMP_SQUARE");
+	Wld_InsertNpc(Stt_311_Fisk, "CAMP_SQUARE");
+};
+func void INIT_WORLD() {
+	B_InitMonsterAttitudes();
+	B_InitGuildAttitudes();
+};
+var int DBGV;
+var int DBGI;
+func void DBG() {
+	DBGV = Npc_GetInvItemBySlot(self, INV_FOOD, 1);
+	DBGI = Hlp_GetInstanceID(item);
+};
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/g1mordrag.pak";
+	try {
+		bakeLifeWorlds(source, path, worlds);
+	} catch (const std::exception& e) {
+		std::printf("  bake failed: %s\n", e.what());
+		CHECK(false);
+		return;
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 1;
+	app.settings().perception = 1;
+	app.settings().immortal = 1;
+	app.applySettings();
+	npcs.config().range = 20000.0f;
+	app.environment().timeOfDay = 12.0f;
+	const float dt = 1.0f / 30.0f;
+	const u32 ms = g.vm().find("ORG_826_MORDRAG"), fs = g.vm().find("STT_311_FISK");
+	u32 m = SCRIPT_NONE, f = SCRIPT_NONE;
+	for (u32 i = 0; i < g.npcCount(); ++i) {
+		if (g.npc(i).symbol == ms) m = i;
+		if (g.npc(i).symbol == fs) f = i;
+	}
+	CHECK(m != SCRIPT_NONE && f != SCRIPT_NONE);
+	if (m == SCRIPT_NONE || f == SCRIPT_NONE) return;
+	const u32 hero = g.heroIndex();
+	const u32 hauAb = g.vm().find("MORDRAGKO_HAUAB");
+	const auto flag = [&]() { return g.vm().getInt(hauAb, 0, nullptr); };
+	const auto run = [&](float seconds, const char* label) {
+		for (int i = 0; i < int(seconds / dt); ++i) {
+			app.update(Input {}, dt);
+			// the player reads on: every line is skipped
+			if (npcs.talkView().active && npcs.talkView().saying) npcs.talkSkip();
+			if (npcs.talkView().active && npcs.talkView().choosing) npcs.talkAbort(); // (no choosing: the menu is left)
+			if (i % 60 == 59)
+				std::printf("    %-10s mordrag down %d hp %d talk %d haubab %d rice %d loaf %d booze %d\n", label, int(g.npc(m).down), int(g.hitPoints(g.npc(m))),
+				            int(npcs.talkView().active), int(flag()), int(g.itemCount(m, g.vm().find("ITFORICE"))), int(g.itemCount(m, g.vm().find("ITFOLOAF"))),
+				            int(g.itemCount(m, g.vm().find("ITFOBOOZE"))) + 1000 * int(g.itemCount(m, g.vm().find("ITFO_POTION_HEALTH_01"))));
+		}
+	};
+	const GameNpc& mn = g.npc(m);
+	app.teleport({mn.pos[0], mn.pos[1] + 5.0f, mn.pos[2] + 180.0f});
+	run(3.0f, "met");
+	{
+		GameNpc& mm = g.npcMut(m);
+		g.setAttribute(mm, 0, 1);
+	}
+	for (int k = 0; k < 3 && g.npc(m).down == DOWN_NONE; ++k) {
+		npcs.strike(hero, m, false);
+		run(1.0f, "struck");
+	}
+	CHECK(g.npc(m).down == DOWN_UNCONSCIOUS);
+	run(150.0f, "waking");
+	{
+		u32 one[4];
+		const u32 cnt = g.infosFor(m, true, one, 4);
+		const u32 aiv = g.vm().findMember("C_NPC", "AIVAR");
+		std::printf("  important infos available for Mordrag: %u (first %s); AIVAR[19]=%d state %s\n", cnt, cnt ? g.infoDescription(one[0]) : "-",
+		            int(g.vm().getInt(aiv, 19, g.npc(m).object)), "");
+		for (u32 k = 0; k < npcs.actorCount(); ++k)
+			if (npcs.actor(k).used && npcs.actor(k).npc == m) std::printf("  mordrag state %s doing %s\n", npcs.stateName(npcs.actor(k).state), npcs.doing(npcs.actor(k)));
+	}
+	for (int k = 0; k < 3; ++k) {
+		run(2.0f, "probe");
+		for (u32 q = 0; q < npcs.actorCount(); ++q)
+			if (npcs.actor(q).used && npcs.actor(q).npc == m) {
+				const NpcActor& a = npcs.actor(q);
+				std::printf("  probe: doing '%s' queue %d action %d phase %d held %d wait %.1f\n", npcs.doing(a), int(a.queueCount), int(a.action.kind), int(a.phase), int(a.heldItem != 0xFFFFFFFFu), double(a.wait));
+			}
+	}
+	std::printf("  item stats: used %u held %u missing %u\n", npcs.stats().itemsUsed, npcs.stats().itemsHeld, npcs.stats().itemsMissing);
+	g.callAs(g.function("DBG"), m, int(hero));
+	std::printf("  DBG: slot food -> %d, item id %d (rice %d)\n", int(g.vm().getInt(g.vm().find("DBGV"), 0, nullptr)), int(g.vm().getInt(g.vm().find("DBGI"), 0, nullptr)),
+	            int(g.vm().find("ITFORICE")));
+	std::printf("  MordragKO_HauAb after 40 s: %d\n", int(flag()));
+	CHECK(flag() == 1);
+	std::printf("");
+	// Fisk, the player by him
+	const GameNpc& fn = g.npc(f);
+	app.teleport({fn.pos[0], fn.pos[1] + 5.0f, fn.pos[2] + 200.0f});
+	run(15.0f, "fisk");
+	const int topic = g.vm().find("FISK_GETNEWHEHLER");
+	const int fk = g.infoIndex(g.vm().find("STT_311_FISK_MORDRAGKO"));
+	std::printf("  Fisk talk begun: %d, his info told: %d\n", int(npcs.talkView().active), fk >= 0 ? int(g.info(u32(fk)).told) : -1);
+	CHECK(fk >= 0 && g.info(u32(fk)).told);
+	(void)topic;
+}
+
+// fix222: the first chapter, walked through by a thorough player (the real scripts, G3_G1_SCRIPT): every character of the game
+// is in the world, the hero is rich and strong; every info that can be told is told, every way of it taken, round after
+// round until nothing new comes. What is left unsaid is printed (G3_CHAPTER_OUT, one "UNSAID <info> <npc>" line each): the
+// list of what the scripts keep for events (a kill, an item, the hour) and, among them, what the engine fails to give.
+static void testG1Chapter() {
+	const char* file = getenv("G3_G1_SCRIPT");
+	if (!file) {
+		std::printf("  (no G3_G1_SCRIPT: skipped)\n");
+		return;
+	}
+	std::ifstream in(file);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	const std::string text = ss.str();
+	std::vector<std::string> npcNames, infoNames;
+	{
+		static const std::regex npcRe(R"(\n\s*instance\s+(\w+)\s*\(\s*Npc_Default\s*\))", std::regex::icase);
+		static const std::regex infoRe(R"(\n\s*instance\s+(\w+)\s*\(\s*C_INFO\s*\))", std::regex::icase);
+		for (std::sregex_iterator it(text.begin(), text.end(), npcRe), end; it != end; ++it)
+			if (strncasecmp((*it)[1].str().c_str(), "PC_Hero", 7) != 0) npcNames.push_back((*it)[1].str());
+		for (std::sregex_iterator it(text.begin(), text.end(), infoRe), end; it != end; ++it) infoNames.push_back((*it)[1].str());
+	}
+	std::string source = text + "\nfunc void STARTUP_WORLD() {\n	Kapitel = 1;\n";
+	for (const std::string& n : npcNames) source += "	Wld_InsertNpc(" + n + ", \"CAMP_SQUARE\");\n";
+	source += "};\nfunc void INIT_WORLD() {\n	B_InitMonsterAttitudes();\n	B_InitGuildAttitudes();\n};\n";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/g1chapter.pak";
+	try {
+		bakeLifeWorlds(source, path, worlds);
+	} catch (const std::exception& e) {
+		std::printf("  bake failed: %s\n", e.what());
+		CHECK(false);
+		return;
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	const u32 hero = g.heroIndex();
+	std::printf("  %zu characters named, %u in the game, %zu infos named\n", npcNames.size(), g.npcCount(), infoNames.size());
+	g.giveItems(hero, g.vm().find("ITMINUGGET"), 5000);
+	if (getenv("G3_CHAPTER_ITEMS")) {
+		// (the things the conditions ask the player to carry: ten of each)
+		static const std::regex hasRe(R"(Npc_HasItems\s*\(\s*(?:hero|other)\s*,\s*(\w+)\s*\))", std::regex::icase);
+		std::set<std::string> seen;
+		for (std::sregex_iterator it(text.begin(), text.end(), hasRe), end; it != end; ++it) {
+			std::string up = (*it)[1].str();
+			for (char& c : up) c = char(toupper(static_cast<unsigned char>(c)));
+			if (!seen.insert(up).second) continue;
+			const u32 sym = g.vm().find(up.c_str());
+			if (sym != SCRIPT_NONE) g.giveItems(hero, sym, 10);
+		}
+	}
+	static std::map<u32, u32> unbound;
+	unbound.clear();
+	g.vm().onUnbound([](u32 symbol, void*) { ++unbound[symbol]; }, nullptr);
+	std::set<u32> done;
+	u32 rounds = 0, told = 0;
+	for (; rounds < 40; ++rounds) {
+		u32 before = told;
+		for (u32 n = 0; n < g.npcCount(); ++n) {
+			if (n == hero) continue;
+			for (int pass = 0; pass < 12; ++pass) {
+				u32 list[TALK_ITEMS];
+				u32 count = g.infosFor(n, true, list, TALK_ITEMS);
+				const u32 more = g.infosFor(n, false, list + count, TALK_ITEMS - count);
+				count += more;
+				bool any = false;
+				for (u32 k = 0; k < count; ++k) {
+					const u32 info = list[k];
+					if (g.info(info).permanent && done.count(info)) continue;
+					done.insert(info);
+					g.runInfo(info, n);
+					++told;
+					any = true;
+					for (int guard = 0; guard < 60; ++guard) {
+						u32 ways[TALK_ITEMS];
+						const u32 w = g.choicesOf(info, ways, TALK_ITEMS);
+						if (!w) break;
+						const u32 pick = ways[w - 1]; // (the last added first: "back" is the first added)
+						const u32 fn = g.choice(pick).fn;
+						g.removeChoice(pick);
+						g.callAs(fn, n, int(hero));
+					}
+				}
+				if (!any) break;
+			}
+		}
+		if (told == before) break;
+	}
+	std::printf("  %u rounds, %u infos told, %u scripts' errors, %u calls given up\n", rounds, told, g.vm().stats().errors, g.vm().stats().stubCalls);
+	{
+		static const std::regex extRe(R"(\n\s*extern\s+func\s+\w+\s+(\w+))", std::regex::icase);
+		for (std::sregex_iterator it(text.begin(), text.end(), extRe), end; it != end; ++it) {
+			const u32 sym = g.vm().find((*it)[1].str().c_str());
+			if (sym != SCRIPT_NONE && unbound.count(sym)) std::printf("  UNBOUND %s x%u\n", (*it)[1].str().c_str(), unbound[sym]);
+		}
+	}
+	{
+		// every external the scripts declare, and which of them nobody carries out
+		static const std::regex extRe(R"(\n\s*extern\s+func\s+\w+\s+(\w+))", std::regex::icase);
+		u32 total = 0, none = 0;
+		for (std::sregex_iterator it(text.begin(), text.end(), extRe), end; it != end; ++it) {
+			const u32 sym = g.vm().find((*it)[1].str().c_str());
+			if (sym == SCRIPT_NONE) continue;
+			++total;
+			if (!g.vm().isBound(sym)) {
+				++none;
+				std::printf("  NOBODY %s\n", (*it)[1].str().c_str());
+			}
+		}
+		std::printf("  externals: %u declared, %u with no implementation\n", total, none);
+	}
+	const char* outName = getenv("G3_CHAPTER_OUT");
+	FILE* out = outName ? std::fopen(outName, "w") : nullptr;
+	u32 unsaid = 0, said = 0;
+	for (const std::string& nm : infoNames) {
+		std::string up = nm;
+		for (char& c : up) c = char(toupper(static_cast<unsigned char>(c)));
+		const int i = g.infoIndex(g.vm().find(up.c_str()));
+		if (i < 0) continue;
+		if (g.info(u32(i)).told) {
+			++said;
+			continue;
+		}
+		++unsaid;
+		const u32 owner = g.infoNpc(u32(i));
+		if (out) std::fprintf(out, "UNSAID %s %u\n", nm.c_str(), owner);
+	}
+	if (out) std::fclose(out);
+	std::printf("  infos said %u, unsaid %u\n", said, unsaid);
+}
+
+// fix222: the people the quests ask the player to beat (the real scripts): each is knocked out by the hero, left to come to,
+// and what he does then is looked at - he must not stay in ZS_HealSelf (or any state of his own) for ever, his
+// AIV_WASDEFEATEDBYSC must be set, and what his scripts then say to the player (an important info) must be told.
+static void testG1Defeat() {
+	const char* file = getenv("G3_G1_SCRIPT");
+	if (!file) {
+		std::printf("  (no G3_G1_SCRIPT: skipped)\n");
+		return;
+	}
+	std::ifstream in(file);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	const std::string text = ss.str();
+	const char* names[] = {"Org_826_Mordrag", "Grd_251_Kirgo", "Sld_729_Kharim", "Nov_1358_Harlok", "Org_844_Lefty", "Org_842_Shrike", "Vlk_574_Mud",
+	                       "Tpl_1422_GorHanis", "Vlk_511_Herek", "Vlk_580_Grim"};
+	for (const char* name : names) {
+		const std::string source = text + std::string("\nfunc void STARTUP_WORLD() {\n	Kapitel = 1;\n	Wld_InsertNpc(") + name +
+		                           ", \"CAMP_SQUARE\");\n};\nfunc void INIT_WORLD() {\n	B_InitMonsterAttitudes();\n	B_InitGuildAttitudes();\n};\n";
+		std::vector<BakeWorld> worlds;
+		const std::string path = gDir + "/g1defeat.pak";
+		try {
+			bakeLifeWorlds(source, path, worlds);
+		} catch (const std::exception& e) {
+			std::printf("  %s: bake failed: %s\n", name, e.what());
+			continue;
+		}
+		gfx::init();
+		App app;
+		if (!app.init(path.c_str(), nullptr) || !app.npcs().loaded() || !app.hero().loaded()) continue;
+		Npcs& npcs = app.npcs();
+		Game& g = npcs.game();
+		g.setQuiet(true);
+		app.settings().fights = 1;
+		app.settings().perception = 1;
+		app.settings().immortal = 1;
+		app.applySettings();
+		npcs.config().range = 20000.0f;
+		app.environment().timeOfDay = 12.0f;
+		const float dt = 1.0f / 30.0f;
+		std::string up = name;
+		for (char& c : up) c = char(toupper(static_cast<unsigned char>(c)));
+		const u32 sym = g.vm().find(up.c_str());
+		u32 b = SCRIPT_NONE;
+		for (u32 i = 0; i < g.npcCount(); ++i)
+			if (g.npc(i).symbol == sym) b = i;
+		if (b == SCRIPT_NONE) {
+			std::printf("  %s: not in the game\n", name);
+			continue;
+		}
+		const u32 hero = g.heroIndex();
+		const auto run = [&](float seconds) {
+			for (int i = 0; i < int(seconds / dt); ++i) {
+				app.update(Input {}, dt);
+				if (npcs.talkView().active && npcs.talkView().saying) npcs.talkSkip();
+				if (npcs.talkView().active && npcs.talkView().choosing) npcs.talkAbort();
+			}
+		};
+		u32 toldBefore = 0;
+		for (u32 i = 0; i < g.infoCount(); ++i)
+			if (g.infoNpc(i) == sym && g.info(i).told) ++toldBefore;
+		const GameNpc& bn = g.npc(b);
+		app.teleport({bn.pos[0], bn.pos[1] + 5.0f, bn.pos[2] + 180.0f});
+		run(3.0f);
+		{
+			GameNpc& mm = g.npcMut(b);
+			g.setAttribute(mm, 0, 1);
+		}
+		for (int k = 0; k < 3 && g.npc(b).down == DOWN_NONE; ++k) {
+			npcs.strike(hero, b, false);
+			run(1.0f);
+		}
+		const bool down = g.npc(b).down != DOWN_NONE;
+		run(60.0f);
+		const u32 aiv = g.vm().findMember("C_NPC", "AIVAR");
+		const int defeated = int(g.vm().getInt(aiv, 19, g.npc(b).object));
+		u32 toldAfter = 0;
+		for (u32 i = 0; i < g.infoCount(); ++i)
+			if (g.infoNpc(i) == sym && g.info(i).told) ++toldAfter;
+		const char* state = "-";
+		const char* doing = "-";
+		for (u32 k = 0; k < npcs.actorCount(); ++k)
+			if (npcs.actor(k).used && npcs.actor(k).npc == b) {
+				state = npcs.stateName(npcs.actor(k).state);
+				doing = npcs.doing(npcs.actor(k));
+			}
+		std::printf("  %-18s down %d, defeated flag %d, hp %d, state %-22s doing %-12s infos told %u -> %u\n", name, int(down), defeated, int(g.hitPoints(g.npc(b))), state, doing,
+		            toldBefore, toldAfter);
+		CHECK(down && defeated >= 1);
+		CHECK(std::strstr(state, "HEALSELF") == nullptr);
+	}
 }
 
 static void testG1Beaten() {
@@ -15065,6 +15534,11 @@ int main(int argc, char** argv) {
 	             {"beast turn", testBeastTurn},
 	             {"g1 beasts", testG1Beasts}, {"g1 calm", testG1Calm}, {"g1 hunter", testG1Hunter},
     {"g1 beaten", testG1Beaten},
+    {"g1 killnpc", testG1KillNpc},
+    {"g1 diego", testG1Diego},
+    {"g1 mordrag", testG1Mordrag},
+    {"g1 chapter", testG1Chapter},
+    {"g1 defeat", testG1Defeat},
     {"g1 threat", testG1Threat},
     {"g1 reload", testG1Reload},
              {"npc items", testNpcItems},

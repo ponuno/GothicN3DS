@@ -604,7 +604,18 @@ ScriptInstance* ScriptVm::popInstanceOf(u32& symbol) {
 		if (!inst && s.sym < _h.symbolCount && _symbols[s.sym].type == SCRIPT_INSTANCE && (_symbols[s.sym].flags & SCRIPTF_CONST))
 			symbol = s.sym;
 	} else if (s.kind == K_INT) {
-		if (s.i >= 0 && u32(s.i) < _h.symbolCount) symbol = u32(s.i);
+		if (s.i >= 0 && u32(s.i) < _h.symbolCount) {
+			symbol = u32(s.i);
+			// fix222: an instance VARIABLE passed for an int (AI_UseItem(self, item), `item` set by Npc_GetInvItemBySlot) is the
+			// instance it refers to, as in the original; the variable's own number named nothing.
+			if (_symbols[symbol].type == SCRIPT_INSTANCE && !(_symbols[symbol].flags & SCRIPTF_CONST)) {
+				if (ScriptInstance* held = instanceOf(symbol)) {
+					symbol = held->symbol;
+					return held;
+				}
+				symbol = SCRIPT_NONE;
+			}
+		}
 		return nullptr;
 	} else {
 		fail("an instance was expected");

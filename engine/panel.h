@@ -243,6 +243,7 @@ private:
 	int _listScroll = 0; // the diary's
 	int _topic = -1;     // the diary's topic opened
 	int _talkCursor = 0; // the dialogue page's chosen way
+	int _talkTop = 0;    // fix222: the first way shown (the list scrolls)
 	u32 _talkVersion = 0xFFFFFFFFu;
 	int _topicY[InventoryView::DIARY_TOPICS] = {}; // where each topic was drawn (for taps)
 	u32 _selected = 0xFFFFFFFFu;

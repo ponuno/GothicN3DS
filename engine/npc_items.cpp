@@ -351,7 +351,12 @@ void Npcs::bindItems() {
 
 void Npcs::xUseItem(ScriptVm& vm, void* user) {
 	Npcs& self = *static_cast<Npcs*>(user);
-	const i32 item = vm.popInt();
+	// fix222: Gothic 1 passes the global item OBJECT (AI_UseItem(self, item) after Npc_GetInvItemBySlot, as ZS_HealSelf
+	// does), not only a definition: popInt took the variable's own symbol, so the food was never eaten and a character
+	// that woke up (Mordrag) stayed in ZS_HealSelf for ever - and never spoke to the player.
+	u32 sym = SCRIPT_NONE;
+	(void)vm.popInstanceOf(sym);
+	const i32 item = sym == SCRIPT_NONE ? -1 : i32(sym);
 	NpcActor* a = self.actorFor(vm.popInstance());
 	if (!a || item < 0) return;
 	NpcAction act;
@@ -363,7 +368,10 @@ void Npcs::xUseItem(ScriptVm& vm, void* user) {
 
 void Npcs::xUseItemToState(ScriptVm& vm, void* user) {
 	Npcs& self = *static_cast<Npcs*>(user);
-	const i32 state = vm.popInt(), item = vm.popInt();
+	const i32 state = vm.popInt();
+	u32 sym = SCRIPT_NONE;
+	(void)vm.popInstanceOf(sym); // (fix222: the item object or its definition)
+	const i32 item = sym == SCRIPT_NONE ? -1 : i32(sym);
 	NpcActor* a = self.actorFor(vm.popInstance());
 	if (!a || item < 0) return;
 	NpcAction act;

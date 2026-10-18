@@ -716,6 +716,7 @@ void Npcs::update(Pak& pak, const World& world, Vec3 eye, float hours, float dt)
 	_game.setHeroPlace(feet, _heroYaw);
 	_game.tickOverlays(dt);
 	trackHeroRoom({feet[0], feet[1], feet[2]});
+	reapFallen(dt);
 	select(pak, world, eye, _cfg.loadsPerFrame);
 	const double tSelect = sys::timeMs();
 	u32 actors = 0, walking = 0, looking = 0, fighting = 0;
@@ -924,4 +925,25 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3], const World* worl
 	_stats.sightMs = float(sightTime);
 }
 
+// fix222: whoever is left with no hit points dies, whoever took them: in ZenGin oCNpc::ChangeAttribute / the attribute's
+// setter ends the character at once. The scripts kill this way (B_KillNpc: Npc_ChangeAttribute(npc, ATR_HITPOINTS, -max),
+// 76 calls, the dead guard Nek among them) and by plain assignment; the engine only clamped at 0, and the "dead" stood
+// about (and was set back to 1 hit point when it came to). Looked at four times a second for all the characters.
+void Npcs::reapFallen(float dt) {
+	_reapClock += dt;
+	if (_reapClock < 0.25f) return;
+	_reapClock = 0.0f;
+	const u32 immortal = u32(_game.constant("NPC_FLAG_IMMORTAL", 1 << 1));
+	const u32 flags = _game.vm().findMember("C_NPC", "FLAGS");
+	for (u32 i = 0; i < _game.npcCount(); ++i) {
+		const GameNpc& n = _game.npc(i);
+		if (n.hero || !n.placed || n.down != DOWN_NONE) continue;
+		if (_game.attributeOf(n, 1) <= 0 || _game.hitPoints(n) > 0) continue; // (no hit points to speak of: not a living thing)
+		if (flags != SCRIPT_NONE && (u32(_game.npcInt(n, flags)) & immortal)) continue;
+		goDown(i, -2, true, false);
+		++_stats.reaped;
+	}
+}
+
 } // namespace g3
+

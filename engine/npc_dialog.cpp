@@ -344,6 +344,19 @@ bool Npcs::talkTo(u32 npc) {
 
 void Npcs::openTalk(NpcActor& a) {
 	if (_talk.processing && _talk.npc == int(a.npc)) return;
+	// fix222: a talk the character begins by itself is not begun with a player who has run far off meanwhile (he walked up
+	// to him, waited, was late; the player was already gone - and the whole speech played to nobody).
+	if (_talk.requested != int(a.npc)) {
+		const GameNpc* h = _game.hero();
+		const GameNpc& me = _game.npc(a.npc);
+		if (h && a.npc != _game.heroIndex()) {
+			const float dx = h->pos[0] - me.pos[0], dy = h->pos[1] - me.pos[1], dz = h->pos[2] - me.pos[2];
+			if (dx * dx + dy * dy + dz * dz > 800.0f * 800.0f) {
+				++_stats.talksAborted;
+				return;
+			}
+		}
+	}
 	if (_talk.processing) talkAbort();
 	_talk = Talk();
 	_talk.processing = true;
@@ -475,11 +488,19 @@ void Npcs::afterTold() {
 	while (t.importantLeft > 0) {
 		u32 next[1];
 		if (_game.infosFor(u32(t.npc), true, next, 1) == 0) break;
+		// fix222: the next important info is told after a pause, not in the same breath (Bloodwyn's two speeches).
+		if (!t.gapped) {
+			t.gapped = true;
+			t.gap = 3.0f;
+			return;
+		}
+		t.gapped = false;
 		--t.importantLeft;
 		runInfo(next[0]);
 		return;
 	}
 	t.importantLeft = 0;
+	t.gapped = false;
 	buildMenu();
 	if (!t.count) {
 		finishTalk();
@@ -503,16 +524,18 @@ bool Npcs::talkChoose(u32 index) {
 		return true;
 	}
 	t.choosing = false;
+	// fix222 (fix211 undone, then done properly): a way that is taken is taken off the list, the others stay - as in the
+	// original: Gomez's contacts ("Lares.", "Cor Kalom." ... - four names to give, each once) go one by one, Drax's
+	// teeth, once learnt, are gone, and "Back" clears the lot itself. fix211 cleared ALL the ways of the info, so that
+	// a way that added nothing sent the talk back to the start and Gomez's list could not be gone through.
+	const u32 info = _game.choice(ref).info;
 	const u32 fn = _game.choice(ref).fn;
-	// fix211: the ways of an info are cleared as one is taken, and whatever the function wants on offer it adds again
-	// (the scripts' teachers all do: "Info_ClearChoices; Info_AddChoice ..." at the end of each way). One that adds
-	// nothing returns to the list of the infos - so a thing learnt (Knows_GetTeeth = TRUE) is no longer on offer.
-	_game.clearChoices(_game.choice(ref).info);
+	_game.removeChoice(ref);
 	const u32 adds = _game.choiceAdds();
 	++_stats.infosTold;
 	_game.callAs(fn, u32(t.npc), int(_game.heroIndex()));
-	// A way on that put up new ways takes the menu over.
-	if (_game.choiceAdds() != adds) t.menuInfo = int(_game.lastChoiceInfo());
+	// A way on that put up new ways takes the menu over; else the list goes on (what is left of it).
+	t.menuInfo = _game.choiceAdds() != adds ? int(_game.lastChoiceInfo()) : int(info);
 	_menuDirty = true;
 	return true;
 }
@@ -597,7 +620,8 @@ void Npcs::tickTalk(float dt) {
 			talkAbort();
 			return;
 		}
-		if (!t.choosing && !t.trading && !_say.active && !_speechCount) afterTold();
+		if (t.gap > 0.0f) t.gap -= dt;
+		else if (!t.choosing && !t.trading && !_say.active && !_speechCount) afterTold();
 		refreshView();
 		return;
 	}
@@ -615,7 +639,20 @@ void Npcs::tickTalk(float dt) {
 		talkAbort();
 		return;
 	}
-	if (!t.choosing && !t.trading && a->action.kind == NPC_ACT_NONE && !a->queueCount && !_say.active && !_speechCount) afterTold();
+	if (t.gap > 0.0f) {
+		// (The pause between two speeches: the player gone from the talk during it ends it.)
+		t.gap -= dt;
+		if (hero) {
+			const float dx = hero->pos[0] - n.pos[0], dz = hero->pos[2] - n.pos[2];
+			if (dx * dx + dz * dz > 900.0f * 900.0f) {
+				++_stats.talksAborted;
+				talkAbort();
+				return;
+			}
+		}
+	} else if (!t.choosing && !t.trading && a->action.kind == NPC_ACT_NONE && !a->queueCount && !_say.active && !_speechCount) {
+		afterTold();
+	}
 	refreshView();
 }
 

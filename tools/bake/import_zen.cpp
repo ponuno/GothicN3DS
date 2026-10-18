@@ -1352,6 +1352,12 @@ bool collectTrigger(const zenkit::VirtualObject& vob, SrcScene& scene, bool& dyn
 		// shut and solid at the start.
 		const auto* d = dynamic_cast<const zenkit::VDoor*>(&vob);
 		if (!d || !vob.show_visual || !vob.visual || vob.visual->name.empty()) return false;
+		// fix222: a bed (or any bed-like furniture) the world's makers filed as a door is no door: it stood in place and
+		// swung open by 90 degrees at A. It stays where it is, drawn with the world.
+		{
+			const std::string vn = upper(vob.visual->name);
+			if (vn.find("BED") != std::string::npos || vn.find("BETT") != std::string::npos) return false;
+		}
 		const FlatPtr mesh = meshOf(upper(vob.visual->name));
 		if (!mesh || mesh->subs.empty()) return false;
 		t.kind = TRG_DOOR;

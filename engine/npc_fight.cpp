@@ -1113,10 +1113,13 @@ void Npcs::goDown(u32 npc, int attacker, bool dead, bool fromBehind) {
 	if (n.down == DOWN_DEAD || (!dead && n.down == DOWN_UNCONSCIOUS)) return;
 	n.down = dead ? DOWN_DEAD : DOWN_UNCONSCIOUS;
 	n.weapon = WEAPON_NONE;
-	n.lastHit = attacker;
+	n.lastHit = attacker < 0 ? -1 : attacker;
 	if (dead) _game.setAttribute(n, 0, 0);
+	// fix222: the hero has no actor, so the scripts' ZS_Unconscious (which marks the victor: AIV_HASDEFEATEDSC) never runs for
+	// him; Scatty's arena quest asks who won. Marked here: the one who beat the hero has defeated him.
+	if (n.hero && !dead && attacker >= 0) _game.setAivar(u32(attacker), "AIV_HASDEFEATEDSC", 1);
 	(dead ? _stats.killed : _stats.knockedOut) += 1;
-	emitSvm(npc, dead ? "DEAD" : "AARGH");
+	if (attacker != -2) emitSvm(npc, dead ? "DEAD" : "AARGH");
 	NpcActor* a = nullptr;
 	for (NpcActor& x : _actors)
 		if (x.used && x.npc == npc) a = &x;
@@ -1164,12 +1167,13 @@ void Npcs::goDown(u32 npc, int attacker, bool dead, bool fromBehind) {
 		if (fn != SCRIPT_NONE && _cfg.alive) {
 			clearState(*a, false);
 			startState(*a, fn, false, nullptr, false);
-			a->other = attacker;
+			a->other = attacker < 0 ? -1 : attacker;
 		} else {
 			clearState(*a, false);
 		}
 	}
-	sendPerception(dead ? _percMurder : _percDefeat, npc, attacker, int(npc));
+	// (attacker -2: the scripts put him down - B_KillNpc, a story's corpse - nobody saw it done.)
+	if (attacker != -2) sendPerception(dead ? _percMurder : _percDefeat, npc, attacker, int(npc));
 }
 
 // ---- the sounds of fighting ----

@@ -168,7 +168,7 @@ struct NpcStats {
 	u32 fighting = 0;     // actors with a weapon in hand right now
 	u32 blows = 0;        // blows that landed since the start ...
 	u32 parried = 0;      // ... and that were fended off
-	u32 knockedOut = 0, killed = 0;
+	u32 knockedOut = 0, killed = 0, reaped = 0;
 	u32 moves = 0;        // moves of the fight AI begun
 	u32 movesUntabled = 0; // ... of which chosen without a table for the fighter's tactic
 	char fightAi = '-';   // where the tables are from: 'F' the game's FIGHT.DAT, 'S' the main script, '-' not read yet
@@ -544,6 +544,8 @@ public:
 	void noticeNow(u32 source);
 	// Somebody has gone down (HP, scripts' state ZS_Unconscious or ZS_Dead):
 	// called for the player's character too, to tell those about.
+	void reapFallen(float dt);
+	float _reapClock = 0.0f;
 	void goDown(u32 npc, int attacker, bool dead, bool fromBehind);
 	// The inhabitants' weapon in hand: whether it is drawn, for the HUD.
 	bool isDown(u32 npc) const { return npc < _game.npcCount() && _game.npc(npc).down != DOWN_NONE; }
@@ -779,6 +781,12 @@ private:
 
 	// ---- things in the hands and in the world (npc_items.cpp) ----
 	void bindItems();
+	void bindExtras();
+	static void xSndIsSourceNpc(ScriptVm& vm, void* user);
+	static void xSndDistToSource(ScriptVm& vm, void* user);
+	static void xCanSeeSource(ScriptVm& vm, void* user);
+	static void xFloatToString(ScriptVm& vm, void* user);
+	static void xPlayerInMyRoom(ScriptVm& vm, void* user);
 	bool beginItem(NpcActor& a, const World& world);
 	bool carryOnItem(NpcActor& a, const World& world, float dt);
 	bool itemStep(NpcActor& a);
@@ -914,6 +922,8 @@ private:
 		u32 state = 0;        // the state of the partner that the talk belongs to (ZS_Talk)
 		bool stop = false;    // AI_StopProcessInfos was reached
 		int importantLeft = 0; // important infos the talk may still begin with (it is at most a few)
+		float gap = 0;         // fix222: the pause before the next important info (they are not told in one breath)
+		bool gapped = false;   // (the pause has been taken for the info that is next)
 		bool choosing = false;
 		bool tradeNext = false; // the info just run is a trade: the wares come up when it has been told
 		bool trading = false;   // the wares are up

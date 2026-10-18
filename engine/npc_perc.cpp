@@ -60,7 +60,8 @@ bool Npcs::sees(const NpcActor& a, u32 other, bool inFront) const {
 	if (d2 > range * range) return false;
 	if (inFront && !seenAllRound(n, o) && dx * dx + dz * dz > 1.0f && fabsf(wrap(atan2f(dx, dz) - n.yaw)) >= 1.75f) return false;
 	// Close by it is noticed through a wall.
-	if (o.hero && !_heroLink.sneaking && d2 <= range * range * _cfg.hearShare * _cfg.hearShare) return true;
+	// fix222: not through a floor or a roof (the player on the roof of a hut was heard by those inside): the other storey is 2+ m off.
+	if (o.hero && !_heroLink.sneaking && fabsf(dy) < 200.0f && d2 <= range * range * _cfg.hearShare * _cfg.hearShare) return true;
 	if (!_world) return true;
 	++_sightTests;
 	// fix206: a line through the collision grid (World::sightFree), as the original's Npc_CanSeeNpc traces a ray - the
@@ -202,6 +203,14 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 	// Gothic 1's ZS_Talk then has the player call "Hey you!" first (Npc_CanSeeNpc false: $SC_HEYTURNAROUND).
 	const auto facesHero = [&]() {
 		if (!hero || _game.isMonster(n)) return true;
+		// fix222: a guide leads the player with its back to him (ZS_GuidePC watches him through this very perception to
+		// stop and wait when he falls behind): it must notice him behind it, or it walks on and he is lost.
+		if (a.state) {
+			char up[64];
+			snprintf(up, sizeof(up), "%s", stateName(a.state));
+			for (char* p = up; *p; ++p) *p = char(toupper(static_cast<unsigned char>(*p)));
+			if (strstr(up, "GUIDE") || strstr(up, "FOLLOW")) return true;
+		}
 		const float dx = hero->pos[0] - n.pos[0], dz = hero->pos[2] - n.pos[2];
 		if (dx * dx + dz * dz < 250.0f * 250.0f) return true;
 		return fabsf(wrap(atan2f(dx, dz) - n.yaw)) < 1.75f;

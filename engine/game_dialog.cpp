@@ -219,6 +219,14 @@ void Game::clearChoices(u32 info) {
 	_choiceCount = to;
 }
 
+void Game::removeChoice(u32 index) {
+	if (index >= _choiceCount) return;
+	free(_choices[index].text);
+	for (u32 i = index + 1; i < _choiceCount; ++i) _choices[i - 1] = _choices[i];
+	--_choiceCount;
+	++_talkVersion;
+}
+
 void Game::clearAllChoices() {
 	for (u32 i = 0; i < _choiceCount; ++i) free(_choices[i].text);
 	if (_choiceCount) ++_talkVersion;

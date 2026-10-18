@@ -2049,6 +2049,7 @@ void Npcs::bindAi() {
 	bindPerception();
 	bindFight();
 	bindItems();
+	bindExtras();
 	vm.onUnbound(&Npcs::unboundThunk, this);
 }
 

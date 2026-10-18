@@ -2105,3 +2105,43 @@ Bink на консоли не декодируется: пекарь запус�
 - **Instant kill.** `Npcs::strike`: a person (guild < GIL_SEPERATOR_HUM) whose hit points run out by a blade or an arrow is knocked out (hp stays 1, DOWN_UNCONSCIOUS) whoever he is - before, a hostile one died on the spot. Magic (`Game::strikeIsSpell()`) still kills outright; beasts die as before.
 - **Finishing blow (fix208 already had it, now reachable).** Weapon (1H/2H) drawn, a person lying knocked out within 2 m in front, attack key -> `Hero::finish()` (T_%sSFINISH), the blow lands `goDown(..., dead)`. New HUD hint "A — добить" (lang_table) while one is in reach. NPCs finish each other by the scripts' `AI_FinishingMove` as before.
 - Tests: `g1 threat` with `THREAT_KO=1` (and `THREAT_NPC=VLK_501_BUDDLER|GRD_214_TORWACHE`): the victim is knocked out, the hero finishes him. ctest 6/6, `g1 beasts|hunter|beaten|calm` pass. ARM check not run.
+
+## fix222 — арена Скатти, крыши, эскорт, кровати-«двери», паузы диалогов
+
+- **Скатти (арена).** Скрипт `DIA_Scatty_*Success` ждёт `AIV_HASDEFEATEDSC` у соперника, когда герой проиграл. Его ставит `ZS_Unconscious` — но у героя нет актёра, состояние не запускается, флаг не ставился: квест застревал. Теперь `Npcs::goDown` для героя (без смерти) ставит победителю `AIV_HASDEFEATEDSC` (`Game::setAivar`). Проверить на консоли: проиграть Кирго/Харим → Скатти «ты проиграл».
+- **Крыши.** `Npcs::sees`: «слышит сквозь стену вблизи» только при разнице высот < 200 см (на крыше слышали жители внутри).
+- **Эскорт.** fix202 (`facesHero`) не давал замечать героя позади; проводник (ZS_GuidePC) ведёт спиной и через `PERC_ASSESSPLAYER` останавливается и ждёт. Для состояний с GUIDE/FOLLOW правило отключено.
+- **Кровати.** Не воспроизведено (нужно имя кровати из отчёта). Предохранитель в бейкере: `oCMobDoor` с визуалом BED/BETT больше не дверь. Если кровать всё ещё поворачивается — прислать имя визуала и отчёт `bed ...` перепёка.
+- **Диалоги.** Между двумя «important» подряд — пауза 3 с (`Talk::gap`), уход героя дальше 9 м в паузе обрывает разговор; разговор, начатый самим персонажем, не начинается, если герой дальше 8 м (`openTalk`).
+- **Не выяснено:** «персонаж должен быть мёртвым, а стоит с 1 HP и ждёт» — нужно имя персонажа и как его били.
+
+### fix222 (дополнение) — общее правило смерти от скриптов («Мёртвый стражник» Нек)
+- **Причина класса ошибок.** Скрипты G1 убивают персонажей не боем, а `Npc_ChangeAttribute(npc, ATR_HITPOINTS, -max)` (`B_KillNpc`, 76 вызовов) или прямым присваиванием HP. Движок только обрезал HP до 0 — «труп» стоял и по `Game::settle` получал 1 HP. В ZenGin обнуление HP заканчивает персонажа сразу.
+- **Правило.** `Npcs::reapFallen` (4 раза в секунду, все размещённые, кроме героя и `NPC_FLAG_IMMORTAL`): HP ≤ 0 при максимуме > 0 и `down == NONE` → `goDown(…, -2, dead)`. Атакующий −2 = «сделали скрипты»: без крика, без `PERC_ASSESSMURDER`. Счётчик `reaped` в статистике.
+- **Тест** `g1 killnpc`: `B_KillNpc` в `INIT_WORLD` → через 3 с `down == DOWN_DEAD`, HP 0.
+- **Аудит внешних функций G1:** из 290 не реализовано 73, но в живом (не закомментированном) коде используются 17, чаще всего `TAL_CONFIGURE` (11), `Npc_IsWayBlocked` (6), `Mdl_StartFaceAni` (6), `TA_BeginOverlay/EndOverlay` (5). Квестов они не держат; список — в этом же разделе, кандидаты на следующие фиксы.
+
+### fix222 (дополнение 2) — меню разговора: больше 12 пунктов
+- **Жалоба:** Диего не предлагает «проверку веры» (`Info_Diego_BringList_Offer`, «What's the test of faith?», условие — только `Npc_KnowsInfo(Info_Diego_Rules)`). Тест `g1 diego`: с рассказанными ThorusSays/Rules пункт в меню Диего ЕСТЬ.
+- **Найденная вероятная причина:** `TALK_ITEMS` был 12; `infosFor` оставляет 12 с наименьшим NR, остальные (в том числе END с большим NR) терялись. У Диего столько пунктов одновременно возможно. Теперь `TALK_ITEMS` 32, на нижнем экране 12 строк (`TALK_ROWS`) с прокруткой (`InventoryPanel::_talkTop`, счётчик «^ 5/14 v»), касание учитывает смещение.
+- **Не проверено на консоли.** Если пункта нет и в прокрутке — прислать список пунктов Диего и журнал «Join OC».
+
+### fix222 (дополнение 3) — побитые НПС застревали в ZS_HealSelf; пункты ответов; Мордраг/Фиск
+- **«Новый перекупщик для Фиска» не начинался после изгнания Мордрага.** Цепочка: побеждён героем → `ZS_Unconscious_End` → `ZS_HealSelf` → `Org_826_Mordrag_HauAb` (important) → `MordragKO_HauAb` → важный разговор Фиска. Тест `g1 mordrag` воспроизвёл: Мордраг после пробуждения вечно в `ZS_HealSelf`, разговора нет.
+- **Причина (общая для всех, кого вырубили).** `ZS_HealSelf_Loop` ест еду: `Npc_GetInvItemBySlot(self, INV_FOOD, 1)` → `AI_UseItem(self, item)`. Скрипт передаёт в параметр int ПЕРЕМЕННУЮ-экземпляр `item`; `popInstanceOf`/`popInt` брали номер самой переменной (384), а не экземпляра в ней — еда не съедалась, HP не доходили до максимума, цикл не кончался. Теперь `ScriptVm::popInstanceOf` разыменовывает переменную-экземпляр; `AI_UseItem`/`AI_UseItemToState` берут её. Мордраг лечится до 180 и говорит; тест проверяет, что информация Фиска рассказана.
+- **Меню ответов (Гомез, список контактов: «Lares.», «Cor Kalom.» …, диалог сбрасывался в начало).** fix211 очищал ВСЕ ответы информации при выборе пункта. Теперь снимается только выбранный пункт (`Game::removeChoice`), остальные остаются; новые `Info_AddChoice` берут меню на себя, `Info_ClearChoices` (BACK) завершает. Учитель Дракс: выученный пункт пропадает, остальные остаются, BACK возвращает к списку; тест `g1 hunter` обновлён. **Допущение:** выбранный ответ снимается и в оригинале (иначе у Гомеза нельзя назвать 4 имени подряд) — подтверждение с консоли.
+
+### fix222 (дополнение 4) — автопрогон первой главы и сценарии поражения
+- **Тест `g1 chapter`** (`G3_G1_SCRIPT`, необязательно `G3_CHAPTER_ITEMS=1` — выдать герою по 10 штук всего, что условия просят «иметь», `G3_CHAPTER_OUT=файл` — список непроизнесённого). В мир вставляются все 580 NPC; «дотошный игрок» рассказывает всё доступное, берёт все пункты ответов (последний добавленный первым), круг за кругом до остановки. Итог: 4 круга, ~730 (с предметами ~790) из 1557 информаций рассказано, **0 ошибок скриптов**, из неисполненных внешних функций вызвана только `AI_PointAt` (и `Snd_Play` — в тесте нет звука). Остальное «непроизнесённое» держится событиями (гильдия, бой, время, место, предметы квеста) — это уже не диалоговая логика, а поведение мира.
+- **Тест `g1 defeat`**: 10 людей, которых бьют по квестам (Мордраг, Кирго, Харим, Харлок, Лефти, Шрайк, Муд, Горханис, Херек, Грим): герой вырубает, ждём 60 с. Все: `AIV_WASDEFEATEDBYSC` = 1, возвращаются в свои состояния (не застревают в `ZS_HealSelf`). Мордраг после пробуждения говорит (2 информации).
+- **Что остаётся неизвестным без консоли:** позиционные условия (`Npc_GetDistToWP`, 59 мест — «стоит ли NPC у такой-то точки»), `Wld_IsTime`, `ZS_TALK`-условия важных информаций, время суток в маршрутах. Они зависят от настоящих путевых точек мира, которых нет в тестовом мире.
+
+### fix222 addendum 5: unbound script externals (audit vs OpenGothic)
+Audit (`g1 chapter`, via `ScriptVm::isBound`) found 76 of 300 declared externals without implementation (the VM swallowed
+them: arguments popped, 0 returned). New `engine/npc_extra.cpp` (`Npcs::bindExtras`): real semantics for
+`Snd_IsSourceNpc`, `Snd_GetDistToSource`, `Npc_CanSeeSource` (OpenGothic gamescript.cpp canSeeSource; used by
+B_AssessQuietSound), `FloatToString` (gothic.cpp), `Npc_IsPlayerInMyRoom/WasPlayerInMyRoom`; the rest are explicit inert
+bindings (Tal_Configure, TA_*Overlay, Mdl_*FaceAni, AI_PointAt/LookAt/Ask*, Mis_*, Doc_*, Npc_IsWayBlocked ...), only when
+nothing else bound them. Now 3 left in tests: Snd_Play/Snd_Play3D (bound by the App) and TA_CS (after this edit bound).
+NOT implemented behaviourally: Npc_IsWayBlocked (always false), AI_DropItem, Npc_OwnedByGuild, Npc_AreWeStronger (0).
+Console-unverified (no ARM build here).

@@ -409,6 +409,8 @@ public:
 	const GameChoice& choice(u32 i) const { return _choices[i]; }
 	u32 choicesOf(u32 info, u32* out, u32 max) const;
 	void clearChoices(u32 info);
+	void removeChoice(u32 index); // fix222: the one way taken
+
 	void clearAllChoices();
 	// How many choices were ever added, and the info the last one hangs on
 	// (a talk notices a choice function that has put up new ways on).
@@ -543,6 +545,8 @@ public:
 	u32 debugLearnAll();
 	// The talk flag (AIV_INVINCIBLE) off: fighters wait (AI_Wait in ZS_Attack) for as long as the player 'is talking'.
 	void clearTalkFlag(u32 npc, bool clear = true);
+	// fix222: an aivar of a character by the name of its constant (AIV_HASDEFEATEDSC), set from the engine's side.
+	void setAivar(u32 npc, const char* constantName, i32 value);
 	i32 talkFlag(u32 npc); // its value (for the debug line), -1: unknown
 	u32 _mAivar = SCRIPT_NONE;
 	i32 _aivInvincible = -1;

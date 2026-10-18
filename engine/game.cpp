@@ -696,6 +696,14 @@ void Game::clearTalkFlag(u32 npc, bool clear) {
 	if (clear) _vm.setInt(member, u32(index), _npcs[npc].object, 0);
 }
 
+void Game::setAivar(u32 npc, const char* constantName, i32 value) {
+	if (npc >= _npcCount || !_npcs[npc].object) return;
+	if (_mAivar == SCRIPT_NONE) _mAivar = _vm.findMember("C_NPC", "AIVAR");
+	const i32 index = constant(constantName, -1);
+	if (_mAivar == SCRIPT_NONE || index < 0 || u32(index) >= _vm.symbol(_mAivar).count) return;
+	_vm.setInt(_mAivar, u32(index), _npcs[npc].object, value);
+}
+
 i32 Game::talkFlag(u32 npc) {
 	clearTalkFlag(npc, false);
 	if (npc >= _npcCount || !_npcs[npc].object || _mAivar == SCRIPT_NONE || _aivInvincible < 0) return -1;

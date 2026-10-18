@@ -6,7 +6,10 @@
 
 namespace g3 {
 
-constexpr int TALK_ITEMS = 12;
+// fix222: 32 ways in all (it was 12: a long list - Diego's, with everything he can tell - lost the ones that came last,
+// the test of faith and even END); the bottom screen shows TALK_ROWS of them and scrolls.
+constexpr int TALK_ITEMS = 32;
+constexpr int TALK_ROWS = 12;
 
 struct TalkView {
 	bool active = false;   // a talk is on: the player's character stands and listens

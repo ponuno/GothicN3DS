@@ -1,6 +1,16 @@
 // Generated once from the texts of the code and kept by hand: Russian (the key), English, Polish, German.
 // A translation keeps the key's %-conversions in their order (the test "language" checks).
 const Entry kEntries[] = {
+    {{"Скорость", "Speed", "Szybkość", "Tempo"}},
+    {{"Качество", "Quality", "Jakość", "Qualität"}},
+    {{"Набор графики", "Graphics preset", "Zestaw grafiki", "Grafik-Voreinstellung"}},
+    {{"Дальность и набор графики", "Draw distance and graphics preset", "Zasięg i zestaw grafiki", "Sichtweite und Grafik-Voreinstellung"}},
+    {{"Все настройки графики по отдельности", "Every graphics setting on its own", "Każde ustawienie grafiki osobno", "Jede Grafikeinstellung einzeln"}},
+    {{"60 к/с, без украшений", "60 fps, no extras", "60 kl./s, bez dodatków", "60 fps, ohne Extras"}},
+    {{"60 к/с, затенение, листва, трава, даль 250 м", "60 fps, occlusion, foliage, grass, far view 250 m", "60 kl./s, cieniowanie, liście, trawa, dal 250 m", "60 fps, Verdeckung, Laub, Gras, Fernsicht 250 m"}},
+    {{"Ровные 30 к/с, все украшения, даль 600 м", "Steady 30 fps, all extras, far view 600 m", "Równe 30 kl./s, wszystkie dodatki, dal 600 m", "Konstante 30 fps, alle Extras, Fernsicht 600 m"}},
+    {{"Изменено вручную в «Графика+»", "Changed by hand in Graphics+", "Zmienione ręcznie w Grafika+", "Von Hand in Grafik+ geändert"}},
+    {{"Набор «Скорость», дальность 120 м", "The Speed preset, draw distance 120 m", "Zestaw Szybkość, zasięg 120 m", "Voreinstellung Tempo, Sichtweite 120 m"}},
     {{"Сначала уберите оружие", "Put the weapon away first", "Najpierw schowaj broń", "Erst die Waffe wegstecken"}},
     {{"Выброшено: %s ×%ld", "Dropped: %s ×%ld", "Wyrzucono: %s ×%ld", "Weggelegt: %s ×%ld"}},
     {{"Выброшено: %s", "Dropped: %s", "Wyrzucono: %s", "Weggelegt: %s"}},

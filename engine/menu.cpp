@@ -45,9 +45,9 @@ const char* const kBottom[] = {"Инвентарь", "Отчёт"};
 const char* const kFonts[] = {"Встроенный", "Игры"};
 const char* const kTimeFlow[] = {"Стоит", "Сутки за 24 мин", "Сутки за 1 ч", "Сутки за 2 ч"};
 const char* const kLanguages[] = {"Русский", "English", "Polski", "Deutsch"};
-const char* const kGfxPresets[] = {"Выкл", "Баланс", "Максимум", "Свой"};
-const char* const kGfxPresetNotes[] = {"Всё выключено, как раньше", "Затенение, листва, тень героя, даль 250 м", "Всё на полную",
-                                       "Значения изменены вручную"};
+const char* const kGfxPresets[] = {"Скорость", "Баланс", "Качество", "Свой"};
+const char* const kGfxPresetNotes[] = {"60 к/с, без украшений", "60 к/с, затенение, листва, трава, даль 250 м",
+                                       "Ровные 30 к/с, все украшения, даль 600 м", "Изменено вручную в «Графика+»"};
 const char* const kScreen[] = {"Обычный", "3D", "Широкий 800x240"};
 const char* const kWind[] = {"Нет", "Слабое", "Обычное", "Сильное"};
 const char* const kWaves[] = {"Нет", "Слабые", "Обычные", "Сильные"};
@@ -80,7 +80,7 @@ const char* const kShadowNotes[] = {"Без теней под ногами", "К
 #define NONE nullptr, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr
 const Item kMain[] = {
     {"Продолжить", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_CLOSED, nullptr, nullptr},
-    {"Графика", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GRAPHICS, "Дальность, детали, частота кадров", nullptr},
+    {"Графика", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GRAPHICS, "Дальность и набор графики", nullptr},
     {"Игра", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GAME, "Бой и предметы", nullptr},
     {"Управление", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_CONTROLS, "Схема, камера", nullptr},
     {"Интерфейс", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_INTERFACE, "Язык, подсказки, нижний экран", nullptr},
@@ -90,19 +90,11 @@ const Item kMain[] = {
     {"Загрузить игру", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_LOAD, "Быстрая загрузка — R + SELECT в игре", nullptr},
     {"Выйти в Homebrew Launcher", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_EXIT, "Позиция и настройки сохранятся", nullptr},
 };
+// fix223: the Graphics page holds the draw distance and the set; every single value is on Graphics+.
 const Item kGraphics[] = {
     {"Дальность прорисовки", RANGE, &Settings::drawMetres, nullptr, 10, 40, 200, "м", 0, "Дальше — больше нагрузки на видеочип", nullptr},
-    {"Мелкие и средние объекты", CHOICE, &Settings::objects, kObjects, 3, 0, 0, nullptr, 0, nullptr, kObjectNotes},
-    {"Густота мелких объектов", CHOICE, &Settings::density, kDensity, 3, 0, 0, nullptr, 0, nullptr, kDensityNotes},
-    {"Жители вдали", CHOICE, &Settings::npcDistance, kNpcRange, 3, 0, 0, nullptr, 0, "Как далеко видны жители и звери", nullptr},
-    {"Купол Барьера", CHOICE, &Settings::barrier, kBarrier, 3, 0, 0, nullptr, 0, nullptr, kBarrierNotes},
-    {"Свет огней", CHOICE, &Settings::lamps, kLamps, 3, 0, 0, nullptr, 0, nullptr, kLampsNotes},
-    {"Плавное появление", TOGGLE, &Settings::dissolve, nullptr, 0, 0, 0, nullptr, 0, "Вступит в силу после перезапуска", nullptr},
-    {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 3, 0, 0, nullptr, 0, nullptr, kFrameNotes},
-    {"Экран", CHOICE, &Settings::stereo, kScreen, 3, 0, 0, nullptr, 0, "Ползунок 3D или 800x240; после перезапуска", nullptr},
-    {"Графика+", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GFX_PLUS, "Затенение углов, листва, тени, даль", nullptr},
-    {"Экспериментально", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_EXPERIMENTAL, "Разгон экрана: 40 Гц, 80 Гц. Риск!", nullptr},
-    {"Сбросить графику", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_RESET_GRAPHICS, "Вернуть значения по умолчанию", nullptr},
+    {"Набор графики", CHOICE, &Settings::gfxPlus, kGfxPresets, 4, 0, 0, nullptr, 0, nullptr, kGfxPresetNotes},
+    {"Графика+", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GFX_PLUS, "Все настройки графики по отдельности", nullptr},
 };
 const Item kExperimental[] = {
     {"ВНИМАНИЕ: разгон экрана", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, 0, "Он не предусмотрен Nintendo", nullptr},
@@ -132,7 +124,7 @@ const Item kInterface[] = {
 };
 // The start menu's "options" (the original's MENU_OPTIONS): the settings' pages.
 const Item kOptions[] = {
-    {"Графика", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GRAPHICS, "Дальность, детали, частота кадров", nullptr},
+    {"Графика", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GRAPHICS, "Дальность и набор графики", nullptr},
     {"Игра", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GAME, "Бой и предметы", nullptr},
     {"Управление", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_CONTROLS, "Схема, камера", nullptr},
     {"Интерфейс", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_INTERFACE, "Язык, подсказки, нижний экран", nullptr},
@@ -145,7 +137,15 @@ const Item kSound[] = {
     {"Гром Барьера", CHOICE, &Settings::barrierThunder, kBarrierThunder, 5, 0, 0, nullptr, 0, nullptr, kBarrierThunderNotes},
 };
 const Item kGfxPlus[] = {
-    {"Набор", CHOICE, &Settings::gfxPlus, kGfxPresets, 4, 0, 0, nullptr, 0, nullptr, kGfxPresetNotes},
+    {"Частота кадров", CHOICE, &Settings::frameRate, kFrames, 3, 0, 0, nullptr, 0, nullptr, kFrameNotes},
+    {"Экран", CHOICE, &Settings::stereo, kScreen, 3, 0, 0, nullptr, 0, "Ползунок 3D или 800x240; после перезапуска", nullptr},
+    {"Сглаживание", CHOICE, &Settings::antialias, kAntialias, 3, 0, 0, nullptr, 0, nullptr, kAntialiasNotes},
+    {"Мелкие и средние объекты", CHOICE, &Settings::objects, kObjects, 3, 0, 0, nullptr, 0, nullptr, kObjectNotes},
+    {"Густота мелких объектов", CHOICE, &Settings::density, kDensity, 3, 0, 0, nullptr, 0, nullptr, kDensityNotes},
+    {"Жители вдали", CHOICE, &Settings::npcDistance, kNpcRange, 3, 0, 0, nullptr, 0, "Как далеко видны жители и звери", nullptr},
+    {"Плавное появление", TOGGLE, &Settings::dissolve, nullptr, 0, 0, 0, nullptr, 0, "Вступит в силу после перезапуска", nullptr},
+    {"Свет огней", CHOICE, &Settings::lamps, kLamps, 3, 0, 0, nullptr, 0, nullptr, kLampsNotes},
+    {"Купол Барьера", CHOICE, &Settings::barrier, kBarrier, 3, 0, 0, nullptr, 0, nullptr, kBarrierNotes},
     {"Затенение углов", RANGE, &Settings::occlusion, nullptr, 10, 0, 100, "%", 0, "Нужен data.pak, запечённый с --ao", nullptr},
     {"Колыхание листвы", CHOICE, &Settings::wind, kWind, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --wind", nullptr},
     {"Волны на воде", CHOICE, &Settings::waves, kWaves, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --water-grid", nullptr},
@@ -153,10 +153,17 @@ const Item kGfxPlus[] = {
     {"Тени от солнца", CHOICE, &Settings::sunShadows, kSunShadows, 4, 0, 0, nullptr, 0, nullptr, kSunShadowNotes},
     {"Тени облаков", CHOICE, &Settings::cloudShadows, kCloudShadows, 3, 0, 0, nullptr, 0, nullptr, kCloudShadowNotes},
     {"Трава", CHOICE, &Settings::grass, kGrass, 3, 0, 0, nullptr, 0, nullptr, kGrassNotes},
+    {"Лучи света", TOGGLE, &Settings::godRays, nullptr, 0, 0, 0, nullptr, 0, "Столбы света в тенях (днём, в ясно)", nullptr},
+    {"Мокрая земля", TOGGLE, &Settings::wetGround, nullptr, 0, 0, 0, nullptr, 0, "В дождь свет на улице темнее", nullptr},
     {"Дальний план", CHOICE, &Settings::farLayer, kFarLayer, 4, 0, 0, nullptr, 0, nullptr, kFarLayerNotes},
+    {"Дальний план вблизи", TOGGLE, &Settings::farFill, nullptr, 0, 0, 0, nullptr, 0, "Затычка на месте незагруженных чанков", nullptr},
     {"Дальняя геометрия", CHOICE, &Settings::farGeometry, kFarGeometry, 4, 0, 0, nullptr, 0, "Упрощённые дальние чанки (мир с --lod)", nullptr},
+    {"Смена LOD", CHOICE, &Settings::lodFade, kLodFade, 3, 0, 0, nullptr, 0, "Смена дальних чанков (рябь)", nullptr},
+    {"Видимость", TOGGLE, &Settings::visibility, nullptr, 0, 0, 0, nullptr, 0, "Не рисовать скрытое стенами (мир с --vis)", nullptr},
+    {"Чтение наперёд", TOGGLE, &Settings::readAhead, nullptr, 0, 0, 0, nullptr, 0, "Модели и чанки читаются с карты заранее", nullptr},
     {"Доворот кадра", TOGGLE, &Settings::reproject, nullptr, 0, 0, 0, nullptr, 0, "Старый кадр довёрнут, пока ждём новый", nullptr},
-    {"Сглаживание", CHOICE, &Settings::antialias, kAntialias, 3, 0, 0, nullptr, 0, nullptr, kAntialiasNotes},
+    {"Экспериментально", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_EXPERIMENTAL, "Разгон экрана: 40 Гц, 80 Гц. Риск!", nullptr},
+    {"Сбросить графику", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_RESET_GRAPHICS, "Набор «Скорость», дальность 120 м", nullptr},
 };
 const Item kDebug[] = {
     {"Жители", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG_NPC, "Восприятие, жизнь, драки", nullptr},
@@ -184,13 +191,7 @@ const Item kDebugWorld[] = {
     {"Следующий мир", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_NEXT_WORLD, nullptr, nullptr},
     {"Время +1 час", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_HOUR, nullptr, nullptr},
     {"Глава", RANGE, &Settings::chapter, nullptr, 1, 0, 6, "", 0, "Меняет главу скриптами игры", nullptr},
-    {"Дальний план вблизи", TOGGLE, &Settings::farFill, nullptr, 0, 0, 0, nullptr, 0, "Затычка на месте незагруженных чанков", nullptr},
-    {"Смена LOD", CHOICE, &Settings::lodFade, kLodFade, 3, 0, 0, nullptr, 0, "Смена дальних чанков (рябь)", nullptr},
     {"Погода", CHOICE, &Settings::weather, kWeather, 6, 0, 0, nullptr, 0, "Авто: меняется сама; иначе держится", nullptr},
-    {"Мокрая земля", TOGGLE, &Settings::wetGround, nullptr, 0, 0, 0, nullptr, 0, "В дождь свет на улице темнее", nullptr},
-    {"Лучи света", TOGGLE, &Settings::godRays, nullptr, 0, 0, 0, nullptr, 0, "Столбы света в тенях (днём, в ясно)", nullptr},
-    {"Видимость", TOGGLE, &Settings::visibility, nullptr, 0, 0, 0, nullptr, 0, "Не рисовать скрытое стенами (мир с --vis)", nullptr},
-    {"Чтение наперёд", TOGGLE, &Settings::readAhead, nullptr, 0, 0, 0, nullptr, 0, "Модели и чанки читаются с карты заранее", nullptr},
 };
 #undef NONE
 
@@ -213,7 +214,8 @@ const PageDef kPages[Menu::PAGES] = {
 } // namespace
 
 Menu::Page Menu::parentOf(Page page) {
-	if (page == PAGE_GFX_PLUS || page == PAGE_EXPERIMENTAL) return PAGE_GRAPHICS;
+	if (page == PAGE_GFX_PLUS) return PAGE_GRAPHICS;
+	if (page == PAGE_EXPERIMENTAL) return PAGE_GFX_PLUS;
 	return page == PAGE_DEBUG_NPC || page == PAGE_DEBUG_HERO || page == PAGE_DEBUG_WORLD ? PAGE_DEBUG : PAGE_MAIN;
 }
 
@@ -319,6 +321,7 @@ MenuAction Menu::update(const MenuInput& in, Settings& s) {
 	case TOGGLE:
 		if (!in.confirm && !dir) return MENU_NONE;
 		s.*it.field = s.*it.field ? 0 : 1;
+		if (_page == PAGE_GFX_PLUS) s.gfxPlus = s.gfxPresetOf();
 		return MENU_CHANGED;
 	case CHOICE: {
 		const int step = dir ? dir : in.confirm ? 1 : 0;
@@ -328,7 +331,7 @@ MenuAction Menu::update(const MenuInput& in, Settings& s) {
 			// A set: its values follow. ("Own" is only shown, never chosen.)
 			if (s.gfxPlus == GFX_PLUS_OWN) s.gfxPlus = u8((s.gfxPlus + it.count + step) % it.count);
 			s.applyGfxPreset(s.gfxPlus);
-		} else if (_page == PAGE_GFX_PLUS) {
+		} else if (_page == PAGE_GFX_PLUS || _page == PAGE_EXPERIMENTAL) {
 			s.gfxPlus = s.gfxPresetOf();
 		}
 		return MENU_CHANGED;

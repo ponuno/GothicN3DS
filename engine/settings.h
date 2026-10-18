@@ -32,8 +32,10 @@ enum ShadowMode : u8 {
 	SHADOW_MODES
 };
 
-// Sets of the Graphics+ page's values (Settings::gfxPlus).
+// The graphics sets (Settings::gfxPlus; fix223: every graphics value, chosen on the Graphics page): speed (60 fps),
+// balanced, quality (a steady 30), own (changed by hand on Graphics+). (The old names are kept for the code.)
 enum GfxPreset : u8 { GFX_PLUS_OFF, GFX_PLUS_BALANCED, GFX_PLUS_MAX, GFX_PLUS_OWN, GFX_PRESETS };
+constexpr u8 GFX_SPEED = GFX_PLUS_OFF, GFX_BALANCED = GFX_PLUS_BALANCED, GFX_QUALITY = GFX_PLUS_MAX;
 
 enum ControlScheme : u8 {
 	CONTROLS_CONSOLE, // the stick moves the character the way it points as the camera sees it; the C-stick turns the camera

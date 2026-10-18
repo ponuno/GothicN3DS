@@ -2153,3 +2153,21 @@ gothic3ds.cia (HOME application, New 3DS: SystemModeExt 124MB, 804 MHz, L2). Nee
 CIA holds no game data. The rsf was validated with makerom on a dummy ARM ELF (the real ELF needs devkitARM, unavailable here);
 banner/icon are placeholders (icon.png in the repo root is also used for the .3dsx smdh). UniqueId 0xFA3D5 is arbitrary.
 Not tested on a console: the CIA install, the memory mode and that sdmc: access works under DirectSdmc.
+
+### CIA crash fix (data abort in ndspSetCounter, FAR 0x1FF57FFE)
+First console test of the CIA: crash at start; it started without `sdmc:/3ds/dspfirm.cdc` (no sound). Cause: the exheader had no
+`IORegisterMapping` (DSP windows 1ff50000-1ff57fff, 1ff70000-1ff77fff) and no `MemoryMapping` (VRAM 1f000000-1f5fffff:r), which
+the .3dsx gets from hbmenu's process. Added to `platform/3ds/cia/gothic3ds.rsf` (as the devkitPro 3DS template). Rebuild with
+`make clean && make cia`; unverified on console until the user tests it.
+
+## fix223 — меню графики: наборы на странице «Графика», всё остальное в «Графика+» (18.10.2026)
+
+- **«Графика»** теперь три строки: дальность прорисовки, «Набор графики» (Скорость / Баланс / Качество / Свой), переход в «Графика+».
+- **«Графика+»** (27 строк, список прокручивается): частота кадров, экран, сглаживание, объекты, густота, жители вдали, плавное появление, свет огней, купол Барьера, затенение, листва, волны, тени (персонажей/солнца/облаков), трава, лучи света, мокрая земля, дальний план, дальний план вблизи, дальняя геометрия, смена LOD, видимость, чтение наперёд, доворот кадра, «Экспериментально» (теперь подстраница «Графика+»), «Сбросить графику».
+- Из «Отладка → Мир и время» убраны графические пункты (дальний план вблизи, смена LOD, мокрая земля, лучи света, видимость, чтение наперёд); осталась погода.
+- **Наборы** (`settings.cpp`, `kGfxSets`) задают 21 значение: objects, dissolve, frameRate, density, npcDistance, lamps, occlusion, wind, waves, shadows, sunShadows, cloudShadows, grass, farLayer, farGeometry, reproject, antialias, farFill, lodFade, godRays, visibility. Не входят: дальность, экран (3D/широкий), Барьер, частота экрана, погода, мокрая земля, чтение наперёд.
+  - «Скорость» = значения по умолчанию (свежий settings.bin показывает её).
+  - «Баланс» — моя оценка: 60 к/с, затенение 60 %, листва, слабые волны, тень героя, мало травы, даль 250 м. Не замерено.
+  - «Качество» — settings.bin пользователя (ровные 30 к/с в G1, замер на New 3DS): полное сглаживание, затенение 100 %, всё на максимум, даль 600 м, LOD сразу, без лучей. Экран 800x240 из его файла в набор не входит.
+- Любое изменение в «Графика+»/«Экспериментально» превращает набор в «Свой»; «Сбросить графику» = «Скорость» + дальность 120 м. Старые settings.bin читаются, набор вычисляется по значениям (файл пользователя → «Качество»).
+- Константы `GFX_SPEED/GFX_BALANCED/GFX_QUALITY` (имена `GFX_PLUS_*` оставлены). Переводы новых строк в `lang_table.inc`. Тесты обновлены, ctest 6/6. На консоли не проверено.

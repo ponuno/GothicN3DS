@@ -55,6 +55,13 @@ AccessControlInfo:
     - 0xFF0003C0
     - 0xFF800000
     - 0x000000FF
+  # The DSP's memory windows (ndsp writes its counters there: without them the app dies with a data abort in
+  # ndspSetCounter at 0x1FF57FFE) and the video memory (as the devkitPro 3DS template).
+  IORegisterMapping:
+    - 1ff50000-1ff57fff
+    - 1ff70000-1ff77fff
+  MemoryMapping:
+    - 1f000000-1f5fffff:r
   SystemCallAccess:
     ArbitrateAddress: 34
     Break: 60

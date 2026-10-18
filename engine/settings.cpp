@@ -53,52 +53,52 @@ u32 checkOf(const u8* bytes, u32 size) {
 void Settings::resetGraphics() {
 	const Settings d;
 	drawMetres = d.drawMetres;
-	objects = d.objects;
-	dissolve = d.dissolve;
-	frameRate = d.frameRate;
-	density = d.density;
-	npcDistance = d.npcDistance;
-	visibility = d.visibility;
-	farGeometry = d.farGeometry;
-	lodFade = d.lodFade;
-	antialias = d.antialias;
 	refresh = d.refresh;
-	reproject = d.reproject;
-	grass = d.grass;
-	lamps = d.lamps;
+	wetGround = d.wetGround;
+	readAhead = d.readAhead;
 	applyGfxPreset(GFX_PLUS_OFF);
 }
 
+// fix223: the sets now hold every value of the graphics (not only the four of Graphics+): the Graphics page chooses one,
+// Graphics+ changes them one by one. Not in a set: the draw distance, the screen mode (3D / wide: a matter of taste and a
+// restart), the Barrier, the screen's refresh (experimental), weather, wet ground and the reading ahead.
+// The quality set is the player's own measured one (settings.bin of 18.10.2026: a steady 30 fps in Gothic 1, New 3DS).
+namespace {
+struct GfxSet {
+	u8 objects, dissolve, frameRate, density, npcDistance, lamps;
+	u8 occlusion, wind, waves, shadows, sunShadows, cloudShadows, grass, farLayer, farGeometry;
+	u8 reproject, antialias, farFill, lodFade, godRays, visibility;
+};
+const GfxSet kGfxSets[GFX_PLUS_OWN] = {
+    // Speed: 60 fps first (the defaults of a fresh settings.bin).
+    {OBJECTS_SMOOTH, 1, FRAMES_60, 0, 1, 2, 0, 0, 0, SHADOWS_OFF, 1, 0, 0, 0, 2, 0, 0, 0, 1, 1, 0},
+    // Balanced: 60 when it fits, the cheap extras on.
+    {OBJECTS_BALANCED, 1, FRAMES_60, 0, 1, 2, 60, 2, 1, SHADOWS_HERO, 1, 0, 1, 1, 2, 0, 0, 1, 1, 0, 0},
+    // Quality: a steady 30 and everything the player's measurement kept.
+    {OBJECTS_BALANCED, 1, FRAMES_30, 0, 1, 2, 100, 3, 3, SHADOWS_ALL, 1, 0, 2, 3, 2, 0, 2, 1, 0, 0, 0},
+};
+#define GFX_FIELDS(X) X(objects) X(dissolve) X(frameRate) X(density) X(npcDistance) X(lamps) X(occlusion) X(wind) X(waves) \
+	X(shadows) X(sunShadows) X(cloudShadows) X(grass) X(farLayer) X(farGeometry) X(reproject) X(antialias) X(farFill) X(lodFade) \
+	X(godRays) X(visibility)
+} // namespace
+
 void Settings::applyGfxPreset(u8 preset) {
-	switch (preset) {
-	case GFX_PLUS_OFF:
-		occlusion = 0;
-		wind = 0;
-		shadows = SHADOWS_OFF;
-		farLayer = 0;
-		break;
-	case GFX_PLUS_BALANCED:
-		occlusion = 60;
-		wind = 2;
-		shadows = SHADOWS_HERO;
-		farLayer = 1;
-		break;
-	case GFX_PLUS_MAX:
-		occlusion = 100;
-		wind = 2;
-		shadows = SHADOWS_ALL;
-		farLayer = 2;
-		break;
-	default: return;
-	}
+	if (preset >= GFX_PLUS_OWN) return;
+	const GfxSet& g = kGfxSets[preset];
+#define SET(f) f = g.f;
+	GFX_FIELDS(SET)
+#undef SET
 	gfxPlus = preset;
 }
 
 u8 Settings::gfxPresetOf() const {
 	for (u8 p = 0; p < GFX_PLUS_OWN; ++p) {
-		Settings t = *this;
-		t.applyGfxPreset(p);
-		if (t.occlusion == occlusion && t.wind == wind && t.shadows == shadows && t.farLayer == farLayer) return p;
+		const GfxSet& g = kGfxSets[p];
+		bool same = true;
+#define CMP(f) same = same && f == g.f;
+		GFX_FIELDS(CMP)
+#undef CMP
+		if (same) return p;
 	}
 	return GFX_PLUS_OWN;
 }

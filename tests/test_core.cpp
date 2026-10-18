@@ -8544,15 +8544,26 @@ static void testGfxPlus() {
 		CHECK(m.page() == Menu::PAGE_GRAPHICS);
 		for (int i = 0; i < m.itemCount(Menu::PAGE_GRAPHICS) && std::strcmp(m.label(Menu::PAGE_GRAPHICS, m.selected()), "Графика+") != 0; ++i)
 			m.update(down, s);
-		CHECK(m.update(ok, s) == MENU_NONE && m.page() == Menu::PAGE_GFX_PLUS);
-		CHECK(m.update(right, s) == MENU_CHANGED && s.gfxPlus == GFX_PLUS_BALANCED && s.occlusion == 60 && s.wind == 2 &&
-		      s.shadows == SHADOWS_HERO);
-		CHECK(m.update(right, s) == MENU_CHANGED && s.gfxPlus == GFX_PLUS_MAX && s.shadows == SHADOWS_ALL);
-		CHECK(m.update(right, s) == MENU_CHANGED && s.gfxPlus == GFX_PLUS_OFF && s.occlusion == 0); // ("own" is skipped)
+		// fix223: the set is chosen on the Graphics page (one item above "Graphics+") and carries every graphics value.
+		MenuInput up;
+		up.up = true;
+		m.update(up, s);
+		CHECK(std::strcmp(m.label(Menu::PAGE_GRAPHICS, m.selected()), "Набор графики") == 0);
+		CHECK(s.gfxPlus == GFX_SPEED);
+		CHECK(m.update(right, s) == MENU_CHANGED && s.gfxPlus == GFX_BALANCED && s.occlusion == 60 && s.wind == 2 &&
+		      s.shadows == SHADOWS_HERO && s.frameRate == FRAMES_60);
+		CHECK(m.update(right, s) == MENU_CHANGED && s.gfxPlus == GFX_QUALITY && s.shadows == SHADOWS_ALL && s.frameRate == FRAMES_30 &&
+		      s.antialias == 2 && s.farLayer == 3 && s.grass == 2);
+		CHECK(m.update(right, s) == MENU_CHANGED && s.gfxPlus == GFX_SPEED && s.occlusion == 0 && s.frameRate == FRAMES_60); // ("own" is skipped)
 		m.update(down, s);
-		CHECK(m.update(right, s) == MENU_CHANGED && s.occlusion == 10 && s.gfxPlus == GFX_PLUS_OWN);
+		CHECK(m.update(ok, s) == MENU_NONE && m.page() == Menu::PAGE_GFX_PLUS);
+		CHECK(m.update(right, s) == MENU_CHANGED && s.frameRate == FRAMES_30 && s.gfxPlus == GFX_PLUS_OWN);
 		s.sanitize();
 		CHECK(s.gfxPlus == GFX_PLUS_OWN && s.gfxPresetOf() == GFX_PLUS_OWN);
+		// Nothing of the graphics is left on the Debug pages.
+		for (int i = 0; i < m.itemCount(Menu::PAGE_DEBUG_WORLD); ++i)
+			CHECK(std::strcmp(m.label(Menu::PAGE_DEBUG_WORLD, i), "Лучи света") != 0 && std::strcmp(m.label(Menu::PAGE_DEBUG_WORLD, i), "Видимость") != 0);
+		CHECK(m.itemCount(Menu::PAGE_GRAPHICS) == 3);
 		CHECK(m.update(back, s) == MENU_NONE && m.page() == Menu::PAGE_GRAPHICS);
 	}
 	app.shutdown();
@@ -10789,7 +10800,7 @@ static void testFarLayer() {
 		s.applyGfxPreset(GFX_PLUS_BALANCED);
 		CHECK(s.farLayer == 1 && s.farCm() == 25000.0f);
 		s.applyGfxPreset(GFX_PLUS_MAX);
-		CHECK(s.farLayer == 2 && s.gfxPresetOf() == GFX_PLUS_MAX);
+		CHECK(s.farLayer == 3 && s.gfxPresetOf() == GFX_PLUS_MAX); // (fix223: the quality set, 600 m)
 		s.farLayer = 9;
 		s.sanitize();
 		CHECK(s.farLayer == 0);
@@ -10809,6 +10820,7 @@ static void testSettings() {
 		s.cameraSpeed = 9;
 		s.invertY = 1;
 		s.immortal = 1;
+		s.gfxPlus = s.gfxPresetOf(); // (fix223: the set follows the values on reading)
 		CHECK(s.save(path.c_str()));
 		Settings t;
 		CHECK(t.load(path.c_str()) && std::memcmp(&s, &t, sizeof(s)) == 0);
@@ -10880,7 +10892,7 @@ static void testSettings() {
 			CHECK(kit);
 			CHECK(d.update(back2, s) == MENU_NONE && d.page() == Menu::PAGE_DEBUG);
 			CHECK(d.update(back2, s) == MENU_NONE && d.page() == Menu::PAGE_MAIN);
-			for (int p = 0; p < Menu::PAGES; ++p) CHECK(d.itemCount(Menu::Page(p)) <= 12); // (the list scrolls)
+			for (int p = 0; p < Menu::PAGES; ++p) CHECK(d.itemCount(Menu::Page(p)) <= (p == Menu::PAGE_GFX_PLUS ? 32 : 12)); // (the list scrolls; fix223: Graphics+ holds all the graphics)
 			(void)none;
 		}
 		// Every line fits the panel (320 pixels, 8 of margin either side).

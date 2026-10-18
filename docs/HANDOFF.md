@@ -2079,3 +2079,29 @@ Bink на консоли не декодируется: пекарь запус�
 - One real hole found and closed: `Npcs::strike` let a victim whose current clip has parry frames (the readied stance of a guard) "fend off" an ARROW or a SPELL (and a hop-back clip too) before he heard the hit: no damage, no reaction, no perception, return -1. Ranged strikes (`Game::spellStriking()`) are no longer parried. Unverified as THE cause of the video; if it still happens, send the debug line "hit <name> L<listens> <state>><state> q a u" (`_lastHitNote`) right after the shot, and say how far the guard is.
 - Other suspects not testable here: the victim farther than the actor range / not `ready` (then `listens` is false and nothing reacts), a walkTo that finds no path from the gate to the hero.
 - ctest 6/6; ARM check not run (no ARM libstdc++ headers).
+
+## fix219 — arrow that misses still alerts the victim (the 20 m bug is NOT found)
+
+- User: the bug reproduces when shooting from very far (~20 m); the damage does go through, the victim's bar stays grey (not hostile) and he stands while the others run at the shooter.
+- `g1 threat` with real scripts, `THREAT_RANGE=3000 THREAT_DIST=1500..2800 THREAT_BOW=1` and NPCs `GRD_214_TORWACHE` (ZS_Guard), `GRD_212_TORWACHE` (ZS_GuardPassage, crossbow): the shot guard always turns hostile and attacks (the 212 shoots his crossbow and stops at ~11 m: a ranged fighter that "stands" while shooting). Beyond ~2000 cm the guards are not alerted at all (ZS_Guard is not left until the hit), also fine. So the engine path `boltImpact -> Npcs::strike -> react` works in the mock world; the difference in the user's game is something the mock lacks (real path/waypoints, the guard's real state, who is really hit).
+- Added (harmless): a missed arrow that reached somebody now counts as an attack on him (zero-damage `strike`), as in the fix218 note (ranged strikes no longer parried).
+- Test knobs: `THREAT_RANGE`, `THREAT_DIST`, `THREAT_NPC`, `THREAT_BOW`, `THREAT_ZERO`, `THREAT_WAIT` (env, test `g1 threat`).
+- Need from the user: which gate (Old Camp main gate?), does the shot guard have a crossbow, and the debug "hit ..." line right after the shot; whether he stays grey after several hits.
+
+## fix220 — on-console readout of the target NPC (for the "shot from 20 m, red bar, stands still" bug)
+
+- User: the bug is tied to the moment the target's bar turns from grey to red (attitude becomes hostile); the victim then stands, and walking up to him "fixes" it. 20 m = G1's `senses_range` (2000) and close to the people's reach on the console (`min(npc range, draw distance)`), so the suspects are: the victim not being an actor any more (not simulated), or a state waiting for a perception that only comes within the senses range.
+- Not reproduced on the flat mock world in any variant (`g1 threat`, new knob `THREAT_BACK=<cm>`: alerted near, hero steps back, then the shot).
+- New: `Npcs::debugActor(npc, l1, l2)`; the 3DS bottom-screen report (Интерфейс -> Нижний экран -> Отчёт) now starts with the TARGET's lines while there is a target:
+  - `T <state> t<s> a<action> p<phase> q<queue> <doing>` or `T NO ACTOR (not simulated) d<m>`
+  - `d<dist>/<reach>m A<actor><ready><far><leaving> at<attitude> tg<target, 9 = hero> w<weapon> s<sees hero> sr<senses m>`
+  - and the last-hit line (`hit <name> L.. <before>><after> q a u`).
+- Ask the user for a photo of the bottom screen while the victim stands with the red bar.
+- ctest 6/6; platform/3ds/main.cpp not compiled here (no ARM toolchain headers) - the CI build will tell.
+
+## fix221 — enemies swim instead of walking on water; blades knock people out, the finishing blow kills
+
+- **Walking on water (cause).** `Npcs::ground` asked `model.clip("S_SWIM")` - only clips ALREADY IN MEMORY - so a person who had never been afloat looked like he had no swimming clips and fell into fix215's "borne on the water" branch (running, at the surface). Now `Model::hasClip` (the table of names): he swims (S_SWIM/S_SWIMF fetched through `Npcs::clip`). Beasts (no swimming clips at all) are now carried deeper (0.75 of their height under the surface, was 0.6) so the legs are under the water. `swimAnimation` no longer cuts a blow short. **Not checked on real data** (the mock worlds of the tests have no pool for people) - please tell if some enemy still runs on the water, and which.
+- **Instant kill.** `Npcs::strike`: a person (guild < GIL_SEPERATOR_HUM) whose hit points run out by a blade or an arrow is knocked out (hp stays 1, DOWN_UNCONSCIOUS) whoever he is - before, a hostile one died on the spot. Magic (`Game::strikeIsSpell()`) still kills outright; beasts die as before.
+- **Finishing blow (fix208 already had it, now reachable).** Weapon (1H/2H) drawn, a person lying knocked out within 2 m in front, attack key -> `Hero::finish()` (T_%sSFINISH), the blow lands `goDown(..., dead)`. New HUD hint "A — добить" (lang_table) while one is in reach. NPCs finish each other by the scripts' `AI_FinishingMove` as before.
+- Tests: `g1 threat` with `THREAT_KO=1` (and `THREAT_NPC=VLK_501_BUDDLER|GRD_214_TORWACHE`): the victim is knocked out, the hero finishes him. ctest 6/6, `g1 beasts|hunter|beaten|calm` pass. ARM check not run.

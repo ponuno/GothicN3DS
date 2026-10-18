@@ -1227,6 +1227,16 @@ int main(int, char**) {
 			                    : pl.waterDepth > 0 ? "wading"
 			                                        : "on the ground";
 			gReportCount = 0;
+			// fix220: first, while there is a target: what it does and whether it is simulated at all (the report has more
+			// lines than the screen; these must not be the ones cut off).
+			if (app.npcs().loaded() && app.target() >= 0) {
+				char l1[64], l2[64];
+				if (app.npcs().debugActor(g3::u32(app.target()), l1, l2, sizeof(l1))) {
+					reportLine("%s", l1);
+					reportLine("%s", l2);
+				}
+				if (app.npcs().debugLastHit(l1, sizeof(l1), 0)) reportLine("%s", l1);
+			}
 			reportLine("frame %5.1f ms avg %5.1f worst %2.0fHz%s", double(msAccum / 30.0f), double(msWorst), double(displayWritten ? refreshHz : 60.0f),
 			     !displayOk && app.settings().refresh ? "!" : g3::display::failure() == 3 ? "!w" : "");
 			reportLine("cpu %3.0f%%  gpu %3.0f%%  load %3.0f%%", double(fs.cpuMs * 6.0f), double(fs.gpuMs * 6.0f),

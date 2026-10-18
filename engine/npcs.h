@@ -531,6 +531,10 @@ public:
 	// What the last blow on somebody (not the player's character) did to it, and the last external the
 	// scripts called that nobody implements (its name hash): for the debug lines. False if nothing yet.
 	bool debugLastHit(char* out, size_t size, int row = 0) const;
+	// fix220: two lines about the character `npc` (the player's target) for the bottom screen's report: its state, action,
+	// phase, queue; its distance, the reach of the people, whether it is an actor (ready, far, leaving), its attitude to the
+	// player, its target, its weapon, whether it sees the player. False if `npc` is no character.
+	bool debugActor(u32 npc, char* line1, char* line2, size_t size) const;
 	u32 lastUnbound() const { return _lastUnbound; }
 	u32 unboundCount() const { return _unboundCount; }
 	// The distinct unimplemented externals called so far (name hashes, up to 6).

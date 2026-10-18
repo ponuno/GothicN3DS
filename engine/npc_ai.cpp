@@ -359,6 +359,7 @@ void Npcs::swimAnimation(NpcActor& a) {
 	if (a.swimming) {
 		const GameNpc& n = _game.npc(a.npc);
 		if (n.down != DOWN_NONE) return;
+		if (a.blow.clip && a.anim.current() == a.blow.clip) return; // (fix221: a blow struck afloat is not cut short)
 		const bool moving = a.phase == NpcActor::MOVING;
 		const Clip* want = clip(a, moving ? "S_SWIMF" : "S_SWIM");
 		if (want && a.anim.current() != want) a.anim.play(want, 0.25f);

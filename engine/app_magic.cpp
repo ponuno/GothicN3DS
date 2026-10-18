@@ -507,6 +507,14 @@ void App::boltImpact(Bolt& b, int victim, Vec3 at) {
 		if (dist > maxRange || chance <= roll) {
 			if (mine) ++_ranged.misses;
 			_ranged.lastDamage = 0;
+			// fix219: an arrow that flew at somebody and missed (a long shot: the chance falls with the distance) is still an
+			// attack on him: he hears it (a blow that does no harm), or he stood there while the others ran at the shooter.
+			if (dist <= maxRange * 1.2f) {
+				i32 none[8] = {};
+				g.setArrowStrike(none);
+				_npcs.strike(u32(hi), u32(victim), false);
+				g.endArrowStrike();
+			}
 			return;
 		}
 		i32 dmg[8];

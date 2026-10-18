@@ -369,6 +369,32 @@ bool Npcs::debugLastHit(char* out, size_t size, int row) const {
 	return true;
 }
 
+bool Npcs::debugActor(u32 npc, char* line1, char* line2, size_t size) const {
+	if (!size || npc >= _game.npcCount()) return false;
+	const GameNpc& n = _game.npc(npc);
+	const GameNpc* hero = _game.hero();
+	const u32 heroIndex = hero ? u32(hero - &_game.npc(0)) : 0xFFFFFFFFu;
+	const NpcActor* a = actorOf(npc);
+	float d = 0.0f;
+	if (hero) {
+		const float dx = n.pos[0] - hero->pos[0], dy = n.pos[1] - hero->pos[1], dz = n.pos[2] - hero->pos[2];
+		d = sqrtf(dx * dx + dy * dy + dz * dz);
+	}
+	if (a) {
+		const char* state = a->state ? stateName(a->state) : "-";
+		if (strncmp(state, "ZS_", 3) == 0) state += 3;
+		snprintf(line1, size, "T %.14s t%d a%d p%d q%d %.6s", state, int(a->stateTime), int(a->action.kind), int(a->phase), int(a->queueCount),
+		         doing(*a));
+	} else {
+		snprintf(line1, size, "T NO ACTOR (not simulated) d%dm", int(d / 100.0f));
+	}
+	const bool sees = a && hero && this->sees(*a, heroIndex, false);
+	snprintf(line2, size, "d%d/%d A%d%d%d%d at%d tg%d w%d s%d sr%d", int(d / 100.0f), int(_reach / 100.0f), a ? 1 : 0, a && a->ready ? 1 : 0,
+	         a && a->far ? 1 : 0, a && a->leaving ? 1 : 0, hero ? int(_game.attitude(npc, heroIndex)) : -1,
+	         n.target == int(heroIndex) ? 9 : n.target, int(n.weapon), sees ? 1 : 0, int(_game.sensesRange(n) / 100.0f));
+	return true;
+}
+
 // Turns the head towards whoever it looks at, at a natural pace, as far as a
 // neck goes; and back again.
 // A creature that has the player in sight and close turns to face him, whatever it was doing in place (a roamer between

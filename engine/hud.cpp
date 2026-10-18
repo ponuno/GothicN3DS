@@ -71,6 +71,9 @@ void App::drawOverlay() {
 		if (items) {
 		} else if (held) _ui.text(W - 10, H - 6 - Ui::lineHeight(), held, ui::GOLD, ui::TEXT, ui::RIGHT);
 		else if (_hero.sneaking()) _ui.text(W - 10, H - 6 - Ui::lineHeight(), tr("Крадётся"), ui::GREY, ui::TEXT, ui::RIGHT);
+		// fix221: a person lying knocked out in reach, the blade in hand: the finishing blow.
+		if (game && !items && (w == WEAPON_1H || w == WEAPON_2H) && !heroTransformed() && !_hero.down() && finishTarget() >= 0)
+			_ui.text(W / 2, H - 15 - Ui::lineHeight(), tr("A — добить"), ui::GOLD, ui::TEXT, ui::CENTER);
 		// The target: its name and health at the top, a mark over its head.
 		// (Not during a talk: the partner's name is the dialogue box's, the target's
 		// white name above it was a stray second copy.)

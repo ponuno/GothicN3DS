@@ -13122,6 +13122,7 @@ func void STARTUP_WORLD() {
 	Kapitel = 1;
 	Wld_InsertNpc(VLK_501_Buddler, "CAMP_SQUARE");
 	Wld_InsertNpc(GRD_214_Torwache, "CAMP_SQUARE");
+	Wld_InsertNpc(GRD_212_Torwache, "CAMP_SQUARE");
 };
 func void INIT_WORLD() {
 	B_InitMonsterAttitudes();
@@ -13148,7 +13149,7 @@ func void INIT_WORLD() {
 	app.settings().perception = 1;
 	app.settings().immortal = 0;
 	app.applySettings();
-	npcs.config().range = 20000.0f;
+	npcs.config().range = getenv("THREAT_RANGE") ? float(atof(getenv("THREAT_RANGE"))) : 20000.0f;
 	app.environment().timeOfDay = 12.0f;
 	const float dt = 1.0f / 30.0f;
 	const u32 sym = g.vm().find(getenv("THREAT_NPC") ? getenv("THREAT_NPC") : "VLK_501_BUDDLER");
@@ -13204,21 +13205,72 @@ func void INIT_WORLD() {
 	run(THREAT_WAIT, "weapon out");
 	const NpcActor* a0 = actorOf(b);
 	std::printf("  warned: state %s\n", a0 ? npcs.stateName(a0->state) : "-");
+	if (const char* back = getenv("THREAT_BACK")) {
+		// (Alerted near, then the shot from farther away: the hero steps back first.)
+		const GameNpc& vn = g.npc(b);
+		const GameNpc& hn = g.npc(hero);
+		float dx = hn.pos[0] - vn.pos[0], dz = hn.pos[2] - vn.pos[2];
+		const float len = std::sqrt(dx * dx + dz * dz);
+		if (len > 1.0f) {
+			dx /= len;
+			dz /= len;
+		}
+		const float d = float(atof(back));
+		app.teleport({vn.pos[0] + dx * d, hn.pos[1] + 5.0f, vn.pos[2] + dz * d});
+		run(1.0f, "stepped back");
+	}
 	const float x0 = g.npc(b).pos[0], z0 = g.npc(b).pos[2];
-	g.setAttribute(g.npcMut(b), 0, 900);
+	const bool knockOut = getenv("THREAT_KO") != nullptr;
+	if (knockOut) {
+		g.setAttribute(g.npcMut(hero), 0, 900);
+		g.setAttribute(g.npcMut(hero), 1, 900);
+	}
+	g.setAttribute(g.npcMut(b), 0, knockOut ? 3 : 900);
 	g.setAttribute(g.npcMut(b), 1, 900);
 	{
 		i32 dmg[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-		dmg[6] = 25;
+		dmg[6] = getenv("THREAT_ZERO") ? 0 : 25;
 		if (getenv("THREAT_BOW")) g.setArrowStrike(dmg);
 		npcs.strike(hero, b, false);
 		if (getenv("THREAT_BOW")) g.endArrowStrike();
 	}
 	run(1.0f, "struck");
+	if (knockOut) {
+		// fix221: beaten by a blade, even a hostile person is only knocked out; the drawn sword and the attack key finish him.
+		std::printf("  after the blow: down %d (1 = knocked out, 2 = dead) hp %d\n", int(g.npc(b).down), int(g.hitPoints(g.npc(b))));
+		CHECK(g.npc(b).down == DOWN_UNCONSCIOUS);
+		const GameNpc& vn = g.npc(b);
+		app.teleport({vn.pos[0], vn.pos[1] + 5.0f, vn.pos[2] + 90.0f});
+		app.camera().yaw = 3.14159f;
+		for (int q = 0; q < 20; ++q) app.update(Input {}, dt);
+		std::printf("  hero weapon %d intent %d npc.weapon %d hero down %d hp %d heroDown %d\n", int(app.hero().weapon()), int(app.hero().weaponIntent()), int(g.npc(hero).weapon), int(g.npc(hero).down), int(g.hitPoints(g.npc(hero))), int(app.hero().down()));
+		for (int tries = 0; tries < 3 && app.hero().weapon() != WEAPON_1H && app.hero().weapon() != WEAPON_2H; ++tries) {
+			Input draw;
+			draw.meleeSlot = true;
+			app.update(draw, dt);
+			for (int q = 0; q < 60; ++q) app.update(Input {}, dt);
+			std::printf("  drawn: weapon %d\n", int(app.hero().weapon()));
+		}
+		std::printf("  finish target %d (victim %u), weapon %d\n", app.finishTarget(), unsigned(b), int(app.hero().weapon()));
+		CHECK(app.finishTarget() == int(b));
+		Input hit;
+		hit.attack = true;
+		app.update(hit, dt);
+		for (int q = 0; q < 90; ++q) app.update(Input {}, dt);
+		std::printf("  after the finishing blow: down %d\n", int(g.npc(b).down));
+		CHECK(g.npc(b).down == DOWN_DEAD);
+		return;
+	}
 	run(8.0f, "after");
 	const NpcActor* a = actorOf(b);
 	const GameNpc& n = g.npc(b);
 	const float dx = n.pos[0] - x0, dz = n.pos[2] - z0;
+	{
+		char l1[64], l2[64];
+		CHECK(npcs.debugActor(b, l1, l2, sizeof(l1)));
+		std::printf("  report: %s | %s\n", l1, l2);
+		CHECK(std::strlen(l1) <= 39 && std::strlen(l2) <= 39);
+	}
 	std::printf("  threatened then struck: state %s doing %s moved %.0f cm\n", a ? npcs.stateName(a->state) : "-", a ? npcs.doing(*a) : "-",
 	            double(std::sqrt(dx * dx + dz * dz)));
 	// He must answer the blow (fight, flee, or at least not stand in the warning for ever).

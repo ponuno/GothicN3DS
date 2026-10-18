@@ -1085,7 +1085,9 @@ i32 Npcs::strike(u32 attacker, u32 victim, bool fromBehind) {
 	// Down? A person beaten by somebody not hostile to it is only knocked out.
 	const bool human = _game.guildOf(v) < _game.constant("GIL_SEPERATOR_HUM", 16);
 	if (hp <= (human ? 1 : 0)) {
-		if (human && _game.attitude(victim, attacker) != _game.constant("ATT_HOSTILE", 0)) {
+		// fix221: as in the original, a person beaten by a blade or an arrow is only knocked out - whoever he is, hostile or
+		// not - and is finished off by a finishing blow (Hero::finish: the weapon drawn, A over him); magic kills outright.
+		if (human && (_game.attitude(victim, attacker) != _game.constant("ATT_HOSTILE", 0) || !_game.strikeIsSpell())) {
 			_game.setAttribute(v, 0, max(hp, i32(1)));
 			goDown(victim, int(attacker), false, fromBehind);
 		} else if (hp <= 0) {

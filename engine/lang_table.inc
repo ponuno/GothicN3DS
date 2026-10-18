@@ -72,6 +72,7 @@ const Entry kEntries[] = {
     {{"A — выбрать   \xE2\x97\x80\xE2\x96\xB6 — изменить   B — назад", "A — select   ◀▶ — change   B — back", "A — wybierz   ◀▶ — zmień   B — wstecz", "A — wählen   ◀▶ — ändern   B — zurück"}},
     {{"A — дальше", "A — continue", "A — dalej", "A — weiter"}},
     {{"A — загрузить позицию", "A — load position", "A — wczytaj pozycję", "A — Position laden"}},
+    {{"A — добить", "A — finish off", "A — dobij", "A — erledigen"}},
     {{"Deutsch", "Deutsch", "Deutsch", "Deutsch"}},
     {{"English", "English", "English", "English"}},
     {{"Polski", "Polski", "Polski", "Polski"}},

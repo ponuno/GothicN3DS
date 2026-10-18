@@ -611,6 +611,8 @@ public:
 	}
 	void endArrowStrike() { _strikeIsArrow = false; }
 	bool spellStriking() const { return _strikeSpell >= 0 || _strikeIsArrow; }
+	// fix221: the blow in play is a spell's (magic kills; a blade or an arrow knocks a person out - see Npcs::strike).
+	bool strikeIsSpell() const { return _strikeSpell >= 0; }
 	// The guilds' table of numbers (C_GILVALUES), an entry of it; `otherwise` if none.
 	i32 guildValue(const char* member, i32 guild, i32 otherwise);
 	// The same for a text member (blood_emitter, blood_texture); "" if none.

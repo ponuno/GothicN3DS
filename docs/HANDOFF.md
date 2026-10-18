@@ -2145,3 +2145,11 @@ bindings (Tal_Configure, TA_*Overlay, Mdl_*FaceAni, AI_PointAt/LookAt/Ask*, Mis_
 nothing else bound them. Now 3 left in tests: Snd_Play/Snd_Play3D (bound by the App) and TA_CS (after this edit bound).
 NOT implemented behaviourally: Npc_IsWayBlocked (always false), AI_DropItem, Npc_OwnedByGuild, Npc_AreWeStronger (0).
 Console-unverified (no ARM build here).
+
+### CIA release (fix222+)
+`make cia` / `scripts/make_cia.sh [out.cia]`: gothic3ds.elf + `platform/3ds/cia/{gothic3ds.rsf,banner.png,icon.png,jingle.wav}` ->
+gothic3ds.cia (HOME application, New 3DS: SystemModeExt 124MB, 804 MHz, L2). Needs makerom (3DSGuy/Project_CTR) and bannertool
+(carstene1ns/3ds-bannertool) in PATH. No RomFS: all data stays in sdmc:/3ds/gothic3ds/ (paths in main.cpp are absolute), so the
+CIA holds no game data. The rsf was validated with makerom on a dummy ARM ELF (the real ELF needs devkitARM, unavailable here);
+banner/icon are placeholders (icon.png in the repo root is also used for the .3dsx smdh). UniqueId 0xFA3D5 is arbitrary.
+Not tested on a console: the CIA install, the memory mode and that sdmc: access works under DirectSdmc.

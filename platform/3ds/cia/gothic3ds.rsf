@@ -1,0 +1,145 @@
+# makerom spec for the Gothic 3DS CIA. Runs on New 3DS only (extra memory, 804 MHz).
+# The UniqueId is from the homebrew range: change it if it clashes with another title on your console.
+BasicInfo:
+  Title                   : "Gothic 3DS"
+  CompanyCode             : "00"
+  ProductCode             : "CTR-P-G3DS"
+  ContentType             : Application
+  Logo                    : Nintendo
+
+RomFs:
+  # no RomFS: all game data is read from the SD card (sdmc:/3ds/gothic3ds/)
+  RootPath: ""
+
+TitleInfo:
+  Category                : Application
+  UniqueId                : 0xFA3D5
+
+Option:
+  UseOnSD                 : true
+  FreeProductCode         : true
+  MediaFootPadding        : false
+  EnableCrypt             : false
+  EnableCompress          : true
+
+AccessControlInfo:
+  CoreVersion             : 2
+  DescVersion             : 2
+  ReleaseKernelMajor      : "02"
+  ReleaseKernelMinor      : "33"
+  UseExtSaveData          : false
+  FileSystemAccess:
+    - DirectSdmc
+    - CategorySystemApplication
+  IdealProcessor          : 0
+  AffinityMask            : 1
+  Priority                : 16
+  MaxCpu                  : 0x9E
+  MemoryType              : Application
+  SystemMode              : 64MB
+  SystemModeExt           : 124MB
+  CpuSpeed                : 804MHz
+  EnableL2Cache           : true
+  CanAccessCore2          : true
+  DisableDebug            : false
+  EnableForceDebug        : false
+  CanWriteSharedPage      : true
+  CanUsePrivilegedPriority: false
+  PermitMainFunctionArgument: true
+  CanShareDeviceMemory    : true
+  RunnableOnSleep         : true
+  SpecialMemoryArrange    : true
+  ResourceLimitCategory   : Application
+  HandleTableSize         : 0x200
+    - 0xFC0003C0
+    - 0xFF0003C0
+    - 0xFF800000
+    - 0x000000FF
+  SystemCallAccess:
+    ArbitrateAddress: 34
+    Break: 60
+    CancelTimer: 28
+    ClearEvent: 25
+    ClearTimer: 29
+    CloseHandle: 35
+    ConnectToPort: 45
+    ControlMemory: 1
+    CreateAddressArbiter: 33
+    CreateEvent: 23
+    CreateMemoryBlock: 30
+    CreateMutex: 19
+    CreateSemaphore: 21
+    CreateThread: 8
+    CreateTimer: 26
+    DuplicateHandle: 39
+    ExitProcess: 3
+    ExitThread: 9
+    GetCurrentProcessorNumber: 17
+    GetHandleInfo: 41
+    GetProcessId: 53
+    GetProcessIdOfThread: 54
+    GetResourceLimit: 56
+    GetResourceLimitCurrentValues: 58
+    GetResourceLimitLimitValues: 57
+    GetSystemInfo: 42
+    GetSystemTick: 40
+    GetThreadContext: 59
+    GetThreadId: 55
+    GetThreadIdealProcessor: 15
+    GetThreadPriority: 11
+    MapMemoryBlock: 31
+    OutputDebugString: 61
+    QueryMemory: 2
+    ReleaseMutex: 20
+    ReleaseSemaphore: 22
+    SendSyncRequest1: 46
+    SendSyncRequest2: 47
+    SendSyncRequest3: 48
+    SendSyncRequest4: 49
+    SendSyncRequest: 50
+    SetThreadPriority: 12
+    SetTimer: 27
+    SignalEvent: 24
+    SleepThread: 10
+    UnmapMemoryBlock: 32
+    WaitSynchronization1: 36
+    WaitSynchronizationN: 37
+  InterruptNumbers:
+  ServiceAccessControl:
+    - APT:U
+    - ac:u
+    - am:net
+    - boss:U
+    - cam:u
+    - cecd:u
+    - cfg:nor
+    - cfg:u
+    - csnd:SND
+    - dsp::DSP
+    - frd:u
+    - fs:USER
+    - gsp::Gpu
+    - gsp::Lcd
+    - hid:USER
+    - http:C
+    - ir:rst
+    - ir:u
+    - ir:USER
+    - mic:u
+    - ndm:u
+    - news:s
+    - nwm::EXT
+    - nwm::UDS
+    - ptm:sysm
+    - ptm:u
+    - pxi:dev
+    - soc:U
+    - ssl:C
+    - y2r:u
+  # Note: the home button menu title keeps Gothic 3DS in the list of applications.
+
+SystemControlInfo:
+  SaveDataSize: 0KB
+  RemasterVersion: 0
+  StackSize: 0x40000
+  # Dependency list is not needed

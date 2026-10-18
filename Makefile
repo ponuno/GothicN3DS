@@ -2,6 +2,7 @@
 # Nintendo 3DS build (devkitARM + libctru + citro3d).
 #
 #   make            -> gothic3ds.3dsx (+ .smdh)
+#   make cia        -> gothic3ds.cia (a HOME menu application, New 3DS)
 #   make clean
 #
 # The PC tools and the PC runtime are built with CMake instead, see README.md.
@@ -82,13 +83,17 @@ endif
 
 export _3DSXFLAGS += --smdh=$(CURDIR)/$(TARGET).smdh
 
-.PHONY: all clean
+.PHONY: all clean cia
 
 all: $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 $(BUILD):
 	@mkdir -p $@
+
+# gothic3ds.cia for the HOME menu (needs makerom + bannertool, see scripts/make_cia.sh)
+cia: all
+	@scripts/make_cia.sh $(CURDIR)/$(TARGET).cia
 
 clean:
 	@echo clean ...

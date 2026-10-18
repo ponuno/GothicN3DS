@@ -117,7 +117,9 @@ void usage() {
 	          "  --debug-report F   the same into the file F\n"
 	          "  --music-dir DIR    folder of WAV renders of the music themes; makes music.pak beside the output\n"
 	          "  --music-rate HZ    highest sample rate of the music (default: 44100)\n"
-	          "  --ffmpeg PATH      the ffmpeg program for the videos (default: ffmpeg.exe beside this one, else the PATH)\n"
+	          "  --ffmpeg PATH      the ffmpeg program for the videos (default: ffmpeg.exe beside this one, else the PATH;\n"
+	          "                     none: on Windows it is downloaded once beside this one)\n"
+	          "  --no-ffmpeg-download  never download ffmpeg\n"
 	          "  --no-video         bake no videos (else the game's _work/Data/Video/*.bik go into video.pak)\n"
 	          "  --video-fps N      frames a second of the videos (default: 15; more is smoother and bigger)\n"
 	          "  --video-size WxH   the videos fit into this (default: 400x240, the top screen)\n"
@@ -247,6 +249,7 @@ int main(int argc, char** argv) {
 		std::string out = "data.pak", firstName, gameDir;
 		VideoBakeOptions videoOpt;
 		std::string ffmpegGiven;
+		bool ffmpegDownload = true;
 		bool withVideo = true;
 		std::vector<std::string> levels;
 		ZenModOptions modOpt;
@@ -292,6 +295,7 @@ int main(int argc, char** argv) {
 			else if (a == "--music-dir") opt.musicDir = value();
 			else if (a == "--music-rate") opt.musicRate = u32(std::stoul(value()));
 			else if (a == "--ffmpeg") ffmpegGiven = value();
+			else if (a == "--no-ffmpeg-download") ffmpegDownload = false;
 			else if (a == "--no-video") withVideo = false;
 			else if (a == "--video-fps") videoOpt.fps = u32(std::clamp(std::stoi(value()), 1, 30));
 			else if (a == "--video-size") {
@@ -771,7 +775,10 @@ int main(int argc, char** argv) {
 			const std::vector<std::string> files = findGameVideos(gameDir);
 			const std::string self = argv[0];
 			const size_t cut = self.find_last_of("/\\");
-			videoOpt.ffmpeg = files.empty() ? std::string() : findFfmpeg(ffmpegGiven, cut == std::string::npos ? std::string() : self.substr(0, cut));
+			const std::string selfDir = cut == std::string::npos ? std::string() : self.substr(0, cut);
+			videoOpt.ffmpeg = files.empty() ? std::string() : findFfmpeg(ffmpegGiven, selfDir);
+			// fix223: none found - fetched once (Windows), unless asked not to or given a path that does not work.
+			if (!files.empty() && videoOpt.ffmpeg.empty() && ffmpegGiven.empty() && ffmpegDownload) videoOpt.ffmpeg = fetchFfmpeg(selfDir);
 			videoOpt.threads = opt.threads;
 			if (files.empty()) {
 				std::printf("videos: none in the game's _work/Data/Video\n");

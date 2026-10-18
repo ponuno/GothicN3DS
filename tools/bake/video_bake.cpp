@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <mutex>
@@ -130,6 +131,49 @@ std::string findFfmpeg(const std::string& given, const std::string& exeDir) {
 		if (fs::exists(beside, ec) && runsFfmpeg(beside.string())) return beside.string();
 	}
 	return runsFfmpeg("ffmpeg") ? std::string("ffmpeg") : std::string();
+}
+
+std::string fetchFfmpeg(const std::string& exeDir) {
+#ifdef _WIN32
+	static const char* const kUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip";
+	std::error_code ec;
+	const fs::path dir = fs::absolute(exeDir.empty() ? fs::path(".") : fs::path(exeDir), ec);
+	const fs::path work = dir / "ffmpeg_download";
+	const fs::path zip = work / "ffmpeg.zip";
+	const fs::path target = dir / "ffmpeg.exe";
+	fs::remove_all(work, ec);
+	fs::create_directories(work, ec);
+	std::printf("videos: no ffmpeg - downloading it once (about 100 MB, LGPL build of BtbN/FFmpeg-Builds) into %s ...\n",
+	            target.string().c_str());
+	std::fflush(stdout);
+	const auto run = [](const std::string& line) {
+		const std::string quoted = "\"" + line + "\""; // (cmd.exe takes the whole line quoted once more)
+		return std::system(quoted.c_str()) == 0;
+	};
+	bool ok = run("curl.exe -L --fail --silent --show-error -o \"" + zip.string() + "\" \"" + kUrl + "\"") &&
+	          run("tar.exe -xf \"" + zip.string() + "\" -C \"" + work.string() + "\"");
+	fs::path found;
+	if (ok)
+		for (auto it = fs::recursive_directory_iterator(work, ec); it != fs::recursive_directory_iterator(); it.increment(ec))
+			if (lower(it->path().filename().string()) == "ffmpeg.exe") {
+				found = it->path();
+				break;
+			}
+	ok = !found.empty() && fs::copy_file(found, target, fs::copy_options::overwrite_existing, ec) && !ec;
+	fs::remove_all(work, ec);
+	if (ok && runsFfmpeg(target.string())) {
+		std::printf("videos: ffmpeg.exe downloaded; next time it is used at once\n");
+		return target.string();
+	}
+	std::printf("WARNING: videos: could not download ffmpeg (no internet, or curl.exe/tar.exe missing). Download it by hand:\n  %s\n"
+	            "  and put bin\\ffmpeg.exe beside g3ds-bake.exe\n",
+	            kUrl);
+	return std::string();
+#else
+	(void)exeDir;
+	std::printf("videos: no ffmpeg - install it (Ubuntu/WSL: sudo apt install ffmpeg) and bake again\n");
+	return std::string();
+#endif
 }
 
 std::vector<std::string> findGameVideos(const std::string& gameDir) {

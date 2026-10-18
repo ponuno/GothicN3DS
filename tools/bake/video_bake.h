@@ -28,6 +28,10 @@ struct VideoBakeResult {
 
 // The ffmpeg to use: `given` if set, else ffmpeg(.exe) beside `exeDir`, else whatever the PATH has ("ffmpeg"), else "".
 std::string findFfmpeg(const std::string& given, const std::string& exeDir);
+// fix223: when there is none, fetches it: on Windows the LGPL build of BtbN/FFmpeg-Builds (the one the release workflow
+// ships) with the system's own curl.exe and tar.exe (Windows 10 1803+), ffmpeg.exe put beside `exeDir`. Returns the
+// program or "" (no Windows, no network, or it did not run); says what it did on stdout.
+std::string fetchFfmpeg(const std::string& exeDir);
 // The video files of a game (<game>/_work/Data/Video/*.bik, any letter case), sorted.
 std::vector<std::string> findGameVideos(const std::string& gameDir);
 // One video into a "video/<name>" entry's bytes.

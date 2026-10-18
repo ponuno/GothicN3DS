@@ -26,8 +26,8 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on its own engine: C++17, a r
 
 ## Option A: Windows, no compiling (recommended)
 
-1. From the Releases page download `Gothic3DS-Baker.exe`, `g3ds-bake.exe`, `dmrender.exe` (and `ffmpeg.exe` for the videos) into one folder, plus the ready `gothic3ds.3dsx` or `gothic3ds.cia`.
-2. Run `Gothic3DS-Baker.exe`, pick your Gothic folder, press **Bake**. The `.pak` files appear next to it. Details: [`windows/README.md`](windows/README.md).
+1. From the Releases page download `Gothic3DS-Baker.exe`, `g3ds-bake.exe` and `dmrender.exe` into one folder, plus the ready `gothic3ds.3dsx` or `gothic3ds.cia`.
+2. Run `Gothic3DS-Baker.exe`, pick your Gothic folder, press **Bake**. ffmpeg (for the videos) is used if you have it, otherwise downloaded once by the baker. The `.pak` files appear next to it. Details: [`windows/README.md`](windows/README.md).
 3. Copy everything to the SD card (step 6 below).
 
 ## Option B: build everything yourself (Linux or WSL)
@@ -65,7 +65,7 @@ mkdir -p ~/out
     -o ~/out/data.pak --music-dir ~/music_wavs
 ```
 
-You get `data.pak` (worlds, models, sounds), `music.pak`, `speech.pak` (voices, 1–2 GB at full quality) and `video.pak` (needs `ffmpeg` in `PATH`). The report is saved in `~/out/bake.log`; `./build/g3ds-bake info ~/out/data.pak` prints it again. **Bake again after every project update** if `docs/HANDOFF.md` says so for that version.
+You get `data.pak` (worlds, models, sounds), `music.pak`, `speech.pak` (voices, 1–2 GB at full quality) and `video.pak` (the videos are decoded with ffmpeg: one in `PATH` or beside the baker is used; on Windows, if there is none, the baker downloads it once by itself; on Linux install it with `sudo apt install ffmpeg`). The report is saved in `~/out/bake.log`; `./build/g3ds-bake info ~/out/data.pak` prints it again. **Bake again after every project update** if `docs/HANDOFF.md` says so for that version.
 
 Instead of steps 1–3 and 5, `scripts/build_all.sh` does everything in one go; its settings are in `scripts/build.conf` (copy `scripts/build.conf.example`).
 

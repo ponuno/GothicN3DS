@@ -142,7 +142,71 @@ make cia          # gothic3ds.cia for the HOME menu
 ```
 
 Start it from the Homebrew Launcher (or the HOME menu for the CIA). Settings, saves and reports (`sound.txt`, `hang.txt`) are kept in `/3ds/gothic3ds/`.
+## Controls
 
+Two schemes, switched in **Pause → Controls → Scheme**:
+- **Console** (as Gothic Classic on consoles): the hero runs where the Circle Pad points, seen from the camera; the C-Stick turns the camera.
+- **Classic** (default, as the PC original): Circle Pad up runs forward, down steps back, left/right turn the hero; the camera stays behind him.
+
+### On foot
+
+| Button | Action |
+|---|---|
+| Circle Pad | Move (a slight tilt walks). With a target locked: circle round it, facing it |
+| C-Stick | Turn the camera. With a target locked: flick left/right to switch to the next enemy on that side |
+| A | Take, open, use, talk (the hint "A …" shows above the thing or person); otherwise strike |
+| B | Jump; let go of a ladder. Jumping at a ledge up to ~2 m high grabs it and climbs up |
+| X | Draw / put away the last weapon, bow or spell you used (as Space in the original) |
+| Y (hold) | Parry |
+| ZL (tap) | Next weapon, bow or spell from the quick slots |
+| ZL (hold) | Pick any quick slot with the D-Pad, release ZL to use it |
+| ZR | Lock on to the nearest enemy in front / release |
+| L / R | Step left / right. Swimming: L dives down, R comes up |
+| D-Pad down | Sneak on / off. With a weapon drawn: hop back |
+| START | Pause menu |
+
+### Fighting
+
+| Button | Action |
+|---|---|
+| A | Strike forward; press again within a blow's window to continue the combo |
+| D-Pad left / right | Side strike (melee weapon or fists), no need to hold A |
+| A held + D-Pad up / left / right | Forward / left / right strike |
+| Y (hold) | Parry |
+| D-Pad down | Hop back |
+| A held (spell in hand) | Charge and cast. D-Pad left / right: choose the spell |
+
+### Inventory and bottom screen
+
+| Button | Action |
+|---|---|
+| SELECT (tap) | Open / close the inventory. The hero stands still while it is open |
+| D-Pad | Move through the items |
+| L / R | Previous / next page |
+| A | Use, equip, eat, read |
+| X | Put into a quick slot (then the D-Pad and A choose the slot) |
+| Y | Drop one item; hold half a second to drop the whole stack |
+| B | Close |
+| Touch | The 10 quick slots (tap to use), the Inventory, Diary and Character buttons |
+
+### Dialogue
+
+The answers appear on the bottom screen: choose with the **D-Pad** and confirm with **A**, or **tap** an answer. Long lists scroll. **A** while someone speaks skips the line; **B** ends the talk.
+
+### Saving
+
+| Button | Action |
+|---|---|
+| SELECT (hold ~1 s) | Quick save |
+| R + START | Quick save |
+| R + SELECT | Quick load |
+| Pause → Save / Load | 10 named slots plus the quick save and the autosave |
+
+### Menus and videos
+
+- In the pause menu: D-Pad or Circle Pad to choose, left / right to change a value, A to confirm, B to go back, START to return to the game.
+- Videos: A, B or START skips.
+- Maps: A, L, R zoom; D-Pad and Circle Pad move; B closes.
 ## Troubleshooting
 
 | Problem | Fix |

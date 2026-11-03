@@ -48,7 +48,8 @@ void App::mobName(u32 mob, char* out, size_t size) const {
 // The thing in reach in front of the character: the nearest of those meant for him that nobody uses.
 // Near is near the thing or near a place to stand at it (a bed's origin may be at its head, a metre and
 // more from where one lies down at its side).
-int App::mobNearest() const {
+int App::mobNearest(float* distance) const {
+	if (distance) *distance = 1e30f;
 	const Mobs& mobs = _npcs.mobs();
 	if (!mobs.hasInfo()) return -1;
 	int best = -1;
@@ -63,7 +64,15 @@ int App::mobNearest() const {
 	};
 	// issue #2: only what he sees - a wall between (Diego's bench on the other side of his hut's wall) is not in reach.
 	const Vec3 eye = {_player.feet.x, _player.feet.y + 110.0f, _player.feet.z};
-	const auto seen = [&](const float p[3]) { return !_world.sightBlocked(eye, {p[0], max(p[1] + 60.0f, _player.feet.y + 40.0f), p[2]}); };
+	// (The line stops 35 cm short of the point: the thing's own mesh - a bed's frame, a bench's seat - does not hide it.)
+	const auto seen = [&](const float p[3]) {
+		Vec3 to = {p[0], max(p[1] + 60.0f, _player.feet.y + 40.0f), p[2]};
+		const Vec3 d = to - eye;
+		const float len = sqrtf(d.x * d.x + d.y * d.y + d.z * d.z);
+		if (len < 70.0f) return true;
+		to = eye + d * ((len - 35.0f) / len);
+		return !_world.sightBlocked(eye, to);
+	};
 	for (u32 i = 0; i < mobs.count(); ++i) {
 		if (!mobs.forPlayer(i) || mobs.userOf(i) >= 0) continue;
 		const WorldMob& m = mobs.mob(i);
@@ -92,6 +101,7 @@ int App::mobNearest() const {
 		bestD = d2;
 		best = int(i);
 	}
+	if (distance && best >= 0) *distance = sqrtf(bestD);
 	return best;
 }
 
@@ -418,7 +428,11 @@ void App::mobUpdate(Input& in, float dt) {
 			// A thing that does its work lets go of him at once; a place to be at, when he asks.
 			// (As in the original, where the character stays in the last state until he is let go - a bench, a bed,
 			// the anvil's hammering, whatever has a pose to stay in; a thing with none - a lever - lets go of him.)
-			const bool leave = in.confirm || fabsf(in.moveX) > 0.6f || fabsf(in.moveZ) > 0.6f || in.jump;
+			// (issue #2: the stick gets him up only once it has been let go since he got there - pressing A on the way to
+			// a bed with the stick still forward had him up again before the sleep menu came.)
+			const bool pushed = fabsf(in.moveX) > 0.6f || fabsf(in.moveZ) > 0.6f;
+			if (!pushed) _mobJob.stickFree = true;
+			const bool leave = in.confirm || (pushed && _mobJob.stickFree) || in.jump;
 			const bool stay = _mobJob.stay || _hero.mobHolds();
 			if (!stay && _mobJob.time > 0.4f) mobEnd(false);
 			else if (stay && _mobJob.time > 0.5f && leave) {

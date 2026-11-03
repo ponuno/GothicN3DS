@@ -14061,6 +14061,92 @@ func void INIT_WORLD() {
 	}
 }
 
+// Beds with Gothic 1's own scripts (G3_G1_SCRIPT, see testG1Beasts): SLEEPABIT_S1 -> AI_ProcessInfos(hero), the hero's
+// PC_Sleep infos, the clock moved, up again. A bed of the world with no function of its own (Gothic 1's are so) the same.
+static void testG1Bed() {
+	const char* file = getenv("G3_G1_SCRIPT");
+	if (!file) {
+		std::printf("  (no G3_G1_SCRIPT: skipped)\n");
+		return;
+	}
+	std::ifstream in(file);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	std::string source = ss.str() + R"(
+func void STARTUP_WORLD() { Kapitel = 1; };
+func void INIT_WORLD() { B_InitMonsterAttitudes(); B_InitGuildAttitudes(); };
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/g1bed.pak";
+	try {
+		bakeLifeWorlds(source, path, worlds);
+	} catch (const std::exception& e) {
+		std::printf("  bake failed: %s\n", e.what());
+		CHECK(false);
+		return;
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().immortal = 1;
+	app.applySettings();
+	const u32 hero = u32(g.hero() - &g.npc(0));
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	run(1.0f);
+	Mobs& mobs = npcs.mobs();
+	int beds[2] = {-1, -1};
+	for (u32 i = 0; i < mobs.count(); ++i)
+		if (mobs.isScheme(i, "BEDHIGH")) beds[mobs.info(i).focus ? 1 : 0] = int(i);
+	CHECK(beds[0] >= 0 && beds[1] >= 0);
+	for (int k = 0; k < 2; ++k) {
+		const int bed = beds[k];
+		if (bed < 0) continue;
+		const WorldMob& m = mobs.mob(u32(bed));
+		app.environment().timeOfDay = 13.0f;
+		app.camera().yaw = k ? -1.5708f : 1.5708f;
+		app.teleport({m.pos[0] + (k ? 150.0f : -150.0f), m.pos[1] + 220.0f, m.pos[2]});
+		run(1.5f);
+		std::printf("  G1 bed %d: target %d (want %d)\n", k, app.mobTarget(), bed);
+		CHECK(app.mobTarget() == bed);
+		// (issue #2: on the console one walks up with the stick and presses A with it still forward - it is held all the way
+		// in: he must stay in bed, the sleep menu must come. The bed without a function of its own - as Gothic 1's are -
+		// waits for SLEEPABIT_S1 a moment: there the stick used to get him up first.)
+		Input a;
+		a.confirm = true;
+		a.moveZ = 1.0f;
+		app.update(a, dt);
+		for (int i = 0; i < int(3.0f / dt); ++i) {
+			Input hold;
+			hold.moveZ = 1.0f;
+			if (npcs.talkView().active) break;
+			app.update(hold, dt);
+		}
+		run(0.5f);
+		const TalkView& v = npcs.talkView();
+		std::printf("  G1 bed %d: in use %d, talk %d self %d, %u ways:", k, int(app.mobInUse()), int(v.active), int(npcs.selfTalk()), v.count);
+		for (u32 i = 0; i < v.count; ++i) std::printf(" [%s]", v.items[i]);
+		std::printf("\n");
+		CHECK(app.mobInUse() && v.active && npcs.selfTalk() && v.count == 5);
+		bool chose = false;
+		for (u32 i = 0; i < v.count && !chose; ++i)
+			if (std::strstr(v.items[i], "morning")) chose = npcs.talkChoose(i);
+		CHECK(chose);
+		run(4.0f);
+		std::printf("  G1 bed %d: slept until %.2f h, in use %d, talk %d, invincible %d\n", k, double(app.environment().timeOfDay), int(app.mobInUse()),
+		            int(npcs.talkView().active), int(g.npcInt(g.npc(hero), g.vm().findMember("C_NPC", "AIVAR"), g.constant("AIV_INVINCIBLE", 0))));
+		CHECK(std::fabs(app.environment().timeOfDay - 8.0f) < 0.2f);
+		CHECK(!npcs.talkView().active && !app.mobInUse() && mobs.userOf(u32(bed)) < 0);
+	}
+}
+
 // The inhabitants' wits: a walker stops to be talked to, creatures notice the player at once and
 // from every side and answer a blow, and a person does not fall on somebody with no quarrel.
 static void testNpcAi() {
@@ -15561,7 +15647,7 @@ int main(int argc, char** argv) {
              {"start menu", testStartMenu},
              {"npcai", testNpcAi},
 	             {"beast turn", testBeastTurn},
-	             {"g1 beasts", testG1Beasts}, {"g1 calm", testG1Calm}, {"g1 hunter", testG1Hunter},
+	             {"g1 beasts", testG1Beasts}, {"g1 bed", testG1Bed}, {"g1 calm", testG1Calm}, {"g1 hunter", testG1Hunter},
     {"g1 beaten", testG1Beaten},
     {"g1 killnpc", testG1KillNpc},
     {"g1 diego", testG1Diego},

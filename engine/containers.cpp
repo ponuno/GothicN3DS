@@ -321,6 +321,29 @@ void App::chestUpdate(Input& in, float dt) {
 		    !_player.grounded || heroTransformed())
 			return;
 		if (_chests.count()) _chestTarget = _chests.nearest(_npcs.mobs(), _player.feet, _hero.yaw(), 170.0f, 1.2f);
+		if (_chestTarget >= 0 && _mobJob.stage == MJ_NONE) {
+			// issue #2: a chest no longer takes A from everything else in reach. In the huts of the Old Camp the chest
+			// stands by the bed, and A always opened it: the one he faces more squarely, and nearer, is the one.
+			float mobD = 0;
+			const int mob = mobNearest(&mobD);
+			if (mob >= 0) {
+				const WorldMob& c = _npcs.mobs().mob(_chests.mob(u32(_chestTarget)));
+				const WorldMob& m = _npcs.mobs().mob(u32(mob));
+				const auto off = [&](const float p[3]) {
+					const float dx = p[0] - _player.feet.x, dz = p[2] - _player.feet.z;
+					if (dx * dx + dz * dz < 1.0f) return 0.0f;
+					float a = atan2f(dx, dz) - _hero.yaw();
+					if (!(fabsf(a) < 1.0e4f)) a = 0.0f;
+					while (a > 3.14159265f) a -= 6.2831853f;
+					while (a < -3.14159265f) a += 6.2831853f;
+					return fabsf(a);
+				};
+				const float cdx = c.pos[0] - _player.feet.x, cdz = c.pos[2] - _player.feet.z;
+				const float chestScore = sqrtf(cdx * cdx + cdz * cdz) + off(c.pos) * 120.0f;
+				const float mobScore = mobD + off(m.pos) * 120.0f;
+				if (mobScore < chestScore) _chestTarget = -1;
+			}
+		}
 		// (A chest first; the body only when there is none in reach.)
 		if (_chestTarget < 0) _corpseTarget = corpseNearest(false);
 		if ((_chestTarget >= 0 || _corpseTarget >= 0) && (in.confirm || in.attack)) {

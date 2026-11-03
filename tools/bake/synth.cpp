@@ -730,6 +730,10 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 		const size_t bed2 = thing("BEDHIGH", -900.0f + 190.0f, 800.0f, 1.5708f, 1, 110.0f, 45.0f);
 		slot(bed2, "ZS_POS0_FRONT", -125.0f, 0.0f, 1.5708f);
 		scene.mobs[bed2].kind = 1; // (a bed with no name: the player may sleep in it all the same)
+		// (issue #2) A bed with no places of its own, as some of Gothic 1's (BED_2_OC: one lies down at its middle), out in the
+		// open by the square.
+		const size_t bed4 = thing("BED", 650.0f, -350.0f, 0.0f, 1, 110.0f, 45.0f);
+		scene.mobs[bed4].kind = 0; // (oCMobInter, as Gothic 1's: a bed by its scheme)
 		// A low bed by the first hut, too, behind the wall: the sleeper's
 		// script asks for both kinds of bed, and is to stay in the high one
 		// it got into first - and never to go through the wall to this one.
@@ -771,6 +775,10 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 		chest("CHESTBIG", -500.0f, 500.0f - 260.0f, 55.0f, 60.0f, "ITMINUGGET:75, ITFOAPPLE:2, ITKELOCKPICK:3, ITKE_CAMPCHEST:1", false, "", "");
 		chest("CHESTSMALL", -330.0f, 500.0f - 260.0f, 38.0f, 40.0f, "ITFO_POTION_HEALTH_01:2", true, "ITKE_CAMPCHEST", "");
 		chest("CHESTSMALL", -680.0f, 500.0f - 260.0f, 38.0f, 40.0f, "ITMINUGGET:20", true, "", "LRL");
+		// (A fourth, the shadows' guild's, by the camp's square: Gothic 1's B_AssessUseMob - a shadow who sees the player at
+		// it attacks him. Test "g1 chest".)
+		chest("CHESTSMALL", -100.0f, 150.0f, 38.0f, 40.0f, "ITFOAPPLE:1", false, "", "");
+		scene.mobs.back().ownerGuild = "GIL_STT";
 		// A ledge: a block of stone 150 cm high in the camp, to jump up to
 		// (a wall the hands take hold of).
 		b.detail = DETAIL_MEDIUM;

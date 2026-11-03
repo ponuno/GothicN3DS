@@ -1243,6 +1243,11 @@ int main(int, char**) {
 				}
 				if (app.npcs().debugLastHit(l1, sizeof(l1), 0)) reportLine("%s", l1);
 			}
+			// issue #2: the nearest bed, while one is within 4 m (why it is not offered).
+			{
+				char bl[96];
+				if (app.debugBed(bl, sizeof(bl))) reportLine("%s", bl);
+			}
 			reportLine("frame %5.1f ms avg %5.1f worst %2.0fHz%s", double(msAccum / 30.0f), double(msWorst), double(displayWritten ? refreshHz : 60.0f),
 			     !displayOk && app.settings().refresh ? "!" : g3::display::failure() == 3 ? "!w" : "");
 			reportLine("cpu %3.0f%%  gpu %3.0f%%  load %3.0f%%", double(fs.cpuMs * 6.0f), double(fs.gpuMs * 6.0f),

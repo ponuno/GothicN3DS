@@ -84,7 +84,9 @@ void Mobs::loadInfo(Pak& pak, const char* worldAsset) {
 bool Mobs::isBed(u32 i) const {
 	if (!_infos || i >= _h.mobCount) return false;
 	if (_infos[i].kind == MOBKIND_BED) return true;
-	if (_infos[i].kind == MOBKIND_CONTAINER || _infos[i].kind == MOBKIND_DOOR) return false;
+	// (issue #2: a bed the world's makers filed as a door - oCMobDoor with a bed's model - is a bed all the same; fix222
+	// took it out of the doors, and it was left neither door nor bed: decoration. A chest is never one.)
+	if (_infos[i].kind == MOBKIND_CONTAINER) return false;
 	// (By its scheme only when it has no function of its own, or a sleeping one: a thing that runs something else is that.)
 	const auto has = [](const char* s, const char* w) {
 		for (; *s; ++s) {
@@ -95,7 +97,7 @@ bool Mobs::isBed(u32 i) const {
 		return false;
 	};
 	const char* on = infoText(_infos[i].onState);
-	return has(scheme(i), "BED") && (!*on || has(on, "SLEEP"));
+	return has(scheme(i), "BED") && (!*on || has(on, "SLEEP") || _infos[i].kind == MOBKIND_DOOR);
 }
 
 bool Mobs::forPlayer(u32 i) const {

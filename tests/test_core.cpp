@@ -6257,8 +6257,8 @@ func void Rtn_start_502() {
 		// ... and those of the things in the hands (drinking a potion; picking up: 3 + 3 of the 67).
 		CHECK(said("things in the hands: the scripts' items are used in 6 ways (BROOM, FOOD, MAP, MEAT, POTION, POTIONFAST)"));
 		// The things of the camp, and which of them the scripts know.
-		CHECK(said("things to use: 11 of 8 kinds, with 12 places to stand at (1 have none: nobody can use those): CHESTSMALL x3, BEDHIGH x2"));
-		CHECK(said("things to use: the worlds have 8 kinds; the scripts name 5 of them: BED x1, BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: BSFIRE, CHESTBIG, CHESTSMALL"));
+		CHECK(said("things to use: 12 of 8 kinds, with 13 places to stand at (1 have none: nobody can use those): CHESTSMALL x3, BEDLOW x2, BEDHIGH x2"));
+		CHECK(said("things to use: the worlds have 8 kinds; the scripts name 5 of them: BED x1, BEDHIGH x2, BEDLOW x2, BENCH x1, BSANVIL x1; not named: BSFIRE, CHESTBIG, CHESTSMALL"));
 		CHECK(said("way net: 13 points, 15 connections") && said("10 free points") && said(" 12 states, "));
 		// What the states need of the engine is on record.
 		CHECK(said("life: the scripts have 12 states; the people of these worlds are put into 7: ZS_MM_ALLSCHEDULER x6, ZS_GUARD x3"));
@@ -6304,7 +6304,7 @@ func void Rtn_start_502() {
 		const WayNet& net = npcs.wayNet();
 		CHECK(net.loaded() && net.nodeCount() == 13 && net.freeCount() == 10);
 		const Mobs& mobs = npcs.mobs();
-		CHECK(mobs.loaded() && mobs.count() == 11); // (issue #2: a bed without places, a guild's chest)
+		CHECK(mobs.loaded() && mobs.count() == 12); // (issue #2: a bed without places, one filed as a door, a guild's chest)
 		// What a character is at: the thing's kind if it is in it, "" if not.
 		const auto inThing = [&](u32 npc) -> std::string {
 			const NpcActor* a = npcs.actorOf(npc);
@@ -6552,7 +6552,7 @@ func void Rtn_start_502() {
 				CHECK(inThing(smith) == "BEDHIGH" && npcs.actorOf(smith)->mob != a->mob && npcs.stats().mobsInUse == 2);
 				u32 free = 0;
 				for (u32 m = 0; m < mobs.count(); ++m) free += mobs.userOf(m) < 0;
-				CHECK(free == 9 && npcs.stats().mobsUsed == 4);
+				CHECK(free == 10 && npcs.stats().mobsUsed == 4);
 			}
 			CHECK((poor || night.farthestOff < 190.0f) && night.travelled > 1000.0f); // (the seat is 1.7 m off the path)
 			u32 asleep = 0;
@@ -12021,7 +12021,7 @@ static void testMobUse() {
 		else if (mobs.isScheme(i, "BEDHIGH")) (mobs.info(i).focus ? namedBed : hiddenBed) = int(i);
 	}
 	CHECK(bench >= 0 && anvil >= 0 && sharp >= 0 && hiddenBed >= 0 && namedBed >= 0);
-	CHECK(named == 7);     // the bench, the three beds (issue #2: one without places too) (a bed is to sleep in, named or not), the anvil, the forge, the other
+	CHECK(named == 8);     // the bench, the four beds (issue #2: one without places, one filed as a door) (a bed is to sleep in, named or not), the anvil, the forge, the other
 	CHECK(hidden == 4);    // the four chests: no prompt
 	if (bench < 0 || anvil < 0 || sharp < 0 || hiddenBed < 0 || namedBed < 0) return;
 	const auto stand = [&](int mob, float dx, float dz, float yaw) {
@@ -14103,20 +14103,21 @@ func void INIT_WORLD() { B_InitMonsterAttitudes(); B_InitGuildAttitudes(); };
 	};
 	run(1.0f);
 	Mobs& mobs = npcs.mobs();
-	int beds[3] = {-1, -1, -1};
+	int beds[4] = {-1, -1, -1, -1};
 	for (u32 i = 0; i < mobs.count(); ++i) {
 		if (mobs.isScheme(i, "BEDHIGH")) beds[mobs.info(i).focus ? 1 : 0] = int(i);
 		if (mobs.isScheme(i, "BED")) beds[2] = int(i); // (issue #2: no places of its own)
+		if (mobs.isScheme(i, "BEDLOW") && mobs.info(i).kind == MOBKIND_DOOR) beds[3] = int(i); // (issue #2: filed as a door)
 	}
-	CHECK(beds[0] >= 0 && beds[1] >= 0 && beds[2] >= 0);
-	for (int k = 0; k < 3; ++k) {
+	CHECK(beds[0] >= 0 && beds[1] >= 0 && beds[2] >= 0 && beds[3] >= 0);
+	for (int k = 0; k < 4; ++k) {
 		const int bed = beds[k];
 		if (bed < 0) continue;
 		const WorldMob& m = mobs.mob(u32(bed));
 		app.environment().timeOfDay = 13.0f;
 		// (The third: walked up to from the south, standing at its side a metre from its middle.)
-		app.camera().yaw = k == 2 ? 0.0f : k ? -1.5708f : 1.5708f;
-		if (k == 2) app.teleport({m.pos[0], m.pos[1] + 220.0f, m.pos[2] - 110.0f});
+		app.camera().yaw = k >= 2 ? 0.0f : k ? -1.5708f : 1.5708f;
+		if (k >= 2) app.teleport({m.pos[0], m.pos[1] + 220.0f, m.pos[2] - 110.0f});
 		else app.teleport({m.pos[0] + (k ? 150.0f : -150.0f), m.pos[1] + 220.0f, m.pos[2]});
 		run(1.5f);
 		std::printf("  G1 bed %d: target %d (want %d)\n", k, app.mobTarget(), bed);

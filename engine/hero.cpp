@@ -842,12 +842,25 @@ bool Hero::openMob(const char* scheme, int states, int slotKind) {
 	// Held in the highest state that has a pose of its own.
 	_use.hold = nullptr;
 	for (int k = top; k >= 0 && !_use.hold; --k) _use.hold = step(k, k);
+	if (top >= 1 && !corpse) {
+		_use.stepDown = step(top, top - 1);
+		_use.stepUp = step(top - 1, top);
+		_use.lowHold = step(top - 1, top - 1);
+	}
 	_use.phase = USE_MOB_IN;
 	_use.stoopHold = _use.nIn == 0;
 	_use.at2 = 0;
 	if (_use.nIn) _anim.play(_use.seqIn[0], 0.12f);
 	else go(_walkMode ? ST_WALK : ST_RUN, true, 0.15f);
 	_roleNow = USE;
+	return true;
+}
+
+bool Hero::mobStep(bool up) {
+	if (!mobCanStep() || _use.stepClip || up != _use.lowered) return false;
+	_use.lowered = !up;
+	_use.stepClip = up ? _use.stepUp : _use.stepDown;
+	_anim.play(_use.stepClip, 0.08f);
 	return true;
 }
 
@@ -884,10 +897,20 @@ void Hero::mobTick(float dt) {
 		break;
 	case USE_MOB_HOLD:
 		_stoop = _use.stoopHold ? 1.0f : 0.0f;
+		if (_use.stepClip && (c != _use.stepClip || _anim.finished())) {
+			// (A step between the states is over: the pose of the state it led to.)
+			_use.stepClip = nullptr;
+			const Clip* pose = _use.lowered ? _use.lowHold : _use.hold;
+			if (pose) _anim.play(pose, 0.08f);
+		}
 		if (_use.release) {
+			// (Let go one state down: the way out skips its own first step, the one down, already taken.)
+			const bool skip = _use.lowered && _use.nOut > 1 && _use.seqOut[0] == _use.stepDown;
+			_use.lowered = false;
+			_use.stepClip = nullptr;
 			_use.phase = USE_MOB_OUT;
-			_use.at2 = 0;
-			if (_use.nOut) _anim.play(_use.seqOut[0], 0.1f);
+			_use.at2 = skip ? 1 : 0;
+			if (_use.nOut) _anim.play(_use.seqOut[_use.at2], 0.1f);
 		}
 		break;
 	case USE_MOB_OUT:

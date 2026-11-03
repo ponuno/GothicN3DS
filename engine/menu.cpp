@@ -78,16 +78,17 @@ const char* const kLampsNotes[] = {"Факелы и костры не светя
 const char* const kShadowNotes[] = {"Без теней под ногами", "Круглая тень под героем", "Под героем и жителями до 25 м", "Герой по фигуре, жители круглые"};
 
 #define NONE nullptr, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr
+// issue #2: saving and loading next to "continue", as the original's menu has them near the top.
 const Item kMain[] = {
     {"Продолжить", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_CLOSED, nullptr, nullptr},
+    {"Сохранить игру", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_SAVE, "10 ячеек; быстро — R + START в игре", nullptr},
+    {"Загрузить игру", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_LOAD, "Быстрая загрузка — R + SELECT в игре", nullptr},
     {"Графика", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GRAPHICS, "Дальность и набор графики", nullptr},
     {"Игра", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_GAME, "Бой и предметы", nullptr},
     {"Управление", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_CONTROLS, "Схема, камера", nullptr},
     {"Интерфейс", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_INTERFACE, "Язык, подсказки, нижний экран", nullptr},
     {"Звук", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_SOUND, "Громкость", nullptr},
     {"Отладка", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG, nullptr, nullptr},
-    {"Сохранить игру", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_SAVE, "10 ячеек; быстро — R + START в игре", nullptr},
-    {"Загрузить игру", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_LOAD, "Быстрая загрузка — R + SELECT в игре", nullptr},
     {"Выйти в Homebrew Launcher", ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_EXIT, "Позиция и настройки сохранятся", nullptr},
 };
 // fix223: the Graphics page holds the draw distance and the set; every single value is on Graphics+.
@@ -169,6 +170,7 @@ const Item kDebug[] = {
     {"Жители", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG_NPC, "Восприятие, жизнь, драки", nullptr},
     {"Герой и вещи", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG_HERO, "Здоровье, оружие, тест-набор", nullptr},
     {"Мир и время", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_DEBUG_WORLD, "Полёт, мир, время", nullptr},
+    {"Телепорт", PAGE, nullptr, nullptr, 0, 0, 0, nullptr, Menu::PAGE_TELEPORT, "Лагеря, башня, хижины (Gothic 1)", nullptr},
 };
 const Item kDebugNpc[] = {
     {"Восприятие жителей", TOGGLE, &Settings::perception, nullptr, 0, 0, 0, nullptr, 0, nullptr, nullptr},
@@ -193,6 +195,31 @@ const Item kDebugWorld[] = {
     {"Глава", RANGE, &Settings::chapter, nullptr, 1, 0, 6, "", 0, "Меняет главу скриптами игры", nullptr},
     {"Погода", CHOICE, &Settings::weather, kWeather, 6, 0, 0, nullptr, 0, "Авто: меняется сама; иначе держится", nullptr},
 };
+// issue #2: the places of Gothic 1's colony to be put down at - each a waypoint of world.zen, taken from the routines of
+// the one who lives there (Thorus at the gate, Lares in his hut ...). Another world, or a mod without the waypoint: the
+// menu says so.
+struct Place {
+	const char* label;
+	const char* waypoint;
+};
+const Place kPlaces[] = {
+    {"Начало игры", "WP_INTRO_FALL3"},
+    {"Старый лагерь: Торус", "OCR_THORUS"},
+    {"Старый лагерь: Снаф", "OCR_CAULDRON_2"},
+    {"Замок баронов", "OCC_BARONS_GREATHALL_THRONE"},
+    {"Новый лагерь: Ларес", "NC_HUT22_IN_MOVEMENT2"},
+    {"Новый лагерь: Ли", "NC_SMALL_CAVE_CENTER"},
+    {"Маги воды", "NC_KDW_CAVE_CENTER"},
+    {"Болотный лагерь: храм", "PSI_TEMPLE_SITTING_PRIEST"},
+    {"Хижина Кавалорна", "OW_SAWHUT_SLEEP_01"},
+    {"Башня Ксардаса", "DT_E3_07"},
+};
+const Item kTeleport[] = {
+#define PLACE(i) {kPlaces[i].label, ACTION, nullptr, nullptr, 0, 0, 0, nullptr, MENU_TELEPORT, nullptr, nullptr}
+    PLACE(0), PLACE(1), PLACE(2), PLACE(3), PLACE(4), PLACE(5), PLACE(6), PLACE(7), PLACE(8), PLACE(9),
+#undef PLACE
+};
+static_assert(sizeof(kTeleport) / sizeof(kTeleport[0]) == sizeof(kPlaces) / sizeof(kPlaces[0]), "a menu line for each place");
 #undef NONE
 
 struct PageDef {
@@ -207,7 +234,7 @@ const PageDef kPages[Menu::PAGES] = {
     PAGE_OF("Отладка", kDebug),      PAGE_OF("Жители", kDebugNpc),    PAGE_OF("Герой и вещи", kDebugHero),
     PAGE_OF("Мир и время", kDebugWorld), PAGE_OF("Графика+", kGfxPlus), PAGE_OF("Экспериментально", kExperimental),
     {"Сохранить игру", nullptr, 0}, {"Загрузить игру", nullptr, 0}, // (lists of slots: Menu::drawSaves)
-    PAGE_OF("Настройки", kOptions),
+    PAGE_OF("Настройки", kOptions), PAGE_OF("Телепорт", kTeleport),
 };
 #undef PAGE_OF
 
@@ -216,6 +243,7 @@ const PageDef kPages[Menu::PAGES] = {
 Menu::Page Menu::parentOf(Page page) {
 	if (page == PAGE_GFX_PLUS) return PAGE_GRAPHICS;
 	if (page == PAGE_EXPERIMENTAL) return PAGE_GFX_PLUS;
+	if (page == PAGE_TELEPORT) return PAGE_DEBUG;
 	return page == PAGE_DEBUG_NPC || page == PAGE_DEBUG_HERO || page == PAGE_DEBUG_WORLD ? PAGE_DEBUG : PAGE_MAIN;
 }
 
@@ -223,7 +251,17 @@ void Menu::open(Page root) {
 	_open = true;
 	_root = root < PAGES ? root : PAGE_MAIN;
 	_page = _root;
-	_sel[_page] = 0;
+	_exitArmed = false;
+	// issue #2: the pause menu opens where it was left (save, load ...); only leaving is never what it opens at.
+	if (_page != PAGE_MAIN || kPages[PAGE_MAIN].items[clamp(_sel[PAGE_MAIN], 0, kPages[PAGE_MAIN].count - 1)].target == MENU_EXIT) _sel[_page] = 0;
+}
+
+const char* Menu::teleportWaypoint(int place) {
+	return place >= 0 && place < int(sizeof(kPlaces) / sizeof(kPlaces[0])) ? kPlaces[place].waypoint : "";
+}
+
+const char* Menu::teleportLabel(int place) {
+	return place >= 0 && place < int(sizeof(kPlaces) / sizeof(kPlaces[0])) ? tr(kPlaces[place].label) : "";
 }
 
 int Menu::itemCount(Page page) const { return page < PAGES ? kPages[page].count : 0; }
@@ -267,6 +305,10 @@ void Menu::value(Page page, int item, const Settings& s, char* out, u32 size) co
 
 MenuAction Menu::update(const MenuInput& in, Settings& s) {
 	if (!_open) return MENU_NONE;
+	// (A first A on "leave" only asks; anything but a second A takes the question back.)
+	const bool armed = _exitArmed;
+	if (in.up || in.down || in.left || in.right || in.confirm || in.back || in.close || in.rename) _exitArmed = false;
+	if (armed && in.back) return MENU_NONE; // ("no": the menu stays)
 	if (in.close) {
 		_open = false;
 		return MENU_CLOSED;
@@ -289,6 +331,8 @@ MenuAction Menu::update(const MenuInput& in, Settings& s) {
 		if (in.left) sel = max(sel - 5, 0);
 		if (in.right) sel = min(sel + 5, n - 1);
 		if (in.confirm) return _page == PAGE_SAVE ? MENU_SAVE_SLOT : MENU_LOAD_SLOT;
+		// issue #2: A saves at once (no keyboard); X first asks for the name.
+		if (in.rename && _page == PAGE_SAVE) return MENU_RENAME_SLOT;
 		return MENU_NONE;
 	}
 	const PageDef& page = kPages[_page];
@@ -311,6 +355,11 @@ MenuAction Menu::update(const MenuInput& in, Settings& s) {
 	case ACTION:
 		if (!in.confirm) return MENU_NONE;
 		if (it.target == MENU_CLOSED) _open = false;
+		if (it.target == MENU_EXIT && !armed) {
+			// issue #2: a slip of the finger is not leaving the game - A once more is.
+			_exitArmed = true;
+			return MENU_NONE;
+		}
 		return MenuAction(it.target);
 	case PAGE:
 		if (in.confirm || in.right) {
@@ -472,7 +521,7 @@ void Menu::drawSaves(Ui& ui, const char* message, const SaveMenuView* v) const {
 	}
 
 	if (message && *message) ui.text(W / 2, foot - lh - 1, message, ui::GREEN, ui::TEXT, ui::CENTER);
-	ui.text(W / 2, foot, saving ? tr("A — сохранить   B — назад") : tr("A — загрузить   B — назад"), ui::DARK + 0x20202000u, ui::TEXT, ui::CENTER);
+	ui.text(W / 2, foot, saving ? tr("A — сохранить   X — с названием   B — назад") : tr("A — загрузить   B — назад"), ui::DARK + 0x20202000u, ui::TEXT, ui::CENTER);
 }
 
 void Menu::draw(Ui& ui, const Settings& s, const char* status, const char* message, const SaveMenuView* saves) const {
@@ -528,7 +577,9 @@ void Menu::draw(Ui& ui, const Settings& s, const char* status, const char* messa
 	}
 	const Item& cur = page.items[sel];
 	const int foot = foot0;
-	if (message && *message)
+	if (_exitArmed && cur.kind == ACTION && cur.target == MENU_EXIT)
+		ui.text(gfx::SCREEN_W / 2, foot - Ui::lineHeight(ui::TEXT), tr("Выйти? A — да, B — нет"), 0xFFD060FFu, ui::TEXT, ui::CENTER);
+	else if (message && *message)
 		ui.text(gfx::SCREEN_W / 2, foot - Ui::lineHeight(ui::TEXT), message, ui::GREEN, ui::TEXT, ui::CENTER);
 	else if (*noteOf(cur, &s))
 		ui.text(gfx::SCREEN_W / 2, foot - Ui::lineHeight(ui::TEXT), noteOf(cur, &s), ui::DARK + 0x30303000u, ui::TEXT, ui::CENTER);

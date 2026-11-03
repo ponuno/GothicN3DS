@@ -374,6 +374,7 @@ public:
 	// try the inventory with. Returns how many kinds were given.
 	u32 giveItemKit();
 	u32 giveTestKit();
+	void debugTeleport(int place); // issue #2: the debug menu's places (Menu::teleportWaypoint)
 	u32 giveSpellKit(); // every rune and scroll, mana
 	u32 giveCraftKit(); // what the things ask for, and ingredients
 	// ---- magic (app_magic.cpp; the rules are the scripts', see game_magic.cpp) ----
@@ -924,6 +925,8 @@ private:
 		bool offered = false; // the engine's sleep menu has been put up
 		bool sleepScript = false; // fix208: the scripts' SLEEPABIT_S1 was run for a bed without a function: its talk is awaited
 		u32 hand = 0xFFFFFFFFu; // fix154: the item in his hand at it (the thing's animations put it there), SCRIPT_NONE: none
+		bool stickWas = false;  // issue #2: the stick was pushed (forward / back step the states once per push)
+		bool stickFree = false; // issue #2: the stick has been let go since he got to it (only then does it get him up)
 	};
 	enum MobStage : u8 { MJ_NONE, MJ_GLIDE, MJ_IN, MJ_HELD, MJ_OUT };
 	MobJob _mobJob;
@@ -933,7 +936,7 @@ private:
 	bool _ladderTop = false; // ... from its top
 	void doorUse(u32 door);
 	void mobUpdate(Input& in, float dt);
-	int mobNearest() const;
+	int mobNearest(float* distance = nullptr) const; // (`distance`: to the thing or its place, cm)
 	bool mobStart(u32 mob);
 	void mobEnd(bool hurried);
 	// (fix153) The thing's state function for `state` ("<onStateFunc>_S<state>", OpenGothic's invokeStateFunc);

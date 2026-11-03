@@ -28,7 +28,7 @@
 //   D-Pad Up      with empty hands: the fists on / off
 //   D-Pad Down    sneak on / off
 //   START         pause menu: continue, graphics, controls, faults, save and load the game, leave
-//                 (the save page: ten slots; A asks for the save's name with the system's keyboard)
+//                 (the save page: ten slots; A saves at once, X asks for a name with the system's keyboard)
 //   (console: SELECT takes the bow; classic: L+SELECT the bow, SELECT the spell)
 //   SELECT        opens the inventory on the bottom screen (D-Pad choose, L / R
 //                 page, A use, X: into a quick slot, B or SELECT close); the
@@ -778,10 +778,12 @@ int main(int, char**) {
 			pin.y = touch.py;
 			if (panel.cursor()) {
 				taken = KEY_DUP | KEY_DDOWN | KEY_DLEFT | KEY_DRIGHT | KEY_A | KEY_B | KEY_X | KEY_Y | KEY_L | KEY_R;
-				pin.up = (repeat & KEY_DUP) != 0;
-				pin.down = (repeat & KEY_DDOWN) != 0;
-				pin.left = (repeat & KEY_DLEFT) != 0;
-				pin.right = (repeat & KEY_DRIGHT) != 0;
+				// issue #2: the Circle Pad chooses too (a talk's answers without moving the thumb to the D-Pad); the
+				// character stands while the cursor is up, the stick is not his then.
+				pin.up = (repeat & (KEY_DUP | KEY_CPAD_UP)) != 0;
+				pin.down = (repeat & (KEY_DDOWN | KEY_CPAD_DOWN)) != 0;
+				pin.left = (repeat & (KEY_DLEFT | KEY_CPAD_LEFT)) != 0;
+				pin.right = (repeat & (KEY_DRIGHT | KEY_CPAD_RIGHT)) != 0;
 				pin.confirm = (down & KEY_A) != 0;
 				pin.back = (down & (KEY_B | KEY_SELECT)) != 0 && !(held & (KEY_R | KEY_START));
 				pin.assign = (down & KEY_X) != 0;
@@ -869,6 +871,7 @@ int main(int, char**) {
 			mi.confirm = (down & KEY_A) != 0;
 			mi.back = (down & KEY_B) != 0;
 			mi.close = (down & KEY_START) != 0;
+			mi.rename = (down & KEY_X) != 0;
 			const g3::MenuAction act = menu.update(mi, app.settings());
 			if (act == g3::MENU_CHANGED) {
 				app.applySettings();
@@ -877,7 +880,10 @@ int main(int, char**) {
 			} else if (act == g3::MENU_EXIT) {
 				break;
 			} else if (act == g3::MENU_SAVE_SLOT) {
-				// As the original: the save is given a name (the system's keyboard; B there: not saved).
+				// issue #2: A saves at once, under the slot's own name (or one made up); no keyboard.
+				app.saveSlot(menu.saveSlot(), nullptr);
+			} else if (act == g3::MENU_RENAME_SLOT) {
+				// X: the save is given a name first (the system's keyboard; B there: not saved).
 				const int slot = menu.saveSlot();
 				char name[128];
 				if (!app.canSave()) app.saveSlot(slot, nullptr); // (its line says why not)

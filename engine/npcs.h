@@ -171,6 +171,7 @@ struct NpcStats {
 	u32 knockedOut = 0, killed = 0, reaped = 0;
 	u32 moves = 0;        // moves of the fight AI begun
 	u32 movesUntabled = 0; // ... of which chosen without a table for the fighter's tactic
+	u32 packWaits = 0;     // issue #2: moves at the enemy turned into a strafe or a wait (another of the pack is at it)
 	char fightAi = '-';   // where the tables are from: 'F' the game's FIGHT.DAT, 'S' the main script, '-' not read yet
 	// Talks.
 	u32 talks = 0;        // talks begun (AI_ProcessInfos)

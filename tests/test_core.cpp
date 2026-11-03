@@ -8539,7 +8539,7 @@ static void testGfxPlus() {
 		ok.confirm = true;
 		right.right = true;
 		back.back = true;
-		m.update(down, s);
+		for (int i = 0; i < 3; ++i) m.update(down, s); // (issue #2: graphics is the fourth line, after save and load)
 		m.update(ok, s);
 		CHECK(m.page() == Menu::PAGE_GRAPHICS);
 		for (int i = 0; i < m.itemCount(Menu::PAGE_GRAPHICS) && std::strcmp(m.label(Menu::PAGE_GRAPHICS, m.selected()), "Графика+") != 0; ++i)
@@ -10856,8 +10856,12 @@ static void testSettings() {
 		ok.confirm = true;
 		back.back = true;
 		start.close = true;
+		// (issue #2: continue, save, load, then the settings)
+		CHECK(std::strcmp(m.label(Menu::PAGE_MAIN, 1), "Сохранить игру") == 0 && std::strcmp(m.label(Menu::PAGE_MAIN, 2), "Загрузить игру") == 0);
 		m.update(down, s);
-		CHECK(m.selected() == 1 && std::strcmp(m.label(Menu::PAGE_MAIN, 1), "Графика") == 0);
+		m.update(down, s);
+		m.update(down, s);
+		CHECK(m.selected() == 3 && std::strcmp(m.label(Menu::PAGE_MAIN, 3), "Графика") == 0);
 		CHECK(m.update(ok, s) == MENU_NONE && m.page() == Menu::PAGE_GRAPHICS);
 		CHECK(m.update(right, s) == MENU_CHANGED && s.drawMetres == 130);
 		CHECK(m.update(left, s) == MENU_CHANGED && m.update(left, s) == MENU_CHANGED && s.drawMetres == 110);
@@ -10866,11 +10870,21 @@ static void testSettings() {
 		CHECK(std::strcmp(value, "110 м") == 0);
 		m.update(down, s);
 		CHECK(m.update(right, s) == MENU_CHANGED && s.objects == OBJECTS_BALANCED);
-		CHECK(m.update(back, s) == MENU_NONE && m.page() == Menu::PAGE_MAIN && m.selected() == 1);
-		m.update(up, s);
-		m.update(up, s); // (round to the last)
-		CHECK(m.selected() == m.itemCount(Menu::PAGE_MAIN) - 1 && m.update(ok, s) == MENU_EXIT);
+		CHECK(m.update(back, s) == MENU_NONE && m.page() == Menu::PAGE_MAIN && m.selected() == 3);
+		for (int i = 0; i < 4; ++i) m.update(up, s); // (round to the last)
+		// issue #2: leaving asks first - B takes it back, a second A leaves.
+		CHECK(m.selected() == m.itemCount(Menu::PAGE_MAIN) - 1 && m.update(ok, s) == MENU_NONE && m.isOpen());
+		CHECK(m.update(back, s) == MENU_NONE && m.isOpen() && m.page() == Menu::PAGE_MAIN);
+		CHECK(m.update(ok, s) == MENU_NONE && m.update(MenuInput(), s) == MENU_NONE && m.update(ok, s) == MENU_EXIT);
 		CHECK(m.update(start, s) == MENU_CLOSED && !m.isOpen());
+		// Opened again: where it was left (but never at "leave").
+		m.open();
+		CHECK(m.selected() == 0);
+		m.update(down, s);
+		CHECK(m.update(start, s) == MENU_CLOSED);
+		m.open();
+		CHECK(m.selected() == 1);
+		m.close();
 		// The debug page leads to three pages of its own; B goes back one step at a time, and the kit is on one of them.
 		{
 			Menu d;
@@ -10879,7 +10893,7 @@ static void testSettings() {
 			ok2.confirm = true;
 			back2.back = true;
 			dn.down = true;
-			for (int i = 0; i < 6; ++i) d.update(dn, s);
+			for (int i = 0; i < 8; ++i) d.update(dn, s);
 			CHECK(d.update(ok2, s) == MENU_NONE && d.page() == Menu::PAGE_DEBUG);
 			d.update(dn, s);
 			CHECK(d.update(ok2, s) == MENU_NONE && d.page() == Menu::PAGE_DEBUG_HERO);
@@ -11156,12 +11170,12 @@ static void testSaves() {
 		for (int i = 0; i < THUMB_W * THUMB_H; ++i) lit += pic[i] != 0;
 		CHECK(lit > THUMB_W * THUMB_H / 2);
 	}
-	// The main page leads to the save page (item 7); it lists ten empty slots, the cursor on the first.
+	// The main page leads to the save page (item 1, issue #2); it lists ten empty slots, the cursor on the first.
 	MenuInput down, ok, back;
 	down.down = true;
 	ok.confirm = true;
 	back.back = true;
-	for (int i = 0; i < 7; ++i) app.menu().update(down, app.settings());
+	app.menu().update(down, app.settings());
 	CHECK(app.menu().update(ok, app.settings()) == MENU_NONE && app.menu().page() == Menu::PAGE_SAVE);
 	app.render();
 	CHECK(app.menu().saveSlot() == 1 && !app.slotInfo(1).used && !app.slotInfo(0).used);
@@ -11194,7 +11208,8 @@ static void testSaves() {
 	app.setPlaySeconds(9000.0);
 	app.menu().open();
 	app.render();
-	for (int i = 0; i < 8; ++i) app.menu().update(down, app.settings());
+	// (issue #2: the pause menu opens where it was left - on "save"; "load" is the next)
+	app.menu().update(down, app.settings());
 	CHECK(app.menu().update(ok, app.settings()) == MENU_NONE && app.menu().page() == Menu::PAGE_LOAD);
 	app.render();
 	// (The cursor on the newest: the quick save, entry 0.)
@@ -14046,6 +14061,92 @@ func void INIT_WORLD() {
 	}
 }
 
+// Beds with Gothic 1's own scripts (G3_G1_SCRIPT, see testG1Beasts): SLEEPABIT_S1 -> AI_ProcessInfos(hero), the hero's
+// PC_Sleep infos, the clock moved, up again. A bed of the world with no function of its own (Gothic 1's are so) the same.
+static void testG1Bed() {
+	const char* file = getenv("G3_G1_SCRIPT");
+	if (!file) {
+		std::printf("  (no G3_G1_SCRIPT: skipped)\n");
+		return;
+	}
+	std::ifstream in(file);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	std::string source = ss.str() + R"(
+func void STARTUP_WORLD() { Kapitel = 1; };
+func void INIT_WORLD() { B_InitMonsterAttitudes(); B_InitGuildAttitudes(); };
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/g1bed.pak";
+	try {
+		bakeLifeWorlds(source, path, worlds);
+	} catch (const std::exception& e) {
+		std::printf("  bake failed: %s\n", e.what());
+		CHECK(false);
+		return;
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().immortal = 1;
+	app.applySettings();
+	const u32 hero = u32(g.hero() - &g.npc(0));
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	run(1.0f);
+	Mobs& mobs = npcs.mobs();
+	int beds[2] = {-1, -1};
+	for (u32 i = 0; i < mobs.count(); ++i)
+		if (mobs.isScheme(i, "BEDHIGH")) beds[mobs.info(i).focus ? 1 : 0] = int(i);
+	CHECK(beds[0] >= 0 && beds[1] >= 0);
+	for (int k = 0; k < 2; ++k) {
+		const int bed = beds[k];
+		if (bed < 0) continue;
+		const WorldMob& m = mobs.mob(u32(bed));
+		app.environment().timeOfDay = 13.0f;
+		app.camera().yaw = k ? -1.5708f : 1.5708f;
+		app.teleport({m.pos[0] + (k ? 150.0f : -150.0f), m.pos[1] + 220.0f, m.pos[2]});
+		run(1.5f);
+		std::printf("  G1 bed %d: target %d (want %d)\n", k, app.mobTarget(), bed);
+		CHECK(app.mobTarget() == bed);
+		// (issue #2: on the console one walks up with the stick and presses A with it still forward - it is held all the way
+		// in: he must stay in bed, the sleep menu must come. The bed without a function of its own - as Gothic 1's are -
+		// waits for SLEEPABIT_S1 a moment: there the stick used to get him up first.)
+		Input a;
+		a.confirm = true;
+		a.moveZ = 1.0f;
+		app.update(a, dt);
+		for (int i = 0; i < int(3.0f / dt); ++i) {
+			Input hold;
+			hold.moveZ = 1.0f;
+			if (npcs.talkView().active) break;
+			app.update(hold, dt);
+		}
+		run(0.5f);
+		const TalkView& v = npcs.talkView();
+		std::printf("  G1 bed %d: in use %d, talk %d self %d, %u ways:", k, int(app.mobInUse()), int(v.active), int(npcs.selfTalk()), v.count);
+		for (u32 i = 0; i < v.count; ++i) std::printf(" [%s]", v.items[i]);
+		std::printf("\n");
+		CHECK(app.mobInUse() && v.active && npcs.selfTalk() && v.count == 5);
+		bool chose = false;
+		for (u32 i = 0; i < v.count && !chose; ++i)
+			if (std::strstr(v.items[i], "morning")) chose = npcs.talkChoose(i);
+		CHECK(chose);
+		run(4.0f);
+		std::printf("  G1 bed %d: slept until %.2f h, in use %d, talk %d, invincible %d\n", k, double(app.environment().timeOfDay), int(app.mobInUse()),
+		            int(npcs.talkView().active), int(g.npcInt(g.npc(hero), g.vm().findMember("C_NPC", "AIVAR"), g.constant("AIV_INVINCIBLE", 0))));
+		CHECK(std::fabs(app.environment().timeOfDay - 8.0f) < 0.2f);
+		CHECK(!npcs.talkView().active && !app.mobInUse() && mobs.userOf(u32(bed)) < 0);
+	}
+}
+
 // The inhabitants' wits: a walker stops to be talked to, creatures notice the player at once and
 // from every side and answer a blow, and a person does not fall on somebody with no quarrel.
 static void testNpcAi() {
@@ -14747,6 +14848,8 @@ static void testRooms() {
 	CHECK(rooms.roomAt({5200, 0, 5200}) == 2); // (a flat leaf: found with room above it)
 	CHECK(rooms.roomAt({-100, 0, 250}) == 0);
 	CHECK(rooms.roomAt({250, 2000, 250}) == 0); // far above the roof: outside
+	// issue #2: on the hut's roof (3.2 m up; the hut's box ends at 3 m) - outside, not in the hut.
+	CHECK(rooms.roomAt({400, 320, 400}) == 0);
 	CHECK(std::strcmp(rooms.name(1), "HUT01") == 0 && std::strcmp(rooms.name(2), "OCC_HALL") == 0 && rooms.name(0)[0] == 0);
 	CHECK(rooms.hash(1) == hashName("hut01") && rooms.hash(0) == 0);
 	// Damaged: refused.
@@ -15544,7 +15647,7 @@ int main(int argc, char** argv) {
              {"start menu", testStartMenu},
              {"npcai", testNpcAi},
 	             {"beast turn", testBeastTurn},
-	             {"g1 beasts", testG1Beasts}, {"g1 calm", testG1Calm}, {"g1 hunter", testG1Hunter},
+	             {"g1 beasts", testG1Beasts}, {"g1 bed", testG1Bed}, {"g1 calm", testG1Calm}, {"g1 hunter", testG1Hunter},
     {"g1 beaten", testG1Beaten},
     {"g1 killnpc", testG1KillNpc},
     {"g1 diego", testG1Diego},

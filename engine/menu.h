@@ -15,6 +15,7 @@ struct MenuInput {
 	bool confirm = false; // A
 	bool back = false;    // B (and START closes it from anywhere)
 	bool close = false;   // START
+	bool rename = false;  // X: the save page's "save under a name of my own" (issue #2)
 };
 
 enum MenuAction : u8 {
@@ -38,6 +39,8 @@ enum MenuAction : u8 {
 	MENU_GIVE_TESTKIT,   // the test kit: spells, stat potions, a weapon, a bow, an armour
 	MENU_SAVE_SLOT,      // the save page: save into Menu::saveSlot() (1..SAVE_SLOTS)
 	MENU_LOAD_SLOT,      // the load page: load Menu::saveSlot() (0 the quick save, 1..SAVE_SLOTS)
+	MENU_RENAME_SLOT,    // the save page, X: ask for a name (the system's keyboard), then save into Menu::saveSlot()
+	MENU_TELEPORT,       // the debug page: to the place Menu::teleport() names (issue #2)
 };
 
 // What the save and load pages show (App fills it): the slots, and the picture of the one selected.
@@ -50,7 +53,7 @@ struct SaveMenuView {
 
 class Menu {
 public:
-	enum Page : u8 { PAGE_MAIN, PAGE_GRAPHICS, PAGE_GAME, PAGE_CONTROLS, PAGE_INTERFACE, PAGE_SOUND, PAGE_DEBUG, PAGE_DEBUG_NPC, PAGE_DEBUG_HERO, PAGE_DEBUG_WORLD, PAGE_GFX_PLUS, PAGE_EXPERIMENTAL, PAGE_SAVE, PAGE_LOAD, PAGE_OPTIONS, PAGES };
+	enum Page : u8 { PAGE_MAIN, PAGE_GRAPHICS, PAGE_GAME, PAGE_CONTROLS, PAGE_INTERFACE, PAGE_SOUND, PAGE_DEBUG, PAGE_DEBUG_NPC, PAGE_DEBUG_HERO, PAGE_DEBUG_WORLD, PAGE_GFX_PLUS, PAGE_EXPERIMENTAL, PAGE_SAVE, PAGE_LOAD, PAGE_OPTIONS, PAGE_TELEPORT, PAGES };
 
 	// `root`: the page it opens at, and the one B leaves it from (the pause menu: the main page; the start menu opens
 	// the load page and the options this way, and B goes back to it).
@@ -72,6 +75,10 @@ public:
 		return page == PAGE_SAVE ? entry + 1 : entry == 0 ? 0 : entry == 1 ? SAVE_AUTO : entry - 1;
 	}
 	static int entryOfSlot(Page page, int slot) { return page == PAGE_SAVE ? slot - 1 : slot == 0 ? 0 : slot == SAVE_AUTO ? 1 : slot + 1; }
+	// The debug page's places (issue #2): the one chosen (MENU_TELEPORT), its waypoint and its name.
+	int teleport() const { return _page == PAGE_TELEPORT ? _sel[_page] : -1; }
+	static const char* teleportWaypoint(int place);
+	static const char* teleportLabel(int place);
 	// The page B goes back to (the main one for most; the debug pages' parent is the debug page, Graphics+'s the graphics page).
 	static Page parentOf(Page page);
 
@@ -95,6 +102,7 @@ private:
 	Page _root = PAGE_MAIN;
 	int _sel[PAGES] = {};
 	bool _open = false;
+	bool _exitArmed = false; // "leave" was pressed once: a second A leaves
 };
 
 } // namespace g3

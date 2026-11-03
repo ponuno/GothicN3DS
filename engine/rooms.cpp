@@ -140,7 +140,11 @@ u16 Rooms::roomAt(Vec3 feet) const {
 		for (u32 k = _cellStart[c]; k < _cellStart[c + 1]; ++k) {
 			const RoomBox& b = _boxes[_cellItems[k]];
 			if (feet.x < b.bbMin[0] || feet.x > b.bbMax[0] || feet.z < b.bbMin[2] || feet.z > b.bbMax[2]) continue;
-			if (y < b.bbMin[1] - below || y > b.bbMax[1] + above) continue;
+			// issue #2: a box with a height of its own (fix163/167: a floor's cell, 60 cm below it to 2.5 m above) is taken
+			// as it is - the 2 m more above that a flat leaf box needs put the roof of a hut, and the New Camp's walkways
+			// over the huts, inside the room under them, and the owners shouted at the player up there.
+			const bool tall = b.bbMax[1] - b.bbMin[1] > 150.0f;
+			if (y < b.bbMin[1] - below || y > b.bbMax[1] + (tall ? 0.0f : above)) continue;
 			const float v = (b.bbMax[0] - b.bbMin[0]) * (b.bbMax[1] - b.bbMin[1] + 1.0f) * (b.bbMax[2] - b.bbMin[2]);
 			if (!best || v < bestVolume) {
 				best = b.room;

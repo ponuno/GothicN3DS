@@ -552,6 +552,31 @@ bool Npcs::fetchMove(NpcActor& a) {
 	const float closeup = 0.75f * float(_game.guildValue("FIGHT_RANGE_BASE", _game.guildOf(n), 60) +
 	                                    _game.guildValue("FIGHT_RANGE_BASE", _game.guildOf(_game.npc(tg)), 60));
 	if ((move == FM_WAIT || move == FM_WAITLONGER || move == FM_TURN) && dist < closeup && focus) move = FM_JUMPBACK;
+	// issue #2: a pack does not fall on the player all at once. The original's MOVE_RUN asks "is somebody standing in
+	// between?" (Fight.d): one of the pack already at the enemy, nearer and in the way, and this one goes round it
+	// (strafes) or waits its turn, rather than pushing in. Mostly one strikes, now and then two, never the whole pack.
+	const bool closing = move == FM_RUN || move == FM_ATTACK || move == FM_SIDEATTACK || move == FM_FRONTATTACK ||
+	                     move == FM_TRIPLEATTACK || move == FM_WHIRLATTACK || move == FM_MASTERATTACK;
+	if (closing && !rangedWeapon(n) && dist <= gRange) {
+		const float tx = _game.npc(tg).pos[0] - n.pos[0], tz = _game.npc(tg).pos[2] - n.pos[2];
+		const float toTarget = atan2f(tx, tz);
+		u32 nearer = 0;
+		bool inTheWay = false;
+		for (const NpcActor& o : _actors) {
+			if (!o.used || &o == &a || !o.ready) continue;
+			const GameNpc& on = _game.npc(o.npc);
+			if (on.down != DOWN_NONE || on.target != n.target || on.world != n.world || rangedWeapon(on) || !inFightState(o)) continue;
+			const float od = distanceTo(o, tg);
+			if (od >= dist - 20.0f || od > _game.meleeRange(o.npc, tg) * 1.3f) continue; // (only those already at it)
+			++nearer;
+			const float ax = on.pos[0] - n.pos[0], az = on.pos[2] - n.pos[2];
+			if (fabsf(wrap(atan2f(ax, az) - toTarget)) < 0.6f) inTheWay = true;
+		}
+		if (inTheWay || nearer >= 2 || (nearer == 1 && _game.dice(10) < 6)) {
+			move = _game.dice(3) ? FM_STRAFE : FM_WAITLONGER;
+			++_stats.packWaits;
+		}
+	}
 	u8* s = a.steps;
 	u8 count = 0;
 	const bool coin = _game.dice(2) != 0;
@@ -650,10 +675,12 @@ bool Npcs::doStep(NpcActor& a, const World& world, float dt) {
 		if (!playStep("T_%sJUMPB", "T_%sPARADEJUMPB")) playStep("T_JUMPB", nullptr);
 		return true;
 	case STEP_STRAFEL:
-		playStep("T_%sRUNSTRAFEL", nullptr);
-		return true;
 	case STEP_STRAFER:
-		playStep("T_%sRUNSTRAFER", nullptr);
+		// (A creature without the steps aside waits a moment instead of asking for the next move at once.)
+		if (!playStep(a.steps[a.stepAt] == STEP_STRAFEL ? "T_%sRUNSTRAFEL" : "T_%sRUNSTRAFER", nullptr)) {
+			if (a.phase == NpcActor::MOVING) stopWalking(a);
+			a.faiWait = 0.3f;
+		}
 		return true;
 	case STEP_WAIT:
 	case STEP_WAITLONG:
@@ -962,10 +989,12 @@ void Npcs::tickFight(NpcActor& a, float dt) {
 			const float hit = clipBlowTime(*c, a.blow.combo);
 			if (hit >= 0.0f && a.blow.landed <= a.blow.combo && t >= hit && (!sameClip || a.animPrev < hit || a.animPrev > t)) {
 				a.blow.landed = u8(a.blow.combo + 1);
-				// It lands on the target if that is within reach and in front.
+				// It lands on the target if that is within reach and in front - OpenGothic's Npc::commitDamage:
+				// FightAlgo::isInAttackRange (the reach, no more) and isInFocusAngle (30 degrees).
+				// (issue #2: with 30 cm more and 46 degrees a scavenger's blow found the player who had stepped aside.)
 				if (targetValid(a)) {
 					const u32 tg = u32(n.target);
-					if (distanceTo(a, tg) <= _game.meleeRange(a.npc, tg) + 30.0f && inFocus(a, tg, 0.8f)) {
+					if (distanceTo(a, tg) <= _game.meleeRange(a.npc, tg) && inFocus(a, tg, 0.5236f)) {
 						const GameNpc& v = _game.npc(tg);
 						const float back = fabsf(wrap(atan2f(n.pos[0] - v.pos[0], n.pos[2] - v.pos[2]) - v.yaw));
 						strike(a.npc, tg, back > kPi * 0.5f);

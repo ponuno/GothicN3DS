@@ -6252,13 +6252,13 @@ func void Rtn_start_502() {
 		const auto said = [&](const char* text) { return r.report.find(text) != std::string::npos; };
 		if (getenv("G3_TRACE")) std::puts(r.report.c_str());
 		// Of the animations the scripts name each skeleton got the ones it has.
-		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 16 families more; fighting 346 "
+		CHECK(said("animations: the scripts name or imply 9, and using the things they name takes 18 families more; fighting 346 "
 		           "more; baked per skeleton: humans 87, scavenger 13, molerat 13"));
 		// ... and those of the things in the hands (drinking a potion; picking up: 3 + 3 of the 67).
 		CHECK(said("things in the hands: the scripts' items are used in 6 ways (BROOM, FOOD, MAP, MEAT, POTION, POTIONFAST)"));
 		// The things of the camp, and which of them the scripts know.
-		CHECK(said("things to use: 9 of 7 kinds, with 11 places to stand at (0 have none: nobody can use those): CHESTSMALL x2, BEDHIGH x2"));
-		CHECK(said("things to use: the worlds have 7 kinds; the scripts name 4 of them: BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: BSFIRE, CHESTBIG, CHESTSMALL"));
+		CHECK(said("things to use: 11 of 8 kinds, with 12 places to stand at (1 have none: nobody can use those): CHESTSMALL x3, BEDHIGH x2"));
+		CHECK(said("things to use: the worlds have 8 kinds; the scripts name 5 of them: BED x1, BEDHIGH x2, BEDLOW x1, BENCH x1, BSANVIL x1; not named: BSFIRE, CHESTBIG, CHESTSMALL"));
 		CHECK(said("way net: 13 points, 15 connections") && said("10 free points") && said(" 12 states, "));
 		// What the states need of the engine is on record.
 		CHECK(said("life: the scripts have 12 states; the people of these worlds are put into 7: ZS_MM_ALLSCHEDULER x6, ZS_GUARD x3"));
@@ -6304,7 +6304,7 @@ func void Rtn_start_502() {
 		const WayNet& net = npcs.wayNet();
 		CHECK(net.loaded() && net.nodeCount() == 13 && net.freeCount() == 10);
 		const Mobs& mobs = npcs.mobs();
-		CHECK(mobs.loaded() && mobs.count() == 9);
+		CHECK(mobs.loaded() && mobs.count() == 11); // (issue #2: a bed without places, a guild's chest)
 		// What a character is at: the thing's kind if it is in it, "" if not.
 		const auto inThing = [&](u32 npc) -> std::string {
 			const NpcActor* a = npcs.actorOf(npc);
@@ -6552,7 +6552,7 @@ func void Rtn_start_502() {
 				CHECK(inThing(smith) == "BEDHIGH" && npcs.actorOf(smith)->mob != a->mob && npcs.stats().mobsInUse == 2);
 				u32 free = 0;
 				for (u32 m = 0; m < mobs.count(); ++m) free += mobs.userOf(m) < 0;
-				CHECK(free == 7 && npcs.stats().mobsUsed == 4);
+				CHECK(free == 9 && npcs.stats().mobsUsed == 4);
 			}
 			CHECK((poor || night.farthestOff < 190.0f) && night.travelled > 1000.0f); // (the seat is 1.7 m off the path)
 			u32 asleep = 0;
@@ -12021,8 +12021,8 @@ static void testMobUse() {
 		else if (mobs.isScheme(i, "BEDHIGH")) (mobs.info(i).focus ? namedBed : hiddenBed) = int(i);
 	}
 	CHECK(bench >= 0 && anvil >= 0 && sharp >= 0 && hiddenBed >= 0 && namedBed >= 0);
-	CHECK(named == 6);     // the bench, both beds (a bed is to sleep in, named or not), the anvil, the forge, the other
-	CHECK(hidden == 3);    // the three chests: no prompt
+	CHECK(named == 7);     // the bench, the three beds (issue #2: one without places too) (a bed is to sleep in, named or not), the anvil, the forge, the other
+	CHECK(hidden == 4);    // the four chests: no prompt
 	if (bench < 0 || anvil < 0 || sharp < 0 || hiddenBed < 0 || namedBed < 0) return;
 	const auto stand = [&](int mob, float dx, float dz, float yaw) {
 		const WorldMob& m = mobs.mob(u32(mob));
@@ -12483,12 +12483,13 @@ static void testChests() {
 
 	// 1. The table: three containers, one open, one locked with a key, one with a combination.
 	Chests& chests = app.chests();
-	CHECK(chests.count() == 3);
-	if (chests.count() != 3) return;
+	CHECK(chests.count() == 4); // (and the shadows' one by the square: test "g1 chest")
+	if (chests.count() != 4) return;
 	u32 bigC = 0, keyC = 0, pickC = 0;
-	for (u32 i = 0; i < 3; ++i) {
-		if (!chests.locked(i)) bigC = i;
-		else if (chests.key(i) != SCRIPT_NONE) keyC = i;
+	for (u32 i = 0; i < 4; ++i) {
+		if (!chests.locked(i)) {
+			if (chests.stackCount(i) == 4) bigC = i;
+		} else if (chests.key(i) != SCRIPT_NONE) keyC = i;
 		else pickC = i;
 	}
 	CHECK(!chests.locked(bigC) && chests.stackCount(bigC) == 4);
@@ -14102,17 +14103,21 @@ func void INIT_WORLD() { B_InitMonsterAttitudes(); B_InitGuildAttitudes(); };
 	};
 	run(1.0f);
 	Mobs& mobs = npcs.mobs();
-	int beds[2] = {-1, -1};
-	for (u32 i = 0; i < mobs.count(); ++i)
+	int beds[3] = {-1, -1, -1};
+	for (u32 i = 0; i < mobs.count(); ++i) {
 		if (mobs.isScheme(i, "BEDHIGH")) beds[mobs.info(i).focus ? 1 : 0] = int(i);
-	CHECK(beds[0] >= 0 && beds[1] >= 0);
-	for (int k = 0; k < 2; ++k) {
+		if (mobs.isScheme(i, "BED")) beds[2] = int(i); // (issue #2: no places of its own)
+	}
+	CHECK(beds[0] >= 0 && beds[1] >= 0 && beds[2] >= 0);
+	for (int k = 0; k < 3; ++k) {
 		const int bed = beds[k];
 		if (bed < 0) continue;
 		const WorldMob& m = mobs.mob(u32(bed));
 		app.environment().timeOfDay = 13.0f;
-		app.camera().yaw = k ? -1.5708f : 1.5708f;
-		app.teleport({m.pos[0] + (k ? 150.0f : -150.0f), m.pos[1] + 220.0f, m.pos[2]});
+		// (The third: walked up to from the south, standing at its side a metre from its middle.)
+		app.camera().yaw = k == 2 ? 0.0f : k ? -1.5708f : 1.5708f;
+		if (k == 2) app.teleport({m.pos[0], m.pos[1] + 220.0f, m.pos[2] - 110.0f});
+		else app.teleport({m.pos[0] + (k ? 150.0f : -150.0f), m.pos[1] + 220.0f, m.pos[2]});
 		run(1.5f);
 		std::printf("  G1 bed %d: target %d (want %d)\n", k, app.mobTarget(), bed);
 		CHECK(app.mobTarget() == bed);
@@ -14145,6 +14150,97 @@ func void INIT_WORLD() { B_InitMonsterAttitudes(); B_InitGuildAttitudes(); };
 		CHECK(std::fabs(app.environment().timeOfDay - 8.0f) < 0.2f);
 		CHECK(!npcs.talkView().active && !app.mobInUse() && mobs.userOf(u32(bed)) < 0);
 	}
+}
+
+// A chest of the shadows' guild, with Gothic 1's own scripts (G3_G1_SCRIPT): Fisk (GIL_STT) by it sees the player open it -
+// PERC_ASSESSUSEMOB, B_AssessUseMob - and goes for him (ZS_ATTACK).
+static void testG1Chest() {
+	const char* file = getenv("G3_G1_SCRIPT");
+	if (!file) {
+		std::printf("  (no G3_G1_SCRIPT: skipped)\n");
+		return;
+	}
+	std::ifstream in(file);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	std::string source = ss.str() + R"(
+func void STARTUP_WORLD() { Kapitel = 1; Wld_InsertNpc(STT_311_Fisk, "CAMP_SQUARE"); };
+func void INIT_WORLD() { B_InitMonsterAttitudes(); B_InitGuildAttitudes(); };
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/g1chest.pak";
+	try {
+		bakeLifeWorlds(source, path, worlds);
+	} catch (const std::exception& e) {
+		std::printf("  bake failed: %s\n", e.what());
+		CHECK(false);
+		return;
+	}
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 1;
+	app.settings().perception = 1;
+	app.settings().immortal = 1;
+	app.applySettings();
+	app.environment().timeOfDay = 12.0f;
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	run(2.0f);
+	int fisk = -1;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).placed && std::strstr(g.nameOf(g.npc(i)), "Fisk")) fisk = int(i);
+	CHECK(fisk >= 0);
+	Chests& chests = app.chests();
+	int owned = -1;
+	for (u32 i = 0; i < chests.count(); ++i)
+		if (npcs.mobs().info(chests.mob(i)).ownerGuild) owned = int(i);
+	CHECK(owned >= 0);
+	if (fisk < 0 || owned < 0) return;
+	const WorldMob& m = npcs.mobs().mob(chests.mob(u32(owned)));
+	// Fisk a few metres off, facing the chest; the player before it.
+	{
+		GameNpc& f = g.npcMut(u32(fisk));
+		f.pos[0] = m.pos[0] + 300.0f;
+		f.pos[2] = m.pos[2] + 300.0f;
+		f.yaw = std::atan2(m.pos[0] - f.pos[0], m.pos[2] - f.pos[2]);
+	}
+	app.camera().yaw = 3.14159265f;
+	app.teleport({m.pos[0], m.pos[1] + 220.0f, m.pos[2] + 90.0f});
+	// (Fisk has something important to say first: his talk is let through to its end - its ways chosen, the last "end".)
+	for (int i = 0; i < int(30.0f / dt); ++i) {
+		if (npcs.talkView().active && !npcs.talkView().saying && npcs.talkView().count > 0) npcs.talkChoose(npcs.talkView().count - 1);
+		app.update(Input {}, dt);
+		if (i > int(4.0f / dt) && !npcs.talkView().active) break;
+	}
+	app.camera().yaw = 3.14159265f;
+	app.teleport({m.pos[0], m.pos[1] + 220.0f, m.pos[2] + 90.0f});
+	run(1.0f);
+	const NpcActor* a = npcs.actorOf(u32(fisk));
+	std::printf("  G1 chest: Fisk %s, state %s, chest target %d (want %d), thing %d, talk %d, player %.0f %.0f %.0f, chest %.0f %.0f %.0f\n",
+	            a ? "about" : "not about", a ? npcs.stateName(a->state) : "-", app.chestTarget(), owned, app.mobTarget(),
+	            int(npcs.talkView().active), double(app.player().feet.x), double(app.player().feet.y), double(app.player().feet.z),
+	            double(m.pos[0]), double(m.pos[1]), double(m.pos[2]));
+	CHECK(a && app.chestTarget() == owned);
+	Input press;
+	press.confirm = true;
+	app.update(press, dt);
+	bool attacked = false;
+	for (int i = 0; i < int(6.0f / dt) && !attacked; ++i) {
+		app.update(Input {}, dt);
+		a = npcs.actorOf(u32(fisk));
+		attacked = a && std::strstr(npcs.stateName(a->state), "ATTACK");
+	}
+	std::printf("  G1 chest: chest stage %d, Fisk %s, attitude to the player %d\n", int(app.chestStage()), a ? npcs.stateName(a->state) : "-",
+	            int(g.attitude(u32(fisk), g.heroIndex())));
+	CHECK(attacked);
 }
 
 // The inhabitants' wits: a walker stops to be talked to, creatures notice the player at once and
@@ -15647,7 +15743,7 @@ int main(int argc, char** argv) {
              {"start menu", testStartMenu},
              {"npcai", testNpcAi},
 	             {"beast turn", testBeastTurn},
-	             {"g1 beasts", testG1Beasts}, {"g1 bed", testG1Bed}, {"g1 calm", testG1Calm}, {"g1 hunter", testG1Hunter},
+	             {"g1 beasts", testG1Beasts}, {"g1 bed", testG1Bed}, {"g1 chest", testG1Chest}, {"g1 calm", testG1Calm}, {"g1 hunter", testG1Hunter},
     {"g1 beaten", testG1Beaten},
     {"g1 killnpc", testG1KillNpc},
     {"g1 diego", testG1Diego},

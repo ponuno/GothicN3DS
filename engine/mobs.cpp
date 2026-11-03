@@ -102,9 +102,11 @@ bool Mobs::forPlayer(u32 i) const {
 	if (!_infos || i >= _h.mobCount) return false;
 	const WorldMob& w = _mobs[i];
 	const WorldMobInfo& m = _infos[i];
-	// A bed is to sleep in whether the world's maker named it or not (OpenGothic offers every bed; Gothic's
-	// own beds go without a focus name often enough) - one with a place to lie down at.
-	if (isBed(i)) return w.slotCount > 0 || m.focus != 0;
+	// A bed is to sleep in whether the world's maker named it or not, and whether its model has places to lie down at
+	// or not (OpenGothic offers every bed; Gothic's own go without a focus name often enough). (issue #2: a bed with no
+	// ZS_POS of its own - the inhabitants lie down at its middle - was no bed for the player, and showed no prompt.)
+	(void)w;
+	if (isBed(i)) return true;
 	return m.focus != 0 && m.kind != MOBKIND_CONTAINER && m.kind != MOBKIND_DOOR && m.kind != MOBKIND_OTHER;
 }
 

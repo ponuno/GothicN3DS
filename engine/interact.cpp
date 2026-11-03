@@ -82,6 +82,9 @@ int App::mobNearest(float* distance) const {
 		const float* at = nullptr;
 		if (inFront(dx, dz)) {
 			d2 = dx * dx + dz * dz;
+			// (A bed without places of its own is reached at its middle, a metre and more from its edge: half a metre
+			// is given back.)
+			if (m.slotCount == 0 && mobs.isBed(i)) d2 = max(sqrtf(d2) - 50.0f, 0.0f) * max(sqrtf(d2) - 50.0f, 0.0f);
 			at = m.pos;
 		}
 		for (u32 k = 0; k < m.slotCount; ++k) {
@@ -103,6 +106,43 @@ int App::mobNearest(float* distance) const {
 	}
 	if (distance && best >= 0) *distance = sqrtf(bestD);
 	return best;
+}
+
+// issue #2: what is the matter with the nearest bed (the report's line): how far, how high, its places, who holds it,
+// whether it is offered and what stands in the way. False with no bed within 4 m.
+bool App::debugBed(char* out, size_t size) const {
+	const Mobs& mobs = _npcs.mobs();
+	if (!mobs.hasInfo() || !size) return false;
+	int best = -1;
+	float bestD = 400.0f * 400.0f;
+	for (u32 i = 0; i < mobs.count(); ++i) {
+		if (!mobs.isBed(i)) continue;
+		const WorldMob& m = mobs.mob(i);
+		const float dx = m.pos[0] - _player.feet.x, dz = m.pos[2] - _player.feet.z, d2 = dx * dx + dz * dz;
+		if (d2 < bestD) {
+			bestD = d2;
+			best = int(i);
+		}
+	}
+	if (best < 0) return false;
+	const WorldMob& m = mobs.mob(u32(best));
+	float slotD = -1.0f, slotY = 0.0f;
+	for (u32 k = 0; k < m.slotCount; ++k) {
+		const MobSlot& sl = mobs.slot(u32(best), k);
+		const float sx = sl.pos[0] - _player.feet.x, sz = sl.pos[2] - _player.feet.z, sd = sqrtf(sx * sx + sz * sz);
+		if (slotD < 0.0f || sd < slotD) {
+			slotD = sd;
+			slotY = sl.pos[1] - _player.feet.y;
+		}
+	}
+	// What keeps the prompt away (the first that holds): the hands, the body, another target.
+	const char* why = _hero.weapon() != WEAPON_NONE ? "weapon" : _hero.drawing() ? "drawing" : !_player.grounded ? "air" : _player.swimming ? "swim"
+	                  : _chestTarget >= 0 ? "chest" : _corpseTarget >= 0 ? "body" : _lootTarget >= 0 ? "loot" : _job.stage != JOB_NONE ? "job"
+	                  : _panel.open() ? "panel" : _mobJob.stage != MJ_NONE ? "in use" : "";
+	snprintf(out, size, "bed %d %.12s k%u d%.0f y%.0f s%u/%.0f/%.0f u%d p%d t%d %s", best, mobs.scheme(u32(best)), unsigned(mobs.info(u32(best)).kind),
+	         double(sqrtf(bestD)), double(m.pos[1] - _player.feet.y), unsigned(m.slotCount), double(slotD), double(slotY), mobs.userOf(u32(best)),
+	         int(mobs.forPlayer(u32(best))), _mobTarget, why);
+	return true;
 }
 
 // A: the condition (the scripts say whether it may be used), the item it wants, then the way to it.

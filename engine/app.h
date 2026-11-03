@@ -452,6 +452,7 @@ public:
 	// The name a thing of the world shows (its prompt).
 	void mobName(u32 mob, char* out, size_t size) const;
 	bool mobInUse() const { return _mobJob.stage != MJ_NONE; }
+	bool debugBed(char* out, size_t size) const; // issue #2: the report's line of the nearest bed (none within 4 m: false)
 	// The dead the character could search now (A; a character's index, -1 for none), and the
 	// one being searched (-1 for none: the open container is a chest).
 	int corpseTarget() const { return _corpseTarget; }

@@ -8539,7 +8539,7 @@ static void testGfxPlus() {
 		ok.confirm = true;
 		right.right = true;
 		back.back = true;
-		m.update(down, s);
+		for (int i = 0; i < 3; ++i) m.update(down, s); // (issue #2: graphics is the fourth line, after save and load)
 		m.update(ok, s);
 		CHECK(m.page() == Menu::PAGE_GRAPHICS);
 		for (int i = 0; i < m.itemCount(Menu::PAGE_GRAPHICS) && std::strcmp(m.label(Menu::PAGE_GRAPHICS, m.selected()), "Графика+") != 0; ++i)
@@ -10856,8 +10856,12 @@ static void testSettings() {
 		ok.confirm = true;
 		back.back = true;
 		start.close = true;
+		// (issue #2: continue, save, load, then the settings)
+		CHECK(std::strcmp(m.label(Menu::PAGE_MAIN, 1), "Сохранить игру") == 0 && std::strcmp(m.label(Menu::PAGE_MAIN, 2), "Загрузить игру") == 0);
 		m.update(down, s);
-		CHECK(m.selected() == 1 && std::strcmp(m.label(Menu::PAGE_MAIN, 1), "Графика") == 0);
+		m.update(down, s);
+		m.update(down, s);
+		CHECK(m.selected() == 3 && std::strcmp(m.label(Menu::PAGE_MAIN, 3), "Графика") == 0);
 		CHECK(m.update(ok, s) == MENU_NONE && m.page() == Menu::PAGE_GRAPHICS);
 		CHECK(m.update(right, s) == MENU_CHANGED && s.drawMetres == 130);
 		CHECK(m.update(left, s) == MENU_CHANGED && m.update(left, s) == MENU_CHANGED && s.drawMetres == 110);
@@ -10866,11 +10870,21 @@ static void testSettings() {
 		CHECK(std::strcmp(value, "110 м") == 0);
 		m.update(down, s);
 		CHECK(m.update(right, s) == MENU_CHANGED && s.objects == OBJECTS_BALANCED);
-		CHECK(m.update(back, s) == MENU_NONE && m.page() == Menu::PAGE_MAIN && m.selected() == 1);
-		m.update(up, s);
-		m.update(up, s); // (round to the last)
-		CHECK(m.selected() == m.itemCount(Menu::PAGE_MAIN) - 1 && m.update(ok, s) == MENU_EXIT);
+		CHECK(m.update(back, s) == MENU_NONE && m.page() == Menu::PAGE_MAIN && m.selected() == 3);
+		for (int i = 0; i < 4; ++i) m.update(up, s); // (round to the last)
+		// issue #2: leaving asks first - B takes it back, a second A leaves.
+		CHECK(m.selected() == m.itemCount(Menu::PAGE_MAIN) - 1 && m.update(ok, s) == MENU_NONE && m.isOpen());
+		CHECK(m.update(back, s) == MENU_NONE && m.isOpen() && m.page() == Menu::PAGE_MAIN);
+		CHECK(m.update(ok, s) == MENU_NONE && m.update(MenuInput(), s) == MENU_NONE && m.update(ok, s) == MENU_EXIT);
 		CHECK(m.update(start, s) == MENU_CLOSED && !m.isOpen());
+		// Opened again: where it was left (but never at "leave").
+		m.open();
+		CHECK(m.selected() == 0);
+		m.update(down, s);
+		CHECK(m.update(start, s) == MENU_CLOSED);
+		m.open();
+		CHECK(m.selected() == 1);
+		m.close();
 		// The debug page leads to three pages of its own; B goes back one step at a time, and the kit is on one of them.
 		{
 			Menu d;
@@ -10879,7 +10893,7 @@ static void testSettings() {
 			ok2.confirm = true;
 			back2.back = true;
 			dn.down = true;
-			for (int i = 0; i < 6; ++i) d.update(dn, s);
+			for (int i = 0; i < 8; ++i) d.update(dn, s);
 			CHECK(d.update(ok2, s) == MENU_NONE && d.page() == Menu::PAGE_DEBUG);
 			d.update(dn, s);
 			CHECK(d.update(ok2, s) == MENU_NONE && d.page() == Menu::PAGE_DEBUG_HERO);
@@ -11156,12 +11170,12 @@ static void testSaves() {
 		for (int i = 0; i < THUMB_W * THUMB_H; ++i) lit += pic[i] != 0;
 		CHECK(lit > THUMB_W * THUMB_H / 2);
 	}
-	// The main page leads to the save page (item 7); it lists ten empty slots, the cursor on the first.
+	// The main page leads to the save page (item 1, issue #2); it lists ten empty slots, the cursor on the first.
 	MenuInput down, ok, back;
 	down.down = true;
 	ok.confirm = true;
 	back.back = true;
-	for (int i = 0; i < 7; ++i) app.menu().update(down, app.settings());
+	app.menu().update(down, app.settings());
 	CHECK(app.menu().update(ok, app.settings()) == MENU_NONE && app.menu().page() == Menu::PAGE_SAVE);
 	app.render();
 	CHECK(app.menu().saveSlot() == 1 && !app.slotInfo(1).used && !app.slotInfo(0).used);
@@ -11194,7 +11208,8 @@ static void testSaves() {
 	app.setPlaySeconds(9000.0);
 	app.menu().open();
 	app.render();
-	for (int i = 0; i < 8; ++i) app.menu().update(down, app.settings());
+	// (issue #2: the pause menu opens where it was left - on "save"; "load" is the next)
+	app.menu().update(down, app.settings());
 	CHECK(app.menu().update(ok, app.settings()) == MENU_NONE && app.menu().page() == Menu::PAGE_LOAD);
 	app.render();
 	// (The cursor on the newest: the quick save, entry 0.)
@@ -14747,6 +14762,8 @@ static void testRooms() {
 	CHECK(rooms.roomAt({5200, 0, 5200}) == 2); // (a flat leaf: found with room above it)
 	CHECK(rooms.roomAt({-100, 0, 250}) == 0);
 	CHECK(rooms.roomAt({250, 2000, 250}) == 0); // far above the roof: outside
+	// issue #2: on the hut's roof (3.2 m up; the hut's box ends at 3 m) - outside, not in the hut.
+	CHECK(rooms.roomAt({400, 320, 400}) == 0);
 	CHECK(std::strcmp(rooms.name(1), "HUT01") == 0 && std::strcmp(rooms.name(2), "OCC_HALL") == 0 && rooms.name(0)[0] == 0);
 	CHECK(rooms.hash(1) == hashName("hut01") && rooms.hash(0) == 0);
 	// Damaged: refused.

@@ -61,22 +61,34 @@ int App::mobNearest() const {
 		while (a < -3.14159265f) a += 6.2831853f;
 		return fabsf(a) <= 1.2f;
 	};
+	// issue #2: only what he sees - a wall between (Diego's bench on the other side of his hut's wall) is not in reach.
+	const Vec3 eye = {_player.feet.x, _player.feet.y + 110.0f, _player.feet.z};
+	const auto seen = [&](const float p[3]) { return !_world.sightBlocked(eye, {p[0], max(p[1] + 60.0f, _player.feet.y + 40.0f), p[2]}); };
 	for (u32 i = 0; i < mobs.count(); ++i) {
 		if (!mobs.forPlayer(i) || mobs.userOf(i) >= 0) continue;
 		const WorldMob& m = mobs.mob(i);
 		if (fabsf(m.pos[1] - _player.feet.y) > 140.0f) continue;
 		const float dx = m.pos[0] - _player.feet.x, dz = m.pos[2] - _player.feet.z;
 		float d2 = 1e30f;
-		if (inFront(dx, dz)) d2 = dx * dx + dz * dz;
+		const float* at = nullptr;
+		if (inFront(dx, dz)) {
+			d2 = dx * dx + dz * dz;
+			at = m.pos;
+		}
 		for (u32 k = 0; k < m.slotCount; ++k) {
 			const MobSlot& sl = mobs.slot(i, k);
 			if (fabsf(sl.pos[1] - _player.feet.y) > 140.0f) continue;
 			const float sx = sl.pos[0] - _player.feet.x, sz = sl.pos[2] - _player.feet.z;
 			const float s2 = sx * sx + sz * sz;
 			// (At the place: whichever way he faces, as long as the thing is not behind him.)
-			if (s2 < d2 && (s2 <= 60.0f * 60.0f ? inFront(dx, dz) || dx * dx + dz * dz < 120.0f * 120.0f : inFront(sx, sz))) d2 = s2;
+			if (s2 < d2 && (s2 <= 60.0f * 60.0f ? inFront(dx, dz) || dx * dx + dz * dz < 120.0f * 120.0f : inFront(sx, sz))) {
+				d2 = s2;
+				at = sl.pos;
+			}
 		}
-		if (d2 >= bestD) continue;
+		if (d2 >= bestD || !at) continue;
+		// (The place he would stand at, or the thing itself: either seen will do.)
+		if (!seen(at) && !(at != m.pos && seen(m.pos))) continue;
 		bestD = d2;
 		best = int(i);
 	}
@@ -366,6 +378,41 @@ void App::mobUpdate(Input& in, float dt) {
 					break;
 				}
 			}
+		}
+		if (_mobJob.stage == MJ_HELD && _hero.mobCanStep() && !_mobJob.bed && mobs.info(_mobJob.mob).useItem) {
+			// issue #2: a thing that works on an item (the pan, the anvil ...; a bench is left as before), as OpenGothic's Interactive (the keys forward and back step the states):
+			// back takes him one state down, forward up again - and the step up does the work once more (the next piece
+			// of meat fried). Back once more from down there, or A, B: he leaves it. The thing's work is no slower
+			// than its animations: as quick as the player pushes the stick.
+			const bool fwd = in.moveZ > 0.6f, back = in.moveZ < -0.6f;
+			const bool push = (fwd || back) && !_mobJob.stickWas;
+			_mobJob.stickWas = fwd || back || fabsf(in.moveX) > 0.6f;
+			if (push && !_hero.mobStepping()) {
+				if (back && !_hero.mobLowered()) {
+					_hero.mobStep(false);
+				} else if (fwd && _hero.mobLowered()) {
+					// (What the last round made stays in his things; the next of what the thing wants goes in the hand.)
+					const WorldMobInfo& wi = mobs.info(_mobJob.mob);
+					const int hi2 = heroIndex();
+					Game& g = _npcs.game();
+					const u32 want = wi.useItem ? g.vm().find(mobs.infoText(wi.useItem)) : SCRIPT_NONE;
+					if (want != SCRIPT_NONE && hi2 >= 0 && _mobJob.hand != want) _mobJob.hand = g.itemCount(u32(hi2), want) > 0 ? want : SCRIPT_NONE;
+					if (want != SCRIPT_NONE && _mobJob.hand == SCRIPT_NONE) {
+						char name[48], buf[96];
+						const GameItemInfo* ii = g.itemInfo(want);
+						scriptText(ii ? g.text(ii->description ? ii->description : ii->name) : "", name, sizeof(name));
+						snprintf(buf, sizeof(buf), tr("Нужен предмет: %s"), name);
+						itemMessage(buf);
+					} else {
+						_hero.mobStep(true);
+						_invStamp = 0;
+					}
+				} else if (back && _hero.mobLowered()) {
+					mobEnd(false);
+					break;
+				}
+			}
+			in.moveX = in.moveZ = 0; // (the stick is the thing's while it can step)
 		}
 		if (_mobJob.stage == MJ_HELD) {
 			// A thing that does its work lets go of him at once; a place to be at, when he asks.

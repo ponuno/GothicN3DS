@@ -143,6 +143,25 @@ void App::teleport(Vec3 eye) {
 	_fallAir = false; // (put down somewhere: no fall)
 }
 
+// issue #2: the debug menu's places - a waypoint of the world (Menu::teleportWaypoint), the hero put down on it facing
+// where the waypoint faces. Not in this world (a mine, another game): the menu says so and nothing happens.
+void App::debugTeleport(int place) {
+	const char* wp = Menu::teleportWaypoint(place);
+	const int node = _npcs.loaded() && *wp ? _npcs.wayNet().findNode(wp) : -1;
+	if (node < 0) {
+		snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Этого места в этом мире нет"));
+		return;
+	}
+	if (_mobJob.stage != MJ_NONE) mobEnd(true);
+	const WayNode& w = _npcs.wayNet().node(u32(node));
+	_cam.yaw = w.yaw;
+	teleport({w.pos[0], w.pos[1] + _player.config.eyeHeight, w.pos[2]});
+	_hero.setYaw(w.yaw);
+	_world.preload(_cam.pos);
+	_menu.close();
+	toast(Menu::teleportLabel(place));
+}
+
 bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	const u32 previous = _world.entryHash();
 	const PakEntry* e = _pak.find(worldEntryHash);
@@ -2234,7 +2253,9 @@ bool App::menuAction(MenuAction action, const char* statePath) {
 			snprintf(_menuMessage, sizeof(_menuMessage), "%s", tr("Сохранённой позиции нет"));
 		}
 		return true;
-	case MENU_SAVE_SLOT: saveSlot(_menu.saveSlot(), nullptr); return true;
+	case MENU_SAVE_SLOT:
+	case MENU_RENAME_SLOT: saveSlot(_menu.saveSlot(), nullptr); return true; // (the platform asks the name for the second)
+	case MENU_TELEPORT: debugTeleport(_menu.teleport()); return true;
 	case MENU_LOAD_SLOT: loadSlot(_menu.saveSlot()); return true;
 	case MENU_EXIT: return false;
 	case MENU_NEXT_WORLD: {

@@ -625,9 +625,15 @@ public:
 	// the guild's FALLDOWN_DAMAGE per metre beyond its FALLDOWN_HEIGHT, less the PROT_FALL protection.
 	// 0 for none (a guild that is never hurt by falling has the height 9999, or a protection below 0).
 	i32 fallDamage(u32 npc, float drop);
-	// Whether the scripts are Gothic 2's (or a mod's on them): they have the regeneration attributes Gothic 1 lacks.
-	// OpenGothic asks its version for the few rules that differ (who may pick a lock, what a wrong turn costs).
-	bool isGothic2() const { return _vm.find("ATR_REGENERATEHP") != SCRIPT_NONE; }
+	// Whether the scripts are Gothic 2's (or a mod's on them). OpenGothic asks its version for the few rules that differ
+	// (who may pick a lock, what a wrong turn costs).
+	// (issue #2: ATR_REGENERATEHP was the test, but Gothic 1's Constants.d has it too - every Gothic 1 game was taken for
+	// Gothic 2, and the lock wanted the talent learnt. These are Gothic 2's alone: its experience function, the smith's
+	// talent, the trophies' talent.)
+	bool isGothic2() const {
+		return _vm.find("B_GIVEPLAYERXP") != SCRIPT_NONE || _vm.find("NPC_TALENT_SMITH") != SCRIPT_NONE ||
+		       _vm.find("PLAYER_TALENT_TAKEANIMALTROPHY") != SCRIPT_NONE;
+	}
 	// The skill (learnt level) and the value (per cent) of a talent of a character, 0 for none.
 	// fix197: the scripts' lock pick: Gothic 1's ITKELOCKPICK or Gothic 2's ITKE_LOCKPICK (SCRIPT_NONE: none).
 	u32 lockpickItem() const {

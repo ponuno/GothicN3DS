@@ -151,8 +151,19 @@ bool App::saveSlot(int slot, const char* title) {
 		*slash = '/';
 	}
 	char name[48];
-	if (title && *title) copySaveTitle(name, sizeof(name), title);
-	else defaultSaveTitle(name, sizeof(name), worldShortName(worldName()), _npcs.loaded() ? _npcs.game().day() : 0);
+	if (title && *title) {
+		copySaveTitle(name, sizeof(name), title);
+	} else {
+		defaultSaveTitle(name, sizeof(name), worldShortName(worldName()), _npcs.loaded() ? _npcs.game().day() : 0);
+		// (issue #2: saved without the keyboard. A name the player once gave the slot stays its name; one made up
+		// for it - "<world>, day N" - is made up anew, for the day of now.)
+		const SaveInfo& old = slotInfo(slot);
+		if (old.used && old.readable && old.title[0]) {
+			char made[48];
+			defaultSaveTitle(made, sizeof(made), old.world, old.day);
+			if (strcmp(made, old.title) != 0) copySaveTitle(name, sizeof(name), old.title);
+		}
+	}
 	gfx::Texture* pic = _slotPicFor == -2 && _slotPic ? _slotPic : nullptr;
 	gfx::Texture* own = pic || !_savePicOk ? nullptr : thumbTexture(_savePic);
 	progressBegin(tr("Сохранение…"), name, pic ? pic : own);

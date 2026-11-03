@@ -204,6 +204,12 @@ public:
 	// There is a pose that is kept while it is in use (a looping "S_<SCHEME>_S1").
 	bool mobHolds() const { return _use.hold != nullptr && _use.hold->loops(); }
 	bool atMob() const { return _use.phase == USE_MOB_IN || _use.phase == USE_MOB_HOLD || _use.phase == USE_MOB_OUT; }
+	// issue #2: at a thing of more than one state (the pan: S0, S1) a step back down and up again, as OpenGothic's
+	// Interactive::implTick takes the keys forward and back - the step up plays the clip that fries the next piece.
+	bool mobCanStep() const { return _use.phase == USE_MOB_HOLD && !_use.release && _use.stepDown && _use.stepUp; }
+	bool mobLowered() const { return _use.lowered; }
+	bool mobStepping() const { return _use.stepClip != nullptr; }
+	bool mobStep(bool up);
 	// How far the character is bent over (for the tests).
 	float stoop() const { return _stoop; }
 	bool usingItem() const { return _use.phase != USE_NONE; }
@@ -369,6 +375,12 @@ private:
 		bool release = false; // closed: on the way back
 		bool stoopHold = false; // no animations for the chest: bent over while it is open
 		float openAt = 0;       // a body: the page is up this many seconds into the search animation (0: when it is over)
+		// issue #2: one state down and up again while held (Hero::mobStep)
+		const Clip* stepDown = nullptr; // T_<S>_S<top>_2_S<top-1>
+		const Clip* stepUp = nullptr;   // T_<S>_S<top-1>_2_S<top>
+		const Clip* lowHold = nullptr;  // S_<S>_S<top-1>
+		const Clip* stepClip = nullptr; // the step being played
+		bool lowered = false;
 	};
 	Use _use;
 	float _stoop = 0; // how far bent over, 0..1 (drawn by updatePose)

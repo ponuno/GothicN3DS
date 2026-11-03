@@ -183,7 +183,14 @@ void App::talkUpdate(Input& in, float dt) {
 	// (A scan over the few characters about is as cheap as the chests' one.)
 	const float feet[3] = {_player.feet.x, _player.feet.y, _player.feet.z};
 	const int t = _npcs.pickTarget(feet, _hero.yaw(), 320.0f, 0.8f);
-	if (t >= 0 && _npcs.canTalk(u32(t))) _talkTarget = t;
+	// issue #2: one to talk to is on the same floor and in sight - not somebody in a hut under the walkway he stands
+	// on (the New Camp), through its roof.
+	const auto reachable = [&](int who) {
+		const GameNpc& n = _npcs.game().npc(u32(who));
+		if (fabsf(n.pos[1] - _player.feet.y) > 180.0f) return false;
+		return !_world.sightBlocked({feet[0], feet[1] + 150.0f, feet[2]}, {n.pos[0], n.pos[1] + 150.0f, n.pos[2]});
+	};
+	if (t >= 0 && _npcs.canTalk(u32(t)) && reachable(t)) _talkTarget = t;
 	if (_talkTarget >= 0 && (in.confirm || in.attack)) {
 		in.confirm = in.attack = false;
 		if (!_npcs.talkTo(u32(_talkTarget))) toast(tr("Сейчас не до разговоров"));

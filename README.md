@@ -221,6 +221,11 @@ The answers appear on the bottom screen: choose with the **D-Pad** and confirm w
 | The baker cannot find `WORLD.ZEN` | `--game` must point to the folder with `Data` and `_work` |
 | Everything is very slow in WSL | The project is under `/mnt/c`: move it to `~` |
 
+
+## Credits 
+
+Big Thanks to OpenGothic project by Try for creating Open-sourced ZenEngine Reimplementation https://github.com/Try/OpenGothic/tree/master
+
 ## More
 
 - [`docs/TECHNICAL.md`](docs/TECHNICAL.md): how the engine works, controls in detail.

@@ -46,8 +46,8 @@ CXXFLAGS += -O3 -flto
 LDFLAGS  += -O3 -flto
 endif
 
-LIBS     := -lcitro3d -lctru -lm
-LIBDIRS  := $(CTRULIB)
+LIBS     := -lcitro3d -lopendsp -lctru -lm
+LIBDIRS  := $(CTRULIB) $(TOPDIR)/third_party/opendsp/library
 
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))

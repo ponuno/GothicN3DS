@@ -56,7 +56,7 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on its own engine: C++17, a r
 ## What you need
 
 - A **New Nintendo 3DS / New 2DS XL** with custom firmware (Luma3DS) and the Homebrew Launcher.
-- **The DSP firmware** dumped once with the **DSP1** app to `sdmc:/3ds/dspfirm.cdc`. Without it the game runs but is completely silent.
+- Sound works out of the box: since fix228 the game ships with **OpenDSP** (an open-source DSP firmware, BSD-2) built in — no firmware dump is needed. If OpenDSP cannot start, the game falls back to the console's firmware (`sdmc:/3ds/dspfirm.cdc`, dumped once with the **DSP1** app); without either the game runs but is completely silent.
 - Gothic 1 installed on the PC (Steam or GOG).
 - An SD card with ~3 GB free for the baked data.
 
@@ -137,7 +137,6 @@ make cia          # gothic3ds.cia for the HOME menu
 ### 6. The SD card
 
 ```
-/3ds/dspfirm.cdc                <- the DSP firmware, directly in /3ds
 /3ds/gothic3ds/gothic3ds.3dsx   <- or install gothic3ds.cia with FBI instead
 /3ds/gothic3ds/data.pak
 /3ds/gothic3ds/music.pak
@@ -215,7 +214,7 @@ The answers appear on the bottom screen: choose with the **D-Pad** and confirm w
 
 | Problem | Fix |
 |---|---|
-| No sound at all | `/3ds/dspfirm.cdc` is missing: run DSP1 once. `sound.txt` then says `dsp: NOT open (ndspInit 0xD880A7FA)` |
+| No sound at all | `sound.txt` (written on exit) says which backend: `backend opendsp` — report a bug; `backend ndsp` with `0xD880A7FA` — run DSP1 once (the dump goes to `/3ds/dspfirm.cdc`); in an emulator check the audio output device |
 | Sound works, nobody speaks / no music | `speech.pak` / `music.pak` is not next to `data.pak`, or its slider in the Sound menu is 0 |
 | A Graphics+ option does nothing | `data.pak` was baked without its switch (step 4) |
 | The game crashes or hangs | Send `/3ds/gothic3ds/hang.txt` (and the Luma crash screen's PC and LR) to the developer |

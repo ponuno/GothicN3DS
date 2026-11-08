@@ -511,8 +511,9 @@ int main(int, char**) {
 	app.setReadAheadBudget(4u << 20);
 	stream.headLead = 1200.0f;
 	// Sound before the application, which hands it to the sound engine.
+	// fix228: OpenDSP (прошита в библиотеку) — дамп всегда право; отчёт называет, что удалось.
 	if (gAudio.open()) app.setAudio(&gAudio);
-	else printf("no sound: the DSP firmware is missing\n(dump it with DSP1 to sdmc:/3ds/dspfirm.cdc)\n");
+	else printf("no sound: %s (0x%08X)\n(dump the DSP with DSP1 to sdmc:/3ds/dspfirm.cdc)\n", gAudio.backendName(), gAudio.openResult());
 	bool ok = gfx::init();
 	if (!ok) printf("gfx init failed\n");
 	if (ok && !app.init(kPakPath, nullptr)) {
@@ -1545,8 +1546,8 @@ int main(int, char**) {
 	aptUnhook(&gAptCookie);
 	exitStep("exit 2/4: closing the world");
 	if (FILE* sf = fopen(kSoundReportPath, "w")) {
-		fprintf(sf, "dsp: %s (ndspInit 0x%08X; 0xD880A7FA means sdmc:/3ds/dspfirm.cdc is missing)\n", gAudio.isOpen() ? "open" : "NOT open",
-		        gAudio.openResult());
+		fprintf(sf, "dsp: %s (backend %s, ndspInit 0x%08X; 0xD880A7FA says the dump sdmc:/3ds/dspfirm.cdc is missing)\n",
+		        gAudio.isOpen() ? "open" : "NOT open", gAudio.backendName(), gAudio.openResult());
 		fprintf(sf, "sound engine: %s; music: %s\n", app.sound().ready() ? "ready" : "OFF", app.music().ready() ? "ready" : "OFF (no music.pak or no DSP)");
 		app.sound().writeReport(sf);
 		app.music().writeReport(sf);

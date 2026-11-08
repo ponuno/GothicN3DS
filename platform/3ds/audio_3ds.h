@@ -1,7 +1,8 @@
 // The console's sound output: the DSP (libctru's ndsp) mixes up to 24
 // channels; we use the first 16, one per voice of the sound engine.
-// Needs the DSP firmware dumped to sdmc:/3ds/dspfirm.cdc (DSP1 does it); when
-// it is not there open() fails and the game is silent.
+// The DSP firmware: OpenDSP (third_party/opendsp, BSD-2) is built into the
+// library, so no dump is needed; when that fails — the stock firmware dumped
+// to sdmc:/3ds/dspfirm.cdc (DSP1 does it). Without either the game is silent.
 #pragma once
 #include "audio.h"
 
@@ -11,10 +12,19 @@ namespace g3 {
 
 class Audio3ds : public AudioOut {
 public:
+	// Which firmware answers on the DSP: OpenDSP (built in) or the dumped one.
+	enum class Backend : u8 { None, Ndsp, OpenDsp };
 	bool open();
 	void close();
 	bool isOpen() const { return _open; }
-	// What ndspInit answered (0: fine): 0xD880A7FA is "no DSP firmware at sdmc:/3ds/dspfirm.cdc".
+	// Which firmware is on the DSP right now.
+	Backend backend() const { return _backend; }
+	const char* backendName() const {
+		return _backend == Backend::OpenDsp ? "opendsp" : (_backend == Backend::Ndsp ? "ndsp" : "none");
+	}
+	// What ndspInit answered (0: fine). 0xD880A7FA is "no DSP firmware at
+	// sdmc:/3ds/dspfirm.cdc"; only possible on the Ndsp backend — OpenDSP
+	// carries its own firmware inside the library.
 	unsigned openResult() const { return _openResult; }
 
 	u32 channels() const override { return _open ? CHANNELS : 0; }
@@ -36,6 +46,7 @@ public:
 
 private:
 	unsigned _openResult = 0xFFFFFFFFu;
+	Backend _backend = Backend::None;
 	bool _open = false;
 	ndspWaveBuf _wave[CHANNELS];
 	u32 _rate[CHANNELS] = {};

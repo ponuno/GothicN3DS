@@ -1,14 +1,27 @@
 #include "audio_3ds.h"
 
+#include <opendsp.h>
+
 #include <string.h>
 
 namespace g3 {
 
 bool Audio3ds::open() {
 	if (_open) return true;
-	const Result rc = ndspInit();
+	// fix228: сначала OpenDSP — её прошивка зашита в библиотеку, дамп с консоли
+	// не нужен (и в Azahar не нужно ничего). Не вышло — фирменный ndsp с дампом
+	// sdmc:/3ds/dspfirm.cdc. Дальше весь ndsp-код общий.
+	Result rc = opendspInit();
+	_backend = Backend::OpenDsp;
+	if (R_FAILED(rc)) {
+		rc = ndspInit();
+		_backend = Backend::Ndsp;
+	}
 	_openResult = unsigned(rc);
-	if (R_FAILED(rc)) return false;
+	if (R_FAILED(rc)) {
+		_backend = Backend::None;
+		return false;
+	}
 	ndspSetOutputMode(NDSP_OUTPUT_STEREO);
 	ndspSetMasterVol(1.0f);
 	memset(_wave, 0, sizeof(_wave));
@@ -24,8 +37,10 @@ bool Audio3ds::open() {
 void Audio3ds::close() {
 	if (!_open) return;
 	for (u32 c = 0; c < CHANNELS; ++c) ndspChnWaveBufClear(int(c));
-	ndspExit();
+	if (_backend == Backend::OpenDsp) opendspExit(); // (внутри — ndspExit и останов декодеров)
+	else ndspExit();
 	_open = false;
+	_backend = Backend::None;
 }
 
 void* Audio3ds::allocSamples(u32 bytes) { return _open ? linearAlloc(bytes) : nullptr; }

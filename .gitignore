@@ -4,3 +4,6 @@
 *.3dsx
 *.smdh
 *.elf
+
+# OpenDSP library build directory
+third_party/opendsp/library/build/

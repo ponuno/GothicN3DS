@@ -464,7 +464,22 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 		const float dx = n.pos[0] - eye.x, dy = n.pos[1] - eye.y, dz = n.pos[2] - eye.z;
 		const float d2 = dx * dx + dy * dy + dz * dz;
 		const bool isActor = n.active || actorOf(i) != nullptr;
-		if ((d2 > keep2 || (d2 > range2 && !isActor)) && !isActor) {
+		// fix224/fix226: a follower (Mud, Shrat, a guide) is not left behind when the player walks away: his routine
+		// is what keeps him coming, so he stays an actor and is chosen first, however far he is. The routine is known
+		// even when he is not an actor yet (Game::updateFollowers), and the state's name is a fallback for mods.
+		bool keepsUp = _game.isFollower(i) && n.down != DOWN_DEAD;
+		if (!keepsUp && n.down != DOWN_DEAD) {
+			const NpcActor* a = actorOf(i);
+			const u32 fn = a ? (a->state ? a->state : a->prevState) : 0; // (between two states of the routine)
+			if (fn) {
+				char up[64];
+				snprintf(up, sizeof(up), "%s", stateName(fn));
+				for (char* p = up; *p; ++p)
+					if (*p >= 'a' && *p <= 'z') *p = char(*p - 'a' + 'A');
+				keepsUp = strstr(up, "FOLLOW") || strstr(up, "GUIDE") || strstr(up, "ESCORT");
+			}
+		}
+		if (!keepsUp && (d2 > keep2 || (d2 > range2 && !isActor)) && !isActor) {
 			if (d2 <= prefetch2 && n.down != DOWN_DEAD && _cfg.prefetchRange > 0.0f) {
 				u32 at = aheadCount;
 				while (at > 0 && aheadKey[at - 1] > d2) --at;
@@ -480,10 +495,10 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 			}
 			return;
 		}
-		if (d2 > keep2) return;
+		if (!keepsUp && d2 > keep2) return;
 		++_stats.near;
 		// (The dead come last: the living need the places more.)
-		const float k = (isActor ? d2 * 0.7f : d2) * (n.down == DOWN_DEAD ? 4.0f : 1.0f);
+		const float k = keepsUp ? -1.0f : (isActor ? d2 * 0.7f : d2) * (n.down == DOWN_DEAD ? 4.0f : 1.0f);
 		u32 at = count;
 		while (at > 0 && key[at - 1] > k) --at;
 		if (at >= want) return;
@@ -515,6 +530,15 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 				_seen[a.npc] = _selectStamp;
 				consider(a.npc);
 			}
+		// fix226: a follower who has not been an actor yet (or was retired before the routine said "come along")
+		// is considered too, however far he is.
+		for (u32 k = 0; k < _game.followerCount(); ++k) {
+			const u32 i = _game.follower(k);
+			if (i < total && _seen[i] != _selectStamp) {
+				_seen[i] = _selectStamp;
+				consider(i);
+			}
+		}
 		_stats.here = _nearHere;
 	} else {
 		// (No memory for the lists: everybody, as before.)
@@ -900,10 +924,41 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3], const World* worl
 		}
 		gfx::setFade(float(a.shown) * (1.0f / 255.0f));
 		if (a.mix > 127) {
+			Vec3 blade {}, hilt {};
 			if (_heldLoot && _heldPak && n.down == DOWN_NONE)
-				_heldLoot->drawCarried(*_heldPak, _game, a.rig->model, *pose, n.yaw, 0.0f, scale, n.weapon, n.melee, feet, light);
-			if (_heldLoot && _heldPak && a.heldItem != 0xFFFFFFFFu && a.itemState >= 0)
-				_heldLoot->drawInHand(*_heldPak, _game, a.rig->model, *pose, n.yaw, scale, a.heldItem, feet, light);
+				_heldLoot->drawCarried(*_heldPak, _game, a.rig->model, *pose, n.yaw, 0.0f, scale, n.weapon, n.melee, feet, light,
+				                       &blade, &hilt);
+			// fix225: the white trail of a blade in a blow, as the player's character has it.
+			if (_swingHook.trail) {
+				const Clip* c = a.anim.current();
+				const ClipFight* f = c ? c->fight() : nullptr;
+				bool on = false;
+				if (f && f->hits && (n.weapon == 2 || n.weapon == 3) && n.down == DOWN_NONE &&
+				    (blade.x != 0.0f || blade.y != 0.0f || blade.z != 0.0f)) {
+					const float t = a.anim.time();
+					const u16 first = f->hit[0], last = f->hitEnd[f->hitEnds ? f->hitEnds - 1 : 0];
+					on = t >= c->frameTime(first) * 0.5f && (last == CLIP_NO_FRAME || t <= c->frameTime(last));
+				}
+				_swingHook.trail(_swingHook.user, a.npc, hilt, blade, on);
+			}
+			// fix224: the bow or crossbow too (in the left hand, or on the back), as the player's character has it.
+			if (_heldLoot && _heldPak && n.down == DOWN_NONE)
+				_heldLoot->drawRanged(*_heldPak, _game, a.rig->model, *pose, n.yaw, 0.0f, scale, n.weapon, n.ranged, feet, light);
+			if (_heldLoot && _heldPak && a.heldItem != 0xFFFFFFFFu && a.itemState >= 0) {
+				// fix224: a torch is carried in the left hand (as the player's character carries it); the rest in the right.
+				bool left = false;
+				if (const GameItemInfo* it = _game.itemInfo(a.heldItem)) {
+					left = (it->mainflag & _game.constant("ITEM_KAT_LIGHT", 1 << 8)) != 0;
+					if (!left && it->visual) {
+						char up[96];
+						snprintf(up, sizeof(up), "%s", _game.text(it->visual));
+						for (char* p = up; *p; ++p)
+							if (*p >= 'a' && *p <= 'z') *p = char(*p - 'a' + 'A');
+						left = strstr(up, "TORCH") != nullptr;
+					}
+				}
+				_heldLoot->drawInHand(*_heldPak, _game, a.rig->model, *pose, n.yaw, scale, a.heldItem, feet, light, left);
+			}
 		}
 		if (a.head && a.mix > 0) {
 			gfx::setFade(float(int(a.shown) * int(a.mix) / 255) * (1.0f / 255.0f));

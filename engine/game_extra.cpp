@@ -217,6 +217,25 @@ void Game::xRemoveNpc(ScriptVm& vm, void* user) {
 	}
 }
 
+// The particle effect a script's visual names: a VisualFX instance's VISNAME_S, or a particle effect itself.
+// 0 — the scripts have nothing of that name (then nothing plays, as in OpenGothic with its logs).
+u32 Game::effectPfx(const char* visual) {
+	if (!visual || !visual[0]) return 0;
+	u32 pfx = 0;
+	ScriptVm& vfx = visualVm();
+	const u32 s = vfx.find(visual);
+	const u32 m = vfx.findMember("CFX_BASE", "VISNAME_S");
+	if (s != SCRIPT_NONE && m != SCRIPT_NONE && vfx.symbol(s).type == SCRIPT_INSTANCE) {
+		if (ScriptInstance* o = vfx.create(s)) {
+			const char* vis = vfx.getString(m, 0, o);
+			if (vis && vis[0]) pfx = hashName(vis);
+			vfx.destroy(o);
+		}
+	}
+	if (!pfx && particleVm().find(visual) != SCRIPT_NONE) pfx = hashName(visual);
+	return pfx;
+}
+
 // Wld_PlayEffect(visual, source, target, level, damage, damageType, projectile): as OpenGothic, only the effect
 // without damage or flight; it is shown at the source (a character). The visual is a VisualFX instance whose
 // particle effect (VISNAME_S) is played, or a particle effect itself.
@@ -227,24 +246,8 @@ void Game::xPlayEffect(ScriptVm& vm, void* user) {
 	ScriptInstance* source = vm.popInstance();
 	char visual[64];
 	copyText(visual, sizeof(visual), vm.popString());
-	if (projectile || damageType || damage || level || !visual[0]) return;
-	u32 pfx = 0;
-	ScriptVm& vfx = g.visualVm();
-	const u32 s = vfx.find(visual), m = vfx.findMember("CFX_BASE", "VISNAME_S");
-	if (s != SCRIPT_NONE && m != SCRIPT_NONE && vfx.symbol(s).type == SCRIPT_INSTANCE) {
-		if (ScriptInstance* o = vfx.create(s)) {
-			const char* vis = vfx.getString(m, 0, o);
-			if (vis && vis[0]) pfx = hashName(vis);
-			vfx.destroy(o);
-		}
-	}
-	if (!pfx && g.particleVm().find(visual) != SCRIPT_NONE) pfx = hashName(visual);
-	if (!pfx) return;
-	if (g._effectCount == 8) {
-		g._effectFirst = (g._effectFirst + 1) % 8;
-		--g._effectCount;
-	}
-	g._effects[(g._effectFirst + g._effectCount++) % 8] = Effect {pfx, g.indexOf(source)};
+	if (projectile || damageType || damage || level) return;
+	g.queueEffect(g.effectPfx(visual), g.indexOf(source));
 }
 
 bool Game::takeEffect(Effect& out) {

@@ -18,7 +18,7 @@ constexpr int kTextMargin = 12;  // of the words from the sheet's
 
 } // namespace
 
-int App::docWidth(const char* text) const { return _ui.ready() ? _ui.measure(text) : int(strlen(text)) * 6; }
+int App::docWidth(const char* text, int size) const { return _ui.ready() ? _ui.measure(text, size) : int(strlen(text)) * 6; }
 
 // Cuts the document into screens: a page of the document begins a new screen, a long line wraps at the sheet's
 // width, a full screen goes on to the next.
@@ -41,9 +41,17 @@ void App::docLayout(const GameDocument& d) {
 	memcpy(r.level, d.level, sizeof(r.level));
 	memcpy(r.coords, d.coords, sizeof(r.coords));
 	r.serial = _npcs.game().documentSerial();
-	const int lh = Ui::lineHeight();
-	const int maxLines = clamp((gfx::SCREEN_H - 2 * kSheetMargin - 2 * kTextMargin - lh) / lh, 1, int(DocReader::LINES));
-	const int maxWidth = gfx::SCREEN_W - 2 * (kSheetMargin + kTextMargin);
+	// fix227: what Doc_SetMargins / Doc_SetFont said — per page, in the pixels of the original 640x480 screen,
+	// scaled onto this one. What a page does not have set — as before: the sheet with its padding.
+	const float scaleW = float(gfx::SCREEN_W) / 640.0f;
+	const float scaleH = float(gfx::SCREEN_H) / 480.0f;
+	const int innerL = kSheetMargin + kTextMargin; // the inside of the sheet by default
+	const int innerR = gfx::SCREEN_W - kSheetMargin - kTextMargin;
+	int maxLines = 1;    // per page, below
+	int maxWidth = innerR - innerL;
+	bool centered = false; // the page's Doc_SetMargins
+	bool bigFont = false;  // the page's Doc_SetFont
+	int indentLeft = 0, indentRight = 0; // the text area inside the sheet, on the screen's pixels
 	u32 screen = 0;
 	int line = 0;
 	bool any = false; // the screen being filled has something on it
@@ -58,6 +66,12 @@ void App::docLayout(const GameDocument& d) {
 	};
 	const auto put = [&](const char* text) {
 		if (line >= maxLines && !next()) return false;
+		if (line == 0) { // the style of the page this screen began with
+			r.centered[screen] = centered;
+			r.bigFont[screen] = bigFont;
+			r.indentLeft[screen] = i16(indentLeft);
+			r.indentRight[screen] = i16(indentRight);
+		}
 		snprintf(r.lines[screen][line], DocReader::LINE, "%s", text);
 		++line;
 		if (text[0]) any = true;
@@ -68,6 +82,23 @@ void App::docLayout(const GameDocument& d) {
 		const GameDocPage& page = d.pages[p];
 		if (!page.text || !page.length) continue;
 		if (any && !next()) break;
+		// fix227: this page's own layout - the font Doc_SetFont names (the larger of our two fonts),
+		// the fields of Doc_SetMargins (the pixels of the original 640x480, scaled here), the centering.
+		bigFont = page.font[0] && strstr(page.font, "20") != nullptr; // "FONT_OLD_20_..." is the large one
+		const int lh = Ui::lineHeight(bigFont ? ui::TITLE : ui::TEXT);
+		int textL = innerL, textR = innerR;
+		int usable = gfx::SCREEN_H - 2 * kSheetMargin - 2 * kTextMargin;
+		if (page.margins[0] >= 0 && page.margins[1] >= 0) {
+			textL = clamp(int(float(page.margins[0]) * scaleW), kSheetMargin + 2, innerR - 40);
+			textR = clamp(gfx::SCREEN_W - int(float(page.margins[1]) * scaleW), textL + 40, gfx::SCREEN_W - kSheetMargin - 2);
+		}
+		if (page.margins[2] >= 0) usable -= max(0, int(float(page.margins[2]) * scaleH) - innerL);
+		if (page.margins[3] >= 0) usable -= max(0, int(float(page.margins[3]) * scaleH) - innerL);
+		maxLines = clamp((usable - lh) / lh, 1, int(DocReader::LINES));
+		maxWidth = textR - textL;
+		centered = page.centered;
+		indentLeft = textL - innerL;
+		indentRight = innerR - textR;
 		const char* cursor = page.text;
 		while (*cursor && !full) {
 			const char* end = strchr(cursor, '\n');
@@ -90,7 +121,7 @@ void App::docLayout(const GameDocument& d) {
 				snprintf(word, sizeof(word), "%.*s", int(e - w < int(sizeof(word)) - 1 ? e - w : int(sizeof(word)) - 1), w);
 				char trial[2 * DocReader::LINE];
 				snprintf(trial, sizeof(trial), cur[0] ? "%s %s" : "%s%s", cur, word);
-				if (cur[0] && (docWidth(trial) > maxWidth || strlen(trial) >= DocReader::LINE)) {
+				if (cur[0] && (docWidth(trial, bigFont ? ui::TITLE : ui::TEXT) > maxWidth || strlen(trial) >= DocReader::LINE)) {
 					if (!put(cur)) full = true;
 					snprintf(cur, sizeof(cur), "%s", word);
 				} else {
@@ -296,7 +327,14 @@ void App::drawDocument() {
 	} else {
 		const DocReader& r = _doc;
 		const u32 page = min(r.page, r.pages - 1);
-		for (int i = 0; i < int(r.lineCount[page]); ++i) _ui.text(x0 + kTextMargin, y0 + kTextMargin + i * lh, r.lines[page][i], ink, ui::TEXT, ui::LEFT, false);
+		// fix227: the page's font (large or not) and its text area from Doc_SetMargins; the centered lines in the middle.
+		const int size = r.bigFont[page] ? ui::TITLE : ui::TEXT;
+		const int lhPage = Ui::lineHeight(size);
+		const int txLeft = x0 + kTextMargin + r.indentLeft[page];
+		const int txRight = x1 - kTextMargin - r.indentRight[page];
+		const int tx = r.centered[page] ? (txLeft + txRight) / 2 : txLeft;
+		for (int i = 0; i < int(r.lineCount[page]); ++i)
+			_ui.text(tx, y0 + kTextMargin + i * lhPage, r.lines[page][i], ink, size, r.centered[page] ? ui::CENTER : ui::LEFT, false);
 	}
 	if (_doc.pages > 1) {
 		char num[24];

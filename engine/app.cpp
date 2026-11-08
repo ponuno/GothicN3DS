@@ -109,6 +109,10 @@ bool App::init(const char* pakPath, const char* worldName) {
 	blood.splash = bloodThunk;
 	blood.user = this;
 	_npcs.setBloodHook(blood);
+	Npcs::SwingHook swing;
+	swing.trail = npcSwingThunk;
+	swing.user = this;
+	_npcs.setSwingHook(swing);
 	startSound();
 	startSpeech();
 	startVideo(); // fix201
@@ -409,6 +413,7 @@ bool App::loadState(const char* path) {
 	_cam.yaw = s.yaw;
 	_cam.pitch = clamp(s.pitch, -1.5f, 1.5f);
 	teleport(eye); // (the character takes its heading from the camera's)
+	_bloodStains.clear(); // (fix224: the blood of the game that was left is not on the ground of the one loaded)
 	_env.timeOfDay = s.timeOfDay;
 	setDrawDistance(s.drawDistance);
 	// Standing in a portal's box when the game was left must not send the
@@ -552,6 +557,7 @@ void App::shutdown() {
 	_shadows.release();
 	_puddles.release();
 	_bloodStains.release();
+	_bladeTrail.release();
 	_rain.release();
 	_ripples.release();
 	_godRays.release();
@@ -587,6 +593,12 @@ void App::checkPortals() {
 
 void App::update(const Input& given, float dt) {
 	if (videoUpdate(given, dt)) return; // fix201: the game stands still while a video plays
+	// fix227: ExitGame / ExitSession ask for the main menu (after the outro's credits, at the end).
+	if (_npcs.loaded() && _npcs.game().takeExitToMenu()) {
+		_npcs.talkAbort();
+		openStartMenu();
+		return;
+	}
 	if (_respawnPending) {
 		_respawnPending = false;
 		char path[200];
@@ -820,6 +832,7 @@ void App::update(const Input& given, float dt) {
 				_player.feet = feet;
 			}
 		}
+		barrierCheck(dt);
 		fallCheck();
 		drownCheck(dt);
 		tBodies = sys::timeMs();
@@ -1309,18 +1322,13 @@ void App::render() {
 			drawArrows(_hero.light());
 			const GameNpc* hn = heroNpc();
 			if (hn && _hero.loaded()) {
-				Vec3 blade {};
+				Vec3 blade {}, hilt {};
 				_loot.drawCarried(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
-				                  hn->melee, _hero.feet(), _hero.light(), &blade);
-				// fix216: the white trail of the blade while a blow is in play
-				const bool swing = _hero.swinging() && (_hero.weapon() == 2 || _hero.weapon() == 3) && (blade.x != 0.0f || blade.y != 0.0f || blade.z != 0.0f);
-				if (swing) {
-					if (_swooshFx && _particles.alive(_swooshFx)) _particles.move(_swooshFx, blade);
-					else _swooshFx = _particles.start(Particles::swooshTrail(), blade, _hero.yaw(), 2.0f);
-				} else if (_swooshFx) {
-					_particles.stop(_swooshFx);
-					_swooshFx = 0;
-				}
+				                  hn->melee, _hero.feet(), _hero.light(), &blade, &hilt);
+				// fix225: the white trail of the blade while a blow is in play (the surface it sweeps).
+				const bool swing = _hero.swinging() && (_hero.weapon() == 2 || _hero.weapon() == 3) &&
+				                   (blade.x != 0.0f || blade.y != 0.0f || blade.z != 0.0f);
+				_bladeTrail.add(BladeTrail::HERO, hilt, blade, _clock, swing);
 			}
 			if (hn && _hero.loaded())
 				_loot.drawRanged(_pak, _npcs.game(), _hero.model(), _hero.pose(), _hero.yaw(), _hero.lean(), nullptr, _hero.weapon(),
@@ -1364,6 +1372,7 @@ void App::render() {
 			                                  0.04f + 0.10f * clamp((_weather.windScale() - 0.55f) / 1.35f, 0.0f, 1.0f)); // fix187: slanted by the wind
 		trace("render: particles");
 		if (!(_renderSkip & SKIP_PARTICLES)) _particles.draw(d.view, _cam.pos, indoor ? indoorLight : sky.light);
+		if (!(_renderSkip & SKIP_PARTICLES)) _bladeTrail.draw(_cam.pos, _clock);
 		trace("render: overlay");
 		if (!(_renderSkip & SKIP_OVERLAY)) drawOverlay();
 		const double r6 = sys::timeMs();
@@ -1532,6 +1541,13 @@ void App::bloodAt(u32 victim, u32 attacker, i32 damage) {
 	_particles.play(Particles::bloodSplash(), at, 0.0f, secs + (damage > 30 ? 0.06f : 0.0f));
 }
 
+void App::npcSwingThunk(void* user, u32 npc, Vec3 base, Vec3 tip, bool on) {
+	static_cast<App*>(user)->npcSwing(npc, base, tip, on);
+}
+
+// fix225: the white trail of an inhabitant's blade (the surface it sweeps, as the original draws it).
+void App::npcSwing(u32 npc, Vec3 base, Vec3 tip, bool on) { _bladeTrail.add(npc, base, tip, _clock, on); }
+
 // Low health: the edge of the picture reddens and beats with the heart; a blow taken flashes it.
 void App::drawLowHealth() {
 	const i32 hp = heroHitPoints(), mx = heroHitPointsMax();
@@ -1608,14 +1624,17 @@ void App::updateLamps() {
 	lf.dt = _lampClock < 0.0 ? -1.0f : float(clamp(_clock - _lampClock, 0.0, 1.0));
 	_lampClock = _clock;
 	for (int i = 0; i < 3; ++i) lf.dayLight[i] = sky.light[i];
-	lf.characters = _settings.lamps >= 1 && !(_renderSkip & SKIP_LAMPS);
-	lf.world = _settings.lamps >= 2 && !_gfxRelief && !_underwater;
-	lf.carriedOnly = _settings.lamps >= 2 && _gfxRelief && !_underwater; // (fix216)
 	// fix192: the torch in the hand is a lamp of its own (a little above its flame).
+	const bool torch = _torch.lit && _torch.shown && _torch.tipKnown;
 	{
 		static const float kTorch[3] = {255.0f, 176.0f, 96.0f};
-		_lamps.setCarried(_torch.lit && _torch.shown && _torch.tipKnown, _torch.tip + Vec3 {0.0f, 12.0f, 0.0f}, 1250.0f, kTorch);
+		_lamps.setCarried(torch, _torch.tip + Vec3 {0.0f, 12.0f, 0.0f}, 1250.0f, kTorch);
 	}
+	// fix224: the torch is the player's own light, not a decoration: it lights even when "Light of fires" is off (or
+	// the pacer has turned the world's lamps off), and then it is the only lamp the world takes.
+	lf.characters = (_settings.lamps >= 1 || torch) && !(_renderSkip & SKIP_LAMPS);
+	lf.world = (_settings.lamps >= 2 || torch) && !_gfxRelief && !_underwater;
+	lf.carriedOnly = ((_settings.lamps < 2) || _gfxRelief) && torch && !_underwater;
 	_lamps.update(lf, &_world);
 	float add[3] = {0.0f, 0.0f, 0.0f};
 	if (_hero.loaded()) _lamps.lightAt({_hero.feet().x, _hero.feet().y + 90.0f, _hero.feet().z}, _hero.sky(), add, &_world);
@@ -1940,6 +1959,49 @@ void App::drownCheck(float dt) {
 	_fight.lastDamage = dmg;
 	if (hp > 0) {
 		_npcs.emitSvm(u32(hi), "AARGH");
+	} else {
+		_hero.fall(true, false);
+		_deadTime = 0.001f;
+		_npcs.goDown(u32(hi), -1, true, false);
+		_target = -1;
+		_locked = false;
+	}
+}
+
+// fix224: the Barrier (oCBarrier) is not only drawn: it is solid. Its dome stands over the colony; a body that gets
+// outside it is put back inside and hurt (the last one who tried reached the other side a dead man). The worlds that
+// are not under the dome (the mines, the other valleys) are told by their own start-up place lying outside its box.
+void App::barrierCheck(float dt) {
+	const int hi = heroIndex();
+	if (hi < 0 || !_npcs.loaded() || _hero.down() || _player.flying || _world.indoor() || !_barrier.hasMesh()) {
+		_barrierTime = 0.0f;
+		return;
+	}
+	const WorldHeader& wh = _world.header();
+	if (!_barrier.covers({wh.spawnPos[0], wh.spawnPos[1], wh.spawnPos[2]})) {
+		_barrierTime = 0.0f;
+		return;
+	}
+	if (_barrier.contains(_player.feet)) {
+		_barrierTime = max(0.0f, _barrierTime - dt);
+		return;
+	}
+	_player.feet = _barrier.keepInside(_player.feet, 0.01f);
+	_player.velocityY = 0.0f;
+	_barrierTime += dt;
+	if (_barrierTime < 0.6f) return;
+	_barrierTime -= 0.6f;
+	if (_barrierTime > 0.6f) _barrierTime = 0.0f; // (a long time away is not a burst of blows on return)
+	Game& g = _npcs.game();
+	GameNpc& h = g.npcMut(u32(hi));
+	const i32 dmg = _settings.immortal ? 0 : max(heroHitPointsMax() / 10, i32(5));
+	if (dmg <= 0) return;
+	const i32 hp = max(g.hitPoints(h) - dmg, i32(0));
+	g.setAttribute(h, 0, hp);
+	_fight.lastDamage = dmg;
+	if (hp > 0) {
+		_npcs.emitSvm(u32(hi), "AARGH");
+		toast(tr("Барьер не пускает"));
 	} else {
 		_hero.fall(true, false);
 		_deadTime = 0.001f;

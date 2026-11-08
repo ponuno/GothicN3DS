@@ -507,6 +507,12 @@ public:
 		void* user = nullptr;
 	};
 	void setBloodHook(const BloodHook& hook) { _bloodHook = hook; }
+	// fix225: a blade the character swings: the hilt and the point of it in the world (the white trail).
+	struct SwingHook {
+		void (*trail)(void* user, u32 npc, Vec3 base, Vec3 tip, bool on) = nullptr;
+		void* user = nullptr;
+	};
+	void setSwingHook(const SwingHook& hook) { _swingHook = hook; }
 	// Somebody near is after the player's character in a fight state, with a weapon drawn or a beast (the music's
 	// "targeted": OpenGothic's WorldObjects::isTargetedBy).
 	bool targetsHero() const;
@@ -734,6 +740,7 @@ private:
 	ShotHook _shotHook;
 	u32 _removeEpisode = 0; // counts the times the player put the weapon away (each is answered once by every character that asks for it)
 	BloodHook _bloodHook;
+	SwingHook _swingHook;
 	bool rangedWeapon(const GameNpc& n) const { return n.weapon == WEAPON_BOW || n.weapon == WEAPON_CBOW || n.weapon == WEAPON_MAG; }
 	float rangedReach(const GameNpc& n) const;
 	bool startShot(NpcActor& a);

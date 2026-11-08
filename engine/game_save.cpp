@@ -200,10 +200,12 @@ void Game::prepareSave() {
 }
 
 void Game::afterRestore() {
+	updateFollowers(); // fix226: a follower saved as one is one again
 	if (!_ikarus.active()) return;
 	_ikarus.setSlot(1);
 	_ikarus.fire("CGAMEMANAGER__READ_SAVEGAME", 4, 1);
 	runIfPresent("INIT_", "GLOBAL");
+	updateFollowers(); // (the scripts may have changed a routine)
 }
 
 bool Game::restore(ByteSource& in) {

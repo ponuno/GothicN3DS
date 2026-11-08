@@ -65,6 +65,12 @@ public:
 	// Reads "fx/barrier" and its texture once (later calls do nothing). False if the archive has no dome (baked before fix150).
 	bool load(Pak& pak);
 	bool hasMesh() const { return _vertexCount > 0; }
+	// The dome as something solid (fix224): a point inside it, and the nearest point inside it (`margin`: how far
+	// inside, as a share of the radius). Outside the dome the Barrier hurts (App::barrierCheck).
+	bool contains(Vec3 p, float margin = 0.0f) const;
+	Vec3 keepInside(Vec3 p, float margin = 0.0f) const;
+	// Whether a place lies in the dome's box (the world it stands over).
+	bool covers(Vec3 p) const;
 	// The time goes on: appearances, lightning, the hum and the thunder. `outdoor`: the sky is seen.
 	void update(float dt, u8 mode, u8 thunder, bool outdoor, Vec3 camera, Sound& sound, Pak& pak);
 	// Between the sky and the world, in PASS_SKY (Sky::draw leaves it there). `radius`: the sky dome's.

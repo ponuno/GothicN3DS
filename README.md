@@ -17,21 +17,25 @@ A port of **Gothic 1** to the **New Nintendo 3DS** on its own engine: C++17, a r
 
 **Not there yet:** ZenGin `.CS` cutscenes, gossip between townsfolk, Ikarus/LeGo (needed by Archolos).
 
-**Known problems(Reporting them is still useful):**
-- Diving is broken(MC just starts walking when too deep)
-- Barrier does not exists as an object in the world yet, so it can't damage the player
-- Torches are useless
+**Fixed in this build (please check):**
+- Diving in deep water (the body no longer starts walking when the surface is above its head)
+- The Barrier is solid: it pushes the hero back inside and hurts him
+- Sun and moon no longer have a black outline in the clouds
+- Followers (Mud, Shrat, guides) keep following when you walk away — even if they were left behind before the routine said "come along"
+- Bows and crossbows are shown in the hands of the townsfolk
+- A real white blade trail: the surface the blade sweeps (for the hero and the townsfolk), not the old sparks at the tip
+- Blood stains are cleared when a saved game is loaded
+- Less stutter during dialogues (the subtitle is wrapped once per line and has no ghost shadow)
+- The torch in the hand lights even when "Light of fires" is off, and townsfolk carry their torches in the left hand
+
+**Known problems (reporting them is still useful):**
+- Torches are useless (if they still are after the light and burning-down fixes, send a screenshot and the bake.log line about `ITLSTORCH`)
 - Translation accuracy for PL and DE not verified
-- Some graphic+ features need fixing
-- Some animations are wanky or do not exist
-- Sun and moon black outline in the clouds
-- Follower NPC's do not follow NH(Mud and Shrat)
-- Some weird npc behaviour(Please report what exactly is wrong)
-- Minor fps drop during dialogues
-- Not all objects shown on players and NPC hands
-- Magic is not properly tested(Probably a lot of missing effects)
-- Blood stains are not reseted after reload
-- Weapon swing effects 
+- Some graphic+ features need fixing (say which option and what it does)
+- Some animations are wanky or do not exist (say which action and what is wrong; a video helps)
+- Some weird npc behaviour (please report what exactly is wrong: who, where, what he did)
+- Magic is not properly tested (probably a lot of missing effects; say which spell and what is missing)
+- Not all objects shown on players and NPC hands (say which item and who holds it)
 
 
 **Further plans:**
@@ -229,7 +233,7 @@ Big Thanks to OpenGothic project by Try for creating Open-sourced ZenEngine Reim
 ## More
 
 - [`docs/TECHNICAL.md`](docs/TECHNICAL.md): how the engine works, controls in detail.
-- [`docs/HANDOFF.md`](docs/HANDOFF.md): every version's changes, what needs a re-bake, what is verified on the console.
+- [`docs/HANDOFF.md`](docs/HANDOFF.md): current state (sections 0–4), what needs a re-bake, what is verified on the console, and the history of every version.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md): plans.
 - [`docs/FORMATS.md`](docs/FORMATS.md): the baked file formats.
 - [`third_party/README.md`](third_party/README.md): third-party code and licences. The project's own licence is not chosen yet.

@@ -734,6 +734,10 @@ void buildSyntheticScene(const SynthOptions& opt, SrcScene& scene) {
 		// open by the square.
 		const size_t bed4 = thing("BED", 650.0f, -350.0f, 0.0f, 1, 110.0f, 45.0f);
 		scene.mobs[bed4].kind = 0; // (oCMobInter, as Gothic 1's: a bed by its scheme)
+		// (issue #2) ... and one the world's makers filed as a door (oCMobDoor with a bed's model), by the square too.
+		const size_t bed5 = thing("BEDLOW", 650.0f, 350.0f, 0.0f, 1, 110.0f, 30.0f);
+		slot(bed5, "ZS_POS0", 0.0f, -110.0f, 0.0f);
+		scene.mobs[bed5].kind = 6; // MOBKIND_DOOR
 		// A low bed by the first hut, too, behind the wall: the sleeper's
 		// script asks for both kinds of bed, and is to stay in the high one
 		// it got into first - and never to go through the wall to this one.

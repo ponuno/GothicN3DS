@@ -132,6 +132,10 @@ void App::talkUpdate(Input& in, float dt) {
 	{
 		Game::Effect e;
 		while (_npcs.game().takeEffect(e)) {
+			if (e.stop) {
+				_particles.stopEffect(e.pfx);
+				continue;
+			}
 			const int heroAt = heroIndex();
 			Vec3 at = _player.feet;
 			float yaw = _hero.yaw();
@@ -201,37 +205,43 @@ void App::drawSubtitle() {
 	const TalkView& v = _npcs.talkView();
 	if (!v.active || !v.saying || !v.line[0]) return;
 	const int W = gfx::SCREEN_W;
-	// A greedy wrap by words into at most four lines.
-	char lines[4][320];
-	int count = 0;
-	const int maxW = W - 40;
-	char cur[320] = "";
-	const char* p = v.line;
-	while (*p && count < 4) {
-		const char* e = p;
-		while (*e && *e != ' ') ++e;
-		char word[120];
-		const size_t len = size_t(e - p) < sizeof(word) - 1 ? size_t(e - p) : sizeof(word) - 1;
-		memcpy(word, p, len);
-		word[len] = 0;
-		char trial[320];
-		snprintf(trial, sizeof(trial), cur[0] ? "%s %s" : "%s%s", cur, word);
-		if (cur[0] && _ui.measure(trial) > maxW) {
-			snprintf(lines[count++], sizeof(lines[0]), "%s", cur);
-			snprintf(cur, sizeof(cur), "%s", word);
-		} else {
-			snprintf(cur, sizeof(cur), "%s", trial);
+	// fix224: the same line is wrapped once, not on every frame of it (the talk's text stays for seconds).
+	u32 hash = 2166136261u;
+	for (const char* c = v.line; *c; ++c) hash = (hash ^ u32(u8(*c))) * 16777619u;
+	if (hash != _subHash) {
+		_subHash = hash;
+		_subCount = 0;
+		const int maxW = W - 40;
+		char cur[320] = "";
+		const char* p = v.line;
+		while (*p && _subCount < 4) {
+			const char* e = p;
+			while (*e && *e != ' ') ++e;
+			char word[120];
+			const size_t len = size_t(e - p) < sizeof(word) - 1 ? size_t(e - p) : sizeof(word) - 1;
+			memcpy(word, p, len);
+			word[len] = 0;
+			char trial[320];
+			snprintf(trial, sizeof(trial), cur[0] ? "%s %s" : "%s%s", cur, word);
+			if (cur[0] && _ui.measure(trial) > maxW) {
+				snprintf(_subLines[_subCount++], sizeof(_subLines[0]), "%s", cur);
+				snprintf(cur, sizeof(cur), "%s", word);
+			} else {
+				snprintf(cur, sizeof(cur), "%s", trial);
+			}
+			p = *e ? e + 1 : e;
 		}
-		p = *e ? e + 1 : e;
+		if (cur[0] && _subCount < 4) snprintf(_subLines[_subCount++], sizeof(_subLines[0]), "%s", cur);
 	}
-	if (cur[0] && count < 4) snprintf(lines[count++], sizeof(lines[0]), "%s", cur);
-	if (!count) return;
+	if (!_subCount) return;
 	const int lh = Ui::lineHeight();
-	// At the top of the picture, as the game's dialogue box: the speaker's name and the words.
+	// At the top of the picture, as the game's dialogue box: the speaker's name and the words. No drop shadow: at this
+	// size a shadow a pixel off looked like a second, ghostly copy of every letter (and cost a second pass of quads).
 	const int top = 10;
-	_ui.box(10, top - 5, W - 10, top + (count + 1) * lh + 3, 0x0E0A06C0u);
-	_ui.text(W / 2, top, v.speaker, v.heroSays ? ui::WHITE : ui::GOLD, ui::TEXT, ui::CENTER);
-	for (int i = 0; i < count; ++i) _ui.text(W / 2, top + (i + 1) * lh, lines[i], ui::WHITE, ui::TEXT, ui::CENTER);
+	_ui.box(10, top - 5, W - 10, top + (_subCount + 1) * lh + 3, 0x0E0A06C0u);
+	_ui.text(W / 2, top, v.speaker, v.heroSays ? ui::WHITE : ui::GOLD, ui::TEXT, ui::CENTER, false);
+	for (int i = 0; i < _subCount; ++i)
+		_ui.text(W / 2, top + (i + 1) * lh, _subLines[i], ui::WHITE, ui::TEXT, ui::CENTER, false);
 }
 
 // The picture of a chapter card ("card/<name>", g3ds/card.h): made when the card comes up, dropped when it goes.

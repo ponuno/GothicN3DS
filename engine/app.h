@@ -9,6 +9,7 @@
 #include "loot.h"
 #include "triggers.h"
 #include "particles.h"
+#include "blade_trail.h"
 #include "blood_stains.h"
 #include "shadows.h"
 #include "puddles.h"
@@ -493,11 +494,19 @@ private:
 		u32 held = 0xFFFFFFFFu;
 		u8 lineCount[MAX_SCREENS] = {};
 		char lines[MAX_SCREENS][LINES][LINE] = {};
+		// fix227: what Doc_SetMargins / Doc_SetFont said about the page a screen was cut from.
+		bool centered[MAX_SCREENS] = {}; // the lines are centered
+		bool bigFont[MAX_SCREENS] = {};  // the large font (the "20" of FONT_OLD_20_...)
+		i16 indentLeft[MAX_SCREENS] = {};  // the text area inside the sheet, in screen pixels
+		i16 indentRight[MAX_SCREENS] = {};
 	};
 	// Falling: the highest the feet were since they left the ground, to see how far they dropped when they land.
 	void fallCheck();
 	void drownCheck(float dt);
 	float _drownTime = 0.0f;
+	// fix224: the Barrier is solid: outside its dome the hero is pushed back in and hurt.
+	void barrierCheck(float dt);
+	float _barrierTime = 0.0f;
 	void heroLanded(float drop);
 	// The clock the scripts set (Wld_SetTime: the sleep until morning): the time jumps under a dip to black.
 	float _timeFade = 0.0f;
@@ -511,7 +520,7 @@ private:
 	void docMapPan(float dx, float dy); // fix192: the map moved by screen pixels (clamped to its edges)
 	float docMapFit() const;           // ... screen pixels per texel of the whole map on the top screen
 	void drawDocument();
-	int docWidth(const char* text) const;
+	int docWidth(const char* text, int size = ui::TEXT) const;
 	DocReader _doc;
 	// Magic.
 	enum CastStage : u8 { CAST_NONE, CAST_INVEST, CAST_SHOOT };
@@ -828,7 +837,10 @@ private:
 		Vec3 tip {0, 0, 0}; // where the flame is (the far end of the torch), from the last frame drawn
 	};
 	Torch _torch;
-	u32 _swooshFx = 0; // fix216: the white trail of the blade in a blow
+	// fix225: the white trail of a blade in a blow (the hero's and the inhabitants'): the surface the blade sweeps.
+	BladeTrail _bladeTrail;
+	void npcSwing(u32 npc, Vec3 base, Vec3 tip, bool on);
+	static void npcSwingThunk(void* user, u32 npc, Vec3 base, Vec3 tip, bool on);
 	void torchUpdate(float dt);
 	void torchOut(bool burnt, const char* why);
 	void drawHeldItems(); // the torch in the left hand, the thing being used in the right
@@ -959,6 +971,10 @@ private:
 	void talkUpdate(Input& in, float dt);
 	void drawSubtitle();
 	int _talkTarget = -1;
+	// fix224: the subtitle's lines are wrapped once per line, not every frame (the talk's text is the same for seconds).
+	u32 _subHash = 0;
+	int _subCount = 0;
+	char _subLines[4][320] = {};
 	void chestUpdate(Input& in, float dt);
 	void chestCommand(const PanelCommand& c);
 	void chestStart(u32 index);

@@ -71,6 +71,7 @@ void Game::bindDialogues() {
 	             {"INFO_ADDCHOICE", xAddChoice},         {"INFO_CLEARCHOICES", xClearChoices},
 	             {"NPC_EXCHANGEROUTINE", xExchangeRoutine}, {"PRINT", xPrint},
 	             {"PRINTSCREEN", xPrintScreen},          {"NPC_KNOWSPLAYER", xKnowsPlayer},
+             {"PRINTDIALOG", xPrintScreen}, // fix227: the same with a dialogue number first (0 calls in G1, G2 and Archolos need it)
 	             {"NPC_SETKNOWSPLAYER", xSetKnowsPlayer},
 	             {"NPC_SETTALENTVALUE", xSetTalentValue}, {"NPC_GETTALENTVALUE", xGetTalentValue},
 	             {"NPC_SETTALENTSKILL", xSetTalentSkill}, {"NPC_GETTALENTSKILL", xGetTalentSkill}, {"INTRODUCECHAPTER", xIntroduceChapter}};
@@ -430,6 +431,7 @@ bool Game::exchangeRoutine(u32 npc, const char* name) {
 	_npcs[npc].routineFirst = before;
 	_npcs[npc].routineCount = u16(min<u32>(_routineCount - before, 0xFFFF));
 	place(_npcs[npc], _hours, _find, _findUser);
+	updateFollowers(); // fix226: "FOLLOW" now, "come along" at once
 	return true;
 }
 

@@ -49,7 +49,13 @@ bool Player::swim(const World& world, float dt) {
 	const PlayerConfig& cfg = config;
 	float surface;
 	const float reach = cfg.eyeHeight + 150.0f;
-	const bool water = world.waterBelow({feet.x, feet.y + reach, feet.z}, reach + 20.0f, surface);
+	// fix224: deep under the surface the water is ABOVE the head, so a ray down from the eyes found no water and the
+	// body was dropped out of the swim (it "started walking" in deep water). The ray starts above the surface the body
+	// is diving from, as far as the dive has taken it.
+	const float above = swimming ? cfg.swimDepth + dive + 100.0f : 0.0f;
+	const float fromY = feet.y + max(reach, above);
+	const float drop = max(reach + 20.0f, above + 120.0f);
+	const bool water = world.waterBelow({feet.x, fromY, feet.z}, drop, surface);
 	waterDepth = water ? max(surface - feet.y, 0.0f) : 0.0f;
 	// A little hysteresis keeps the body from bobbing between the two states.
 	if (waterDepth <= cfg.swimDepth - (swimming ? 30.0f : 0.0f)) {

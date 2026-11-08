@@ -260,6 +260,28 @@ gfx::Texture* Barrier::loadTexture() {
 	return t;
 }
 
+bool Barrier::contains(Vec3 p, float margin) const {
+	if (!hasMesh()) return true;
+	const float q[3] = {(p.x - _centre[0]) / _radii[0], (p.y - _centre[1]) / _radii[1], (p.z - _centre[2]) / _radii[2]};
+	const float lim = 1.0f + margin;
+	return dot3(q, q) <= lim * lim;
+}
+
+Vec3 Barrier::keepInside(Vec3 p, float margin) const {
+	if (!hasMesh()) return p;
+	float q[3] = {(p.x - _centre[0]) / _radii[0], (p.y - _centre[1]) / _radii[1], (p.z - _centre[2]) / _radii[2]};
+	const float l2 = dot3(q, q);
+	const float lim = max(0.0f, 1.0f - margin);
+	if (l2 <= lim * lim || l2 < 1e-8f) return p;
+	const float k = lim / sqrtf(l2);
+	return {_centre[0] + q[0] * k * _radii[0], _centre[1] + q[1] * k * _radii[1], _centre[2] + q[2] * k * _radii[2]};
+}
+
+bool Barrier::covers(Vec3 p) const {
+	if (!hasMesh()) return false;
+	return p.x >= _bbMin[0] && p.x <= _bbMax[0] && p.y >= _bbMin[1] && p.y <= _bbMax[1] && p.z >= _bbMin[2] && p.z <= _bbMax[2];
+}
+
 u32 Barrier::bolts() const {
 	u32 n = 0;
 	for (const Bolt& b : _bolt) n += b.alive;

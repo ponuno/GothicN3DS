@@ -518,6 +518,14 @@ void Particles::stop(u32 handle) {
 		if (_dynamic[i].id == handle) _dynamic[i].ttl = min(_dynamic[i].ttl, 0.02f);
 }
 
+// fix227: Wld_StopEffect — to end the running one-off effects of one effect.
+void Particles::stopEffect(u32 effect) {
+	const int di = defFor(effect);
+	if (di < 0) return;
+	for (u32 i = 0; i < _dynamicCount; ++i)
+		if (_dynamic[i].def == u16(di)) _dynamic[i].ttl = min(_dynamic[i].ttl, 0.02f);
+}
+
 void Particles::update(float dt, Vec3 eye) {
 	if (dt <= 0.0f) return;
 	dt = min(dt, 0.1f);

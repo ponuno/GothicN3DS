@@ -1970,7 +1970,9 @@ void appendObjects(const zenkit::World& world, const zenkit::Vfs& vfs, zenkit::G
 			           : vob.type == T::oCMobSwitch ? MOBKIND_SWITCH
 			           : vob.type == T::oCMobWheel ? MOBKIND_WHEEL
 			           : vob.type == T::oCMobContainer ? MOBKIND_CONTAINER
-			           : vob.type == T::oCMobDoor ? MOBKIND_DOOR
+			           : vob.type == T::oCMobDoor ? (out.scheme.find("BED") != std::string::npos || out.scheme.find("BETT") != std::string::npos
+			                                             ? MOBKIND_BED // (issue #2, fix222: a bed filed as a door)
+			                                             : MOBKIND_DOOR)
 			           : vob.type == T::oCMobInter ? MOBKIND_INTER
 			                                       : MOBKIND_OTHER;
 		}

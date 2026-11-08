@@ -65,6 +65,7 @@ public:
 	u32 start(u32 effect, Vec3 pos, float yaw, float seconds);
 	void move(u32 handle, Vec3 pos);
 	void stop(u32 handle);
+	void stopEffect(u32 effect); // fix227: Wld_StopEffect — to end all running (dynamic) effects of that effect
 	bool alive(u32 handle) const; // (fix192) the effect of that handle still runs
 
 	// The engine's own effect for the tail of an arrow (no script has one): a thin glowing streak. Start it with start().

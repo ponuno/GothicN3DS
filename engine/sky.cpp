@@ -299,7 +299,9 @@ void Sky::drawBodies(Vec3 camera, float radius, const SkyColors& colors, float s
 		for (int y = 0; y < 32; ++y)
 			for (int x = 0; x < 32; ++x) {
 				const float dx = (float(x) - 15.5f) / 15.5f, dy = (float(y) - 15.5f) / 15.5f;
-				disc[y * 32 + x] = u8(clamp01((1.0f - sqrtf(dx * dx + dy * dy)) * 7.0f) * 255.0f);
+				// fix224: a soft edge, blended (an alpha-tested disc left a black rim where a cloud met it).
+				const float r = sqrtf(dx * dx + dy * dy);
+				disc[y * 32 + x] = u8(clamp01((1.0f - r) * 2.4f) * 255.0f);
 			}
 		_disc = gfx::uiTextureCreate(32, 32, disc, true);
 		if (!_dot || !_disc) return;
@@ -414,7 +416,7 @@ void Sky::drawBodies(Vec3 camera, float radius, const SkyColors& colors, float s
 		gfx::draw(mesh, 0, starQuads * 6);
 	}
 	if (discQuads) {
-		gfx::setMaterial(_disc, MATF_ALPHA_TEST);
+		gfx::setMaterial(_disc, MATF_BLEND);
 		gfx::draw(mesh, starQuads * 6, discQuads * 6);
 	}
 }

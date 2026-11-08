@@ -210,6 +210,11 @@ struct GameDocPage {
 	char* text;           // the lines, joined by '\n' (null for none)
 	u32 length, capacity; // bytes used, bytes allocated
 	char image[40];       // the page's own background, "" for none
+	// fix227: what Doc_SetMargins / Doc_SetFont said about this page, in the original's 640x480.
+	// margins: left, right, top, bottom in pixels, -1 when not set; centered: the lines are centered.
+	i16 margins[4];
+	bool centered;
+	char font[40]; // the last font Doc_SetFont named, "" if none
 };
 struct GameDocument {
 	bool used, map;
@@ -250,6 +255,7 @@ struct GameStats {
 	u32 routinesLost = 0;   // fix199: Wld_Set*Routine beyond the table
 	u32 objectRoutineSwitches = 0, mobRoutineSwitches = 0; // fix199: times an object routine switched something
 	u32 videosAsked = 0; // fix201: PlayVideo calls
+	u32 exitsToMenu = 0; // fix227: ExitGame / ExitSession asks
 	u32 moves = 0;       // changes of place since the start (routines moving on)
 };
 
@@ -345,6 +351,15 @@ public:
 	bool isMonster(const GameNpc& n) const { return _humanGuilds > 0 && guildOf(n) > _humanGuilds; }
 	const GameNpc* hero() const { return _hero != SCRIPT_NONE ? &_npcs[_hero] : nullptr; }
 	const GameRoutine& routine(u32 i) const { return _routines[i]; }
+	// fix226: the characters whose routine is to follow the player (Mud, Shrat, a guide). They are kept simulated
+	// however far the player goes, so that their own state (ZS_FollowPC and the like) can bring them along.
+	u32 followerCount() const { return _followerCount; }
+	u32 follower(u32 i) const { return i < _followerCount ? _followers[i] : SCRIPT_NONE; }
+	bool isFollower(u32 npc) const {
+		for (u32 i = 0; i < _followerCount; ++i)
+			if (_followers[i] == npc) return true;
+		return false;
+	}
 	const char* text(GameText id) const { return id < _textCount ? _texts[id] : ""; }
 	// The character's name as the scripts give it ("Thorus").
 	const char* nameOf(const GameNpc& n) const;
@@ -458,8 +473,29 @@ public:
 	struct Effect {
 		u32 pfx;
 		int npc;
+		bool stop = false; // fix227: Wld_StopEffect — the App ends the running effects of this pfx
 	};
 	bool takeEffect(Effect& out);
+	// put an effect (pfx — the hash of the particle effect) or a stop request (stop) into the queue for the App, oldest first
+	void queueEffect(u32 pfx, int npc, bool stop = false) {
+		if (!pfx) return;
+		if (_effectCount == 8) {
+			_effectFirst = (_effectFirst + 1) % 8;
+			--_effectCount;
+		}
+		Effect& e = _effects[(_effectFirst + _effectCount) % 8];
+		e.pfx = pfx;
+		e.npc = npc;
+		e.stop = stop;
+	}
+	u32 effectPfx(const char* visual); // fix227: the name from the script — the hash of the particle effect
+	// fix227: ExitGame (after the outro of Gothic 1) and ExitSession (Gothic 2) ask for the main menu;
+	// the App takes the request when the world update runs next.
+	bool takeExitToMenu() {
+		if (!_askExit) return false;
+		_askExit = false;
+		return true;
+	}
 	// ---- triggers (Wld_SendTrigger, Wld_SendUntrigger), and what the world's triggers keep (triggers.h) ----
 	// The next event the scripts sent, oldest first: the name (upper case) and whether it is an untrigger.
 	bool takeTrigger(char* name, u32 size, bool& untrigger);
@@ -763,6 +799,8 @@ private:
 	static void xHasEquippedRanged(ScriptVm& vm, void* user);
 	static void xHasEquippedWeapon(ScriptVm& vm, void* user);
 	static void xIsInFightMode(ScriptVm& vm, void* user);
+	static void xIsDrawingWeapon(ScriptVm& vm, void* user); // fix227
+	static void xIsDrawingSpell(ScriptVm& vm, void* user); // fix227
 	static void xHasReadiedWeapon(ScriptVm& vm, void* user);
 	static void xHasReadiedMelee(ScriptVm& vm, void* user);
 	static void xHasReadiedRanged(ScriptVm& vm, void* user);
@@ -815,6 +853,11 @@ private:
 	u32 _npcCount = 0, _npcCap = 0;
 	GameRoutine* _routines = nullptr;
 	u32 _routineCount = 0, _routineCap = 0;
+	enum { MAX_FOLLOWERS = 32 };
+	u16 _followers[MAX_FOLLOWERS] = {};
+	u8 _followerCount = 0;
+	void updateFollowers();
+	bool isFollowState(u32 fn) const;
 	char** _texts = nullptr;
 	u32* _textHash = nullptr;
 	u32 _textCount = 0, _textCap = 0;
@@ -890,6 +933,7 @@ private:
 	static void xIsNear(ScriptVm& vm, void* user);
 	static void xDetectPlayer(ScriptVm& vm, void* user);
 	static void xStopEffect(ScriptVm& vm, void* user);
+	static void xExitToMenu(ScriptVm& vm, void* user); // fix227: ExitGame / ExitSession
 	// The object routines (Wld_SetObjectRoutine / Wld_SetMobRoutine).
 	struct ObjName {
 		char name[48];
@@ -961,6 +1005,7 @@ private:
 	u32 _triggerKeptCount = 0, _triggerKeptCap = 0;
 	Effect _effects[8] = {};
 	u32 _effectFirst = 0, _effectCount = 0;
+	bool _askExit = false; // fix227: ExitGame / ExitSession asked for the main menu
 	static void xRemoveNpc(ScriptVm& vm, void* user);
 	static void xGetHeightToNpc(ScriptVm& vm, void* user);
 	static void xHasRangedWeaponWithAmmo(ScriptVm& vm, void* user);
@@ -975,6 +1020,8 @@ private:
 	static void xDocCreateMap(ScriptVm& vm, void* user);
 	static void xDocSetPage(ScriptVm& vm, void* user);
 	static void xDocSetPages(ScriptVm& vm, void* user);
+	static void xDocSetMargins(ScriptVm& vm, void* user); // fix227
+	static void xDocSetFonts(ScriptVm& vm, void* user);   // fix227: Doc_SetFont
 	static void xDocPrintLine(ScriptVm& vm, void* user);
 	static void xDocSetLevel(ScriptVm& vm, void* user);
 	static void xDocSetLevelCoords(ScriptVm& vm, void* user);

@@ -139,6 +139,7 @@ void Game::release() {
 	_armors = nullptr;
 	_worlds = nullptr;
 	_npcCount = _npcCap = _routineCount = _routineCap = _textCount = _textCap = 0;
+	_followerCount = 0;
 	_armorCount = _armorCap = _worldCount = _worldCap = 0;
 	_world = 0;
 	_hero = SCRIPT_NONE;
@@ -276,8 +277,8 @@ bool Game::bindAll() {
 	             {"DOC_SETPAGES", xDocSetPages},
 	             {"DOC_PRINTLINE", xDocPrintLine},
 	             {"DOC_PRINTLINES", xDocPrintLine},
-	             {"DOC_SETMARGINS", xNothing},
-	             {"DOC_SETFONT", xNothing},
+	             {"DOC_SETMARGINS", xDocSetMargins}, // fix227,
+	             {"DOC_SETFONT", xDocSetFonts}, // fix227,
 	             {"DOC_SETLEVEL", xDocSetLevel},
 	             {"DOC_SETLEVELCOORDS", xDocSetLevelCoords},
 	             {"DOC_SHOW", xDocShow},
@@ -323,6 +324,9 @@ bool Game::bindAll() {
 	             {"PRINTDEBUGINST", xNothing},
 	             {"PRINTDEBUGINSTCH", xNothing},
 	             {"PRINTDEBUGCH", xNothing}};
+	// fix227: the end of the game asks for the main menu (the outro of Gothic 1, G2's ExitSession).
+	_vm.bind("EXITGAME", xExitToMenu, this); // fix227: the outro of Gothic 1
+	_vm.bind("EXITSESSION", xExitToMenu, this); // fix227: the end of a G2 session
 	for (const auto& e : table) _vm.bind(e.name, e.fn, this);
 	bindDialogues();
 	bindItems();
@@ -652,6 +656,21 @@ void Game::xIsInFightMode(ScriptVm& vm, void* user) {
 	vm.pushInt(in); // (ranged weapons: not yet)
 }
 
+// fix227: Npc_IsDrawingWeapon — a weapon in the hands or on its way there (fists are no weapon; a spell is
+// Npc_IsDrawingSpell's business). The scripts check it before offering peace or waiting out a blow.
+void Game::xIsDrawingWeapon(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const GameNpc* n = g.npcOf(vm.popInstance());
+	const u8 w = n ? u8(n->weapon) : u8(WEAPON_NONE);
+	vm.pushInt(w == WEAPON_1H || w == WEAPON_2H || w == WEAPON_BOW || w == WEAPON_CBOW);
+}
+
+void Game::xIsDrawingSpell(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const GameNpc* n = g.npcOf(vm.popInstance());
+	vm.pushInt(n && n->weapon == WEAPON_MAG);
+}
+
 void Game::xHasReadiedWeapon(ScriptVm& vm, void* user) {
 	Game& g = *static_cast<Game*>(user);
 	const GameNpc* n = g.npcOf(vm.popInstance());
@@ -961,6 +980,31 @@ const GameRoutine* Game::routineAt(const GameNpc& n, float hours) const {
 	return &_routines[n.routineFirst];
 }
 
+// fix226: a routine state that means "come along" (G1: ZS_FollowPC, ZS_GuidePC, ZS_FollowMode; G2 and mods add
+// their own). The names are compared by hash, so this works with an archive baked before "script/states" was kept.
+bool Game::isFollowState(u32 fn) const {
+	if (!fn || fn >= _vm.symbolCount()) return false;
+	const u32 h = _vm.symbol(fn).nameHash;
+	static const u32 known[] = {hashName("ZS_FOLLOWPC"), hashName("ZS_GUIDEPC"), hashName("ZS_FOLLOWMODE"),
+	                            hashName("ZS_FOLLOWMODEWAIT"), hashName("ZS_ESCORT"), hashName("ZS_ESCORTPC"),
+	                            hashName("ZS_ESCORTNPC"), hashName("ZS_FOLLOW")};
+	for (u32 k : known)
+		if (h == k) return true;
+	return false;
+}
+
+// The followers of the world the game is in, for Npcs::select: they are considered even when the player has walked
+// out of the range every other character is dropped at. Rebuilt when a routine changes (setTime, Npc_ExchangeRoutine)
+// and after a save is read.
+void Game::updateFollowers() {
+	_followerCount = 0;
+	for (u32 i = 0; i < _npcCount && _followerCount < MAX_FOLLOWERS; ++i) {
+		const GameNpc& n = _npcs[i];
+		if (n.hero || !n.placed || n.world != _world || n.down == DOWN_DEAD) continue;
+		if (isFollowState(behaviour(n))) _followers[_followerCount++] = u16(i);
+	}
+}
+
 int Game::indexOf(const ScriptInstance* inst) const {
 	if (!inst) return -1;
 	const size_t index = reinterpret_cast<size_t>(inst->user);
@@ -1060,6 +1104,7 @@ u32 Game::setTime(float hours, PointFinder find, void* user) {
 		place(n, hours, find, user);
 		if (!n.placed) ++_stats.unplaced;
 	}
+	updateFollowers(); // fix226
 	return _stats.moves - before;
 }
 

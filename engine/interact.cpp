@@ -100,7 +100,10 @@ int App::mobNearest(float* distance) const {
 		}
 		if (d2 >= bestD || !at) continue;
 		// (The place he would stand at, or the thing itself: either seen will do.)
-		if (!seen(at) && !(at != m.pos && seen(m.pos))) continue;
+		bool visible = seen(at) || (at != m.pos && seen(m.pos));
+		// (A bed against a wall may have its nearest place in it: any of its places seen will do.)
+		for (u32 k = 0; !visible && k < m.slotCount && mobs.isBed(i); ++k) visible = seen(mobs.slot(i, k).pos);
+		if (!visible) continue;
 		bestD = d2;
 		best = int(i);
 	}

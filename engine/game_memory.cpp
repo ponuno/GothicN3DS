@@ -285,8 +285,38 @@ void Game::xPlayVideoEx(ScriptVm& vm, void* user) {
 	vm.pushInt(1);
 }
 
-// Wld_StopEffect(name): the effects shown here end by themselves after a moment (Wld_PlayEffect).
-void Game::xStopEffect(ScriptVm& vm, void*) { (void)vm.popString(); }
+// Wld_StopEffect(visual) — fix227: end the effects of this visual. In Gothic 2 the scripts also name a vob
+// and its index — we pop them off and ignore them: our effects play at characters, not attached to vobs.
+void Game::xStopEffect(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	char visual[64];
+	copyText(visual, sizeof(visual), vm.popString());
+	const u32 fn = vm.callee();
+	if (fn != SCRIPT_NONE) {
+		const u32 count = vm.symbol(fn).count;
+		for (u32 k = count; k >= 2; --k) { // the arguments after the name, by their types
+			const ScriptSymbol& p = vm.symbol(fn + k);
+			if (p.type == SCRIPT_FLOAT) {
+				(void)vm.popFloat();
+			} else if (p.type == SCRIPT_INT || p.type == SCRIPT_FUNC) {
+				(void)vm.popInt();
+			} else if (p.type == SCRIPT_STRING) {
+				(void)vm.popString();
+			} else {
+				(void)vm.popInstance();
+			}
+		}
+	}
+	g.queueEffect(g.effectPfx(visual), -1, true);
+}
+
+// fix227: ExitGame and ExitSession ask for the main menu (after the credits of Gothic 1, at the end of G2).
+void Game::xExitToMenu(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	(void)vm;
+	g._askExit = true;
+	++g._stats.exitsToMenu;
+}
 
 void Game::bindMemory() {
 	static const struct {

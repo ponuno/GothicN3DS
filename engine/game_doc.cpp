@@ -1,7 +1,7 @@
 // Books, letters and maps the scripts put up (Doc_Create, Doc_SetPages, Doc_PrintLine(s), Doc_Show ...).
 // As OpenGothic's Gothic::doc_*: a handle names a document being built; Doc_Show gives it to the reader
-// and the handle is free again. The margins and fonts the scripts name are the original's screen's (640 x 480)
-// and mean nothing on this one: the reader lays the text out itself (App::docLayout).
+// and the handle is free again. The margins and fonts the scripts name (Doc_SetMargins, Doc_SetFont) are
+// kept per page since fix227: the reader scales them from the original's 640x480 onto its own screen.
 #include "game.h"
 
 #include <stdlib.h>
@@ -42,6 +42,14 @@ int Game::docCreate(bool map) {
 		_docs[i].used = true;
 		_docs[i].map = map;
 		_docs[i].pageCount = 1; // (Doc_SetPages says more; a script that prints without it has the one)
+		for (u32 p = 0; p < GAME_DOC_PAGES; ++p) {
+			_docs[i].pages[p].margins[0] = -1;
+			_docs[i].pages[p].margins[1] = -1;
+			_docs[i].pages[p].margins[2] = -1;
+			_docs[i].pages[p].margins[3] = -1;
+			_docs[i].pages[p].centered = false;
+			_docs[i].pages[p].font[0] = 0;
+		}
 		return int(i);
 	}
 	return -1;
@@ -104,6 +112,52 @@ void Game::xDocSetPages(ScriptVm& vm, void* user) {
 	const int count = vm.popInt();
 	GameDocument* d = g.docOf(vm.popInt());
 	if (d && count >= 0 && u32(count) <= GAME_DOC_PAGES) d->pageCount = u32(count);
+}
+
+// fix227. Doc_SetMargins(doc, page, left, top, right, bottom, center): the text area of a page, in the
+// pixels of the original screen (640x480). The reader scales them onto its own screen; where not set, it
+// lays the text out as before. A page that does not exist — as Doc_SetPage: for the whole document.
+void Game::xDocSetMargins(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	const i32 center = vm.popInt();
+	const i32 bottom = vm.popInt();
+	const i32 right = vm.popInt();
+	const i32 top = vm.popInt();
+	const i32 left = vm.popInt();
+	const int page = vm.popInt();
+	GameDocument* d = g.docOf(vm.popInt());
+	if (!d) return;
+	const bool cen = center != 0;
+	// The page keeps the margins as left, right, top, bottom; the center flag — beside them.
+	const i16 m[4] = {i16(clamp<i32>(left, -1, 32000)), i16(clamp<i32>(right, -1, 32000)),
+	                  i16(clamp<i32>(top, -1, 32000)), i16(clamp<i32>(bottom, -1, 32000))};
+	if (page >= 0 && u32(page) < d->pageCount) {
+		GameDocPage& p = d->pages[page];
+		for (int k = 0; k < 4; ++k) p.margins[k] = m[k];
+		p.centered = cen;
+	} else if (page < 0) {
+		for (u32 p = 0; p < GAME_DOC_PAGES; ++p) {
+			for (int k = 0; k < 4; ++k) d->pages[p].margins[k] = m[k];
+			d->pages[p].centered = cen;
+		}
+	}
+}
+
+// Doc_SetFont(doc, page, font) — the name of a font of the original ("FONT_OLD_20_WHITE.TGA", ...).
+// We have two sizes (and keep the color of the ink), so only the height in the name is used: 20 and above
+// is the large, otherwise the small one. The reader parses the name again when laying out.
+void Game::xDocSetFonts(ScriptVm& vm, void* user) {
+	Game& g = *static_cast<Game*>(user);
+	char name[64];
+	copyText(name, sizeof(name), vm.popString());
+	const int page = vm.popInt();
+	GameDocument* d = g.docOf(vm.popInt());
+	if (!d) return;
+	if (page >= 0 && u32(page) < d->pageCount) {
+		copyText(d->pages[page].font, sizeof(d->pages[page].font), name);
+	} else if (page < 0) {
+		for (u32 p = 0; p < GAME_DOC_PAGES; ++p) copyText(d->pages[p].font, sizeof(d->pages[p].font), name);
+	}
 }
 
 void Game::xDocPrintLine(ScriptVm& vm, void* user) {

@@ -139,3 +139,7 @@ static inline void C3D_AlphaBlend(GPU_BLENDEQUATION, GPU_BLENDEQUATION, GPU_BLEN
 
 enum { C3D_UNSIGNED_BYTE = 0, C3D_UNSIGNED_SHORT = 1 };
 void C3D_DrawElements(GPU_Primitive_t primitive, int count, int type, const void* indices);
+
+// Отражения: перенос цели в текстуру в моке — пустой (текстура остаётся
+// прежней; тесты кадров отражений на host не смотрят).
+inline void GX_DisplayTransfer(u32*, u32, u32*, u32, u32) {}

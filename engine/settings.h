@@ -143,6 +143,10 @@ struct Settings {
 	float cloudShadowScale() const { return cloudShadows == 1 ? 1.0f : cloudShadows == 2 ? 1.45f : 0.0f; }
 	float waveHeightCm() const { return waves == 1 ? 10.0f : waves == 2 ? 22.0f : waves == 3 ? 40.0f : 0.0f; }
 	float lodFadeMs() const { return lodFade == 0 ? 1.0f : lodFade == 2 ? 900.0f : 350.0f; }
+	// Отражения в воде («спокойное зеркало», этап 1): 0 off, 1 слабое, 2 сильное.
+	// Только консоль; на хосте reflectionSupported() ложен и вода как раньше.
+	u8 reflection = 0;
+	float reflectionStrength() const { return reflection == 1 ? 0.55f : reflection == 2 ? 0.85f : 0.0f; }
 	float lodDistanceCm() const;
 
 	// Clamps every value into its range (after reading a file of another version).

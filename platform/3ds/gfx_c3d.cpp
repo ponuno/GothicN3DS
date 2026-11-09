@@ -126,6 +126,22 @@ bool gAlphaTest = false; // the material's own (cut-out)
 // Dissolving (setFade): the share of pixels drawn, 255 = all (off), and the
 // noise texture it is tested against.
 u8 gFade = 255;
+
+// ---- планарные отражения в воде («спокойное зеркало», этап 1) ----
+// Состояние и машина описаны у doReflTransfer ниже; здесь — до updateWindy,
+// который reflon'ом управляет.
+C3D_RenderTarget* gReflTarget = nullptr;
+C3D_Tex gReflTex;
+bool gReflTexReady = false;   // цель и текстура созданы
+bool gReflBound = false;      // текстура привязана к юниту 1 (как tenant)
+bool gReflPass = false;       // идёт зеркальный проход (между Begin и End)
+bool gReflPending = false;    // цель нарисована — в конце кадра переносится в текстуру
+bool gReflSampleReady = false; // перенос уже был: воде можно сэмплить отражение
+float gReflPlane = 0.0f;      // уровень воды, см (мировые)
+u8 gReflStrength = 0;         // сила смешивания 0..255
+int gLocReflon = -1;          // bool-регистр reflon в шейдере
+bool gReflon = false;         // последнее значение reflon
+bool gReflStageOn = false;    // стадия 4 (rgb) настроена на смешивание отражения
 C3D_Tex gNoise;
 bool gNoiseReady = false;
 bool gInFrame = false;
@@ -134,6 +150,14 @@ bool gFogToBlack = false;
 BlendMode gBlend = BLEND_UNSET;
 float gTexOffset[2] = {0, 0};
 float gAnchor[3] = {0, 0, 0};       // the lattice point next to the eye that positions are relative to
+
+// Смещение отражённой плоскости в anchored-координатах: отражённая точка —
+// (x, plane − y, z) с plane = 2·(уровень воды − якорь по y); 0, когда
+// отражений нет (шейдер тогда эту компоненту не читает, fast и подавно).
+static inline float reflPlaneRow() {
+	return (gReflSampleReady && gReflStrength && gLocReflon >= 0) ? 2.0f * (gReflPlane - gAnchor[1]) : 0.0f;
+}
+
 float gParams[4] = {0, 0, 0, 0};    // last value of the `params` uniform
 MemStats gMem;
 FrameStats gFrameStats = {};
@@ -317,7 +341,7 @@ void setSunStages() {
 void sendSunUniforms() {
 	if (!gMvpShader) return;
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocTexOffset, gTexOffset[0], gTexOffset[1], gSunUv[2], gSunUv[3]);
-	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocAoK, gFx[3] / 256.0f, gSunUv[0], gSunUv[1], 0.0f);
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocAoK, gFx[3] / 256.0f, gSunUv[0], gSunUv[1], reflPlaneRow());
 }
 
 // Unit 1 without a mask: the dissolve's noise, or (no dissolve) the white 8x8 - never nothing, a stage reads it.
@@ -364,6 +388,7 @@ void setFadeStages(bool on, u8 share) {
 	C3D_TexEnv* s3 = C3D_GetTexEnv(5);
 	C3D_TexEnvInit(s2);
 	C3D_TexEnvInit(s3);
+	gReflStageOn = false; // TexEnvInit выше вернул стадии в проход; отражение перевпишет при следующей воде
 	if (!on) return;
 	C3D_TexEnvSrc(s2, C3D_Alpha, GPU_PREVIOUS, GPU_TEXTURE1, GPU_PRIMARY_COLOR);
 	C3D_TexEnvFunc(s2, C3D_Alpha, GPU_SUBTRACT);
@@ -399,7 +424,7 @@ void setFxUniform(float x, float y, float z, float w) {
 	gFx[2] = z;
 	gFx[3] = w;
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocFx, x, y, z, w);
-	if (gMvpShader) C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocAoK, w / 256.0f, gSunUv[0], gSunUv[1], 0.0f);
+	if (gMvpShader) C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocAoK, w / 256.0f, gSunUv[0], gSunUv[1], reflPlaneRow());
 }
 
 void updateWindy() {
@@ -415,8 +440,35 @@ void updateWindy() {
 		gWavy = wavy;
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWavy, wavy);
 	}
+	// Отражение (этап 1): reflon поднимается для воды с грид-разметкой, когда
+	// перенесённое отражение уже есть и сила не нулевая. Вода в отражённом
+	// проходе не рисуется, растворение есть только в непрозрачном мире.
+	const bool reflon = gLocReflon >= 0 && wavy && gReflSampleReady && gReflStrength != 0;
+	if (reflon != gReflon) {
+		gReflon = reflon;
+		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocReflon, reflon);
+	}
 }
 
+// Стадия 4, RGB: смесь с отражением; текстура отражения на юните 1 как ещё
+// один «арендатор» (вода не растворяется и не берёт солнечной маски, так что
+// стадии свободны). Вызывается из setMaterial; fade сбрасывает флаг.
+void updateReflStage() {
+	const bool want = gReflon && !gReflPass;
+	if (want == gReflStageOn) return;
+	gReflStageOn = want;
+	C3D_TexEnv* env = C3D_GetTexEnv(4);
+	C3D_TexEnvInit(env);
+	if (want) {
+		C3D_TexEnvSrc(env, C3D_RGB, GPU_TEXTURE1, GPU_PREVIOUS, GPU_CONSTANT);
+		C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_ALPHA);
+		C3D_TexEnvFunc(env, C3D_RGB, GPU_INTERPOLATE);
+		C3D_TexEnvColor(env, u32(gReflStrength) << 24);
+		if (!gReflBound) { C3D_TexBind(1, &gReflTex); gReflBound = true; gUnit1 = &gReflTex; }
+	} else {
+		bindUnit1Default();
+	}
+}
 void setWaveUniform(float a, float b, float height, float shade) {
 	if (gLocWave < 0 || (a == gWave[0] && b == gWave[1] && height == gWave[2] && shade == gWave[3])) return;
 	gWave[0] = a;
@@ -562,10 +614,22 @@ void reap() {
 
 } // namespace
 
-// The render target: 240x400, the screen's own size, or, supersampled, 480x800 (four times the pixels, about 3 MB
-// of VRAM with the depth buffer) which the display transfer shrinks by averaging 2x2 as it copies it to the screen
-// (libctru: with scaling the dimensions given are the bigger ones, which is what citro3d passes). If the big one does
-// not fit into VRAM the ordinary one is made.
+// ---- планарные отражения в воде («спокойное зеркало», этап 1) ----
+// Состояние — выше, у gReflTarget (до updateWindy, который им управляет);
+// здесь — машина: отдельная цель 256x256 (RGBA8 + глубина 24, VRAM),
+// отражённая камера (мир отражается в плоскости y = waterY до вида) рисует в
+// неё непрозрачный мир внутри того же кадра, до основного прохода; в конце
+// кадра display-перенос кладёт цель в текстуру, вода сэмплит её проективно
+// (этап reflon в world_full.v.pica: точка (x, plane - y, z) тем же mvp, rcp
+// уже есть) и смешивает по силе через RGB стадии 4: вода не растворяется и
+// не берёт солнечной маски, так что стадия свободна. Текстура живёт на
+// юните 1 ещё одним «арендатором» рядом с шумом и маской солнца. Стерео и
+// шейдер без reflon отражений не получают (этап 2).
+
+#define REFL_TRANSFER_FLAGS 	(GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) | 	 GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) | 	 GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
+
+static Texture gReflWrap; // обёртка для reflectionTexture(): тот же C3D_Tex
+
 static bool makeTarget(bool super) {
 	gSuper = false;
 	gTarget = nullptr;
@@ -631,6 +695,19 @@ bool init() {
 	}
 
 	if (!makeTarget(gSuperWanted)) return false;
+
+	// Отражения (этап 1): цель 256x256 RGBA8 + глубина 24 (VRAM) и текстура
+	// под перенос. Не получилось — отражения просто выключены.
+	gReflTarget = C3D_RenderTargetCreate(REFL_W, REFL_H, GPU_RB_RGBA8, GPU_RB_DEPTH24);
+	if (gReflTarget && C3D_TexInit(&gReflTex, REFL_W, REFL_H, GPU_RGBA8)) {
+		C3D_TexSetFilter(&gReflTex, GPU_LINEAR, GPU_LINEAR);
+		C3D_TexSetWrap(&gReflTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+		gReflTexReady = true;
+		gReflWrap.tex = gReflTex;
+	} else {
+		C3D_RenderTargetDelete(gReflTarget);
+		gReflTarget = nullptr;
+	}
 
 	gMvpShader = false;
 	gBound = PROGRAM_FULL;
@@ -732,6 +809,8 @@ bool init() {
 		gLocAoK = shaderInstanceGetUniformLocation(gProgram.vertexShader, "aoK");
 		if (gLocMvp < 0 || gLocFogRow < 0 || gLocLightK < 0 || gLocAoK < 0) return false;
 		gLocProjection = gLocModelView = 0; // (stand-ins for the check below; the matrices go to mvp)
+		// Отражения: bool reflon (опционально: шейдер без него рисует воду без отражений).
+		gLocReflon = shaderInstanceGetUniformLocation(gProgram.vertexShader, "reflon");
 	} else {
 		gLocProjection = shaderInstanceGetUniformLocation(gProgram.vertexShader, "projection");
 		gLocModelView = shaderInstanceGetUniformLocation(gProgram.vertexShader, "modelView");
@@ -796,6 +875,13 @@ void shutdown() {
 		// might not come.)
 		if (gTargetR) C3D_RenderTargetDelete(gTargetR);
 		if (gTarget) C3D_RenderTargetDelete(gTarget);
+		if (gReflTarget) C3D_RenderTargetDelete(gReflTarget);
+		gReflTarget = nullptr;
+		if (gReflTexReady) C3D_TexDelete(&gReflTex);
+		gReflTexReady = false;
+		gReflBound = gReflPass = false;
+		gReflStageOn = false;
+		gLocReflon = -1;
 		reap();
 		// The command writer still points into one of the buffers freed next.
 		GPUCMD_SetBuffer(nullptr, 0, 0);
@@ -1097,6 +1183,7 @@ bool captureFrame(u16* rgb565, int w, int h) {
 	return true;
 }
 
+
 void frameBegin(const FrameDesc& f) {
 	noteTopBuffer();
 	gFrame = f;
@@ -1366,6 +1453,7 @@ void setMaterial(Texture* t, u32 materialFlags, float opacity, float uvOffsetU, 
 	gMaterialWind = (materialFlags & MATF_WIND) != 0;
 	gMaterialWater = (materialFlags & MATF_WATER) != 0;
 	updateWindy();
+	updateReflStage();
 	gSunMaterialOk = (materialFlags & (MATF_ALPHA_TEST | MATF_WIND | MATF_ADD | MATF_WATER)) == 0;
 	updateSun();
 }
@@ -1653,6 +1741,19 @@ void uiDraw(Texture* t, const UiQuad* quads, u32 count) {
 	}
 }
 
+void doReflTransfer() {
+	gReflPending = false;
+	if (!gReflTarget || !gReflTexReady) return;
+	// Цель -> текстура одним display-переносом (как экран: цель в памяти
+	// лежит «на боку»; FLIP_VERT и OUT_TILED дают на выходе обычную
+	// текстуру-сэмпл; точная ориентация проверяется на железе, план, раздел 3).
+	GX_DisplayTransfer((u32*)gReflTarget->frameBuf.colorBuf,
+	                   GX_BUFFER_DIM(gReflTarget->frameBuf.width, gReflTarget->frameBuf.height),
+	                   (u32*)gReflTex.data, GX_BUFFER_DIM(REFL_W, REFL_H), REFL_TRANSFER_FLAGS);
+	C3D_TexFlush(&gReflTex);
+	gReflSampleReady = true;
+}
+
 void frameEnd() {
 	if (!gInFrame) return;
 	gInFrame = false;
@@ -1700,6 +1801,49 @@ void frameEnd() {
 	GPUCMD_SetBuffer(gOwnBuffer[gOwnIndex], kOwnBufferWords, recorded);
 	C3D_FrameEnd(0);
 	gOwnIndex ^= 1; // the GPU reads this buffer now; the next frame is written into the other
+	if (gReflPending) doReflTransfer();
+}
+
+// ---- планарные отражения в воде (этап 1, «спокойное зеркало») ----
+// Публичная часть; состояние и комментарий — наверху файла, у gReflTarget.
+
+bool reflectionSupported() {
+	return gReady && gReflTarget && gReflTexReady && gLocReflon >= 0;
+}
+
+Texture* reflectionTexture() {
+	return gReflTexReady ? &gReflWrap : nullptr;
+}
+
+
+bool reflectionBegin(const FrameDesc& f, const ReflParams& p) {
+	if (!reflectionSupported() || !gInFrame || gReflPass || gStereoFrame) return false;
+	if (p.strength <= 0.0f || !(p.waterY == p.waterY) || p.waterY < -1.0e9f || p.waterY > 1.0e9f) return false;
+	gReflPlane = p.waterY;
+	gReflStrength = u8(clamp(p.strength, 0.0f, 1.0f) * 255.0f + 0.5f);
+	// Очистка цели цветом тумана кадра: небо отражения — цвет горизонта.
+	const u32 clear = (u32)f.fogColor[0] << 24 | (u32)f.fogColor[1] << 16 | (u32)f.fogColor[2] << 8 | 0xFFu;
+	C3D_RenderTargetClear(gReflTarget, C3D_CLEAR_ALL, clear, 0);
+	if (gClassic) {
+		C3D_FrameDrawOn(gReflTarget);
+	} else {
+		C3D_SetFrameBuf(&gReflTarget->frameBuf);
+		C3D_SetViewport(0, 0, REFL_W, REFL_H);
+	}
+	beginPassState(f, gReflTarget); // состояние прохода заново, под отражённую камеру
+	gReflPass = true;
+	return true;
+}
+
+void reflectionEnd() {
+	if (!gReflPass) return;
+	gReflPass = false;
+	gReflPending = true; // перенос цели в текстуру — в конце кадра, после списка
+	// назад к экранной цели и к состоянию основного прохода
+	if (gClassic) C3D_FrameDrawOn(gTarget);
+	C3D_SetFrameBuf(&gTarget->frameBuf);
+	C3D_SetViewport(0, 0, gTarget->frameBuf.width, gTarget->frameBuf.height);
+	beginPassState(gFrame, gTarget);
 }
 
 void c3dSetStereo(bool on) {

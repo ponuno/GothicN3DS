@@ -31,7 +31,8 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 25: the light of torches and fires.
 // 26: English is the base language (a file of an older version that had Russian - the old default - gets English once).
 // 27: the font of the interface (the game's own or the built-in one).
-constexpr u32 SETTINGS_VERSION = 27;
+// 28: planar reflection in the water ("спокойное зеркало"), u8 (0 off, 1 weak, 2 strong).
+constexpr u32 SETTINGS_VERSION = 28;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -66,16 +67,16 @@ void Settings::resetGraphics() {
 namespace {
 struct GfxSet {
 	u8 objects, dissolve, frameRate, density, npcDistance, lamps;
-	u8 occlusion, wind, waves, shadows, sunShadows, cloudShadows, grass, farLayer, farGeometry;
+	u8 occlusion, wind, waves, reflection, shadows, sunShadows, cloudShadows, grass, farLayer, farGeometry;
 	u8 reproject, antialias, farFill, lodFade, godRays, visibility;
 };
 const GfxSet kGfxSets[GFX_PLUS_OWN] = {
     // Speed: 60 fps first (the defaults of a fresh settings.bin).
-    {OBJECTS_SMOOTH, 1, FRAMES_60, 0, 1, 2, 0, 0, 0, SHADOWS_OFF, 1, 0, 0, 0, 2, 0, 0, 0, 1, 1, 0},
+    {OBJECTS_SMOOTH, 1, FRAMES_60, 0, 1, 2, 0, 0, 0, 0, SHADOWS_OFF, 1, 0, 0, 0, 2, 0, 0, 0, 1, 1, 0},
     // Balanced: 60 when it fits, the cheap extras on.
-    {OBJECTS_BALANCED, 1, FRAMES_60, 0, 1, 2, 60, 2, 1, SHADOWS_HERO, 1, 0, 1, 1, 2, 0, 0, 1, 1, 0, 0},
+    {OBJECTS_BALANCED, 1, FRAMES_60, 0, 1, 2, 60, 2, 1, 0, SHADOWS_HERO, 1, 0, 1, 1, 2, 0, 0, 1, 1, 0, 0},
     // Quality: a steady 30 and everything the player's measurement kept.
-    {OBJECTS_BALANCED, 1, FRAMES_30, 0, 1, 2, 100, 3, 3, SHADOWS_ALL, 1, 0, 2, 3, 2, 0, 2, 1, 0, 0, 0},
+    {OBJECTS_BALANCED, 1, FRAMES_30, 0, 1, 2, 100, 3, 3, 2, SHADOWS_ALL, 1, 0, 2, 3, 2, 0, 2, 1, 0, 0, 0},
 };
 #define GFX_FIELDS(X) X(objects) X(dissolve) X(frameRate) X(density) X(npcDistance) X(lamps) X(occlusion) X(wind) X(waves) \
 	X(shadows) X(sunShadows) X(cloudShadows) X(grass) X(farLayer) X(farGeometry) X(reproject) X(antialias) X(farFill) X(lodFade) \
@@ -120,6 +121,7 @@ void Settings::sanitize() {
 	occlusion = u8(clamp<int>(occlusion, 0, 100) / 10 * 10);
 	if (wind > 3) wind = 0;
 	if (waves > 3) waves = 0;
+	if (reflection > 2) reflection = 0;
 	if (weather > 5) weather = 0;
 	if (shadows >= SHADOW_MODES) shadows = SHADOWS_OFF;
 	if (farLayer > 3) farLayer = 0;

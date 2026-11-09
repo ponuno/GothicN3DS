@@ -1149,7 +1149,7 @@ static void testDefaultShader(const std::string& pak) {
 	// main, fastmain, fadefast (with the dissolve: 3 more), skinmain (both ways of the dissolve counted)
 	std::printf("  entries: %u, %u, %u and %u instructions\n", mock3ds::shaderEntryInstructions(0), mock3ds::shaderEntryInstructions(1),
 	            mock3ds::shaderEntryInstructions(2), mock3ds::shaderEntryInstructions(3));
-	CHECK(mock3ds::shaderEntryInstructions(1) <= 20 && mock3ds::shaderEntryInstructions(0) < 130); // (fix140: the sheen made it 125) // (the water waves are most of the full entry: it draws only what waves or sways)
+	CHECK(mock3ds::shaderEntryInstructions(1) <= 20 && mock3ds::shaderEntryInstructions(0) < 140); // (fix140: the sheen made it 125; the water's reflection ("спокойное зеркало") adds 11 more to the full entry, which draws only what waves, sways or reflects)
 	CHECK(mock3ds::shaderEntryInstructions(2) <= 28 && mock3ds::shaderEntryInstructions(3) <= 32);
 	// The sun's mask: four instructions more, in entries of their own (chunks without a mask keep the short ones; fix145: the
 	// coordinate is built in a register and written whole, zw too).

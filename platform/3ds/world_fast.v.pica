@@ -30,6 +30,7 @@
 .bool windy
 .bool fading
 .bool wavy          ; Graphics+: the water's waves (world_full.v.pica only)
+.bool reflon        ; the water's reflection (world_full.v.pica only)
 
 .constf consts(0.0, 1.0, 0.0, 0.0)
 .alias zero consts.xxxx

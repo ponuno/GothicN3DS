@@ -1842,7 +1842,7 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 		snap = blended || _fadeStep >= 255 || l.drawnFrame + 1 != _drawFrame;
 		l.snapNow = snap;
 		l.windBatches = 0;
-		if (!blended) l.drawnFrame = _drawFrame;
+		if (!blended && !_reflMode) l.drawnFrame = _drawFrame; // отражение не считается отрисовкой кадра
 	}
 	// The chunk as a whole may be dissolving at the draw distance: its batches share that, and merge as they would.
 	const u8 edge = blended ? u8(255) : l.edgeShare;
@@ -1946,6 +1946,9 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 		Batch& batch = l.batches[b];
 		const WorldMaterial& m = _materials[batch.material];
 		if (((m.flags & MATF_TRANSLUCENT) != 0) != blended || batch.indexCount == 0) continue;
+		// Отражение: воду не рисуем вовсе, равно как и то, что целиком под её
+		// поверхностью (в зеркале видно только то, что над водой).
+		if (_reflMode && ((m.flags & MATF_WATER) || batch.bbMax[1] <= _reflWater)) continue;
 		// What sways is drawn after everything else: on the console it is a different vertex shader, and a change
 		// of shader between two draw calls costs more than the calls do.
 		if (phase != 0 && ((m.flags & MATF_WIND) != 0) != (phase == 2)) {
@@ -2057,7 +2060,31 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 	if (!blended) gfx::setFade(1.0f);
 }
 
-void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs) {
+void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs, bool reflection, float waterY) {
+	if (reflection) {
+		if (!_pak) return;
+		// Отражение — вторая отрисовка внутри того же кадра: растворение и
+		// статистику главного прохода сохраняем и возвращаем; воду и то,
+		// что целиком под ней, отсекает drawBatches.
+		const WorldStats st = _stats;
+		const u32 frame = _drawFrame;
+		const u32 lastMs = _lastDrawMs;
+		const int fadeStep = _fadeStep;
+		const int lodStep = _lodStep;
+		_reflMode = true;
+		_reflWater = waterY;
+
+		draw(viewProj, camera, timeMs);
+
+		_reflMode = false;
+		_stats = st;
+		_drawFrame = frame;
+		_lastDrawMs = lastMs;
+		_fadeStep = fadeStep;
+		_lodStep = lodStep;
+		return;
+	}
+
 	_stats.chunksDrawn = 0;
 	_stats.chunksEdgeFading = 0;
 	_stats.drawCalls = 0;

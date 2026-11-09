@@ -1384,6 +1384,33 @@ void App::render() {
 	};
 	trace("render: frame begin");
 	gfx::frameBegin(eyeDesc[0]);
+
+	// Отражения в воде, этап 1 («спокойное зеркало»): второй проход 256x256
+	// отражённой камерой, до основного мира; в конце кадра цель переносится в
+	// текстуру, и вода сэмплит её проективно (с задержкой в кадр; стоячая вода
+	// этого не видит). Отражения нет под водой, в стерео и там, где шейдер
+	// не умеет; уровень воды — ближайшая поверхность под глазом.
+	if (!stereo && !_underwater && !(_renderSkip & SKIP_WORLD) && gfx::reflectionSupported()) {
+		const float strength = _settings.reflectionStrength();
+		float waterY = 0.0f;
+		if (strength > 0.0f && _world.waterBelow(_cam.pos, _cam.zFar, waterY) && _cam.pos.y > waterY + 4.0f) {
+			gfx::FrameDesc rf = eyeDesc[0];
+			// Отражение в плоскости y = waterY: точка уходит в (x, 2H - y, z);
+			// вид остаётся обычным, применённым к отражённому миру (план, п. 1).
+			Mat4 flip = identity();
+			flip.at(1, 1) = -1.0f;
+			flip.at(1, 3) = 2.0f * waterY;
+			rf.view = mul(eyeDesc[0].view, flip);
+			rf.eye = {_cam.pos.x, 2.0f * waterY - _cam.pos.y, _cam.pos.z};
+			const gfx::ReflParams rp = {waterY, strength};
+			if (gfx::reflectionBegin(rf, rp)) {
+				trace("render: reflection");
+				const Mat4 reflVp = mul(proj, rf.view);
+				_world.draw(reflVp, rf.eye, u32(u64(_clock * 1000.0)), true, waterY);
+				gfx::reflectionEnd();
+			}
+		}
+	}
 	drawEye(eyeDesc[0]);
 	if (stereo) {
 		gfx::eyeBegin(eyeDesc[1]);

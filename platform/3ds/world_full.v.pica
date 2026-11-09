@@ -28,6 +28,7 @@
 .bool windy
 .bool fading        ; the dissolve (gfx::setFade): texture coordinate 1 is the place on the screen
 .bool wavy          ; Graphics+: the water's waves (world_full.v.pica only)
+.bool reflon        ; the water's reflection (world_full.v.pica only)
 
 .constf consts(0.0, 1.0, 0.00390625, 0.00125) ; 0, 1, 1/256, k = 1/800 cm (gfx.h WIND_WAVE_PER_CM)
 .constf noiseScale(15.0, 25.0, 0.00070144, 0.00086167) ; zw: wave B's kB per cm (the 96 constant registers are full); texels of the 8x8 noise per unit of x and y on the screen (as world_fade.v.pica)
@@ -159,15 +160,35 @@
 	dp4 r6.w, mvp[3], r0
 	mov outpos, r6
 
-	; the dissolve: where on the screen, in texels of the noise (see world_fade.v.pica)
+	; texture coordinate 1: the dissolve's place on the screen; or, for the
+	; water with the reflection on (reflon), its place in the reflection's
+	; texture: the point mirrored in the plane of the water (y -> j - y, the
+	; plane at aoK.w) and projected with the same mvp, divided by the depth
+	; (rcp) - flat sampling follows; or nothing. reflon is only raised for
+	; whole draws (the water that is not dissolving), so the three cases
+	; here are exclusive, and the uniform's two tail components (lightK.w =
+	; half, aoK.w = the plane) are set only by the reflection's own pass
+	; (gfx_c3d.cpp); the fast entries read neither.
+	mov outtc1, zero
 	ifu fading
 		rcp r7.x, r6.w
 		mul r7.xy, r6.xy, r7.xx
 		mul r7.xy, noiseScale.xy, r7.xy
 		mov r7.zw, zero
 		mov outtc1, r7
-	.else
-		mov outtc1, zero
+	.end
+	ifu reflon
+		; r0.w уже 1 (шаг позиции не трогает его); z не важен - текстура плоская
+		mov r7, r0
+		add r7.y, aoK.w, -r0.y
+		dp4 r7.x, mvp[1], r7
+		dp4 r7.y, mvp[0], r7
+		dp4 r7.w, mvp[3], r7
+		rcp r7.w, r7.w
+		mul r7.xy, r7.xy, r7.ww
+		mul r7.xy, lightK.ww, r7.xy
+		add r7.xy, lightK.ww, -r7.xy
+		mov outtc1, r7
 	.end
 
 	mul r2, params.xxxx, intc

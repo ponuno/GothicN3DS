@@ -605,6 +605,13 @@ void setLamps(const LampSet* lamps) {
 bool lampsSupported() { return true; }
 bool sunShadowSupported() { return true; }
 
+// Отражения в воде: этап 1 — только на консоли; программный рендер отражений
+// не строит, и вода рисуется как раньше (кадр целиком обычным путём).
+bool reflectionSupported() { return false; }
+bool reflectionBegin(const FrameDesc&, const ReflParams&) { return false; }
+void reflectionEnd() {}
+Texture* reflectionTexture() { return nullptr; }
+
 void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin) {
 	if (!m || indexCount == 0 || firstIndex + indexCount > m->indexCount || !skin.bones) return;
 	const float rel[3] = {skin.origin[0] - gAnchor[0], skin.origin[1] - gAnchor[1], skin.origin[2] - gAnchor[2]};

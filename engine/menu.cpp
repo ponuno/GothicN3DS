@@ -51,6 +51,7 @@ const char* const kGfxPresetNotes[] = {"60 к/с, без украшений", "6
 const char* const kScreen[] = {"Обычный", "3D", "Широкий 800x240"};
 const char* const kWind[] = {"Нет", "Слабое", "Обычное", "Сильное"};
 const char* const kWaves[] = {"Нет", "Слабые", "Обычные", "Сильные"};
+const char* const kRefl[] = {"Нет", "Слабое", "Сильное"};
 const char* const kShadows[] = {"Выкл", "Герой", "Все рядом", "Силуэт героя"};
 const char* const kRefresh[] = {"Выкл", "45–60 Гц", "45–72 Гц", "45–80 Гц", "Держать 72", "Держать 80"};
 const char* const kFarGeometry[] = {"Выкл", "25 м", "40 м", "60 м"};
@@ -150,6 +151,7 @@ const Item kGfxPlus[] = {
     {"Затенение углов", RANGE, &Settings::occlusion, nullptr, 10, 0, 100, "%", 0, "Нужен data.pak, запечённый с --ao", nullptr},
     {"Колыхание листвы", CHOICE, &Settings::wind, kWind, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --wind", nullptr},
     {"Волны на воде", CHOICE, &Settings::waves, kWaves, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --water-grid", nullptr},
+    {"Отражение в воде", CHOICE, &Settings::reflection, kRefl, 3, 0, 0, nullptr, 0, "Планарное зеркало: вода отражает мир", nullptr},
     {"Тени персонажей", CHOICE, &Settings::shadows, kShadows, 4, 0, 0, nullptr, 0, nullptr, kShadowNotes},
     {"Тени от солнца", CHOICE, &Settings::sunShadows, kSunShadows, 4, 0, 0, nullptr, 0, nullptr, kSunShadowNotes},
     {"Тени облаков", CHOICE, &Settings::cloudShadows, kCloudShadows, 3, 0, 0, nullptr, 0, nullptr, kCloudShadowNotes},

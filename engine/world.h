@@ -222,8 +222,12 @@ public:
 	// The longest a background job took since the last call, ms.
 	float takeWorstLoadMs() { return _loader.takeWorstJobMs(); }
 	// Opaque geometry; gfx::frameBegin must have been called. `timeMs` drives
-	// texture animation and scrolling.
-	void draw(const Mat4& viewProj, Vec3 camera, u32 timeMs);
+	// texture animation and scrolling. `reflection` (a second pass inside the
+	// same frame, for the water's planar reflections): the water itself and
+	// everything wholly below its surface is not drawn, and the frame state
+	// that drives the dissolves is left as it was afterwards; `waterY` is the
+	// water level, cm. Runs before the main pass.
+	void draw(const Mat4& viewProj, Vec3 camera, u32 timeMs, bool reflection = false, float waterY = 0.0f);
 	// Translucent geometry of the chunks draw() found visible. Call after
 	// gfx::setPass(PASS_BLEND).
 	void drawBlended();
@@ -557,7 +561,9 @@ private:
 	u32 _drawFrame = 1;     // draw() counter
 	u32 _lastDrawMs = 0;
 	int _fadeStep = 255;
-	int _lodStep = 255;     // the same for the stand-ins' dissolve (lodFadeMs)    // how much of a dissolve one frame does (255: all of it)
+	int _lodStep = 255;     // the same for the stand-ins' dissolve (lodFadeMs)
+	bool _reflMode = false;  // the reflection pass: a second draw inside the frame; water and what lies below it is left out
+	float _reflWater = 0.0f;  // the water surface level for that pass, cm
 	// Graphics+ of this frame (draw()): the occlusion's strength, the wind's
 	// push along x and z (gusts included), and the time the wave goes by.
 	float _fxOcclusion = 0.0f, _windX = 0.0f, _windZ = 0.0f;

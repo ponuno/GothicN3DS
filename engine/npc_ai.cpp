@@ -787,8 +787,11 @@ void Npcs::tickState(NpcActor& a) {
 	a.loopWait = n.weapon != WEAPON_NONE ? 0.0f : max(a.percTime, 0.25f);
 	// (A state without a loop of its own simply lasts.)
 	i32 loop = a.loopFn != SCRIPT_NONE ? invoke(a, a.loopFn) : 0;
-	// Its hours are over?
-	if (n.routineCount ? (_game.behaviour(n) != a.routineFn || n.want != a.routineAt) : a.stateHours >= 4.0f) loop = 1;
+	// Its hours are over? A change of the daily schedule (the hour line passed, Npc_ExchangeRoutine)
+	// ends only the states the routine itself began. A state the scripts began — the follower's
+	// ZS_FollowPC out of a talk, the attacker's ZS_Attack — lives until its own loop lets it go:
+	// the schedule must not keep rewriting the walk behind the player every game hour (fix228).
+	if (a.routineState && (n.routineCount ? (_game.behaviour(n) != a.routineFn || n.want != a.routineAt) : a.stateHours >= 4.0f)) loop = 1;
 	if (loop != 0) {
 		clearState(a, true);
 		a.other = -1;

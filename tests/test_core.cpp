@@ -14666,6 +14666,82 @@ func void Rtn_start_700() { TA_Min(self, 0, 0, 24, 0, ZS_FollowPC, "CAMP_SQUARE"
 	CHECK(a && a->ready && d1 < d0 - 500.0f);
 }
 
+// fix228: спутник как Mud — follow, начатый разговором (AI_StartState, не распорядком) и
+// переживший смену часа распорядка. Раньше смена часа прерывала любое состояние — рутина
+// переписывала преследование, и спутник останавливался.
+static void testFollowerHours() {
+	std::string source = syntheticScriptSource();
+	const std::string hook = "func void STARTUP_SUB_CAMP() {";
+	CHECK(source.find(hook) != std::string::npos);
+	source.replace(source.find(hook), hook.size(), hook + "\n\tWld_InsertNpc(VLK_701_Follower, \"CAMP_SQUARE\");");
+	source += R"(
+func void ZS_FollowPC() { AI_GotoNpc(self, hero); }
+func int ZS_FollowPC_Loop() { AI_GotoNpc(self, hero); AI_Wait(self, 0.2); return 0; }
+func void ZS_FollowPC_End() {}
+func void ProbeStartFollow() { AI_StartState(self, ZS_FollowPC, 0, ""); }
+instance VLK_701_Follower (Npc_Default) {
+	name = "Follower2"; guild = GIL_VLK; id = 701; senses_range = 3000;
+	Mdl_SetVisual(self, "HUMANS.MDS");
+	Mdl_SetVisualBody(self, "hum_body_Naked0", 3, 1, "Hum_Head_Pony", 9, 2, -1);
+	daily_routine = Rtn_start_701;
+};
+func void Rtn_start_701() {
+	TA_Min(self, 0, 0, 6, 0, ZS_Stand, "CAMP_SQUARE");
+	TA_Min(self, 6, 0, 24, 0, ZS_Stand, "CAMP_GATE");
+};
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/follower_hours.pak";
+	bakeLifeWorlds(source, path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.skipChapters();
+	Game& g = app.npcs().game();
+	Npcs& npcs = app.npcs();
+	g.setQuiet(true);
+	app.weather().configure(WEATHER_CLEAR, true);
+	app.weather().settle();
+	app.environment().timeOfDay = 12.0f;
+	app.settings().timeFlow = 0;
+	app.applySettings();
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	run(1.0f);
+	const u32 sym = g.vm().find("VLK_701_Follower");
+	const u32 followFn = g.vm().find("ZS_FollowPC");
+	CHECK(sym != SCRIPT_NONE && followFn != SCRIPT_NONE);
+	if (sym == SCRIPT_NONE || followFn == SCRIPT_NONE) return;
+	int f = -1;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).symbol == sym) f = int(i);
+	if (f < 0) {
+		CHECK(false);
+		return;
+	}
+	// «Разговор»: состояние начато не распорядком, как у Mud после «Why not — come along».
+	g.callAs(g.vm().find("ProbeStartFollow"), u32(f), -1);
+	run(0.5f);
+	const NpcActor* a = npcs.actorOf(u32(f));
+	CHECK(a && a->state == followFn);
+	if (!a || a->state != followFn) return;
+
+	// Герой убегает; часы пересекают границу распорядка (12 -> 3, через полночь).
+	app.teleport({g.npc(u32(f)).pos[0] + 5000.0f, g.npc(u32(f)).pos[1] + 10.0f, g.npc(u32(f)).pos[2]});
+	app.update(Input {}, dt);
+	const float d0 = std::hypot(g.npc(u32(f)).pos[0] - g.hero()->pos[0], g.npc(u32(f)).pos[2] - g.hero()->pos[2]);
+	app.environment().timeOfDay = 3.0f;
+	run(8.0f);
+	a = npcs.actorOf(u32(f));
+	const float d1 = std::hypot(g.npc(u32(f)).pos[0] - g.hero()->pos[0], g.npc(u32(f)).pos[2] - g.hero()->pos[2]);
+	std::printf("  follower-hours: state %s, distance %.0f -> %.0f cm\n", a && a->state == followFn ? "follow" : "routine", double(d0), double(d1));
+	CHECK(a && a->state == followFn);
+	CHECK(d1 < d0 - 500.0f);
+}
+
 
 // Things in the inhabitants' hands and in the world (npc_items.cpp, game_items.cpp): holding a potion
 // in the state of its scheme and putting it away, drinking one, armour and weapons as the scripts ask
@@ -15891,6 +15967,7 @@ int main(int argc, char** argv) {
 	             {"mobs", testMobs},
 	             {"life", testLife},
 	             {"follower", testFollower},
+	             {"follower hours", testFollowerHours},
 	             {"fight", testFight},
              {"magic", testMagic},
              {"transform", testTransformHero},

@@ -119,14 +119,17 @@ void C3D_FVUnifMtx4x4(GPU_SHADER_TYPE type, int id, const C3D_Mtx* mtx);
 void C3D_BoolUnifSet(GPU_SHADER_TYPE type, int id, bool value);
 
 struct C3D_TexEnv {
-	int unused;
+	GPU_COMBINEFUNC rgbFunc, alphaFunc;
 };
 enum C3D_TexEnvMode { C3D_RGB = BIT(0), C3D_Alpha = BIT(1), C3D_Both = 3 };
 C3D_TexEnv* C3D_GetTexEnv(int id);
-static inline void C3D_TexEnvInit(C3D_TexEnv*) {}
+static inline void C3D_TexEnvInit(C3D_TexEnv* env) { env->rgbFunc = env->alphaFunc = GPU_REPLACE; }
 static inline void C3D_TexEnvSrc(C3D_TexEnv*, C3D_TexEnvMode, GPU_TEVSRC, GPU_TEVSRC = GPU_PRIMARY_COLOR, GPU_TEVSRC = GPU_PRIMARY_COLOR) {}
 static inline void C3D_TexEnvOpRgb(C3D_TexEnv*, GPU_TEVOP_RGB, GPU_TEVOP_RGB = GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB = GPU_TEVOP_RGB_SRC_COLOR) {}
-static inline void C3D_TexEnvFunc(C3D_TexEnv*, C3D_TexEnvMode, GPU_COMBINEFUNC) {}
+static inline void C3D_TexEnvFunc(C3D_TexEnv* env, C3D_TexEnvMode mode, GPU_COMBINEFUNC func) {
+	if (mode & C3D_RGB) env->rgbFunc = func;
+	if (mode & C3D_Alpha) env->alphaFunc = func;
+}
 static inline void C3D_TexEnvColor(C3D_TexEnv*, u32) {}
 static inline void C3D_TexEnvBufUpdate(int, int) {}
 
@@ -143,3 +146,4 @@ void C3D_DrawElements(GPU_Primitive_t primitive, int count, int type, const void
 // Отражения: перенос цели в текстуру в моке — пустой (текстура остаётся
 // прежней; тесты кадров отражений на host не смотрят).
 inline void GX_DisplayTransfer(u32*, u32, u32*, u32, u32) {}
+void GX_TextureCopy(u32*, u32, u32*, u32, u32, u32);

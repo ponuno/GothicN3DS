@@ -72,6 +72,7 @@ bool App::init(const char* pakPath, const char* worldName) {
 	_clock = 0;
 	_switches = 0;
 	_portalLock = false;
+	_reflPlaneValid = false;
 	// The game's scripts, if the archive has them, and through them the
 	// people of this world.
 	_npcs.setHeldSource(&_loot, &_pak);
@@ -171,6 +172,7 @@ bool App::enterWorld(u32 worldEntryHash, const Vec3* eye, float yaw) {
 	const PakEntry* e = _pak.find(worldEntryHash);
 	if (!e || e->type != ASSET_WORLD || worldEntryHash == previous) return false;
 	const float drawDistance = _world.config().drawDistance;
+	_reflPlaneValid = false; // (another world, another water)
 	// Give the old world's memory back before the new one asks for its own.
 	dropHeroArmor(); // (fix217: its meshes go with the people's cache)
 	_npcs.leaveWorld();
@@ -1393,7 +1395,50 @@ void App::render() {
 	if (!stereo && !_underwater && !(_renderSkip & SKIP_WORLD) && gfx::reflectionSupported()) {
 		const float strength = _settings.reflectionStrength();
 		float waterY = 0.0f;
-		if (strength > 0.0f && _world.waterBelow(_cam.pos, _cam.zFar, waterY) && _cam.pos.y > waterY + 4.0f) {
+		// World coordinates are centimetres. The plane has to be the water the
+		// player is looking at, and it must not change when only the camera
+		// turns: `waterBelow` answers with the HIGHEST surface under a point,
+		// and the colony has streams and pools at other levels. So: the water
+		// under the camera itself; else the plane already found, while the
+		// player has not walked away from it; else the nearest of eight fixed
+		// world directions (not the view's, which used to pick another level
+		// at some angles and mirror the hero about the wrong plane).
+		// fix242: search around the HERO, not the camera, but from the camera's
+		// height (swimming, his feet are already below the surface). The camera
+		// is behind him, often over the pier or the bank; a probe on its side
+		// could find a lower water level (a stream, a cave pool) and mirror the
+		// hero about that plane, so his reflection appeared shifted up.
+		const Vec3 feet = _hero.loaded() ? _hero.feet() : _cam.pos;
+		const Vec3 at = {feet.x, _cam.pos.y, feet.z};
+		bool fresh = false, water = false;
+		if (strength > 0.0f) {
+			fresh = water = _world.waterBelow(at, _cam.zFar, waterY);
+		}
+		if (!water && strength > 0.0f && _reflPlaneValid) {
+			const float dx = at.x - _reflPlaneAt.x, dz = at.z - _reflPlaneAt.z;
+			if (dx * dx + dz * dz < 300.0f * 300.0f && _cam.pos.y > _reflPlane + 4.0f) {
+				waterY = _reflPlane;
+				water = true;
+			}
+		}
+		for (int ring = 0; !water && strength > 0.0f && ring < 4; ++ring) {
+			const float radius = 400.0f * float(1 << ring); // 4, 8, 16, 32 metres
+			for (int i = 0; !water && i < 8; ++i) {
+				const float a = float(i) * 0.7853982f;
+				const Vec3 probe = {at.x + radius * sinf(a), at.y, at.z + radius * cosf(a)};
+				fresh = water = _world.waterBelow(probe, _cam.zFar, waterY);
+			}
+		}
+		if (water) {
+			_reflPlane = waterY;
+			_reflPlaneValid = true;
+			// (Only a fresh find moves the anchor: keeping the plane must not
+			// keep the search from ever running again as the player walks on.)
+			if (fresh) _reflPlaneAt = at;
+		} else {
+			_reflPlaneValid = false;
+		}
+		if (strength > 0.0f && water && _cam.pos.y > waterY + 4.0f) {
 			gfx::FrameDesc rf = eyeDesc[0];
 			// Отражение в плоскости y = waterY: точка уходит в (x, 2H - y, z);
 			// вид остаётся обычным, применённым к отражённому миру (план, п. 1).
@@ -1407,6 +1452,16 @@ void App::render() {
 				trace("render: reflection");
 				const Mat4 reflVp = mul(proj, rf.view);
 				_world.draw(reflVp, rf.eye, u32(u64(_clock * 1000.0)), true, waterY);
+				// fix237: the people in the water too, from the poses and fades
+				// the last main pass left (nothing is advanced here). A 256x256
+				// picture cannot show the far crowd: 25 m is enough.
+				const float reflLight[3] = {1.0f, 1.0f, 1.0f};
+				if (!(_renderSkip & (SKIP_NPCS | SKIP_REFL_CHARS)))
+					_npcs.drawReflection(reflVp, indoor ? reflLight : sky.light, &_world, _cam.pos, waterY,
+					                     min(2500.0f, max(_npcs.stats().reach, 800.0f)));
+				trace("render: reflection hero");
+				gfx::setFade(1.0f); // (the world's last chunk may be dissolving)
+				if (_heroVisible && !(_renderSkip & (SKIP_HERO | SKIP_REFL_CHARS))) drawHero();
 				gfx::reflectionEnd();
 			}
 		}

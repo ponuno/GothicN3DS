@@ -168,6 +168,7 @@ struct Machine {
 	int entry; // which DVLE runs
 	float in[16][4], tmp[16][4], out[16][4];
 	u8 written[16]; // the components of each output register the run wrote (bit 0 = x)
+	u8 rewritten[16]; // components written more than once on the executed path
 	float uniform[96][4];
 	u16 bools;
 	int address[3]; // a0.x, a0.y, aL
@@ -204,7 +205,10 @@ void writeDest(Machine& m, u32 reg, u32 mask, const float v[4]) {
 	for (int i = 0; i < 4; ++i)
 		if (mask & (8u >> i)) {
 			r[i] = m.gpuFloats ? toGpuFloat(v[i]) : v[i];
-			if (reg < 0x10) m.written[reg] = u8(m.written[reg] | (1u << i));
+			if (reg < 0x10) {
+				m.rewritten[reg] = u8(m.rewritten[reg] | (m.written[reg] & (1u << i)));
+				m.written[reg] = u8(m.written[reg] | (1u << i));
+			}
 		}
 }
 
@@ -538,6 +542,10 @@ bool shadeVertex(const DrawCall& call, unsigned index, ShadedVertex& out, bool g
 	// Outputs by meaning: the set bits of an entry's mask are the components
 	// of its semantic, in order.
 	for (const ShaderOutput& o : en.outputs) {
+		// Report separately from undefined components (fix145). This records
+		// our conservative single-emission rule; it is not a GPU timing model.
+		if ((o.type == 3 || o.type == 5 || o.type == 6) && o.reg >= 0 && o.reg < 16 && m.rewritten[o.reg])
+			out.repeatedTexcoordWrites = true;
 		float* target = o.type == 0 ? out.position : o.type == 2 ? out.color : o.type == 3 ? out.texcoord : o.type == 5 ? out.texcoord1 : o.type == 6 ? out.texcoord2 : nullptr;
 		const int limit = o.type == 3 || o.type == 5 || o.type == 6 ? 2 : 4;
 		if (!target || o.reg < 0 || o.reg > 15) continue;
@@ -813,7 +821,8 @@ void C3D_RenderTargetSetOutput(C3D_RenderTarget* target, gfxScreen_t, gfx3dSide_
 	gLinked = target;
 	if (target) target->linked = true;
 }
-void C3D_FrameBufClear(C3D_FrameBuf*, C3D_ClearBits, u32, u32) {
+void C3D_FrameBufClear(C3D_FrameBuf* fb, C3D_ClearBits, u32, u32) {
+	if (fb && fb->width == 256 && fb->height == 256) ++gCount.reflectionClears;
 	if (gpuBusy()) ++gCount.clearedBusy;
 	gClearedSinceSubmit = true;
 }
@@ -838,6 +847,16 @@ Result CFGU_GetSystemModel(u8* model) {
 bool gfxIs3D(void) { return g3D; }
 void C3D_SetViewport(u32, u32, u32, u32) {}
 void C3D_SetScissor(GPU_SCISSORMODE, u32, u32, u32, u32) {}
+
+void GX_TextureCopy(u32*, u32 inDim, u32*, u32 outDim, u32 bytes, u32 flags) {
+	// Observe the queued copy's parameters, not its pixels (this mock has no
+	// rasterizer). Reflection tests must not mistake this for an image test.
+	++gCount.textureCopies;
+	gCount.textureCopyBytes = bytes;
+	gCount.textureCopyFlags = flags;
+	gCount.textureCopyInDim = inDim;
+	gCount.textureCopyOutDim = outDim;
+}
 
 void C3D_SetBufInfo(C3D_BufInfo* info) { gBufInfo = *info; }
 C3D_AttrInfo* C3D_GetAttrInfo(void) { return &gAttrInfo; }

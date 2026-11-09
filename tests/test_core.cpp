@@ -5355,6 +5355,56 @@ static void testInhabitants() {
 		app.render();
 		CHECK(npcs.stats().shown >= 1);
 
+		// fix237: the water's mirror draws the people too, from the poses the
+		// main pass left, without stepping them or counting them twice.
+		{
+			Vec3 feet {};
+			const NpcActor* who = nullptr;
+			for (u32 i = 0; i < npcs.game().npcCount() && !who; ++i) {
+				const NpcActor* a = npcs.actorOf(i);
+				if (!a || a->shown == 0 || !a->ready || (!a->body && !a->low)) continue;
+				const GameNpc& n = npcs.game().npc(i);
+				feet = {n.pos[0], n.pos[1], n.pos[2]};
+				who = a;
+			}
+			CHECK(who != nullptr);
+			if (who) {
+				// A camera above the water, 4 m short of the person and level with
+				// his head: his mirror is straight ahead and well inside the view.
+				const float waterY = feet.y - 50.0f;
+				const Vec3 eye = {feet.x, feet.y + 150.0f, feet.z - 400.0f};
+				gfx::FrameDesc fd {};
+				fd.view = viewLH(eye, 0.0f, 0.0f);
+				fd.eye = eye;
+				fd.fovY = 1.0f;
+				fd.zNear = 10.0f;
+				fd.zFar = 20000.0f;
+				fd.fogStart = 16000.0f;
+				fd.fogEnd = 20000.0f;
+				fd.dayLight[0] = fd.dayLight[1] = fd.dayLight[2] = 1.0f;
+				const Mat4 proj = perspectiveLH(fd.fovY, float(gfx::SCREEN_W) / float(gfx::SCREEN_H), fd.zNear, fd.zFar);
+				Mat4 flip = identity();
+				flip.at(1, 1) = -1.0f;
+				flip.at(1, 3) = 2.0f * waterY;
+				const Mat4 mirrored = mul(proj, mul(fd.view, flip));
+				const NpcStats plain = npcs.stats();
+				auto mirror = [&](float plane, float maxDist) {
+					gfx::frameBegin(fd);
+					gfx::setPass(gfx::PASS_WORLD);
+					npcs.drawReflection(mirrored, fd.dayLight, &app.world(), eye, plane, maxDist);
+					const unsigned triangles = gfx::softStats().skinnedTriangles;
+					gfx::frameEnd();
+					return triangles;
+				};
+				CHECK(mirror(waterY, 20000.0f) > 0);
+				// A plane above every head, or a reach shorter than the step: nothing.
+				CHECK(mirror(feet.y + 10000.0f, 20000.0f) == 0);
+				CHECK(mirror(waterY, 1.0f) == 0);
+				CHECK(npcs.stats().shown == plain.shown && npcs.stats().drawCalls == plain.drawCalls &&
+				      npcs.stats().triangles == plain.triangles);
+			}
+		}
+
 		// The cave: its own people, the others stay where they are; and back.
 		const u32 loadsOutside = npcs.stats().loads;
 		CHECK(app.enterWorld(hashName("world/cave"), nullptr, 0));

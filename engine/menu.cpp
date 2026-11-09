@@ -151,7 +151,7 @@ const Item kGfxPlus[] = {
     {"Затенение углов", RANGE, &Settings::occlusion, nullptr, 10, 0, 100, "%", 0, "Нужен data.pak, запечённый с --ao", nullptr},
     {"Колыхание листвы", CHOICE, &Settings::wind, kWind, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --wind", nullptr},
     {"Волны на воде", CHOICE, &Settings::waves, kWaves, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --water-grid", nullptr},
-    {"Отражение в воде", CHOICE, &Settings::reflection, kRefl, 3, 0, 0, nullptr, 0, "Планарное зеркало: вода отражает мир", nullptr},
+    {"Отражение в воде", CHOICE, &Settings::reflection, kRefl, 3, 0, 0, nullptr, 0, "Планарное зеркало: вода отражает мир и персонажей", nullptr},
     {"Тени персонажей", CHOICE, &Settings::shadows, kShadows, 4, 0, 0, nullptr, 0, nullptr, kShadowNotes},
     {"Тени от солнца", CHOICE, &Settings::sunShadows, kSunShadows, 4, 0, 0, nullptr, 0, nullptr, kSunShadowNotes},
     {"Тени облаков", CHOICE, &Settings::cloudShadows, kCloudShadows, 3, 0, 0, nullptr, 0, nullptr, kCloudShadowNotes},

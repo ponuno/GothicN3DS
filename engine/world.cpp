@@ -1792,6 +1792,12 @@ void World::classify(const Loaded& l, u32 index, bool count) {
 		// kept up to date there too, so that turning the view finds them as
 		// they should be, not dissolving in.)
 		_clusterNear[c] = aabbDistance(k.bbMin, k.bbMax, _camera);
+		// Reflection uses the current LOD state, but must not advance or
+		// retarget the main camera's transitions (including mixFrame).
+		if (_reflMode) {
+			if (where != 0) _clusterFar[c] = aabbFarDistance(k.bbMin, k.bbMax, _camera);
+			continue;
+		}
 		// Far enough from the camera for the stand-ins (a cluster's own distance: a chunk is 40 m wide).
 		bool wantLod = l.hasLod && _cfg.lodDistance > 0.0f && _clusterNear[c] > (k.lod ? _cfg.lodDistance * _cfg.lodHysteresis : _cfg.lodDistance);
 		// Near enough for the full batches, but their textures have not come: the stand-ins stay (a chunk shows white, or
@@ -1985,19 +1991,23 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 			    !(batch.detail == DETAIL_SMALL && batch.layer >= _cfg.smallLayers))
 				++_stats.sizeCulled;
 			const int target = inRange ? 255 : 0;
-			if (snap)
-				batch.shown = u8(target);
-			else if (batch.shown < target)
-				batch.shown = u8(min(int(batch.shown) + _fadeStep, 255));
-			else if (batch.shown > target)
-				batch.shown = u8(max(int(batch.shown) - _fadeStep, 0));
-			shown = batch.shown;
+			if (_reflMode) {
+				shown = u8(target);
+			} else {
+				if (snap)
+					batch.shown = u8(target);
+				else if (batch.shown < target)
+					batch.shown = u8(min(int(batch.shown) + _fadeStep, 255));
+				else if (batch.shown > target)
+					batch.shown = u8(max(int(batch.shown) - _fadeStep, 0));
+				shown = batch.shown;
+			}
 			visible = shown > 0;
 		} else if (batch.detail != DETAIL_ALWAYS) {
 			// Out of view: in or out at once, by the nearest point of the box.
 			const float limit = detailReach(batch);
 			const bool thinned = batch.detail == DETAIL_SMALL && batch.layer >= _cfg.smallLayers;
-			batch.shown = !thinned && _clusterNear[c] <= (batch.shown ? limit * _cfg.detailHysteresis : limit) ? 255 : 0;
+			if (!_reflMode) batch.shown = !thinned && _clusterNear[c] <= (batch.shown ? limit * _cfg.detailHysteresis : limit) ? 255 : 0;
 		}
 		if (lodShare != 255) {
 			shown = u8(int(shown) * int(lodShare) / 255);
@@ -2071,11 +2081,19 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs, bool reflection,
 		const u32 lastMs = _lastDrawMs;
 		const int fadeStep = _fadeStep;
 		const int lodStep = _lodStep;
+		// fix238: the mirror sees the whole shore when the camera looks across
+		// the water, and that is where the second pass gets expensive. A
+		// 256x256 reflection under ripples does not need the full draw
+		// distance: cap it (the edge fades out at the cap as the world does).
+		constexpr float kReflectionReach = 7000.0f; // cm
+		const float fullDrawDistance = _cfg.drawDistance;
 		_reflMode = true;
 		_reflWater = waterY;
+		_cfg.drawDistance = min(fullDrawDistance, kReflectionReach);
 
 		draw(viewProj, camera, timeMs);
 
+		_cfg.drawDistance = fullDrawDistance;
 		_reflMode = false;
 		_stats = st;
 		_drawFrame = frame;
@@ -2206,7 +2224,9 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs, bool reflection,
 		++_stats.chunksDrawn;
 		_stats.trianglesInChunks += l.triangles;
 	}
-	if (farActive()) drawFar(whole);
+	// The colour-only far layer has no material flags to exclude its water.
+	// Stage 1 reflects resident geometry only, rather than reflecting water into itself.
+	if (!_reflMode && farActive()) drawFar(whole);
 	for (u32 k = 0; k < n; ++k) {
 		Loaded& l = _loaded[_order[k]];
 		if (!l.windBatches) continue;

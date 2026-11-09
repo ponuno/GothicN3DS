@@ -102,6 +102,7 @@ public:
 		SKIP_PARTICLES = 1u << 10, SKIP_OVERLAY = 1u << 11, SKIP_GRASS = 1u << 12,
 		SKIP_LAMPS = 1u << 13, // fix148: the lamps light nothing (debug.txt lamps / nolamps)
 		SKIP_CLOUDS = 1u << 14, // fix186: no clouds' shadows, whatever the menu says (debug.txt noclouds)
+		SKIP_REFL_CHARS = 1u << 15, // fix241: no hero or inhabitants in the water's mirror (debug.txt noreflchar)
 	};
 	void setRenderSkip(u32 skip) { _renderSkip = skip; }
 	// fix186, for the tests: the clouds' coverage, 0..1, whatever the weather says (< 0: the weather's).
@@ -704,6 +705,13 @@ private:
 	u32 _switches = 0;
 	bool _portalLock = false; // just arrived: ignore portals until the player has left their boxes
 	bool _underwater = false;
+	// fix239: the water plane the reflection was found at, and where it was
+	// found. Kept while the player stands by it, so that turning the view
+	// cannot pick another water level and mirror the world (and the hero)
+	// about the wrong plane.
+	float _reflPlane = 0.0f;
+	bool _reflPlaneValid = false;
+	Vec3 _reflPlaneAt {0.0f, 0.0f, 0.0f};
 	bool _thirdPerson = true; // wanted; see thirdPerson()
 	bool _heroVisible = false;
 	bool _gfxRelief = false;

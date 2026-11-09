@@ -3,19 +3,27 @@
 # so any 17th uniform overflowed it). See docs/plan-reflections.md, round 1.
 p = 'picasso/source/picasso_assembler.cpp'
 s = open(p, encoding='utf-8', errors='replace').read()
-old = '''		if (useSharedSpace)
-			g_uniformTable[g_uniformCount++].init(argText, uniformPos, uSize, dirParam);'''
-new = '''		if (useSharedSpace)
+start = s.index('\t\t// If not found, create it')
+end = s.index('\n\t\tif (*argText', start)
+old = s[start:end]
+new = '''		// If not found, create it (and record it exactly once).
+		if (uniformPos < 0)
 		{
-			if (g_uniformCount == MAX_UNIFORM)
+			if (useSharedSpace && g_uniformCount >= MAX_UNIFORM)
 				return throwError("too many global uniforms: %s\\n", argText);
-			g_uniformTable[g_uniformCount++].init(argText, uniformPos, uSize, dirParam);
-		}'''
-if old in s:
-    s = s.replace(old, new)
+
+			uniformPos = alloc.AllocGlobal(uSize);
+			if (uniformPos < 0)
+				return throwError("not enough uniform space: %s[%d]\\n", argText, uSize);
+			if (useSharedSpace)
+				g_uniformTable[g_uniformCount++].init(argText, uniformPos, uSize, dirParam);
+		}
+'''
+if old == new:
+    print('already patched')
+elif 'g_uniformTable[g_uniformCount++].init(argText, uniformPos, uSize, dirParam);' in old:
+    s = s[:start] + new + s[end:]
     open(p, 'w', encoding='utf-8', newline='\n').write(s)
     print('patched')
-elif new in s:
-    print('already patched')
 else:
     raise SystemExit('pattern not found')

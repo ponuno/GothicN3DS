@@ -15,6 +15,9 @@ void c3dSetClassicFrames(bool classic);
 // world-only shader of the versions before characters. drawSkinned() then
 // draws nothing. A fallback should the character branch misbehave on hardware.
 void c3dSetPlainShader(bool plain);
+// Diagnostic: the exact six-entry shader from fix228, before reflections.
+// Keeps normal world/NPC rendering; no reflection target is allocated.
+void c3dSetPreReflectionShader(bool on);
 // Squeezes the picture into half the screen: half the pixels, the same triangles (for finding out whether the GPU is limited by the pixels).
 void c3dSetFillTest(bool on);
 // The sun's shadow left out of the drawing altogether (its texture stages never set): for finding faults (C-Stick up at start).
@@ -24,6 +27,24 @@ void c3dSetNoLamps(bool on);
 // For finding faults (debug.txt): materials with any of `skipFlags` (MATF_*) are not drawn; `program` 1 draws the world with the fast
 // entry only, 2 with the full one only, 0 as usual.
 void c3dSetDebugDraw(u16 skipFlags, int program);
+// fix232, the water's reflection (debug.txt norefl / noreflsample / norefltransfer): NO_PASS leaves the mirrored pass out
+// altogether; NO_SAMPLE runs the pass and the copy but the water never reads the reflection; NO_TRANSFER runs the pass and
+// the water reads the texture, but the target is never copied into it. Used to tell a GPU hang in the pass from one in the
+// transfer or in sampling a 256x256 RGBA8 on unit 1.
+enum ReflectionDebug : unsigned {
+	REFL_DBG_NO_PASS = 1u << 0,
+	REFL_DBG_NO_TRANSFER = 1u << 1,
+	REFL_DBG_NO_SAMPLE = 1u << 2,
+	// fix241/fix242: opt-in experiment: copy at the end of the mirrored pass, in the same frame
+	// (instead of the next idle point). It made reflections disappear in fix240; the water plane
+	// in the depth is now on by default and this was the other change of that build.
+	REFL_DBG_NOW_COPY = 1u << 3,
+	// fix244: no mask of what lies under the water in the mirrored pass (debug.txt noreflclip).
+	// By default the plane is drawn into the target AFTER the scene with LESS: it covers the
+	// submerged geometry (nearer than the plane) and leaves the above-water reflection (farther).
+	REFL_DBG_NO_CLIP = 1u << 4,
+};
+void c3dSetReflectionDebug(unsigned flags);
 // fix144, the sun's mask (debug.txt words sunl4 sunkeep sunwhite sunnotex sunnearest sunrepeat). Call before init().
 enum SunDebug : unsigned {
 	SUN_DBG_L4 = 1u << 0,      // masks stay GPU_L4 as baked (by default they become GPU_A8, the noise's format, at load)

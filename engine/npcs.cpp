@@ -980,6 +980,69 @@ void Npcs::draw(const Mat4& viewProj, const float dayLight[3], const World* worl
 	_stats.sightMs = float(sightTime);
 }
 
+void Npcs::drawReflection(const Mat4& viewProj, const float dayLight[3], const World* world, Vec3 eye, float waterY,
+                          float maxDist) {
+	if (!loaded()) return;
+	const Frustum frustum = frustumFromViewProj(viewProj);
+	const float max2 = maxDist * maxDist;
+	static Mat34 skin[MODEL_MAX_NODES];
+	for (NpcActor& a : _actors) {
+		if (!a.used || !a.ready || !a.rig || (!a.body && !a.low) || a.shown == 0) continue;
+		// Hidden behind a wall as the main pass last saw it (a reflection
+		// through that wall would be wrong far more often than a missing one).
+		if (a.occluded) continue;
+		const GameNpc& n = _game.npc(a.npc);
+		const Vec3 feet = {n.pos[0], n.pos[1], n.pos[2]};
+		const float dx = feet.x - eye.x, dy = feet.y - eye.y, dz = feet.z - eye.z;
+		if (dx * dx + dy * dy + dz * dz > max2) continue;
+		// The piece the main pass draws most of: the full body once it is in,
+		// the coarse one otherwise (both while one dissolves into the other,
+		// which a 256x256 picture does not need).
+		NpcPiece* piece = nullptr;
+		float share = 255.0f;
+		if (a.body && a.mix >= 128) {
+			piece = a.body;
+			share = float(a.mix);
+		} else if (a.low) {
+			piece = a.low;
+			share = float(255 - a.mix);
+		} else {
+			piece = a.body;
+		}
+		const Model& body = piece->model;
+		const ModelHeader& bh = body.header();
+		float reach = 0;
+		for (int k = 0; k < 3; k += 2) reach = max(reach, max(fabsf(bh.bbMin[k]), fabsf(bh.bbMax[k])));
+		const float grow = max(n.look.scale[0], max(n.look.scale[1], n.look.scale[2]));
+		reach = reach * grow + 40.0f;
+		// Wholly under the water: not in the mirror (the world's own pass leaves
+		// out what lies below the plane the same way).
+		if (feet.y + (bh.bbMax[1] + 60.0f) * grow < waterY) continue;
+		const float mn[3] = {feet.x - reach, feet.y - 20.0f, feet.z - reach};
+		const float mx[3] = {feet.x + reach, feet.y + (bh.bbMax[1] + 60.0f) * grow, feet.z + reach};
+		if (!aabbInFrustum(frustum, mn, mx)) continue;
+		float light[3];
+		for (int i = 0; i < 3; ++i) {
+			const float baked = float(a.light[i]) * (1.0f / 255.0f);
+			const float sky = float(a.light[3]) * (1.0f / 255.0f);
+			light[i] = max(baked * (1.0f + sky * (dayLight[i] - 1.0f)) * 1.15f, 0.22f);
+		}
+		if (world) {
+			const float cloud = world->cloudShade(feet.x, feet.z);
+			if (cloud < 1.0f) {
+				const float k = 1.0f + float(a.light[3]) * (1.0f / 255.0f) * (cloud - 1.0f);
+				for (int i = 0; i < 3; ++i) light[i] = max(light[i] * k, 0.22f);
+			}
+			if (world->lamps()) world->lamps()->lightAt({feet.x, feet.y + 90.0f, feet.z}, float(a.light[3]) * (1.0f / 255.0f), light, world);
+		}
+		const bool scaled = n.look.scale[0] != 1.0f || n.look.scale[1] != 1.0f || n.look.scale[2] != 1.0f;
+		body.skinMatrices(a.anim.pose(), n.yaw, a.noLying ? a.slump * 1.5f : 0.0f, scaled ? n.look.scale : nullptr, skin);
+		gfx::setFade(float(a.shown) * share * (1.0f / 65025.0f)); // (shown * share / 255 / 255)
+		body.drawSkinned(skin, feet, light);
+	}
+	gfx::setFade(1.0f);
+}
+
 // fix222: whoever is left with no hit points dies, whoever took them: in ZenGin oCNpc::ChangeAttribute / the attribute's
 // setter ends the character at once. The scripts kill this way (B_KillNpc: Npc_ChangeAttribute(npc, ATR_HITPOINTS, -max),
 // 76 calls, the dead guard Nek among them) and by plain assignment; the engine only clamped at 0, and the "dead" stood

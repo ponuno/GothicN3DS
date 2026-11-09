@@ -66,7 +66,7 @@ struct FrameStats {
 bool init();
 // ---- планарные отражения в воде (этап 1: «спокойное зеркало») ----
 // Отдельный проход в цель 256x256 (RGBA8 + глубина 24), отражённой камерой;
-// вода сэмплит её проективно (юнит 2, tc1 = NDC*0.5+0.5). В отражении мир
+// вода сэмплит её проективно (юнит 1, tc1 = NDC*0.5+0.5). В отражении мир
 // рисуется как обычно, но без воды, без блендинга, без UI/травы и без того,
 // что целиком под водой. Стерео: отражение выключено (этап 2).
 struct ReflParams {
@@ -75,8 +75,8 @@ struct ReflParams {
 };
 bool reflectionSupported();               // консоль: да; ПК-эмулятор шейдера: этап 1 — нет
 bool reflectionBegin(const FrameDesc& f, const ReflParams& p); // false — не поддерживается, кадр рисуют обычным
-void reflectionEnd();                      // перенос RT в текстуру; после — обычный мир как обычно
-Texture* reflectionTexture();              // для unit 2; null, если отражения нет
+void reflectionEnd();                      // восстановить мир; перенос RT в текстуру — в frameEnd
+Texture* reflectionTexture();              // для unit 1; null, если отражения нет
 constexpr int REFL_W = 256, REFL_H = 256;
 
 void shutdown();

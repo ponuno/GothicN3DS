@@ -14,7 +14,7 @@ class Audio3ds : public AudioOut {
 public:
 	// Which firmware answers on the DSP: OpenDSP (built in) or the dumped one.
 	enum class Backend : u8 { None, Ndsp, OpenDsp };
-	bool open();
+	bool open(bool useOpenDsp = true); // false: diagnostic stock NDSP only, no OpenDSP init
 	void close();
 	bool isOpen() const { return _open; }
 	// Which firmware is on the DSP right now.

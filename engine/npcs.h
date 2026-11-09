@@ -420,6 +420,13 @@ public:
 	// Call in PASS_WORLD. `dayLight` as for the world (1 1 1 indoors). With `world`, those hidden from `eye` behind
 	// its walls are left out (NpcConfig::hideOccluded).
 	void draw(const Mat4& viewProj, const float dayLight[3], const World* world = nullptr, Vec3 eye = {0, 0, 0});
+	// fix237: the same people in the water's planar reflection: a second pass,
+	// from the mirrored `viewProj`, over the poses and fades the main pass has
+	// already worked out. It changes no pass state of its own (no pose step, no
+	// dissolve, no statistics, no drawn lists); `eye` is the player's, for the
+	// distance, `waterY` leaves out what is wholly under the water, and
+	// `maxDist` keeps the far crowd out of the 256x256 texture.
+	void drawReflection(const Mat4& viewProj, const float dayLight[3], const World* world, Vec3 eye, float waterY, float maxDist);
 	// How far a dissolve gets this frame (World::fadeStep(); 255: they come and go at once).
 	void setFadeStep(int step) { _fadeStep = step < 1 ? 1 : step > 255 ? 255 : step; }
 	// Whose models and archive the weapons in their hands are drawn from.

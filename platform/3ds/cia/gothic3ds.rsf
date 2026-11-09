@@ -55,10 +55,14 @@ AccessControlInfo:
     - 0xFF0003C0
     - 0xFF800000
     - 0x000000FF
-  # The DSP's memory windows (ndsp writes its counters there: without them the app dies with a data abort in
-  # ndspSetCounter at 0x1FF57FFE) and the video memory (as the devkitPro 3DS template).
+  # DSP DRAM windows for both banks. ndsp uses 1ff5/1ff7; OpenDSP's
+  # extension mailbox (DSP word 0x0d00) also needs 1ff4/1ff6.
+  # Without the low windows the CIA aborts in opendspGetCapabilities,
+  # reading 0x1FF41A00 (crash_dump_00000039.dmp).
   IORegisterMapping:
+    - 1ff40000-1ff47fff
     - 1ff50000-1ff57fff
+    - 1ff60000-1ff67fff
     - 1ff70000-1ff77fff
   MemoryMapping:
     - 1f000000-1f5fffff:r

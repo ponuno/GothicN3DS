@@ -40,6 +40,9 @@ struct Counters {
 	unsigned framesShownRight;    // right-eye target copied to the screen
 	unsigned switches3D;          // gfxSet3D calls that changed the mode
 	unsigned rightDraws;          // draw calls recorded while the right target was the one drawn into
+	unsigned textureCopies, textureCopyBytes, textureCopyFlags;
+	unsigned textureCopyInDim, textureCopyOutDim;
+	unsigned reflectionClears;
 };
 
 Counters& counters();
@@ -82,6 +85,7 @@ struct ShadedVertex {
 	float texcoord[2];
 	float texcoord1[2];
 	float texcoord2[2];
+	bool repeatedTexcoordWrites = false; // overlapping writes to any declared texture-coordinate output
 };
 // Runs the bound shader on vertex `index` of the call's buffer. False if the
 // bytecode does something the interpreter refuses: an unknown instruction, a

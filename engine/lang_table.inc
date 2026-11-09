@@ -402,6 +402,8 @@ const Entry kEntries[] = {
     {{"Обычные", "Normal", "Zwykłe", "Normal"}},
     {{"Сильные", "Strong", "Silne", "Stark"}},
     {{"Нужен data.pak, запечённый с --water-grid", "Needs data.pak baked with --water-grid", "Wymaga data.pak z --water-grid", "Braucht data.pak mit --water-grid"}},
+    {{"Отражение в воде", "Water reflection", "Odbicie w wodzie", "Wasserspiegelung"}},
+    {{"Планарное зеркало: вода отражает мир и персонажей", "A planar mirror: the water reflects the world and its people", "Zwierciadło płaskie: woda odbija świat i postacie", "Ein ebener Spiegel: das Wasser spiegelt Welt und Figuren"}},
     {{"Тени персонажей", "Character shadows", "Cienie postaci", "Figurenschatten"}},
     {{"%", "%", "%", "%"}},
     {{"Дальний план", "Far view", "Dalszy plan", "Fernsicht"}},

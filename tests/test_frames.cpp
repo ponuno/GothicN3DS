@@ -295,6 +295,7 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 			++sc.failed;
 			continue;
 		}
+		if (got.repeatedTexcoordWrites || gpu.repeatedTexcoordWrites) ++sc.failed;
 
 		if (sc.checkFade && !skinned && !sky) {
 			mock3ds::DrawCall faded = call;
@@ -303,6 +304,7 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 			if (!mock3ds::shadeVertex(faded, index, f, false)) {
 				++sc.failed;
 			} else {
+				if (f.repeatedTexcoordWrites) ++sc.failed;
 				++sc.fadedVertices;
 				for (int k = 0; k < 4; ++k)
 					sc.fadeChanged = std::max({sc.fadeChanged, std::fabs(double(f.position[k]) - double(got.position[k])),
@@ -1680,7 +1682,194 @@ static void flight(const std::string& pak, bool classic, bool worker) {
 	CHECK(mock3ds::counters().linearBlocks == 0); // nothing left in the linear heap
 }
 
-// The picture of a saved game: the framebuffer on show (not the one the next picture goes into), turned the right way up.
+// Reflection UVs run through the actual assembled shader, including the
+// backend's lightK.w/aoK.w. Distinct points must not collapse into one texel.
+struct ReflectionCheck {
+	unsigned draws = 0, vertices = 0;
+	float worst = 0.0f;
+};
+
+static void reflectionHook(const mock3ds::DrawCall& call, void* user) {
+	if (!(call.bools & 16)) return;
+	ReflectionCheck& check = *static_cast<ReflectionCheck*>(user);
+	++check.draws;
+	CHECK(call.entry == 0 && call.tex1 && call.tex1->width == gfx::REFL_W && call.tex1->height == gfx::REFL_H);
+	CHECK(call.uniforms[89][3] == 0.5f);
+	for (unsigned i = 0; i < call.count; ++i) {
+		const unsigned index = call.indices[i];
+		WorldVertex v;
+		std::memcpy(&v, static_cast<const u8*>(call.vertices) + index * call.stride, sizeof(v));
+		const float* chunk = call.uniforms[5];
+		const float p[4] = {chunk[0] + v.x * chunk[3], call.uniforms[90][3] - (chunk[1] + v.y * chunk[3]),
+		                    chunk[2] + v.z * chunk[3], 1.0f};
+		float clip[4] = {};
+		for (int row = 0; row < 4; ++row)
+			for (int k = 0; k < 4; ++k) clip[row] += call.uniforms[row][k] * p[k];
+		for (bool rounded : {false, true}) {
+			mock3ds::ShadedVertex got;
+			CHECK(mock3ds::shadeVertex(call, index, got, rounded));
+			CHECK(!got.repeatedTexcoordWrites);
+			for (int axis = 0; axis < 2; ++axis) {
+				const float want = 0.5f + 0.5f * clip[axis] / clip[3];
+				CHECK(std::isfinite(got.texcoord1[axis]));
+				check.worst = std::max(check.worst, std::fabs(got.texcoord1[axis] - want));
+			}
+		}
+		++check.vertices;
+	}
+}
+
+static void testReflection(bool classic) {
+	mock3ds::reset();
+	gfx::c3dSetClassicFrames(classic);
+	CHECK(gfx::init() && gfx::reflectionSupported());
+	WorldVertex vertices[3] = {};
+	vertices[0].x = -200;
+	vertices[1].x = 300;
+	vertices[1].y = 70; // also check the mirrored height, not only points on the plane
+	vertices[2].z = 500;
+	const u16 indices[3] = {0, 1, 2};
+	gfx::Mesh* mesh = gfx::meshCreate(vertices, 3, indices, 3);
+	CHECK(mesh != nullptr);
+	gfx::FrameDesc fd {};
+	fd.eye = {1200, 900, -1300};
+	fd.view = viewLH(fd.eye, 0.35f, 0.2f);
+	fd.fovY = 1.0f;
+	fd.zNear = 10.0f;
+	fd.zFar = fd.fogEnd = 20000.0f;
+	fd.fogStart = 10000.0f;
+	fd.dayLight[0] = fd.dayLight[1] = fd.dayLight[2] = 1.0f;
+	const float waterY = 400.0f;
+	const float origin[3] = {1000, waterY, 500};
+	gfx::ChunkFx fx;
+	fx.waterGrid = true;
+	ReflectionCheck check;
+	u8 coverage[8 * 8];
+	std::memset(coverage, 255, sizeof(coverage));
+	gfx::Texture* ui = gfx::uiTextureCreate(8, 8, coverage);
+	CHECK(ui != nullptr);
+	for (int frame = 0; frame < 5; ++frame) {
+		gfx::frameBegin(fd);
+		// The last two frames omit the reflection: it must not sample a stale copy.
+		if (frame < 3) {
+			gfx::FrameDesc rf = fd;
+			Mat4 flip = identity();
+			flip.at(1, 1) = -1.0f;
+			flip.at(1, 3) = 2.0f * waterY;
+			rf.view = mul(fd.view, flip);
+			rf.eye.y = 2.0f * waterY - fd.eye.y;
+			CHECK(gfx::reflectionBegin(rf, {waterY, 0.85f}));
+			gfx::setChunkTransform(origin, 1.0f, 1.0f);
+			gfx::setMaterial(nullptr, 0);
+			gfx::draw(mesh, 0, 3);
+			gfx::reflectionEnd();
+		}
+		gfx::setPass(gfx::PASS_BLEND);
+		mock3ds::setDrawHook(reflectionHook, &check);
+		const unsigned before = check.draws;
+		// Two water draws separated by a non-water material must both rebind
+		// the reflection, even though its resource was already used this pass.
+		for (int draw = 0; draw < 3; ++draw) {
+			gfx::setChunkTransform(origin, 1.0f, 1.0f, &fx);
+			gfx::setMaterial(nullptr, draw == 1 ? 0 : MATF_WATER);
+			gfx::draw(mesh, 0, 3);
+		}
+		mock3ds::setDrawHook(nullptr, nullptr);
+		// fix232/fix241: the copy happens at the next GPU-idle point, so the
+		// water samples the pass of the frame before. In the classic order that
+		// point is this frame's begin, in the overlapped one this frame's end.
+		const unsigned wantWater = classic ? (frame == 1 || frame == 2 ? 2u : 0u) : (frame == 2 ? 2u : 0u);
+		CHECK(check.draws - before == wantWater);
+		if (wantWater) CHECK(C3D_GetTexEnv(4)->rgbFunc == GPU_INTERPOLATE);
+		// Water can be the last world material before opening a menu. Both
+		// opaque and translucent UI batches must shed its reflection mixer.
+		const gfx::UiQuad menu[2] = {
+		    {0, 0, 100, 100, 0, 0, 8, 8, {255, 255, 255, 255}},
+		    {10, 10, 90, 90, 0, 0, 8, 8, {255, 255, 255, 128}},
+		};
+		gfx::uiDraw(ui, menu, 2);
+		CHECK(C3D_GetTexEnv(4)->rgbFunc == GPU_REPLACE);
+		CHECK(C3D_GetTexEnv(5)->rgbFunc == GPU_REPLACE);
+		gfx::frameEnd();
+		// One copy per recorded pass, at the next GPU-idle point.
+		CHECK(mock3ds::counters().textureCopies == unsigned(std::min(frame, 3)));
+	}
+	CHECK(check.vertices > 0 && check.worst < 0.002f);
+	// fix232: the three switches isolate the pass, the copy and the sampling.
+	auto frameWith = [&](unsigned flags) -> unsigned {
+		gfx::c3dSetReflectionDebug(flags);
+		gfx::frameBegin(fd);
+		if (gfx::reflectionSupported()) {
+			gfx::FrameDesc rf = fd;
+			Mat4 flip = identity();
+			flip.at(1, 1) = -1.0f;
+			flip.at(1, 3) = 2.0f * waterY;
+			rf.view = mul(fd.view, flip);
+			rf.eye.y = 2.0f * waterY - fd.eye.y;
+			gfx::reflectionBegin(rf, {waterY, 0.85f});
+			gfx::setChunkTransform(origin, 1.0f, 1.0f);
+			gfx::setMaterial(nullptr, 0);
+			gfx::draw(mesh, 0, 3);
+			gfx::reflectionEnd();
+		}
+		gfx::setPass(gfx::PASS_BLEND);
+		mock3ds::setDrawHook(reflectionHook, &check);
+		const unsigned before = check.draws;
+		gfx::setChunkTransform(origin, 1.0f, 1.0f, &fx);
+		gfx::setMaterial(nullptr, MATF_WATER);
+		gfx::draw(mesh, 0, 3);
+		mock3ds::setDrawHook(nullptr, nullptr);
+		gfx::frameEnd();
+		return check.draws - before;
+	};
+	CHECK(frameWith(gfx::REFL_DBG_NO_SAMPLE) == 0u);         // pass and copy run, the water reads nothing
+	CHECK(frameWith(gfx::REFL_DBG_NO_TRANSFER) == 1u);       // the single water draw reads the texture, nothing is copied
+	const unsigned copiesBefore = mock3ds::counters().textureCopies;
+	CHECK(frameWith(gfx::REFL_DBG_NO_TRANSFER | gfx::REFL_DBG_NO_SAMPLE) == 0u);
+	CHECK(mock3ds::counters().textureCopies == copiesBefore);
+	gfx::c3dSetReflectionDebug(gfx::REFL_DBG_NO_PASS);
+	CHECK(!gfx::reflectionSupported());
+	CHECK(frameWith(gfx::REFL_DBG_NO_PASS) == 0u);
+	gfx::c3dSetReflectionDebug(0);
+	CHECK(gfx::reflectionSupported());
+	CHECK(mock3ds::counters().textureCopyBytes == gfx::REFL_W * gfx::REFL_H * 4);
+	CHECK(mock3ds::counters().textureCopyFlags == GX_TRANSFER_RAW_COPY(1));
+	CHECK(mock3ds::counters().textureCopyInDim == 0 && mock3ds::counters().textureCopyOutDim == 0);
+	gfx::textureDestroy(ui);
+	gfx::meshDestroy(mesh);
+	gfx::shutdown();
+	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
+}
+
+// Unlike plain, both controls keep the normal six-entry world/skin shader.
+// norefl must allocate/touch no mirror target at all; oldshader changes only
+// the shader bank and reflection resources, not NPC selection.
+static void testReflectionIsolation(bool oldShader) {
+	mock3ds::reset();
+	gfx::c3dSetClassicFrames(false);
+	gfx::c3dSetPreReflectionShader(oldShader);
+	gfx::c3dSetReflectionDebug(oldShader ? 0u : unsigned(gfx::REFL_DBG_NO_PASS));
+	CHECK(gfx::init() && gfx::c3dFastShader() && !gfx::c3dPlainShader());
+	CHECK(!gfx::reflectionSupported() && !gfx::reflectionTexture());
+	CHECK(mock3ds::shaderEntries() == 6);
+	gfx::FrameDesc fd {};
+	fd.view = viewLH({0, 0, 0}, 0, 0);
+	fd.fovY = 1.0f;
+	fd.zNear = 10.0f;
+	fd.zFar = fd.fogEnd = 1000.0f;
+	fd.fogStart = 900.0f;
+	for (int i = 0; i < 3; ++i) {
+		gfx::frameBegin(fd);
+		gfx::frameEnd();
+	}
+	CHECK(mock3ds::counters().reflectionClears == 0 && mock3ds::counters().textureCopies == 0);
+	gfx::shutdown();
+	gfx::c3dSetPreReflectionShader(false);
+	gfx::c3dSetReflectionDebug(0);
+	CHECK(mock3ds::violations() == 0 && mock3ds::counters().linearBlocks == 0);
+}
+
+// The picture of a saved game: the framebuffer on show, turned the right way up.
 static void testCapture() {
 	mock3ds::reset();
 	gfx::c3dSetClassicFrames(false);
@@ -1756,6 +1945,11 @@ int main(int argc, char** argv) {
 	testShader(pak);
 	std::printf("[ RUN ] the default shader, without the dissolve\n");
 	testDefaultShader(pak);
+	std::printf("[ RUN ] reflection UVs, bindings and copies (classic / overlapped)\n");
+	testReflection(true);
+	testReflection(false);
+	testReflectionIsolation(false);
+	testReflectionIsolation(true);
 	testSunMask();
 	testLampEntry();
 	testClassicShader(pak);

@@ -169,27 +169,33 @@
 	; here are exclusive, and the uniform's two tail components (lightK.w =
 	; half, aoK.w = the plane) are set only by the reflection's own pass
 	; (gfx_c3d.cpp); the fast entries read neither.
-	mov outtc1, zero
+	; fix235: stage the chosen coordinate in r7 and emit outtc1 exactly once.
+	; fix145 established that this output must be written whole on hardware;
+	; unlike fix228, the first reflection implementation wrote it twice when
+	; dissolving, even with reflon=false. Do not pre-clear the output register.
+	mov r7, zero
 	ifu fading
 		rcp r7.x, r6.w
 		mul r7.xy, r6.xy, r7.xx
 		mul r7.xy, noiseScale.xy, r7.xy
 		mov r7.zw, zero
-		mov outtc1, r7
 	.end
 	ifu reflon
-		; r0.w уже 1 (шаг позиции не трогает его); z не важен - текстура плоская
-		mov r7, r0
-		add r7.y, aoK.w, -r0.y
-		dp4 r7.x, mvp[1], r7
-		dp4 r7.y, mvp[0], r7
-		dp4 r7.w, mvp[3], r7
+		; The raw tiled copy keeps the framebuffer's GPU axes. Project into
+		; those same axes, without the screen-capture transpose/flip.
+		; Keep the source position separate from all dp4 destinations.
+		mov r8, r0
+		add r8.y, aoK.w, -r8.y
+		dp4 r7.x, mvp[0], r8
+		dp4 r7.y, mvp[1], r8
+		dp4 r7.w, mvp[3], r8
 		rcp r7.w, r7.w
 		mul r7.xy, r7.xy, r7.ww
 		mul r7.xy, lightK.ww, r7.xy
-		add r7.xy, lightK.ww, -r7.xy
-		mov outtc1, r7
+		add r7.xy, lightK.ww, r7.xy
+		mov r7.zw, zero
 	.end
+	mov outtc1, r7
 
 	mul r2, params.xxxx, intc
 	add r2, texOffset, r2

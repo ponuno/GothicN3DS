@@ -79,8 +79,8 @@ const GfxSet kGfxSets[GFX_PLUS_OWN] = {
     {OBJECTS_BALANCED, 1, FRAMES_30, 0, 1, 2, 100, 3, 3, 2, SHADOWS_ALL, 1, 0, 2, 3, 2, 0, 2, 1, 0, 0, 0},
 };
 #define GFX_FIELDS(X) X(objects) X(dissolve) X(frameRate) X(density) X(npcDistance) X(lamps) X(occlusion) X(wind) X(waves) \
-	X(shadows) X(sunShadows) X(cloudShadows) X(grass) X(farLayer) X(farGeometry) X(reproject) X(antialias) X(farFill) X(lodFade) \
-	X(godRays) X(visibility)
+	X(reflection) X(shadows) X(sunShadows) X(cloudShadows) X(grass) X(farLayer) X(farGeometry) X(reproject) X(antialias) \
+	X(farFill) X(lodFade) X(godRays) X(visibility)
 } // namespace
 
 void Settings::applyGfxPreset(u8 preset) {

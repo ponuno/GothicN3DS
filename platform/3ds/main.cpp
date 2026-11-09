@@ -195,8 +195,17 @@ static Thread gWatchdog = nullptr;
 //   nosun        the sun's shadow stages never set (as C-Stick up)
 //   classic      citro3d's own frames instead of the overlapped ones (as Y held)
 //   plain        the plain world shader (as R held: no characters)
+//   oldshader    exact pre-reflection shader; NPC selection/rendering unchanged, no reflection resources
 //   nowind nowater noalpha noblend   materials of that kind not drawn (swaying, water, cut-out, see-through)
 //   fastonly fullonly                the world drawn with the fast entry only / the full entry only
+//   norefl                       the water's reflection left out altogether (fix232)
+//   noreflsample                 the mirrored pass and the copy run, the water does not read the reflection
+//   norefltransfer               the pass runs and the water reads the texture, the target is never copied into it
+//   noreflchar   (fix241) no hero or inhabitants in the water's reflection (the mirrored world stays)
+//   noreflclip   (fix244) no water mask in the mirror: what lies under the water mirrors above it
+//   reflnow      (fix241) copy the mirror in the same frame, not at the next idle point (experimental)
+//   noaudio       do not initialize DSP or attach any audio output; graphics/NPCs unchanged
+//   stockdsp      stock NDSP only (needs dspfirm.cdc), never try OpenDSP; noaudio takes precedence
 //   noladderinfo  world/<name>/ladderinfo not read;  noweathersfx  the baker's rain and thunder not taken
 //   fix144, the sun's mask (gfx::SunDebug): sunl4 (masks stay GPU_L4, not A8)  sunkeep (the mask stays on unit 1 after its
 //   chunk)  sunwhite (the white 8x8 in place of every mask)  sunnotex (the sun's entry, no mask read)  sunnearest  sunrepeat
@@ -209,6 +218,9 @@ static int gDebugProgram = 0;
 static unsigned gDebugSun = 0; // gfx::SunDebug
 static bool gDebugNoLadderInfo = false, gDebugNoWeatherSfx = false, gDebugLadderUnused = false;
 static bool gDebugNoLampShader = false;
+static bool gDebugNoAudio = false, gDebugStockDsp = false;
+static bool gDebugOldShader = false;
+static unsigned gDebugRefl = 0; // gfx::ReflectionDebug
 static void readDebugFile() {
 	FILE* f = fopen("sdmc:/3ds/gothic3ds/debug.txt", "rb");
 	if (!f) return;
@@ -240,6 +252,15 @@ static void readDebugFile() {
 		if (strcmp(w, "nosun") == 0) gDebugNoSun = known = true;
 		if (strcmp(w, "classic") == 0) gDebugClassic = known = true;
 		if (strcmp(w, "plain") == 0) gDebugPlain = known = true;
+		if (strcmp(w, "oldshader") == 0) gDebugOldShader = known = true;
+		if (strcmp(w, "noaudio") == 0) gDebugNoAudio = known = true;
+		if (strcmp(w, "stockdsp") == 0) gDebugStockDsp = known = true;
+		if (strcmp(w, "norefl") == 0) gDebugRefl |= gfx::REFL_DBG_NO_PASS, known = true;
+		if (strcmp(w, "noreflsample") == 0) gDebugRefl |= gfx::REFL_DBG_NO_SAMPLE, known = true;
+		if (strcmp(w, "norefltransfer") == 0) gDebugRefl |= gfx::REFL_DBG_NO_TRANSFER, known = true;
+		if (strcmp(w, "reflnow") == 0) gDebugRefl |= gfx::REFL_DBG_NOW_COPY, known = true;
+		if (strcmp(w, "noreflclip") == 0) gDebugRefl |= gfx::REFL_DBG_NO_CLIP, known = true;
+		if (strcmp(w, "noreflchar") == 0) gDebugSkip |= App::SKIP_REFL_CHARS, known = true;
 		if (strcmp(w, "nowind") == 0) gDebugMatSkip |= g3::MATF_WIND, known = true;
 		if (strcmp(w, "nowater") == 0) gDebugMatSkip |= g3::MATF_WATER, known = true;
 		if (strcmp(w, "noalpha") == 0) gDebugMatSkip |= g3::MATF_ALPHA_TEST, known = true;
@@ -479,6 +500,7 @@ int main(int, char**) {
 	const bool dissolve = settings.dissolve && !(startKeys & KEY_DRIGHT);
 	gfx::c3dSetClassicFrames(classic);
 	gfx::c3dSetPlainShader(plainShader);
+	gfx::c3dSetPreReflectionShader(gDebugOldShader);
 	gfx::c3dSetClassicShader(classicShader);
 	gfx::c3dSetDoubleDraws((startKeys & KEY_START) != 0); // hold START at start: every draw twice
 	gfx::c3dSetFillTest(halfPicture); // hold ZR at start: half the pixels, the same triangles
@@ -486,6 +508,7 @@ int main(int, char**) {
 	gfx::c3dSetNoLamps(gDebugNoLampShader);
 	gfx::c3dSetSunDebug(gDebugSun);
 	gfx::c3dSetDebugDraw(gDebugMatSkip, gDebugProgram); // hold the C-Stick up at start: no sun's shadow at all (its stages left out)
+	gfx::c3dSetReflectionDebug(gDebugRefl); // fix232: norefl / noreflsample / norefltransfer (debug.txt)
 	gfx::c3dSetFadeShader(dissolve);
 	gfx::c3dSetSupersampleMode(settings.antialias); // (a change in the menu counts after a restart)
 	// The top screen: wide (800x240) or stereo 3D (the same, after a restart; the 3D not together with the smoothing). The wide
@@ -511,9 +534,23 @@ int main(int, char**) {
 	app.setReadAheadBudget(4u << 20);
 	stream.headLead = 1200.0f;
 	// Sound before the application, which hands it to the sound engine.
-	// fix228: OpenDSP (прошита в библиотеку) — дамп всегда право; отчёт называет, что удалось.
-	if (gAudio.open()) app.setAudio(&gAudio);
-	else printf("no sound: %s (0x%08X)\n(dump the DSP with DSP1 to sdmc:/3ds/dspfirm.cdc)\n", gAudio.backendName(), gAudio.openResult());
+	// Overwrite the old shutdown report now: a hang must not leave last
+	// session's successful sound.txt looking like a report from this run.
+	const char* audioMode = gDebugNoAudio ? "disabled (noaudio)" : gDebugStockDsp ? "stock NDSP only" : "OpenDSP with NDSP fallback";
+	if (FILE* sf = fopen(kSoundReportPath, "w")) {
+		fprintf(sf, "report stage: before audio initialization; requested: %s\n", audioMode);
+		fclose(sf);
+	}
+	g3::trace("main: audio initialization");
+	if (!gDebugNoAudio) {
+		if (gAudio.open(!gDebugStockDsp)) app.setAudio(&gAudio);
+		else printf("no sound: %s (0x%08X)\n(dump the DSP with DSP1 to sdmc:/3ds/dspfirm.cdc)\n", gAudio.backendName(), gAudio.openResult());
+	}
+	if (FILE* sf = fopen(kSoundReportPath, "a")) {
+		fprintf(sf, "report stage: audio initialization complete, before graphics/application initialization\n");
+		fprintf(sf, "dsp: %s (backend %s, init 0x%08X)\n", gAudio.isOpen() ? "open" : "NOT open", gAudio.backendName(), gAudio.openResult());
+		fclose(sf);
+	}
 	bool ok = gfx::init();
 	if (!ok) printf("gfx init failed\n");
 	if (ok && !app.init(kPakPath, nullptr)) {
@@ -557,7 +594,8 @@ int main(int, char**) {
 	{
 		char what[224];
 		snprintf(what, sizeof(what), "preset %d, draw %d m, objects %d, life %d, shader %s; linear heap at %08lx..%08lx (physical)",
-		         int(settings.gfxPresetOf()), int(settings.drawMetres), int(settings.objects), int(settings.life), plainShader ? "plain" : "normal",
+		         int(settings.gfxPresetOf()), int(settings.drawMetres), int(settings.objects), int(settings.life),
+		         plainShader ? "plain" : gDebugOldShader ? "pre-reflection" : "normal",
 		         static_cast<unsigned long>(gLinearPhys[0]), static_cast<unsigned long>(gLinearPhys[1]));
 		startHitchLog(what);
 	}
@@ -1546,6 +1584,7 @@ int main(int, char**) {
 	aptUnhook(&gAptCookie);
 	exitStep("exit 2/4: closing the world");
 	if (FILE* sf = fopen(kSoundReportPath, "w")) {
+		fprintf(sf, "report stage: normal shutdown; requested: %s\n", audioMode);
 		fprintf(sf, "dsp: %s (backend %s, ndspInit 0x%08X; 0xD880A7FA says the dump sdmc:/3ds/dspfirm.cdc is missing)\n",
 		        gAudio.isOpen() ? "open" : "NOT open", gAudio.backendName(), gAudio.openResult());
 		fprintf(sf, "sound engine: %s; music: %s\n", app.sound().ready() ? "ready" : "OFF", app.music().ready() ? "ready" : "OFF (no music.pak or no DSP)");

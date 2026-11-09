@@ -22,6 +22,7 @@
 
 #include "world_fade_shbin.h"
 #include "world_fast_shbin.h"
+#include "world_before_reflections_shbin.h"
 #include "world_plain_shbin.h"
 #include "world_shbin.h"
 
@@ -96,6 +97,7 @@ bool gWavy = false, gMaterialWater = false, gChunkWave = false, gChunkWaterGrid 
 bool gFillTest = false;    // the picture squeezed into half the screen (hold ZR at start): does the GPU time follow the pixels?
 bool gDoubleDraws = false; // every world draw is issued twice (hold START at start): what does one more draw call cost with no state change?
 bool gPlainShader = false; // the world-only shader of earlier versions: no characters
+bool gPreReflectionShader = false; // exact fix228 shader, with normal NPCs (debug.txt oldshader)
 bool gFadeShader = false;  // the shader with the dissolve, and the noise on unit 1
 Pass gPass = PASS_WORLD;
 
@@ -133,15 +135,22 @@ u8 gFade = 255;
 C3D_RenderTarget* gReflTarget = nullptr;
 C3D_Tex gReflTex;
 bool gReflTexReady = false;   // цель и текстура созданы
-bool gReflBound = false;      // текстура привязана к юниту 1 (как tenant)
 bool gReflPass = false;       // идёт зеркальный проход (между Begin и End)
-bool gReflPending = false;    // цель нарисована — в конце кадра переносится в текстуру
-bool gReflSampleReady = false; // перенос уже был: воде можно сэмплить отражение
+bool gReflHasPass = false;    // в каком-то кадре записан проход, ещё не перенесённый в текстуру
+bool gReflRecorded = false;   // this CPU frame contains a pass; publish only AFTER submitting its list
+u32 gFrameSeq = 0;            // number of the frame being recorded (fix232)
+u32 gReflPassSeq = 0;         // gFrameSeq of the last recorded pass
+bool gReflSampleReady = false; // зеркало уже перенесено в текстуру: воде можно сэмплить
 float gReflPlane = 0.0f;      // уровень воды, см (мировые)
 u8 gReflStrength = 0;         // сила смешивания 0..255
 int gLocReflon = -1;          // bool-регистр reflon в шейдере
 bool gReflon = false;         // последнее значение reflon
 bool gReflStageOn = false;    // стадия 4 (rgb) настроена на смешивание отражения
+bool gReflFresh = false;      // отражённый проход уже был в этом кадре (иначе вода читает устаревшую цель)
+u32 gReflClearColor = 0;      // cleared at the next GPU-idle point, before a new pass is drawn
+u32 gReflDebug = 0;           // fix232: c3dSetReflectionDebug (debug.txt), 0 = everything on
+Mesh* gReflClip = nullptr;    // fix244: the water plane drawn over the mirrored pass to hide what lies under the water
+float gReflEyeX = 0.0f, gReflEyeZ = 0.0f; // (the mirrored eye, for that plane)
 C3D_Tex gNoise;
 bool gNoiseReady = false;
 bool gInFrame = false;
@@ -155,7 +164,7 @@ float gAnchor[3] = {0, 0, 0};       // the lattice point next to the eye that po
 // (x, plane − y, z) с plane = 2·(уровень воды − якорь по y); 0, когда
 // отражений нет (шейдер тогда эту компоненту не читает, fast и подавно).
 static inline float reflPlaneRow() {
-	return (gReflSampleReady && gReflStrength && gLocReflon >= 0) ? 2.0f * (gReflPlane - gAnchor[1]) : 0.0f;
+	return (gReflSampleReady && gReflFresh && gReflStrength && gLocReflon >= 0) ? 2.0f * (gReflPlane - gAnchor[1]) : 0.0f;
 }
 
 float gParams[4] = {0, 0, 0, 0};    // last value of the `params` uniform
@@ -443,7 +452,8 @@ void updateWindy() {
 	// Отражение (этап 1): reflon поднимается для воды с грид-разметкой, когда
 	// перенесённое отражение уже есть и сила не нулевая. Вода в отражённом
 	// проходе не рисуется, растворение есть только в непрозрачном мире.
-	const bool reflon = gLocReflon >= 0 && wavy && gReflSampleReady && gReflStrength != 0;
+	const bool reflon = gLocReflon >= 0 && wavy && gReflSampleReady && gReflStrength != 0 && gReflFresh && !gReflPass &&
+	                    !(gReflDebug & REFL_DBG_NO_SAMPLE);
 	if (reflon != gReflon) {
 		gReflon = reflon;
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocReflon, reflon);
@@ -455,6 +465,15 @@ void updateWindy() {
 // стадии свободны). Вызывается из setMaterial; fade сбрасывает флаг.
 void updateReflStage() {
 	const bool want = gReflon && !gReflPass;
+	// Unit 1 is shared with the sun and the dissolve. The cached TEV state
+	// does not imply that its texture is still bound.
+	if (want) {
+		if (gUnit1 != &gReflTex) {
+			C3D_TexBind(1, &gReflTex);
+			gUnit1 = &gReflTex;
+		}
+		gSunBound = nullptr;
+	}
 	if (want == gReflStageOn) return;
 	gReflStageOn = want;
 	C3D_TexEnv* env = C3D_GetTexEnv(4);
@@ -464,7 +483,6 @@ void updateReflStage() {
 		C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_ALPHA);
 		C3D_TexEnvFunc(env, C3D_RGB, GPU_INTERPOLATE);
 		C3D_TexEnvColor(env, u32(gReflStrength) << 24);
-		if (!gReflBound) { C3D_TexBind(1, &gReflTex); gReflBound = true; gUnit1 = &gReflTex; }
 	} else {
 		bindUnit1Default();
 	}
@@ -518,13 +536,19 @@ void setFogRow(float fogA, float fogB) {
 // dayLight - 1; the fast entry wants it divided by 255 twice (see world_fast.v.pica).
 void setDayDelta(float x, float y, float z) {
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocDayDelta, x, y, z, 0.0f);
-	if (gMvpShader) C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocLightK, x / 65025.0f, y / 65025.0f, z / 65025.0f, 0.0f);
+	// fix229: lightK.w = 0.5 — в world_full.v.pica это «полсдвиг» uv = lightK.w - lightK.w*ndc
+	// (разворот_vertically в 0..1); ноль здесь сваливал все uv в один угловой тексель.
+	if (gMvpShader) C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocLightK, x / 65025.0f, y / 65025.0f, z / 65025.0f, 0.5f);
 }
 
 // fix144: a mask is on unit 1 only for the sun's entry. Any other entry (and the overlay, the sky, the characters) finds the
 // noise or the white 8x8 there: texture unit 1 samples for every pixel of every draw while it is on, whatever the stages read,
 // and those entries' texture coordinate 1 is not the mask's (sunkeep: as fix143, the mask stays).
 void guardUnit1() {
+	if (gReflon && !gReflPass && gBound == PROGRAM_FULL) {
+		updateReflStage();
+		return;
+	}
 	if (gBound != PROGRAM_FAST_SUN && gSunBound && !(gSunDebug & SUN_DBG_KEEP)) bindUnit1Default();
 }
 
@@ -619,14 +643,16 @@ void reap() {
 // здесь — машина: отдельная цель 256x256 (RGBA8 + глубина 24, VRAM),
 // отражённая камера (мир отражается в плоскости y = waterY до вида) рисует в
 // неё непрозрачный мир внутри того же кадра, до основного прохода; в конце
-// кадра display-перенос кладёт цель в текстуру, вода сэмплит её проективно
+// кадра побайтовый GPU-перенос кладёт цель в текстуру, вода сэмплит её проективно
 // (этап reflon в world_full.v.pica: точка (x, plane - y, z) тем же mvp, rcp
 // уже есть) и смешивает по силе через RGB стадии 4: вода не растворяется и
 // не берёт солнечной маски, так что стадия свободна. Текстура живёт на
 // юните 1 ещё одним «арендатором» рядом с шумом и маской солнца. Стерео и
 // шейдер без reflon отражений не получают (этап 2).
 
-#define REFL_TRANSFER_FLAGS 	(GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) | 	 GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) | 	 GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
+// The framebuffer and texture both use 8x8 tiles, RGBA8, and the same
+// dimensions. Copy their bytes unchanged: OUT_TILED would treat the already
+// tiled framebuffer as linear input and swizzle it a second time.
 
 static Texture gReflWrap; // обёртка для reflectionTexture(): тот же C3D_Tex
 
@@ -698,15 +724,31 @@ bool init() {
 
 	// Отражения (этап 1): цель 256x256 RGBA8 + глубина 24 (VRAM) и текстура
 	// под перенос. Не получилось — отражения просто выключены.
-	gReflTarget = C3D_RenderTargetCreate(REFL_W, REFL_H, GPU_RB_RGBA8, GPU_RB_DEPTH24);
+	const bool wantReflection = !gPlainShader && !gClassicShader && !gPreReflectionShader && !(gReflDebug & REFL_DBG_NO_PASS);
+	gReflTarget = wantReflection ? C3D_RenderTargetCreate(REFL_W, REFL_H, GPU_RB_RGBA8, GPU_RB_DEPTH24) : nullptr;
 	if (gReflTarget && C3D_TexInit(&gReflTex, REFL_W, REFL_H, GPU_RGBA8)) {
 		C3D_TexSetFilter(&gReflTex, GPU_LINEAR, GPU_LINEAR);
 		C3D_TexSetWrap(&gReflTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+		C3D_TexFlush(&gReflTex); // release any CPU cache dirt before GPU-only writes
 		gReflTexReady = true;
 		gReflWrap.tex = gReflTex;
 	} else {
-		C3D_RenderTargetDelete(gReflTarget);
+		if (gReflTarget) C3D_RenderTargetDelete(gReflTarget);
 		gReflTarget = nullptr;
+	}
+	if (gReflTexReady) {
+		// fix240: the water plane drawn into the mirrored pass's depth (see clipReflectionAtPlane).
+		WorldVertex corners[4] = {};
+		const i16 h = 30000;
+		const i16 xz[4][2] = {{-h, -h}, {h, -h}, {-h, h}, {h, h}};
+		for (int i = 0; i < 4; ++i) {
+			corners[i].x = xz[i][0];
+			corners[i].y = 0;
+			corners[i].z = xz[i][1];
+			corners[i].w = 1;
+		}
+		static const u16 indices[6] = {0, 1, 2, 2, 1, 3};
+		gReflClip = meshCreate(corners, 4, indices, 6);
 	}
 
 	gMvpShader = false;
@@ -716,7 +758,9 @@ bool init() {
 	// the fast entry is `fadefast`, which also gives the noise its place on the screen (before fix85 the dissolve
 	// meant world_fade.v.pica for everything: about 36 instructions a world vertex instead of 22).
 	if (!gPlainShader && !gClassicShader) {
-		gDvlb = DVLB_ParseFile(reinterpret_cast<u32*>(world_fast_shbin), world_fast_shbin_size);
+		u32* code = reinterpret_cast<u32*>(gPreReflectionShader ? world_before_reflections_shbin : world_fast_shbin);
+		const u32 codeSize = gPreReflectionShader ? world_before_reflections_shbin_size : world_fast_shbin_size;
+		gDvlb = DVLB_ParseFile(code, codeSize);
 		if (gDvlb && gDvlb->numDVLE >= 4) {
 			shaderProgramInit(&gProgram);
 			shaderProgramSetVsh(&gProgram, &gDvlb->DVLE[0]);
@@ -879,7 +923,15 @@ void shutdown() {
 		gReflTarget = nullptr;
 		if (gReflTexReady) C3D_TexDelete(&gReflTex);
 		gReflTexReady = false;
-		gReflBound = gReflPass = false;
+		if (gReflClip) meshDestroy(gReflClip);
+		gReflClip = nullptr;
+		gReflPass = gReflSampleReady = gReflFresh = false;
+		gReflHasPass = false;
+		gReflRecorded = false;
+		gFrameSeq = gReflPassSeq = 0;
+		gReflDebug = 0;
+		gReflStrength = 0;
+		gReflon = false;
 		gReflStageOn = false;
 		gLocReflon = -1;
 		reap();
@@ -1109,11 +1161,18 @@ void c3dSyncTopOnly(bool on) { gTopOnly = on; }
 
 // C3D_FrameBegin with the wait for the display: for the top screen alone when it runs faster than the bottom one.
 static bool frameBeginSynced() {
-	if (!gTopOnly) return C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
-	const u32 start = C3D_FrameCounter(0);
-	do {
-		gspWaitForAnyEvent();
-	} while (C3D_FrameCounter(0) == start);
+	// Same synchronization as C3D_FRAME_SYNCDRAW, but with separate trace
+	// steps so the watchdog can distinguish a display wait from a stuck GPU.
+	g3::trace("gfx: waiting for display VBlank");
+	if (!gTopOnly) {
+		C3D_FrameSync();
+	} else {
+		const u32 start = C3D_FrameCounter(0);
+		do {
+			gspWaitForAnyEvent();
+		} while (C3D_FrameCounter(0) == start);
+	}
+	g3::trace("gfx: waiting for GPU command queue");
 	return C3D_FrameBegin(0);
 }
 
@@ -1129,6 +1188,7 @@ static void markSync() {
 }
 
 static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target);
+void serviceReflection(); // fix232 (defined next to frameEnd)
 
 // The top screen's two framebuffers, as libctru turns them: gfxGetFramebuffer gives the one the next picture goes into,
 // so the other is the one on show (as reproject_3ds.cpp finds them, from what it has seen).
@@ -1187,6 +1247,9 @@ bool captureFrame(u16* rgb565, int w, int h) {
 void frameBegin(const FrameDesc& f) {
 	noteTopBuffer();
 	gFrame = f;
+	++gFrameSeq; // fix232: which frame a recorded reflection pass belongs to
+	gReflRecorded = false;
+	gReflFresh = false; // зеркало этого кадра ещё не построено; reflon поднимется только после reflectionBegin
 	gClearColor = (u32(f.clearColor[0]) << 24) | (u32(f.clearColor[1]) << 16) | (u32(f.clearColor[2]) << 8) | 0xFFu;
 	if (gClassic) {
 		g3::trace("gfx: waiting for the GPU and the display (classic)");
@@ -1194,6 +1257,7 @@ void frameBegin(const FrameDesc& f) {
 		if (!gInFrame) return;
 		markSync();
 		reap(); // the previous frame is off the GPU now
+		serviceReflection(); // fix232: copy the previous pass's target, clear it for this one
 		C3D_RenderTargetClear(gTarget, C3D_CLEAR_ALL, gClearColor, 0);
 		C3D_FrameDrawOn(gTarget);
 	} else {
@@ -1271,7 +1335,7 @@ static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target) {
 	if (gLocFx >= 0) {
 		gFx[0] = gFx[1] = gFx[2] = gFx[3] = 0.0f;
 		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocFx, 0.0f, 0.0f, 0.0f, 0.0f);
-		if (gMvpShader) C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocAoK, 0.0f, 0.0f, 0.0f, 0.0f);
+		if (gMvpShader) C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocAoK, 0.0f, 0.0f, 0.0f, reflPlaneRow());
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWindy, false);
 	}
 	gWindy = gMaterialWind = gChunkWind = false;
@@ -1281,6 +1345,8 @@ static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target) {
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWavy, false);
 	}
 	gWavy = gMaterialWater = gChunkWave = gChunkWaterGrid = false;
+	if (gLocReflon >= 0) C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocReflon, false);
+	gReflon = false;
 
 	// Start every frame from a known state; from here on only changes are sent.
 	setStage0(true, 255);
@@ -1298,12 +1364,14 @@ static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target) {
 	// Not dissolving.
 	if (gNoiseReady) {
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocFading, false);
-		setFadeStages(false, 255);
 	}
+	setFadeStages(false, 255); // clear a previous reflection even when there is no dissolve texture
 	// The noise stays bound to unit 1: citro3d cannot unbind units 1 and 2
 	// (C3D_TexBind reads the type of the texture it is given, null or not -
 	// that crashed the console). No texture stage reads it unless dissolving.
 	bindUnit1Default();
+	// Unit 1 is now the noise; the next water draw installs its own stage.
+	gReflStageOn = false;
 	gFade = 255;
 	gBlend = BLEND_UNSET;
 	setBlend(BLEND_OFF);
@@ -1356,7 +1424,7 @@ void setPass(Pass pass) {
 		C3D_CullFace(GPU_CULL_NONE);
 	} else {
 		C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
-		C3D_CullFace(GPU_CULL_BACK_CCW);
+		C3D_CullFace(gReflPass ? GPU_CULL_FRONT_CCW : GPU_CULL_BACK_CCW);
 	}
 	if (pass != PASS_BLEND) setBlend(BLEND_OFF);
 }
@@ -1462,7 +1530,7 @@ bool fadeSupported() { return gNoiseReady; }
 
 void setTwoSided(bool both) {
 	if (!gInFrame || gPass != PASS_WORLD) return;
-	C3D_CullFace(both ? GPU_CULL_NONE : GPU_CULL_BACK_CCW);
+	C3D_CullFace(both ? GPU_CULL_NONE : gReflPass ? GPU_CULL_FRONT_CCW : GPU_CULL_BACK_CCW);
 }
 
 void setFade(float visible) {
@@ -1670,6 +1738,9 @@ static void beginUi(Texture* t) {
 	gMaterialWind = gChunkWind = false;
 	gMaterialWater = gChunkWave = gChunkWaterGrid = false;
 	updateWindy();
+	// fix236: disabling the vertex reflection flag does not reset its RGB
+	// combiner. UI bypasses setMaterial, so retire stage 4 explicitly here.
+	updateReflStage();
 	C3D_Mtx proj, identity;
 	Mtx_OrthoTilt(&proj, 0.0f, float(SCREEN_W), float(SCREEN_H), 0.0f, -1.0f, 1.0f, true);
 	memset(&identity, 0, sizeof(identity));
@@ -1741,17 +1812,32 @@ void uiDraw(Texture* t, const UiQuad* quads, u32 count) {
 	}
 }
 
-void doReflTransfer() {
-	gReflPending = false;
-	if (!gReflTarget || !gReflTexReady) return;
-	// Цель -> текстура одним display-переносом (как экран: цель в памяти
-	// лежит «на боку»; FLIP_VERT и OUT_TILED дают на выходе обычную
-	// текстуру-сэмпл; точная ориентация проверяется на железе, план, раздел 3).
-	GX_DisplayTransfer((u32*)gReflTarget->frameBuf.colorBuf,
-	                   GX_BUFFER_DIM(gReflTarget->frameBuf.width, gReflTarget->frameBuf.height),
-	                   (u32*)gReflTex.data, GX_BUFFER_DIM(REFL_W, REFL_H), REFL_TRANSFER_FLAGS);
-	C3D_TexFlush(&gReflTex);
+// fix232: the copy happens only at a GPU-idle point, and only for a pass that
+// was submitted in an EARLIER frame (that frame has been executed by now).
+// The earlier post-FrameEnd copy was asynchronous; changing its placement
+// did NOT resolve the reported hang, so it is not an established cause.
+// The clear goes to the target before
+// the pass this frame records (its draws are submitted after this point).
+// Same layout both sides (RGBA8, 256x256, 8x8 tiles): raw copy, no flip,
+// transpose or second tiling operation. Even without the copy sampling is
+// allowed: that isolates the texture read from the transfer.
+static void copyReflectionTarget() {
+	if (!(gReflDebug & REFL_DBG_NO_TRANSFER)) {
+		GX_TextureCopy((u32*)gReflTarget->frameBuf.colorBuf, 0,
+		               (u32*)gReflTex.data, 0, u32(REFL_W * REFL_H * 4), GX_TRANSFER_RAW_COPY(1));
+	}
 	gReflSampleReady = true;
+}
+
+void serviceReflection() {
+	if (!gReflTarget || (gReflDebug & REFL_DBG_NO_PASS)) return;
+	// fix241: by default the pass of the frame before is copied here, at the
+	// GPU-idle point (fix232). `reflnow` copies it in reflectionEnd instead.
+	if (!(gReflDebug & REFL_DBG_NOW_COPY) && gReflHasPass && gReflPassSeq < gFrameSeq && gReflTexReady) {
+		copyReflectionTarget();
+		gReflHasPass = false;
+	}
+	C3D_RenderTargetClear(gReflTarget, C3D_CLEAR_ALL, gReflClearColor, 0);
 }
 
 void frameEnd() {
@@ -1771,6 +1857,8 @@ void frameEnd() {
 		// so the safe default stays.
 		gStereoFrame = false;
 		C3D_FrameEnd(0);
+		gReflHasPass = gReflRecorded;
+		gReflPassSeq = gFrameSeq;
 		gFrameStats.commandBufferUse = C3D_GetCmdBufUsage();
 		gFrameStats.gpuMs = C3D_GetDrawingTime(); // of the frame before
 		return;
@@ -1789,6 +1877,10 @@ void frameEnd() {
 	// The GPU is idle: whatever was destroyed while it drew can go. The frame
 	// about to be submitted was recorded after those were destroyed.
 	reap();
+	// The GPU has finished the frame that drew the mirror: copy it now, then
+	// prepare the target for this frame's pass. Both are ordered before the
+	// list submitted below.
+	serviceReflection();
 	C3D_RenderTargetClear(gTarget, C3D_CLEAR_ALL, gClearColor, 0);
 	gTarget->used = true; // C3D_FrameEnd copies used targets to the screen
 	if (gStereoFrame && gTargetR) {
@@ -1800,21 +1892,57 @@ void frameEnd() {
 	// buffer; point it back at the end of what was recorded.
 	GPUCMD_SetBuffer(gOwnBuffer[gOwnIndex], kOwnBufferWords, recorded);
 	C3D_FrameEnd(0);
+	gReflHasPass = gReflRecorded;
+	gReflPassSeq = gFrameSeq;
 	gOwnIndex ^= 1; // the GPU reads this buffer now; the next frame is written into the other
-	if (gReflPending) doReflTransfer();
 }
 
 // ---- планарные отражения в воде (этап 1, «спокойное зеркало») ----
 // Публичная часть; состояние и комментарий — наверху файла, у gReflTarget.
 
 bool reflectionSupported() {
-	return gReady && gReflTarget && gReflTexReady && gLocReflon >= 0;
+	return gReady && gReflTarget && gReflTexReady && gLocReflon >= 0 && !(gReflDebug & REFL_DBG_NO_PASS);
 }
 
 Texture* reflectionTexture() {
 	return gReflTexReady ? &gReflWrap : nullptr;
 }
 
+// fix244: the water plane over the mirrored scene. The mirrored camera is
+// below the plane. What is really ABOVE the water (valid reflection) is
+// beyond the plane from it; what is really BELOW the water (the wading hero's
+// submerged half) is between the camera and the plane. Drawn AFTER the scene
+// with LESS (nearer depths are greater on PICA), the plane's fog covers
+// exactly the submerged part; the above-water reflection is farther and
+// survives. Its colour is the frame's fog colour, like the pass's clear.
+static void maskReflectionUnderWater() {
+	if (!gReflClip || (gReflDebug & REFL_DBG_NO_CLIP)) return;
+	WorldVertex v[4] = {};
+	const i16 h = 30000;
+	const i16 xz[4][2] = {{-h, -h}, {h, -h}, {-h, h}, {h, h}};
+	const u8 r = u8(gReflClearColor >> 24), g = u8(gReflClearColor >> 16), b = u8(gReflClearColor >> 8);
+	for (int i = 0; i < 4; ++i) {
+		v[i].x = xz[i][0];
+		v[i].y = 0;
+		v[i].z = xz[i][1];
+		v[i].w = 1;
+		v[i].r = r;
+		v[i].g = g;
+		v[i].b = b;
+		v[i].a = 0;
+	}
+	meshUpdate(gReflClip, v, 4);
+	const float origin[3] = {gReflEyeX, gReflPlane, gReflEyeZ};
+	setChunkTransform(origin, 1.0f, 0.0f);
+	setMaterial(nullptr, 0);
+	setTwoSided(true);
+	// Nearer depths are greater (the console's reversed depth): paint only
+	// where the stored geometry is nearer than the plane, i.e. below the water.
+	C3D_DepthTest(true, GPU_LESS, GPU_WRITE_COLOR);
+	draw(gReflClip, 0, 6);
+	C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
+	setTwoSided(false);
+}
 
 bool reflectionBegin(const FrameDesc& f, const ReflParams& p) {
 	if (!reflectionSupported() || !gInFrame || gReflPass || gStereoFrame) return false;
@@ -1822,23 +1950,32 @@ bool reflectionBegin(const FrameDesc& f, const ReflParams& p) {
 	gReflPlane = p.waterY;
 	gReflStrength = u8(clamp(p.strength, 0.0f, 1.0f) * 255.0f + 0.5f);
 	// Очистка цели цветом тумана кадра: небо отражения — цвет горизонта.
-	const u32 clear = (u32)f.fogColor[0] << 24 | (u32)f.fogColor[1] << 16 | (u32)f.fogColor[2] << 8 | 0xFFu;
-	C3D_RenderTargetClear(gReflTarget, C3D_CLEAR_ALL, clear, 0);
+	gReflClearColor = (u32)f.fogColor[0] << 24 | (u32)f.fogColor[1] << 16 | (u32)f.fogColor[2] << 8 | 0xFFu;
+	gReflPass = true;
 	if (gClassic) {
-		C3D_FrameDrawOn(gReflTarget);
+		C3D_FrameDrawOn(gReflTarget); // (the target was cleared at this frame's start, serviceReflection)
 	} else {
 		C3D_SetFrameBuf(&gReflTarget->frameBuf);
 		C3D_SetViewport(0, 0, REFL_W, REFL_H);
 	}
 	beginPassState(f, gReflTarget); // состояние прохода заново, под отражённую камеру
-	gReflPass = true;
+	gReflEyeX = f.eye.x;
+	gReflEyeZ = f.eye.z;
+	gReflFresh = true; // вода этого кадра может сэмплить отражение
 	return true;
 }
 
 void reflectionEnd() {
 	if (!gReflPass) return;
+	// fix244: hide what lies under the water, now that the mirrored scene is
+	// drawn (see maskReflectionUnderWater).
+	maskReflectionUnderWater();
+	// fix241: the next-idle copy is the default again (fix240's copy in the
+	// same frame made reflections disappear on the console). `reflnow` tries it.
+	const bool sameFrame = (gReflDebug & REFL_DBG_NOW_COPY) != 0;
+	if (sameFrame && gReflTarget && gReflTexReady) copyReflectionTarget();
 	gReflPass = false;
-	gReflPending = true; // перенос цели в текстуру — в конце кадра, после списка
+	gReflRecorded = !sameFrame; // (the old path marks a pass for the next idle point)
 	// назад к экранной цели и к состоянию основного прохода
 	if (gClassic) C3D_FrameDrawOn(gTarget);
 	C3D_SetFrameBuf(&gTarget->frameBuf);
@@ -1867,6 +2004,9 @@ void c3dSetDebugDraw(u16 skipFlags, int program) {
 	gDebugSkipFlags = skipFlags;
 	gDebugProgram = program;
 }
+// fix232: isolates the reflection's parts (debug.txt norefl / noreflsample / norefltransfer).
+void c3dSetReflectionDebug(unsigned flags) { gReflDebug = flags; }
+void c3dSetPreReflectionShader(bool on) { if (!gReady) gPreReflectionShader = on; }
 
 void c3dSetWide(bool on) {
 	if (!gReady) gWideWanted = on; // (only before init(): the targets are made there)

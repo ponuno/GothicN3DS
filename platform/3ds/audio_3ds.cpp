@@ -6,14 +6,20 @@
 
 namespace g3 {
 
-bool Audio3ds::open() {
+bool Audio3ds::open(bool useOpenDsp) {
 	if (_open) return true;
 	// fix228: сначала OpenDSP — её прошивка зашита в библиотеку, дамп с консоли
 	// не нужен (и в Azahar не нужно ничего). Не вышло — фирменный ndsp с дампом
 	// sdmc:/3ds/dspfirm.cdc. Дальше весь ndsp-код общий.
-	Result rc = opendspInit();
-	_backend = Backend::OpenDsp;
-	if (R_FAILED(rc)) {
+	Result rc;
+	if (useOpenDsp) {
+		rc = opendspInit();
+		_backend = Backend::OpenDsp;
+		if (R_FAILED(rc)) {
+			rc = ndspInit();
+			_backend = Backend::Ndsp;
+		}
+	} else {
 		rc = ndspInit();
 		_backend = Backend::Ndsp;
 	}

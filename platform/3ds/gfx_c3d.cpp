@@ -1912,9 +1912,9 @@ Texture* reflectionTexture() {
 // below the plane. What is really ABOVE the water (valid reflection) is
 // beyond the plane from it; what is really BELOW the water (the wading hero's
 // submerged half) is between the camera and the plane. Drawn AFTER the scene
-// with LESS (nearer depths are greater on PICA), the plane's fog covers
-// exactly the submerged part; the above-water reflection is farther and
-// survives. Its colour is the frame's fog colour, like the pass's clear.
+// with GPU_GREATER, the plane's fog covers exactly the submerged part; the
+// above-water reflection is farther and survives. Its colour is the frame's
+// fog colour, like the pass's clear.
 static void maskReflectionUnderWater() {
 	if (!gReflClip || (gReflDebug & REFL_DBG_NO_CLIP)) return;
 	WorldVertex v[4] = {};
@@ -1936,9 +1936,11 @@ static void maskReflectionUnderWater() {
 	setChunkTransform(origin, 1.0f, 0.0f);
 	setMaterial(nullptr, 0);
 	setTwoSided(true);
-	// Nearer depths are greater (the console's reversed depth): paint only
-	// where the stored geometry is nearer than the plane, i.e. below the water.
-	C3D_DepthTest(true, GPU_LESS, GPU_WRITE_COLOR);
+	// GPU_GREATER: the plane's fog paints only where the stored geometry is
+	// nearer than the plane, i.e. the submerged part below the water; the
+	// valid above-water reflection is beyond the plane and survives.
+	// (GPU_LESS left the submerged half visible as upside-down legs.)
+	C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_COLOR);
 	draw(gReflClip, 0, 6);
 	C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
 	setTwoSided(false);

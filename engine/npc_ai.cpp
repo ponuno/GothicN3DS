@@ -792,6 +792,14 @@ void Npcs::tickState(NpcActor& a) {
 		}
 		return;
 	}
+	// Npc_ExchangeRoutine replaces the schedule while the actor can still be
+	// finishing the old state's wait.  End that state before the wait can hide
+	// the new FOLLOW routine for another perception interval.
+	if (a.state && a.routineState &&
+	    (n.routineCount ? (_game.behaviour(n) != a.routineFn || n.want != a.routineAt) : a.stateHours >= 4.0f)) {
+		clearState(a, true);
+		a.other = -1;
+	}
 	if (!a.state) {
 		// fix229: a state the scripts began (a follow out of a talk) is resumed after the character
 		// was out of sight, not the routine's.

@@ -431,6 +431,10 @@ bool Game::exchangeRoutine(u32 npc, const char* name) {
 	_npcs[npc].routineFirst = before;
 	_npcs[npc].routineCount = u16(min<u32>(_routineCount - before, 0xFFFF));
 	place(_npcs[npc], _hours, _find, _findUser);
+	// Keep a script-started follower selected immediately.  The actor may still
+	// be in the previous routine state for this frame, but the new routine is
+	// already authoritative and must not be retired before ZS_FollowPC starts.
+	_npcs[npc].following = isFollowState(_npcs[npc].state);
 	updateFollowers(); // fix226: "FOLLOW" now, "come along" at once
 	return true;
 }

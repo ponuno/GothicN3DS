@@ -306,7 +306,7 @@ bool Npcs::canTalk(u32 npc) const {
 		if (a.used && a.npc == npc) {
 			const bool follower = _game.isFollower(npc) || (a.state && _game.isFollowState(a.state));
 			// (Not one in a fight: it has no ear for talk, nor does an enemy.)
-			if (!a.ready || (!follower && inFightState(a)) || a.flee > 0.0f || a.refuseTalk > 0.0f || (!follower && _game.npc(npc).weapon != WEAPON_NONE)) return false;
+			if (!a.ready || (!follower && inFightState(a)) || a.flee > 0.0f || (!follower && _game.npc(npc).weapon != WEAPON_NONE)) return false;
 			const u32 hero = _game.heroIndex();
 			if (hero != SCRIPT_NONE && _game.attitude(npc, hero) == _game.constant("ATT_HOSTILE", 0) && _game.isMonster(_game.npc(npc))) return false;
 			// A follow state may not have enabled PERC_ASSESSTALK yet. The
@@ -490,6 +490,18 @@ void Npcs::afterTold() {
 		++_stats.trades;
 		_menuDirty = true;
 		return;
+	}
+	// An important info may create a choice menu while its last line is
+	// finishing.  Show that menu before advancing to another important info.
+	// Mud's first important info does exactly this: its two answers are the
+	// only way to reach DIA_Mud_FirstEXIT_Komm/Verpiss and exchange the routine.
+	if (t.menuInfo >= 0) {
+		u32 ways[TALK_ITEMS];
+		if (_game.choicesOf(u32(t.menuInfo), ways, TALK_ITEMS) != 0) {
+			buildMenu();
+			t.choosing = true;
+			return;
+		}
 	}
 	while (t.importantLeft > 0) {
 		u32 available[TALK_ITEMS];

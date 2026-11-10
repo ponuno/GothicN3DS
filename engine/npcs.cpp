@@ -322,26 +322,57 @@ Npcs::Piece* Npcs::piece(Pak& pak, u32 hash, u32& loadsLeft) {
 	return spare->failed ? nullptr : spare;
 }
 
+// Whether any of the actor's models (the rig, then the overlays) has the clip - the same places
+// Npcs::clip() looks in when it is played.
+bool Npcs::hasClipAnywhere(NpcActor& a, u32 hash) {
+	if (a.rig && a.rig->model.hasClip(hash)) return true;
+	const GameNpc& n = _game.npc(a.npc);
+	for (u32 k = n.overlayCount(); k-- > 0;) {
+		const Model* om = overlayModel(n.overlay[k]);
+		if (om && om->hasClip(hash)) return true;
+	}
+	return false;
+}
+
 void Npcs::ground(NpcActor& a, const World& world, float above) {
 	GameNpc& n = _game.npcMut(a.npc);
 	float y;
 	Vec3 normal;
 	u8 light[4];
-	if (!world.rayDown({n.pos[0], n.pos[1] + above, n.pos[2]}, above + 500.0f, y, normal, light)) return;
-	n.pos[1] = y;
+	u8 group = 0;
+	const Vec3 from {n.pos[0], n.pos[1] + above, n.pos[2]};
+	bool onGround = world.rayDown(from, above + 500.0f, y, normal, light, &group);
+	// fix231: the water is looked for from the top of the ground ray, down far - like the player's
+	// character (Player::swim casts from above the surface too), not only 4 m above the bed. Over deep
+	// water the bed is out of the ray's reach and the old code kept the height the character entered
+	// at - it skimmed the surface ("walked on water").
+	float surface = 0.0f;
+	const bool hasWater = world.waterBelow({n.pos[0], from.y + 500.0f, n.pos[2]}, 6000.0f, surface);
+	// A bake that kept the water in the collider is recognised by the surface's material group
+	// (5 = water): the surface is no ground, the bed is the first solid below it.
+	if (onGround && hasWater && group == 5 && fabsf(y - surface) < 60.0f)
+		onGround = world.rayDown({n.pos[0], surface - 60.0f, n.pos[2]}, 3000.0f, y, normal, light, &group);
+	if (onGround) {
+		n.pos[1] = y;
+		memcpy(a.light, light, sizeof(a.light));
+		a.grounded = true;
+	} else {
+		a.grounded = false;
+	}
 	// fix209: water deeper than a body floats it (as the player's character: PlayerConfig::swimDepth, with the same
 	// hysteresis), where the feet float on its surface; shallower, it wades. Only humans swim (a model without the
-	// swimming clips walks the bed, as before).
+	// swimming clips is borne on the water, as before).
 	{
-		float surface;
-		const float depth = world.waterBelow({n.pos[0], y + 400.0f, n.pos[2]}, 420.0f, surface) ? surface - y : 0.0f;
+		// With no bed within the ray's reach the water is deep by definition.
+		const float depth = hasWater ? (onGround ? max(surface - y, 0.0f) : above + 500.0f) : 0.0f;
 		const bool wasSwimming = a.swimming;
 		const float limit = 125.0f - (a.swimming ? 30.0f : 0.0f);
-		// fix221: the clips are asked for by name in the model's table (hasClip), not for the ones in memory (clip()): the
-		// swimming ones are fetched only once somebody swims, so a person who had never been afloat was found to have none
-		// and was borne along the water RUNNING ("walks on water") instead of swimming.
+		// fix221/fix231: the clips are asked for by name in the models' tables (hasClip), not for the ones in memory
+		// (clip()): the swimming ones are fetched only once somebody swims, so a person who had never been afloat was
+		// found to have none and was borne along the water RUNNING ("walks on water") instead of swimming. The overlays
+		// are asked too - the clip may come from one of them.
 		static const u32 swimIdle = hashName("S_SWIM"), swimMove = hashName("S_SWIMF");
-		a.swimming = depth > limit && n.down == DOWN_NONE && a.rig && a.rig->model.hasClip(swimIdle) && a.rig->model.hasClip(swimMove);
+		a.swimming = depth > limit && n.down == DOWN_NONE && hasClipAnywhere(a, swimIdle) && hasClipAnywhere(a, swimMove);
 		if (a.swimming) {
 			n.pos[1] = surface - 125.0f;
 			// (fix209: no light of the ground below; the sky's)
@@ -349,12 +380,14 @@ void Npcs::ground(NpcActor& a, const World& world, float above) {
 			// fix215: a body of a model without swimming clips (a beast in pursuit) is not left running along the bottom: it is
 			// borne on the water, as high as its legs would reach, if it is not too big to be (a troll wades).
 			const ModelHeader& mh = a.rig->model.header();
-			if (mh.bbMax[1] - mh.bbMin[1] < 220.0f) n.pos[1] = max(y, surface - 0.75f * (mh.bbMax[1] - mh.bbMin[1])); // (fix221: deeper - the legs under water, not skimming it)
+			if (mh.bbMax[1] - mh.bbMin[1] < 220.0f) {
+				const float h = mh.bbMax[1] - mh.bbMin[1];
+				// Over deep water (no bed in reach) the surface carries it; on a bed it rises off the bed.
+				n.pos[1] = onGround ? max(y, surface - 0.75f * h) : surface - 0.75f * h; // (fix221: deeper - the legs under water, not skimming it)
+			}
 		}
 		if (wasSwimming != a.swimming) a.swimChanged = true;
 	}
-	memcpy(a.light, light, sizeof(a.light));
-	a.grounded = true;
 	if (_rooms.count()) _game.setRoom(a.npc, _rooms.hash(roomOf(n.pos)));
 }
 
@@ -471,7 +504,9 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 		if (!keepsUp && n.down != DOWN_DEAD) {
 			const NpcActor* a = actorOf(i);
 			const u32 fn = a ? (a->state ? a->state : a->prevState) : 0; // (between two states of the routine)
-			if (fn) {
+			// fix229: by hash first - it works even when the archive has no "script/states" table.
+			if (fn && _game.isFollowState(fn)) keepsUp = true;
+			if (!keepsUp && fn) {
 				char up[64];
 				snprintf(up, sizeof(up), "%s", stateName(fn));
 				for (char* p = up; *p; ++p)
@@ -1015,9 +1050,11 @@ void Npcs::drawReflection(const Mat4& viewProj, const float dayLight[3], const W
 		for (int k = 0; k < 3; k += 2) reach = max(reach, max(fabsf(bh.bbMin[k]), fabsf(bh.bbMax[k])));
 		const float grow = max(n.look.scale[0], max(n.look.scale[1], n.look.scale[2]));
 		reach = reach * grow + 40.0f;
-		// Wholly under the water: not in the mirror (the world's own pass leaves
-		// out what lies below the plane the same way).
-		if (feet.y + (bh.bbMax[1] + 60.0f) * grow < waterY) continue;
+		// Standing in the water: not in the mirror (the plane's mask cannot cut
+		// a wading NPC's submerged half above the water, so he is left out of
+		// the reflection entirely — fix243's safe variant; the world's own pass
+		// leaves out what lies below the plane the same way).
+		if (feet.y < waterY + 10.0f) continue;
 		const float mn[3] = {feet.x - reach, feet.y - 20.0f, feet.z - reach};
 		const float mx[3] = {feet.x + reach, feet.y + (bh.bbMax[1] + 60.0f) * grow, feet.z + reach};
 		if (!aabbInFrustum(frustum, mn, mx)) continue;

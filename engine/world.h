@@ -99,6 +99,10 @@ struct StreamConfig {
 	// Waves on the water (gfx::ChunkFx::waveHeight): how high the crest lifts the surface, cm; 0 still. Only in a
 	// world baked with a fine water grid (hasWaterGrid()).
 	float waves = 0.0f;
+	// The water's glint (gfx::ChunkFx::waterGlint): unit vector towards the sun and 0..1 strength of the Blinn-Phong
+	// highlight and of the Fresnel brightening. The app sets the sun each frame; waterGlint is a quality setting.
+	float waterSun[3] = {0.35f, 0.80f, 0.45f};
+	float waterGlint = 0.55f;
 	// The sun's shadow on the ground (a world baked with --sun-shadow; hasSunMasks()): the masks are loaded with the
 	// chunks and handed to the drawing (gfx::ChunkFx::sun); how dark they make the ground is gfx::setSunShadow's.
 	bool sunMasks = false;

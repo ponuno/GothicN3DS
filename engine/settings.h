@@ -147,6 +147,14 @@ struct Settings {
 	// Только консоль; на хосте reflectionSupported() ложен и вода как раньше.
 	u8 reflection = 0;
 	float reflectionStrength() const { return reflection == 1 ? 0.55f : reflection == 2 ? 0.85f : 0.0f; }
+	// Version 30: how often the mirror pass is drawn (fix246): 0 every frame, 1 every other frame,
+	// 2 every third. In the skipped frames the water samples the last reflection texture. Only the
+	// console; on the host reflectionSupported() is false anyway.
+	u8 reflRate = 0;
+	// Version 29: the water's glint (Blinn-Phong highlight and Fresnel brightening in the vertex shader):
+	// 0 off (the cheapest, flat light), 1 normal, 2 strong. Needs data.pak baked with --water-grid.
+	u8 waterFx = 1;
+	float waterGlint() const { return waterFx == 2 ? 0.85f : waterFx == 1 ? 0.55f : 0.0f; }
 	float lodDistanceCm() const;
 
 	// Clamps every value into its range (after reading a file of another version).

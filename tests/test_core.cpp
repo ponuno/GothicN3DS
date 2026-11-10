@@ -14657,6 +14657,70 @@ func void Rtn_start_503() {
 	            npcs.stats().provoked, npcs.stats().talksStopped);
 }
 
+// fix248: a talk the character begins by itself - an important info, PERC_ASSESSPLAYER -> B_AssessSC ->
+// B_CheckForImportantInfo -> AI_StartState(ZS_Talk) - must play the important info and then put the menu
+// up (choosing), exactly like the player-initiated talk. Watched step by step, so a break shows where.
+static void testNpcTalk() {
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/npctalk.pak";
+	bakeLifeWorlds(syntheticScriptSource(), path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.world().preload(app.camera().pos);
+	Npcs& npcs = app.npcs();
+	Game& g = npcs.game();
+	g.setQuiet(true);
+	app.settings().fights = 0;
+	app.settings().perception = 1;
+	app.settings().immortal = 1;
+	app.applySettings();
+	npcs.config().range = 20000.0f;
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	const auto until = [&](auto&& pred, float limit) {
+		for (float t = 0; t < limit && !pred(); t += dt) {
+			if (npcs.talkView().saying) npcs.talkSkip();
+			app.update(Input {}, dt);
+		}
+		return pred();
+	};
+	const u32 thorusSym = g.vm().find("GRD_200_THORUS");
+	u32 thorus = SCRIPT_NONE;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).symbol == thorusSym) thorus = i;
+	CHECK(thorus != SCRIPT_NONE);
+	if (thorus == SCRIPT_NONE) return;
+	run(1.0f);
+	// The player comes up close to Thorus: the important info is to begin the talk by itself.
+	app.teleport({g.npc(thorus).pos[0], g.npc(thorus).pos[1] + 5.0f, g.npc(thorus).pos[2] + 250.0f});
+	app.camera().yaw = 3.14159265f;
+	app.update(Input {}, dt);
+	const bool began = until([&] { return npcs.talking(); }, 15.0f);
+	std::printf("  npc-talk: talking %d, perceived %u, talks %u, aborted %u\n", int(began), npcs.stats().perceived, npcs.stats().talks,
+	            npcs.stats().talksAborted);
+	CHECK(began);
+	if (!began) return;
+	const NpcActor* a = npcs.actorOf(thorus);
+	std::printf("  npc-talk: partner state %s, action %d, queue %d\n", a ? npcs.stateName(a->state) : "-", a ? int(a->action.kind) : -1,
+	            a ? int(a->queueCount) : -1);
+	const int helloInfo = g.infoIndex(g.vm().find("DIA_THORUS_HELLO"));
+	CHECK(helloInfo >= 0);
+	// The important info is told first; then the menu comes up.
+	const bool menu = until([&] { return npcs.talkView().choosing; }, 60.0f);
+	std::printf("  npc-talk: hello told %d, choosing %d, count %d\n", helloInfo >= 0 && g.info(u32(helloInfo)).told ? 1 : 0, int(menu),
+	            int(npcs.talkView().count));
+	CHECK(menu);
+	CHECK(helloInfo < 0 || g.info(u32(helloInfo)).told);
+	CHECK(npcs.talkView().count > 0);
+	npcs.talkAbort();
+	run(0.5f);
+	CHECK(!npcs.talkView().active);
+}
+
 // fix226: a character whose routine is ZS_FollowPC (Mud, Shrat, a guide) is kept simulated however far the player
 // goes: the routine is what brings him along, so he must not be dropped as "not near" and left standing.
 static void testFollower() {
@@ -14789,6 +14853,81 @@ func void Rtn_start_701() {
 	const float d1 = std::hypot(g.npc(u32(f)).pos[0] - g.hero()->pos[0], g.npc(u32(f)).pos[2] - g.hero()->pos[2]);
 	std::printf("  follower-hours: state %s, distance %.0f -> %.0f cm\n", a && a->state == followFn ? "follow" : "routine", double(d0), double(d1));
 	CHECK(a && a->state == followFn);
+	CHECK(d1 < d0 - 500.0f);
+}
+
+// fix229: a follow begun by a talk (AI_StartState, not the routine) is kept up however far the player
+// goes: the state is recognised by hash (no "script/states" table needed) and the character stays an
+// actor; the flag on GameNpc also makes it resume the state after it was out of sight.
+static void testFollowerTalk() {
+	std::string source = syntheticScriptSource();
+	const std::string hook = "func void STARTUP_SUB_CAMP() {";
+	CHECK(source.find(hook) != std::string::npos);
+	source.replace(source.find(hook), hook.size(), hook + "\n\tWld_InsertNpc(VLK_702_Follower, \"CAMP_SQUARE\");");
+	source += R"(
+func void ZS_FollowPC() { AI_GotoNpc(self, hero); }
+func int ZS_FollowPC_Loop() { AI_GotoNpc(self, hero); AI_Wait(self, 0.2); return 0; }
+func void ZS_FollowPC_End() {}
+func void ProbeStartFollow() { AI_StartState(self, ZS_FollowPC, 0, ""); }
+instance VLK_702_Follower (Npc_Default) {
+	name = "Follower3"; guild = GIL_VLK; id = 702; senses_range = 3000;
+	Mdl_SetVisual(self, "HUMANS.MDS");
+	Mdl_SetVisualBody(self, "hum_body_Naked0", 3, 1, "Hum_Head_Pony", 9, 2, -1);
+	daily_routine = Rtn_start_702;
+};
+func void Rtn_start_702() {
+	TA_Min(self, 0, 0, 24, 0, ZS_Stand, "CAMP_SQUARE");
+};
+)";
+	std::vector<BakeWorld> worlds;
+	const std::string path = gDir + "/follower_talk.pak";
+	bakeLifeWorlds(source, path, worlds);
+	gfx::init();
+	App app;
+	CHECK(app.init(path.c_str(), nullptr));
+	if (!app.npcs().loaded() || !app.hero().loaded()) return;
+	app.skipChapters();
+	Game& g = app.npcs().game();
+	Npcs& npcs = app.npcs();
+	g.setQuiet(true);
+	app.weather().configure(WEATHER_CLEAR, true);
+	app.weather().settle();
+	app.environment().timeOfDay = 12.0f;
+	app.settings().timeFlow = 0;
+	app.applySettings();
+	const float dt = 1.0f / 30.0f;
+	const auto run = [&](float seconds) {
+		for (int i = 0; i < int(seconds / dt); ++i) app.update(Input {}, dt);
+	};
+	run(1.0f);
+	const u32 sym = g.vm().find("VLK_702_Follower");
+	const u32 followFn = g.vm().find("ZS_FollowPC");
+	CHECK(sym != SCRIPT_NONE && followFn != SCRIPT_NONE);
+	if (sym == SCRIPT_NONE || followFn == SCRIPT_NONE) return;
+	int f = -1;
+	for (u32 i = 0; i < g.npcCount(); ++i)
+		if (g.npc(i).symbol == sym) f = int(i);
+	if (f < 0) {
+		CHECK(false);
+		return;
+	}
+	// «Разговор»: follow начат скриптом, а не распорядком.
+	g.callAs(g.vm().find("ProbeStartFollow"), u32(f), -1);
+	run(0.5f);
+	const NpcActor* a = npcs.actorOf(u32(f));
+	CHECK(a && a->state == followFn);
+	CHECK(g.isFollower(u32(f))); // (the flag, not only the routine)
+	if (!a || a->state != followFn) return;
+	// Герой уходит далеко за пределы, где кого-либо держат актёром.
+	app.teleport({g.npc(u32(f)).pos[0] + 8000.0f, g.npc(u32(f)).pos[1] + 10.0f, g.npc(u32(f)).pos[2]});
+	app.update(Input {}, dt);
+	const float d0 = std::hypot(g.npc(u32(f)).pos[0] - g.hero()->pos[0], g.npc(u32(f)).pos[2] - g.hero()->pos[2]);
+	run(8.0f);
+	a = npcs.actorOf(u32(f));
+	const float d1 = std::hypot(g.npc(u32(f)).pos[0] - g.hero()->pos[0], g.npc(u32(f)).pos[2] - g.hero()->pos[2]);
+	std::printf("  follower-talk: actor %d, state %s, distance %.0f -> %.0f cm\n", a ? 1 : 0, a && a->state == followFn ? "follow" : "routine", double(d0),
+	            double(d1));
+	CHECK(a && a->state == followFn); // (still simulated, still in the follow state)
 	CHECK(d1 < d0 - 500.0f);
 }
 
@@ -16018,6 +16157,7 @@ int main(int argc, char** argv) {
 	             {"life", testLife},
 	             {"follower", testFollower},
 	             {"follower hours", testFollowerHours},
+	             {"follower talk", testFollowerTalk},
 	             {"fight", testFight},
              {"magic", testMagic},
              {"transform", testTransformHero},
@@ -16032,6 +16172,7 @@ int main(int argc, char** argv) {
              {"teach", testTeach},
              {"particles", testParticles},
              {"dialogs", testDialogs},
+             {"npc talk", testNpcTalk},
              {"wait till end", testWaitTillEnd},
              {"quick externals", testQuickExternals},
              {"video", testVideo},

@@ -52,6 +52,8 @@ const char* const kScreen[] = {"Обычный", "3D", "Широкий 800x240"}
 const char* const kWind[] = {"Нет", "Слабое", "Обычное", "Сильное"};
 const char* const kWaves[] = {"Нет", "Слабые", "Обычные", "Сильные"};
 const char* const kRefl[] = {"Нет", "Слабое", "Сильное"};
+const char* const kReflRate[] = {"Каждый кадр", "Через кадр", "Каждый 3-й"};
+const char* const kWaterFx[] = {"Выкл", "Обычная", "Сильная"};
 const char* const kShadows[] = {"Выкл", "Герой", "Все рядом", "Силуэт героя"};
 const char* const kRefresh[] = {"Выкл", "45–60 Гц", "45–72 Гц", "45–80 Гц", "Держать 72", "Держать 80"};
 const char* const kFarGeometry[] = {"Выкл", "25 м", "40 м", "60 м"};
@@ -152,6 +154,8 @@ const Item kGfxPlus[] = {
     {"Колыхание листвы", CHOICE, &Settings::wind, kWind, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --wind", nullptr},
     {"Волны на воде", CHOICE, &Settings::waves, kWaves, 4, 0, 0, nullptr, 0, "Нужен data.pak, запечённый с --water-grid", nullptr},
     {"Отражение в воде", CHOICE, &Settings::reflection, kRefl, 3, 0, 0, nullptr, 0, "Планарное зеркало: вода отражает мир и персонажей", nullptr},
+    {"Частота отражения", CHOICE, &Settings::reflRate, kReflRate, 3, 0, 0, nullptr, 0, "Как часто рисуется зеркало: в пропущенных кадрах вода берёт прошлое отражение", nullptr},
+    {"Блики на воде", CHOICE, &Settings::waterFx, kWaterFx, 3, 0, 0, nullptr, 0, "Аналитический блик и Fresnel в вершинном шейдере; нужен --water-grid", nullptr},
     {"Тени персонажей", CHOICE, &Settings::shadows, kShadows, 4, 0, 0, nullptr, 0, nullptr, kShadowNotes},
     {"Тени от солнца", CHOICE, &Settings::sunShadows, kSunShadows, 4, 0, 0, nullptr, 0, nullptr, kSunShadowNotes},
     {"Тени облаков", CHOICE, &Settings::cloudShadows, kCloudShadows, 3, 0, 0, nullptr, 0, nullptr, kCloudShadowNotes},

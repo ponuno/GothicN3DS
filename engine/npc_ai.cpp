@@ -698,6 +698,15 @@ void Npcs::clearState(NpcActor& a, bool finalize) {
 	}
 	// (A chase is over: the creature, back at its place, threatens the player anew rather than falling on him at once.)
 	if (a.state && refusesState(a.state)) a.warned = false;
+	// fix229: the follow flag and the state to resume go with the state that ends.
+	if (a.state) {
+		GameNpc& m = _game.npcMut(a.npc);
+		if (m.resumeState == a.state) m.resumeState = 0;
+		if (m.following && _game.isFollowState(a.state)) {
+			m.following = false;
+			_game.refreshFollowers();
+		}
+	}
 	a.state = 0;
 	a.started = false;
 	a.loopFn = a.endFn = SCRIPT_NONE;
@@ -738,6 +747,20 @@ void Npcs::startState(NpcActor& a, u32 fn, bool finalizeOld, const char* wp, boo
 	for (u32& p : a.perc) p = 0;
 	if (wp && *wp) _game.setWayPoint(n, wp);
 	a.state = fn;
+	// fix229: a follow state begun by the scripts (a talk's "come along") counts as much as the
+	// routine's one: the character is kept simulated however far the player goes (Npcs::select),
+	// and resumes this state when it is simulated again after being out of sight.
+	if (!byRoutine)
+		n.resumeState = fn;
+	else
+		n.resumeState = 0;
+	{
+		const bool fol = _game.isFollowState(fn);
+		if (fol != n.following) {
+			n.following = fol;
+			_game.refreshFollowers();
+		}
+	}
 	// (The state's clock starts with the state - Npc_GetStateTime - and not with every start of its beginning:
 	// asked for again it begins anew, but its time goes on, as OpenGothic's startState has it. A beast
 	// warned by its pack or struck again used to start the clock of its chase anew each time, and never gave up.)
@@ -770,9 +793,13 @@ void Npcs::tickState(NpcActor& a) {
 		return;
 	}
 	if (!a.state) {
-		const u32 fn = _game.behaviour(n);
+		// fix229: a state the scripts began (a follow out of a talk) is resumed after the character
+		// was out of sight, not the routine's.
+		GameNpc& m = _game.npcMut(a.npc);
+		const u32 fn = m.resumeState ? m.resumeState : _game.behaviour(n);
+		const bool byRoutine = m.resumeState == 0;
 		if (!fn) return;
-		startState(a, fn, false, nullptr, true);
+		startState(a, fn, false, nullptr, byRoutine);
 		if (!a.state) return;
 	}
 	if (!a.started) {

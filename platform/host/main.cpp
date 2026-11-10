@@ -54,6 +54,7 @@ static void usage() {
 	     "  --vis               use the baked visibility table (data baked with --vis): what is hidden from the camera's cell is not drawn\n"
 	     "  --lod M             draw chunks wholly farther than M metres with their simplified stand-ins (data baked with --lod)\n"
 	     "  --waves N           waves on the water 0..3 (data baked with --water-grid)\n"
+	     "  --water-fx N        the water's glint 0 off, 1 normal, 2 strong (data baked with --water-grid)\n"
 	     "  --grass N           the new grass 0 off, 1 few, 2 many (data baked with --grass)\n"
 	     "  --lamps N           light of torches and fires: 0 off, 1 the people and things, 2 the world too (default)\n"
 	     "  --clouds N[,C]      clouds' shadows 0 off, 1 on, 2 darker (data baked with --sun-shadow); C: their coverage 0..1\n"
@@ -173,6 +174,7 @@ int main(int argc, char** argv) {
 	int menuPage = -1;
 	const char* gfxPlusSpec = nullptr;
 	int wavesSpec = -1;
+	int waterFxSpec = -1;
 	int grassSpec = -1;
 	int lampsSpec = -1;
 	int cloudsSpec = -1;
@@ -203,6 +205,7 @@ int main(int argc, char** argv) {
 		else if (arg("--menu")) menuPage = atoi(argv[++i]);
 		else if (arg("--gfx-plus")) gfxPlusSpec = argv[++i];
 		else if (arg("--waves")) wavesSpec = atoi(argv[++i]);
+		else if (arg("--water-fx")) waterFxSpec = atoi(argv[++i]);
 		else if (arg("--grass")) grassSpec = atoi(argv[++i]);
 		else if (arg("--lamps")) lampsSpec = atoi(argv[++i]);
 		else if (arg("--clouds")) {
@@ -252,6 +255,11 @@ int main(int argc, char** argv) {
 		app.settings().waves = u8(clamp(wavesSpec, 0, 3));
 		app.applySettings();
 		printf("waves on the water: %d (%s)\n", int(app.settings().waves), app.world().hasWaterGrid() ? "water grid in the data" : "NOT in the data");
+	}
+	if (waterFxSpec >= 0) {
+		app.settings().waterFx = u8(clamp(waterFxSpec, 0, 2));
+		app.applySettings();
+		printf("water glint: %d (%s)\n", int(app.settings().waterFx), app.world().hasWaterGrid() ? "water grid in the data" : "NOT in the data");
 	}
 	if (grassSpec >= 0) {
 		app.settings().grass = u8(clamp(grassSpec, 0, 2));

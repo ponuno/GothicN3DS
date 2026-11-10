@@ -178,7 +178,7 @@ struct ShaderCheck {
 	u16 windyBit = 4;
 	// Where the shader in use keeps its uniforms (world_fade/world.v.pica: the defaults; world_full/fast.v.pica:
 	// the combined matrix takes fewer registers) and which program a draw call may be drawn by.
-	int locChunk = 8, locParams = 9, locDayDelta = 10, locTexOffset = 11, locBones = 13, locFx = 91;
+	int locChunk = 8, locParams = 9, locDayDelta = 10, locTexOffset = 11, locSkinLight = 12, locBones = 13, locFx = 91;
 	bool twoEntries = false; // the fast shader: entry 1 (2 with the dissolve) draws the static world, 3 characters, 0 what sways
 	unsigned fadeBit = 2;    // the bool register of `fading` (b1 in world_fade.v.pica, b2 in the default shader)
 	unsigned fastDraws = 0, fullDraws = 0, skinDraws = 0, wrongEntry = 0, swayOnFast = 0, lampDraws = 0, litVertices = 0;
@@ -239,7 +239,7 @@ struct ShaderCheck {
 static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 	ShaderCheck& sc = *static_cast<ShaderCheck*>(user);
 	const int locChunk = sc.locChunk, locParams = sc.locParams, locDayDelta = sc.locDayDelta, locTexOffset = sc.locTexOffset,
-	          locBones = sc.locBones, locFx = sc.locFx; // checked in the tests of each shader
+	          locSkinLight = sc.locSkinLight, locBones = sc.locBones, locFx = sc.locFx; // checked in the tests of each shader
 	const bool skinned = call.bools & 1;
 	const bool windy = (call.bools & sc.windyBit) != 0;
 	// (fix148: entry 5, the lamps', is the fast one with the dissolve and the lamps' light.)
@@ -384,32 +384,59 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 				sc.worstSway = std::max(sc.worstSway, std::hypot(double(fx[0]) * wave, double(fx[1]) * wave));
 				++sc.swayedVertices;
 			}
-			// The water's waves (world_full.v.pica): two waves of one swell 4 x (1 - |x|), lift by 0.7 A + 0.3 B, the slopes light it, the
-			// texture slides; all per step of the corner's weight (w's high byte), the uniform holds them per step.
-			double waveShade = 1.0, shiftU = 0.0, shiftV = 0.0;
+			// The water's waves (world_full.v.pica): three waves of the smooth 4 x (1 - |x|) shape, lift by
+			// 0.7 (0.7 A + 0.3 B + 0.3 C), the slopes light it and give it an analytic normal; the texture slides. All
+			// per step of the corner's weight (w's high byte), the uniform holds them per step. C's phase is dayDelta.w.
+			double waveShade = 1.0, shiftU = 0.0, shiftV = 0.0, waterShadeK = 1.0, waterGlint = 0.0;
 			if (sc.wavyBit && (call.bools & sc.wavyBit) && sway > 0) {
 				const float* wv = call.uniforms[sc.locWave];
-				const double k[2][2] = {{0.00057143, 0.00042857}, {0.00070144, 0.00086167}};
-				double ws[2], sl[2];
-				for (int a = 0; a < 2; ++a) {
-					const double u = double(wv[a]) + k[a][0] * p[0] + k[a][1] * p[2];
+				const double k[3][2] = {{0.00057143, 0.00042857}, {0.00070144, 0.00086167},
+				                        {0.00042857 / 0.7, 0.00057143 / 0.7}};
+				const double phase[3] = {double(wv[0]), double(wv[1]), double(call.uniforms[locDayDelta][3])};
+				double ws[3], sl[3];
+				for (int a = 0; a < 3; ++a) {
+					const double u = phase[a] + k[a][0] * p[0] + k[a][1] * p[2];
 					const double x = 2.0 * (u - std::floor(u)) - 1.0, edge = 1.0 - std::fabs(x);
 					ws[a] = 4.0 * x * edge;
 					sl[a] = 2.0 * edge - 1.0;
 				}
-				const double lift = double(wv[2]) * sway * (0.7 * ws[0] + 0.3 * ws[1]);
+				const double lift = double(wv[2]) * sway * 0.7 * (0.7 * ws[0] + 0.3 * ws[1] + 0.3 * ws[2]);
 				p[1] += lift;
-				waveShade = 1.0 + double(wv[3]) * sway * (0.6 * sl[0] + 0.4 * sl[1]);
+				waveShade = 1.0 + double(wv[3]) * sway * (0.6 * sl[0] + 0.4 * sl[1] + 0.3 * sl[2]);
 				shiftU = 0.000118110 * sway * ws[0];
 				shiftV = 0.000118110 * sway * ws[1];
 				sc.worstWave = std::max(sc.worstWave, std::fabs(lift));
 				++sc.wavedVertices;
+				// The glint: the analytic normal from the slope, the eye at the lattice anchor, a Blinn-Phong
+				// highlight (N.H)^16 scaled by 0.3 and an F0 = 0.015625 Fresnel, both times the glint strength.
+				const double s = 4.0 * double(wv[2]) * sway;
+				const double sx = s * (0.49 * sl[0] * k[0][0] + 0.21 * sl[1] * k[1][0] + 0.21 * sl[2] * k[2][0]);
+				const double sz = s * (0.49 * sl[0] * k[0][1] + 0.21 * sl[1] * k[1][1] + 0.21 * sl[2] * k[2][1]);
+				const double nl = std::sqrt(sx * sx + 1.0 + sz * sz);
+				const double nx = -sx / nl, ny = 1.0 / nl, nz = -sz / nl;
+				const double P[3] = {p[0] + double(chunk[0]), p[1] + double(chunk[1]), p[2] + double(chunk[2])};
+				const double vl = std::sqrt(P[0] * P[0] + P[1] * P[1] + P[2] * P[2]);
+				const double vx = -P[0] / vl, vy = -P[1] / vl, vz = -P[2] / vl;
+				const float* sl3 = call.uniforms[locSkinLight];
+				double hx = vx + double(sl3[0]), hy = vy + double(sl3[1]), hz = vz + double(sl3[2]);
+				const double hl = std::sqrt(hx * hx + hy * hy + hz * hz);
+				hx /= hl; hy /= hl; hz /= hl;
+				const double ndh = std::max(nx * hx + ny * hy + nz * hz, 0.0);
+				const double ndh2 = ndh * ndh, ndh4 = ndh2 * ndh2, ndh8 = ndh4 * ndh4, ndh16 = ndh8 * ndh8;
+				waterGlint = double(sl3[3]) * ndh16 * 0.3;
+				const double ndv = std::max(nx * vx + ny * vy + nz * vz, 0.0);
+				const double t = 1.0 - ndv, t5 = t * t * t * t * t;
+				const double f0 = 4.0 / 256.0; // the shader has no free constant: F0 = consts.z * wc.x
+				const double fres = double(sl3[3]) * (f0 + (1.0 - f0) * t5);
+				waterShadeK = 1.0 + 0.3 * fres;
 			}
 			const double shade = (1.0 - occlusion * double(fx[3])) * waveShade;
 			sc.occludedVertices += occlusion > 0 && fx[3] > 0;
 			for (int k = 0; k < 3; ++k) {
 				world[k] = double(sc.anchor[k]) + double(chunk[k]) + p[k];
-				wantColor[k] = double(rgb[k]) / 255.0 * (1.0 + double(v.a) / 255.0 * double(call.uniforms[locDayDelta][k])) * shade;
+				wantColor[k] = (double(rgb[k]) / 255.0 * (1.0 + double(v.a) / 255.0 * double(call.uniforms[locDayDelta][k])) * shade *
+				                    waterShadeK +
+				                waterGlint);
 			}
 			// fix148: the lamps' entry adds their light (world_lamp.v.pica): the first eight rows of the palette are four lamps,
 			// (place relative to the anchor, -1/range^2) and (colour, (keep - 1) / 255).
@@ -449,11 +476,13 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 		if (!skinned && sc.wavyBit && (call.bools & sc.wavyBit) && vertexWind(v.w) > 0) {
 			// (the wave's texture slide, as above)
 			const float* wv = call.uniforms[sc.locWave];
-			const double k[2][2] = {{0.00057143, 0.00042857}, {0.00070144, 0.00086167}};
+			const double k[3][2] = {{0.00057143, 0.00042857}, {0.00070144, 0.00086167},
+			                        {0.00042857 / 0.7, 0.00057143 / 0.7}};
+			const double phase[3] = {double(wv[0]), double(wv[1]), double(call.uniforms[locDayDelta][3])};
 			double chunkP[3] = {double(chunk[3]) * double(v.x), double(chunk[3]) * double(v.y), double(chunk[3]) * double(v.z)};
-			double ws[2];
-			for (int a = 0; a < 2; ++a) {
-				const double u = double(wv[a]) + k[a][0] * chunkP[0] + k[a][1] * chunkP[2];
+			double ws[3];
+			for (int a = 0; a < 3; ++a) {
+				const double u = phase[a] + k[a][0] * chunkP[0] + k[a][1] * chunkP[2];
 				const double x = 2.0 * (u - std::floor(u)) - 1.0;
 				ws[a] = 4.0 * x * (1.0 - std::fabs(x));
 			}
@@ -508,6 +537,16 @@ static void shaderHook(const mock3ds::DrawCall& call, void* user) {
 }
 
 static void testShader(const std::string& pak) {
+	// The event-ripple model (Ripples::Event): a source spreads and fades, and at most MAX_EVENTS live at once.
+	{
+		Ripples::Event e;
+		e.life = 1.0f;
+		e.size = 1.0f;
+		e.strength = 1.0f;
+		const float r0 = e.radius(), i0 = e.intensity();
+		e.age = 0.5f;
+		CHECK(e.radius() > r0 && e.intensity() < i0 && Ripples::MAX_EVENTS == 16);
+	}
 	mock3ds::reset();
 	gfx::c3dSetClassicFrames(false);
 	gfx::c3dSetFadeShader(true); // the dissolve: since fix85 the default shader's entries with it (fadefast, skinmain)
@@ -545,6 +584,7 @@ static void testShader(const std::string& pak) {
 	sc.locParams = 6;
 	sc.locDayDelta = 7;
 	sc.locTexOffset = 8;
+	sc.locSkinLight = 9;
 	sc.locBones = 10;
 	sc.locFx = 88;
 	sc.twoEntries = true;
@@ -639,6 +679,7 @@ static void testShader(const std::string& pak) {
 		cc.locParams = 6;
 		cc.locDayDelta = 7;
 		cc.locTexOffset = 8;
+		cc.locSkinLight = 9;
 		cc.locBones = 10;
 		cc.locFx = 88;
 		cc.windyBit = 2;
@@ -1151,7 +1192,7 @@ static void testDefaultShader(const std::string& pak) {
 	// main, fastmain, fadefast (with the dissolve: 3 more), skinmain (both ways of the dissolve counted)
 	std::printf("  entries: %u, %u, %u and %u instructions\n", mock3ds::shaderEntryInstructions(0), mock3ds::shaderEntryInstructions(1),
 	            mock3ds::shaderEntryInstructions(2), mock3ds::shaderEntryInstructions(3));
-	CHECK(mock3ds::shaderEntryInstructions(1) <= 20 && mock3ds::shaderEntryInstructions(0) < 140); // (fix140: the sheen made it 125; the water's reflection ("спокойное зеркало") adds 11 more to the full entry, which draws only what waves, sways or reflects)
+	CHECK(mock3ds::shaderEntryInstructions(1) <= 20 && mock3ds::shaderEntryInstructions(0) < 256); // (the water glint: 230 instructions now; 256 is the PICA200 vertex-shader limit. Only the full entry grew.)
 	CHECK(mock3ds::shaderEntryInstructions(2) <= 28 && mock3ds::shaderEntryInstructions(3) <= 32);
 	// The sun's mask: four instructions more, in entries of their own (chunks without a mask keep the short ones; fix145: the
 	// coordinate is built in a register and written whole, zw too).
@@ -1186,6 +1227,7 @@ static void testDefaultShader(const std::string& pak) {
 		sc.locParams = 6;
 		sc.locDayDelta = 7;
 		sc.locTexOffset = 8;
+		sc.locSkinLight = 9;
 		sc.locBones = 10;
 		sc.locFx = 88;
 		sc.twoEntries = true;
@@ -1750,7 +1792,9 @@ static void testReflection(bool classic) {
 	CHECK(ui != nullptr);
 	for (int frame = 0; frame < 5; ++frame) {
 		gfx::frameBegin(fd);
-		// The last two frames omit the reflection: it must not sample a stale copy.
+		// fix246: the last two frames omit the mirror pass — the water samples the last
+		// copied texture there; frame 4 also calls reflectionSkip(), which turns it off.
+		if (frame == 4) gfx::reflectionSkip();
 		if (frame < 3) {
 			gfx::FrameDesc rf = fd;
 			Mat4 flip = identity();
@@ -1778,7 +1822,9 @@ static void testReflection(bool classic) {
 		// fix232/fix241: the copy happens at the next GPU-idle point, so the
 		// water samples the pass of the frame before. In the classic order that
 		// point is this frame's begin, in the overlapped one this frame's end.
-		const unsigned wantWater = classic ? (frame == 1 || frame == 2 ? 2u : 0u) : (frame == 2 ? 2u : 0u);
+		// fix246: from the first copy on the water samples every frame, even
+		// without a fresh pass (frame 3), until reflectionSkip() (frame 4).
+		const unsigned wantWater = classic ? (frame == 0 || frame == 4 ? 0u : 2u) : (frame < 2 || frame == 4 ? 0u : 2u);
 		CHECK(check.draws - before == wantWater);
 		if (wantWater) CHECK(C3D_GetTexEnv(4)->rgbFunc == GPU_INTERPOLATE);
 		// Water can be the last world material before opening a menu. Both
@@ -1811,6 +1857,8 @@ static void testReflection(bool classic) {
 			gfx::setMaterial(nullptr, 0);
 			gfx::draw(mesh, 0, 3);
 			gfx::reflectionEnd();
+		} else {
+			gfx::reflectionSkip(); // (as App does when no mirror is wanted at all)
 		}
 		gfx::setPass(gfx::PASS_BLEND);
 		mock3ds::setDrawHook(reflectionHook, &check);

@@ -704,6 +704,8 @@ private:
 	void pushFront(NpcActor& a, const NpcAction& act);
 	// `force`: read even past the budget when nothing can be let go (a fall must not be missing).
 	const Clip* clip(NpcActor& a, const char* name, bool force = false);
+	// fix231: whether any of the actor's models (the rig, then the overlays) has the clip by name.
+	bool hasClipAnywhere(NpcActor& a, u32 hash);
 	bool evictClip(); // lets the animation not played for longest go; false: nothing to let go
 	const Clip* modeClip(NpcActor& a, const char* pattern, bool orOtherMode);
 	NpcActor* actorFor(ScriptInstance* inst);

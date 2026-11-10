@@ -16,7 +16,7 @@
 .fvec fogRow        ; fog factor before clamping = dp4(fogRow, position relative to the lattice point)
 .fvec chunk         ; xyz = origin relative to the eye's lattice point, w = position step
 .fvec params        ; x = uv scale, y = 1/255, z = fogA, w = fogB (the fog already is in fogRow; kept for the uv scale)
-.fvec dayDelta      ; xyz = dayLight - 1
+.fvec dayDelta      ; xyz = dayLight - 1; w = the phase of water wave C at the chunk's origin (no free uniform)
 .fvec texOffset     ; xy = texture scroll offset (zw must be 0)
 .fvec skinLight     ; xyz = light on the character
 .fvec bones[78]     ; 26 bones, three rows of a 3x4 matrix each
@@ -101,7 +101,7 @@
 		; wave.z, wave.w and wc.w are per step: the CPU divides by 127)
 		mul r8.x, consts.z, inpos.w
 		flr r8.x, r8.x
-		; r9.x = xA = 2 fract(wave.x + kA . (x, z)) - 1,  r10.x = xB likewise
+		; ---- wave A: xA = 2 fract(phaseA + kA . (x, z)) - 1 ----
 		mul r9.x, wkA.x, r0.x
 		mul r9.y, wkA.y, r0.z
 		add r9.x, r9.x, r9.y
@@ -110,6 +110,11 @@
 		add r9.x, r9.x, -r9.y
 		add r9.x, r9.x, r9.x
 		add r9.x, -consts.y, r9.x
+		max r11.x, r9.x, -r9.x
+		add r11.x, consts.y, -r11.x          ; edgeA = 1 - |xA|
+		mul r12.x, r9.x, r11.x
+		mul r12.x, wc.x, r12.x               ; wA = 4 xA edgeA
+		; ---- wave B ----
 		mul r10.x, noiseScale.z, r0.x
 		mul r10.y, noiseScale.w, r0.z
 		add r10.x, r10.x, r10.y
@@ -118,41 +123,138 @@
 		add r10.x, r10.x, -r10.y
 		add r10.x, r10.x, r10.x
 		add r10.x, -consts.y, r10.x
-		; r11.x = 1 - |xA|, r11.y = 1 - |xB|
-		max r11.x, r9.x, -r9.x
-		add r11.x, consts.y, -r11.x
 		max r11.y, r10.x, -r10.x
-		add r11.y, consts.y, -r11.y
-		; r12.x = wA = 4 xA (1 - |xA|),  r12.y = wB
-		mul r12.x, r9.x, r11.x
-		mul r12.x, wc.x, r12.x
+		add r11.y, consts.y, -r11.y          ; edgeB
 		mul r12.y, r10.x, r11.y
-		mul r12.y, wc.x, r12.y
-		; height: wave.z * (0.7 wA + 0.3 wB), straight up
+		mul r12.y, wc.x, r12.y               ; wB
+		; ---- wave C: the cross-chop. kC = (kA.y, kA.x) / 0.7, so its direction is across A's and its wavelength is
+		; 0.7 of A's (gfx.h WAVE_C_*). Its phase comes in dayDelta.w (the 96 constant registers are full: no uniform
+		; of its own). ----
+		rcp r13.y, wc.y
+		mul r12.w, wkA.y, r13.y              ; kC.x
+		mul r13.w, wkA.x, r13.y              ; kC.z
+		mul r10.y, r12.w, r0.x
+		mul r10.z, r13.w, r0.z
+		add r10.y, r10.y, r10.z
+		add r10.y, dayDelta.w, r10.y
+		flr r10.z, r10.y
+		add r10.y, r10.y, -r10.z
+		add r10.y, r10.y, r10.y
+		add r10.y, -consts.y, r10.y
+		max r10.z, r10.y, -r10.y
+		add r10.z, consts.y, -r10.z          ; edgeC
+		mul r12.z, r10.y, r10.z
+		mul r12.z, wc.x, r12.z               ; wC
+		; height: height * weight * 0.7 * (0.7 wA + 0.3 wB + 0.3 wC), straight up
 		mul r13.x, wc.y, r12.x
 		mul r13.y, wc.z, r12.y
 		add r13.x, r13.x, r13.y
-		mul r13.x, wave.z, r13.x
-		mul r13.x, r13.x, r8.x
+		mul r13.y, wc.z, r12.z
+		add r13.x, r13.x, r13.y
+		mul r13.x, wc.y, r13.x               ; * 0.7 (the three shares then sum to 0.91)
+		mul r13.y, wave.z, r8.x              ; height * weight, per step
+		mul r13.x, r13.x, r13.y
 		add r0.y, r0.y, r13.x
-		; slopes: d wA / du ~ (1 - 2 |xA|) = 2 (1 - |xA|) - 1; the surface is lit by 1 + strength * (lA sA + lB sB)
+		; slopes: sA/sB/sC = 2 edge - 1 (the derivative of 4 x (1 - |x|) up to the factor 4)
 		add r11.x, r11.x, r11.x
 		add r11.x, -consts.y, r11.x
 		add r11.y, r11.y, r11.y
 		add r11.y, -consts.y, r11.y
+		add r13.y, r10.z, r10.z
+		add r13.y, -consts.y, r13.y
+		; normal gradient: 4 * height * weight * (0.49 sA kA + 0.21 sB kB + 0.21 sC kC)
+		mul r13.z, wave.z, r8.x
+		mul r13.z, wc.x, r13.z               ; 4 * height * weight
+		mul r14.y, wkA.x, r11.x
+		mul r14.y, wc.y, r14.y
+		mul r14.y, wc.y, r14.y               ; 0.49 sA kA.x
+		mul r9.y, noiseScale.z, r11.y
+		mul r9.y, wc.y, r9.y
+		mul r9.y, wc.z, r9.y               ; 0.21 sB kB.x
+		add r14.y, r14.y, r9.y
+		mul r9.z, r12.w, r13.y
+		mul r9.z, wc.y, r9.z
+		mul r9.z, wc.z, r9.z               ; 0.21 sC kC.x
+		add r14.y, r14.y, r9.z
+		mul r14.y, r13.z, r14.y              ; slope along x
+		mul r14.z, wkA.y, r11.x
+		mul r14.z, wc.y, r14.z
+		mul r14.z, wc.y, r14.z
+		mul r9.y, noiseScale.w, r11.y
+		mul r9.y, wc.y, r9.y
+		mul r9.y, wc.z, r9.y
+		add r14.z, r14.z, r9.y
+		mul r9.z, r13.w, r13.y
+		mul r9.z, wc.y, r9.z
+		mul r9.z, wc.z, r9.z
+		add r14.z, r14.z, r9.z
+		mul r14.z, r13.z, r14.z              ; slope along z
+		; the surface is lit by 1 + strength * (0.6 sA + 0.4 sB + 0.3 sC)
 		mul r11.x, wkA.z, r11.x
 		mul r11.y, wkA.w, r11.y
 		add r11.x, r11.x, r11.y
+		mul r13.y, wc.z, r13.y
+		add r11.x, r11.x, r13.y
 		mul r11.x, wave.w, r11.x
 		mul r11.x, r11.x, r8.x
 		add r14.x, consts.y, r11.x
-		; the texture slides with the waves, as if seen through them
+		; the texture slides with the waves, as if seen through them (the long A and B swell; C is a lighting-only chop)
 		mul r15.xy, wc.ww, r12.xy
 		mul r15.xy, r15.xy, r8.xx
 	.end
 
 	; relative to the eye's lattice point
 	add r0.xyz, chunk.xyz, r0.xyz
+
+	ifu wavy
+		; ---- light on the water: a soft Blinn-Phong glint and a Fresnel brightening. No fragment shader on the
+		; PICA200: both are per vertex, from the analytic normal (-slopeX, 1, -slopeZ), and the texture combiner and
+		; blending do the rest. The eye is the lattice anchor, so V = normalize(-P). skinLight.xyz is the unit vector
+		; to the sun/moon, skinLight.w the glint strength (0: off). ----
+		mov r12.w, r8.x                     ; keep the weight: r8 becomes the normal below
+		mov r8.x, -r14.y
+		mov r8.y, one
+		mov r8.z, -r14.z
+		dp3 r13.x, r8, r8
+		rsq r13.x, r13.x
+		mul r8.xyz, r8.xyz, r13.xxx          ; N
+		mov r9.x, -r0.x
+		mov r9.y, -r0.y
+		mov r9.z, -r0.z
+		dp3 r13.y, r9, r9
+		rsq r13.y, r13.y
+		mul r9.xyz, r9.xyz, r13.yyy          ; V
+		mov r12.xyz, skinLight.xyz
+		add r10.xyz, r9.xyz, r12.xyz
+		dp3 r13.z, r10, r10
+		rsq r13.z, r13.z
+		mul r10.xyz, r10.xyz, r13.zzz        ; H
+		dp3 r11.x, r8.xyz, r10.xyz
+		max r11.x, zero, r11.x
+		mul r11.y, r11.x, r11.x
+		mul r11.y, r11.y, r11.y
+		mul r11.y, r11.y, r11.y
+		mul r11.y, r11.y, r11.y              ; (N.H)^16
+		mul r11.y, skinLight.w, r11.y
+		mul r14.w, wc.z, r11.y               ; glint, scaled by 0.3
+		dp3 r11.z, r8.xyz, r9.xyz
+		max r11.z, zero, r11.z
+		add r11.z, one, -r11.z
+		mul r12.x, r11.z, r11.z
+		mul r12.x, r12.x, r12.x
+		mul r12.x, r12.x, r11.z              ; (1 - N.V)^5
+		mov r9.w, wc.x
+		mul r10.w, consts.z, r9.w            ; F0 = 4/256 = 0.015625 (no free .constf: 96 registers are full)
+		add r12.y, one, -r10.w               ; 1 - F0
+		mul r12.x, r12.y, r12.x
+		add r12.x, r10.w, r12.x              ; F0 + (1 - F0) t^5
+		mul r13.w, skinLight.w, r12.x        ; Fresnel, scaled by the glint strength
+		; Only the fine water that carries a wave weight gets the glint: the coarse pieces (weight 0) are flat, and a
+		; broad highlight over them would be a flat sheet of light. (Weight is a step count, 0 or at least 1.)
+		min r13.x, one, r12.w
+		mul r14.w, r13.x, r14.w
+		mul r13.w, r13.x, r13.w
+	.end
 
 	dp4 r6.x, mvp[0], r0
 	dp4 r6.y, mvp[1], r0
@@ -230,6 +332,12 @@
 	.end
 	ifu wavy
 		mul r4.xyz, r4.xyz, r14.xxx
+		; Fresnel: grazing facets catch more of the sky (1 + 0.3 F times), then the soft Blinn-Phong glint on top.
+		; Both are 0 when the glint is off (skinLight.w = 0), so the cheap path is a multiply by one and adding zero.
+		mul r5.y, wc.z, r13.w
+		add r5.y, one, r5.y
+		mul r4.xyz, r4.xyz, r5.yyy
+		add r4.xyz, r4.xyz, r14.www
 		; fix140, the sheen: water seen from afar mirrors the sky, close below it is dark and clear - a Fresnel by distance.
 		; With the view depth d (r6.w, cm), f = t / (1 + t), t = d / 800 (consts.w): 0.1 at 1 m, 0.5 at 8 m, 0.8 at 32 m. It needs
 		; no new uniform (the 96 constant registers are full, and picasso's table of global uniforms is full with 16 for each of

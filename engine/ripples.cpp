@@ -139,6 +139,8 @@ void Ripples::release() {
 	_texture = nullptr;
 	for (Ring& r : _ring) r = Ring {};
 	_count = 0;
+	for (Event& e : _event) e = Event {};
+	_eventCount = 0;
 	_haveLast = _wasIn = false;
 	_timer = _wakeTimer = _foamTimer = 0.0f;
 	_dirX = 0.0f;
@@ -179,8 +181,48 @@ void Ripples::spawn(const World& world, Kind kind, float x, float z, float surfa
 	_ring[slot] = r;
 }
 
+bool Ripples::splashAt(const World& world, Vec3 at, float size, float strength) {
+	float surface = at.y, weight = 0.0f;
+	if (!world.waterBelow({at.x, at.y + 60.0f, at.z}, 400.0f, surface, &weight)) return false;
+	const float s = clamp(size, 0.1f, 2.0f);
+	const float k = clamp(strength, 0.05f, 1.5f);
+	// The event source: capped, the oldest goes. This is the data a procedural ripple would read later; the drawn
+	// shapes below are the billboard implementation.
+	if (_eventCount >= MAX_EVENTS) {
+		u32 oldest = 0;
+		for (u32 i = 1; i < _eventCount; ++i)
+			if (_event[i].age / _event[i].life > _event[oldest].age / _event[oldest].life) oldest = i;
+		for (u32 i = oldest; i + 1 < _eventCount; ++i) _event[i] = _event[i + 1];
+		--_eventCount;
+	}
+	Event& e = _event[_eventCount++];
+	e.x = at.x;
+	e.y = surface;
+	e.z = at.z;
+	e.age = 0.0f;
+	e.life = 1.8f;
+	e.size = s;
+	e.strength = k;
+	e.weight = weight;
+	// The splash: a broken crown of foam, two packets of crests and a patch, as when a body steps in (update()).
+	spawn(world, FOAM_RING, at.x, at.z, surface, 0.75f * s + 0.2f, 0.9f * k, 1.1f);
+	spawn(world, RING, at.x, at.z, surface, 0.85f * s + 0.1f, k, 1.9f);
+	spawn(world, RING, at.x, at.z, surface, 0.45f * s, 0.75f * k, 1.4f);
+	spawn(world, FOAM, at.x, at.z, surface, 0.7f * s, 0.75f * k, 1.4f, cosf(rnd() * 6.2832f), sinf(rnd() * 6.2832f));
+	return true;
+}
+
 void Ripples::update(const World& world, Vec3 feet, float waterDepth, bool swimming, float dt) {
 	if (!(dt > 0.0f)) return;
+	for (u32 i = 0; i < _eventCount;) {
+		_event[i].age += dt;
+		if (_event[i].age >= _event[i].life) {
+			for (u32 k = i; k + 1 < _eventCount; ++k) _event[k] = _event[k + 1];
+			--_eventCount;
+		} else {
+			++i;
+		}
+	}
 	for (u32 i = 0; i < _count; ++i) _ring[i].age += dt;
 	while (_count > 0 && _ring[_count - 1].age >= _ring[_count - 1].life) --_count;
 	const bool in = waterDepth > kMinDepth;

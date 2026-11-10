@@ -1127,6 +1127,7 @@ void App::render() {
 		renderStartMenu();
 		return;
 	}
+	++_frameNo; // fix246: the frame's number, picks the mirror frames of Settings::reflRate
 	// The picture a save will carry: the frame on show as the menu opens (the game, not the menu over it).
 	if (_menu.isOpen() && !_menuShot) {
 		captureSavePicture();
@@ -1145,6 +1146,22 @@ void App::render() {
 	fd.zNear = _cam.zNear;
 	fd.zFar = _cam.zFar;
 	const bool indoor = _world.indoor();
+	// The water's glint: the light's direction (the sun, or the moon when it is the brighter one) and how much of it
+	// the weather leaves. The shader has no room for another uniform, so this rides in ChunkFx (skinLight on the GPU).
+	{
+		float direction[3] = {0.35f, 0.80f, 0.45f};
+		if (!indoor) {
+			float sun[3], moon[3];
+			Sky::sunDirection(_env.timeOfDay, sun);
+			Sky::moonDirection(_env.timeOfDay, moon);
+			const float* to = sun[1] >= moon[1] ? sun : moon;
+			for (int i = 0; i < 3; ++i) direction[i] = to[i];
+		}
+		for (int i = 0; i < 3; ++i) _world.config().waterSun[i] = direction[i];
+		const float clear = clamp(1.0f - 0.75f * _weather.cloud() - 0.35f * _weather.rain(), 0.0f, 1.0f);
+		const float high = indoor ? 0.45f : clamp(direction[1] * 3.0f, 0.0f, 1.0f);
+		_world.config().waterGlint = _settings.waterGlint() * clear * high;
+	}
 	const float fogScale = indoor ? 1.0f : _weather.fogScale();
 	fd.fogStart = _env.fogStart * fogScale;
 	fd.fogEnd = _env.fogEnd * fogScale;
@@ -1392,6 +1409,7 @@ void App::render() {
 	// текстуру, и вода сэмплит её проективно (с задержкой в кадр; стоячая вода
 	// этого не видит). Отражения нет под водой, в стерео и там, где шейдер
 	// не умеет; уровень воды — ближайшая поверхность под глазом.
+	bool wantRefl = false; // fix246: a mirror pass is wanted at all this frame (off / no water / underwater / stereo: no)
 	if (!stereo && !_underwater && !(_renderSkip & SKIP_WORLD) && gfx::reflectionSupported()) {
 		const float strength = _settings.reflectionStrength();
 		float waterY = 0.0f;
@@ -1438,7 +1456,11 @@ void App::render() {
 		} else {
 			_reflPlaneValid = false;
 		}
-		if (strength > 0.0f && water && _cam.pos.y > waterY + 4.0f) {
+		wantRefl = strength > 0.0f && water && _cam.pos.y > waterY + 4.0f;
+		// fix246: with reflRate > 0 the mirror pass runs only in its own frames (every other / every
+		// third); in the skipped frames the water samples the last copied reflection texture.
+		const bool reflFrame = _settings.reflRate == 0 || _frameNo % u32(_settings.reflRate + 1) == 0;
+		if (wantRefl && reflFrame) {
 			gfx::FrameDesc rf = eyeDesc[0];
 			// Отражение в плоскости y = waterY: точка уходит в (x, 2H - y, z);
 			// вид остаётся обычным, применённым к отражённому миру (план, п. 1).
@@ -1461,11 +1483,21 @@ void App::render() {
 					                     min(2500.0f, max(_npcs.stats().reach, 800.0f)));
 				trace("render: reflection hero");
 				gfx::setFade(1.0f); // (the world's last chunk may be dissolving)
-				if (_heroVisible && !(_renderSkip & (SKIP_HERO | SKIP_REFL_CHARS))) drawHero();
+				// fix244: the mask cannot hide the hero's submerged half (the
+				// plane's LESS keeps what is nearer than the water), so a hero
+				// standing in the water is left out of the mirror entirely
+				// (fix243's safe variant) instead of showing his legs above it.
+				const bool heroInWater = _hero.feet().y < waterY + 10.0f;
+				if (_heroVisible &&
+				    !(_renderSkip & (SKIP_HERO | SKIP_REFL_CHARS)) &&
+				    !heroInWater) {
+					drawHero();
+				}
 				gfx::reflectionEnd();
 			}
 		}
 	}
+	if (!wantRefl) gfx::reflectionSkip(); // fix246: no mirror at all this frame — the water must not sample the old one
 	drawEye(eyeDesc[0]);
 	if (stereo) {
 		gfx::eyeBegin(eyeDesc[1]);
@@ -2193,6 +2225,7 @@ void App::applySettings() {
 	cfg.wind = _windRelief ? 0.0f : _windWanted;
 	_wavesWanted = _settings.waveHeightCm();
 	cfg.waves = _wavesWanted;
+	cfg.waterGlint = _settings.waterGlint();
 	cfg.sunMasks = _settings.sunShadows != 0;
 	cfg.clouds = cfg.sunMasks && _settings.cloudShadows != 0 && !(_renderSkip & SKIP_CLOUDS);
 	setLanguage(_settings.language);

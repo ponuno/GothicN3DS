@@ -531,13 +531,16 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 			}
 			float shade = 1.0f - (steps - sway) * gFx.occlusion; // the low byte: ambient occlusion
 			float uvShift[2] = {0.0f, 0.0f};
+			float glint = 0.0f, fresnel = 0.0f;
 			if (wavy) {
-				// As world_full.v.pica: two waves x (1 - |x|) * 4, the height from both, the slopes light the surface.
-				float xs[2], ws[2], slope[2];
-				for (int k2 = 0; k2 < 2; ++k2) {
-					const float* d = k2 ? WAVE_B_DIR : WAVE_A_DIR;
-					const float cm = k2 ? WAVE_B_CM : WAVE_A_CM;
-					float t = (k2 ? gFx.waveB : gFx.waveA) + (p[0] * d[0] + p[2] * d[1]) / cm;
+				// As world_full.v.pica: three waves x (1 - |x|) * 4, the height from all, the slopes light the surface
+				// and give it a normal. C is the cross-chop: kC = (kA.y, kA.x) / 0.7, its phase in dayDelta.w.
+				const float phase[3] = {gFx.waveA, gFx.waveB, gFx.waveC};
+				const float k[3][2] = {{0.00057143f, 0.00042857f}, {0.00070144f, 0.00086167f},
+				                       {0.00042857f * (1.0f / 0.7f), 0.00057143f * (1.0f / 0.7f)}};
+				float xs[3], ws[3], slope[3];
+				for (int k2 = 0; k2 < 3; ++k2) {
+					float t = phase[k2] + p[0] * k[k2][0] + p[2] * k[k2][1];
 					t -= floorf(t);
 					xs[k2] = t + t - 1.0f;
 					const float edge = 1.0f - fabsf(xs[k2]);
@@ -545,10 +548,31 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 					slope[k2] = 2.0f * edge - 1.0f;
 				}
 				const float weight = sway * (1.0f / 127.0f); // (the corner's wind byte: how much of the waves it takes)
-				p[1] += weight * gFx.waveHeight * (0.7f * ws[0] + 0.3f * ws[1]);
-				shade *= 1.0f + weight * gFx.waveShade * (0.6f * slope[0] + 0.4f * slope[1]);
-				uvShift[0] = weight * 0.015f * ws[0];
-				uvShift[1] = weight * 0.015f * ws[1];
+				p[1] += weight * gFx.waveHeight * 0.7f * (0.7f * ws[0] + 0.3f * ws[1] + 0.3f * ws[2]);
+				shade *= 1.0f + weight * gFx.waveShade * (0.6f * slope[0] + 0.4f * slope[1] + 0.3f * slope[2]);
+				uvShift[0] = weight * 0.015f * (ws[0] + 0.3f * ws[2]);
+				uvShift[1] = weight * 0.015f * (ws[1] + 0.3f * ws[2]);
+				// Normal from the analytic slope; the eye is the lattice anchor (view is anchor-relative).
+				const float sx = 4.0f * weight * gFx.waveHeight *
+				                 (0.49f * slope[0] * k[0][0] + 0.21f * slope[1] * k[1][0] + 0.21f * slope[2] * k[2][0]);
+				const float sz = 4.0f * weight * gFx.waveHeight *
+				                 (0.49f * slope[0] * k[0][1] + 0.21f * slope[1] * k[1][1] + 0.21f * slope[2] * k[2][1]);
+				const float nl = sqrtf(sx * sx + 1.0f + sz * sz);
+				const float nx = -sx / nl, ny = 1.0f / nl, nz = -sz / nl;
+				const float P[3] = {p[0] + gChunk[0], p[1] + gChunk[1], p[2] + gChunk[2]};
+				const float vl = sqrtf(P[0] * P[0] + P[1] * P[1] + P[2] * P[2]);
+				const float vx = -P[0] / vl, vy = -P[1] / vl, vz = -P[2] / vl;
+				float hx = vx + gFx.waterSun[0], hy = vy + gFx.waterSun[1], hz = vz + gFx.waterSun[2];
+				const float hl = sqrtf(hx * hx + hy * hy + hz * hz);
+				hx /= hl; hy /= hl; hz /= hl;
+				const float ndh = fmaxf(nx * hx + ny * hy + nz * hz, 0.0f);
+				const float ndh2 = ndh * ndh, ndh4 = ndh2 * ndh2, ndh8 = ndh4 * ndh4, ndh16 = ndh8 * ndh8;
+				const float gate = sway > 0.0f ? 1.0f : 0.0f; // (the shader's min(weight, 1): open water is flat)
+				glint = gate * gFx.waterGlint * ndh16 * 0.3f;
+				const float ndv = fmaxf(nx * vx + ny * vy + nz * vz, 0.0f);
+				const float t5 = (1.0f - ndv) * (1.0f - ndv) * (1.0f - ndv) * (1.0f - ndv) * (1.0f - ndv);
+				const float f0 = 4.0f / 256.0f; // (the shader has no free constant: F0 = consts.z * wc.x)
+				fresnel = gate * gFx.waterGlint * (f0 + (1.0f - f0) * t5);
 			}
 			// The shader's arithmetic: position relative to the anchor first
 			// (exact for lattice positions), then one matrix for every chunk.
@@ -582,10 +606,12 @@ void draw(Mesh* m, u32 firstIndex, u32 indexCount) {
 					for (int ch = 0; ch < 3; ++ch) lamp[ch] += l.rgb[ch] * f;
 				}
 			}
+			const float shadeK = 1.0f + 0.3f * fresnel;
 			cv[k] = {c.x, c.y, c.z, c.w, float(v.u) * gUvScale + gUvOffset[0] + uvShift[0],
 			         float(v.v) * gUvScale + gUvOffset[1] + uvShift[1],
-			         v.r * (1.0f / 255.0f) * tint[0] * shade * sheenK + lamp[0], v.g * (1.0f / 255.0f) * tint[1] * shade * sheenK + lamp[1],
-			         v.b * (1.0f / 255.0f) * tint[2] * shade * sheenK + lamp[2], 1.0f, fog,
+			         (v.r * (1.0f / 255.0f) * tint[0] * shade * shadeK + glint) * sheenK + lamp[0],
+			         (v.g * (1.0f / 255.0f) * tint[1] * shade * shadeK + glint) * sheenK + lamp[1],
+			         (v.b * (1.0f / 255.0f) * tint[2] * shade * shadeK + glint) * sheenK + lamp[2], 1.0f, fog,
 			         (p[0] + gChunk[0] + gAnchor[0] - gFx.sunX0) * gFx.sunScaleX, (p[2] + gChunk[2] + gAnchor[2] - gFx.sunZ0) * gFx.sunScaleZ};
 		}
 		if (gPass == PASS_WORLD) ++gStats.trianglesSubmitted;
@@ -611,6 +637,7 @@ bool reflectionSupported() { return false; }
 bool reflectionBegin(const FrameDesc&, const ReflParams&) { return false; }
 void reflectionEnd() {}
 Texture* reflectionTexture() { return nullptr; }
+void reflectionSkip() {}
 
 void drawSkinned(Mesh* m, u32 firstIndex, u32 indexCount, const SkinDraw& skin) {
 	if (!m || indexCount == 0 || firstIndex + indexCount > m->indexCount || !skin.bones) return;

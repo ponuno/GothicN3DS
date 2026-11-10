@@ -77,6 +77,10 @@ bool reflectionSupported();               // консоль: да; ПК-эмул
 bool reflectionBegin(const FrameDesc& f, const ReflParams& p); // false — не поддерживается, кадр рисуют обычным
 void reflectionEnd();                      // восстановить мир; перенос RT в текстуру — в frameEnd
 Texture* reflectionTexture();              // для unit 1; null, если отражения нет
+// В этом кадре зеркального прохода нет и отражение выключено совсем (настройка 0, нет воды под
+// камерой, под водой, стерео): вода не должна сэмплить старую текстуру. Когда проход просто
+// пропущен по частоте (reflRate), вызывать не надо — вода читает последнее отражение.
+void reflectionSkip();
 constexpr int REFL_W = 256, REFL_H = 256;
 
 void shutdown();
@@ -121,13 +125,19 @@ struct ChunkFx {
 	float windX = 0.0f, windZ = 0.0f;
 	float windPhase = 0.0f; // 0..1: the wave's phase at the chunk's origin (see windPhaseAt)
 	// Water waves (MATF_WATER materials only; needs water baked in a fine grid, g3ds-bake --water-grid): the phases
-	// of the two waves at the chunk's origin (0..1, see wavePhaseAt), how high they lift the surface at the crest, cm
+	// of the three waves at the chunk's origin (0..1, see wavePhaseAt), how high they lift the surface at the crest, cm
 	// (0 = flat water, the fast shader), and how much their slopes light and darken it.
-	float waveA = 0.0f, waveB = 0.0f, waveHeight = 0.0f, waveShade = 0.0f;
+	float waveA = 0.0f, waveB = 0.0f, waveC = 0.0f, waveHeight = 0.0f, waveShade = 0.0f;
 	// The chunk's water carries the waves' weight in its vertices' w (WORLDF_WATER_GRID): the corner's wind byte, 0..127,
 	// of how much of the height and the shading it takes. Such water is drawn with the full shader even when still,
 	// because the fast one reads the whole of w as occlusion.
 	bool waterGrid = false;
+	// Water only (a world with the grid): the unit vector towards the sun and the strength of the glint (0..1). The
+	// vertex shader turns the waves' analytic slope into a normal, adds a soft Blinn-Phong highlight and brightens the
+	// grazing facets by an F0 = 0.015625 Fresnel. Both are 0 when the sun is down (the water stays dark) and the glint
+	// strength is a quality setting. PICA200 has no fragment shader here: this is per vertex, then the texture combiner.
+	float waterSun[3] = {0.35f, 0.80f, 0.45f};
+	float waterGlint = 0.0f;
 	// The sun's shadow (g3ds-bake --sun-shadow): a mask (a TEX_L4 texture, 15 sunlit .. 0 shaded) lying flat over the
 	// chunk, u = (x - sunX0) * sunScaleX, v = (z - sunZ0) * sunScaleZ in world cm. Null: none. What is drawn under its
 	// dark texels is darkened by setSunShadow's strength - except cut-out, swaying, glowing and water materials, and characters.
@@ -165,14 +175,27 @@ bool lampsSupported();
 void setSunShadow(float darkness);
 // Whether this backend draws the sun's masks at all (the console's older shaders do not).
 bool sunShadowSupported();
-// The water's two waves (world_full.v.pica has the same numbers): directions (x, z) and wavelengths, cm; speed in
-// waves a second.
+// The water's three waves (world_full.v.pica has the same numbers): directions (x, z) and wavelengths, cm; speed in
+// waves a second. A and B are the long swell; C is the short cross-chop (perpendicular-ish, 70 % of A's wavelength).
+// PICA200 has no sine instruction in the vertex shader, so the shader uses the smooth polynomial 4 x (1 - |x|), which
+// is the parabola that best fits one sine period with one multiply and one absolute value. The runs below are that
+// polynomial, not sin(); everything else (directions, speeds, amplitudes) is a true sum of travelling waves.
 constexpr float WAVE_A_DIR[2] = {0.8f, 0.6f};
 constexpr float WAVE_A_CM = 1400.0f;
 constexpr float WAVE_A_SPEED = 0.07f;
 constexpr float WAVE_B_DIR[2] = {0.6313f, 0.7755f}; // 14 degrees off A: one swell
 constexpr float WAVE_B_CM = 900.0f;
 constexpr float WAVE_B_SPEED = 0.10f;
+constexpr float WAVE_C_DIR[2] = {0.6f, 0.8f}; // across A and B: the chop that breaks the long crests
+constexpr float WAVE_C_CM = 980.0f;
+constexpr float WAVE_C_SPEED = 0.13f;
+constexpr int WAVE_COUNT = 3;
+// Height shares of the three waves. They sum to 0.91, so the crest stays just under `waveHeight`; the shader's
+// equivalent factors are 0.7 * (0.7, 0.3, 0.3) with PICA's existing constants (no room for another .constf).
+constexpr float WAVE_MIX[WAVE_COUNT] = {0.49f, 0.21f, 0.21f};
+inline const float* waveDir(int which) { return which == 2 ? WAVE_C_DIR : which ? WAVE_B_DIR : WAVE_A_DIR; }
+inline float waveCm(int which) { return which == 2 ? WAVE_C_CM : which ? WAVE_B_CM : WAVE_A_CM; }
+inline float waveSpeed(int which) { return which == 2 ? WAVE_C_SPEED : which ? WAVE_B_SPEED : WAVE_A_SPEED; }
 // The water's sheen (fix140): water seen from afar mirrors the sky, close below it is dark and clear. A Fresnel by the view
 // depth d: f = t / (1 + t), t = d * WATER_SHEEN_PER_CM; the colour is WATER_SHEEN_BASE + WATER_SHEEN_RANGE * f times, the fog
 // factor (the horizon's colour, the sky) is cut by WATER_SHEEN_SKY * f. world_full.v.pica has the same numbers, as constants
@@ -181,11 +204,12 @@ constexpr float WATER_SHEEN_PER_CM = 0.00125f;
 constexpr float WATER_SHEEN_BASE = 0.7f;
 constexpr float WATER_SHEEN_RANGE = 0.6f;
 constexpr float WATER_SHEEN_SKY = 0.4f;
-// The phase (0..1) of wave A (which = 0) or B (1) at `origin` at time `seconds`; in double, as windPhaseAt.
+// The phase (0..1) of wave A (which = 0), B (1) or C (2) at `origin` at time `seconds`; in double, as windPhaseAt.
 inline float wavePhaseAt(const float origin[3], double seconds, int which) {
-	const float* d = which ? WAVE_B_DIR : WAVE_A_DIR;
-	const double cm = which ? double(WAVE_B_CM) : double(WAVE_A_CM);
-	const double speed = which ? double(WAVE_B_SPEED) : double(WAVE_A_SPEED);
+	if (which < 0 || which >= WAVE_COUNT) which = 0;
+	const float* d = waveDir(which);
+	const double cm = double(waveCm(which));
+	const double speed = double(waveSpeed(which));
 	double t = seconds * speed + (double(origin[0]) * double(d[0]) + double(origin[2]) * double(d[1])) / cm;
 	t -= floor(t);
 	return float(t);
@@ -194,18 +218,17 @@ inline float wavePhaseAt(const float origin[3], double seconds, int which) {
 // 1 for the crest `height`; and the slope there (cm of height per cm along x and z) - `weight` 0..1 of the corner's share.
 inline void waveSurfaceAt(float x, float z, double seconds, float height, float weight, float& lift, float& slopeX, float& slopeZ) {
 	lift = slopeX = slopeZ = 0.0f;
-	const float mix[2] = {0.7f, 0.3f};
-	for (int k = 0; k < 2; ++k) {
-		const float* d = k ? WAVE_B_DIR : WAVE_A_DIR;
-		const double cm = k ? double(WAVE_B_CM) : double(WAVE_A_CM);
-		const double speed = k ? double(WAVE_B_SPEED) : double(WAVE_A_SPEED);
+	for (int k = 0; k < WAVE_COUNT; ++k) {
+		const float* d = waveDir(k);
+		const double cm = double(waveCm(k));
+		const double speed = double(waveSpeed(k));
 		double t = seconds * speed + (double(x) * double(d[0]) + double(z) * double(d[1])) / cm;
 		t -= floor(t);
 		const float xs = float(t + t - 1.0);
 		const float edge = 1.0f - (xs < 0 ? -xs : xs);
-		lift += mix[k] * 4.0f * xs * edge;
+		lift += WAVE_MIX[k] * 4.0f * xs * edge;
 		// d(4 x (1 - |x|))/dx = 4 - 8 |x|; dx/dt = 2; dt/dposition = direction / wavelength
-		const float dw = mix[k] * (4.0f - 8.0f * (xs < 0 ? -xs : xs)) * 2.0f / float(cm);
+		const float dw = WAVE_MIX[k] * (4.0f - 8.0f * (xs < 0 ? -xs : xs)) * 2.0f / float(cm);
 		slopeX += dw * d[0];
 		slopeZ += dw * d[1];
 	}

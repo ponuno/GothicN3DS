@@ -92,7 +92,8 @@ float gFx[4] = {0, 0, 0, 0};
 bool gWindy = false, gMaterialWind = false, gChunkWind = false;
 // The water's waves: the last `wave` uniform, and the `wavy` switch - on for a water material while the chunk's waves
 // are not zero.
-float gWave[4] = {0, 0, 0, 0};
+float gWave[5] = {0, 0, 0, 0, 0};
+float gDayDelta[3] = {0, 0, 0}; // the dayLight - 1 triplet, so that a water chunk can rewrite dayDelta.w without losing it
 bool gWavy = false, gMaterialWater = false, gChunkWave = false, gChunkWaterGrid = false;
 bool gFillTest = false;    // the picture squeezed into half the screen (hold ZR at start): does the GPU time follow the pixels?
 bool gDoubleDraws = false; // every world draw is issued twice (hold START at start): what does one more draw call cost with no state change?
@@ -146,7 +147,6 @@ u8 gReflStrength = 0;         // сила смешивания 0..255
 int gLocReflon = -1;          // bool-регистр reflon в шейдере
 bool gReflon = false;         // последнее значение reflon
 bool gReflStageOn = false;    // стадия 4 (rgb) настроена на смешивание отражения
-bool gReflFresh = false;      // отражённый проход уже был в этом кадре (иначе вода читает устаревшую цель)
 u32 gReflClearColor = 0;      // cleared at the next GPU-idle point, before a new pass is drawn
 u32 gReflDebug = 0;           // fix232: c3dSetReflectionDebug (debug.txt), 0 = everything on
 Mesh* gReflClip = nullptr;    // fix244: the water plane drawn over the mirrored pass to hide what lies under the water
@@ -164,7 +164,7 @@ float gAnchor[3] = {0, 0, 0};       // the lattice point next to the eye that po
 // (x, plane − y, z) с plane = 2·(уровень воды − якорь по y); 0, когда
 // отражений нет (шейдер тогда эту компоненту не читает, fast и подавно).
 static inline float reflPlaneRow() {
-	return (gReflSampleReady && gReflFresh && gReflStrength && gLocReflon >= 0) ? 2.0f * (gReflPlane - gAnchor[1]) : 0.0f;
+	return (gReflSampleReady && gReflStrength && gLocReflon >= 0) ? 2.0f * (gReflPlane - gAnchor[1]) : 0.0f;
 }
 
 float gParams[4] = {0, 0, 0, 0};    // last value of the `params` uniform
@@ -452,7 +452,10 @@ void updateWindy() {
 	// Отражение (этап 1): reflon поднимается для воды с грид-разметкой, когда
 	// перенесённое отражение уже есть и сила не нулевая. Вода в отражённом
 	// проходе не рисуется, растворение есть только в непрозрачном мире.
-	const bool reflon = gLocReflon >= 0 && wavy && gReflSampleReady && gReflStrength != 0 && gReflFresh && !gReflPass &&
+	// fix246: gReflFresh убран — вода сэмплит последнюю перенесённую текстуру и в кадрах без
+	// зеркального прохода (reflRate); «нет отражения» теперь означает только gReflStrength == 0
+	// (reflectionSkip) или отсутствие валидной текстуры.
+	const bool reflon = gLocReflon >= 0 && wavy && gReflSampleReady && gReflStrength != 0 && !gReflPass &&
 	                    !(gReflDebug & REFL_DBG_NO_SAMPLE);
 	if (reflon != gReflon) {
 		gReflon = reflon;
@@ -487,14 +490,19 @@ void updateReflStage() {
 		bindUnit1Default();
 	}
 }
-void setWaveUniform(float a, float b, float height, float shade) {
-	if (gLocWave < 0 || (a == gWave[0] && b == gWave[1] && height == gWave[2] && shade == gWave[3])) return;
+void setWaveUniform(float a, float b, float c, float height, float shade) {
+	if (gLocWave < 0 || (a == gWave[0] && b == gWave[1] && c == gWave[2] && height == gWave[3] && shade == gWave[4])) return;
 	gWave[0] = a;
 	gWave[1] = b;
-	gWave[2] = height;
-	gWave[3] = shade;
+	gWave[2] = c;
+	gWave[3] = height;
+	gWave[4] = shade;
 	// (The shader multiplies by the corner's weight, 0..127: the height and the shading come in per step of it.)
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocWave, a, b, height * (1.0f / 127.0f), shade * (1.0f / 127.0f));
+	// Wave C's phase has no uniform of its own: the 96 constant registers of the PICA200's vertex shader are full.
+	// dayDelta.w is unused by every entry, so it carries the phase at this chunk's origin. (Water is never skinned;
+	// the characters' entry does not read it, and setDayDelta puts 0 there at the start of each pass.)
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocDayDelta, gDayDelta[0], gDayDelta[1], gDayDelta[2], c);
 }
 
 // The shader with the combined matrix. A C3D_Mtx holds rows; its components are named, whatever order citro3d keeps them in.
@@ -535,6 +543,9 @@ void setFogRow(float fogA, float fogB) {
 
 // dayLight - 1; the fast entry wants it divided by 255 twice (see world_fast.v.pica).
 void setDayDelta(float x, float y, float z) {
+	gDayDelta[0] = x;
+	gDayDelta[1] = y;
+	gDayDelta[2] = z;
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocDayDelta, x, y, z, 0.0f);
 	// fix229: lightK.w = 0.5 — в world_full.v.pica это «полсдвиг» uv = lightK.w - lightK.w*ndc
 	// (разворот_vertically в 0..1); ноль здесь сваливал все uv в один угловой тексель.
@@ -925,7 +936,7 @@ void shutdown() {
 		gReflTexReady = false;
 		if (gReflClip) meshDestroy(gReflClip);
 		gReflClip = nullptr;
-		gReflPass = gReflSampleReady = gReflFresh = false;
+		gReflPass = gReflSampleReady = false;
 		gReflHasPass = false;
 		gReflRecorded = false;
 		gFrameSeq = gReflPassSeq = 0;
@@ -1249,7 +1260,6 @@ void frameBegin(const FrameDesc& f) {
 	gFrame = f;
 	++gFrameSeq; // fix232: which frame a recorded reflection pass belongs to
 	gReflRecorded = false;
-	gReflFresh = false; // зеркало этого кадра ещё не построено; reflon поднимется только после reflectionBegin
 	gClearColor = (u32(f.clearColor[0]) << 24) | (u32(f.clearColor[1]) << 16) | (u32(f.clearColor[2]) << 8) | 0xFFu;
 	if (gClassic) {
 		g3::trace("gfx: waiting for the GPU and the display (classic)");
@@ -1340,7 +1350,7 @@ static void beginPassState(const FrameDesc& f, C3D_RenderTarget* target) {
 	}
 	gWindy = gMaterialWind = gChunkWind = false;
 	if (gLocWave >= 0) {
-		gWave[0] = gWave[1] = gWave[2] = gWave[3] = 0.0f;
+		gWave[0] = gWave[1] = gWave[2] = gWave[3] = gWave[4] = 0.0f;
 		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocWave, 0.0f, 0.0f, 0.0f, 0.0f);
 		C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLocWavy, false);
 	}
@@ -1466,9 +1476,15 @@ void setChunkTransform(const float origin[3], float posScale, float uvScale, con
 	const ChunkFx& f = fx ? *fx : none;
 	setFxUniform(f.windX * 4.0f, f.windZ * 4.0f, f.windPhase, f.occlusion);
 	gChunkWind = f.windX != 0.0f || f.windZ != 0.0f;
-	setWaveUniform(f.waveA, f.waveB, f.waveHeight, f.waveShade);
+	setWaveUniform(f.waveA, f.waveB, f.waveC, f.waveHeight, f.waveShade);
 	gChunkWave = f.waveHeight != 0.0f;
 	gChunkWaterGrid = f.waterGrid && gLocWavy >= 0;
+	// The water's sun and glint ride in skinLight, which the whole entry does not read for anything else (only the
+	// characters' own entry uses it, and drawSkinned sends that before every character). No new uniform: PICA has 96
+	// constant registers and the water shader uses all of them.
+	if (gLocSkinLight >= 0) {
+		C3D_FVUnifSet(GPU_VERTEX_SHADER, gLocSkinLight, f.waterSun[0], f.waterSun[1], f.waterSun[2], f.waterGlint);
+	}
 	updateWindy();
 	// The sun's mask: its place relative to the anchor (u = (anchor + p - x0) * scale).
 	gChunkSunDark = f.sunDark >= 0.0f ? clamp(f.sunDark, 0.0f, 1.0f) : gSunDark;
@@ -1908,13 +1924,20 @@ Texture* reflectionTexture() {
 	return gReflTexReady ? &gReflWrap : nullptr;
 }
 
+// fix246: в этом кадре отражения нет совсем — гасим силу, чтобы вода не сэмплила старую
+// текстуру (проход, пропущенный по частоте reflRate, сюда не приходит).
+void reflectionSkip() {
+	gReflStrength = 0;
+}
+
 // fix244: the water plane over the mirrored scene. The mirrored camera is
 // below the plane. What is really ABOVE the water (valid reflection) is
 // beyond the plane from it; what is really BELOW the water (the wading hero's
 // submerged half) is between the camera and the plane. Drawn AFTER the scene
-// with GPU_GREATER, the plane's fog covers exactly the submerged part; the
-// above-water reflection is farther and survives. Its colour is the frame's
-// fog colour, like the pass's clear.
+// with LESS (nearer depths are greater on PICA), the plane's fog covers
+// exactly the submerged part; the above-water reflection is farther and
+// survives. Its colour is the frame's fog colour, like the pass's clear.
+// (GPU_GREATER here masks the whole reflected pass on the console.)
 static void maskReflectionUnderWater() {
 	if (!gReflClip || (gReflDebug & REFL_DBG_NO_CLIP)) return;
 	WorldVertex v[4] = {};
@@ -1936,11 +1959,11 @@ static void maskReflectionUnderWater() {
 	setChunkTransform(origin, 1.0f, 0.0f);
 	setMaterial(nullptr, 0);
 	setTwoSided(true);
-	// GPU_GREATER: the plane's fog paints only where the stored geometry is
-	// nearer than the plane, i.e. the submerged part below the water; the
-	// valid above-water reflection is beyond the plane and survives.
-	// (GPU_LESS left the submerged half visible as upside-down legs.)
-	C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_COLOR);
+	// Nearer depths are greater (the console's reversed depth): paint only
+	// where the stored geometry is nearer than the plane, i.e. below the water.
+	// (GPU_GREATER masks the whole reflected pass; what is in the water is
+	// kept out of the mirrored pass in app.cpp / Npcs::drawReflection().)
+	C3D_DepthTest(true, GPU_LESS, GPU_WRITE_COLOR);
 	draw(gReflClip, 0, 6);
 	C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
 	setTwoSided(false);
@@ -1963,7 +1986,6 @@ bool reflectionBegin(const FrameDesc& f, const ReflParams& p) {
 	beginPassState(f, gReflTarget); // состояние прохода заново, под отражённую камеру
 	gReflEyeX = f.eye.x;
 	gReflEyeZ = f.eye.z;
-	gReflFresh = true; // вода этого кадра может сэмплить отражение
 	return true;
 }
 

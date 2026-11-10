@@ -32,7 +32,9 @@ constexpr u32 SETTINGS_MAGIC = fourcc('G', '3', 'S', 'E');
 // 26: English is the base language (a file of an older version that had Russian - the old default - gets English once).
 // 27: the font of the interface (the game's own or the built-in one).
 // 28: planar reflection in the water ("спокойное зеркало"), u8 (0 off, 1 weak, 2 strong).
-constexpr u32 SETTINGS_VERSION = 28;
+// 29: the water's glint (Blinn-Phong/Fresnel in the vertex shader), u8 (0 off, 1 normal, 2 strong).
+// 30: how often the mirror pass is drawn (fix246), u8 (0 every frame, 1 every other, 2 every third).
+constexpr u32 SETTINGS_VERSION = 30;
 
 // On disk: magic, version, the settings' bytes (as many as this version
 // has), a check over all of it. A file of an older version with fewer bytes
@@ -67,19 +69,19 @@ void Settings::resetGraphics() {
 namespace {
 struct GfxSet {
 	u8 objects, dissolve, frameRate, density, npcDistance, lamps;
-	u8 occlusion, wind, waves, reflection, shadows, sunShadows, cloudShadows, grass, farLayer, farGeometry;
+	u8 occlusion, wind, waves, reflection, reflRate, waterFx, shadows, sunShadows, cloudShadows, grass, farLayer, farGeometry;
 	u8 reproject, antialias, farFill, lodFade, godRays, visibility;
 };
 const GfxSet kGfxSets[GFX_PLUS_OWN] = {
     // Speed: 60 fps first (the defaults of a fresh settings.bin).
-    {OBJECTS_SMOOTH, 1, FRAMES_60, 0, 1, 2, 0, 0, 0, 0, SHADOWS_OFF, 1, 0, 0, 0, 2, 0, 0, 0, 1, 1, 0},
+    {OBJECTS_SMOOTH, 1, FRAMES_60, 0, 1, 2, 0, 0, 0, 0, 0, 0, SHADOWS_OFF, 1, 0, 0, 0, 2, 0, 0, 0, 1, 1, 0},
     // Balanced: 60 when it fits, the cheap extras on.
-    {OBJECTS_BALANCED, 1, FRAMES_60, 0, 1, 2, 60, 2, 1, 0, SHADOWS_HERO, 1, 0, 1, 1, 2, 0, 0, 1, 1, 0, 0},
+    {OBJECTS_BALANCED, 1, FRAMES_60, 0, 1, 2, 60, 2, 1, 0, 0, 1, SHADOWS_HERO, 1, 0, 1, 1, 2, 0, 0, 1, 1, 0, 0},
     // Quality: a steady 30 and everything the player's measurement kept.
-    {OBJECTS_BALANCED, 1, FRAMES_30, 0, 1, 2, 100, 3, 3, 2, SHADOWS_ALL, 1, 0, 2, 3, 2, 0, 2, 1, 0, 0, 0},
+    {OBJECTS_BALANCED, 1, FRAMES_30, 0, 1, 2, 100, 3, 3, 2, 0, 2, SHADOWS_ALL, 1, 0, 2, 3, 2, 0, 2, 1, 0, 0, 0},
 };
 #define GFX_FIELDS(X) X(objects) X(dissolve) X(frameRate) X(density) X(npcDistance) X(lamps) X(occlusion) X(wind) X(waves) \
-	X(reflection) X(shadows) X(sunShadows) X(cloudShadows) X(grass) X(farLayer) X(farGeometry) X(reproject) X(antialias) \
+	X(reflection) X(reflRate) X(waterFx) X(shadows) X(sunShadows) X(cloudShadows) X(grass) X(farLayer) X(farGeometry) X(reproject) X(antialias) \
 	X(farFill) X(lodFade) X(godRays) X(visibility)
 } // namespace
 
@@ -122,6 +124,8 @@ void Settings::sanitize() {
 	if (wind > 3) wind = 0;
 	if (waves > 3) waves = 0;
 	if (reflection > 2) reflection = 0;
+	if (reflRate > 2) reflRate = 0;
+	if (waterFx > 2) waterFx = 1;
 	if (weather > 5) weather = 0;
 	if (shadows >= SHADOW_MODES) shadows = SHADOWS_OFF;
 	if (farLayer > 3) farLayer = 0;
@@ -210,6 +214,10 @@ bool Settings::load(const char* path) {
 	if (h.version < 3) s.report = 0;
 	if (h.version < 18 && s.antialias == 1) s.antialias = 2; // (the old "on" is the full smoothing)
 	if (h.version < 26 && s.language == 0) s.language = 1; // (Lang: 0 Russian, 1 English)
+	// Version 29: the water's glint. An older file keeps the preset's level (Quality was the strong one).
+	if (h.version < 29) s.waterFx = s.gfxPlus == 2 ? 2 : s.gfxPlus == 0 ? 0 : 1;
+	// Version 30: how often the mirror pass is drawn. An older file keeps every frame.
+	if (h.version < 30) s.reflRate = 0;
 	s.sanitize();
 	s.chapter = 255; // (never kept: it follows the game)
 	*this = s;

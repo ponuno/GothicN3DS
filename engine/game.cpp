@@ -1001,7 +1001,7 @@ void Game::updateFollowers() {
 	for (u32 i = 0; i < _npcCount && _followerCount < MAX_FOLLOWERS; ++i) {
 		const GameNpc& n = _npcs[i];
 		if (n.hero || !n.placed || n.world != _world || n.down == DOWN_DEAD) continue;
-		if (isFollowState(behaviour(n))) _followers[_followerCount++] = u16(i);
+		if (n.following || isFollowState(behaviour(n))) _followers[_followerCount++] = u16(i); // fix229: the flag of a script-begun follow state
 	}
 }
 

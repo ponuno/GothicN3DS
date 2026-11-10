@@ -203,8 +203,10 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 	// Gothic 1's ZS_Talk then has the player call "Hey you!" first (Npc_CanSeeNpc false: $SC_HEYTURNAROUND).
 	const auto facesHero = [&]() {
 		if (!hero || _game.isMonster(n)) return true;
-		// fix222: a guide leads the player with its back to him (ZS_GuidePC watches him through this very perception to
-		// stop and wait when he falls behind): it must notice him behind it, or it walks on and he is lost.
+		// fix222/fix229: a guide or a follower leads the player with its back to him (ZS_GuidePC watches him through
+		// this very perception to stop and wait when he falls behind): it must notice him behind it, or it walks on
+		// and he is lost. By hash first - it works even without "script/states" in the archive.
+		if (a.state && _game.isFollowState(a.state)) return true;
 		if (a.state) {
 			char up[64];
 			snprintf(up, sizeof(up), "%s", stateName(a.state));
@@ -213,8 +215,16 @@ void Npcs::perceive(NpcActor& a, const World& world) {
 		}
 		const float dx = hero->pos[0] - n.pos[0], dz = hero->pos[2] - n.pos[2];
 		if (dx * dx + dz * dz < 250.0f * 250.0f) return true;
-		return fabsf(wrap(atan2f(dx, dz) - n.yaw)) < 1.75f;
+		if (fabsf(wrap(atan2f(dx, dz) - n.yaw)) < 1.75f) return true;
+		// fix230: with an important info to tell, the talk begins whichever way it faces - as in the original,
+		// where the engine starts it and ZS_Talk has the player call "hey you".
+		u32 one;
+		return _game.infosFor(a.npc, true, &one, 1) > 0;
 	};
+	// fix230: the player within the talk perception's own reach (PERC_DIST_DIALOG in the scripts): an important
+	// info is to be begun at once, not after the slow rhythm the perceptions otherwise keep.
+	if (_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer] && hero && within(_percPlayer, *hero))
+		a.percWait = min(a.percWait, _cfg.noticeEvery);
 	if (_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer] && hero && within(_percPlayer, *hero) && facesHero() &&
 	    sees(a, heroIndex, _heroLink.sneaking))
 		react(a, a.perc[_percPlayer], int(heroIndex), -1);

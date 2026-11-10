@@ -70,6 +70,11 @@ struct GameNpc {
 	// see npcs.h): a new time of day changes what its routine wants, not
 	// where it is.
 	bool active = false;
+	// fix229: a state of following the player (ZS_FollowPC, ZS_GuidePC and the like) begun by the
+	// scripts (a talk's "come along"), not only by the routine. Such a character is kept simulated
+	// however far the player goes, and resumes the state after it was out of sight or a save was read.
+	bool following = false;
+	u32 resumeState = 0; // the script-begun state to resume when the character is simulated again, 0 for none
 	// What it thinks of the player (the scripts' ATT_ numbers), -1 for what
 	// its guild thinks; a passing mood over that.
 	i8 attitude = -1, tempAttitude = -1;
@@ -356,10 +361,15 @@ public:
 	u32 followerCount() const { return _followerCount; }
 	u32 follower(u32 i) const { return i < _followerCount ? _followers[i] : SCRIPT_NONE; }
 	bool isFollower(u32 npc) const {
+		if (npc < _npcCount && _npcs[npc].following) return true; // fix229: set when a follow state begins
 		for (u32 i = 0; i < _followerCount; ++i)
 			if (_followers[i] == npc) return true;
 		return false;
 	}
+	// fix229: called when a character's `following` flag changed (a follow state began or ended).
+	void refreshFollowers() { updateFollowers(); }
+	// fix226/fix229: whether a state function means "come along" (ZS_FollowPC, ZS_GuidePC, ...), by hash.
+	bool isFollowState(u32 fn) const;
 	const char* text(GameText id) const { return id < _textCount ? _texts[id] : ""; }
 	// The character's name as the scripts give it ("Thorus").
 	const char* nameOf(const GameNpc& n) const;
@@ -857,7 +867,6 @@ private:
 	u16 _followers[MAX_FOLLOWERS] = {};
 	u8 _followerCount = 0;
 	void updateFollowers();
-	bool isFollowState(u32 fn) const;
 	char** _texts = nullptr;
 	u32* _textHash = nullptr;
 	u32 _textCount = 0, _textCap = 0;

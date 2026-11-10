@@ -593,6 +593,21 @@ void App::boltUpdate(float dt) {
 			boltImpact(b, -1, from);
 			continue;
 		}
+		// A projectile that crosses a water surface: a ripple where it went in, then it is spent. The water's
+		// collision is off (MATF_NO_COLLISION), so it flew through the surface; the splash is the event.
+		if (to.y < from.y) {
+			float surface = 0.0f;
+			if (_world.waterBelow(from, from.y - to.y + 20.0f, surface) && surface <= from.y && surface >= to.y) {
+				const float span = from.y - to.y > 0.001f ? from.y - to.y : 0.001f;
+				const float t = clamp((from.y - surface) / span, 0.0f, 1.0f);
+				const Vec3 at = {from.x + (to.x - from.x) * t, surface, from.z + (to.z - from.z) * t};
+				_ripples.splashAt(_world, at, b.arrow ? 0.8f : 1.1f, b.arrow ? 0.75f : 1.0f);
+				if (b.fx) _particles.stop(b.fx);
+				b.fx = 0;
+				b.alive = false;
+				continue;
+			}
+		}
 		b.pos[0] = to.x;
 		b.pos[1] = to.y;
 		b.pos[2] = to.z;

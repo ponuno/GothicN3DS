@@ -344,14 +344,16 @@ bool Npcs::talkTo(u32 npc) {
 
 void Npcs::openTalk(NpcActor& a) {
 	if (_talk.processing && _talk.npc == int(a.npc)) return;
-	// fix222: a talk the character begins by itself is not begun with a player who has run far off meanwhile (he walked up
-	// to him, waited, was late; the player was already gone - and the whole speech played to nobody).
+	// fix222/fix248: a talk the character begins by itself is not begun with a player who has run far off meanwhile (he walked
+	// up to him, waited, was late; the player was already gone - and the whole speech played to nobody). The perception may
+	// have fired at the whole reach of the senses (20 m and more), so the limit here is the same 15 m the talk itself ends at
+	// (tickTalk), not the 8 m of the player's own asking.
 	if (_talk.requested != int(a.npc)) {
 		const GameNpc* h = _game.hero();
 		const GameNpc& me = _game.npc(a.npc);
 		if (h && a.npc != _game.heroIndex()) {
 			const float dx = h->pos[0] - me.pos[0], dy = h->pos[1] - me.pos[1], dz = h->pos[2] - me.pos[2];
-			if (dx * dx + dy * dy + dz * dz > 800.0f * 800.0f) {
+			if (dx * dx + dy * dy + dz * dz > 1500.0f * 1500.0f) {
 				++_stats.talksAborted;
 				return;
 			}

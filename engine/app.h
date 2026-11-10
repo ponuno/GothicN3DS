@@ -209,6 +209,7 @@ public:
 	Weather& weather() { return _weather; }
 	const Puddles& puddles() const { return _puddles; }
 	const Rain& rain() const { return _rain; }
+	const Ripples& ripples() const { return _ripples; }
 	const GodRays& godRays() const { return _godRays; }
 	// Graphics+: the new grass (grass.h; a world baked with --grass) and how far it is drawn now (cm; the menu, the load).
 	const Grass& grass() const { return _grass; }
@@ -712,6 +713,7 @@ private:
 	float _reflPlane = 0.0f;
 	bool _reflPlaneValid = false;
 	Vec3 _reflPlaneAt {0.0f, 0.0f, 0.0f};
+	u32 _frameNo = 0; // fix246: the frame's number, picks the mirror frames of Settings::reflRate
 	bool _thirdPerson = true; // wanted; see thirdPerson()
 	bool _heroVisible = false;
 	bool _gfxRelief = false;

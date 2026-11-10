@@ -1904,9 +1904,14 @@ void World::drawBatches(Loaded& l, bool blended, int phase) {
 			if (_waveHeight > 0.0f) {
 				fx.waveA = gfx::wavePhaseAt(l.origin, _windSeconds, 0);
 				fx.waveB = gfx::wavePhaseAt(l.origin, _windSeconds, 1);
+				fx.waveC = gfx::wavePhaseAt(l.origin, _windSeconds, 2);
 				fx.waveHeight = _waveHeight;
 				fx.waveShade = _waveShade;
 			}
+			for (int c = 0; c < 3; ++c) {
+				fx.waterSun[c] = _cfg.waterSun[c];
+			}
+			fx.waterGlint = _cfg.waterGlint;
 			gfx::setChunkTransform(l.origin, l.posScale, l.uvScale, &fx);
 			transformSet = true;
 		}
@@ -2081,19 +2086,14 @@ void World::draw(const Mat4& viewProj, Vec3 camera, u32 timeMs, bool reflection,
 		const u32 lastMs = _lastDrawMs;
 		const int fadeStep = _fadeStep;
 		const int lodStep = _lodStep;
-		// fix238: the mirror sees the whole shore when the camera looks across
-		// the water, and that is where the second pass gets expensive. A
-		// 256x256 reflection under ripples does not need the full draw
-		// distance: cap it (the edge fades out at the cap as the world does).
-		constexpr float kReflectionReach = 7000.0f; // cm
-		const float fullDrawDistance = _cfg.drawDistance;
+		// The mirror pass draws at the main pass's draw distance. fix238's
+		// 70 m cap is removed on request: the far shore was visibly missing
+		// from the reflection.
 		_reflMode = true;
 		_reflWater = waterY;
-		_cfg.drawDistance = min(fullDrawDistance, kReflectionReach);
 
 		draw(viewProj, camera, timeMs);
 
-		_cfg.drawDistance = fullDrawDistance;
 		_reflMode = false;
 		_stats = st;
 		_drawFrame = frame;

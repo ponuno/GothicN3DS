@@ -23,11 +23,30 @@ public:
 
 	// Once a frame. `feet`: where the body is; `waterDepth`: the water above the feet (0: dry); `swimming`; `dt`: seconds.
 	void update(const World& world, Vec3 feet, float waterDepth, bool swimming, float dt);
+	// A splash from something falling into the water (an arrow, a spell, a thrown object): rings, foam and a short
+	// event source at `at` (the surface is found under it; no water there: nothing happens). Sources are capped at
+	// MAX_EVENTS; the oldest is dropped. The billboards are what is drawn now; the source list is also what a future
+	// procedural-ripple pass would send to the water shader. Returns false if there was no water.
+	bool splashAt(const World& world, Vec3 at, float size = 1.0f, float strength = 0.8f);
 	// In PASS_BLEND, after the water. `skyLight`: the light's colour (the shapes are paler in the dark).
 	void draw(const World& world, Vec3 camera, const float skyLight[3]);
 	// Forgets everything and frees the meshes and the texture (a world was left).
 	void release();
 	u32 rings() const { return _count; }
+
+	// The event sources (a ring spreading out from a place where something fell in). Position, age/life, size and
+	// strength; `radius` grows with age as the drawn ring does. At most MAX_EVENTS at once.
+	static constexpr u32 MAX_EVENTS = 16;
+	struct Event {
+		float x = 0, y = 0, z = 0;
+		float age = 0, life = 1.8f;
+		float size = 1.0f, strength = 0.8f;
+		float weight = 0.0f; // how much of the waves lifts the water there (0..1), for a future shader source
+		float radius() const { return Ripples::radius(age / (life > 0.0f ? life : 1.0f), size); }
+		float intensity() const { return opacity(age / (life > 0.0f ? life : 1.0f), strength); }
+	};
+	u32 eventCount() const { return _eventCount; }
+	const Event* events() const { return _event; }
 
 	// How far a ring of age `age` (0..1) has spread and how visible it is (0..1), for a ring of `size` (0..1).
 	static float radius(float age, float size) { return (12.0f + (50.0f + 90.0f * size) * age) ; }
@@ -57,6 +76,8 @@ private:
 	static constexpr u32 MESHES = 3;
 	Ring _ring[MAX_RINGS] = {};
 	u32 _count = 0;
+	Event _event[MAX_EVENTS] = {};
+	u32 _eventCount = 0;
 	Vec3 _last {0, 0, 0};
 	bool _haveLast = false;
 	bool _wasIn = false;

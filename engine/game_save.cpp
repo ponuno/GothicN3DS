@@ -18,6 +18,7 @@ constexpr u32 SAVE_VERSION = 1;
 constexpr u32 MAX_STRING_MEMBERS = 96;
 constexpr u32 LATE_MAGIC = 0x4554414Cu; // "LATE"
 constexpr u32 OVERLAY_MAGIC = 0x534C564Fu; // "OVLS"
+constexpr u32 FOLLOW_MAGIC = 0x574F4C46u; // "FOLW" (fix229)
 constexpr u32 IKARUS_FILES = 0x52414B49u; // "IKAR" (fix195)
 constexpr u32 NEWS_BLOCK = 0x5357454Eu;   // "NEWS" (fix199)
 
@@ -130,6 +131,10 @@ void Game::save(ByteSink& out) const {
 			r.str(text(n.overlay[k]));
 			r.f32v(n.overlayLeft[k]);
 		}
+		// fix229: the follow flag and the script-begun state to resume (a save from before them has none here).
+		r.u32v(FOLLOW_MAGIC);
+		r.u8v(u8(n.following ? 1 : 0));
+		r.u32v(n.resumeState);
 		// Last (an older save's record ends before it): made after the start-up, summoned.
 		r.u32v(LATE_MAGIC);
 		r.u8v(u8((n.late ? 1 : 0) | (n.spawned ? 2 : 0)));
@@ -479,6 +484,15 @@ void Game::restoreNpc(u32 index, ByteSource& r) {
 					n.overlayLeft[k] = left;
 				}
 			}
+		}
+	}
+	// fix229: the follow flag and the script-begun state to resume (a save from before them has LATE here).
+	if (!r.bad && r.left() >= 9) {
+		ByteSource peek = r;
+		if (peek.u32v() == FOLLOW_MAGIC) {
+			r.u32v();
+			n.following = r.u8v() != 0;
+			n.resumeState = r.u32v();
 		}
 	}
 }

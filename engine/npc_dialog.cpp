@@ -304,14 +304,15 @@ bool Npcs::canTalk(u32 npc) const {
 	if (!_cfg.alive || npc >= _game.npcCount() || npc == _game.heroIndex() || _game.npc(npc).down != DOWN_NONE) return false;
 	for (const NpcActor& a : _actors)
 		if (a.used && a.npc == npc) {
+			const bool follower = _game.isFollower(npc) || (a.state && _game.isFollowState(a.state));
 			// (Not one in a fight: it has no ear for talk, nor does an enemy.)
-			if (!a.ready || inFightState(a) || a.flee > 0.0f || a.refuseTalk > 0.0f || _game.npc(npc).weapon != WEAPON_NONE) return false;
+			if (!a.ready || (!follower && inFightState(a)) || a.flee > 0.0f || a.refuseTalk > 0.0f || (!follower && _game.npc(npc).weapon != WEAPON_NONE)) return false;
 			const u32 hero = _game.heroIndex();
 			if (hero != SCRIPT_NONE && _game.attitude(npc, hero) == _game.constant("ATT_HOSTILE", 0) && _game.isMonster(_game.npc(npc))) return false;
 			// A follow state may not have enabled PERC_ASSESSTALK yet. The
 			// original still lets the player call the NPC, after which ZS_TALK
 			// sets up the perception itself.
-			return (_percTalk >= 0 && _percTalk < Game::PERC_TYPES && a.perc[_percTalk]) || _game.hasInfos(npc) || _fnTalk != SCRIPT_NONE;
+			return follower || (_percTalk >= 0 && _percTalk < Game::PERC_TYPES && a.perc[_percTalk]) || _game.hasInfos(npc) || _fnTalk != SCRIPT_NONE;
 		}
 	return false;
 }

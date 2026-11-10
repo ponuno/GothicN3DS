@@ -972,12 +972,27 @@ const GameRoutine* Game::routineAt(const GameNpc& n, float hours) const {
 	i32 minute = i32(hours * 60.0f);
 	minute %= 24 * 60;
 	if (minute < 0) minute += 24 * 60;
+	const i32 day = 24 * 60;
 	for (u32 i = 0; i < n.routineCount; ++i) {
 		const GameRoutine& r = _routines[n.routineFirst + i];
-		const bool in = r.start < r.stop ? (minute >= r.start && minute < r.stop) : (minute >= r.start || minute < r.stop);
+		const bool in = r.start < r.stop ? (minute >= r.start && minute < r.stop) : (r.start > r.stop && (minute >= r.start || minute < r.stop));
 		if (in) return &r;
 	}
-	return &_routines[n.routineFirst];
+	// OpenGothic uses the routine that ended most recently when the clock is in
+	// a gap. Choosing the first entry here sends characters such as Mud to an
+	// unrelated part of their schedule until the next boundary is crossed.
+	const GameRoutine* previous = nullptr;
+	i32 nearest = day + 1;
+	for (u32 i = 0; i < n.routineCount; ++i) {
+		const GameRoutine& r = _routines[n.routineFirst + i];
+		i32 distance = minute - r.stop;
+		if (distance < 0) distance += day;
+		if (distance <= nearest) {
+			nearest = distance;
+			previous = &r;
+		}
+	}
+	return previous ? previous : &_routines[n.routineFirst];
 }
 
 // fix226: a routine state that means "come along" (G1: ZS_FollowPC, ZS_GuidePC, ZS_FollowMode; G2 and mods add

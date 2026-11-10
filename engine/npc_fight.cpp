@@ -713,8 +713,15 @@ bool Npcs::doStep(NpcActor& a, const World& world, float dt) {
 		}
 		if (!c || !c->moves()) {
 			const float step = min(420.0f * dt, dist);
-			n.pos[0] += sinf(n.yaw) * step;
-			n.pos[2] += cosf(n.yaw) * step;
+			const float x = n.pos[0] + sinf(n.yaw) * step;
+			const float z = n.pos[2] + cosf(n.yaw) * step;
+			if (!blockedByWater(a, world, x, z)) {
+				n.pos[0] = x;
+				n.pos[2] = z;
+			} else {
+				stopWalking(a);
+				return true;
+			}
 		}
 		// Not getting any closer: let the state think again.
 		if (dist < a.bestDist - 1.0f) {
@@ -877,8 +884,15 @@ bool Npcs::carryOnFight(NpcActor& a, const World& world, float dt) {
 			if ((c = modeClip(a, "S_%sL", true)) != nullptr) a.anim.play(c, 0.1f);
 		}
 		if (!c || !c->moves()) {
-			n.pos[0] += sinf(n.yaw) * 420.0f * dt;
-			n.pos[2] += cosf(n.yaw) * 420.0f * dt;
+			const float x = n.pos[0] + sinf(n.yaw) * 420.0f * dt;
+			const float z = n.pos[2] + cosf(n.yaw) * 420.0f * dt;
+			if (!blockedByWater(a, world, x, z)) {
+				n.pos[0] = x;
+				n.pos[2] = z;
+			} else {
+				stopWalking(a);
+				return true;
+			}
 		}
 		a.flee -= dt;
 		if (a.flee > 0.0f) return false;

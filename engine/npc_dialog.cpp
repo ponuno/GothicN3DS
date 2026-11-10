@@ -308,7 +308,10 @@ bool Npcs::canTalk(u32 npc) const {
 			if (!a.ready || inFightState(a) || a.flee > 0.0f || a.refuseTalk > 0.0f || _game.npc(npc).weapon != WEAPON_NONE) return false;
 			const u32 hero = _game.heroIndex();
 			if (hero != SCRIPT_NONE && _game.attitude(npc, hero) == _game.constant("ATT_HOSTILE", 0) && _game.isMonster(_game.npc(npc))) return false;
-			return (_percTalk >= 0 && _percTalk < Game::PERC_TYPES && a.perc[_percTalk]) || _game.hasInfos(npc);
+			// A follow state may not have enabled PERC_ASSESSTALK yet. The
+			// original still lets the player call the NPC, after which ZS_TALK
+			// sets up the perception itself.
+			return (_percTalk >= 0 && _percTalk < Game::PERC_TYPES && a.perc[_percTalk]) || _game.hasInfos(npc) || _fnTalk != SCRIPT_NONE;
 		}
 	return false;
 }
@@ -488,8 +491,20 @@ void Npcs::afterTold() {
 		return;
 	}
 	while (t.importantLeft > 0) {
-		u32 next[1];
-		if (_game.infosFor(u32(t.npc), true, next, 1) == 0) break;
+		u32 available[TALK_ITEMS];
+		const u32 availableCount = _game.infosFor(u32(t.npc), true, available, TALK_ITEMS);
+		u32 next = SCRIPT_NONE;
+		for (u32 k = 0; k < availableCount; ++k) {
+			const u32 key = _game.info(available[k]).information;
+			bool seen = false;
+			for (u32 j = 0; j < t.importantSeenCount; ++j)
+				seen = seen || t.importantSeen[j] == key;
+			if (!seen) {
+				next = available[k];
+				break;
+			}
+		}
+		if (next == SCRIPT_NONE) break;
 		// fix222: the next important info is told after a pause, not in the same breath (Bloodwyn's two speeches).
 		if (!t.gapped) {
 			t.gapped = true;
@@ -498,7 +513,8 @@ void Npcs::afterTold() {
 		}
 		t.gapped = false;
 		--t.importantLeft;
-		runInfo(next[0]);
+		if (t.importantSeenCount < TALK_ITEMS) t.importantSeen[t.importantSeenCount++] = _game.info(next).information;
+		runInfo(next);
 		return;
 	}
 	t.importantLeft = 0;

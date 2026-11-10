@@ -689,6 +689,7 @@ private:
 	bool begin(NpcActor& a, const World& world);
 	bool carryOn(NpcActor& a, const World& world, float dt);
 	bool walkTo(NpcActor& a, const float target[3], float radius, float dt, bool last);
+	bool blockedByWater(NpcActor& a, const World& world, float x, float z);
 	bool turn(NpcActor& a, float yaw, float rate, float dt);
 	bool taken(const NpcActor& a, const float pos[3]) const;
 	void startWalking(NpcActor& a);
@@ -939,6 +940,8 @@ private:
 		u32 state = 0;        // the state of the partner that the talk belongs to (ZS_Talk)
 		bool stop = false;    // AI_StopProcessInfos was reached
 		int importantLeft = 0; // important infos the talk may still begin with (it is at most a few)
+		u32 importantSeen[TALK_ITEMS] = {};
+		u32 importantSeenCount = 0;
 		float gap = 0;         // fix222: the pause before the next important info (they are not told in one breath)
 		bool gapped = false;   // (the pause has been taken for the info that is next)
 		bool choosing = false;

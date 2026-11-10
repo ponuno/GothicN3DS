@@ -910,6 +910,39 @@ bool Npcs::turn(NpcActor& a, float yaw, float rate, float dt) {
 	return false;
 }
 
+// Match OpenGothic's MoveAlgo: a character without swimming animations must
+// not advance into water deeper than its chest. The ground may be outside the
+// ordinary ray when the water is deep, so both surfaces are queried from
+// above the water plane.
+bool Npcs::blockedByWater(NpcActor& a, const World& world, float x, float z) {
+	if (a.swimming) return false;
+	const GameNpc& n = _game.npc(a.npc);
+	float surface = 0.0f;
+	if (!world.waterBelow({x, n.pos[1] + 620.0f, z}, 6000.0f, surface)) return false;
+	// Let a swimmer take the first step into deep water. `ground()` then
+	// switches the actor to S_SWIM/S_SWIMF. Blocking that boundary step would
+	// leave the actor on the shore forever because it never gets a chance to
+	// enter the swimming state.
+	static const u32 swimIdle = hashName("S_SWIM"), swimMove = hashName("S_SWIMF");
+	if (hasClipAnywhere(a, swimIdle) && hasClipAnywhere(a, swimMove)) return false;
+	// Water below a bridge or an overhang must not make the upper floor
+	// impassable. OpenGothic's water ray rejects a water hit hidden by solid
+	// geometry in the same way.
+	float upper = 0.0f;
+	Vec3 upperNormal;
+	if (world.rayDown({x, n.pos[1] + 300.0f, z}, 700.0f, upper, upperNormal) && upper > surface + 20.0f) return false;
+	float floor = 0.0f;
+	Vec3 normal;
+	if (!world.rayDown({x, surface - 60.0f, z}, 3000.0f, floor, normal)) return true;
+	const i32 guild = _game.guildOf(n);
+	const i32 chest = _game.guildValue("WATER_DEPTH_CHEST", guild, 125);
+	const i32 knee = _game.guildValue("WATER_DEPTH_KNEE", guild, 60);
+	// Gothic uses 999999 for flying creatures such as bloodflies. They are
+	// deliberately allowed to pass over water without swim animations.
+	if (chest >= 999999 || knee >= 999999) return false;
+	return surface - floor > float(chest);
+}
+
 // A step towards `target`. True once it is within `radius` of it.
 bool Npcs::walkTo(NpcActor& a, const float target[3], float radius, float dt, bool last) {
 	GameNpc& n = _game.npcMut(a.npc);
@@ -942,8 +975,15 @@ bool Npcs::walkTo(NpcActor& a, const float target[3], float radius, float dt, bo
 	}
 	if (!c || !c->moves()) {
 		const float step = min((run ? 420.0f : 130.0f) * dt, d);
-		n.pos[0] += sinf(n.yaw) * step;
-		n.pos[2] += cosf(n.yaw) * step;
+		const float x = n.pos[0] + sinf(n.yaw) * step;
+		const float z = n.pos[2] + cosf(n.yaw) * step;
+		if (!_world || !blockedByWater(a, *_world, x, z)) {
+			n.pos[0] = x;
+			n.pos[2] = z;
+		} else {
+			stopWalking(a);
+			return true;
+		}
 	}
 	// Not getting any closer (a turn too wide, a clip that goes nowhere):
 	// after a while it is simply there.
@@ -964,10 +1004,14 @@ bool Npcs::walkTo(NpcActor& a, const float target[3], float radius, float dt, bo
 			a.stuck = 0;
 			a.bestDist = d;
 		} else if (a.stuck > (last ? 3.0f : 5.0f)) {
-			++_stats.snapped;
-			n.pos[0] = target[0];
-			n.pos[1] = target[1];
-			n.pos[2] = target[2];
+			if (!(_world && blockedByWater(a, *_world, target[0], target[2]))) {
+				++_stats.snapped;
+				n.pos[0] = target[0];
+				n.pos[1] = target[1];
+				n.pos[2] = target[2];
+			} else {
+				stopWalking(a);
+			}
 			return true;
 		}
 	}
@@ -1430,7 +1474,25 @@ void Npcs::tick(NpcActor& a, const World& world, float dt, float hoursPassed) {
 			if (a.action.kind == NPC_ACT_NONE && !a.queueCount) break;
 		}
 		part(_stats.tickActMs);
+		if (walked && blockedByWater(a, world, n.pos[0], n.pos[2])) {
+			n.pos[0] = before[0];
+			n.pos[2] = before[2];
+			walked = false;
+			stopWalking(a);
+		}
 		a.percWait -= dt;
+		// Clamp the polling interval as soon as the player enters the
+		// dialogue perception range. Waiting for the previous slow interval
+		// made NPC-started conversations appear several seconds late.
+		if (_percPlayer >= 0 && _percPlayer < Game::PERC_TYPES && a.perc[_percPlayer]) {
+			const GameNpc* hero = _game.hero();
+			const float range = _game.perceptionRange(_percPlayer);
+			if (hero && hero->placed && n.world == hero->world) {
+				const float dx = hero->pos[0] - n.pos[0], dy = hero->pos[1] - n.pos[1], dz = hero->pos[2] - n.pos[2];
+				if (range < 0.0f || dx * dx + dy * dy + dz * dz <= range * range)
+					a.percWait = min(a.percWait, _cfg.noticeEvery);
+			}
+		}
 		// The player has just come within the reach of its senses: it looks at once.
 		const bool near = heroNear(n);
 		if (near && !a.heroWasNear) a.percWait = 0.0f;

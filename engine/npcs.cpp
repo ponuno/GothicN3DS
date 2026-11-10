@@ -594,8 +594,13 @@ void Npcs::select(Pak& pak, const World& world, Vec3 eye, u32 loadsLeft) {
 		if (!a.used) continue;
 		bool still = false;
 		for (u32 k = 0; k < count && !still; ++k) still = chosen[k] == a.npc;
-		a.leaving = !still && a.leaving;
-		if (still) continue;
+		if (still) {
+			// A follower can leave the visible set while it is being faded out,
+			// then become selected again immediately. Let it fade in instead of
+			// keeping the stale leaving flag forever.
+			a.leaving = false;
+			continue;
+		}
 		// (One that is seen dissolves out first, and goes when it is gone.)
 		if (a.ready && a.shown > 0 && _fadeStep < 255 && gfx::fadeSupported())
 			a.leaving = true;
